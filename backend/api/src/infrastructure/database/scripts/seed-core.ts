@@ -9,9 +9,12 @@ import {
   DEV_BILLING_INVOICE_SEEDS,
   DEV_COMPLAINT_SEEDS,
   DEV_OCCUPANCY_SEEDS,
+  DEV_PARKING_SLOT_SEEDS,
+  DEV_PARKING_ZONE_SEEDS,
   DEV_RESIDENT_SEEDS,
   DEV_TECHNICIAN_SEEDS,
   DEV_USER_SEEDS,
+  DEV_VEHICLE_SEEDS,
   DEV_WORK_ORDER_SEEDS,
   GRANADA_PROPERTY,
   PERMISSIONS,
@@ -194,15 +197,22 @@ async function seedLayer2(client: PoolClient): Promise<void> {
   await client.query(
     `INSERT INTO property_settings (
        property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
-       quiet_hour_start, guest_report_deadline
+       quiet_hour_start, guest_report_deadline, parking_management_mode,
+       max_vehicles_per_resident, parking_capacity_motorcycle, parking_capacity_car,
+       parking_requires_approval
      )
-     VALUES ($1, 25, 1.00, 100000, '21:00:00', '21:00:00')
+     VALUES ($1, 25, 1.00, 100000, '21:00:00', '21:00:00', 'unmanaged', 3, NULL, NULL, true)
      ON CONFLICT (property_id) DO UPDATE
      SET default_due_day = EXCLUDED.default_due_day,
          late_fee_percent_per_day = EXCLUDED.late_fee_percent_per_day,
          booking_fee_amount = EXCLUDED.booking_fee_amount,
          quiet_hour_start = EXCLUDED.quiet_hour_start,
          guest_report_deadline = EXCLUDED.guest_report_deadline,
+         parking_management_mode = EXCLUDED.parking_management_mode,
+         max_vehicles_per_resident = EXCLUDED.max_vehicles_per_resident,
+         parking_capacity_motorcycle = EXCLUDED.parking_capacity_motorcycle,
+         parking_capacity_car = EXCLUDED.parking_capacity_car,
+         parking_requires_approval = EXCLUDED.parking_requires_approval,
          updated_at = now()`,
     [CORE_SEED_IDS.granadaProperty],
   );
@@ -451,6 +461,7 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
 
   await seedDevelopmentBilling(client);
   await seedDevelopmentComplaintAndMaintenance(client);
+  await seedDevelopmentVehicleAndParking(client);
 }
 
 async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promise<void> {
@@ -694,6 +705,167 @@ async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promi
       );
     }
   }
+}
+
+async function seedDevelopmentVehicleAndParking(client: PoolClient): Promise<void> {
+  await client.query(
+    `UPDATE property_settings
+     SET parking_management_mode = 'slot',
+         max_vehicles_per_resident = 3,
+         parking_capacity_motorcycle = 80,
+         parking_capacity_car = 12,
+         parking_requires_approval = true,
+         updated_at = now()
+     WHERE property_id = $1`,
+    [CORE_SEED_IDS.granadaProperty],
+  );
+
+  await client.query('DELETE FROM vehicle_status_histories WHERE vehicle_id = ANY($1::uuid[])', [
+    DEV_VEHICLE_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM vehicle_files WHERE vehicle_id = ANY($1::uuid[])', [
+    DEV_VEHICLE_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM parking_slots WHERE id = ANY($1::uuid[])', [
+    DEV_PARKING_SLOT_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM parking_zones WHERE id = ANY($1::uuid[])', [
+    DEV_PARKING_ZONE_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM vehicles WHERE id = ANY($1::uuid[])', [DEV_VEHICLE_SEEDS.map(({ id }) => id)]);
+
+  for (const vehicle of DEV_VEHICLE_SEEDS) {
+    const context = await vehicleSeedContext(client, vehicle.residentId, vehicle.roomNumber);
+    await client.query(
+      `INSERT INTO vehicles (
+         id, property_id, resident_id, vehicle_code, plate_number, vehicle_type,
+         brand, color, year, vehicle_status, notes, approved_by_user_id, approved_at,
+         suspend_reason, snapshot_resident_name, snapshot_room_number, created_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, 'Development dummy vehicle',
+         CASE WHEN $10 IN ('active', 'suspended') THEN $11::uuid ELSE NULL END,
+         CASE WHEN $10 IN ('active', 'suspended') THEN now() - interval '7 days' ELSE NULL END,
+         CASE WHEN $10 = 'suspended' THEN 'Development seed suspension' ELSE NULL END,
+         $12, $13, $11
+       )
+       ON CONFLICT (property_id, vehicle_code) DO UPDATE
+       SET resident_id = EXCLUDED.resident_id,
+           plate_number = EXCLUDED.plate_number,
+           vehicle_type = EXCLUDED.vehicle_type,
+           brand = EXCLUDED.brand,
+           color = EXCLUDED.color,
+           year = EXCLUDED.year,
+           vehicle_status = EXCLUDED.vehicle_status,
+           notes = EXCLUDED.notes,
+           approved_by_user_id = EXCLUDED.approved_by_user_id,
+           approved_at = EXCLUDED.approved_at,
+           reject_reason = NULL,
+           suspend_reason = EXCLUDED.suspend_reason,
+           deactivation_reason = NULL,
+           deactivated_at = NULL,
+           snapshot_resident_name = EXCLUDED.snapshot_resident_name,
+           snapshot_room_number = EXCLUDED.snapshot_room_number,
+           updated_at = now()`,
+      [
+        vehicle.id,
+        CORE_SEED_IDS.granadaProperty,
+        vehicle.residentId,
+        vehicle.code,
+        normalizeSeedPlate(vehicle.plateNumber),
+        vehicle.vehicleType,
+        vehicle.brand,
+        vehicle.color,
+        vehicle.year ?? null,
+        vehicle.status,
+        CORE_SEED_IDS.ownerUser,
+        context.residentName,
+        context.roomNumber,
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO vehicle_status_histories (vehicle_id, from_status, to_status, changed_by_user_id, notes)
+       VALUES ($1, NULL, $2, $3, 'Seed data - development vehicle')`,
+      [vehicle.id, vehicle.status, CORE_SEED_IDS.ownerUser],
+    );
+  }
+
+  for (const zone of DEV_PARKING_ZONE_SEEDS) {
+    await client.query(
+      `INSERT INTO parking_zones (
+         id, property_id, zone_code, zone_name, zone_type, capacity,
+         location_description, is_active, sort_order, created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9)
+       ON CONFLICT (property_id, zone_code) DO UPDATE
+       SET zone_name = EXCLUDED.zone_name,
+           zone_type = EXCLUDED.zone_type,
+           capacity = EXCLUDED.capacity,
+           location_description = EXCLUDED.location_description,
+           is_active = EXCLUDED.is_active,
+           sort_order = EXCLUDED.sort_order,
+           updated_at = now()`,
+      [
+        zone.id,
+        CORE_SEED_IDS.granadaProperty,
+        zone.zoneCode,
+        zone.zoneName,
+        zone.zoneType,
+        zone.capacity,
+        zone.locationDescription,
+        zone.sortOrder,
+        CORE_SEED_IDS.ownerUser,
+      ],
+    );
+  }
+
+  for (const slot of DEV_PARKING_SLOT_SEEDS) {
+    await client.query(
+      `INSERT INTO parking_slots (id, zone_id, slot_number, slot_type, slot_status, vehicle_id)
+       VALUES ($1, $2, $3, $4, CASE WHEN $5::uuid IS NULL THEN 'available' ELSE 'occupied' END, $5)
+       ON CONFLICT (zone_id, slot_number) DO UPDATE
+       SET slot_type = EXCLUDED.slot_type,
+           slot_status = EXCLUDED.slot_status,
+           vehicle_id = EXCLUDED.vehicle_id,
+           updated_at = now()`,
+      [
+        slot.id,
+        CORE_SEED_IDS.devParkingZones[slot.zoneKey],
+        slot.slotNumber,
+        slot.slotType,
+        slot.vehicleId ?? null,
+      ],
+    );
+  }
+}
+
+async function vehicleSeedContext(
+  client: PoolClient,
+  residentId: string,
+  roomNumber: string,
+): Promise<{ residentName: string; roomNumber: string }> {
+  const result = await client.query<{ resident_name: string; room_number: string }>(
+    `SELECT residents.full_name AS resident_name, rooms.number AS room_number
+     FROM residents
+     JOIN occupancies ON occupancies.resident_id = residents.id
+       AND occupancies.occupancy_status = 'active'
+     JOIN rooms ON rooms.id = occupancies.room_id
+     WHERE residents.id = $1
+       AND rooms.property_id = $2
+       AND rooms.number = $3`,
+    [residentId, CORE_SEED_IDS.granadaProperty, roomNumber],
+  );
+  const context = result.rows[0];
+  if (!context) {
+    throw new Error(`Development vehicle seed context not found for resident ${residentId} room ${roomNumber}.`);
+  }
+  return { residentName: context.resident_name, roomNumber: context.room_number };
+}
+
+function normalizeSeedPlate(plateNumber: string): string {
+  return plateNumber.trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
 async function complaintSeedContext(
@@ -1324,6 +1496,69 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
          AND assigned_to_user_id IS NOT NULL`,
       [propertyId, DEV_WORK_ORDER_SEEDS.map(({ id }) => id)],
     ),
+    validationCheck(
+      client,
+      'DEV-VEHICLE-01 vehicle count',
+      'SELECT count(*) FROM vehicles WHERE property_id = $1 AND id = ANY($2::uuid[])',
+      [propertyId, DEV_VEHICLE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-VEHICLE-02 active vehicle count',
+      "SELECT count(*) FROM vehicles WHERE property_id = $1 AND id = ANY($2::uuid[]) AND vehicle_status = 'active'",
+      [propertyId, DEV_VEHICLE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-VEHICLE-03 pending vehicle count',
+      "SELECT count(*) FROM vehicles WHERE property_id = $1 AND id = ANY($2::uuid[]) AND vehicle_status = 'pending_approval'",
+      [propertyId, DEV_VEHICLE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-VEHICLE-04 suspended vehicle count',
+      "SELECT count(*) FROM vehicles WHERE property_id = $1 AND id = ANY($2::uuid[]) AND vehicle_status = 'suspended'",
+      [propertyId, DEV_VEHICLE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-PARKING-01 dev parking slot mode',
+      `SELECT count(*)
+       FROM property_settings
+       WHERE property_id = $1
+         AND parking_management_mode = 'slot'
+         AND max_vehicles_per_resident = 3
+         AND parking_requires_approval = true`,
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-PARKING-02 parking zone count',
+      'SELECT count(*) FROM parking_zones WHERE property_id = $1 AND id = ANY($2::uuid[]) AND is_active = true',
+      [propertyId, DEV_PARKING_ZONE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-PARKING-03 parking slot count',
+      `SELECT count(*)
+       FROM parking_slots
+       JOIN parking_zones ON parking_zones.id = parking_slots.zone_id
+       WHERE parking_zones.property_id = $1
+         AND parking_slots.id = ANY($2::uuid[])`,
+      [propertyId, DEV_PARKING_SLOT_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-PARKING-04 assigned parking slot count',
+      `SELECT count(*)
+       FROM parking_slots
+       JOIN parking_zones ON parking_zones.id = parking_slots.zone_id
+       WHERE parking_zones.property_id = $1
+         AND parking_slots.id = ANY($2::uuid[])
+         AND parking_slots.slot_status = 'occupied'
+         AND parking_slots.vehicle_id IS NOT NULL`,
+      [propertyId, DEV_PARKING_SLOT_SEEDS.map(({ id }) => id)],
+    ),
   ]);
 
   const expected = new Map<string, number>([
@@ -1349,6 +1584,14 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
     ['DEV-COMPLAINT-04 common area complaint count', 4],
     ['DEV-COMPLAINT-05 work order count', DEV_WORK_ORDER_SEEDS.length],
     ['DEV-COMPLAINT-06 assigned work order count', 6],
+    ['DEV-VEHICLE-01 vehicle count', DEV_VEHICLE_SEEDS.length],
+    ['DEV-VEHICLE-02 active vehicle count', 5],
+    ['DEV-VEHICLE-03 pending vehicle count', 2],
+    ['DEV-VEHICLE-04 suspended vehicle count', 2],
+    ['DEV-PARKING-01 dev parking slot mode', 1],
+    ['DEV-PARKING-02 parking zone count', DEV_PARKING_ZONE_SEEDS.length],
+    ['DEV-PARKING-03 parking slot count', DEV_PARKING_SLOT_SEEDS.length],
+    ['DEV-PARKING-04 assigned parking slot count', 4],
   ]);
 
   for (const check of checks) {

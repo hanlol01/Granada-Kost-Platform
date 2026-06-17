@@ -19,6 +19,8 @@ import { OccupancyModule } from './modules/occupancy/occupancy.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ComplaintModule } from './modules/complaint/complaint.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
+import { VehicleModule } from './modules/vehicle/vehicle.module';
+import { ParkingModule } from './modules/parking/parking.module';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { MaintenanceModule } from './modules/maintenance/maintenance.module';
     BillingModule,
     ComplaintModule,
     MaintenanceModule,
+    VehicleModule,
+    ParkingModule,
     HealthModule,
   ],
 })

@@ -73,6 +73,34 @@ export type DevWorkOrderSeedRecord = {
   status: 'open' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'verified' | 'cancelled';
   assignedTechnicianKey?: keyof typeof CORE_SEED_IDS.devUsers.technicians;
 };
+export type DevVehicleSeedRecord = {
+  id: string;
+  code: string;
+  residentId: string;
+  roomNumber: string;
+  plateNumber: string;
+  vehicleType: 'motorcycle' | 'car';
+  brand: string;
+  color: string;
+  year?: string;
+  status: 'active' | 'pending_approval' | 'suspended';
+};
+export type DevParkingZoneSeedRecord = {
+  id: string;
+  zoneCode: string;
+  zoneName: string;
+  zoneType: 'motorcycle' | 'car' | 'mixed';
+  capacity: number;
+  locationDescription: string;
+  sortOrder: number;
+};
+export type DevParkingSlotSeedRecord = {
+  id: string;
+  zoneKey: keyof typeof CORE_SEED_IDS.devParkingZones;
+  slotNumber: string;
+  slotType: 'motorcycle' | 'car';
+  vehicleId?: string;
+};
 
 export const CORE_SEED_IDS = {
   ownerUser: '10000000-0000-4000-8000-000000000001',
@@ -186,6 +214,30 @@ export const CORE_SEED_IDS = {
     lobbyLamp: '84000000-0000-4000-8000-000000000006',
     pumpInspection: '84000000-0000-4000-8000-000000000007',
   },
+  devVehicles: {
+    alphaMotor: '85000000-0000-4000-8000-000000000001',
+    alphaCar: '85000000-0000-4000-8000-000000000002',
+    bravoMotor: '85000000-0000-4000-8000-000000000003',
+    charlieMotor: '85000000-0000-4000-8000-000000000004',
+    deltaCar: '85000000-0000-4000-8000-000000000005',
+    echoMotor: '85000000-0000-4000-8000-000000000006',
+    foxtrotMotor: '85000000-0000-4000-8000-000000000007',
+    golfCar: '85000000-0000-4000-8000-000000000008',
+    hotelMotor: '85000000-0000-4000-8000-000000000009',
+  },
+  devParkingZones: {
+    motorcycleFront: '86000000-0000-4000-8000-000000000001',
+    motorcycleBack: '86000000-0000-4000-8000-000000000002',
+    carMain: '86000000-0000-4000-8000-000000000003',
+  },
+  devParkingSlots: {
+    motorcycleFront01: '87000000-0000-4000-8000-000000000001',
+    motorcycleFront02: '87000000-0000-4000-8000-000000000002',
+    motorcycleFront03: '87000000-0000-4000-8000-000000000003',
+    motorcycleBack01: '87000000-0000-4000-8000-000000000004',
+    carMain01: '87000000-0000-4000-8000-000000000005',
+    carMain02: '87000000-0000-4000-8000-000000000006',
+  },
 } as const;
 
 export const ROLES = [
@@ -216,6 +268,8 @@ export const PERMISSIONS = [
   ['payment.verify', 'Verify Payment', 'Verify or reject manual payment proof.'],
   ['complaint.manage', 'Manage Complaint', 'Manage complaints and work order status.'],
   ['maintenance.manage', 'Manage Maintenance', 'Manage maintenance work orders.'],
+  ['vehicle.manage', 'Manage Vehicles', 'Register, approve, update, suspend, and deactivate vehicles.'],
+  ['parking.manage', 'Manage Parking', 'Manage parking zones and slots.'],
   ['smart_lock.view', 'View Smart Lock', 'View smart lock metadata and security reports.'],
   ['smart_lock.command', 'Command Smart Lock', 'Execute lock or unlock commands.'],
   ['cctv.view', 'View CCTV', 'View CCTV metadata and preview sessions.'],
@@ -244,6 +298,8 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
     'payment.verify',
     'complaint.manage',
     'maintenance.manage',
+    'vehicle.manage',
+    'parking.manage',
     'smart_lock.view',
     'cctv.view',
     'notification.manage',
@@ -829,6 +885,190 @@ export const DEV_WORK_ORDER_SEEDS: DevWorkOrderSeedRecord[] = [
     priority: 'medium',
     status: 'assigned',
     assignedTechnicianKey: 'anto',
+  },
+];
+
+export const DEV_VEHICLE_SEEDS: DevVehicleSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devVehicles.alphaMotor,
+    code: 'VEH-GSH-2026-0001',
+    residentId: CORE_SEED_IDS.devResidents.alpha,
+    roomNumber: 'RK-02-01',
+    plateNumber: 'D 1001 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Honda Vario',
+    color: 'Black',
+    year: '2022',
+    status: 'active',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.alphaCar,
+    code: 'VEH-GSH-2026-0002',
+    residentId: CORE_SEED_IDS.devResidents.alpha,
+    roomNumber: 'RK-02-01',
+    plateNumber: 'D 1002 DEV',
+    vehicleType: 'car',
+    brand: 'Toyota Avanza',
+    color: 'Silver',
+    year: '2021',
+    status: 'active',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.bravoMotor,
+    code: 'VEH-GSH-2026-0003',
+    residentId: CORE_SEED_IDS.devResidents.bravo,
+    roomNumber: 'AK-18A-1B',
+    plateNumber: 'D 1003 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Yamaha NMAX',
+    color: 'Blue',
+    year: '2023',
+    status: 'active',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.charlieMotor,
+    code: 'VEH-GSH-2026-0004',
+    residentId: CORE_SEED_IDS.devResidents.charlie,
+    roomNumber: 'RK-01-01',
+    plateNumber: 'D 1004 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Honda Beat',
+    color: 'White',
+    year: '2020',
+    status: 'pending_approval',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.deltaCar,
+    code: 'VEH-GSH-2026-0005',
+    residentId: CORE_SEED_IDS.devResidents.delta,
+    roomNumber: 'AK-05A-1B',
+    plateNumber: 'D 1005 DEV',
+    vehicleType: 'car',
+    brand: 'Daihatsu Ayla',
+    color: 'Red',
+    year: '2022',
+    status: 'pending_approval',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.echoMotor,
+    code: 'VEH-GSH-2026-0006',
+    residentId: CORE_SEED_IDS.devResidents.echo,
+    roomNumber: 'RK-04-02',
+    plateNumber: 'D 1006 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Suzuki Address',
+    color: 'Grey',
+    year: '2019',
+    status: 'suspended',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.foxtrotMotor,
+    code: 'VEH-GSH-2026-0007',
+    residentId: CORE_SEED_IDS.devResidents.foxtrot,
+    roomNumber: 'RK-03-01',
+    plateNumber: 'D 1007 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Honda Scoopy',
+    color: 'Cream',
+    year: '2023',
+    status: 'active',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.golfCar,
+    code: 'VEH-GSH-2026-0008',
+    residentId: CORE_SEED_IDS.devResidents.golf,
+    roomNumber: 'RK-06-01',
+    plateNumber: 'D 1008 DEV',
+    vehicleType: 'car',
+    brand: 'Honda Brio',
+    color: 'Yellow',
+    year: '2020',
+    status: 'suspended',
+  },
+  {
+    id: CORE_SEED_IDS.devVehicles.hotelMotor,
+    code: 'VEH-GSH-2026-0009',
+    residentId: CORE_SEED_IDS.devResidents.hotel,
+    roomNumber: 'RK-08-01',
+    plateNumber: 'D 1009 DEV',
+    vehicleType: 'motorcycle',
+    brand: 'Yamaha Fazzio',
+    color: 'Green',
+    year: '2024',
+    status: 'active',
+  },
+];
+
+export const DEV_PARKING_ZONE_SEEDS: DevParkingZoneSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devParkingZones.motorcycleFront,
+    zoneCode: 'MTR-FRONT',
+    zoneName: 'Motorcycle Front Yard',
+    zoneType: 'motorcycle',
+    capacity: 12,
+    locationDescription: 'Development dummy motorcycle zone near front gate.',
+    sortOrder: 1,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingZones.motorcycleBack,
+    zoneCode: 'MTR-BACK',
+    zoneName: 'Motorcycle Back Yard',
+    zoneType: 'motorcycle',
+    capacity: 8,
+    locationDescription: 'Development dummy motorcycle zone near service area.',
+    sortOrder: 2,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingZones.carMain,
+    zoneCode: 'CAR-MAIN',
+    zoneName: 'Car Main Parking',
+    zoneType: 'car',
+    capacity: 4,
+    locationDescription: 'Development dummy car parking zone.',
+    sortOrder: 3,
+  },
+];
+
+export const DEV_PARKING_SLOT_SEEDS: DevParkingSlotSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devParkingSlots.motorcycleFront01,
+    zoneKey: 'motorcycleFront',
+    slotNumber: 'MF-01',
+    slotType: 'motorcycle',
+    vehicleId: CORE_SEED_IDS.devVehicles.alphaMotor,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingSlots.motorcycleFront02,
+    zoneKey: 'motorcycleFront',
+    slotNumber: 'MF-02',
+    slotType: 'motorcycle',
+    vehicleId: CORE_SEED_IDS.devVehicles.bravoMotor,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingSlots.motorcycleFront03,
+    zoneKey: 'motorcycleFront',
+    slotNumber: 'MF-03',
+    slotType: 'motorcycle',
+  },
+  {
+    id: CORE_SEED_IDS.devParkingSlots.motorcycleBack01,
+    zoneKey: 'motorcycleBack',
+    slotNumber: 'MB-01',
+    slotType: 'motorcycle',
+    vehicleId: CORE_SEED_IDS.devVehicles.foxtrotMotor,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingSlots.carMain01,
+    zoneKey: 'carMain',
+    slotNumber: 'CM-01',
+    slotType: 'car',
+    vehicleId: CORE_SEED_IDS.devVehicles.alphaCar,
+  },
+  {
+    id: CORE_SEED_IDS.devParkingSlots.carMain02,
+    zoneKey: 'carMain',
+    slotNumber: 'CM-02',
+    slotType: 'car',
   },
 ];
 

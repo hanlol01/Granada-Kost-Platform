@@ -15,6 +15,7 @@
     "db:seed:prod": "tsx src/infrastructure/database/scripts/seed-core.ts --env=production",
     "billing:validate-workflow": "tsx src/infrastructure/database/scripts/validate-billing-workflow.ts",
     "complaint:validate-workflow": "tsx src/infrastructure/database/scripts/validate-complaint-workflow.ts",
+    "vehicle:validate-workflow": "tsx src/infrastructure/database/scripts/validate-vehicle-workflow.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"*.json\" \"*.md\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"*.json\" \"*.md\""

@@ -54,3 +54,14 @@
 - Complaint category seed: 10 categories
 - Development technician, complaint, and work order seed
 - Complaint workflow validation script
+
+## 2026-06-18
+
+### Vehicle + Parking
+- Vehicle and parking migration
+- Repository, service, helper, and audit foundation
+- Vehicle and parking API Phase 1
+- Development vehicle seed: 9 dummy vehicles
+- Development parking seed: 3 zones and 6 slots
+- Vehicle and parking workflow validation script
+- Build, lint, dev seed, and workflow validation passed

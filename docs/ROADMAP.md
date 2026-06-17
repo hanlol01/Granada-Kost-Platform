@@ -58,6 +58,16 @@
 - Workflow validation script for complaint and maintenance.
 - Status: selesai sampai 7F.
 
+## Milestone 8 - Vehicle + Parking Phase 1
+
+- Vehicle and parking database migration.
+- Repository, service, helper, and audit foundation.
+- Vehicle and parking API endpoint.
+- Production-safe permission and parking settings seed.
+- Development vehicle and parking seed.
+- Workflow validation script for Vehicle and Parking.
+- Status: selesai sampai 8F.
+
 ## Next Milestone
 
-- File upload implementation, Notification, Vehicle, Smart Lock, dan CCTV belum dimulai.
+- File upload implementation, Notification, Smart Lock, dan CCTV belum dimulai.

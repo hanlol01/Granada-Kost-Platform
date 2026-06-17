@@ -39,6 +39,25 @@
 - Layer 6 development seed: dummy residents dan active occupancies.
 - Status: selesai.
 
+## Milestone 6 - Billing Phase 1
+
+- Billing database migration.
+- Billing repository and service foundation.
+- Billing DTO, controller, and API endpoint.
+- Manual transfer/payment proof workflow foundation.
+- Development billing seed and workflow validation.
+- Status: selesai.
+
+## Milestone 7 - Complaint + Maintenance Phase 1
+
+- Complaint and maintenance database migration.
+- Repository, service, helper, and audit foundation.
+- Complaint and work order API endpoint.
+- Complaint category production seed.
+- Development technician, complaint, and work order seed.
+- Workflow validation script for complaint and maintenance.
+- Status: selesai sampai 7F.
+
 ## Next Milestone
 
-- Billing, Complaint, Vehicle, Smart Lock, dan CCTV belum dimulai.
+- File upload implementation, Notification, Vehicle, Smart Lock, dan CCTV belum dimulai.

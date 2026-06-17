@@ -17,6 +17,8 @@ import { RoomModule } from './modules/room/room.module';
 import { ResidentModule } from './modules/resident/resident.module';
 import { OccupancyModule } from './modules/occupancy/occupancy.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { ComplaintModule } from './modules/complaint/complaint.module';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { BillingModule } from './modules/billing/billing.module';
     ResidentModule,
     OccupancyModule,
     BillingModule,
+    ComplaintModule,
+    MaintenanceModule,
     HealthModule,
   ],
 })

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { PropertyModule } from '../property/property.module';
+import { RbacModule } from '../rbac/rbac.module';
 import { BillingPeriodRepository } from './repositories/billing-period.repository';
 import { InvoiceRepository } from './repositories/invoice.repository';
 import { PaymentProofRepository } from './repositories/payment-proof.repository';
@@ -16,6 +18,7 @@ import { PaymentProofService } from './services/payment-proof.service';
 import { PaymentService } from './services/payment.service';
 
 @Module({
+  imports: [PropertyModule, RbacModule],
   controllers: [
     InvoiceController,
     PaymentController,

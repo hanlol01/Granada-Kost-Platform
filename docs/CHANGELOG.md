@@ -40,3 +40,17 @@
 - Master room seed Layer 5: 163 rooms
 - Development seed Layer 6: 10 dummy residents, 8 active occupancies
 - Seed validation checks
+
+### Billing
+- Billing migration
+- Billing repository and service foundation
+- Billing API Phase 1
+- Development billing seed and workflow validation
+
+### Complaint + Maintenance
+- Complaint and maintenance migration
+- Repository and service foundation
+- Complaint and work order API Phase 1
+- Complaint category seed: 10 categories
+- Development technician, complaint, and work order seed
+- Complaint workflow validation script

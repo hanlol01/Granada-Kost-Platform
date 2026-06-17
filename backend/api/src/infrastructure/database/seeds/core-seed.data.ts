@@ -27,6 +27,52 @@ export type DevBillingInvoiceSeedRecord = {
   id: string;
   occupancyId: string;
 };
+export type ComplaintCategorySeedRecord = {
+  id: string;
+  code: string;
+  name: string;
+  defaultPriority: 'low' | 'medium' | 'high' | 'urgent';
+  description: string;
+  sortOrder: number;
+};
+export type DevUserSeedRecord = {
+  id: string;
+  email: string;
+  displayName: string;
+  roleCode: 'admin' | 'technician' | 'property_owner';
+  phone?: string;
+};
+export type DevTechnicianSeedRecord = {
+  id: string;
+  userId: string;
+  displayName: string;
+  phone: string;
+  skillTags: string;
+};
+export type DevComplaintSeedRecord = {
+  id: string;
+  code: string;
+  residentId: string;
+  roomNumber?: string;
+  categoryCode: string;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'submitted' | 'acknowledged' | 'in_progress' | 'on_hold' | 'resolved' | 'closed' | 'cancelled';
+  assignedTechnicianKey?: keyof typeof CORE_SEED_IDS.devUsers.technicians;
+  locationNote?: string;
+};
+export type DevWorkOrderSeedRecord = {
+  id: string;
+  code: string;
+  complaintId?: string;
+  roomNumber?: string;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'open' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'verified' | 'cancelled';
+  assignedTechnicianKey?: keyof typeof CORE_SEED_IDS.devUsers.technicians;
+};
 
 export const CORE_SEED_IDS = {
   ownerUser: '10000000-0000-4000-8000-000000000001',
@@ -92,6 +138,53 @@ export const CORE_SEED_IDS = {
       golf: '72000000-0000-4000-8000-000000000007',
       hotel: '72000000-0000-4000-8000-000000000008',
     },
+  },
+  complaintCategories: {
+    ac: '80000000-0000-4000-8000-000000000001',
+    water: '80000000-0000-4000-8000-000000000002',
+    electricity: '80000000-0000-4000-8000-000000000003',
+    internet: '80000000-0000-4000-8000-000000000004',
+    roomFacility: '80000000-0000-4000-8000-000000000005',
+    cleanliness: '80000000-0000-4000-8000-000000000006',
+    security: '80000000-0000-4000-8000-000000000007',
+    commonFacility: '80000000-0000-4000-8000-000000000008',
+    noise: '80000000-0000-4000-8000-000000000009',
+    other: '80000000-0000-4000-8000-000000000010',
+  },
+  devUsers: {
+    admin: '81000000-0000-4000-8000-000000000001',
+    propertyOwner: '81000000-0000-4000-8000-000000000002',
+    technicians: {
+      budi: '81000000-0000-4000-8000-000000000011',
+      anto: '81000000-0000-4000-8000-000000000012',
+      rudi: '81000000-0000-4000-8000-000000000013',
+    },
+  },
+  devTechnicianProfiles: {
+    budi: '82000000-0000-4000-8000-000000000001',
+    anto: '82000000-0000-4000-8000-000000000002',
+    rudi: '82000000-0000-4000-8000-000000000003',
+  },
+  devComplaints: {
+    acInProgress: '83000000-0000-4000-8000-000000000001',
+    waterResolved: '83000000-0000-4000-8000-000000000002',
+    internetSubmitted: '83000000-0000-4000-8000-000000000003',
+    corridorAcknowledged: '83000000-0000-4000-8000-000000000004',
+    gateOnHold: '83000000-0000-4000-8000-000000000005',
+    wallClosed: '83000000-0000-4000-8000-000000000006',
+    parkingCancelled: '83000000-0000-4000-8000-000000000007',
+    acLeakInProgress: '83000000-0000-4000-8000-000000000008',
+    noiseSubmitted: '83000000-0000-4000-8000-000000000009',
+    electricityResolved: '83000000-0000-4000-8000-000000000010',
+  },
+  devWorkOrders: {
+    acService: '84000000-0000-4000-8000-000000000001',
+    waterRepair: '84000000-0000-4000-8000-000000000002',
+    gateRepair: '84000000-0000-4000-8000-000000000003',
+    acLeak: '84000000-0000-4000-8000-000000000004',
+    electricityCheck: '84000000-0000-4000-8000-000000000005',
+    lobbyLamp: '84000000-0000-4000-8000-000000000006',
+    pumpInspection: '84000000-0000-4000-8000-000000000007',
   },
 } as const;
 
@@ -401,6 +494,342 @@ export const DEV_BILLING_INVOICE_SEEDS: DevBillingInvoiceSeedRecord[] = [
   { id: CORE_SEED_IDS.devBilling.invoices.foxtrot, occupancyId: CORE_SEED_IDS.devOccupancies.foxtrot },
   { id: CORE_SEED_IDS.devBilling.invoices.golf, occupancyId: CORE_SEED_IDS.devOccupancies.golf },
   { id: CORE_SEED_IDS.devBilling.invoices.hotel, occupancyId: CORE_SEED_IDS.devOccupancies.hotel },
+];
+
+export const COMPLAINT_CATEGORY_SEEDS: ComplaintCategorySeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.complaintCategories.ac,
+    code: 'ac',
+    name: 'AC',
+    defaultPriority: 'high',
+    description: 'Masalah pendingin ruangan atau kebocoran AC.',
+    sortOrder: 1,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.water,
+    code: 'water',
+    name: 'Air',
+    defaultPriority: 'high',
+    description: 'Masalah air, keran, pipa, atau kamar mandi.',
+    sortOrder: 2,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.electricity,
+    code: 'electricity',
+    name: 'Listrik',
+    defaultPriority: 'urgent',
+    description: 'Masalah listrik, stop kontak, lampu, atau MCB.',
+    sortOrder: 3,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.internet,
+    code: 'internet',
+    name: 'Internet',
+    defaultPriority: 'medium',
+    description: 'Masalah WiFi atau koneksi internet.',
+    sortOrder: 4,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.roomFacility,
+    code: 'room_facility',
+    name: 'Fasilitas Kamar',
+    defaultPriority: 'low',
+    description: 'Masalah fasilitas kamar seperti kasur, meja, lemari, atau pintu.',
+    sortOrder: 5,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.cleanliness,
+    code: 'cleanliness',
+    name: 'Kebersihan',
+    defaultPriority: 'low',
+    description: 'Masalah kebersihan kamar atau area bersama.',
+    sortOrder: 6,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.security,
+    code: 'security',
+    name: 'Keamanan',
+    defaultPriority: 'urgent',
+    description: 'Masalah keamanan properti atau akses.',
+    sortOrder: 7,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.commonFacility,
+    code: 'common_facility',
+    name: 'Fasilitas Umum',
+    defaultPriority: 'medium',
+    description: 'Masalah fasilitas bersama seperti koridor, lobby, parkir, atau gerbang.',
+    sortOrder: 8,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.noise,
+    code: 'noise',
+    name: 'Kebisingan',
+    defaultPriority: 'medium',
+    description: 'Keluhan kebisingan atau gangguan kenyamanan.',
+    sortOrder: 9,
+  },
+  {
+    id: CORE_SEED_IDS.complaintCategories.other,
+    code: 'other',
+    name: 'Lainnya',
+    defaultPriority: 'low',
+    description: 'Keluhan lain yang belum masuk kategori khusus.',
+    sortOrder: 10,
+  },
+];
+
+export const DEV_USER_SEEDS: DevUserSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devUsers.admin,
+    email: 'dev.admin@example.test',
+    displayName: 'Dev Admin Complaint',
+    roleCode: 'admin',
+  },
+  {
+    id: CORE_SEED_IDS.devUsers.propertyOwner,
+    email: 'dev.property.owner@example.test',
+    displayName: 'Dev Property Owner',
+    roleCode: 'property_owner',
+  },
+  {
+    id: CORE_SEED_IDS.devUsers.technicians.budi,
+    email: 'dev.technician.budi@example.test',
+    displayName: 'Dev Technician Budi',
+    roleCode: 'technician',
+    phone: '+6280010000001',
+  },
+  {
+    id: CORE_SEED_IDS.devUsers.technicians.anto,
+    email: 'dev.technician.anto@example.test',
+    displayName: 'Dev Technician Anto',
+    roleCode: 'technician',
+    phone: '+6280010000002',
+  },
+  {
+    id: CORE_SEED_IDS.devUsers.technicians.rudi,
+    email: 'dev.technician.rudi@example.test',
+    displayName: 'Dev Technician Rudi',
+    roleCode: 'technician',
+    phone: '+6280010000003',
+  },
+];
+
+export const DEV_TECHNICIAN_SEEDS: DevTechnicianSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devTechnicianProfiles.budi,
+    userId: CORE_SEED_IDS.devUsers.technicians.budi,
+    displayName: 'Dev Technician Budi',
+    phone: '+6280010000001',
+    skillTags: 'AC,Listrik,Plumbing',
+  },
+  {
+    id: CORE_SEED_IDS.devTechnicianProfiles.anto,
+    userId: CORE_SEED_IDS.devUsers.technicians.anto,
+    displayName: 'Dev Technician Anto',
+    phone: '+6280010000002',
+    skillTags: 'Plumbing,Furniture',
+  },
+  {
+    id: CORE_SEED_IDS.devTechnicianProfiles.rudi,
+    userId: CORE_SEED_IDS.devUsers.technicians.rudi,
+    displayName: 'Dev Technician Rudi',
+    phone: '+6280010000003',
+    skillTags: 'Internet,Listrik',
+  },
+];
+
+export const DEV_COMPLAINT_SEEDS: DevComplaintSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devComplaints.acInProgress,
+    code: 'TKT-GSH-2026-0001',
+    residentId: CORE_SEED_IDS.devResidents.alpha,
+    roomNumber: 'RK-02-01',
+    categoryCode: 'ac',
+    title: 'AC kamar tidak dingin',
+    description: 'Dummy complaint: AC kamar terasa kurang dingin sejak pagi.',
+    priority: 'high',
+    status: 'in_progress',
+    assignedTechnicianKey: 'budi',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.waterResolved,
+    code: 'TKT-GSH-2026-0002',
+    residentId: CORE_SEED_IDS.devResidents.bravo,
+    roomNumber: 'AK-18A-1B',
+    categoryCode: 'water',
+    title: 'Keran kamar mandi bocor',
+    description: 'Dummy complaint: Keran kamar mandi menetes terus.',
+    priority: 'high',
+    status: 'resolved',
+    assignedTechnicianKey: 'anto',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.internetSubmitted,
+    code: 'TKT-GSH-2026-0003',
+    residentId: CORE_SEED_IDS.devResidents.charlie,
+    roomNumber: 'RK-01-01',
+    categoryCode: 'internet',
+    title: 'WiFi kamar lambat',
+    description: 'Dummy complaint: Koneksi WiFi lambat untuk testing.',
+    priority: 'medium',
+    status: 'submitted',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.corridorAcknowledged,
+    code: 'TKT-GSH-2026-0004',
+    residentId: CORE_SEED_IDS.devResidents.delta,
+    categoryCode: 'common_facility',
+    title: 'Lampu koridor mati',
+    description: 'Dummy complaint: Lampu koridor area tengah mati.',
+    priority: 'medium',
+    status: 'acknowledged',
+    locationNote: 'Koridor tengah lantai 1',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.gateOnHold,
+    code: 'TKT-GSH-2026-0005',
+    residentId: CORE_SEED_IDS.devResidents.echo,
+    categoryCode: 'security',
+    title: 'Pintu gerbang sulit ditutup',
+    description: 'Dummy complaint: Pintu gerbang perlu pengecekan teknisi.',
+    priority: 'urgent',
+    status: 'on_hold',
+    assignedTechnicianKey: 'budi',
+    locationNote: 'Gerbang depan',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.wallClosed,
+    code: 'TKT-GSH-2026-0006',
+    residentId: CORE_SEED_IDS.devResidents.foxtrot,
+    roomNumber: 'RK-03-01',
+    categoryCode: 'room_facility',
+    title: 'Cat dinding mengelupas',
+    description: 'Dummy complaint: Cat dinding mengelupas kecil.',
+    priority: 'low',
+    status: 'closed',
+    assignedTechnicianKey: 'anto',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.parkingCancelled,
+    code: 'TKT-GSH-2026-0007',
+    residentId: CORE_SEED_IDS.devResidents.golf,
+    categoryCode: 'cleanliness',
+    title: 'Sampah area parkir',
+    description: 'Dummy complaint: Tiket dibatalkan karena sudah ditangani.',
+    priority: 'low',
+    status: 'cancelled',
+    locationNote: 'Area parkir belakang',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.acLeakInProgress,
+    code: 'TKT-GSH-2026-0008',
+    residentId: CORE_SEED_IDS.devResidents.hotel,
+    roomNumber: 'RK-08-01',
+    categoryCode: 'ac',
+    title: 'AC bocor air',
+    description: 'Dummy complaint: AC meneteskan air di dekat meja.',
+    priority: 'high',
+    status: 'in_progress',
+    assignedTechnicianKey: 'budi',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.noiseSubmitted,
+    code: 'TKT-GSH-2026-0009',
+    residentId: CORE_SEED_IDS.devResidents.alpha,
+    categoryCode: 'noise',
+    title: 'Suara berisik area luar',
+    description: 'Dummy complaint: Ada suara berisik untuk skenario submitted.',
+    priority: 'medium',
+    status: 'submitted',
+    locationNote: 'Area luar dekat parkir',
+  },
+  {
+    id: CORE_SEED_IDS.devComplaints.electricityResolved,
+    code: 'TKT-GSH-2026-0010',
+    residentId: CORE_SEED_IDS.devResidents.charlie,
+    roomNumber: 'RK-01-01',
+    categoryCode: 'electricity',
+    title: 'Stop kontak tidak menyala',
+    description: 'Dummy complaint: Stop kontak sudah selesai dicek teknisi.',
+    priority: 'urgent',
+    status: 'resolved',
+    assignedTechnicianKey: 'rudi',
+  },
+];
+
+export const DEV_WORK_ORDER_SEEDS: DevWorkOrderSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devWorkOrders.acService,
+    code: 'WO-GSH-2026-0001',
+    complaintId: CORE_SEED_IDS.devComplaints.acInProgress,
+    roomNumber: 'RK-02-01',
+    title: 'Service AC kamar RK-02-01',
+    description: 'Dummy work order untuk service AC.',
+    priority: 'high',
+    status: 'in_progress',
+    assignedTechnicianKey: 'budi',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.waterRepair,
+    code: 'WO-GSH-2026-0002',
+    complaintId: CORE_SEED_IDS.devComplaints.waterResolved,
+    roomNumber: 'AK-18A-1B',
+    title: 'Perbaikan keran kamar mandi',
+    description: 'Dummy work order untuk keran bocor.',
+    priority: 'high',
+    status: 'verified',
+    assignedTechnicianKey: 'anto',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.gateRepair,
+    code: 'WO-GSH-2026-0003',
+    complaintId: CORE_SEED_IDS.devComplaints.gateOnHold,
+    title: 'Pengecekan pintu gerbang',
+    description: 'Dummy work order common area gerbang depan.',
+    priority: 'urgent',
+    status: 'on_hold',
+    assignedTechnicianKey: 'budi',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.acLeak,
+    code: 'WO-GSH-2026-0004',
+    complaintId: CORE_SEED_IDS.devComplaints.acLeakInProgress,
+    roomNumber: 'RK-08-01',
+    title: 'Perbaikan AC bocor',
+    description: 'Dummy work order AC bocor.',
+    priority: 'high',
+    status: 'assigned',
+    assignedTechnicianKey: 'budi',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.electricityCheck,
+    code: 'WO-GSH-2026-0005',
+    complaintId: CORE_SEED_IDS.devComplaints.electricityResolved,
+    roomNumber: 'RK-01-01',
+    title: 'Cek stop kontak kamar',
+    description: 'Dummy work order listrik.',
+    priority: 'urgent',
+    status: 'completed',
+    assignedTechnicianKey: 'rudi',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.lobbyLamp,
+    code: 'WO-GSH-2026-0006',
+    title: 'Ganti lampu lobby',
+    description: 'Dummy standalone work order fasilitas umum.',
+    priority: 'medium',
+    status: 'open',
+  },
+  {
+    id: CORE_SEED_IDS.devWorkOrders.pumpInspection,
+    code: 'WO-GSH-2026-0007',
+    title: 'Inspeksi pompa air',
+    description: 'Dummy standalone work order pompa air.',
+    priority: 'medium',
+    status: 'assigned',
+    assignedTechnicianKey: 'anto',
+  },
 ];
 
 export function ownerIdentityFor(environment: SeedEnvironment): { email: string; displayName: string } {

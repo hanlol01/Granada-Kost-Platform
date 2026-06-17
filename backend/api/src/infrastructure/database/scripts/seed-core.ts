@@ -4,10 +4,15 @@ import argon2 from 'argon2';
 import { config as loadEnv } from 'dotenv';
 import { Pool, PoolClient } from 'pg';
 import {
+  COMPLAINT_CATEGORY_SEEDS,
   CORE_SEED_IDS,
   DEV_BILLING_INVOICE_SEEDS,
+  DEV_COMPLAINT_SEEDS,
   DEV_OCCUPANCY_SEEDS,
   DEV_RESIDENT_SEEDS,
+  DEV_TECHNICIAN_SEEDS,
+  DEV_USER_SEEDS,
+  DEV_WORK_ORDER_SEEDS,
   GRANADA_PROPERTY,
   PERMISSIONS,
   ROLE_PERMISSION_GRANTS,
@@ -277,6 +282,35 @@ async function seedLayer5(client: PoolClient): Promise<void> {
   }
 }
 
+async function seedComplaintCategories(client: PoolClient): Promise<void> {
+  for (const category of COMPLAINT_CATEGORY_SEEDS) {
+    await client.query(
+      `INSERT INTO complaint_categories (
+         id, property_id, name, normalized_code, default_priority, description,
+         icon, is_active, sort_order, created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, true, $7, $8)
+       ON CONFLICT (property_id, normalized_code) DO UPDATE
+       SET name = EXCLUDED.name,
+           default_priority = EXCLUDED.default_priority,
+           description = EXCLUDED.description,
+           is_active = EXCLUDED.is_active,
+           sort_order = EXCLUDED.sort_order,
+           updated_at = now()`,
+      [
+        category.id,
+        CORE_SEED_IDS.granadaProperty,
+        category.name,
+        category.code,
+        category.defaultPriority,
+        category.description,
+        category.sortOrder,
+        CORE_SEED_IDS.ownerUser,
+      ],
+    );
+  }
+}
+
 async function seedDevelopmentData(client: PoolClient): Promise<void> {
   const residentPasswordHash = await argon2.hash('GranadaResident@Dev2026!');
 
@@ -416,6 +450,318 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
   }
 
   await seedDevelopmentBilling(client);
+  await seedDevelopmentComplaintAndMaintenance(client);
+}
+
+async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promise<void> {
+  const staffPasswordHash = await argon2.hash('GranadaStaff@Dev2026!');
+  const technicianPasswordHash = await argon2.hash('GranadaTechnician@Dev2026!');
+
+  for (const user of DEV_USER_SEEDS) {
+    await client.query(
+      `INSERT INTO users (id, email, phone, password_hash, display_name, user_status, password_changed_at)
+       VALUES ($1, $2, $3, $4, $5, 'active', now())
+       ON CONFLICT (email) DO UPDATE
+       SET phone = EXCLUDED.phone,
+           password_hash = EXCLUDED.password_hash,
+           display_name = EXCLUDED.display_name,
+           user_status = EXCLUDED.user_status,
+           password_changed_at = EXCLUDED.password_changed_at,
+           updated_at = now()`,
+      [
+        user.id,
+        user.email,
+        user.phone ?? null,
+        user.roleCode === 'technician' ? technicianPasswordHash : staffPasswordHash,
+        user.displayName,
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO user_property_roles (user_id, property_id, role_id, assigned_by_user_id)
+       SELECT $1::uuid, $2::uuid, roles.id, $3::uuid
+       FROM roles
+       WHERE roles.code = $4
+       ON CONFLICT ON CONSTRAINT user_property_roles_unique_active DO NOTHING`,
+      [user.id, CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.ownerUser, user.roleCode],
+    );
+  }
+
+  await client.query(
+    `INSERT INTO property_owner_assignments (
+       user_id, property_id, ownership_label, ownership_status, effective_from, assigned_by_user_id
+     )
+     VALUES ($1, $2, 'Development property owner', 'active', CURRENT_DATE, $3)
+     ON CONFLICT ON CONSTRAINT property_owner_assignments_unique_active DO UPDATE
+     SET ownership_label = EXCLUDED.ownership_label,
+         effective_from = EXCLUDED.effective_from,
+         assigned_by_user_id = EXCLUDED.assigned_by_user_id`,
+    [CORE_SEED_IDS.devUsers.propertyOwner, CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.ownerUser],
+  );
+
+  for (const technician of DEV_TECHNICIAN_SEEDS) {
+    await client.query(
+      `INSERT INTO technician_profiles (
+         id, property_id, user_id, display_name, phone, skill_tags, is_active
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, true)
+       ON CONFLICT (property_id, user_id) DO UPDATE
+       SET display_name = EXCLUDED.display_name,
+           phone = EXCLUDED.phone,
+           skill_tags = EXCLUDED.skill_tags,
+           is_active = EXCLUDED.is_active,
+           updated_at = now()`,
+      [
+        technician.id,
+        CORE_SEED_IDS.granadaProperty,
+        technician.userId,
+        technician.displayName,
+        technician.phone,
+        technician.skillTags,
+      ],
+    );
+  }
+
+  await client.query('DELETE FROM maintenance_materials WHERE work_order_id = ANY($1::uuid[])', [
+    DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM maintenance_work_order_files WHERE work_order_id = ANY($1::uuid[])', [
+    DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM maintenance_work_order_histories WHERE work_order_id = ANY($1::uuid[])', [
+    DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM complaint_files WHERE complaint_id = ANY($1::uuid[])', [
+    DEV_COMPLAINT_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query('DELETE FROM complaint_status_histories WHERE complaint_id = ANY($1::uuid[])', [
+    DEV_COMPLAINT_SEEDS.map(({ id }) => id),
+  ]);
+
+  for (const complaint of DEV_COMPLAINT_SEEDS) {
+    const context = await complaintSeedContext(client, complaint.residentId, complaint.roomNumber, complaint.categoryCode);
+    const assignedToUserId = complaint.assignedTechnicianKey
+      ? CORE_SEED_IDS.devUsers.technicians[complaint.assignedTechnicianKey]
+      : null;
+
+    await client.query(
+      `INSERT INTO complaints (
+         id, property_id, resident_id, room_id, category_id, complaint_code, title,
+         description, priority, complaint_status, location_note, assigned_to_user_id,
+         acknowledged_at, resolved_at, closed_at, cancelled_at, cancel_reason,
+         snapshot_room_number, snapshot_resident_name, created_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7,
+         $8, $9, $10, $11, $12,
+         CASE WHEN $10 IN ('acknowledged', 'in_progress', 'on_hold', 'resolved', 'closed') THEN now() - interval '3 days' ELSE NULL END,
+         CASE WHEN $10 IN ('resolved', 'closed') THEN now() - interval '1 day' ELSE NULL END,
+         CASE WHEN $10 = 'closed' THEN now() ELSE NULL END,
+         CASE WHEN $10 = 'cancelled' THEN now() ELSE NULL END,
+         CASE WHEN $10 = 'cancelled' THEN 'Development seed cancellation' ELSE NULL END,
+         $13, $14, $15
+       )
+       ON CONFLICT (property_id, complaint_code) DO UPDATE
+       SET resident_id = EXCLUDED.resident_id,
+           room_id = EXCLUDED.room_id,
+           category_id = EXCLUDED.category_id,
+           title = EXCLUDED.title,
+           description = EXCLUDED.description,
+           priority = EXCLUDED.priority,
+           complaint_status = EXCLUDED.complaint_status,
+           location_note = EXCLUDED.location_note,
+           assigned_to_user_id = EXCLUDED.assigned_to_user_id,
+           acknowledged_at = EXCLUDED.acknowledged_at,
+           resolved_at = EXCLUDED.resolved_at,
+           closed_at = EXCLUDED.closed_at,
+           cancelled_at = EXCLUDED.cancelled_at,
+           cancel_reason = EXCLUDED.cancel_reason,
+           snapshot_room_number = EXCLUDED.snapshot_room_number,
+           snapshot_resident_name = EXCLUDED.snapshot_resident_name,
+           updated_at = now()`,
+      [
+        complaint.id,
+        CORE_SEED_IDS.granadaProperty,
+        complaint.residentId,
+        context.roomId,
+        context.categoryId,
+        complaint.code,
+        complaint.title,
+        complaint.description,
+        complaint.priority,
+        complaint.status,
+        complaint.locationNote ?? null,
+        assignedToUserId,
+        context.roomNumber,
+        context.residentName,
+        context.residentUserId,
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO complaint_status_histories (
+         complaint_id, from_status, to_status, label, changed_by_user_id, notes
+       )
+       VALUES ($1, NULL, 'submitted', 'Development complaint submitted', $2, 'Seed data - development complaint')`,
+      [complaint.id, context.residentUserId],
+    );
+
+    if (complaint.status !== 'submitted') {
+      await client.query(
+        `INSERT INTO complaint_status_histories (
+           complaint_id, from_status, to_status, label, changed_by_user_id, notes
+         )
+         VALUES ($1, 'submitted', $2, 'Development complaint status', $3, 'Seed data - status fixture')`,
+        [complaint.id, complaint.status, CORE_SEED_IDS.ownerUser],
+      );
+    }
+  }
+
+  for (const workOrder of DEV_WORK_ORDER_SEEDS) {
+    const context = await workOrderSeedContext(client, workOrder.roomNumber);
+    const assignedToUserId = workOrder.assignedTechnicianKey
+      ? CORE_SEED_IDS.devUsers.technicians[workOrder.assignedTechnicianKey]
+      : null;
+
+    await client.query(
+      `INSERT INTO maintenance_work_orders (
+         id, property_id, room_id, complaint_id, work_order_code, title, description,
+         priority, work_order_status, assigned_to_user_id, started_at, completed_at,
+         verified_at, verified_by_user_id, created_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7,
+         $8, $9, $10,
+         CASE WHEN $9 IN ('in_progress', 'completed', 'verified') THEN now() - interval '1 day' ELSE NULL END,
+         CASE WHEN $9 IN ('completed', 'verified') THEN now() - interval '3 hours' ELSE NULL END,
+         CASE WHEN $9 = 'verified' THEN now() ELSE NULL END,
+         CASE WHEN $9 = 'verified' THEN $11::uuid ELSE NULL END,
+         $11
+       )
+       ON CONFLICT (property_id, work_order_code) DO UPDATE
+       SET room_id = EXCLUDED.room_id,
+           complaint_id = EXCLUDED.complaint_id,
+           title = EXCLUDED.title,
+           description = EXCLUDED.description,
+           priority = EXCLUDED.priority,
+           work_order_status = EXCLUDED.work_order_status,
+           assigned_to_user_id = EXCLUDED.assigned_to_user_id,
+           started_at = EXCLUDED.started_at,
+           completed_at = EXCLUDED.completed_at,
+           verified_at = EXCLUDED.verified_at,
+           verified_by_user_id = EXCLUDED.verified_by_user_id,
+           updated_at = now()`,
+      [
+        workOrder.id,
+        CORE_SEED_IDS.granadaProperty,
+        context.roomId,
+        workOrder.complaintId ?? null,
+        workOrder.code,
+        workOrder.title,
+        workOrder.description,
+        workOrder.priority,
+        workOrder.status,
+        assignedToUserId,
+        CORE_SEED_IDS.ownerUser,
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO maintenance_work_order_histories (
+         work_order_id, from_status, to_status, changed_by_user_id, notes
+       )
+       VALUES ($1, NULL, 'open', $2, 'Seed data - development work order')`,
+      [workOrder.id, CORE_SEED_IDS.ownerUser],
+    );
+
+    if (workOrder.status !== 'open') {
+      await client.query(
+        `INSERT INTO maintenance_work_order_histories (
+           work_order_id, from_status, to_status, changed_by_user_id, notes
+         )
+         VALUES ($1, 'open', $2, $3, 'Seed data - status fixture')`,
+        [workOrder.id, workOrder.status, CORE_SEED_IDS.ownerUser],
+      );
+    }
+
+    if (workOrder.status === 'completed' || workOrder.status === 'verified') {
+      await client.query(
+        `INSERT INTO maintenance_materials (
+           work_order_id, item_name, quantity, unit_cost, total_cost, created_by_user_id
+         )
+         VALUES ($1, 'Dummy material', 1, 25000, 25000, $2)`,
+        [workOrder.id, CORE_SEED_IDS.ownerUser],
+      );
+    }
+  }
+}
+
+async function complaintSeedContext(
+  client: PoolClient,
+  residentId: string,
+  roomNumber: string | undefined,
+  categoryCode: string,
+): Promise<{ residentName: string; residentUserId: string; roomId: string | null; roomNumber: string | null; categoryId: string }> {
+  const residentResult = await client.query<{ full_name: string; user_id: string }>(
+    'SELECT full_name, user_id FROM residents WHERE id = $1',
+    [residentId],
+  );
+  const resident = residentResult.rows[0];
+  if (!resident) {
+    throw new Error(`Development complaint seed resident not found: ${residentId}.`);
+  }
+
+  const categoryResult = await client.query<{ id: string }>(
+    'SELECT id FROM complaint_categories WHERE property_id = $1 AND normalized_code = $2',
+    [CORE_SEED_IDS.granadaProperty, categoryCode],
+  );
+  const category = categoryResult.rows[0];
+  if (!category) {
+    throw new Error(`Development complaint seed category not found: ${categoryCode}.`);
+  }
+
+  if (!roomNumber) {
+    return {
+      residentName: resident.full_name,
+      residentUserId: resident.user_id,
+      roomId: null,
+      roomNumber: null,
+      categoryId: category.id,
+    };
+  }
+
+  const roomResult = await client.query<{ id: string; number: string }>(
+    'SELECT id, number FROM rooms WHERE property_id = $1 AND number = $2',
+    [CORE_SEED_IDS.granadaProperty, roomNumber],
+  );
+  const room = roomResult.rows[0];
+  if (!room) {
+    throw new Error(`Development complaint seed room not found: ${roomNumber}.`);
+  }
+
+  return {
+    residentName: resident.full_name,
+    residentUserId: resident.user_id,
+    roomId: room.id,
+    roomNumber: room.number,
+    categoryId: category.id,
+  };
+}
+
+async function workOrderSeedContext(client: PoolClient, roomNumber?: string): Promise<{ roomId: string | null }> {
+  if (!roomNumber) {
+    return { roomId: null };
+  }
+
+  const roomResult = await client.query<{ id: string }>('SELECT id FROM rooms WHERE property_id = $1 AND number = $2', [
+    CORE_SEED_IDS.granadaProperty,
+    roomNumber,
+  ]);
+  const room = roomResult.rows[0];
+  if (!room) {
+    throw new Error(`Development work order seed room not found: ${roomNumber}.`);
+  }
+  return { roomId: room.id };
 }
 
 async function seedDevelopmentBilling(client: PoolClient): Promise<void> {
@@ -636,6 +982,12 @@ async function validateSeed(client: PoolClient, environment: SeedEnvironment): P
       'SELECT count(*) FROM room_facilities WHERE property_id = $1 AND name = ANY($2::text[]) AND status = $3',
       [CORE_SEED_IDS.granadaProperty, ROOM_FACILITIES.map(([, name]) => name), 'active'],
     ),
+    countQuery(
+      client,
+      'complaint_categories',
+      'SELECT count(*) FROM complaint_categories WHERE property_id = $1 AND normalized_code = ANY($2::text[]) AND is_active = true',
+      [CORE_SEED_IDS.granadaProperty, COMPLAINT_CATEGORY_SEEDS.map(({ code }) => code)],
+    ),
   ]);
 
   const expected = new Map<string, number>([
@@ -648,6 +1000,7 @@ async function validateSeed(client: PoolClient, environment: SeedEnvironment): P
     ['property_settings', 1],
     ['room_types', ROOM_TYPES.length],
     ['room_facilities', ROOM_FACILITIES.length],
+    ['complaint_categories', COMPLAINT_CATEGORY_SEEDS.length],
   ]);
 
   for (const count of counts) {
@@ -923,6 +1276,54 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
          )`,
       [propertyId, period.periodKey],
     ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-01 technician user count',
+      `SELECT count(*)
+       FROM users
+       WHERE id = ANY($1::uuid[])
+         AND user_status = 'active'`,
+      [DEV_USER_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-02 technician profile count',
+      'SELECT count(*) FROM technician_profiles WHERE property_id = $1 AND is_active = true',
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-03 complaint count',
+      'SELECT count(*) FROM complaints WHERE property_id = $1 AND id = ANY($2::uuid[])',
+      [propertyId, DEV_COMPLAINT_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-04 common area complaint count',
+      `SELECT count(*)
+       FROM complaints
+       WHERE property_id = $1
+         AND id = ANY($2::uuid[])
+         AND room_id IS NULL
+         AND location_note IS NOT NULL`,
+      [propertyId, DEV_COMPLAINT_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-05 work order count',
+      'SELECT count(*) FROM maintenance_work_orders WHERE property_id = $1 AND id = ANY($2::uuid[])',
+      [propertyId, DEV_WORK_ORDER_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-COMPLAINT-06 assigned work order count',
+      `SELECT count(*)
+       FROM maintenance_work_orders
+       WHERE property_id = $1
+         AND id = ANY($2::uuid[])
+         AND assigned_to_user_id IS NOT NULL`,
+      [propertyId, DEV_WORK_ORDER_SEEDS.map(({ id }) => id)],
+    ),
   ]);
 
   const expected = new Map<string, number>([
@@ -942,6 +1343,12 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
     ['DEV-BILLING-03 issued invoice count', 8],
     ['DEV-BILLING-04 rent line item count', 8],
     ['DEV-BILLING-05 invoice amount mismatch', 0],
+    ['DEV-COMPLAINT-01 technician user count', DEV_USER_SEEDS.length],
+    ['DEV-COMPLAINT-02 technician profile count', DEV_TECHNICIAN_SEEDS.length],
+    ['DEV-COMPLAINT-03 complaint count', DEV_COMPLAINT_SEEDS.length],
+    ['DEV-COMPLAINT-04 common area complaint count', 4],
+    ['DEV-COMPLAINT-05 work order count', DEV_WORK_ORDER_SEEDS.length],
+    ['DEV-COMPLAINT-06 assigned work order count', 6],
   ]);
 
   for (const check of checks) {
@@ -968,6 +1375,7 @@ async function main(): Promise<void> {
     await seedLayer3(client);
     await seedLayer4(client);
     await seedLayer5(client);
+    await seedComplaintCategories(client);
     const counts = await validateSeed(client, environment);
     const layer5Checks = await validateLayer5(client, !seedDevelopment);
     let devChecks: ValidationCheck[] = [];

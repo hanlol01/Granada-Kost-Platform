@@ -16,6 +16,7 @@ import { PropertyModule } from './modules/property/property.module';
 import { RoomModule } from './modules/room/room.module';
 import { ResidentModule } from './modules/resident/resident.module';
 import { OccupancyModule } from './modules/occupancy/occupancy.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { OccupancyModule } from './modules/occupancy/occupancy.module';
     RoomModule,
     ResidentModule,
     OccupancyModule,
+    BillingModule,
     HealthModule,
   ],
 })

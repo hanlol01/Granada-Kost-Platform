@@ -129,13 +129,34 @@ npm run db:seed:dev
 `db:seed:dev` menambahkan development-only dummy data:
 
 - 10 Penghuni fiktif dengan email `.test`, telepon dummy, dan KTP dummy.
+- 10 user login Penghuni fiktif dengan password `GranadaResident@Dev2026!`.
 - 10 emergency contacts fiktif.
 - 8 active occupancies.
 - 8 check-in records.
 - 8 occupancy history records.
 - 8 kamar menjadi `occupied`, 155 kamar tetap `vacant`.
+- 1 primary active payment account BSI untuk Granada:
+  - Bank: `BSI / Bank Syariah Indonesia`
+  - Account number: `7318321153`
+  - Account holder: `PT SON SMART LIVING`
+- 8 issued invoice development untuk periode bulan berjalan, due date tanggal 25, mengikuti `rooms.monthly_price`.
 
 Data development ini tidak berjalan pada `db:seed` biasa atau `db:seed:prod`.
+
+Validasi workflow Billing Phase 1 development:
+
+```bash
+npm --workspace @granada-kost/api run billing:validate-workflow
+```
+
+Script validasi ini development-only dan membutuhkan `db:seed:dev`. Skenario yang dicek:
+
+- create invoice dan issue invoice.
+- record manual bank transfer payment.
+- partial payment dan outstanding balance.
+- create payment proof, reject proof, verify proof.
+- resident hanya membaca invoice miliknya.
+- property owner billing summary sebagai aggregate read-only.
 
 Seed production membutuhkan password owner dari environment. Contoh PowerShell:
 

@@ -13,6 +13,7 @@
     "db:seed": "tsx src/infrastructure/database/scripts/seed-core.ts",
     "db:seed:dev": "tsx src/infrastructure/database/scripts/seed-core.ts --env=development --with-dev-data",
     "db:seed:prod": "tsx src/infrastructure/database/scripts/seed-core.ts --env=production",
+    "billing:validate-workflow": "tsx src/infrastructure/database/scripts/validate-billing-workflow.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"*.json\" \"*.md\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"*.json\" \"*.md\""

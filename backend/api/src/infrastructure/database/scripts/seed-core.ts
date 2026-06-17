@@ -1,7 +1,11 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import argon2 from 'argon2';
+import { config as loadEnv } from 'dotenv';
 import { Pool, PoolClient } from 'pg';
 import {
   CORE_SEED_IDS,
+  DEV_BILLING_INVOICE_SEEDS,
   DEV_OCCUPANCY_SEEDS,
   DEV_RESIDENT_SEEDS,
   GRANADA_PROPERTY,
@@ -16,6 +20,15 @@ import {
 } from '../seeds/core-seed.data';
 import { databaseConfigFromEnv } from './database-url';
 
+loadEnv({
+  path: [
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), 'backend/api/.env'),
+    resolve(__dirname, '../../../../.env'),
+    resolve(__dirname, '../../../.env'),
+  ].find((path) => existsSync(path)),
+});
+
 type SeedCount = {
   table: string;
   count: number;
@@ -24,6 +37,13 @@ type SeedCount = {
 type ValidationCheck = {
   check: string;
   count: number;
+};
+
+type BillingPeriodSeed = {
+  periodKey: string;
+  startDate: string;
+  endDate: string;
+  dueDate: string;
 };
 
 function resolveSeedEnvironment(): SeedEnvironment {
@@ -59,6 +79,26 @@ function shouldSeedDevelopmentData(environment: SeedEnvironment): boolean {
     throw new Error('Development seed data can only run with --env=development.');
   }
   return true;
+}
+
+function currentBillingPeriodSeed(): BillingPeriodSeed {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const startDate = new Date(year, month, 1);
+  const endDate = new Date(year, month + 1, 0);
+  const dueDate = new Date(year, month, 25);
+
+  return {
+    periodKey: `${year}-${String(month + 1).padStart(2, '0')}`,
+    startDate: toDateOnly(startDate),
+    endDate: toDateOnly(endDate),
+    dueDate: toDateOnly(dueDate),
+  };
+}
+
+function toDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 async function seedLayer0(client: PoolClient, environment: SeedEnvironment): Promise<void> {
@@ -238,15 +278,39 @@ async function seedLayer5(client: PoolClient): Promise<void> {
 }
 
 async function seedDevelopmentData(client: PoolClient): Promise<void> {
+  const residentPasswordHash = await argon2.hash('GranadaResident@Dev2026!');
+
   for (const resident of DEV_RESIDENT_SEEDS) {
     await client.query(
+      `INSERT INTO users (id, email, password_hash, display_name, user_status, password_changed_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           display_name = EXCLUDED.display_name,
+           user_status = EXCLUDED.user_status,
+           password_changed_at = EXCLUDED.password_changed_at,
+           updated_at = now()`,
+      [resident.userId, resident.email, residentPasswordHash, resident.fullName, resident.status],
+    );
+
+    await client.query(
+      `INSERT INTO user_property_roles (user_id, property_id, role_id, assigned_by_user_id)
+       SELECT $1::uuid, $2::uuid, roles.id, $3::uuid
+       FROM roles
+       WHERE roles.code = 'resident'
+       ON CONFLICT ON CONSTRAINT user_property_roles_unique_active DO NOTHING`,
+      [resident.userId, CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.ownerUser],
+    );
+
+    await client.query(
       `INSERT INTO residents (
-         id, property_id, full_name, phone, email, ktp_number, gender, resident_status,
+         id, property_id, user_id, full_name, phone, email, ktp_number, gender, resident_status,
          created_by_user_id, updated_by_user_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
        ON CONFLICT (id) DO UPDATE
-       SET full_name = EXCLUDED.full_name,
+       SET user_id = EXCLUDED.user_id,
+           full_name = EXCLUDED.full_name,
            phone = EXCLUDED.phone,
            email = EXCLUDED.email,
            ktp_number = EXCLUDED.ktp_number,
@@ -257,6 +321,7 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
       [
         resident.id,
         CORE_SEED_IDS.granadaProperty,
+        resident.userId,
         resident.fullName,
         resident.phone,
         resident.email,
@@ -347,6 +412,170 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
            updated_at = now()
        WHERE id = $1`,
       [room.room_id, CORE_SEED_IDS.ownerUser],
+    );
+  }
+
+  await seedDevelopmentBilling(client);
+}
+
+async function seedDevelopmentBilling(client: PoolClient): Promise<void> {
+  const period = currentBillingPeriodSeed();
+
+  await client.query(
+    `UPDATE payment_accounts
+     SET is_primary = false,
+         updated_at = now()
+     WHERE property_id = $1
+       AND status = 'active'
+       AND is_primary = true
+       AND id <> $2`,
+    [CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.devBilling.bsiPaymentAccount],
+  );
+
+  await client.query(
+    `INSERT INTO payment_accounts (
+       id, property_id, account_type, bank_name, account_number, account_holder,
+       instructions, is_primary, status, created_by_user_id
+     )
+     VALUES (
+       $1, $2, 'bank_transfer', 'BSI / Bank Syariah Indonesia', '7318321153',
+       'PT SON SMART LIVING', 'Transfer manual ke rekening BSI dan unggah bukti pembayaran.',
+       true, 'active', $3
+     )
+     ON CONFLICT (property_id, account_type, account_number) DO UPDATE
+     SET bank_name = EXCLUDED.bank_name,
+         account_holder = EXCLUDED.account_holder,
+         instructions = EXCLUDED.instructions,
+         is_primary = EXCLUDED.is_primary,
+         status = EXCLUDED.status,
+         updated_at = now()`,
+    [CORE_SEED_IDS.devBilling.bsiPaymentAccount, CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.ownerUser],
+  );
+
+  const billingPeriodResult = await client.query<{ id: string }>(
+    `INSERT INTO billing_periods (
+       id, property_id, period_key, start_date, end_date, due_date, status, created_by_user_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, 'open', $7)
+     ON CONFLICT (property_id, period_key) DO UPDATE
+     SET start_date = EXCLUDED.start_date,
+         end_date = EXCLUDED.end_date,
+         due_date = EXCLUDED.due_date,
+         status = EXCLUDED.status,
+         updated_at = now()
+     RETURNING id`,
+    [
+      CORE_SEED_IDS.devBilling.currentBillingPeriod,
+      CORE_SEED_IDS.granadaProperty,
+      period.periodKey,
+      period.startDate,
+      period.endDate,
+      period.dueDate,
+      CORE_SEED_IDS.ownerUser,
+    ],
+  );
+  const billingPeriodId = billingPeriodResult.rows[0].id;
+
+  await client.query('DELETE FROM invoice_line_items WHERE invoice_id = ANY($1::uuid[])', [
+    DEV_BILLING_INVOICE_SEEDS.map(({ id }) => id),
+  ]);
+  await client.query(
+    `DELETE FROM invoice_line_items
+     WHERE invoice_id IN (
+       SELECT invoices.id
+       FROM invoices
+       WHERE invoices.billing_period_id = $1
+         AND invoices.occupancy_id = ANY($2::uuid[])
+     )`,
+    [billingPeriodId, DEV_BILLING_INVOICE_SEEDS.map(({ occupancyId }) => occupancyId)],
+  );
+
+  for (const invoiceSeed of DEV_BILLING_INVOICE_SEEDS) {
+    const result = await client.query<{
+      property_id: string;
+      resident_id: string;
+      room_id: string;
+      occupancy_id: string;
+      room_number: string;
+      resident_name: string;
+      monthly_price: string;
+    }>(
+      `SELECT occupancies.property_id,
+              occupancies.resident_id,
+              occupancies.room_id,
+              occupancies.id AS occupancy_id,
+              rooms.number AS room_number,
+              residents.full_name AS resident_name,
+              rooms.monthly_price
+       FROM occupancies
+       JOIN rooms ON rooms.id = occupancies.room_id
+       JOIN residents ON residents.id = occupancies.resident_id
+       WHERE occupancies.id = $1
+         AND occupancies.occupancy_status = 'active'`,
+      [invoiceSeed.occupancyId],
+    );
+    const occupancy = result.rows[0];
+    if (!occupancy) {
+      throw new Error(`Development billing seed occupancy not found: ${invoiceSeed.occupancyId}.`);
+    }
+
+    const amount = Number(occupancy.monthly_price);
+    const invoiceCode = `DEV-INV-${period.periodKey}-${occupancy.room_number}`;
+
+    const invoiceResult = await client.query<{ id: string }>(
+      `INSERT INTO invoices (
+         id, property_id, resident_id, room_id, occupancy_id, billing_period_id, invoice_code,
+         invoice_status, subtotal_amount, late_fee_amount, total_amount, due_date, issued_at,
+         snapshot_period_key, snapshot_period_start_date, snapshot_period_end_date,
+         snapshot_room_number, snapshot_resident_name, snapshot_monthly_price,
+         created_by_user_id
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, 'issued', $8, 0, $8, $9, now(),
+         $10, $11, $12, $13, $14, $8, $15
+       )
+       ON CONFLICT (billing_period_id, occupancy_id) DO UPDATE
+       SET invoice_code = EXCLUDED.invoice_code,
+           invoice_status = EXCLUDED.invoice_status,
+           subtotal_amount = EXCLUDED.subtotal_amount,
+           late_fee_amount = EXCLUDED.late_fee_amount,
+           total_amount = EXCLUDED.total_amount,
+           due_date = EXCLUDED.due_date,
+           issued_at = COALESCE(invoices.issued_at, EXCLUDED.issued_at),
+           snapshot_period_key = EXCLUDED.snapshot_period_key,
+           snapshot_period_start_date = EXCLUDED.snapshot_period_start_date,
+           snapshot_period_end_date = EXCLUDED.snapshot_period_end_date,
+           snapshot_room_number = EXCLUDED.snapshot_room_number,
+           snapshot_resident_name = EXCLUDED.snapshot_resident_name,
+           snapshot_monthly_price = EXCLUDED.snapshot_monthly_price,
+           updated_at = now()
+       RETURNING id`,
+      [
+        invoiceSeed.id,
+        occupancy.property_id,
+        occupancy.resident_id,
+        occupancy.room_id,
+        occupancy.occupancy_id,
+        billingPeriodId,
+        invoiceCode,
+        amount,
+        period.dueDate,
+        period.periodKey,
+        period.startDate,
+        period.endDate,
+        occupancy.room_number,
+        occupancy.resident_name,
+        CORE_SEED_IDS.ownerUser,
+      ],
+    );
+    const invoiceId = invoiceResult.rows[0].id;
+
+    await client.query(
+      `INSERT INTO invoice_line_items (
+         invoice_id, line_type, description, quantity, unit_amount, total_amount, sort_order, metadata
+       )
+       VALUES ($1, 'rent', $2, 1, $3, $3, 1, $4::jsonb)`,
+      [invoiceId, `Sewa kamar ${occupancy.room_number} periode ${period.periodKey}`, amount, JSON.stringify({ seed: 'development-billing', source: 'Milestone 6E' })],
     );
   }
 }
@@ -569,6 +798,7 @@ async function validateLayer5(client: PoolClient, requireNoDevelopmentData: bool
 
 async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCheck[]> {
   const propertyId = CORE_SEED_IDS.granadaProperty;
+  const period = currentBillingPeriodSeed();
   const checks = await Promise.all([
     validationCheck(client, 'DEV-01 resident count', 'SELECT count(*) FROM residents WHERE property_id = $1', [propertyId]),
     validationCheck(
@@ -619,6 +849,80 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
          AND residents.gender <> rooms.gender_policy`,
       [propertyId],
     ),
+    validationCheck(
+      client,
+      'DEV-11 resident user link count',
+      `SELECT count(*)
+       FROM residents
+       JOIN users ON users.id = residents.user_id
+       WHERE residents.property_id = $1
+         AND users.email = residents.email`,
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-BILLING-01 primary BSI payment account',
+      `SELECT count(*)
+       FROM payment_accounts
+       WHERE property_id = $1
+         AND account_type = 'bank_transfer'
+         AND bank_name = 'BSI / Bank Syariah Indonesia'
+         AND account_number = '7318321153'
+         AND account_holder = 'PT SON SMART LIVING'
+         AND is_primary = true
+         AND status = 'active'`,
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-BILLING-02 current billing period',
+      `SELECT count(*)
+       FROM billing_periods
+       WHERE property_id = $1
+         AND period_key = $2
+         AND due_date = $3
+         AND status = 'open'`,
+      [propertyId, period.periodKey, period.dueDate],
+    ),
+    validationCheck(
+      client,
+      'DEV-BILLING-03 issued invoice count',
+      `SELECT count(*)
+       FROM invoices
+       JOIN billing_periods ON billing_periods.id = invoices.billing_period_id
+       WHERE invoices.property_id = $1
+         AND billing_periods.period_key = $2
+         AND invoices.invoice_status = 'issued'`,
+      [propertyId, period.periodKey],
+    ),
+    validationCheck(
+      client,
+      'DEV-BILLING-04 rent line item count',
+      `SELECT count(*)
+       FROM invoice_line_items
+       JOIN invoices ON invoices.id = invoice_line_items.invoice_id
+       JOIN billing_periods ON billing_periods.id = invoices.billing_period_id
+       WHERE invoices.property_id = $1
+         AND billing_periods.period_key = $2
+         AND invoice_line_items.line_type = 'rent'`,
+      [propertyId, period.periodKey],
+    ),
+    validationCheck(
+      client,
+      'DEV-BILLING-05 invoice amount mismatch',
+      `SELECT count(*)
+       FROM invoices
+       JOIN rooms ON rooms.id = invoices.room_id
+       JOIN billing_periods ON billing_periods.id = invoices.billing_period_id
+       WHERE invoices.property_id = $1
+         AND billing_periods.period_key = $2
+         AND (
+           invoices.subtotal_amount <> rooms.monthly_price OR
+           invoices.total_amount <> rooms.monthly_price OR
+           invoices.snapshot_monthly_price <> rooms.monthly_price
+         )`,
+      [propertyId, period.periodKey],
+    ),
   ]);
 
   const expected = new Map<string, number>([
@@ -632,6 +936,12 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
     ['DEV-08 room status sync violations', 0],
     ['DEV-09 active occupancy count', 8],
     ['DEV-10 gender compatibility violations', 0],
+    ['DEV-11 resident user link count', 10],
+    ['DEV-BILLING-01 primary BSI payment account', 1],
+    ['DEV-BILLING-02 current billing period', 1],
+    ['DEV-BILLING-03 issued invoice count', 8],
+    ['DEV-BILLING-04 rent line item count', 8],
+    ['DEV-BILLING-05 invoice amount mismatch', 0],
   ]);
 
   for (const check of checks) {

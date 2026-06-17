@@ -8,6 +8,7 @@ export type RoomSeedRecord = {
 };
 export type DevResidentSeedRecord = {
   id: string;
+  userId: string;
   fullName: string;
   gender: RoomGenderPolicy;
   status: 'active' | 'inactive';
@@ -21,6 +22,10 @@ export type DevOccupancySeedRecord = {
   id: string;
   residentId: string;
   roomNumber: string;
+};
+export type DevBillingInvoiceSeedRecord = {
+  id: string;
+  occupancyId: string;
 };
 
 export const CORE_SEED_IDS = {
@@ -52,6 +57,18 @@ export const CORE_SEED_IDS = {
     inactiveOne: '50000000-0000-4000-8000-000000000009',
     inactiveTwo: '50000000-0000-4000-8000-000000000010',
   },
+  devResidentUsers: {
+    alpha: '51000000-0000-4000-8000-000000000001',
+    bravo: '51000000-0000-4000-8000-000000000002',
+    charlie: '51000000-0000-4000-8000-000000000003',
+    delta: '51000000-0000-4000-8000-000000000004',
+    echo: '51000000-0000-4000-8000-000000000005',
+    foxtrot: '51000000-0000-4000-8000-000000000006',
+    golf: '51000000-0000-4000-8000-000000000007',
+    hotel: '51000000-0000-4000-8000-000000000008',
+    inactiveOne: '51000000-0000-4000-8000-000000000009',
+    inactiveTwo: '51000000-0000-4000-8000-000000000010',
+  },
   devOccupancies: {
     alpha: '60000000-0000-4000-8000-000000000001',
     bravo: '60000000-0000-4000-8000-000000000002',
@@ -61,6 +78,20 @@ export const CORE_SEED_IDS = {
     foxtrot: '60000000-0000-4000-8000-000000000006',
     golf: '60000000-0000-4000-8000-000000000007',
     hotel: '60000000-0000-4000-8000-000000000008',
+  },
+  devBilling: {
+    bsiPaymentAccount: '70000000-0000-4000-8000-000000000001',
+    currentBillingPeriod: '71000000-0000-4000-8000-000000000001',
+    invoices: {
+      alpha: '72000000-0000-4000-8000-000000000001',
+      bravo: '72000000-0000-4000-8000-000000000002',
+      charlie: '72000000-0000-4000-8000-000000000003',
+      delta: '72000000-0000-4000-8000-000000000004',
+      echo: '72000000-0000-4000-8000-000000000005',
+      foxtrot: '72000000-0000-4000-8000-000000000006',
+      golf: '72000000-0000-4000-8000-000000000007',
+      hotel: '72000000-0000-4000-8000-000000000008',
+    },
   },
 } as const;
 
@@ -87,6 +118,7 @@ export const PERMISSIONS = [
   ['checkout.manage', 'Manage Check-Out', 'Approve, inspect, and finalize check-out workflows.'],
   ['deposit.manage', 'Manage Deposit', 'Manage deposit charge, deduction, refund, and settlement.'],
   ['billing.read', 'Read Billing', 'Read billing, payment, and revenue data.'],
+  ['billing.self.read', 'Read Own Billing', 'Read own billing and payment history.'],
   ['billing.manage', 'Manage Billing', 'Create or mutate billing and invoice records.'],
   ['payment.verify', 'Verify Payment', 'Verify or reject manual payment proof.'],
   ['complaint.manage', 'Manage Complaint', 'Manage complaints and work order status.'],
@@ -128,7 +160,7 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
   ['technician', 'maintenance.manage'],
   ['resident', 'property.read'],
   ['resident', 'room.read'],
-  ['resident', 'billing.read'],
+  ['resident', 'billing.self.read'],
   ['property_owner', 'property.read'],
   ['property_owner', 'room.read'],
   ['property_owner', 'resident.read'],
@@ -229,6 +261,7 @@ export const ROOM_SEEDS: RoomSeedRecord[] = [
 export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   {
     id: CORE_SEED_IDS.devResidents.alpha,
+    userId: CORE_SEED_IDS.devResidentUsers.alpha,
     fullName: 'Dev Resident Alpha',
     gender: 'male',
     status: 'active',
@@ -240,6 +273,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.bravo,
+    userId: CORE_SEED_IDS.devResidentUsers.bravo,
     fullName: 'Dev Resident Bravo',
     gender: 'male',
     status: 'active',
@@ -251,6 +285,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.charlie,
+    userId: CORE_SEED_IDS.devResidentUsers.charlie,
     fullName: 'Dev Resident Charlie',
     gender: 'female',
     status: 'active',
@@ -262,6 +297,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.delta,
+    userId: CORE_SEED_IDS.devResidentUsers.delta,
     fullName: 'Dev Resident Delta',
     gender: 'female',
     status: 'active',
@@ -273,6 +309,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.echo,
+    userId: CORE_SEED_IDS.devResidentUsers.echo,
     fullName: 'Dev Resident Echo',
     gender: 'male',
     status: 'active',
@@ -284,6 +321,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.foxtrot,
+    userId: CORE_SEED_IDS.devResidentUsers.foxtrot,
     fullName: 'Dev Resident Foxtrot',
     gender: 'female',
     status: 'active',
@@ -295,6 +333,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.golf,
+    userId: CORE_SEED_IDS.devResidentUsers.golf,
     fullName: 'Dev Resident Golf',
     gender: 'male',
     status: 'active',
@@ -306,6 +345,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.hotel,
+    userId: CORE_SEED_IDS.devResidentUsers.hotel,
     fullName: 'Dev Resident Hotel',
     gender: 'female',
     status: 'active',
@@ -317,6 +357,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.inactiveOne,
+    userId: CORE_SEED_IDS.devResidentUsers.inactiveOne,
     fullName: 'Dev Resident Inactive One',
     gender: 'male',
     status: 'inactive',
@@ -328,6 +369,7 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   },
   {
     id: CORE_SEED_IDS.devResidents.inactiveTwo,
+    userId: CORE_SEED_IDS.devResidentUsers.inactiveTwo,
     fullName: 'Dev Resident Inactive Two',
     gender: 'female',
     status: 'inactive',
@@ -348,6 +390,17 @@ export const DEV_OCCUPANCY_SEEDS: DevOccupancySeedRecord[] = [
   { id: CORE_SEED_IDS.devOccupancies.foxtrot, residentId: CORE_SEED_IDS.devResidents.foxtrot, roomNumber: 'RK-03-01' },
   { id: CORE_SEED_IDS.devOccupancies.golf, residentId: CORE_SEED_IDS.devResidents.golf, roomNumber: 'RK-06-01' },
   { id: CORE_SEED_IDS.devOccupancies.hotel, residentId: CORE_SEED_IDS.devResidents.hotel, roomNumber: 'RK-08-01' },
+];
+
+export const DEV_BILLING_INVOICE_SEEDS: DevBillingInvoiceSeedRecord[] = [
+  { id: CORE_SEED_IDS.devBilling.invoices.alpha, occupancyId: CORE_SEED_IDS.devOccupancies.alpha },
+  { id: CORE_SEED_IDS.devBilling.invoices.bravo, occupancyId: CORE_SEED_IDS.devOccupancies.bravo },
+  { id: CORE_SEED_IDS.devBilling.invoices.charlie, occupancyId: CORE_SEED_IDS.devOccupancies.charlie },
+  { id: CORE_SEED_IDS.devBilling.invoices.delta, occupancyId: CORE_SEED_IDS.devOccupancies.delta },
+  { id: CORE_SEED_IDS.devBilling.invoices.echo, occupancyId: CORE_SEED_IDS.devOccupancies.echo },
+  { id: CORE_SEED_IDS.devBilling.invoices.foxtrot, occupancyId: CORE_SEED_IDS.devOccupancies.foxtrot },
+  { id: CORE_SEED_IDS.devBilling.invoices.golf, occupancyId: CORE_SEED_IDS.devOccupancies.golf },
+  { id: CORE_SEED_IDS.devBilling.invoices.hotel, occupancyId: CORE_SEED_IDS.devOccupancies.hotel },
 ];
 
 export function ownerIdentityFor(environment: SeedEnvironment): { email: string; displayName: string } {

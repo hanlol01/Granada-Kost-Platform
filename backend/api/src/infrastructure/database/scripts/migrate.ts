@@ -1,7 +1,18 @@
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { config as loadEnv } from 'dotenv';
 import { Pool } from 'pg';
 import { databaseConfigFromEnv } from './database-url';
+
+loadEnv({
+  path: [
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), 'backend/api/.env'),
+    resolve(__dirname, '../../../../.env'),
+    resolve(__dirname, '../../../.env'),
+  ].find((path) => existsSync(path)),
+});
 
 async function main(): Promise<void> {
   const pool = new Pool(databaseConfigFromEnv());

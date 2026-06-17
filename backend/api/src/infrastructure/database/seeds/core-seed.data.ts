@@ -1,0 +1,359 @@
+export type SeedEnvironment = 'development' | 'production';
+export type RoomGenderPolicy = 'male' | 'female';
+export type RoomSeedRecord = {
+  number: string;
+  unitCode: string;
+  genderPolicy: RoomGenderPolicy;
+  roomTypeName: 'RuKost Standard' | 'ApartKost Standard';
+};
+export type DevResidentSeedRecord = {
+  id: string;
+  fullName: string;
+  gender: RoomGenderPolicy;
+  status: 'active' | 'inactive';
+  email: string;
+  phone: string;
+  ktpNumber: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+};
+export type DevOccupancySeedRecord = {
+  id: string;
+  residentId: string;
+  roomNumber: string;
+};
+
+export const CORE_SEED_IDS = {
+  ownerUser: '10000000-0000-4000-8000-000000000001',
+  granadaProperty: '20000000-0000-4000-8000-000000000001',
+  roomTypes: {
+    rukostStandard: '30000000-0000-4000-8000-000000000001',
+    apartkostStandard: '30000000-0000-4000-8000-000000000002',
+  },
+  facilities: {
+    ac: '40000000-0000-4000-8000-000000000001',
+    kasur: '40000000-0000-4000-8000-000000000002',
+    lemari: '40000000-0000-4000-8000-000000000003',
+    wifi: '40000000-0000-4000-8000-000000000004',
+    kamarMandiDalam: '40000000-0000-4000-8000-000000000005',
+    meja: '40000000-0000-4000-8000-000000000006',
+    kursi: '40000000-0000-4000-8000-000000000007',
+    waterHeater: '40000000-0000-4000-8000-000000000008',
+  },
+  devResidents: {
+    alpha: '50000000-0000-4000-8000-000000000001',
+    bravo: '50000000-0000-4000-8000-000000000002',
+    charlie: '50000000-0000-4000-8000-000000000003',
+    delta: '50000000-0000-4000-8000-000000000004',
+    echo: '50000000-0000-4000-8000-000000000005',
+    foxtrot: '50000000-0000-4000-8000-000000000006',
+    golf: '50000000-0000-4000-8000-000000000007',
+    hotel: '50000000-0000-4000-8000-000000000008',
+    inactiveOne: '50000000-0000-4000-8000-000000000009',
+    inactiveTwo: '50000000-0000-4000-8000-000000000010',
+  },
+  devOccupancies: {
+    alpha: '60000000-0000-4000-8000-000000000001',
+    bravo: '60000000-0000-4000-8000-000000000002',
+    charlie: '60000000-0000-4000-8000-000000000003',
+    delta: '60000000-0000-4000-8000-000000000004',
+    echo: '60000000-0000-4000-8000-000000000005',
+    foxtrot: '60000000-0000-4000-8000-000000000006',
+    golf: '60000000-0000-4000-8000-000000000007',
+    hotel: '60000000-0000-4000-8000-000000000008',
+  },
+} as const;
+
+export const ROLES = [
+  ['owner', 'Owner', 'Platform/operator owner with highest access.'],
+  ['manager', 'Manager', 'Operational manager with broad property operations.'],
+  ['admin', 'Admin', 'Daily administrative staff.'],
+  ['technician', 'Technician', 'Maintenance staff assigned to work orders.'],
+  ['resident', 'Penghuni', 'Penghuni using the resident PWA.'],
+  ['property_owner', 'Pemilik Rumah Kost', 'Read-only property owner/investor scoped to owned properties.'],
+] as const;
+
+export const PERMISSIONS = [
+  ['rbac.manage', 'Manage RBAC', 'Manage roles, permissions, and property role assignment.'],
+  ['audit.view', 'View Audit', 'View security and domain audit logs.'],
+  ['audit.export', 'Export Audit', 'Export security and audit reports.'],
+  ['property.read', 'Read Property', 'Read property profile and scoped property data.'],
+  ['property.manage', 'Manage Property', 'Manage property profile and settings.'],
+  ['room.read', 'Read Room', 'Read room data.'],
+  ['room.manage', 'Manage Room', 'Create or update room operational data.'],
+  ['resident.read', 'Read Penghuni', 'Read Penghuni/resident data within scope.'],
+  ['resident.manage', 'Manage Penghuni', 'Create or update Penghuni/resident data.'],
+  ['lease.manage', 'Manage Lease', 'Manage lease, check-in, and check-out workflows.'],
+  ['checkout.manage', 'Manage Check-Out', 'Approve, inspect, and finalize check-out workflows.'],
+  ['deposit.manage', 'Manage Deposit', 'Manage deposit charge, deduction, refund, and settlement.'],
+  ['billing.read', 'Read Billing', 'Read billing, payment, and revenue data.'],
+  ['billing.manage', 'Manage Billing', 'Create or mutate billing and invoice records.'],
+  ['payment.verify', 'Verify Payment', 'Verify or reject manual payment proof.'],
+  ['complaint.manage', 'Manage Complaint', 'Manage complaints and work order status.'],
+  ['maintenance.manage', 'Manage Maintenance', 'Manage maintenance work orders.'],
+  ['smart_lock.view', 'View Smart Lock', 'View smart lock metadata and security reports.'],
+  ['smart_lock.command', 'Command Smart Lock', 'Execute lock or unlock commands.'],
+  ['cctv.view', 'View CCTV', 'View CCTV metadata and preview sessions.'],
+  ['notification.manage', 'Manage Notification', 'Manage announcements and notification content.'],
+  ['report.view', 'View Report', 'View operational reports.'],
+  ['report.export', 'Export Report', 'Export operational reports.'],
+  ['property_owner.report.view', 'View Property Owner Report', 'Read-only property owner reports.'],
+] as const;
+
+const allPermissionCodes = PERMISSIONS.map(([code]) => code);
+
+export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
+  ...allPermissionCodes.map((permissionCode) => ['owner', permissionCode] as const),
+  ...allPermissionCodes
+    .filter((permissionCode) => permissionCode !== 'rbac.manage')
+    .map((permissionCode) => ['manager', permissionCode] as const),
+  ...[
+    'property.read',
+    'room.read',
+    'room.manage',
+    'resident.read',
+    'resident.manage',
+    'lease.manage',
+    'checkout.manage',
+    'billing.read',
+    'payment.verify',
+    'complaint.manage',
+    'maintenance.manage',
+    'smart_lock.view',
+    'cctv.view',
+    'notification.manage',
+    'report.view',
+  ].map((permissionCode) => ['admin', permissionCode] as const),
+  ['technician', 'complaint.manage'],
+  ['technician', 'maintenance.manage'],
+  ['resident', 'property.read'],
+  ['resident', 'room.read'],
+  ['resident', 'billing.read'],
+  ['property_owner', 'property.read'],
+  ['property_owner', 'room.read'],
+  ['property_owner', 'resident.read'],
+  ['property_owner', 'billing.read'],
+  ['property_owner', 'property_owner.report.view'],
+];
+
+export const GRANADA_PROPERTY = {
+  id: CORE_SEED_IDS.granadaProperty,
+  name: 'Granada Student House Jatinangor',
+  address: 'Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang',
+  timezone: 'Asia/Jakarta',
+  status: 'active',
+} as const;
+
+export const ROOM_TYPES = [
+  {
+    id: CORE_SEED_IDS.roomTypes.rukostStandard,
+    name: 'RuKost Standard',
+    basePrice: 1800000,
+    defaultDepositAmount: 0,
+  },
+  {
+    id: CORE_SEED_IDS.roomTypes.apartkostStandard,
+    name: 'ApartKost Standard',
+    basePrice: 1800000,
+    defaultDepositAmount: 0,
+  },
+] as const;
+
+export const ROOM_FACILITIES = [
+  [CORE_SEED_IDS.facilities.ac, 'AC'],
+  [CORE_SEED_IDS.facilities.kasur, 'Kasur'],
+  [CORE_SEED_IDS.facilities.lemari, 'Lemari'],
+  [CORE_SEED_IDS.facilities.wifi, 'WiFi'],
+  [CORE_SEED_IDS.facilities.kamarMandiDalam, 'Kamar Mandi Dalam'],
+  [CORE_SEED_IDS.facilities.meja, 'Meja'],
+  [CORE_SEED_IDS.facilities.kursi, 'Kursi'],
+  [CORE_SEED_IDS.facilities.waterHeater, 'Water Heater'],
+] as const;
+
+const RUKOST_UNITS: Array<readonly [string, RoomGenderPolicy, number]> = [
+  ['01', 'female', 11],
+  ['02', 'male', 8],
+  ['03', 'female', 8],
+  ['04', 'male', 7],
+  ['06', 'male', 7],
+  ['07', 'male', 7],
+  ['08', 'female', 7],
+  ['09', 'female', 6],
+  ['10', 'male', 8],
+  ['11', 'male', 7],
+  ['12', 'male', 7],
+  ['13', 'female', 11],
+  ['14', 'male', 6],
+  ['15', 'female', 6],
+  ['16', 'female', 7],
+  ['17', 'female', 10],
+];
+
+const APARTKOST_UNITS: Array<readonly [string, RoomGenderPolicy]> = [
+  ['05A', 'female'],
+  ['05B', 'female'],
+  ['05C', 'female'],
+  ['05D', 'female'],
+  ['18A', 'male'],
+  ['18B', 'male'],
+  ['18C', 'male'],
+  ['18D', 'male'],
+  ['18E', 'male'],
+  ['18F', 'male'],
+];
+
+const APARTKOST_ROOM_CODES = ['1B', '2B', '3A', '4A'] as const;
+
+export const ROOM_SEEDS: RoomSeedRecord[] = [
+  ...RUKOST_UNITS.flatMap(([unitCode, genderPolicy, roomCount]) =>
+    Array.from({ length: roomCount }, (_, index) => {
+      const roomCode = String(index + 1).padStart(2, '0');
+      return {
+        number: `RK-${unitCode}-${roomCode}`,
+        unitCode,
+        genderPolicy,
+        roomTypeName: 'RuKost Standard' as const,
+      };
+    }),
+  ),
+  ...APARTKOST_UNITS.flatMap(([unitCode, genderPolicy]) =>
+    APARTKOST_ROOM_CODES.map((roomCode) => ({
+      number: `AK-${unitCode}-${roomCode}`,
+      unitCode,
+      genderPolicy,
+      roomTypeName: 'ApartKost Standard' as const,
+    })),
+  ),
+];
+
+export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devResidents.alpha,
+    fullName: 'Dev Resident Alpha',
+    gender: 'male',
+    status: 'active',
+    email: 'dev.resident.alpha@example.test',
+    phone: '+6280000000001',
+    ktpNumber: '0000000000000001',
+    emergencyContactName: 'Dev Emergency Alpha',
+    emergencyContactPhone: '+6280090000001',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.bravo,
+    fullName: 'Dev Resident Bravo',
+    gender: 'male',
+    status: 'active',
+    email: 'dev.resident.bravo@example.test',
+    phone: '+6280000000002',
+    ktpNumber: '0000000000000002',
+    emergencyContactName: 'Dev Emergency Bravo',
+    emergencyContactPhone: '+6280090000002',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.charlie,
+    fullName: 'Dev Resident Charlie',
+    gender: 'female',
+    status: 'active',
+    email: 'dev.resident.charlie@example.test',
+    phone: '+6280000000003',
+    ktpNumber: '0000000000000003',
+    emergencyContactName: 'Dev Emergency Charlie',
+    emergencyContactPhone: '+6280090000003',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.delta,
+    fullName: 'Dev Resident Delta',
+    gender: 'female',
+    status: 'active',
+    email: 'dev.resident.delta@example.test',
+    phone: '+6280000000004',
+    ktpNumber: '0000000000000004',
+    emergencyContactName: 'Dev Emergency Delta',
+    emergencyContactPhone: '+6280090000004',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.echo,
+    fullName: 'Dev Resident Echo',
+    gender: 'male',
+    status: 'active',
+    email: 'dev.resident.echo@example.test',
+    phone: '+6280000000005',
+    ktpNumber: '0000000000000005',
+    emergencyContactName: 'Dev Emergency Echo',
+    emergencyContactPhone: '+6280090000005',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.foxtrot,
+    fullName: 'Dev Resident Foxtrot',
+    gender: 'female',
+    status: 'active',
+    email: 'dev.resident.foxtrot@example.test',
+    phone: '+6280000000006',
+    ktpNumber: '0000000000000006',
+    emergencyContactName: 'Dev Emergency Foxtrot',
+    emergencyContactPhone: '+6280090000006',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.golf,
+    fullName: 'Dev Resident Golf',
+    gender: 'male',
+    status: 'active',
+    email: 'dev.resident.golf@example.test',
+    phone: '+6280000000007',
+    ktpNumber: '0000000000000007',
+    emergencyContactName: 'Dev Emergency Golf',
+    emergencyContactPhone: '+6280090000007',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.hotel,
+    fullName: 'Dev Resident Hotel',
+    gender: 'female',
+    status: 'active',
+    email: 'dev.resident.hotel@example.test',
+    phone: '+6280000000008',
+    ktpNumber: '0000000000000008',
+    emergencyContactName: 'Dev Emergency Hotel',
+    emergencyContactPhone: '+6280090000008',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.inactiveOne,
+    fullName: 'Dev Resident Inactive One',
+    gender: 'male',
+    status: 'inactive',
+    email: 'dev.resident.inactive.one@example.test',
+    phone: '+6280000000009',
+    ktpNumber: '0000000000000009',
+    emergencyContactName: 'Dev Emergency Inactive One',
+    emergencyContactPhone: '+6280090000009',
+  },
+  {
+    id: CORE_SEED_IDS.devResidents.inactiveTwo,
+    fullName: 'Dev Resident Inactive Two',
+    gender: 'female',
+    status: 'inactive',
+    email: 'dev.resident.inactive.two@example.test',
+    phone: '+6280000000010',
+    ktpNumber: '0000000000000010',
+    emergencyContactName: 'Dev Emergency Inactive Two',
+    emergencyContactPhone: '+6280090000010',
+  },
+];
+
+export const DEV_OCCUPANCY_SEEDS: DevOccupancySeedRecord[] = [
+  { id: CORE_SEED_IDS.devOccupancies.alpha, residentId: CORE_SEED_IDS.devResidents.alpha, roomNumber: 'RK-02-01' },
+  { id: CORE_SEED_IDS.devOccupancies.bravo, residentId: CORE_SEED_IDS.devResidents.bravo, roomNumber: 'AK-18A-1B' },
+  { id: CORE_SEED_IDS.devOccupancies.charlie, residentId: CORE_SEED_IDS.devResidents.charlie, roomNumber: 'RK-01-01' },
+  { id: CORE_SEED_IDS.devOccupancies.delta, residentId: CORE_SEED_IDS.devResidents.delta, roomNumber: 'AK-05A-1B' },
+  { id: CORE_SEED_IDS.devOccupancies.echo, residentId: CORE_SEED_IDS.devResidents.echo, roomNumber: 'RK-04-02' },
+  { id: CORE_SEED_IDS.devOccupancies.foxtrot, residentId: CORE_SEED_IDS.devResidents.foxtrot, roomNumber: 'RK-03-01' },
+  { id: CORE_SEED_IDS.devOccupancies.golf, residentId: CORE_SEED_IDS.devResidents.golf, roomNumber: 'RK-06-01' },
+  { id: CORE_SEED_IDS.devOccupancies.hotel, residentId: CORE_SEED_IDS.devResidents.hotel, roomNumber: 'RK-08-01' },
+];
+
+export function ownerIdentityFor(environment: SeedEnvironment): { email: string; displayName: string } {
+  if (environment === 'production') {
+    return { email: process.env.SEED_OWNER_EMAIL ?? 'owner@granada.id', displayName: 'System Owner' };
+  }
+
+  return { email: process.env.SEED_OWNER_EMAIL ?? 'owner@granada.dev', displayName: 'Dev Owner' };
+}

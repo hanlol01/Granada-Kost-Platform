@@ -1,0 +1,34 @@
+{
+  "name": "granada-kost-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo untuk platform Granada Kost: admin web, penghuni PWA, backend API, dan shared packages.",
+  "packageManager": "npm@10",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "backend/*"
+  ],
+  "scripts": {
+    "dev:admin": "npm --workspace @granada-kost/admin run dev -- --port 8080",
+    "dev:penghuni": "npm --workspace @granada-kost/penghuni run dev -- --port 8081",
+    "dev:api": "npm --workspace @granada-kost/api run dev",
+    "build:admin": "npm --workspace @granada-kost/admin run build",
+    "build:penghuni": "npm --workspace @granada-kost/penghuni run build",
+    "build:api": "npm --workspace @granada-kost/api run build",
+    "db:migrate:api": "npm --workspace @granada-kost/api run db:migrate",
+    "db:seed:api": "npm --workspace @granada-kost/api run db:seed",
+    "db:seed:dev": "npm --workspace @granada-kost/api run db:seed:dev",
+    "db:seed:prod": "npm --workspace @granada-kost/api run db:seed:prod",
+    "lint:admin": "npm --workspace @granada-kost/admin run lint",
+    "lint:penghuni": "npm --workspace @granada-kost/penghuni run lint",
+    "lint:api": "npm --workspace @granada-kost/api run lint",
+    "format:admin": "npm --workspace @granada-kost/admin run format",
+    "format:penghuni": "npm --workspace @granada-kost/penghuni run format",
+    "format:api": "npm --workspace @granada-kost/api run format"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  }
+}

@@ -29,4 +29,10 @@ export const environmentValidationSchema = Joi.object({
   REDIS_PASSWORD: Joi.string().allow('').optional(),
   REDIS_DB: Joi.number().integer().min(0).default(0),
   REDIS_KEY_PREFIX: Joi.string().default('granada:'),
+
+  BREVO_API_KEY: Joi.string().allow('').optional(),
+  BREVO_DAILY_LIMIT: Joi.number().integer().min(1).default(300),
+  FONNTE_API_KEY: Joi.string().allow('').optional(),
+  FONNTE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  PUSH_NOTIFICATION_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
 });

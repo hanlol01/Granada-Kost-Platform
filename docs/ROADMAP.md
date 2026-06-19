@@ -68,6 +68,16 @@
 - Workflow validation script for Vehicle and Parking.
 - Status: selesai sampai 8F.
 
+## Milestone 9 - Notification Phase 1
+
+- Notification database migration.
+- Repository, service, provider abstraction, helper, template, and audit foundation.
+- Notification API endpoint for self notifications, preferences, and admin delivery monitoring.
+- Production-safe notification property settings seed.
+- Development notification preference, in-app notification, and delivery seed.
+- Workflow validation script for Notification.
+- Status: selesai sampai 9F.
+
 ## Next Milestone
 
-- File upload implementation, Notification, Smart Lock, dan CCTV belum dimulai.
+- File upload implementation, Smart Lock, CCTV, dan worker/provider integration belum dimulai.

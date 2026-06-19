@@ -21,6 +21,7 @@ import { ComplaintModule } from './modules/complaint/complaint.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { VehicleModule } from './modules/vehicle/vehicle.module';
 import { ParkingModule } from './modules/parking/parking.module';
+import { NotificationModule } from './modules/notification/notification.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { ParkingModule } from './modules/parking/parking.module';
     MaintenanceModule,
     VehicleModule,
     ParkingModule,
+    NotificationModule,
     HealthModule,
   ],
 })

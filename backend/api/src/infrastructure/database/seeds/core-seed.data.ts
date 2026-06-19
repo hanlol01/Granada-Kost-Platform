@@ -101,6 +101,39 @@ export type DevParkingSlotSeedRecord = {
   slotType: 'motorcycle' | 'car';
   vehicleId?: string;
 };
+export type DevNotificationPreferenceSeedRecord = {
+  id: string;
+  userId: string;
+  emailEnabled: boolean;
+  whatsappEnabled: boolean;
+  pushEnabled: boolean;
+  digestMode: boolean;
+};
+export type DevNotificationSeedRecord = {
+  id: string;
+  recipientUserId: string;
+  notificationType: string;
+  status: 'unread' | 'read' | 'archived';
+  priority: 'urgent' | 'high' | 'normal' | 'low';
+  title: string;
+  body: string;
+  metadata: Record<string, string | number | boolean>;
+  sourceEventType: string;
+  sourceResourceId: string;
+};
+export type DevNotificationDeliverySeedRecord = {
+  id: string;
+  notificationId: string;
+  status: 'pending' | 'delivered' | 'failed' | 'dead_lettered' | 'skipped';
+  recipientAddress: string;
+  subject?: string;
+  contentSnapshot?: string;
+  attemptCount: number;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  providerMessageId?: string;
+  skipReason?: 'quota_exhausted' | 'preference_disabled' | 'invalid_recipient' | 'channel_disabled' | 'deferred_to_digest';
+};
 
 export const CORE_SEED_IDS = {
   ownerUser: '10000000-0000-4000-8000-000000000001',
@@ -238,6 +271,30 @@ export const CORE_SEED_IDS = {
     carMain01: '87000000-0000-4000-8000-000000000005',
     carMain02: '87000000-0000-4000-8000-000000000006',
   },
+  devNotifications: {
+    invoiceIssued: '89000000-0000-4000-8000-000000000001',
+    billingOverdue: '89000000-0000-4000-8000-000000000002',
+    complaintCreated: '89000000-0000-4000-8000-000000000003',
+    complaintResolved: '89000000-0000-4000-8000-000000000004',
+    workOrderAssigned: '89000000-0000-4000-8000-000000000005',
+    vehicleApproved: '89000000-0000-4000-8000-000000000006',
+    occupancyCheckIn: '89000000-0000-4000-8000-000000000007',
+    occupancyCheckOut: '89000000-0000-4000-8000-000000000008',
+  },
+  devNotificationDeliveries: {
+    pendingEmail: '89100000-0000-4000-8000-000000000001',
+    deliveredEmail: '89100000-0000-4000-8000-000000000002',
+    failedEmail: '89100000-0000-4000-8000-000000000003',
+    deadLetterEmail: '89100000-0000-4000-8000-000000000004',
+    skippedEmail: '89100000-0000-4000-8000-000000000005',
+  },
+  devNotificationPreferences: {
+    owner: '89200000-0000-4000-8000-000000000001',
+    admin: '89200000-0000-4000-8000-000000000002',
+    resident: '89200000-0000-4000-8000-000000000003',
+    technician: '89200000-0000-4000-8000-000000000004',
+    propertyOwner: '89200000-0000-4000-8000-000000000005',
+  },
 } as const;
 
 export const ROLES = [
@@ -315,6 +372,49 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
   ['property_owner', 'resident.read'],
   ['property_owner', 'billing.read'],
   ['property_owner', 'property_owner.report.view'],
+];
+
+export const DEV_NOTIFICATION_PREFERENCE_SEEDS: DevNotificationPreferenceSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devNotificationPreferences.owner,
+    userId: CORE_SEED_IDS.ownerUser,
+    emailEnabled: true,
+    whatsappEnabled: false,
+    pushEnabled: true,
+    digestMode: false,
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationPreferences.admin,
+    userId: CORE_SEED_IDS.devUsers.admin,
+    emailEnabled: true,
+    whatsappEnabled: false,
+    pushEnabled: true,
+    digestMode: false,
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationPreferences.resident,
+    userId: CORE_SEED_IDS.devResidentUsers.alpha,
+    emailEnabled: true,
+    whatsappEnabled: false,
+    pushEnabled: true,
+    digestMode: false,
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationPreferences.technician,
+    userId: CORE_SEED_IDS.devUsers.technicians.budi,
+    emailEnabled: true,
+    whatsappEnabled: false,
+    pushEnabled: true,
+    digestMode: false,
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationPreferences.propertyOwner,
+    userId: CORE_SEED_IDS.devUsers.propertyOwner,
+    emailEnabled: true,
+    whatsappEnabled: false,
+    pushEnabled: false,
+    digestMode: false,
+  },
 ];
 
 export const GRANADA_PROPERTY = {
@@ -1069,6 +1169,158 @@ export const DEV_PARKING_SLOT_SEEDS: DevParkingSlotSeedRecord[] = [
     zoneKey: 'carMain',
     slotNumber: 'CM-02',
     slotType: 'car',
+  },
+];
+
+export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devNotifications.invoiceIssued,
+    recipientUserId: CORE_SEED_IDS.devResidentUsers.alpha,
+    notificationType: 'billing.invoice_issued',
+    status: 'unread',
+    priority: 'normal',
+    title: 'Tagihan Juni 2026 sudah terbit',
+    body: 'Tagihan Juni 2026 sebesar Rp 1.800.000 untuk kamar RK-02-01 sudah terbit.',
+    metadata: { invoice_id: CORE_SEED_IDS.devBilling.invoices.alpha, room_number: 'RK-02-01', amount: 1800000 },
+    sourceEventType: 'billing.invoice.issued',
+    sourceResourceId: CORE_SEED_IDS.devBilling.invoices.alpha,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.billingOverdue,
+    recipientUserId: CORE_SEED_IDS.devResidentUsers.bravo,
+    notificationType: 'billing.invoice_overdue',
+    status: 'unread',
+    priority: 'high',
+    title: 'Tagihan Juni 2026 melewati jatuh tempo',
+    body: 'Tagihan Juni 2026 untuk kamar AK-18A-1B sudah overdue.',
+    metadata: { invoice_id: CORE_SEED_IDS.devBilling.invoices.bravo, room_number: 'AK-18A-1B', outstanding_amount: 1800000 },
+    sourceEventType: 'billing.overdue',
+    sourceResourceId: CORE_SEED_IDS.devBilling.invoices.bravo,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.complaintCreated,
+    recipientUserId: CORE_SEED_IDS.devUsers.admin,
+    notificationType: 'complaint.created',
+    status: 'unread',
+    priority: 'normal',
+    title: 'Complaint baru: AC kurang dingin',
+    body: 'Complaint TKT-GSH-2026-0001 dibuat oleh penghuni dummy.',
+    metadata: { complaint_id: CORE_SEED_IDS.devComplaints.acInProgress, complaint_code: 'TKT-GSH-2026-0001' },
+    sourceEventType: 'complaint.created',
+    sourceResourceId: CORE_SEED_IDS.devComplaints.acInProgress,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.complaintResolved,
+    recipientUserId: CORE_SEED_IDS.devResidentUsers.alpha,
+    notificationType: 'complaint.resolved',
+    status: 'read',
+    priority: 'high',
+    title: 'Complaint AC sudah diselesaikan',
+    body: 'Complaint AC kurang dingin telah diselesaikan. Silakan cek detail di aplikasi.',
+    metadata: { complaint_id: CORE_SEED_IDS.devComplaints.waterResolved, complaint_code: 'TKT-GSH-2026-0002' },
+    sourceEventType: 'complaint.resolved',
+    sourceResourceId: CORE_SEED_IDS.devComplaints.waterResolved,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.workOrderAssigned,
+    recipientUserId: CORE_SEED_IDS.devUsers.technicians.budi,
+    notificationType: 'maintenance.work_order_assigned',
+    status: 'unread',
+    priority: 'high',
+    title: 'Work order baru: Service AC kamar RK-02-01',
+    body: 'Work order WO-GSH-2026-0001 telah ditugaskan kepada Anda.',
+    metadata: { work_order_id: CORE_SEED_IDS.devWorkOrders.acService, work_order_code: 'WO-GSH-2026-0001' },
+    sourceEventType: 'work_order.assigned',
+    sourceResourceId: CORE_SEED_IDS.devWorkOrders.acService,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.vehicleApproved,
+    recipientUserId: CORE_SEED_IDS.devResidentUsers.alpha,
+    notificationType: 'vehicle.approved',
+    status: 'read',
+    priority: 'normal',
+    title: 'Kendaraan D 1001 DEV disetujui',
+    body: 'Kendaraan D 1001 DEV telah aktif untuk Granada Student House Jatinangor.',
+    metadata: { vehicle_id: CORE_SEED_IDS.devVehicles.alphaMotor, plate_number: 'D 1001 DEV' },
+    sourceEventType: 'vehicle.approved',
+    sourceResourceId: CORE_SEED_IDS.devVehicles.alphaMotor,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.occupancyCheckIn,
+    recipientUserId: CORE_SEED_IDS.devResidentUsers.alpha,
+    notificationType: 'occupancy.check_in_completed',
+    status: 'unread',
+    priority: 'normal',
+    title: 'Check-in berhasil',
+    body: 'Check-in kamar RK-02-01 berhasil pada data development.',
+    metadata: { occupancy_id: CORE_SEED_IDS.devOccupancies.alpha, room_number: 'RK-02-01' },
+    sourceEventType: 'occupancy.check_in',
+    sourceResourceId: CORE_SEED_IDS.devOccupancies.alpha,
+  },
+  {
+    id: CORE_SEED_IDS.devNotifications.occupancyCheckOut,
+    recipientUserId: CORE_SEED_IDS.devUsers.propertyOwner,
+    notificationType: 'occupancy.check_out_finalized',
+    status: 'unread',
+    priority: 'normal',
+    title: 'Check-out selesai',
+    body: 'Check-out dummy untuk laporan property owner sudah selesai.',
+    metadata: { occupancy_id: CORE_SEED_IDS.devOccupancies.golf, room_number: 'RK-06-01' },
+    sourceEventType: 'occupancy.check_out',
+    sourceResourceId: CORE_SEED_IDS.devOccupancies.golf,
+  },
+];
+
+export const DEV_NOTIFICATION_DELIVERY_SEEDS: DevNotificationDeliverySeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devNotificationDeliveries.pendingEmail,
+    notificationId: CORE_SEED_IDS.devNotifications.invoiceIssued,
+    status: 'pending',
+    recipientAddress: 'dev.resident.alpha@example.test',
+    subject: 'Tagihan Juni 2026 Granada Kost',
+    contentSnapshot: '<p>Tagihan Juni 2026 sebesar Rp 1.800.000 sudah terbit.</p>',
+    attemptCount: 0,
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationDeliveries.deliveredEmail,
+    notificationId: CORE_SEED_IDS.devNotifications.complaintResolved,
+    status: 'delivered',
+    recipientAddress: 'dev.resident.alpha@example.test',
+    subject: 'Complaint Granada Kost selesai',
+    contentSnapshot: '<p>Complaint AC sudah diselesaikan.</p>',
+    attemptCount: 1,
+    providerMessageId: 'brevo-dev-delivered-001',
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationDeliveries.failedEmail,
+    notificationId: CORE_SEED_IDS.devNotifications.billingOverdue,
+    status: 'failed',
+    recipientAddress: 'dev.resident.bravo@example.test',
+    subject: 'Tagihan Granada Kost Overdue',
+    contentSnapshot: '<p>Tagihan Juni 2026 sudah overdue.</p>',
+    attemptCount: 2,
+    lastErrorCode: 'brevo_timeout',
+    lastErrorMessage: 'Development safe provider timeout.',
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationDeliveries.deadLetterEmail,
+    notificationId: CORE_SEED_IDS.devNotifications.workOrderAssigned,
+    status: 'dead_lettered',
+    recipientAddress: 'dev.technician.budi@example.test',
+    subject: 'Work order baru Granada Kost',
+    contentSnapshot: '<p>Work order baru telah ditugaskan.</p>',
+    attemptCount: 5,
+    lastErrorCode: 'max_retry_exceeded',
+    lastErrorMessage: 'Development delivery reached maximum attempts.',
+  },
+  {
+    id: CORE_SEED_IDS.devNotificationDeliveries.skippedEmail,
+    notificationId: CORE_SEED_IDS.devNotifications.vehicleApproved,
+    status: 'skipped',
+    recipientAddress: 'dev.resident.alpha@example.test',
+    subject: 'Kendaraan Granada Kost disetujui',
+    attemptCount: 0,
+    skipReason: 'preference_disabled',
   },
 ];
 

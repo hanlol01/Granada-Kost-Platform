@@ -8,6 +8,9 @@ import {
   CORE_SEED_IDS,
   DEV_BILLING_INVOICE_SEEDS,
   DEV_COMPLAINT_SEEDS,
+  DEV_NOTIFICATION_DELIVERY_SEEDS,
+  DEV_NOTIFICATION_PREFERENCE_SEEDS,
+  DEV_NOTIFICATION_SEEDS,
   DEV_OCCUPANCY_SEEDS,
   DEV_PARKING_SLOT_SEEDS,
   DEV_PARKING_ZONE_SEEDS,
@@ -195,25 +198,33 @@ async function seedLayer1(client: PoolClient): Promise<void> {
 
 async function seedLayer2(client: PoolClient): Promise<void> {
   await client.query(
-    `INSERT INTO property_settings (
-       property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
-       quiet_hour_start, guest_report_deadline, parking_management_mode,
-       max_vehicles_per_resident, parking_capacity_motorcycle, parking_capacity_car,
-       parking_requires_approval
-     )
-     VALUES ($1, 25, 1.00, 100000, '21:00:00', '21:00:00', 'unmanaged', 3, NULL, NULL, true)
-     ON CONFLICT (property_id) DO UPDATE
-     SET default_due_day = EXCLUDED.default_due_day,
-         late_fee_percent_per_day = EXCLUDED.late_fee_percent_per_day,
-         booking_fee_amount = EXCLUDED.booking_fee_amount,
-         quiet_hour_start = EXCLUDED.quiet_hour_start,
+      `INSERT INTO property_settings (
+        property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
+        quiet_hour_start, guest_report_deadline, parking_management_mode,
+        max_vehicles_per_resident, parking_capacity_motorcycle, parking_capacity_car,
+        parking_requires_approval, notification_email_enabled, notification_whatsapp_enabled,
+        notification_push_enabled, notification_digest_enabled, notification_digest_hour,
+        notification_retention_days
+      )
+      VALUES ($1, 25, 1.00, 100000, '21:00:00', '21:00:00', 'unmanaged', 3, NULL, NULL, true, true, false, false, true, 8, 90)
+      ON CONFLICT (property_id) DO UPDATE
+      SET default_due_day = EXCLUDED.default_due_day,
+          late_fee_percent_per_day = EXCLUDED.late_fee_percent_per_day,
+          booking_fee_amount = EXCLUDED.booking_fee_amount,
+          quiet_hour_start = EXCLUDED.quiet_hour_start,
          guest_report_deadline = EXCLUDED.guest_report_deadline,
          parking_management_mode = EXCLUDED.parking_management_mode,
-         max_vehicles_per_resident = EXCLUDED.max_vehicles_per_resident,
-         parking_capacity_motorcycle = EXCLUDED.parking_capacity_motorcycle,
-         parking_capacity_car = EXCLUDED.parking_capacity_car,
-         parking_requires_approval = EXCLUDED.parking_requires_approval,
-         updated_at = now()`,
+          max_vehicles_per_resident = EXCLUDED.max_vehicles_per_resident,
+          parking_capacity_motorcycle = EXCLUDED.parking_capacity_motorcycle,
+          parking_capacity_car = EXCLUDED.parking_capacity_car,
+          parking_requires_approval = EXCLUDED.parking_requires_approval,
+          notification_email_enabled = EXCLUDED.notification_email_enabled,
+          notification_whatsapp_enabled = EXCLUDED.notification_whatsapp_enabled,
+          notification_push_enabled = EXCLUDED.notification_push_enabled,
+          notification_digest_enabled = EXCLUDED.notification_digest_enabled,
+          notification_digest_hour = EXCLUDED.notification_digest_hour,
+          notification_retention_days = EXCLUDED.notification_retention_days,
+          updated_at = now()`,
     [CORE_SEED_IDS.granadaProperty],
   );
 }
@@ -462,6 +473,119 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
   await seedDevelopmentBilling(client);
   await seedDevelopmentComplaintAndMaintenance(client);
   await seedDevelopmentVehicleAndParking(client);
+  await seedDevelopmentNotification(client);
+}
+
+async function seedDevelopmentNotification(client: PoolClient): Promise<void> {
+  for (const preference of DEV_NOTIFICATION_PREFERENCE_SEEDS) {
+    await client.query(
+      `INSERT INTO notification_preferences (
+         id, user_id, email_enabled, whatsapp_enabled, push_enabled, digest_mode
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id) DO UPDATE
+       SET email_enabled = EXCLUDED.email_enabled,
+           whatsapp_enabled = EXCLUDED.whatsapp_enabled,
+           push_enabled = EXCLUDED.push_enabled,
+           digest_mode = EXCLUDED.digest_mode,
+           updated_at = now()`,
+      [
+        preference.id,
+        preference.userId,
+        preference.emailEnabled,
+        preference.whatsappEnabled,
+        preference.pushEnabled,
+        preference.digestMode,
+      ],
+    );
+  }
+
+  await client.query('DELETE FROM notification_deliveries WHERE id = ANY($1::uuid[])', [
+    DEV_NOTIFICATION_DELIVERY_SEEDS.map(({ id }) => id),
+  ]);
+
+  for (const notification of DEV_NOTIFICATION_SEEDS) {
+    await client.query(
+      `INSERT INTO notifications (
+         id, property_id, recipient_user_id, notification_type, notification_status,
+         priority, title, body, metadata, source_event_type, source_resource_id,
+         correlation_id, read_at, expires_at, created_at
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11,
+         gen_random_uuid(),
+         CASE WHEN $5 = 'read' THEN now() - interval '1 day' ELSE NULL END,
+         now() + interval '90 days',
+         now() - interval '2 hours'
+       )
+       ON CONFLICT (id) DO UPDATE
+       SET recipient_user_id = EXCLUDED.recipient_user_id,
+           notification_type = EXCLUDED.notification_type,
+           notification_status = EXCLUDED.notification_status,
+           priority = EXCLUDED.priority,
+           title = EXCLUDED.title,
+           body = EXCLUDED.body,
+           metadata = EXCLUDED.metadata,
+           source_event_type = EXCLUDED.source_event_type,
+           source_resource_id = EXCLUDED.source_resource_id,
+           read_at = EXCLUDED.read_at,
+           expires_at = EXCLUDED.expires_at`,
+      [
+        notification.id,
+        CORE_SEED_IDS.granadaProperty,
+        notification.recipientUserId,
+        notification.notificationType,
+        notification.status,
+        notification.priority,
+        notification.title,
+        notification.body,
+        JSON.stringify(notification.metadata),
+        notification.sourceEventType,
+        notification.sourceResourceId,
+      ],
+    );
+  }
+
+  for (const delivery of DEV_NOTIFICATION_DELIVERY_SEEDS) {
+    await client.query(
+      `INSERT INTO notification_deliveries (
+         id, notification_id, channel, provider_name, delivery_status, recipient_address,
+         subject, content_snapshot, attempt_count, max_attempts, last_error_code,
+         last_error_message, provider_message_id, skip_reason, next_retry_at, delivered_at
+       )
+       VALUES (
+         $1, $2, 'email', 'brevo', $3, $4, $5, $6, $7, 5, $8, $9, $10, $11,
+         CASE WHEN $3 = 'failed' THEN now() + interval '15 minutes' ELSE NULL END,
+         CASE WHEN $3 = 'delivered' THEN now() - interval '1 hour' ELSE NULL END
+       )
+       ON CONFLICT (id) DO UPDATE
+       SET delivery_status = EXCLUDED.delivery_status,
+           recipient_address = EXCLUDED.recipient_address,
+           subject = EXCLUDED.subject,
+           content_snapshot = EXCLUDED.content_snapshot,
+           attempt_count = EXCLUDED.attempt_count,
+           last_error_code = EXCLUDED.last_error_code,
+           last_error_message = EXCLUDED.last_error_message,
+           provider_message_id = EXCLUDED.provider_message_id,
+           skip_reason = EXCLUDED.skip_reason,
+           next_retry_at = EXCLUDED.next_retry_at,
+           delivered_at = EXCLUDED.delivered_at,
+           updated_at = now()`,
+      [
+        delivery.id,
+        delivery.notificationId,
+        delivery.status,
+        delivery.recipientAddress,
+        delivery.subject ?? null,
+        delivery.contentSnapshot ?? null,
+        delivery.attemptCount,
+        delivery.lastErrorCode ?? null,
+        delivery.lastErrorMessage ?? null,
+        delivery.providerMessageId ?? null,
+        delivery.skipReason ?? null,
+      ],
+    );
+  }
 }
 
 async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promise<void> {
@@ -1556,8 +1680,50 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
        WHERE parking_zones.property_id = $1
          AND parking_slots.id = ANY($2::uuid[])
          AND parking_slots.slot_status = 'occupied'
-         AND parking_slots.vehicle_id IS NOT NULL`,
+       AND parking_slots.vehicle_id IS NOT NULL`,
       [propertyId, DEV_PARKING_SLOT_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-NOTIFICATION-01 preference count',
+      'SELECT count(*) FROM notification_preferences WHERE id = ANY($1::uuid[])',
+      [DEV_NOTIFICATION_PREFERENCE_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-NOTIFICATION-02 notification count',
+      'SELECT count(*) FROM notifications WHERE property_id = $1 AND id = ANY($2::uuid[])',
+      [propertyId, DEV_NOTIFICATION_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-NOTIFICATION-03 delivery count',
+      `SELECT count(*)
+       FROM notification_deliveries
+       WHERE id = ANY($1::uuid[])
+         AND channel = 'email'
+         AND provider_name = 'brevo'`,
+      [DEV_NOTIFICATION_DELIVERY_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-NOTIFICATION-04 delivery status coverage',
+      `SELECT count(DISTINCT delivery_status)
+       FROM notification_deliveries
+       WHERE id = ANY($1::uuid[])`,
+      [DEV_NOTIFICATION_DELIVERY_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-NOTIFICATION-05 property notification settings',
+      `SELECT count(*)
+       FROM property_settings
+       WHERE property_id = $1
+         AND notification_email_enabled = true
+         AND notification_whatsapp_enabled = false
+         AND notification_push_enabled = false
+         AND notification_retention_days = 90`,
+      [propertyId],
     ),
   ]);
 
@@ -1592,6 +1758,11 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
     ['DEV-PARKING-02 parking zone count', DEV_PARKING_ZONE_SEEDS.length],
     ['DEV-PARKING-03 parking slot count', DEV_PARKING_SLOT_SEEDS.length],
     ['DEV-PARKING-04 assigned parking slot count', 4],
+    ['DEV-NOTIFICATION-01 preference count', DEV_NOTIFICATION_PREFERENCE_SEEDS.length],
+    ['DEV-NOTIFICATION-02 notification count', DEV_NOTIFICATION_SEEDS.length],
+    ['DEV-NOTIFICATION-03 delivery count', DEV_NOTIFICATION_DELIVERY_SEEDS.length],
+    ['DEV-NOTIFICATION-04 delivery status coverage', 5],
+    ['DEV-NOTIFICATION-05 property notification settings', 1],
   ]);
 
   for (const check of checks) {

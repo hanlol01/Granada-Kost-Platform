@@ -65,3 +65,15 @@
 - Development parking seed: 3 zones and 6 slots
 - Vehicle and parking workflow validation script
 - Build, lint, dev seed, and workflow validation passed
+
+## 2026-06-19
+
+### Notification
+- Notification migration
+- Repository, service, provider abstraction, helper, template, and audit foundation
+- Notification API Phase 1
+- Development notification preference seed: 5 users
+- Development in-app notification seed: 8 samples
+- Development delivery seed: 5 Brevo email dummy records
+- Notification workflow validation script
+- Build, lint, dev seed, and workflow validation passed

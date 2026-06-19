@@ -36,4 +36,11 @@ export default () => ({
     loginRateLimitMaxAttempts: Number(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS ?? 5),
     loginRateLimitWindowSeconds: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_SECONDS ?? 300),
   },
+  notification: {
+    brevoApiKey: process.env.BREVO_API_KEY,
+    brevoDailyLimit: Number(process.env.BREVO_DAILY_LIMIT ?? 300),
+    fonnteApiKey: process.env.FONNTE_API_KEY,
+    fonnteEnabled: process.env.FONNTE_ENABLED === 'true',
+    pushEnabled: process.env.PUSH_NOTIFICATION_ENABLED === 'true',
+  },
 });

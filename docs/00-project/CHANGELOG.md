@@ -77,3 +77,15 @@
 - Development delivery seed: 5 Brevo email dummy records
 - Notification workflow validation script
 - Build, lint, dev seed, and workflow validation passed
+
+## 2026-06-26
+
+### Smart Lock
+- Smart Lock migration: `009_smart_lock.sql`
+- Repository, service, helper, gateway abstraction, and audit foundation
+- Tuya gateway skeleton without real provider call
+- Smart Lock API Phase 1 through M10E
+- RBAC permission mapping: `smart_lock.read`, `smart_lock.manage`, `smart_lock.command`
+- Property scope and resident active access grant self-scope
+- Command endpoint uses simulated gateway response and rate limit helper
+- Build and lint passed

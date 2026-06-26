@@ -78,6 +78,15 @@
 - Workflow validation script for Notification.
 - Status: selesai sampai 9F.
 
+## Milestone 10 - Smart Lock Phase 1
+
+- Smart Lock planning and architecture.
+- Smart Lock database migration.
+- Repository, service, helper, gateway abstraction, and audit foundation.
+- Smart Lock API layer with RBAC, property scope, resident self-scope, and simulated Tuya gateway response.
+- Status: selesai sampai 10E.
+
 ## Next Milestone
 
-- File upload implementation, Smart Lock, CCTV, dan worker/provider integration belum dimulai.
+- M10F - Smart Lock Runtime Integration.
+- File upload implementation, CCTV, dan worker/provider integration belum dimulai.

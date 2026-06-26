@@ -17,5 +17,6 @@ import { RoomService } from './room.service';
     PropertyOwnerRoomController,
   ],
   providers: [RoomRepository, RoomService],
+  exports: [RoomRepository, RoomService],
 })
 export class RoomModule {}

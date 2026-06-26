@@ -22,6 +22,7 @@ import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { VehicleModule } from './modules/vehicle/vehicle.module';
 import { ParkingModule } from './modules/parking/parking.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     VehicleModule,
     ParkingModule,
     NotificationModule,
+    SmartLockModule,
     HealthModule,
   ],
 })

@@ -134,6 +134,22 @@ export type DevNotificationDeliverySeedRecord = {
   providerMessageId?: string;
   skipReason?: 'quota_exhausted' | 'preference_disabled' | 'invalid_recipient' | 'channel_disabled' | 'deferred_to_digest';
 };
+export type DevSmartLockGatewaySeedRecord = {
+  id: string;
+  credentialId: string;
+  gatewayCode: string;
+  displayName: string;
+  providerType: 'tuya';
+  gatewayStatus: 'active' | 'maintenance' | 'disabled';
+  priority: number;
+  weight: number;
+  capacityLimit: number;
+  capacityUsed: number;
+  region: string;
+  credentialRef: string;
+  credentialVersion: string;
+  capabilities: Record<string, boolean>;
+};
 
 export const CORE_SEED_IDS = {
   ownerUser: '10000000-0000-4000-8000-000000000001',
@@ -295,6 +311,14 @@ export const CORE_SEED_IDS = {
     technician: '89200000-0000-4000-8000-000000000004',
     propertyOwner: '89200000-0000-4000-8000-000000000005',
   },
+  devSmartLockGateways: {
+    gatewayA: '90000000-0000-4000-8000-000000000001',
+    gatewayB: '90000000-0000-4000-8000-000000000002',
+  },
+  devSmartLockGatewayCredentials: {
+    gatewayA: '90100000-0000-4000-8000-000000000001',
+    gatewayB: '90100000-0000-4000-8000-000000000002',
+  },
 } as const;
 
 export const ROLES = [
@@ -331,6 +355,11 @@ export const PERMISSIONS = [
   ['smart_lock.manage', 'Manage Smart Lock', 'Manage smart lock devices, credentials, and restrictions.'],
   ['smart_lock.view', 'View Smart Lock', 'View smart lock metadata and security reports.'],
   ['smart_lock.command', 'Command Smart Lock', 'Execute lock or unlock commands.'],
+  ['smart_lock.gateway.read', 'Read Smart Lock Gateway', 'View Smart Lock gateway registry and health.'],
+  ['smart_lock.gateway.manage', 'Manage Smart Lock Gateway', 'Manage Smart Lock gateway status, capacity, and onboarding metadata.'],
+  ['smart_lock.gateway.credentials.rotate', 'Rotate Smart Lock Gateway Credentials', 'Rotate Smart Lock gateway credential references.'],
+  ['smart_lock.device.onboard', 'Onboard Smart Lock Device', 'Bind Smart Lock devices to gateways during onboarding.'],
+  ['smart_lock.device.migrate', 'Migrate Smart Lock Device', 'Move Smart Lock device mapping through controlled migration.'],
   ['cctv.view', 'View CCTV', 'View CCTV metadata and preview sessions.'],
   ['notification.manage', 'Manage Notification', 'Manage announcements and notification content.'],
   ['report.view', 'View Report', 'View operational reports.'],
@@ -362,6 +391,7 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
     'smart_lock.read',
     'smart_lock.manage',
     'smart_lock.view',
+    'smart_lock.gateway.read',
     'cctv.view',
     'notification.manage',
     'report.view',
@@ -1325,6 +1355,61 @@ export const DEV_NOTIFICATION_DELIVERY_SEEDS: DevNotificationDeliverySeedRecord[
     subject: 'Kendaraan Granada Kost disetujui',
     attemptCount: 0,
     skipReason: 'preference_disabled',
+  },
+];
+
+export const DEV_SMART_LOCK_GATEWAY_SEEDS: DevSmartLockGatewaySeedRecord[] = [
+  {
+    id: CORE_SEED_IDS.devSmartLockGateways.gatewayA,
+    credentialId: CORE_SEED_IDS.devSmartLockGatewayCredentials.gatewayA,
+    gatewayCode: 'GW-GRD-A',
+    displayName: 'Development Tuya Gateway A',
+    providerType: 'tuya',
+    gatewayStatus: 'active',
+    priority: 10,
+    weight: 10,
+    capacityLimit: 120,
+    capacityUsed: 0,
+    region: 'ap-southeast-1',
+    credentialRef: 'secret://dev/smart-lock/tuya/gateway-a',
+    credentialVersion: 'dev-v1',
+    capabilities: {
+      lock: true,
+      unlock: true,
+      remote_unlock: true,
+      emergency_unlock: true,
+      sync_status: true,
+      credential_create: true,
+      credential_disable: true,
+      access_log: true,
+      normal_open_mode: true,
+    },
+  },
+  {
+    id: CORE_SEED_IDS.devSmartLockGateways.gatewayB,
+    credentialId: CORE_SEED_IDS.devSmartLockGatewayCredentials.gatewayB,
+    gatewayCode: 'GW-GRD-B',
+    displayName: 'Development Tuya Gateway B',
+    providerType: 'tuya',
+    gatewayStatus: 'maintenance',
+    priority: 20,
+    weight: 5,
+    capacityLimit: 120,
+    capacityUsed: 0,
+    region: 'ap-southeast-1',
+    credentialRef: 'secret://dev/smart-lock/tuya/gateway-b',
+    credentialVersion: 'dev-v1',
+    capabilities: {
+      lock: true,
+      unlock: true,
+      remote_unlock: true,
+      emergency_unlock: true,
+      sync_status: true,
+      credential_create: true,
+      credential_disable: true,
+      access_log: true,
+      normal_open_mode: true,
+    },
   },
 ];
 

@@ -15,6 +15,7 @@ import {
   DEV_PARKING_SLOT_SEEDS,
   DEV_PARKING_ZONE_SEEDS,
   DEV_RESIDENT_SEEDS,
+  DEV_SMART_LOCK_GATEWAY_SEEDS,
   DEV_TECHNICIAN_SEEDS,
   DEV_USER_SEEDS,
   DEV_VEHICLE_SEEDS,
@@ -474,6 +475,7 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
   await seedDevelopmentComplaintAndMaintenance(client);
   await seedDevelopmentVehicleAndParking(client);
   await seedDevelopmentNotification(client);
+  await seedDevelopmentSmartLockRuntime(client);
 }
 
 async function seedDevelopmentNotification(client: PoolClient): Promise<void> {
@@ -583,6 +585,108 @@ async function seedDevelopmentNotification(client: PoolClient): Promise<void> {
         delivery.lastErrorMessage ?? null,
         delivery.providerMessageId ?? null,
         delivery.skipReason ?? null,
+      ],
+    );
+  }
+}
+
+async function seedDevelopmentSmartLockRuntime(client: PoolClient): Promise<void> {
+  for (const gateway of DEV_SMART_LOCK_GATEWAY_SEEDS) {
+    await client.query(
+      `INSERT INTO smart_lock_gateways (
+         id, property_id, provider_type, gateway_code, display_name, gateway_status,
+         priority, weight, capacity_limit, capacity_used, region, credential_ref,
+         capabilities, disabled_at
+       )
+       VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12,
+         $13::jsonb,
+         CASE WHEN $6 = 'disabled' THEN now() ELSE NULL END
+       )
+       ON CONFLICT (property_id, gateway_code) DO UPDATE
+       SET provider_type = EXCLUDED.provider_type,
+           display_name = EXCLUDED.display_name,
+           gateway_status = EXCLUDED.gateway_status,
+           priority = EXCLUDED.priority,
+           weight = EXCLUDED.weight,
+           capacity_limit = EXCLUDED.capacity_limit,
+           capacity_used = EXCLUDED.capacity_used,
+           region = EXCLUDED.region,
+           credential_ref = EXCLUDED.credential_ref,
+           capabilities = EXCLUDED.capabilities,
+           disabled_at = EXCLUDED.disabled_at,
+           updated_at = now()`,
+      [
+        gateway.id,
+        CORE_SEED_IDS.granadaProperty,
+        gateway.providerType,
+        gateway.gatewayCode,
+        gateway.displayName,
+        gateway.gatewayStatus,
+        gateway.priority,
+        gateway.weight,
+        gateway.capacityLimit,
+        gateway.capacityUsed,
+        gateway.region,
+        gateway.credentialRef,
+        JSON.stringify(gateway.capabilities),
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO smart_lock_gateway_credentials (
+         id, gateway_id, credential_ref, credential_status, key_id, version, metadata
+       )
+       VALUES ($1, $2, $3, 'active', $4, $5, $6::jsonb)
+       ON CONFLICT (gateway_id, credential_ref, version) DO UPDATE
+       SET credential_status = 'active',
+           key_id = EXCLUDED.key_id,
+           metadata = EXCLUDED.metadata,
+           rotated_at = NULL,
+           revoked_at = NULL,
+           updated_at = now()`,
+      [
+        gateway.credentialId,
+        gateway.id,
+        gateway.credentialRef,
+        gateway.gatewayCode.toLowerCase(),
+        gateway.credentialVersion,
+        JSON.stringify({
+          seed: 'development',
+          provider: gateway.providerType,
+          real_credentials: false,
+          note: 'Dummy credential reference only. Secret material is intentionally absent.',
+        }),
+      ],
+    );
+
+    await client.query(
+      `INSERT INTO smart_lock_gateway_health (
+         gateway_id, health_status, last_checked_at, latency_ms, error_code, error_message,
+         consecutive_failures, metadata
+       )
+       VALUES (
+         $1, 'unknown', now(), NULL, NULL,
+         'Development gateway seed has no real provider health check.',
+         0, $2::jsonb
+       )
+       ON CONFLICT (gateway_id) DO UPDATE
+       SET health_status = EXCLUDED.health_status,
+           last_checked_at = EXCLUDED.last_checked_at,
+           latency_ms = EXCLUDED.latency_ms,
+           error_code = EXCLUDED.error_code,
+           error_message = EXCLUDED.error_message,
+           consecutive_failures = EXCLUDED.consecutive_failures,
+           metadata = EXCLUDED.metadata,
+           updated_at = now()`,
+      [
+        gateway.id,
+        JSON.stringify({
+          seed: 'development',
+          provider: gateway.providerType,
+          real_credentials: false,
+        }),
       ],
     );
   }
@@ -1725,6 +1829,54 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
          AND notification_retention_days = 90`,
       [propertyId],
     ),
+    validationCheck(
+      client,
+      'DEV-SMARTLOCK-01 gateway count',
+      'SELECT count(*) FROM smart_lock_gateways WHERE property_id = $1 AND id = ANY($2::uuid[])',
+      [propertyId, DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-SMARTLOCK-02 active gateway count',
+      "SELECT count(*) FROM smart_lock_gateways WHERE property_id = $1 AND id = ANY($2::uuid[]) AND gateway_status = 'active'",
+      [propertyId, DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-SMARTLOCK-03 credential reference count',
+      `SELECT count(*)
+       FROM smart_lock_gateway_credentials
+       JOIN smart_lock_gateways ON smart_lock_gateways.id = smart_lock_gateway_credentials.gateway_id
+       WHERE smart_lock_gateways.property_id = $1
+         AND smart_lock_gateway_credentials.id = ANY($2::uuid[])
+         AND smart_lock_gateway_credentials.credential_ref LIKE 'secret://dev/smart-lock/tuya/%'
+         AND smart_lock_gateway_credentials.credential_status = 'active'`,
+      [propertyId, DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ credentialId }) => credentialId)],
+    ),
+    validationCheck(
+      client,
+      'DEV-SMARTLOCK-04 health snapshot count',
+      `SELECT count(*)
+       FROM smart_lock_gateway_health
+       WHERE gateway_id = ANY($1::uuid[])
+         AND health_status = 'unknown'`,
+      [DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ id }) => id)],
+    ),
+    validationCheck(
+      client,
+      'DEV-SMARTLOCK-05 plaintext credential violation count',
+      `SELECT count(*)
+       FROM smart_lock_gateway_credentials
+       WHERE id = ANY($1::uuid[])
+         AND (
+           credential_ref NOT LIKE 'secret://dev/smart-lock/tuya/%'
+           OR metadata::text ILIKE '%access_secret%'
+           OR metadata::text ILIKE '%client_secret%'
+           OR metadata::text ILIKE '%password%'
+           OR metadata::text ILIKE '%token%'
+         )`,
+      [DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ credentialId }) => credentialId)],
+    ),
   ]);
 
   const expected = new Map<string, number>([
@@ -1763,6 +1915,11 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
     ['DEV-NOTIFICATION-03 delivery count', DEV_NOTIFICATION_DELIVERY_SEEDS.length],
     ['DEV-NOTIFICATION-04 delivery status coverage', 5],
     ['DEV-NOTIFICATION-05 property notification settings', 1],
+    ['DEV-SMARTLOCK-01 gateway count', DEV_SMART_LOCK_GATEWAY_SEEDS.length],
+    ['DEV-SMARTLOCK-02 active gateway count', 1],
+    ['DEV-SMARTLOCK-03 credential reference count', DEV_SMART_LOCK_GATEWAY_SEEDS.length],
+    ['DEV-SMARTLOCK-04 health snapshot count', DEV_SMART_LOCK_GATEWAY_SEEDS.length],
+    ['DEV-SMARTLOCK-05 plaintext credential violation count', 0],
   ]);
 
   for (const check of checks) {

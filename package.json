@@ -20,6 +20,7 @@
     "db:seed:api": "npm --workspace @granada-kost/api run db:seed",
     "db:seed:dev": "npm --workspace @granada-kost/api run db:seed:dev",
     "db:seed:prod": "npm --workspace @granada-kost/api run db:seed:prod",
+    "smartlock:validate-runtime": "npm --workspace @granada-kost/api run smartlock:validate-runtime",
     "lint:admin": "npm --workspace @granada-kost/admin run lint",
     "lint:penghuni": "npm --workspace @granada-kost/penghuni run lint",
     "lint:api": "npm --workspace @granada-kost/api run lint",

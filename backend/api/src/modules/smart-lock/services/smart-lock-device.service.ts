@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { SMART_LOCK_AUDIT_ACTIONS } from '../constants/smart-lock.constants';
-import { TuyaSmartLockGateway } from '../gateways/tuya-smart-lock.gateway';
 import { SmartLockStatusTransitionHelper } from '../helpers/smart-lock-status-transition.helper';
 import { SmartLockDeviceRepository } from '../repositories/smart-lock-device.repository';
+import { SmartLockRuntimeService } from '../runtime/services/smart-lock-runtime.service';
 import {
   RegisterSmartLockDeviceInput,
   SmartLockAccessAction,
@@ -19,7 +19,7 @@ import { SmartLockAuditService } from './smart-lock-audit.service';
 export class SmartLockDeviceService {
   constructor(
     private readonly devices: SmartLockDeviceRepository,
-    private readonly gateway: TuyaSmartLockGateway,
+    private readonly runtime: SmartLockRuntimeService,
     private readonly audit: SmartLockAuditService,
   ) {}
 
@@ -78,7 +78,7 @@ export class SmartLockDeviceService {
 
   async syncStatus(deviceId: string, context: SmartLockAuditContext = {}) {
     const device = await this.get(deviceId);
-    const result = await this.gateway.syncDeviceStatus(device.tuyaDeviceId);
+    const result = await this.runtime.syncDeviceStatus(device, context.correlationId);
     await this.audit.writeDomainAudit({
       action: SMART_LOCK_AUDIT_ACTIONS.deviceStatusSync,
       resourceType: 'smart_lock_device',
@@ -102,7 +102,7 @@ export class SmartLockDeviceService {
     },
   ) {
     const device = await this.get(deviceId);
-    const result = await this.gateway.executeCommand(device.tuyaDeviceId, action);
+    const result = await this.runtime.executeCommand(device, action, options.context?.correlationId);
     const auditAction = this.commandAuditAction(action);
     await this.audit.writeDomainAudit({
       action: auditAction,

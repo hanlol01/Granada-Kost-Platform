@@ -18,6 +18,20 @@ import { SmartLockAlertRepository } from './repositories/smart-lock-alert.reposi
 import { SmartLockCredentialRepository } from './repositories/smart-lock-credential.repository';
 import { SmartLockDeviceRepository } from './repositories/smart-lock-device.repository';
 import { SmartLockRestrictionRepository } from './repositories/smart-lock-restriction.repository';
+import { TuyaSmartLockProvider } from './runtime/providers/tuya-smart-lock.provider';
+import { SmartLockDeviceGatewayRepository } from './runtime/repositories/smart-lock-device-gateway.repository';
+import { SmartLockGatewayCredentialRepository } from './runtime/repositories/smart-lock-gateway-credential.repository';
+import { SmartLockGatewayHealthRepository } from './runtime/repositories/smart-lock-gateway-health.repository';
+import { SmartLockGatewayRepository } from './runtime/repositories/smart-lock-gateway.repository';
+import { SmartLockFailoverService } from './runtime/services/smart-lock-failover.service';
+import { SmartLockGatewayHealthService } from './runtime/services/smart-lock-gateway-health.service';
+import { SmartLockGatewayRegistryService } from './runtime/services/smart-lock-gateway-registry.service';
+import { SmartLockGatewayResolverService } from './runtime/services/smart-lock-gateway-resolver.service';
+import { SmartLockProviderRegistryService } from './runtime/services/smart-lock-provider-registry.service';
+import { SmartLockRetryPolicyService } from './runtime/services/smart-lock-retry-policy.service';
+import { SmartLockRuntimeService } from './runtime/services/smart-lock-runtime.service';
+import { SmartLockSecretResolutionService } from './runtime/services/smart-lock-secret-resolution.service';
+import { SmartLockTokenCacheService } from './runtime/services/smart-lock-token-cache.service';
 import { SmartLockAccessGrantService } from './services/smart-lock-access-grant.service';
 import { SmartLockAlertService } from './services/smart-lock-alert.service';
 import { SmartLockAuditService } from './services/smart-lock-audit.service';
@@ -32,6 +46,10 @@ const repositories = [
   SmartLockAccessLogRepository,
   SmartLockRestrictionRepository,
   SmartLockAlertRepository,
+  SmartLockGatewayRepository,
+  SmartLockGatewayCredentialRepository,
+  SmartLockDeviceGatewayRepository,
+  SmartLockGatewayHealthRepository,
 ];
 
 const services = [
@@ -41,6 +59,15 @@ const services = [
   SmartLockRestrictionService,
   SmartLockAlertService,
   SmartLockAuditService,
+  SmartLockGatewayRegistryService,
+  SmartLockGatewayResolverService,
+  SmartLockProviderRegistryService,
+  SmartLockSecretResolutionService,
+  SmartLockTokenCacheService,
+  SmartLockRetryPolicyService,
+  SmartLockFailoverService,
+  SmartLockGatewayHealthService,
+  SmartLockRuntimeService,
 ];
 
 @Module({
@@ -52,7 +79,7 @@ const services = [
     SmartLockLogAlertController,
     MySmartLockController,
   ],
-  providers: [...repositories, ...services, SmartLockRateLimitHelper, TuyaSmartLockGateway],
-  exports: [...repositories, ...services, SmartLockRateLimitHelper, TuyaSmartLockGateway],
+  providers: [...repositories, ...services, SmartLockRateLimitHelper, TuyaSmartLockGateway, TuyaSmartLockProvider],
+  exports: [...repositories, ...services, SmartLockRateLimitHelper, TuyaSmartLockGateway, TuyaSmartLockProvider],
 })
 export class SmartLockModule {}

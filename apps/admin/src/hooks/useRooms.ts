@@ -8,12 +8,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { useProperty } from "@/lib/property";
 
-export type RoomStatus =
-  | "vacant"
-  | "reserved"
-  | "occupied"
-  | "maintenance"
-  | "inactive";
+export type RoomStatus = "vacant" | "reserved" | "occupied" | "maintenance" | "inactive";
 
 export type RoomRecord = {
   id: string;

@@ -8,12 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -34,7 +29,15 @@ import {
   UserCog,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid } from "recharts";
+import {
+  BarChart,
+  Bar,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip as RTooltip,
+  CartesianGrid,
+} from "recharts";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/complaints")({ component: ComplaintsPage });
@@ -62,56 +65,54 @@ function tabToStatusFilter(tab: ComplaintTab): StoredComplaintStatus | undefined
   }
 }
 
-const STATUS_META: Record<
-  StoredComplaintStatus,
-  { label: string; cls: string; icon: LucideIcon }
-> = {
-  submitted: {
-    label: "Menunggu",
-    cls: "bg-warning/20 text-warning-foreground border-warning/30",
-    icon: Clock,
-  },
-  acknowledged: {
-    label: "Dilihat",
-    cls: "bg-primary-soft text-primary border-primary/20",
-    icon: Clock,
-  },
-  in_progress: {
-    label: "Diproses",
-    cls: "bg-primary-soft text-primary border-primary/20",
-    icon: Loader2,
-  },
-  on_hold: {
-    label: "Ditahan",
-    cls: "bg-muted text-muted-foreground border-border",
-    icon: Clock,
-  },
-  escalated: {
-    label: "Eskalasi",
-    cls: "bg-destructive/15 text-destructive border-destructive/30",
-    icon: MessageSquareWarning,
-  },
-  resolved: {
-    label: "Selesai",
-    cls: "bg-success/15 text-success border-success/30",
-    icon: CheckCircle2,
-  },
-  reopened: {
-    label: "Dibuka Ulang",
-    cls: "bg-warning/20 text-warning-foreground border-warning/30",
-    icon: MessageSquareWarning,
-  },
-  closed: {
-    label: "Ditutup",
-    cls: "bg-muted text-muted-foreground border-border",
-    icon: CheckCircle2,
-  },
-  cancelled: {
-    label: "Dibatalkan",
-    cls: "bg-muted text-muted-foreground border-border line-through",
-    icon: MessageSquareWarning,
-  },
-};
+const STATUS_META: Record<StoredComplaintStatus, { label: string; cls: string; icon: LucideIcon }> =
+  {
+    submitted: {
+      label: "Menunggu",
+      cls: "bg-warning/20 text-warning-foreground border-warning/30",
+      icon: Clock,
+    },
+    acknowledged: {
+      label: "Dilihat",
+      cls: "bg-primary-soft text-primary border-primary/20",
+      icon: Clock,
+    },
+    in_progress: {
+      label: "Diproses",
+      cls: "bg-primary-soft text-primary border-primary/20",
+      icon: Loader2,
+    },
+    on_hold: {
+      label: "Ditahan",
+      cls: "bg-muted text-muted-foreground border-border",
+      icon: Clock,
+    },
+    escalated: {
+      label: "Eskalasi",
+      cls: "bg-destructive/15 text-destructive border-destructive/30",
+      icon: MessageSquareWarning,
+    },
+    resolved: {
+      label: "Selesai",
+      cls: "bg-success/15 text-success border-success/30",
+      icon: CheckCircle2,
+    },
+    reopened: {
+      label: "Dibuka Ulang",
+      cls: "bg-warning/20 text-warning-foreground border-warning/30",
+      icon: MessageSquareWarning,
+    },
+    closed: {
+      label: "Ditutup",
+      cls: "bg-muted text-muted-foreground border-border",
+      icon: CheckCircle2,
+    },
+    cancelled: {
+      label: "Dibatalkan",
+      cls: "bg-muted text-muted-foreground border-border line-through",
+      icon: MessageSquareWarning,
+    },
+  };
 
 const PRIO_META: Record<ComplaintPriority, string> = {
   low: "bg-muted text-muted-foreground",
@@ -385,17 +386,14 @@ function ComplaintsPage() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <Info label="Penghuni" value={selected.snapshotResidentName} />
-                  <Info
-                    label="Kamar"
-                    value={selected.snapshotRoomNumber ?? "–"}
-                  />
-                  <Info
-                    label="Kategori"
-                    value={categoryById.get(selected.categoryId) ?? "–"}
-                  />
+                  <Info label="Kamar" value={selected.snapshotRoomNumber ?? "–"} />
+                  <Info label="Kategori" value={categoryById.get(selected.categoryId) ?? "–"} />
                   <Info label="Tanggal" value={formatDate(selected.submittedAt.slice(0, 10))} />
                   <Info label="Status" value={STATUS_META[selected.complaintStatus].label} />
-                  <Info label="SLA" value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"} />
+                  <Info
+                    label="SLA"
+                    value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"}
+                  />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Judul</p>
@@ -431,9 +429,7 @@ function ComplaintsPage() {
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        Transisi status komplain tersedia di M11E.
-                      </TooltipContent>
+                      <TooltipContent>Transisi status komplain tersedia di M11E.</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>

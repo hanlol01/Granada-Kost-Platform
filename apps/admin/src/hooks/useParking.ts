@@ -38,8 +38,7 @@ export type ParkingSlotRecord = {
 export function useParkingZones(activeOnly = true): UseQueryResult<ParkingZoneRecord[]> {
   const { currentPropertyId } = useProperty();
   return useQuery<ParkingZoneRecord[]>({
-    queryKey:
-      ["parking", "zones", { propertyId: currentPropertyId }, { activeOnly }] as const,
+    queryKey: ["parking", "zones", { propertyId: currentPropertyId }, { activeOnly }] as const,
     queryFn: () =>
       apiClient.get<ParkingZoneRecord[]>("/parking/zones", {
         query: {
@@ -57,13 +56,7 @@ export function useParkingSlots(
 ): UseQueryResult<ParkingSlotRecord[]> {
   const { currentPropertyId } = useProperty();
   return useQuery<ParkingSlotRecord[]>({
-    queryKey:
-      [
-        "parking",
-        "slots",
-        { propertyId: currentPropertyId },
-        { zoneId, status },
-      ] as const,
+    queryKey: ["parking", "slots", { propertyId: currentPropertyId }, { zoneId, status }] as const,
     queryFn: () =>
       apiClient.get<ParkingSlotRecord[]>("/parking/slots", {
         query: { zone_id: zoneId ?? undefined, status },

@@ -40,9 +40,7 @@ export type UseVehiclesFilters = {
   offset?: number;
 };
 
-export function useVehicles(
-  filters: UseVehiclesFilters = {},
-): UseQueryResult<VehicleRecord[]> {
+export function useVehicles(filters: UseVehiclesFilters = {}): UseQueryResult<VehicleRecord[]> {
   const { currentPropertyId } = useProperty();
   return useQuery<VehicleRecord[]>({
     queryKey: ["vehicles", "list", { propertyId: currentPropertyId }, filters] as const,

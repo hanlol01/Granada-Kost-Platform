@@ -6,12 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useInvoices, type InvoiceRecord, type InvoiceStatus } from "@/hooks/useBilling";
 import { formatIDR, formatDate } from "@/lib/format";
@@ -76,9 +71,7 @@ function PaymentsPage() {
       .filter((p) => p.invoiceStatus === "paid")
       .reduce((s, p) => s + p.totalAmount, 0);
     const unpaid = items
-      .filter((p) =>
-        ["unpaid", "overdue", "partially_paid", "issued"].includes(p.invoiceStatus),
-      )
+      .filter((p) => ["unpaid", "overdue", "partially_paid", "issued"].includes(p.invoiceStatus))
       .reduce((s, p) => s + p.totalAmount, 0);
     const overdue = items.filter((p) => p.invoiceStatus === "overdue").length;
     return { total, paid, unpaid, overdue };
@@ -222,8 +215,7 @@ function PaymentList({ items, isFetching }: { items: InvoiceRecord[]; isFetching
           <div className="flex-1 min-w-0">
             <p className="font-medium truncate">{p.snapshotResidentName}</p>
             <p className="text-xs text-muted-foreground">
-              Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo{" "}
-              {formatDate(p.dueDate)}
+              Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo {formatDate(p.dueDate)}
             </p>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">

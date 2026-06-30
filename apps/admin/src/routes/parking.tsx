@@ -188,13 +188,7 @@ function ParkingPage() {
   );
 }
 
-function CapacityPill({
-  capacity,
-  slots,
-}: {
-  capacity: number;
-  slots: ParkingSlotStatus[];
-}) {
+function CapacityPill({ capacity, slots }: { capacity: number; slots: ParkingSlotStatus[] }) {
   const occupied = slots.filter((s) => s === "occupied" || s === "reserved").length;
   const utilization = capacity > 0 ? Math.round((occupied / capacity) * 100) : 0;
   return (

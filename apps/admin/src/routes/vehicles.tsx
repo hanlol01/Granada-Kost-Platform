@@ -14,17 +14,8 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  useVehicles,
-  type VehicleStatus,
-  type VehicleType,
-} from "@/hooks/useVehicles";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useVehicles, type VehicleStatus, type VehicleType } from "@/hooks/useVehicles";
 import { Search, Plus, Bike, Car, Zap, CircleDot } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -219,18 +210,14 @@ function VehiclesPage() {
                               <p className="font-medium">
                                 {v.brand} {v.color ? `· ${v.color}` : ""}
                               </p>
-                              <p className="text-xs text-muted-foreground">
-                                {v.vehicleCode}
-                              </p>
+                              <p className="text-xs text-muted-foreground">{v.vehicleCode}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-5 py-3">
                           <p className="font-medium">{v.snapshotResidentName}</p>
                           <p className="text-xs text-muted-foreground">
-                            {v.snapshotRoomNumber
-                              ? `Kamar ${v.snapshotRoomNumber}`
-                              : "–"}
+                            {v.snapshotRoomNumber ? `Kamar ${v.snapshotRoomNumber}` : "–"}
                           </p>
                         </td>
                         <td className="px-5 py-3 font-mono text-xs">{v.plateNumber}</td>

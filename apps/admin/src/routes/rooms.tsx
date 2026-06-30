@@ -14,12 +14,7 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRooms, type RoomStatus } from "@/hooks/useRooms";
 import { formatIDR } from "@/lib/format";
 import { Plus, Search, Pencil, Trash2, BedDouble } from "lucide-react";

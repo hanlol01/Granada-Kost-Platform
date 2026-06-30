@@ -9,12 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VehiclesRouteImport } from './routes/vehicles'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as SmartLockRouteImport } from './routes/smart-lock'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RoomsRouteImport } from './routes/rooms'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PaymentsRouteImport } from './routes/payments'
+import { Route as ParkingRouteImport } from './routes/parking'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ComplaintsRouteImport } from './routes/complaints'
@@ -24,6 +26,11 @@ import { Route as BookingRouteImport } from './routes/booking'
 import { Route as AccessHistoryRouteImport } from './routes/access-history'
 import { Route as IndexRouteImport } from './routes/index'
 
+const VehiclesRoute = VehiclesRouteImport.update({
+  id: '/vehicles',
+  path: '/vehicles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TenantsRoute = TenantsRouteImport.update({
   id: '/tenants',
   path: '/tenants',
@@ -52,6 +59,11 @@ const ReportsRoute = ReportsRouteImport.update({
 const PaymentsRoute = PaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ParkingRoute = ParkingRouteImport.update({
+  id: '/parking',
+  path: '/parking',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -104,12 +116,14 @@ export interface FileRoutesByFullPath {
   '/complaints': typeof ComplaintsRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/tenants': typeof TenantsRoute
+  '/vehicles': typeof VehiclesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -120,12 +134,14 @@ export interface FileRoutesByTo {
   '/complaints': typeof ComplaintsRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/tenants': typeof TenantsRoute
+  '/vehicles': typeof VehiclesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -137,12 +153,14 @@ export interface FileRoutesById {
   '/complaints': typeof ComplaintsRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
+  '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
   '/rooms': typeof RoomsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/tenants': typeof TenantsRoute
+  '/vehicles': typeof VehiclesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -155,12 +173,14 @@ export interface FileRouteTypes {
     | '/complaints'
     | '/login'
     | '/notifications'
+    | '/parking'
     | '/payments'
     | '/reports'
     | '/rooms'
     | '/settings'
     | '/smart-lock'
     | '/tenants'
+    | '/vehicles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -171,12 +191,14 @@ export interface FileRouteTypes {
     | '/complaints'
     | '/login'
     | '/notifications'
+    | '/parking'
     | '/payments'
     | '/reports'
     | '/rooms'
     | '/settings'
     | '/smart-lock'
     | '/tenants'
+    | '/vehicles'
   id:
     | '__root__'
     | '/'
@@ -187,12 +209,14 @@ export interface FileRouteTypes {
     | '/complaints'
     | '/login'
     | '/notifications'
+    | '/parking'
     | '/payments'
     | '/reports'
     | '/rooms'
     | '/settings'
     | '/smart-lock'
     | '/tenants'
+    | '/vehicles'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -204,16 +228,25 @@ export interface RootRouteChildren {
   ComplaintsRoute: typeof ComplaintsRoute
   LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
+  ParkingRoute: typeof ParkingRoute
   PaymentsRoute: typeof PaymentsRoute
   ReportsRoute: typeof ReportsRoute
   RoomsRoute: typeof RoomsRoute
   SettingsRoute: typeof SettingsRoute
   SmartLockRoute: typeof SmartLockRoute
   TenantsRoute: typeof TenantsRoute
+  VehiclesRoute: typeof VehiclesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/vehicles': {
+      id: '/vehicles'
+      path: '/vehicles'
+      fullPath: '/vehicles'
+      preLoaderRoute: typeof VehiclesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tenants': {
       id: '/tenants'
       path: '/tenants'
@@ -254,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/payments'
       fullPath: '/payments'
       preLoaderRoute: typeof PaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/parking': {
+      id: '/parking'
+      path: '/parking'
+      fullPath: '/parking'
+      preLoaderRoute: typeof ParkingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -324,12 +364,14 @@ const rootRouteChildren: RootRouteChildren = {
   ComplaintsRoute: ComplaintsRoute,
   LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,
+  ParkingRoute: ParkingRoute,
   PaymentsRoute: PaymentsRoute,
   ReportsRoute: ReportsRoute,
   RoomsRoute: RoomsRoute,
   SettingsRoute: SettingsRoute,
   SmartLockRoute: SmartLockRoute,
   TenantsRoute: TenantsRoute,
+  VehiclesRoute: VehiclesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

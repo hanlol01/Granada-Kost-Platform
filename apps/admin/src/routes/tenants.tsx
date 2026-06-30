@@ -7,19 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Search, Eye, Pencil, Users, Phone, Mail } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useResidents, type ResidentRecord } from "@/hooks/useResidents";
 import { cn } from "@/lib/utils";
 
@@ -30,9 +20,7 @@ function StatusPill({ status }: { status: ResidentRecord["residentStatus"] }) {
     <span
       className={cn(
         "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
-        status === "active"
-          ? "bg-success/15 text-success"
-          : "bg-muted text-muted-foreground",
+        status === "active" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground",
       )}
     >
       {status === "active" ? "Aktif" : "Tidak Aktif"}
@@ -239,15 +227,7 @@ function TenantsPage() {
   );
 }
 
-function Row({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon?: React.ReactNode;
-}) {
+function Row({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-4">
       <span className="text-muted-foreground inline-flex items-center gap-1">

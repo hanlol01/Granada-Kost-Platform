@@ -44,7 +44,12 @@ export function useAcknowledgeComplaint() {
 
 export function useResolveComplaint() {
   const qc = useQueryClient();
-  return useSimpleTransition(qc, "resolve", "Komplain ditandai selesai", "Gagal menyelesaikan komplain");
+  return useSimpleTransition(
+    qc,
+    "resolve",
+    "Komplain ditandai selesai",
+    "Gagal menyelesaikan komplain",
+  );
 }
 
 export function useCloseComplaint() {

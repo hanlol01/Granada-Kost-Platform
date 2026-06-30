@@ -21,12 +21,7 @@
 // but route components keep the upload button disabled with an explicit label
 // until both pieces land together.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { qk } from "@/lib/query-client";
 import { newIdempotencyKey } from "@/lib/idempotency";

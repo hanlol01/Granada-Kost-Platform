@@ -75,17 +75,50 @@ function tabToStatusFilter(tab: ComplaintTab): StoredComplaintStatus | undefined
   }
 }
 
-const STATUS_META: Record<StoredComplaintStatus, { label: string; cls: string; icon: LucideIcon }> = {
-  submitted: { label: "Menunggu", cls: "bg-warning/20 text-warning-foreground border-warning/30", icon: Clock },
-  acknowledged: { label: "Dilihat", cls: "bg-primary-soft text-primary border-primary/20", icon: Clock },
-  in_progress: { label: "Diproses", cls: "bg-primary-soft text-primary border-primary/20", icon: Loader2 },
-  on_hold: { label: "Ditahan", cls: "bg-muted text-muted-foreground border-border", icon: Clock },
-  escalated: { label: "Eskalasi", cls: "bg-destructive/15 text-destructive border-destructive/30", icon: MessageSquareWarning },
-  resolved: { label: "Selesai", cls: "bg-success/15 text-success border-success/30", icon: CheckCircle2 },
-  reopened: { label: "Dibuka Ulang", cls: "bg-warning/20 text-warning-foreground border-warning/30", icon: MessageSquareWarning },
-  closed: { label: "Ditutup", cls: "bg-muted text-muted-foreground border-border", icon: CheckCircle2 },
-  cancelled: { label: "Dibatalkan", cls: "bg-muted text-muted-foreground border-border line-through", icon: MessageSquareWarning },
-};
+const STATUS_META: Record<StoredComplaintStatus, { label: string; cls: string; icon: LucideIcon }> =
+  {
+    submitted: {
+      label: "Menunggu",
+      cls: "bg-warning/20 text-warning-foreground border-warning/30",
+      icon: Clock,
+    },
+    acknowledged: {
+      label: "Dilihat",
+      cls: "bg-primary-soft text-primary border-primary/20",
+      icon: Clock,
+    },
+    in_progress: {
+      label: "Diproses",
+      cls: "bg-primary-soft text-primary border-primary/20",
+      icon: Loader2,
+    },
+    on_hold: { label: "Ditahan", cls: "bg-muted text-muted-foreground border-border", icon: Clock },
+    escalated: {
+      label: "Eskalasi",
+      cls: "bg-destructive/15 text-destructive border-destructive/30",
+      icon: MessageSquareWarning,
+    },
+    resolved: {
+      label: "Selesai",
+      cls: "bg-success/15 text-success border-success/30",
+      icon: CheckCircle2,
+    },
+    reopened: {
+      label: "Dibuka Ulang",
+      cls: "bg-warning/20 text-warning-foreground border-warning/30",
+      icon: MessageSquareWarning,
+    },
+    closed: {
+      label: "Ditutup",
+      cls: "bg-muted text-muted-foreground border-border",
+      icon: CheckCircle2,
+    },
+    cancelled: {
+      label: "Dibatalkan",
+      cls: "bg-muted text-muted-foreground border-border line-through",
+      icon: MessageSquareWarning,
+    },
+  };
 
 const PRIO_META: Record<ComplaintPriority, string> = {
   low: "bg-muted text-muted-foreground",
@@ -98,10 +131,23 @@ const PRIO_META: Record<ComplaintPriority, string> = {
 // helper (complaint-status-transition.helper.ts). Any UI button that is not
 // in this list is hidden so we never invite an INVALID_STATE_TRANSITION.
 const CAN_ACKNOWLEDGE: StoredComplaintStatus[] = ["submitted", "reopened"];
-const CAN_RESOLVE: StoredComplaintStatus[] = ["acknowledged", "in_progress", "on_hold", "escalated", "reopened"];
+const CAN_RESOLVE: StoredComplaintStatus[] = [
+  "acknowledged",
+  "in_progress",
+  "on_hold",
+  "escalated",
+  "reopened",
+];
 const CAN_CLOSE: StoredComplaintStatus[] = ["resolved"];
 const CAN_REOPEN: StoredComplaintStatus[] = ["resolved", "closed"];
-const CAN_CANCEL: StoredComplaintStatus[] = ["submitted", "acknowledged", "in_progress", "on_hold", "escalated", "reopened"];
+const CAN_CANCEL: StoredComplaintStatus[] = [
+  "submitted",
+  "acknowledged",
+  "in_progress",
+  "on_hold",
+  "escalated",
+  "reopened",
+];
 
 function ComplaintsPage() {
   const [q, setQ] = useState("");
@@ -201,10 +247,25 @@ function ComplaintsPage() {
           </>
         ) : (
           [
-            { l: "Total Bulan Ini", v: stats.total, c: "bg-primary-soft text-primary", i: MessageSquareWarning },
+            {
+              l: "Total Bulan Ini",
+              v: stats.total,
+              c: "bg-primary-soft text-primary",
+              i: MessageSquareWarning,
+            },
             { l: "Selesai", v: stats.done, c: "bg-success/15 text-success", i: CheckCircle2 },
-            { l: "Diproses", v: stats.inProgress, c: "bg-warning/20 text-warning-foreground", i: Loader2 },
-            { l: "Kategori", v: categoriesQuery.data?.length ?? 0, c: "bg-chart-4/15 text-chart-4", i: Clock },
+            {
+              l: "Diproses",
+              v: stats.inProgress,
+              c: "bg-warning/20 text-warning-foreground",
+              i: Loader2,
+            },
+            {
+              l: "Kategori",
+              v: categoriesQuery.data?.length ?? 0,
+              c: "bg-chart-4/15 text-chart-4",
+              i: Clock,
+            },
           ].map((s) => (
             <Card key={s.l} className="hover:shadow-md transition-all">
               <CardContent className="p-5 flex items-center justify-between">
@@ -228,14 +289,40 @@ function ComplaintsPage() {
         <CardContent>
           <div className="h-56">
             {byCategory.length === 0 ? (
-              <EmptyState title="Belum ada data" description="Distribusi muncul setelah tiket komplain pertama dibuat." />
+              <EmptyState
+                title="Belum ada data"
+                description="Distribusi muncul setelah tiket komplain pertama dibuat."
+              />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={byCategory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                  <XAxis dataKey="category" stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--color-muted-foreground)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <RTooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="var(--color-border)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="category"
+                    stroke="var(--color-muted-foreground)"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="var(--color-muted-foreground)"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <RTooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
                   <Bar dataKey="count" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -250,12 +337,21 @@ function ComplaintsPage() {
           <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="relative flex-1 md:w-72">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari komplain..." value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+              <Input
+                placeholder="Cari komplain..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="pl-9"
+              />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs value={tab} onValueChange={(v) => setTab(isComplaintTab(v) ? v : "all")} className="mb-4">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(isComplaintTab(v) ? v : "all")}
+            className="mb-4"
+          >
             <TabsList>
               <TabsTrigger value="all">Semua</TabsTrigger>
               <TabsTrigger value="open">Menunggu</TabsTrigger>
@@ -277,10 +373,19 @@ function ComplaintsPage() {
             <EmptyState
               icon={<Inbox className="h-5 w-5" />}
               title={q ? "Tidak ada tiket cocok" : "Belum ada komplain"}
-              description={q ? "Coba ubah kata kunci pencarian atau pindah tab." : "Tiket akan tampil saat penghuni mengajukan komplain."}
+              description={
+                q
+                  ? "Coba ubah kata kunci pencarian atau pindah tab."
+                  : "Tiket akan tampil saat penghuni mengajukan komplain."
+              }
             />
           ) : (
-            <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-3", isFetching && "opacity-90 transition-opacity")}>
+            <div
+              className={cn(
+                "grid grid-cols-1 md:grid-cols-2 gap-3",
+                isFetching && "opacity-90 transition-opacity",
+              )}
+            >
               {filtered.map((c) => {
                 const meta = STATUS_META[c.complaintStatus];
                 const Icon = meta.icon;
@@ -297,12 +402,16 @@ function ComplaintsPage() {
                           <p className="font-semibold text-sm">
                             {c.complaintCode} · {categoryName}
                           </p>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[c.priority]}`}>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[c.priority]}`}
+                          >
                             {c.priority}
                           </span>
                         </div>
                         <p className="text-sm font-medium mt-1 truncate">{c.title}</p>
-                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{c.description}</p>
+                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
+                          {c.description}
+                        </p>
                       </div>
                       <Badge variant="outline" className={`shrink-0 gap-1 ${meta.cls}`}>
                         <Icon className="h-3 w-3" /> {meta.label}
@@ -330,7 +439,9 @@ function ComplaintsPage() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   Tiket {selected.complaintCode}
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[selected.priority]}`}>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[selected.priority]}`}
+                  >
                     {selected.priority}
                   </span>
                 </DialogTitle>
@@ -342,7 +453,10 @@ function ComplaintsPage() {
                   <Info label="Kategori" value={categoryById.get(selected.categoryId) ?? "–"} />
                   <Info label="Tanggal" value={formatDate(selected.submittedAt.slice(0, 10))} />
                   <Info label="Status" value={STATUS_META[selected.complaintStatus].label} />
-                  <Info label="SLA" value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"} />
+                  <Info
+                    label="SLA"
+                    value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"}
+                  />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Judul</p>
@@ -366,7 +480,9 @@ function ComplaintsPage() {
                           variant="outline"
                           size="sm"
                           disabled={pendingTransition}
-                          onClick={() => setConfirmTransition({ complaint: selected, kind: "acknowledge" })}
+                          onClick={() =>
+                            setConfirmTransition({ complaint: selected, kind: "acknowledge" })
+                          }
                         >
                           <Eye className="h-3.5 w-3.5 mr-1" /> Akui
                         </Button>
@@ -375,7 +491,9 @@ function ComplaintsPage() {
                         <Button
                           size="sm"
                           disabled={pendingTransition}
-                          onClick={() => setConfirmTransition({ complaint: selected, kind: "resolve" })}
+                          onClick={() =>
+                            setConfirmTransition({ complaint: selected, kind: "resolve" })
+                          }
                         >
                           <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Selesai
                         </Button>
@@ -385,7 +503,9 @@ function ComplaintsPage() {
                           variant="outline"
                           size="sm"
                           disabled={pendingTransition}
-                          onClick={() => setConfirmTransition({ complaint: selected, kind: "close" })}
+                          onClick={() =>
+                            setConfirmTransition({ complaint: selected, kind: "close" })
+                          }
                         >
                           Tutup
                         </Button>
@@ -395,7 +515,9 @@ function ComplaintsPage() {
                           variant="outline"
                           size="sm"
                           disabled={pendingTransition}
-                          onClick={() => setConfirmTransition({ complaint: selected, kind: "reopen" })}
+                          onClick={() =>
+                            setConfirmTransition({ complaint: selected, kind: "reopen" })
+                          }
                         >
                           <RotateCcw className="h-3.5 w-3.5 mr-1" /> Buka Ulang
                         </Button>
@@ -419,9 +541,7 @@ function ComplaintsPage() {
                               </Button>
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent>
-                            Picker teknisi belum tersedia di Phase 1.
-                          </TooltipContent>
+                          <TooltipContent>Picker teknisi belum tersedia di Phase 1.</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </>
@@ -469,7 +589,9 @@ function ComplaintsPage() {
         onOpenChange={(o) => !o && setCancelTarget(null)}
         title="Batalkan komplain"
         description={
-          cancelTarget ? `Tiket ${cancelTarget.complaintCode} akan dibatalkan. Tindakan ini diaudit.` : null
+          cancelTarget
+            ? `Tiket ${cancelTarget.complaintCode} akan dibatalkan. Tindakan ini diaudit.`
+            : null
         }
         confirmLabel="Batalkan"
         destructive

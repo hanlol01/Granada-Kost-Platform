@@ -18,7 +18,11 @@ function iconForType(type: string) {
   if (type.startsWith("billing") || type.startsWith("payment") || type.startsWith("invoice")) {
     return Receipt;
   }
-  if (type.startsWith("complaint") || type.startsWith("work_order") || type.startsWith("maintenance")) {
+  if (
+    type.startsWith("complaint") ||
+    type.startsWith("work_order") ||
+    type.startsWith("maintenance")
+  ) {
     return Wrench;
   }
   if (type.startsWith("announce")) return Megaphone;

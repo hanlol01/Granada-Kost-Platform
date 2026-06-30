@@ -7,7 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Search, Eye, Pencil, Users, Phone, Mail, UserCheck, UserX, LogIn, Plus } from "lucide-react";
+import {
+  Search,
+  Eye,
+  Pencil,
+  Users,
+  Phone,
+  Mail,
+  UserCheck,
+  UserX,
+  LogIn,
+  Plus,
+} from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
@@ -300,9 +311,7 @@ function TenantsPage() {
       <ConfirmDialog
         open={statusTarget !== null}
         onOpenChange={(o) => !o && setStatusTarget(null)}
-        title={
-          statusTarget?.next === "active" ? "Aktifkan penghuni" : "Nonaktifkan penghuni"
-        }
+        title={statusTarget?.next === "active" ? "Aktifkan penghuni" : "Nonaktifkan penghuni"}
         description={
           statusTarget
             ? `Konfirmasi ubah status ${statusTarget.resident.fullName} menjadi ${

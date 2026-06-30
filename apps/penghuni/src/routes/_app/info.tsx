@@ -1,18 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  ChevronDown,
-  HelpCircle,
-  Megaphone,
-  ShieldCheck,
-} from "lucide-react";
+import { ChevronDown, HelpCircle, Megaphone, ShieldCheck } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { EmptyState, LoadingState } from "@/components/state";
-import {
-  useAnnouncements,
-  useFaqs,
-  useKostRules,
-} from "@/hooks/usePenghuniInfo";
+import { useAnnouncements, useFaqs, useKostRules } from "@/hooks/usePenghuniInfo";
 
 export const Route = createFileRoute("/_app/info")({
   component: InfoPage,
@@ -49,8 +40,8 @@ function InfoPage() {
       </div>
 
       <div className="flex flex-col gap-3 px-5 py-5 animate-[fade-in_0.3s_ease-out]">
-        {tab === "news" && (
-          announcements.isLoading ? (
+        {tab === "news" &&
+          (announcements.isLoading ? (
             <LoadingState label="Memuat pengumuman..." />
           ) : announcements.data?.available && announcements.data.items.length > 0 ? (
             announcements.data.items.map((a) => (
@@ -77,11 +68,10 @@ function InfoPage() {
                 icon={<Megaphone className="h-5 w-5" />}
               />
             </div>
-          )
-        )}
+          ))}
 
-        {tab === "rules" && (
-          rules.isLoading ? (
+        {tab === "rules" &&
+          (rules.isLoading ? (
             <LoadingState label="Memuat peraturan..." />
           ) : rules.data?.available && rules.data.items.length > 0 ? (
             <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
@@ -104,17 +94,15 @@ function InfoPage() {
               <EmptyState
                 title="Belum tersedia"
                 description={
-                  rules.data?.reason ??
-                  "Peraturan kos akan disinkronkan dengan property settings."
+                  rules.data?.reason ?? "Peraturan kos akan disinkronkan dengan property settings."
                 }
                 icon={<ShieldCheck className="h-5 w-5" />}
               />
             </div>
-          )
-        )}
+          ))}
 
-        {tab === "faq" && (
-          faqs.isLoading ? (
+        {tab === "faq" &&
+          (faqs.isLoading ? (
             <LoadingState label="Memuat FAQ..." />
           ) : faqs.data?.available && faqs.data.items.length > 0 ? (
             faqs.data.items.map((f, i) => <FaqItem key={i} index={i} q={f.q} a={f.a} />)
@@ -123,14 +111,12 @@ function InfoPage() {
               <EmptyState
                 title="Belum tersedia"
                 description={
-                  faqs.data?.reason ??
-                  "FAQ akan ditampilkan saat endpoint resident tersedia."
+                  faqs.data?.reason ?? "FAQ akan ditampilkan saat endpoint resident tersedia."
                 }
                 icon={<HelpCircle className="h-5 w-5" />}
               />
             </div>
-          )
-        )}
+          ))}
       </div>
     </>
   );

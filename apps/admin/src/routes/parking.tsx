@@ -69,7 +69,11 @@ function ParkingPage() {
           </CardHeader>
           <CardContent>
             {zonesQuery.error ? (
-              <ErrorState error={zonesQuery.error} onRetry={() => zonesQuery.refetch()} title="Gagal memuat zona" />
+              <ErrorState
+                error={zonesQuery.error}
+                onRetry={() => zonesQuery.refetch()}
+                title="Gagal memuat zona"
+              />
             ) : zonesQuery.isLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -93,13 +97,20 @@ function ParkingPage() {
                       onClick={() => setSelectedZoneId(z.id)}
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
-                        active ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground",
+                        active
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted text-foreground",
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <div className="min-w-0 flex-1 text-left">
                         <p className="font-medium truncate">{z.zoneName}</p>
-                        <p className={cn("text-[11px] truncate", active ? "opacity-90" : "text-muted-foreground")}>
+                        <p
+                          className={cn(
+                            "text-[11px] truncate",
+                            active ? "opacity-90" : "text-muted-foreground",
+                          )}
+                        >
                           {z.zoneCode} · {z.capacity} slot
                         </p>
                       </div>
@@ -114,7 +125,9 @@ function ParkingPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base">{selectedZone ? selectedZone.zoneName : "Detail Zona"}</CardTitle>
+              <CardTitle className="text-base">
+                {selectedZone ? selectedZone.zoneName : "Detail Zona"}
+              </CardTitle>
               {selectedZone ? (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {selectedZone.locationDescription ?? "Tanpa keterangan lokasi"}
@@ -122,14 +135,24 @@ function ParkingPage() {
               ) : null}
             </div>
             {selectedZone ? (
-              <CapacityPill capacity={selectedZone.capacity} slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)} />
+              <CapacityPill
+                capacity={selectedZone.capacity}
+                slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)}
+              />
             ) : null}
           </CardHeader>
           <CardContent>
             {!selectedZone ? (
-              <EmptyState title="Pilih zona" description="Detail slot akan tampil di sini setelah zona dipilih." />
+              <EmptyState
+                title="Pilih zona"
+                description="Detail slot akan tampil di sini setelah zona dipilih."
+              />
             ) : slotsQuery.error ? (
-              <ErrorState error={slotsQuery.error} onRetry={() => slotsQuery.refetch()} title="Gagal memuat slot" />
+              <ErrorState
+                error={slotsQuery.error}
+                onRetry={() => slotsQuery.refetch()}
+                title="Gagal memuat slot"
+              />
             ) : slotsQuery.isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -147,10 +170,15 @@ function ParkingPage() {
                 {(slotsQuery.data ?? []).map((s) => {
                   const meta = SLOT_STATUS_LABEL[s.slotStatus];
                   return (
-                    <div key={s.id} className="rounded-lg border border-border p-3 hover:shadow-sm transition-all">
+                    <div
+                      key={s.id}
+                      className="rounded-lg border border-border p-3 hover:shadow-sm transition-all"
+                    >
                       <div className="flex items-center justify-between">
                         <p className="font-semibold text-sm">{s.slotNumber}</p>
-                        <span className="text-[10px] text-muted-foreground capitalize">{s.slotType}</span>
+                        <span className="text-[10px] text-muted-foreground capitalize">
+                          {s.slotType}
+                        </span>
                       </div>
                       <span
                         className={cn(

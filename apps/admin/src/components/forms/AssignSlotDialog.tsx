@@ -5,10 +5,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useVehicles, type VehicleType } from "@/hooks/useVehicles";
 import { useAssignParkingSlot } from "@/hooks/useParkingMutations";
 import type { ParkingSlotRecord } from "@/hooks/useParking";
@@ -71,9 +83,15 @@ export function AssignSlotDialog({ open, onOpenChange, slot }: AssignSlotDialogP
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Kendaraan</Label>
-            <Select value={vehicleId} onValueChange={setVehicleId} disabled={pending || vehicles.isLoading}>
+            <Select
+              value={vehicleId}
+              onValueChange={setVehicleId}
+              disabled={pending || vehicles.isLoading}
+            >
               <SelectTrigger>
-                <SelectValue placeholder={vehicles.isLoading ? "Memuat..." : "Pilih kendaraan..."} />
+                <SelectValue
+                  placeholder={vehicles.isLoading ? "Memuat..." : "Pilih kendaraan..."}
+                />
               </SelectTrigger>
               <SelectContent>
                 {list.length === 0 ? (
@@ -94,7 +112,12 @@ export function AssignSlotDialog({ open, onOpenChange, slot }: AssignSlotDialogP
             </p>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
               Batal
             </Button>
             <Button type="submit" disabled={!canSubmit || pending}>

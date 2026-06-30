@@ -8,11 +8,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useProperty } from "@/lib/property";
 import { useRooms } from "@/hooks/useRooms";
@@ -91,7 +103,11 @@ export function CheckInDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Kamar (status kosong)</Label>
-            <Select value={roomId} onValueChange={setRoomId} disabled={pending || vacantRooms.isLoading}>
+            <Select
+              value={roomId}
+              onValueChange={setRoomId}
+              disabled={pending || vacantRooms.isLoading}
+            >
               <SelectTrigger>
                 <SelectValue placeholder={vacantRooms.isLoading ? "Memuat..." : "Pilih kamar..."} />
               </SelectTrigger>
@@ -113,14 +129,29 @@ export function CheckInDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Tanggal Mulai</Label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={pending} />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              disabled={pending}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Catatan (opsional)</Label>
-            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={pending} />
+            <Textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={pending}
+            />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
               Batal
             </Button>
             <Button type="submit" disabled={!canSubmit || pending}>

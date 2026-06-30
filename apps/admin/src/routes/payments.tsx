@@ -128,10 +128,30 @@ function PaymentsPage() {
           </>
         ) : (
           <>
-            <Stat icon={CreditCard} label="Total Tagihan" value={formatIDR(stats.total)} accent="bg-primary-soft text-primary" />
-            <Stat icon={CheckCircle2} label="Sudah Lunas" value={formatIDR(stats.paid)} accent="bg-success/15 text-success" />
-            <Stat icon={Clock} label="Belum Dibayar" value={formatIDR(stats.unpaid)} accent="bg-warning/20 text-warning-foreground" />
-            <Stat icon={AlertTriangle} label="Jatuh Tempo" value={`${stats.overdue} tagihan`} accent="bg-destructive/15 text-destructive" />
+            <Stat
+              icon={CreditCard}
+              label="Total Tagihan"
+              value={formatIDR(stats.total)}
+              accent="bg-primary-soft text-primary"
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Sudah Lunas"
+              value={formatIDR(stats.paid)}
+              accent="bg-success/15 text-success"
+            />
+            <Stat
+              icon={Clock}
+              label="Belum Dibayar"
+              value={formatIDR(stats.unpaid)}
+              accent="bg-warning/20 text-warning-foreground"
+            />
+            <Stat
+              icon={AlertTriangle}
+              label="Jatuh Tempo"
+              value={`${stats.overdue} tagihan`}
+              accent="bg-destructive/15 text-destructive"
+            />
           </>
         )}
       </div>
@@ -151,7 +171,11 @@ function PaymentsPage() {
             <TabsContent value={tab} className="mt-4">
               {tab === "payments" ? (
                 payments.error ? (
-                  <ErrorState error={payments.error} onRetry={() => payments.refetch()} title="Gagal memuat pembayaran" />
+                  <ErrorState
+                    error={payments.error}
+                    onRetry={() => payments.refetch()}
+                    title="Gagal memuat pembayaran"
+                  />
                 ) : payments.isLoading ? (
                   <div className="space-y-2">
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -172,7 +196,11 @@ function PaymentsPage() {
                   />
                 )
               ) : invoices.error ? (
-                <ErrorState error={invoices.error} onRetry={() => invoices.refetch()} title="Gagal memuat tagihan" />
+                <ErrorState
+                  error={invoices.error}
+                  onRetry={() => invoices.refetch()}
+                  title="Gagal memuat tagihan"
+                />
               ) : invoices.isLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 5 }).map((_, i) => (
@@ -238,7 +266,11 @@ function PaymentsPage() {
         }
         confirmLabel="Batalkan Invoice"
         destructive
-        reason={{ label: "Alasan pembatalan", placeholder: "Mis. duplikat, salah input", minLength: 3 }}
+        reason={{
+          label: "Alasan pembatalan",
+          placeholder: "Mis. duplikat, salah input",
+          minLength: 3,
+        }}
         pending={cancelMut.isPending}
         onConfirm={async (reason) => {
           if (!cancelTarget || !reason) return;
@@ -300,13 +332,25 @@ function PaymentsPage() {
   );
 }
 
-function Stat({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: string; value: string; accent: string }) {
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  accent: string;
+}) {
   return (
     <Card>
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {label}
+            </p>
             <p className="text-lg lg:text-xl font-semibold mt-2 tracking-tight">{value}</p>
           </div>
           <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${accent}`}>
@@ -358,7 +402,8 @@ function InvoiceList({
             <div className="flex-1 min-w-0">
               <p className="font-medium truncate">{p.snapshotResidentName}</p>
               <p className="text-xs text-muted-foreground">
-                Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo {formatDate(p.dueDate)}
+                Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo{" "}
+                {formatDate(p.dueDate)}
               </p>
             </div>
             <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">

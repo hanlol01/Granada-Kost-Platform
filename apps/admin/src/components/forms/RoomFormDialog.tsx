@@ -8,11 +8,23 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ApiError } from "@granada-kost/api-client";
 import type { RoomRecord } from "@/hooks/useRooms";
 import { useCreateRoom, useUpdateRoom, type CreateRoomInput } from "@/hooks/useRoomMutations";
@@ -22,7 +34,7 @@ const Schema = z.object({
   unitCode: z.string().trim().optional().or(z.literal("")),
   floor: z.string().trim().optional().or(z.literal("")),
   sizeLabel: z.string().trim().optional().or(z.literal("")),
-  genderPolicy: z.enum(["male", "female", "mixed"]).default("mixed"),
+  genderPolicy: z.enum(["male", "female", "mixed"]),
   monthlyPrice: z.coerce.number().int().min(0, "Harga tidak boleh negatif"),
   depositAmount: z.coerce.number().int().min(0, "Deposit tidak boleh negatif"),
 });
@@ -138,7 +150,9 @@ export function RoomFormDialog({ open, onOpenChange, initial }: RoomFormDialogPr
             <Field label="Gender Policy" error={form.formState.errors.genderPolicy?.message}>
               <Select
                 value={form.watch("genderPolicy")}
-                onValueChange={(v) => form.setValue("genderPolicy", v as FormValues["genderPolicy"])}
+                onValueChange={(v) =>
+                  form.setValue("genderPolicy", v as FormValues["genderPolicy"])
+                }
                 disabled={pending}
               >
                 <SelectTrigger>
@@ -154,14 +168,31 @@ export function RoomFormDialog({ open, onOpenChange, initial }: RoomFormDialogPr
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Harga Bulanan (IDR)" error={form.formState.errors.monthlyPrice?.message}>
-              <Input type="number" min={0} step={1000} {...form.register("monthlyPrice")} disabled={pending} />
+              <Input
+                type="number"
+                min={0}
+                step={1000}
+                {...form.register("monthlyPrice")}
+                disabled={pending}
+              />
             </Field>
             <Field label="Deposit (IDR)" error={form.formState.errors.depositAmount?.message}>
-              <Input type="number" min={0} step={1000} {...form.register("depositAmount")} disabled={pending} />
+              <Input
+                type="number"
+                min={0}
+                step={1000}
+                {...form.register("depositAmount")}
+                disabled={pending}
+              />
             </Field>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
               Batal
             </Button>
             <Button type="submit" disabled={pending}>

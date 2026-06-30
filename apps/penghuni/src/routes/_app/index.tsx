@@ -47,11 +47,21 @@ function HomePage() {
             <p className="text-xs opacity-80">Selamat datang,</p>
             <h1 className="text-xl font-semibold">{profile.displayName} 👋</h1>
             <p className="mt-1 text-xs opacity-80">
-              {currentInvoice
-                ? <>Kamar <span className="font-medium opacity-100">{currentInvoice.snapshotRoomNumber}</span> · Aktif</>
-                : profile.roomLabel
-                  ? <>Properti <span className="font-medium opacity-100">{profile.roomLabel}</span></>
-                  : <>Status hunian akan tampil di sini</>}
+              {currentInvoice ? (
+                <>
+                  Kamar{" "}
+                  <span className="font-medium opacity-100">
+                    {currentInvoice.snapshotRoomNumber}
+                  </span>{" "}
+                  · Aktif
+                </>
+              ) : profile.roomLabel ? (
+                <>
+                  Properti <span className="font-medium opacity-100">{profile.roomLabel}</span>
+                </>
+              ) : (
+                <>Status hunian akan tampil di sini</>
+              )}
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur">
@@ -160,7 +170,10 @@ function HomePage() {
         <div className="mt-3 flex flex-col gap-2">
           {recentPayments.length === 0 ? (
             <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
-              <EmptyState title="Belum ada pembayaran" description="Pembayaran yang sudah diverifikasi akan tampil di sini." />
+              <EmptyState
+                title="Belum ada pembayaran"
+                description="Pembayaran yang sudah diverifikasi akan tampil di sini."
+              />
             </div>
           ) : (
             recentPayments.slice(0, 3).map((p) => (
@@ -273,9 +286,7 @@ function InvoiceStatusBadge({ status }: { status: string }) {
   };
   const s = map[status] ?? { label: status, cls: "bg-secondary text-foreground" };
   return (
-    <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + s.cls}>
-      {s.label}
-    </span>
+    <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + s.cls}>{s.label}</span>
   );
 }
 

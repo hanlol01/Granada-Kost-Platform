@@ -1,13 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import {
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Filter,
-  ImagePlus,
-  Receipt,
-} from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Filter, ImagePlus, Receipt } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/state";
 import {
@@ -54,16 +47,17 @@ function BillingPage() {
     <>
       <AppHeader
         title="Tagihan & Pembayaran"
-        subtitle={current ? `Periode ${formatPeriodKey(current.snapshotPeriodKey)}` : "Tidak ada tagihan aktif"}
+        subtitle={
+          current
+            ? `Periode ${formatPeriodKey(current.snapshotPeriodKey)}`
+            : "Tidak ada tagihan aktif"
+        }
       />
       <div className="flex flex-col gap-5 px-5 py-5 animate-[fade-in_0.4s_ease-out]">
         {isLoading ? (
           <LoadingState label="Memuat tagihan..." />
         ) : isError ? (
-          <ErrorState
-            error={invoicesQuery.error}
-            onRetry={() => void invoicesQuery.refetch()}
-          />
+          <ErrorState error={invoicesQuery.error} onRetry={() => void invoicesQuery.refetch()} />
         ) : (
           <>
             {/* Current bill */}
@@ -209,15 +203,7 @@ function PayActionDisabled() {
   );
 }
 
-function BreakdownRow({
-  label,
-  amount,
-  bold,
-}: {
-  label: string;
-  amount: number;
-  bold?: boolean;
-}) {
+function BreakdownRow({ label, amount, bold }: { label: string; amount: number; bold?: boolean }) {
   return (
     <div className="flex items-center justify-between">
       <span className={bold ? "font-semibold opacity-100" : "opacity-90"}>{label}</span>
@@ -286,13 +272,7 @@ function PaymentRow({ payment }: { payment: MyPaymentRecord }) {
   );
 }
 
-function InvoiceStatusBadge({
-  status,
-  compact,
-}: {
-  status: MyInvoiceStatus;
-  compact?: boolean;
-}) {
+function InvoiceStatusBadge({ status, compact }: { status: MyInvoiceStatus; compact?: boolean }) {
   const map: Record<MyInvoiceStatus, { label: string; cls: string }> = {
     overdue: { label: "Telat", cls: "bg-destructive text-destructive-foreground" },
     unpaid: { label: "Belum Lunas", cls: "bg-warning text-warning-foreground" },

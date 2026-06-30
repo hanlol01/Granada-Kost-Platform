@@ -209,11 +209,7 @@ function ProfilePage() {
             hint="Form ubah kata sandi tersedia di milestone berikutnya"
           />
           <Divider />
-          <DisabledRow
-            icon={ShieldCheck}
-            label="Kebijakan Privasi"
-            hint="Belum tersedia"
-          />
+          <DisabledRow icon={ShieldCheck} label="Kebijakan Privasi" hint="Belum tersedia" />
         </div>
 
         <button

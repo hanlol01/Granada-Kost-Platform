@@ -11,12 +11,7 @@
 // Backend remains final authority for self-scope (request body never carries
 // recipient_user_id; the controller resolves identity from the token).
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { qk } from "@/lib/query-client";
 import { newIdempotencyKey } from "@/lib/idempotency";
@@ -67,9 +62,7 @@ export function useUnreadCount(): UseQueryResult<number> {
   return useQuery<number>({
     queryKey: [...qk.penghuni.notifications(), "unread-count"] as const,
     queryFn: async () => {
-      const res = await apiClient.get<{ unread_count: number }>(
-        "/my/notifications/unread-count",
-      );
+      const res = await apiClient.get<{ unread_count: number }>("/my/notifications/unread-count");
       return res.unread_count ?? 0;
     },
     // The badge polls more often than lists; still under TanStack defaults.

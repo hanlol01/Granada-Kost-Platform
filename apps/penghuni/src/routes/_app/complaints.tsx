@@ -60,10 +60,7 @@ function ComplaintsPage() {
             {complaints.isLoading ? (
               <LoadingState label="Memuat tiket..." />
             ) : complaints.isError ? (
-              <ErrorState
-                error={complaints.error}
-                onRetry={() => void complaints.refetch()}
-              />
+              <ErrorState error={complaints.error} onRetry={() => void complaints.refetch()} />
             ) : (complaints.data ?? []).length === 0 ? (
               <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
                 <EmptyState
@@ -119,7 +116,10 @@ function ComplaintRow({ complaint }: { complaint: MyComplaintRecord }) {
 }
 
 function ComplaintStatusBadge({ status }: { status: MyComplaintStatus }) {
-  const map: Record<MyComplaintStatus, { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }> = {
+  const map: Record<
+    MyComplaintStatus,
+    { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }
+  > = {
     submitted: { label: "Menunggu", cls: "bg-warning/20 text-warning-foreground", icon: Clock },
     acknowledged: { label: "Diterima", cls: "bg-primary/15 text-primary", icon: Clock },
     in_progress: { label: "Diproses", cls: "bg-primary/15 text-primary", icon: Loader2 },
@@ -170,7 +170,9 @@ function CreateComplaintGate({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary/60 p-4 text-xs text-muted-foreground">
-          <p className="text-sm font-semibold text-foreground">Pengajuan dari aplikasi belum aktif</p>
+          <p className="text-sm font-semibold text-foreground">
+            Pengajuan dari aplikasi belum aktif
+          </p>
           <p className="mt-1">
             Backend memerlukan daftar kategori komplain yang khusus untuk Penghuni. Endpoint
             tersebut belum tersedia di Phase 1, sehingga pengajuan dari aplikasi tidak dapat

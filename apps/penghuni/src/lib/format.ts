@@ -20,8 +20,18 @@ export function formatPeriodKey(key: string | null | undefined): string {
   const m = parseInt(month, 10);
   if (!year || !m || m < 1 || m > 12) return key;
   const months = [
-    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
-    "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Mei",
+    "Jun",
+    "Jul",
+    "Agu",
+    "Sep",
+    "Okt",
+    "Nov",
+    "Des",
   ];
   return `${months[m - 1]} ${year}`;
 }

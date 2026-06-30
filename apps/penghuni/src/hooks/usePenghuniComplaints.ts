@@ -13,12 +13,7 @@
 // the submit button disabled with a clear label until a resident-scoped
 // category endpoint ships in a future milestone.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { qk } from "@/lib/query-client";
 import { newIdempotencyKey } from "@/lib/idempotency";

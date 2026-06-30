@@ -41,10 +41,12 @@ export function usePenghuniProfile(): PenghuniProfileView {
   // /auth/me returns { id, email, displayName, roles, permissions, propertyIds, ... }.
   // The shared AuthMe type declares optional `name` and `properties` for
   // backwards compatibility, so we read both keys without inventing data.
-  const u = (user ?? null) as (typeof user & {
-    displayName?: string;
-    propertyIds?: string[];
-  }) | null;
+  const u = (user ?? null) as
+    | (typeof user & {
+        displayName?: string;
+        propertyIds?: string[];
+      })
+    | null;
   const displayName = u?.displayName ?? u?.name ?? "Penghuni";
   const propertyName = u?.properties?.[0]?.name ?? null;
   return {

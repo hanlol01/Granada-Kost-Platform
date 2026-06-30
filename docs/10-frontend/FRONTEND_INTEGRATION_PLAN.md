@@ -90,30 +90,34 @@ Observasi penting:
 
 ## 4. Halaman yang Masih Memakai Dummy Data
 
-Semua halaman Admin dan Penghuni saat ini memakai dummy data. Tidak ada satu pun fetch ke backend.
+Status per M11E (2026-06-30): mayoritas halaman Admin sudah memakai data backend (read + mutation). Penghuni app masih dummy sepenuhnya sampai M11F.
 
-Admin (semua import dari `@/lib/mock-data`):
-- Dashboard (`/`) — `rooms`, `tenants`, `payments`, `monthlyIncome`, `recentActivity`.
-- Kamar (`/rooms`) — `rooms`.
-- Penghuni (`/tenants`) — `tenants`.
-- Pembayaran (`/payments`) — `payments`.
-- Komplain (`/complaints`) — complaint list dummy.
-- Smart Lock (`/smart-lock`) — `smartLocks`, `lockActivityHourly`, `lockAlerts`.
-- Access History (`/access-history`) — dummy log.
-- Booking (`/booking`, `/bookings`) — `bookingRooms`, `BOOKING_FEE`.
-- CCTV (`/cctv`) — placeholder list kamera.
-- Notifikasi (`/notifications`) — list dummy.
-- Laporan (`/reports`) — diturunkan dari `payments` + `monthlyIncome`.
-- Pengaturan (`/settings`) — form statis tanpa persistensi.
+Admin - sudah live (read + mutation):
+- Dashboard (`/`) - agregat `/rooms`, `/residents`, `/billing/aging-summary`.
+- Kamar (`/rooms`) - list + create/edit/update status.
+- Penghuni (`/tenants`) - list + create/edit/update status + check-in dialog.
+- Pembayaran (`/payments`) - invoice list + issue/cancel; payment verify/reject di tab Verifikasi.
+- Komplain (`/complaints`) - list + workflow transitions (acknowledge/resolve/close/reopen/cancel). Assign teknisi masih disabled (no picker).
+- Kendaraan (`/vehicles`) - list + approve/reject/suspend/reactivate/deactivate.
+- Parkir (`/parking`) - zones + slots + assign/release.
 
-Penghuni (semua import dari `@/lib/dummy-data`):
-- Home (`/_app/`) — `currentUser`, `currentBill`, `announcements`, `paymentHistory`.
-- Tagihan (`/_app/billing`) — `currentBill`, `paymentHistory`.
-- Komplain (`/_app/complaints`) — `complaints`, `complaintCategories`.
-- Info (`/_app/info`) — `announcements`, `faqs`.
-- Notifikasi (`/_app/notifications`) — `notifications`.
-- Profil (`/_app/profile`) — `currentUser`.
-- Chat (`/_app/chat`) — `chatMessages`.
+Admin - masih placeholder/dummy:
+- Smart Lock (`/smart-lock`) - `smartLocks`, `lockActivityHourly`, `lockAlerts`. Live setelah M10G + M11H.
+- Access History (`/access-history`) - dummy log. Live di M11H.
+- CCTV (`/cctv`) - placeholder list kamera. Live di M11I.
+- Booking (`/booking`, `/bookings`) - `bookingRooms`, `BOOKING_FEE`. Phase 2 (M11J).
+- Notifikasi (`/notifications`) - list dummy. Wired di M11G.
+- Laporan (`/reports`) - diturunkan dari `payments` + `monthlyIncome`. Wired di M11G.
+- Pengaturan (`/settings`) - form statis tanpa persistensi. Wired di M11G/M11J.
+
+Penghuni (semua import dari `@/lib/dummy-data`) - dipindahkan ke backend pada M11F:
+- Home (`/_app/`) - `currentUser`, `currentBill`, `announcements`, `paymentHistory`.
+- Tagihan (`/_app/billing`) - `currentBill`, `paymentHistory`.
+- Komplain (`/_app/complaints`) - `complaints`, `complaintCategories`.
+- Info (`/_app/info`) - `announcements`, `faqs`.
+- Notifikasi (`/_app/notifications`) - `notifications`.
+- Profil (`/_app/profile`) - `currentUser`.
+- Chat (`/_app/chat`) - `chatMessages` (tetap placeholder; Phase 2).
 
 ---
 

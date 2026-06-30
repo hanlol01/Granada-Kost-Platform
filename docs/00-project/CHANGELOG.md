@@ -129,6 +129,19 @@
 - All disabled action buttons labeled "tersedia di M11E"
 - Build, lint, typecheck passed
 
+### Penghuni Core (M11F)
+- Hooks per domain di `apps/penghuni/src/hooks`: `usePenghuniProfile`, `usePenghuniHome`, `usePenghuniBilling`, `usePenghuniComplaints`, `usePenghuniNotifications`, `usePenghuniInfo`.
+- Lib penunjang baru: `lib/format.ts`, `lib/idempotency.ts`, `lib/mutation-feedback.ts` (sejajar pola Admin M11E).
+- Home (`/_app/`) live: greeting + initials dari `/auth/me`, current invoice dari `/my/invoices` (selector overdue → unpaid → issued), recent payments dari `/my/payments`, badge unread dari `/my/notifications/unread-count`. Pengumuman tetap placeholder.
+- Billing (`/_app/billing`) live: list invoice + payment ledger dari `/my/invoices` & `/my/payments`. Filter Semua/Lunas, breakdown subtotal + late-fee + total. Tombol upload bukti tetap disabled dengan label "tersedia setelah File API rilis" (File API belum tersedia).
+- Complaints (`/_app/complaints`) live read-only: list dari `/my/complaints`. Tombol Buat Tiket membuka dialog penjelas yang menjelaskan endpoint kategori belum dibuka untuk role resident — submit ditahan.
+- Notifications (`/_app/notifications`) live: list `/my/notifications`, optimistic `mark-as-read` per item, `mark-all` via `/my/notifications/read-all`, badge unread dari `/my/notifications/unread-count`.
+- Info (`/_app/info`) menampilkan empty-state eksplisit pada tab Pengumuman/Peraturan/FAQ karena belum ada endpoint resident.
+- Profile (`/_app/profile`) live: header dari `/auth/me`, list sesi aktif via `/auth/sessions`, revoke sesi `DELETE /auth/sessions/:id`, logout `POST /auth/logout`, logout-all `POST /auth/logout-all`. Field belum tersedia di `/auth/me` (phone, joinDate) ditandai "Belum tersedia". Edit profile tetap disabled (tidak ada `PATCH /penghuni/me` di Phase 1).
+- Mutation aktif: mark notification read, mark-all read, revoke session, logout-all. Mutation ditahan: payment proof submit (menunggu File API), complaint create (menunggu kategori resident-scope), edit profil, change password (UX form belum dibangun, hook siap).
+- Self-scope: tidak ada `resident_id` yang dikirim dari frontend; seluruh endpoint berbasis `/my/*` dan `/auth/*` mengandalkan identitas token.
+- Build, lint, typecheck passed di workspace Penghuni.
+
 ### Admin Operational Mutations (M11E)
 - Mutation infrastructure: `lib/idempotency.ts`, `lib/mutation-feedback.ts`, `components/confirm/ConfirmDialog.tsx`
 - Domain hooks: `useRoomMutations`, `useResidentMutations`, `useOccupancyMutations` (check-in), `useBillingMutations`, `useComplaintMutations`, `useVehicleMutations`, `useParkingMutations`

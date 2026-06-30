@@ -110,14 +110,14 @@ Admin - masih placeholder/dummy:
 - Laporan (`/reports`) - diturunkan dari `payments` + `monthlyIncome`. Wired di M11G.
 - Pengaturan (`/settings`) - form statis tanpa persistensi. Wired di M11G/M11J.
 
-Penghuni (semua import dari `@/lib/dummy-data`) - dipindahkan ke backend pada M11F:
-- Home (`/_app/`) - `currentUser`, `currentBill`, `announcements`, `paymentHistory`.
-- Tagihan (`/_app/billing`) - `currentBill`, `paymentHistory`.
-- Komplain (`/_app/complaints`) - `complaints`, `complaintCategories`.
-- Info (`/_app/info`) - `announcements`, `faqs`.
-- Notifikasi (`/_app/notifications`) - `notifications`.
-- Profil (`/_app/profile`) - `currentUser`.
-- Chat (`/_app/chat`) - `chatMessages` (tetap placeholder; Phase 2).
+Penghuni - status per M11F (2026-06-30):
+- Home (`/_app/`) - live. Komposisi `/auth/me` + `/my/invoices` (selector current invoice) + `/my/payments` + `/my/notifications/unread-count`. Bagian Pengumuman menjadi empty-state eksplisit sampai endpoint resident tersedia.
+- Tagihan (`/_app/billing`) - live read. `/my/invoices` + `/my/payments`. Upload bukti pembayaran masih disabled dengan label jelas (menunggu File API).
+- Komplain (`/_app/complaints`) - live read dari `/my/complaints`. Tombol Buat Tiket tetap muncul namun dialognya menjelaskan endpoint kategori belum tersedia untuk resident, sehingga create ditahan tanpa workflow palsu.
+- Notifikasi (`/_app/notifications`) - live: list + mark-as-read (optimistic) + read-all via `/my/notifications/*`.
+- Info (`/_app/info`) - placeholder empty-state per tab. Hook `usePenghuniInfo` siap di-swap saat endpoint resident dirilis.
+- Profil (`/_app/profile`) - live: header dari `/auth/me`, list sesi aktif `/auth/sessions` + revoke + logout-all. Edit profil dan change password sengaja disabled (no `PATCH /penghuni/me`; form change password ditahan ke milestone berikutnya).
+- Chat (`/_app/chat`) - tetap placeholder Phase 2.
 
 ---
 

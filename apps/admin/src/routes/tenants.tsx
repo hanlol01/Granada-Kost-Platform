@@ -18,7 +18,14 @@ function TenantsPage() {
   const [view, setView] = useState<Tenant | null>(null);
 
   const filtered = useMemo(
-    () => list.filter((t) => q === "" || t.name.toLowerCase().includes(q.toLowerCase()) || t.roomNumber.includes(q) || t.phone.includes(q)),
+    () =>
+      list.filter(
+        (t) =>
+          q === "" ||
+          t.name.toLowerCase().includes(q.toLowerCase()) ||
+          t.roomNumber.includes(q) ||
+          t.phone.includes(q),
+      ),
     [list, q],
   );
 
@@ -26,7 +33,12 @@ function TenantsPage() {
     <AppShell title="Data Penghuni" subtitle={`${list.length} penghuni terdaftar`}>
       <div className="relative mb-4 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, kamar, atau HP..." className="pl-9" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama, kamar, atau HP..."
+          className="pl-9"
+        />
       </div>
 
       <Card>
@@ -45,7 +57,10 @@ function TenantsPage() {
               </thead>
               <tbody>
                 {filtered.map((t) => (
-                  <tr key={t.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                  <tr
+                    key={t.id}
+                    className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                  >
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold text-sm">
@@ -57,13 +72,21 @@ function TenantsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3"><span className="font-medium">#{t.roomNumber}</span></td>
+                    <td className="px-5 py-3">
+                      <span className="font-medium">#{t.roomNumber}</span>
+                    </td>
                     <td className="px-5 py-3 text-muted-foreground">{t.phone}</td>
                     <td className="px-5 py-3 text-muted-foreground">{formatDate(t.joinDate)}</td>
-                    <td className="px-5 py-3"><StatusBadge status={t.paymentStatus} /></td>
+                    <td className="px-5 py-3">
+                      <StatusBadge status={t.paymentStatus} />
+                    </td>
                     <td className="px-5 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setView(t)}><Eye className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="sm"><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => setView(t)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -74,10 +97,15 @@ function TenantsPage() {
           <div className="md:hidden divide-y divide-border">
             {filtered.map((t) => (
               <div key={t.id} className="p-4 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold">{t.name.charAt(0)}</div>
+                <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold">
+                  {t.name.charAt(0)}
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{t.name}</p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{t.phone} · Kamar {t.roomNumber}</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {t.phone} · Kamar {t.roomNumber}
+                  </p>
                 </div>
                 <StatusBadge status={t.paymentStatus} />
               </div>
@@ -95,11 +123,15 @@ function TenantsPage() {
 
       <Dialog open={!!view} onOpenChange={(o) => !o && setView(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Detail Penghuni</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Detail Penghuni</DialogTitle>
+          </DialogHeader>
           {view && (
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-4 pb-4 border-b">
-                <div className="h-14 w-14 rounded-full bg-primary-soft text-primary flex items-center justify-center text-xl font-semibold">{view.name.charAt(0)}</div>
+                <div className="h-14 w-14 rounded-full bg-primary-soft text-primary flex items-center justify-center text-xl font-semibold">
+                  {view.name.charAt(0)}
+                </div>
                 <div>
                   <p className="font-semibold text-base">{view.name}</p>
                   <p className="text-xs text-muted-foreground">Kamar #{view.roomNumber}</p>

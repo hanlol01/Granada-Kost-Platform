@@ -128,7 +128,9 @@ function BillingPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{p.period}</p>
-                  <p className="text-xs text-muted-foreground">{p.method} · {p.date}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {p.method} · {p.date}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold">{formatIDR(p.amount)}</p>

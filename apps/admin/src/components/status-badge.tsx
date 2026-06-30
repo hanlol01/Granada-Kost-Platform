@@ -12,7 +12,12 @@ export function StatusBadge({ status }: { status: RoomStatus | PaymentStatus }) 
   };
   const item = map[status];
   return (
-    <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium", item.cls)}>
+    <span
+      className={cn(
+        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+        item.cls,
+      )}
+    >
       {item.label}
     </span>
   );

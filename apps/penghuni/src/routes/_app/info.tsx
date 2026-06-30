@@ -37,7 +37,9 @@ function InfoPage() {
               onClick={() => setTab(t)}
               className={
                 "rounded-xl py-2 text-xs font-semibold transition " +
-                (tab === t ? "bg-card text-foreground shadow-[var(--shadow-soft)]" : "text-muted-foreground")
+                (tab === t
+                  ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
+                  : "text-muted-foreground")
               }
             >
               {t === "news" ? "Pengumuman" : t === "rules" ? "Peraturan" : "FAQ"}
@@ -49,13 +51,16 @@ function InfoPage() {
       <div className="flex flex-col gap-3 px-5 py-5 animate-[fade-in_0.3s_ease-out]">
         {tab === "news" &&
           announcements.map((a) => (
-            <div
-              key={a.id}
-              className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]"
-            >
+            <div key={a.id} className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-primary">
-                  {a.category === "Maintenance" ? <Wrench className="h-5 w-5" /> : a.category === "Promo" ? <Sparkles className="h-5 w-5" /> : <Megaphone className="h-5 w-5" />}
+                  {a.category === "Maintenance" ? (
+                    <Wrench className="h-5 w-5" />
+                  ) : a.category === "Promo" ? (
+                    <Sparkles className="h-5 w-5" />
+                  ) : (
+                    <Megaphone className="h-5 w-5" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -120,7 +125,9 @@ function InfoPage() {
                 >
                   <p className="text-sm font-medium">{f.q}</p>
                   <ChevronDown
-                    className={"h-4 w-4 text-muted-foreground transition " + (open ? "rotate-180" : "")}
+                    className={
+                      "h-4 w-4 text-muted-foreground transition " + (open ? "rotate-180" : "")
+                    }
                   />
                 </button>
                 {open && (
@@ -143,7 +150,11 @@ function PriorityBadge({ p }: { p: string }) {
     low: "bg-success/15 text-success",
   };
   return (
-    <span className={"shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase " + (map[p] ?? "")}>
+    <span
+      className={
+        "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase " + (map[p] ?? "")
+      }
+    >
       {p}
     </span>
   );

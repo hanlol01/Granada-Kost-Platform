@@ -63,7 +63,9 @@ function ChatPage() {
           {typing && (
             <div className="self-start rounded-2xl rounded-bl-md bg-card px-4 py-3 shadow-[var(--shadow-soft)]">
               <div className="flex gap-1">
-                <Dot delay={0} /><Dot delay={150} /><Dot delay={300} />
+                <Dot delay={0} />
+                <Dot delay={150} />
+                <Dot delay={300} />
               </div>
             </div>
           )}

@@ -16,6 +16,7 @@ import { Route as RoomsRouteImport } from './routes/rooms'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ComplaintsRouteImport } from './routes/complaints'
 import { Route as CctvRouteImport } from './routes/cctv'
 import { Route as BookingsRouteImport } from './routes/bookings'
@@ -58,6 +59,11 @@ const NotificationsRoute = NotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ComplaintsRoute = ComplaintsRouteImport.update({
   id: '/complaints',
   path: '/complaints',
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/payments': typeof PaymentsRoute
   '/reports': typeof ReportsRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/login'
     | '/notifications'
     | '/payments'
     | '/reports'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/login'
     | '/notifications'
     | '/payments'
     | '/reports'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/login'
     | '/notifications'
     | '/payments'
     | '/reports'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   BookingsRoute: typeof BookingsRoute
   CctvRoute: typeof CctvRoute
   ComplaintsRoute: typeof ComplaintsRoute
+  LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
   PaymentsRoute: typeof PaymentsRoute
   ReportsRoute: typeof ReportsRoute
@@ -250,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/complaints': {
       id: '/complaints'
       path: '/complaints'
@@ -302,6 +322,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookingsRoute: BookingsRoute,
   CctvRoute: CctvRoute,
   ComplaintsRoute: ComplaintsRoute,
+  LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,
   PaymentsRoute: PaymentsRoute,
   ReportsRoute: ReportsRoute,

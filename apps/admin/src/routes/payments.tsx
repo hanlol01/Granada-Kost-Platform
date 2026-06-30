@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { payments as initial, type Payment } from "@/lib/mock-data";
 import { formatIDR, formatDate } from "@/lib/format";
 import { CheckCircle2, CreditCard, Clock, AlertTriangle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -20,21 +21,47 @@ function PaymentsPage() {
   const overdue = list.filter((p) => p.status === "overdue").length;
 
   const pay = (id: string) => {
-    setList((p) => p.map((x) => x.id === id ? { ...x, status: "paid", paidDate: new Date().toISOString().slice(0, 10) } : x));
+    setList((p) =>
+      p.map((x) =>
+        x.id === id ? { ...x, status: "paid", paidDate: new Date().toISOString().slice(0, 10) } : x,
+      ),
+    );
     toast.success("Pembayaran berhasil dicatat");
   };
 
   return (
     <AppShell title="Pembayaran" subtitle="Kelola tagihan dan transaksi sewa">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <Stat icon={CreditCard} label="Total Tagihan" value={formatIDR(total)} accent="bg-primary-soft text-primary" />
-        <Stat icon={CheckCircle2} label="Sudah Lunas" value={formatIDR(paid)} accent="bg-success/15 text-success" />
-        <Stat icon={Clock} label="Belum Dibayar" value={formatIDR(unpaid)} accent="bg-warning/20 text-warning-foreground" />
-        <Stat icon={AlertTriangle} label="Jatuh Tempo" value={`${overdue} tagihan`} accent="bg-destructive/15 text-destructive" />
+        <Stat
+          icon={CreditCard}
+          label="Total Tagihan"
+          value={formatIDR(total)}
+          accent="bg-primary-soft text-primary"
+        />
+        <Stat
+          icon={CheckCircle2}
+          label="Sudah Lunas"
+          value={formatIDR(paid)}
+          accent="bg-success/15 text-success"
+        />
+        <Stat
+          icon={Clock}
+          label="Belum Dibayar"
+          value={formatIDR(unpaid)}
+          accent="bg-warning/20 text-warning-foreground"
+        />
+        <Stat
+          icon={AlertTriangle}
+          label="Jatuh Tempo"
+          value={`${overdue} tagihan`}
+          accent="bg-destructive/15 text-destructive"
+        />
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Daftar Tagihan</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">Daftar Tagihan</CardTitle>
+        </CardHeader>
         <CardContent>
           <Tabs defaultValue="all">
             <TabsList>
@@ -42,9 +69,15 @@ function PaymentsPage() {
               <TabsTrigger value="unpaid">Belum Lunas</TabsTrigger>
               <TabsTrigger value="paid">Riwayat</TabsTrigger>
             </TabsList>
-            <TabsContent value="all" className="mt-4"><PaymentList items={list} onPay={pay} /></TabsContent>
-            <TabsContent value="unpaid" className="mt-4"><PaymentList items={list.filter(p => p.status !== "paid")} onPay={pay} /></TabsContent>
-            <TabsContent value="paid" className="mt-4"><PaymentList items={list.filter(p => p.status === "paid")} onPay={pay} /></TabsContent>
+            <TabsContent value="all" className="mt-4">
+              <PaymentList items={list} onPay={pay} />
+            </TabsContent>
+            <TabsContent value="unpaid" className="mt-4">
+              <PaymentList items={list.filter((p) => p.status !== "paid")} onPay={pay} />
+            </TabsContent>
+            <TabsContent value="paid" className="mt-4">
+              <PaymentList items={list.filter((p) => p.status === "paid")} onPay={pay} />
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -52,36 +85,62 @@ function PaymentsPage() {
   );
 }
 
-function Stat({ icon: Icon, label, value, accent }: any) {
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  accent: string;
+}) {
   return (
-    <Card><CardContent className="p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-          <p className="text-lg lg:text-xl font-semibold mt-2 tracking-tight">{value}</p>
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {label}
+            </p>
+            <p className="text-lg lg:text-xl font-semibold mt-2 tracking-tight">{value}</p>
+          </div>
+          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${accent}`}>
+            <Icon className="h-5 w-5" />
+          </div>
         </div>
-        <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${accent}`}><Icon className="h-5 w-5" /></div>
-      </div>
-    </CardContent></Card>
+      </CardContent>
+    </Card>
   );
 }
 
 function PaymentList({ items, onPay }: { items: Payment[]; onPay: (id: string) => void }) {
-  if (items.length === 0) return <div className="py-12 text-center text-muted-foreground text-sm">Tidak ada tagihan</div>;
+  if (items.length === 0)
+    return <div className="py-12 text-center text-muted-foreground text-sm">Tidak ada tagihan</div>;
   return (
     <div className="space-y-2">
       {items.map((p) => (
-        <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors">
-          <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold shrink-0">{p.tenantName.charAt(0)}</div>
+        <div
+          key={p.id}
+          className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors"
+        >
+          <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold shrink-0">
+            {p.tenantName.charAt(0)}
+          </div>
           <div className="flex-1 min-w-0">
             <p className="font-medium truncate">{p.tenantName}</p>
-            <p className="text-xs text-muted-foreground">Kamar #{p.roomNumber} · Jatuh tempo {formatDate(p.dueDate)}</p>
+            <p className="text-xs text-muted-foreground">
+              Kamar #{p.roomNumber} · Jatuh tempo {formatDate(p.dueDate)}
+            </p>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
             <p className="font-semibold">{formatIDR(p.amount)}</p>
             <StatusBadge status={p.status} />
             {p.status !== "paid" && (
-              <Button size="sm" onClick={() => onPay(p.id)}>Bayar</Button>
+              <Button size="sm" onClick={() => onPay(p.id)}>
+                Bayar
+              </Button>
             )}
           </div>
         </div>

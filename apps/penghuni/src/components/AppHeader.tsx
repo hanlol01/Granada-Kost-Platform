@@ -28,9 +28,7 @@ export function AppHeader({
           <h1 className="truncate text-base font-semibold tracking-tight text-foreground">
             {title}
           </h1>
-          {subtitle && (
-            <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
-          )}
+          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
         </div>
         {action ?? (
           <Link

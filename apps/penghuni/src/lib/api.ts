@@ -21,7 +21,9 @@ export const apiClient = new ApiClient({
   onError: (err) => {
     if (typeof window !== "undefined") {
       // eslint-disable-next-line no-console
-      console.error(`[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`);
+      console.error(
+        `[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`,
+      );
     }
   },
 });

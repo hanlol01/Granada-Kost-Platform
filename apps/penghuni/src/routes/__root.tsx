@@ -78,18 +78,38 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Kos Resident App — Aplikasi Penghuni Kos Modern" },
-      { name: "description", content: "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola." },
+      {
+        name: "description",
+        content:
+          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+      },
       { name: "author", content: "Kos Resident" },
       { name: "theme-color", content: "#3b82f6" },
       { property: "og:title", content: "Kos Resident App — Aplikasi Penghuni Kos Modern" },
-      { property: "og:description", content: "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola." },
+      {
+        property: "og:description",
+        content:
+          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "Kos Resident App — Aplikasi Penghuni Kos Modern" },
-      { name: "twitter:description", content: "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b8751b53-9e37-4c66-8c46-54372a33baef/id-preview-38671283--cd9e147e-4296-4d54-a8c1-f3c515039031.lovable.app-1778995645501.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b8751b53-9e37-4c66-8c46-54372a33baef/id-preview-38671283--cd9e147e-4296-4d54-a8c1-f3c515039031.lovable.app-1778995645501.png" },
+      {
+        name: "twitter:description",
+        content:
+          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b8751b53-9e37-4c66-8c46-54372a33baef/id-preview-38671283--cd9e147e-4296-4d54-a8c1-f3c515039031.lovable.app-1778995645501.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/b8751b53-9e37-4c66-8c46-54372a33baef/id-preview-38671283--cd9e147e-4296-4d54-a8c1-f3c515039031.lovable.app-1778995645501.png",
+      },
     ],
     links: [
       {

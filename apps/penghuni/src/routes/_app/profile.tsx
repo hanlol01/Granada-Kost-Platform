@@ -138,8 +138,7 @@ function ToggleRow({
       <p className="flex-1 text-sm font-medium">{label}</p>
       <span
         className={
-          "relative h-6 w-11 rounded-full transition " +
-          (checked ? "bg-primary" : "bg-border")
+          "relative h-6 w-11 rounded-full transition " + (checked ? "bg-primary" : "bg-border")
         }
       >
         <span

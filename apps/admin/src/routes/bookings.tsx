@@ -3,22 +3,68 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { bookings as initial, monthlyBookings, bookingRooms, type Booking, type BookingStatus } from "@/lib/mock-data";
+import {
+  bookings as initial,
+  monthlyBookings,
+  bookingRooms,
+  type Booking,
+  type BookingStatus,
+} from "@/lib/mock-data";
 import { formatIDR, formatDate } from "@/lib/format";
 import { useMemo, useState } from "react";
-import { Search, Check, X, Ban, ClipboardList, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import {
+  Search,
+  Check,
+  X,
+  Ban,
+  ClipboardList,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { AreaChart, Area, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 export const Route = createFileRoute("/bookings")({ component: BookingsAdminPage });
 
 const statusMeta: Record<BookingStatus, { label: string; cls: string; icon: typeof Clock }> = {
-  pending_payment: { label: "Menunggu Pembayaran", cls: "bg-warning/20 text-warning-foreground", icon: Clock },
-  pending_verification: { label: "Menunggu Verifikasi", cls: "bg-primary-soft text-primary", icon: AlertCircle },
+  pending_payment: {
+    label: "Menunggu Pembayaran",
+    cls: "bg-warning/20 text-warning-foreground",
+    icon: Clock,
+  },
+  pending_verification: {
+    label: "Menunggu Verifikasi",
+    cls: "bg-primary-soft text-primary",
+    icon: AlertCircle,
+  },
   approved: { label: "Disetujui", cls: "bg-success/15 text-success", icon: CheckCircle2 },
   rejected: { label: "Ditolak", cls: "bg-destructive/15 text-destructive", icon: XCircle },
   expired: { label: "Kadaluarsa", cls: "bg-muted text-muted-foreground", icon: Ban },
@@ -31,20 +77,31 @@ function BookingsAdminPage() {
   const [filter, setFilter] = useState<string>("all");
   const [detail, setDetail] = useState<Booking | null>(null);
 
-  const stats = useMemo(() => ({
-    total: data.length,
-    pending_payment: data.filter((b) => b.status === "pending_payment").length,
-    pending_verification: data.filter((b) => b.status === "pending_verification").length,
-    approved: data.filter((b) => b.status === "approved").length,
-    rejected: data.filter((b) => b.status === "rejected").length,
-  }), [data]);
+  const stats = useMemo(
+    () => ({
+      total: data.length,
+      pending_payment: data.filter((b) => b.status === "pending_payment").length,
+      pending_verification: data.filter((b) => b.status === "pending_verification").length,
+      approved: data.filter((b) => b.status === "approved").length,
+      rejected: data.filter((b) => b.status === "rejected").length,
+    }),
+    [data],
+  );
 
-  const filtered = useMemo(() => data.filter((b) => {
-    if (tab !== "all" && b.status !== tab) return false;
-    if (filter !== "all" && b.status !== filter) return false;
-    if (q && !(`${b.code} ${b.name} ${b.roomNumber} ${b.phone}`.toLowerCase().includes(q.toLowerCase()))) return false;
-    return true;
-  }), [data, tab, filter, q]);
+  const filtered = useMemo(
+    () =>
+      data.filter((b) => {
+        if (tab !== "all" && b.status !== tab) return false;
+        if (filter !== "all" && b.status !== filter) return false;
+        if (
+          q &&
+          !`${b.code} ${b.name} ${b.roomNumber} ${b.phone}`.toLowerCase().includes(q.toLowerCase())
+        )
+          return false;
+        return true;
+      }),
+    [data, tab, filter, q],
+  );
 
   const occupancyData = useMemo(() => {
     const counts = { Kosong: 0, Terisi: 0, Dibooking: 0, Maintenance: 0 };
@@ -58,33 +115,68 @@ function BookingsAdminPage() {
   }, []);
 
   const updateStatus = (id: string, status: BookingStatus, msg: string) => {
-    setData((p) => p.map((b) => b.id === id ? { ...b, status } : b));
+    setData((p) => p.map((b) => (b.id === id ? { ...b, status } : b)));
     toast.success(msg);
     setDetail(null);
   };
 
   const cards = [
-    { label: "Total Booking", value: stats.total, icon: ClipboardList, color: "text-primary bg-primary-soft" },
-    { label: "Menunggu Pembayaran", value: stats.pending_payment, icon: Clock, color: "text-warning-foreground bg-warning/20" },
-    { label: "Menunggu Verifikasi", value: stats.pending_verification, icon: AlertCircle, color: "text-primary bg-primary-soft" },
-    { label: "Disetujui", value: stats.approved, icon: CheckCircle2, color: "text-success bg-success/15" },
-    { label: "Ditolak", value: stats.rejected, icon: XCircle, color: "text-destructive bg-destructive/15" },
+    {
+      label: "Total Booking",
+      value: stats.total,
+      icon: ClipboardList,
+      color: "text-primary bg-primary-soft",
+    },
+    {
+      label: "Menunggu Pembayaran",
+      value: stats.pending_payment,
+      icon: Clock,
+      color: "text-warning-foreground bg-warning/20",
+    },
+    {
+      label: "Menunggu Verifikasi",
+      value: stats.pending_verification,
+      icon: AlertCircle,
+      color: "text-primary bg-primary-soft",
+    },
+    {
+      label: "Disetujui",
+      value: stats.approved,
+      icon: CheckCircle2,
+      color: "text-success bg-success/15",
+    },
+    {
+      label: "Ditolak",
+      value: stats.rejected,
+      icon: XCircle,
+      color: "text-destructive bg-destructive/15",
+    },
   ];
 
   return (
-    <AppShell title="Manajemen Booking" subtitle={`${stats.total} booking total — kelola permintaan booking online`}>
+    <AppShell
+      title="Manajemen Booking"
+      subtitle={`${stats.total} booking total — kelola permintaan booking online`}
+    >
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <Card key={c.label}><CardContent className="p-4">
-              <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center mb-2", c.color)}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <p className="text-2xl font-bold">{c.value}</p>
-              <p className="text-xs text-muted-foreground">{c.label}</p>
-            </CardContent></Card>
+            <Card key={c.label}>
+              <CardContent className="p-4">
+                <div
+                  className={cn(
+                    "h-9 w-9 rounded-lg flex items-center justify-center mb-2",
+                    c.color,
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                <p className="text-2xl font-bold">{c.value}</p>
+                <p className="text-xs text-muted-foreground">{c.label}</p>
+              </CardContent>
+            </Card>
           );
         })}
       </div>
@@ -92,7 +184,9 @@ function BookingsAdminPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <Card>
-          <CardHeader><CardTitle className="text-base">Booking Bulanan</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Booking Bulanan</CardTitle>
+          </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={monthlyBookings}>
@@ -105,21 +199,41 @@ function BookingsAdminPage() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="month" className="text-xs" />
                 <YAxis className="text-xs" />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
-                <Area type="monotone" dataKey="bookings" stroke="hsl(var(--primary))" fill="url(#bookFill)" strokeWidth={2} />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 8,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="bookings"
+                  stroke="hsl(var(--primary))"
+                  fill="url(#bookFill)"
+                  strokeWidth={2}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">Okupansi Kamar</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Okupansi Kamar</CardTitle>
+          </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={occupancyData}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="name" className="text-xs" />
                 <YAxis className="text-xs" />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 8,
+                  }}
+                />
                 <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -141,14 +255,23 @@ function BookingsAdminPage() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama, atau kamar..." className="pl-9" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari kode, nama, atau kamar..."
+            className="pl-9"
+          />
         </div>
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="sm:w-52"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="sm:w-52">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
             {(Object.keys(statusMeta) as BookingStatus[]).map((s) => (
-              <SelectItem key={s} value={s}>{statusMeta[s].label}</SelectItem>
+              <SelectItem key={s} value={s}>
+                {statusMeta[s].label}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -156,10 +279,12 @@ function BookingsAdminPage() {
 
       {/* List */}
       {filtered.length === 0 ? (
-        <Card><CardContent className="py-16 text-center">
-          <ClipboardList className="h-12 w-12 mx-auto text-muted-foreground/40" />
-          <p className="mt-3 font-medium">Tidak ada booking ditemukan</p>
-        </CardContent></Card>
+        <Card>
+          <CardContent className="py-16 text-center">
+            <ClipboardList className="h-12 w-12 mx-auto text-muted-foreground/40" />
+            <p className="mt-3 font-medium">Tidak ada booking ditemukan</p>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* Desktop table */}
@@ -181,16 +306,32 @@ function BookingsAdminPage() {
                 {filtered.map((b) => {
                   const m = statusMeta[b.status];
                   return (
-                    <tr key={b.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                    <tr
+                      key={b.id}
+                      className="border-t border-border hover:bg-muted/30 transition-colors"
+                    >
                       <td className="px-4 py-3 font-mono text-xs">{b.code}</td>
                       <td className="px-4 py-3 font-medium">{b.name}</td>
                       <td className="px-4 py-3 text-muted-foreground">{b.phone}</td>
                       <td className="px-4 py-3">{b.roomNumber}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(b.bookingDate)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {formatDate(b.bookingDate)}
+                      </td>
                       <td className="px-4 py-3">{formatIDR(b.fee)}</td>
-                      <td className="px-4 py-3"><span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium", m.cls)}>{m.label}</span></td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={cn(
+                            "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+                            m.cls,
+                          )}
+                        >
+                          {m.label}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => setDetail(b)}>Detail</Button>
+                        <Button variant="ghost" size="sm" onClick={() => setDetail(b)}>
+                          Detail
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -203,20 +344,33 @@ function BookingsAdminPage() {
             {filtered.map((b) => {
               const m = statusMeta[b.status];
               return (
-                <Card key={b.id} className="hover:shadow-md transition-shadow"><CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-mono text-[10px] text-muted-foreground">{b.code}</p>
-                      <p className="font-semibold">{b.name}</p>
-                      <p className="text-xs text-muted-foreground">{b.phone} · Kamar {b.roomNumber}</p>
+                <Card key={b.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-mono text-[10px] text-muted-foreground">{b.code}</p>
+                        <p className="font-semibold">{b.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {b.phone} · Kamar {b.roomNumber}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
+                          m.cls,
+                        )}
+                      >
+                        {m.label}
+                      </span>
                     </div>
-                    <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium", m.cls)}>{m.label}</span>
-                  </div>
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                    <p className="text-xs text-muted-foreground">{formatDate(b.bookingDate)}</p>
-                    <Button variant="ghost" size="sm" onClick={() => setDetail(b)}>Detail</Button>
-                  </div>
-                </CardContent></Card>
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                      <p className="text-xs text-muted-foreground">{formatDate(b.bookingDate)}</p>
+                      <Button variant="ghost" size="sm" onClick={() => setDetail(b)}>
+                        Detail
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
@@ -224,7 +378,12 @@ function BookingsAdminPage() {
       )}
 
       {/* Detail dialog */}
-      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+      <Dialog
+        open={!!detail}
+        onOpenChange={(o) => {
+          if (!o) setDetail(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           {detail && (
             <>
@@ -244,22 +403,43 @@ function BookingsAdminPage() {
                 <Row label="Tanggal Booking" value={formatDate(detail.bookingDate)} />
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Status</span>
-                  <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium", statusMeta[detail.status].cls)}>{statusMeta[detail.status].label}</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+                      statusMeta[detail.status].cls,
+                    )}
+                  >
+                    {statusMeta[detail.status].label}
+                  </span>
                 </div>
               </div>
               <DialogFooter className="flex-wrap gap-2">
                 {detail.status !== "approved" && (
-                  <Button onClick={() => updateStatus(detail.id, "approved", "Booking disetujui — kamar otomatis berstatus Dibooking")}>
+                  <Button
+                    onClick={() =>
+                      updateStatus(
+                        detail.id,
+                        "approved",
+                        "Booking disetujui — kamar otomatis berstatus Dibooking",
+                      )
+                    }
+                  >
                     <Check className="h-4 w-4 mr-1" /> Setujui
                   </Button>
                 )}
                 {detail.status !== "rejected" && (
-                  <Button variant="outline" onClick={() => updateStatus(detail.id, "rejected", "Booking ditolak")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => updateStatus(detail.id, "rejected", "Booking ditolak")}
+                  >
                     <X className="h-4 w-4 mr-1" /> Tolak
                   </Button>
                 )}
                 {detail.status !== "expired" && (
-                  <Button variant="outline" onClick={() => updateStatus(detail.id, "expired", "Booking dibatalkan")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => updateStatus(detail.id, "expired", "Booking dibatalkan")}
+                  >
                     <Ban className="h-4 w-4 mr-1" /> Batalkan
                   </Button>
                 )}

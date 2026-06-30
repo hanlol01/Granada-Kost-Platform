@@ -39,7 +39,8 @@ function HomePage() {
             <p className="text-xs opacity-80">Selamat datang,</p>
             <h1 className="text-xl font-semibold">{currentUser.name} 👋</h1>
             <p className="mt-1 text-xs opacity-80">
-              Kamar <span className="font-medium opacity-100">{currentUser.room}</span> · {currentUser.status}
+              Kamar <span className="font-medium opacity-100">{currentUser.room}</span> ·{" "}
+              {currentUser.status}
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur">
@@ -135,9 +136,7 @@ function HomePage() {
                   <p className="truncate text-sm font-semibold">{a.title}</p>
                   <PriorityBadge p={a.priority} />
                 </div>
-                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                  {a.body}
-                </p>
+                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
               </div>
             </Link>
           ))}
@@ -158,7 +157,9 @@ function HomePage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{p.period}</p>
-                <p className="text-xs text-muted-foreground">{p.method} · {p.id}</p>
+                <p className="text-xs text-muted-foreground">
+                  {p.method} · {p.id}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-sm font-semibold">{formatIDR(p.amount)}</p>
@@ -236,7 +237,11 @@ function PriorityBadge({ p }: { p: string }) {
     low: "bg-success/15 text-success",
   };
   return (
-    <span className={"shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase " + (map[p] ?? "")}>
+    <span
+      className={
+        "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase " + (map[p] ?? "")
+      }
+    >
       {p}
     </span>
   );

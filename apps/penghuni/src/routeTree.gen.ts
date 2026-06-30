@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
@@ -18,6 +19,11 @@ import { Route as AppComplaintsRouteImport } from './routes/_app/complaints'
 import { Route as AppChatRouteImport } from './routes/_app/chat'
 import { Route as AppBillingRouteImport } from './routes/_app/billing'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
@@ -60,6 +66,7 @@ const AppBillingRoute = AppBillingRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
   '/complaints': typeof AppComplaintsRoute
@@ -68,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AppProfileRoute
 }
 export interface FileRoutesByTo {
+  '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
   '/complaints': typeof AppComplaintsRoute
@@ -79,6 +87,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
   '/_app/billing': typeof AppBillingRoute
   '/_app/chat': typeof AppChatRoute
   '/_app/complaints': typeof AppComplaintsRoute
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
     | '/billing'
     | '/chat'
     | '/complaints'
@@ -99,6 +109,7 @@ export interface FileRouteTypes {
     | '/profile'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/login'
     | '/billing'
     | '/chat'
     | '/complaints'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/login'
     | '/_app/billing'
     | '/_app/chat'
     | '/_app/complaints'
@@ -120,10 +132,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -207,6 +227,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

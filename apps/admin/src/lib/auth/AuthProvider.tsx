@@ -1,4 +1,12 @@
-import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { AuthMe, LoginRequest, LoginResponse, RoleCode } from "@granada-kost/domain";
@@ -74,17 +82,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(
-    async (identifier: string, password: string) => {
-      const body: LoginRequest = { identifier, password };
-      const res = await apiClient.post<LoginResponse>("/auth/login", body, { anonymous: true });
-      accessTokenRef.current = res.access_token;
-      const me = await apiClient.get<AuthMe>("/auth/me");
-      setUser(me);
-      setStatus("authenticated");
-    },
-    [],
-  );
+  const login = useCallback(async (identifier: string, password: string) => {
+    const body: LoginRequest = { identifier, password };
+    const res = await apiClient.post<LoginResponse>("/auth/login", body, { anonymous: true });
+    accessTokenRef.current = res.access_token;
+    const me = await apiClient.get<AuthMe>("/auth/me");
+    setUser(me);
+    setStatus("authenticated");
+  }, []);
 
   const logout = useCallback(async () => {
     try {

@@ -33,7 +33,9 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
           <div className="flex items-center justify-between gap-4 px-4 md:px-8 py-4">
             <div className="min-w-0">
               <h1 className="text-xl md:text-2xl font-semibold tracking-tight truncate">{title}</h1>
-              {subtitle && <p className="text-sm text-muted-foreground mt-0.5 truncate">{subtitle}</p>}
+              {subtitle && (
+                <p className="text-sm text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {actions}

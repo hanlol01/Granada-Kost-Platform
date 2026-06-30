@@ -1,10 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
-import {
-  complaints,
-  complaintCategories,
-} from "@/lib/dummy-data";
+import { complaints, complaintCategories } from "@/lib/dummy-data";
 import {
   Plus,
   Snowflake,
@@ -87,10 +84,7 @@ function ComplaintsPage() {
             {complaints.map((c) => {
               const Icon = catIcons[c.category] ?? Hammer;
               return (
-                <div
-                  key={c.id}
-                  className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]"
-                >
+                <div key={c.id} className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
                   <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-primary">
                       <Icon className="h-4 w-4" />
@@ -102,7 +96,9 @@ function ComplaintsPage() {
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{c.desc}</p>
                       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{c.id} · {c.category}</span>
+                        <span>
+                          {c.id} · {c.category}
+                        </span>
                         <span>{c.date}</span>
                       </div>
                     </div>
@@ -226,7 +222,10 @@ function ComplaintsPage() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }> = {
+  const map: Record<
+    string,
+    { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }
+  > = {
     waiting: { label: "Menunggu", cls: "bg-warning/20 text-warning-foreground", icon: Clock },
     process: { label: "Diproses", cls: "bg-primary/15 text-primary", icon: Loader2 },
     done: { label: "Selesai", cls: "bg-success/15 text-success", icon: CheckCircle2 },
@@ -235,7 +234,12 @@ function StatusBadge({ status }: { status: string }) {
   if (!s) return null;
   const Icon = s.icon;
   return (
-    <span className={"inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " + s.cls}>
+    <span
+      className={
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
+        s.cls
+      }
+    >
       <Icon className="h-3 w-3" /> {s.label}
     </span>
   );

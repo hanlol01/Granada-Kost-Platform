@@ -44,8 +44,7 @@ export const qk = {
   billing: {
     invoices: (propertyId?: string, filters?: Record<string, unknown>) =>
       ["billing", "invoices", { propertyId }, { ...filters }] as const,
-    paymentProofs: (propertyId?: string) =>
-      ["billing", "payment-proofs", { propertyId }] as const,
+    paymentProofs: (propertyId?: string) => ["billing", "payment-proofs", { propertyId }] as const,
   },
   complaints: {
     list: (propertyId?: string, filters?: Record<string, unknown>) =>

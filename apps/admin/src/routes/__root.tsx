@@ -79,17 +79,34 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Kos Management System" },
-      { name: "description", content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin." },
+      {
+        name: "description",
+        content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin.",
+      },
       { name: "author", content: "Kos Management" },
       { property: "og:title", content: "Kos Management System" },
-      { property: "og:description", content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin." },
+      {
+        property: "og:description",
+        content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "Kos Management System" },
-      { name: "twitter:description", content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a0ad0fe8-3384-47de-96c2-62b7e4d4654b/id-preview-ac3ce397--ac46e1c4-b421-499b-896a-b88802418ea6.lovable.app-1778991314930.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a0ad0fe8-3384-47de-96c2-62b7e4d4654b/id-preview-ac3ce397--ac46e1c4-b421-499b-896a-b88802418ea6.lovable.app-1778991314930.png" },
+      {
+        name: "twitter:description",
+        content: "Sistem pengelolaan rumah kos modern untuk pemilik dan admin.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a0ad0fe8-3384-47de-96c2-62b7e4d4654b/id-preview-ac3ce397--ac46e1c4-b421-499b-896a-b88802418ea6.lovable.app-1778991314930.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/a0ad0fe8-3384-47de-96c2-62b7e4d4654b/id-preview-ac3ce397--ac46e1c4-b421-499b-896a-b88802418ea6.lovable.app-1778991314930.png",
+      },
     ],
     links: [
       {

@@ -1,5 +1,20 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, BedDouble, Users, CreditCard, BarChart3, Settings, Building2, MessageSquareWarning, Cctv, Bell, Lock, History, CalendarCheck, ClipboardList } from "lucide-react";
+import {
+  LayoutDashboard,
+  BedDouble,
+  Users,
+  CreditCard,
+  BarChart3,
+  Settings,
+  Building2,
+  MessageSquareWarning,
+  Cctv,
+  Bell,
+  Lock,
+  History,
+  CalendarCheck,
+  ClipboardList,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const navItems = [

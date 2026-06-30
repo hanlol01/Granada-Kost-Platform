@@ -5,8 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { bookingRooms as initialRooms, type BookingRoom, BOOKING_FEE } from "@/lib/mock-data";
 import { formatIDR } from "@/lib/format";
 import { useMemo, useState } from "react";
@@ -20,7 +32,11 @@ const statusMap = {
   vacant: { label: "Kosong", dot: "bg-success", ring: "ring-success/40 hover:ring-success" },
   occupied: { label: "Terisi", dot: "bg-destructive", ring: "ring-destructive/30" },
   reserved: { label: "Dibooking", dot: "bg-warning", ring: "ring-warning/30" },
-  maintenance: { label: "Maintenance", dot: "bg-muted-foreground", ring: "ring-muted-foreground/30" },
+  maintenance: {
+    label: "Maintenance",
+    dot: "bg-muted-foreground",
+    ring: "ring-muted-foreground/30",
+  },
 } as const;
 
 function BookingPage() {
@@ -34,32 +50,42 @@ function BookingPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [lastBookingRoom, setLastBookingRoom] = useState<string>("");
 
-  const filtered = useMemo(() => rooms.filter((r) => {
-    if (q && !r.number.includes(q)) return false;
-    if (floor !== "all" && String(r.floor) !== floor) return false;
-    if (type !== "all" && r.type !== type) return false;
-    if (price === "low" && r.price >= 1000000) return false;
-    if (price === "mid" && (r.price < 1000000 || r.price >= 1500000)) return false;
-    if (price === "high" && r.price < 1500000) return false;
-    return true;
-  }), [rooms, q, floor, type, price]);
+  const filtered = useMemo(
+    () =>
+      rooms.filter((r) => {
+        if (q && !r.number.includes(q)) return false;
+        if (floor !== "all" && String(r.floor) !== floor) return false;
+        if (type !== "all" && r.type !== type) return false;
+        if (price === "low" && r.price >= 1000000) return false;
+        if (price === "mid" && (r.price < 1000000 || r.price >= 1500000)) return false;
+        if (price === "high" && r.price < 1500000) return false;
+        return true;
+      }),
+    [rooms, q, floor, type, price],
+  );
 
   const byFloor = (f: number) => filtered.filter((r) => r.floor === f);
 
   const submitBooking = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selected) return;
-    setRooms((p) => p.map((r) => r.number === selected.number ? { ...r, status: "reserved" } : r));
+    setRooms((p) =>
+      p.map((r) => (r.number === selected.number ? { ...r, status: "reserved" } : r)),
+    );
     setLastBookingRoom(selected.number);
     setFormOpen(false);
     setSelected(null);
-    toast.success("Booking berhasil dibuat", { description: "Silakan lanjutkan pembayaran booking fee" });
+    toast.success("Booking berhasil dibuat", {
+      description: "Silakan lanjutkan pembayaran booking fee",
+    });
     setTimeout(() => setPayOpen(true), 300);
   };
 
   const payFee = () => {
     setPayOpen(false);
-    toast.success("Pembayaran diterima", { description: `Booking kamar ${lastBookingRoom} menunggu verifikasi` });
+    toast.success("Pembayaran diterima", {
+      description: `Booking kamar ${lastBookingRoom} menunggu verifikasi`,
+    });
   };
 
   return (
@@ -81,10 +107,17 @@ function BookingPage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <div className="relative col-span-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nomor kamar..." className="pl-9" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari nomor kamar..."
+            className="pl-9"
+          />
         </div>
         <Select value={floor} onValueChange={setFloor}>
-          <SelectTrigger><SelectValue placeholder="Lantai" /></SelectTrigger>
+          <SelectTrigger>
+            <SelectValue placeholder="Lantai" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Lantai</SelectItem>
             <SelectItem value="1">Lantai 1</SelectItem>
@@ -92,7 +125,9 @@ function BookingPage() {
           </SelectContent>
         </Select>
         <Select value={type} onValueChange={setType}>
-          <SelectTrigger><SelectValue placeholder="Tipe" /></SelectTrigger>
+          <SelectTrigger>
+            <SelectValue placeholder="Tipe" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Tipe</SelectItem>
             <SelectItem value="Standard">Standard</SelectItem>
@@ -101,7 +136,9 @@ function BookingPage() {
           </SelectContent>
         </Select>
         <Select value={price} onValueChange={setPrice}>
-          <SelectTrigger><SelectValue placeholder="Harga" /></SelectTrigger>
+          <SelectTrigger>
+            <SelectValue placeholder="Harga" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Harga</SelectItem>
             <SelectItem value="low">&lt; 1 Juta</SelectItem>
@@ -120,7 +157,11 @@ function BookingPage() {
             <span className="text-xs text-muted-foreground">({byFloor(f).length} kamar)</span>
           </div>
           {byFloor(f).length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Tidak ada kamar sesuai filter</CardContent></Card>
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                Tidak ada kamar sesuai filter
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {byFloor(f).map((r) => {
@@ -130,11 +171,15 @@ function BookingPage() {
                   <button
                     key={r.number}
                     disabled={!clickable}
-                    onClick={() => { setSelected(r); }}
+                    onClick={() => {
+                      setSelected(r);
+                    }}
                     className={cn(
                       "relative group text-left p-4 rounded-xl bg-card border ring-1 transition-all",
                       s.ring,
-                      clickable ? "hover:-translate-y-0.5 hover:shadow-lg cursor-pointer" : "opacity-70 cursor-not-allowed",
+                      clickable
+                        ? "hover:-translate-y-0.5 hover:shadow-lg cursor-pointer"
+                        : "opacity-70 cursor-not-allowed",
                     )}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -142,11 +187,19 @@ function BookingPage() {
                         <p className="text-xs text-muted-foreground">Kamar</p>
                         <p className="text-2xl font-bold tracking-tight">{r.number}</p>
                       </div>
-                      <span className={cn("h-2.5 w-2.5 rounded-full mt-1", s.dot, clickable && "animate-pulse")} />
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full mt-1",
+                          s.dot,
+                          clickable && "animate-pulse",
+                        )}
+                      />
                     </div>
                     <p className="text-xs text-muted-foreground">{r.type}</p>
                     <p className="text-sm font-semibold text-primary mt-1">{formatIDR(r.price)}</p>
-                    <span className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{s.label}</span>
+                    <span className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {s.label}
+                    </span>
                   </button>
                 );
               })}
@@ -156,14 +209,25 @@ function BookingPage() {
       ))}
 
       {/* Detail modal */}
-      <Dialog open={!!selected && !formOpen} onOpenChange={(o) => { if (!o) setSelected(null); }}>
+      <Dialog
+        open={!!selected && !formOpen}
+        onOpenChange={(o) => {
+          if (!o) setSelected(null);
+        }}
+      >
         <DialogContent className="max-w-lg">
           {selected && (
             <>
               <DialogHeader>
-                <DialogTitle>Kamar {selected.number} · {selected.type}</DialogTitle>
+                <DialogTitle>
+                  Kamar {selected.number} · {selected.type}
+                </DialogTitle>
               </DialogHeader>
-              <img src={selected.photo} alt={`Kamar ${selected.number}`} className="w-full h-48 object-cover rounded-lg" />
+              <img
+                src={selected.photo}
+                alt={`Kamar ${selected.number}`}
+                className="w-full h-48 object-cover rounded-lg"
+              />
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground">Harga / bulan</p>
@@ -186,12 +250,16 @@ function BookingPage() {
                 <p className="text-xs text-muted-foreground mb-1.5">Fasilitas</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selected.facilities.map((f) => (
-                    <span key={f} className="text-xs px-2 py-1 rounded-full bg-muted">{f}</span>
+                    <span key={f} className="text-xs px-2 py-1 rounded-full bg-muted">
+                      {f}
+                    </span>
                   ))}
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setSelected(null)}>Tutup</Button>
+                <Button variant="outline" onClick={() => setSelected(null)}>
+                  Tutup
+                </Button>
                 <Button onClick={() => setFormOpen(true)}>Booking Sekarang</Button>
               </DialogFooter>
             </>
@@ -207,23 +275,44 @@ function BookingPage() {
           </DialogHeader>
           <form onSubmit={submitBooking} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label htmlFor="name">Nama lengkap</Label><Input id="name" required /></div>
-              <div><Label htmlFor="phone">Nomor HP</Label><Input id="phone" required /></div>
-              <div className="col-span-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" required /></div>
-              <div><Label htmlFor="ktp">Nomor KTP</Label><Input id="ktp" required /></div>
+              <div>
+                <Label htmlFor="name">Nama lengkap</Label>
+                <Input id="name" required />
+              </div>
+              <div>
+                <Label htmlFor="phone">Nomor HP</Label>
+                <Input id="phone" required />
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" required />
+              </div>
+              <div>
+                <Label htmlFor="ktp">Nomor KTP</Label>
+                <Input id="ktp" required />
+              </div>
               <div>
                 <Label htmlFor="gender">Jenis Kelamin</Label>
-                <Select defaultValue="L"><SelectTrigger><SelectValue /></SelectTrigger>
+                <Select defaultValue="L">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="L">Laki-laki</SelectItem>
                     <SelectItem value="P">Perempuan</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label htmlFor="checkin">Tanggal Masuk</Label><Input id="checkin" type="date" required /></div>
+              <div>
+                <Label htmlFor="checkin">Tanggal Masuk</Label>
+                <Input id="checkin" type="date" required />
+              </div>
               <div>
                 <Label htmlFor="duration">Durasi Sewa</Label>
-                <Select defaultValue="6"><SelectTrigger><SelectValue /></SelectTrigger>
+                <Select defaultValue="6">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="3">3 bulan</SelectItem>
                     <SelectItem value="6">6 bulan</SelectItem>
@@ -232,9 +321,14 @@ function BookingPage() {
                 </Select>
               </div>
             </div>
-            <div><Label htmlFor="note">Catatan tambahan</Label><Textarea id="note" rows={2} /></div>
+            <div>
+              <Label htmlFor="note">Catatan tambahan</Label>
+              <Textarea id="note" rows={2} />
+            </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>Batal</Button>
+              <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>
+                Batal
+              </Button>
               <Button type="submit">Simpan Booking</Button>
             </DialogFooter>
           </form>
@@ -253,11 +347,17 @@ function BookingPage() {
             </div>
             <p className="text-sm text-muted-foreground">Kamar {lastBookingRoom}</p>
             <p className="text-3xl font-bold text-primary">{formatIDR(BOOKING_FEE)}</p>
-            <p className="text-xs text-muted-foreground">Wajib dibayar dalam 1x24 jam, jika tidak booking akan kadaluarsa.</p>
+            <p className="text-xs text-muted-foreground">
+              Wajib dibayar dalam 1x24 jam, jika tidak booking akan kadaluarsa.
+            </p>
           </div>
           <DialogFooter className="sm:justify-center">
-            <Button variant="outline" onClick={() => setPayOpen(false)}>Nanti Saja</Button>
-            <Button onClick={payFee}><CheckCircle2 className="h-4 w-4 mr-1" /> Bayar Sekarang</Button>
+            <Button variant="outline" onClick={() => setPayOpen(false)}>
+              Nanti Saja
+            </Button>
+            <Button onClick={payFee}>
+              <CheckCircle2 className="h-4 w-4 mr-1" /> Bayar Sekarang
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

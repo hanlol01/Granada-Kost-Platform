@@ -29,7 +29,11 @@ function NotificationsPage() {
     <AppShell
       title="Notifikasi"
       subtitle={`${unread} notifikasi belum dibaca`}
-      actions={<Button variant="outline" size="sm" onClick={markAll}><CheckCheck className="h-4 w-4 mr-1" /> Tandai semua dibaca</Button>}
+      actions={
+        <Button variant="outline" size="sm" onClick={markAll}>
+          <CheckCheck className="h-4 w-4 mr-1" /> Tandai semua dibaca
+        </Button>
+      }
     >
       {items.length === 0 ? (
         <div className="py-24 text-center">
@@ -46,16 +50,22 @@ function NotificationsPage() {
                 return (
                   <button
                     key={n.id}
-                    onClick={() => setItems((p) => p.map((i) => i.id === n.id ? { ...i, read: true } : i))}
+                    onClick={() =>
+                      setItems((p) => p.map((i) => (i.id === n.id ? { ...i, read: true } : i)))
+                    }
                     className={`w-full text-left flex items-start gap-3 p-4 rounded-lg hover:bg-muted transition-colors ${!n.read && "bg-primary-soft/30"}`}
                   >
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${meta.c}`}>
+                    <div
+                      className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${meta.c}`}
+                    >
                       <Icon className="h-5 w-5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm truncate">{n.title}</p>
-                        {!n.read && <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />}
+                        {!n.read && (
+                          <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">{n.description}</p>
                       <p className="text-xs text-muted-foreground mt-1">{n.time}</p>

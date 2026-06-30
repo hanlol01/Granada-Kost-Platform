@@ -23,7 +23,9 @@ export const apiClient = new ApiClient({
     // Only normalized ApiError lands here. Never log raw payloads (ADR-FE-008).
     if (typeof window !== "undefined") {
       // eslint-disable-next-line no-console
-      console.error(`[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`);
+      console.error(
+        `[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`,
+      );
     }
   },
 });

@@ -1,61 +1,127 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/state/EmptyState";
+import { ErrorState } from "@/components/state/ErrorState";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { payments as initial, type Payment } from "@/lib/mock-data";
+import { useInvoices, type InvoiceRecord, type InvoiceStatus } from "@/hooks/useBilling";
 import { formatIDR, formatDate } from "@/lib/format";
-import { CheckCircle2, CreditCard, Clock, AlertTriangle } from "lucide-react";
+import { CheckCircle2, CreditCard, Clock, AlertTriangle, Receipt } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/payments")({ component: PaymentsPage });
 
-function PaymentsPage() {
-  const [list, setList] = useState<Payment[]>(initial);
-  const total = list.reduce((s, p) => s + p.amount, 0);
-  const paid = list.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
-  const unpaid = list.filter((p) => p.status !== "paid").reduce((s, p) => s + p.amount, 0);
-  const overdue = list.filter((p) => p.status === "overdue").length;
+type InvoiceTab = "all" | "unpaid" | "paid";
 
-  const pay = (id: string) => {
-    setList((p) =>
-      p.map((x) =>
-        x.id === id ? { ...x, status: "paid", paidDate: new Date().toISOString().slice(0, 10) } : x,
-      ),
-    );
-    toast.success("Pembayaran berhasil dicatat");
+function isInvoiceTab(value: string): value is InvoiceTab {
+  return value === "all" || value === "unpaid" || value === "paid";
+}
+
+const INVOICE_STATUS_LABEL: Record<InvoiceStatus, { label: string; cls: string }> = {
+  draft: { label: "Draft", cls: "bg-muted text-muted-foreground" },
+  issued: { label: "Terkirim", cls: "bg-primary-soft text-primary" },
+  unpaid: { label: "Belum Lunas", cls: "bg-warning/20 text-warning-foreground" },
+  partially_paid: {
+    label: "Bayar Sebagian",
+    cls: "bg-chart-4/15 text-chart-4",
+  },
+  paid: { label: "Lunas", cls: "bg-success/15 text-success" },
+  overdue: { label: "Jatuh Tempo", cls: "bg-destructive/15 text-destructive" },
+  void: { label: "Void", cls: "bg-muted text-muted-foreground line-through" },
+};
+
+function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const item = INVOICE_STATUS_LABEL[status] ?? {
+    label: status,
+    cls: "bg-muted text-muted-foreground",
   };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+        item.cls,
+      )}
+    >
+      {item.label}
+    </span>
+  );
+}
+
+function PaymentsPage() {
+  const [tab, setTab] = useState<InvoiceTab>("all");
+
+  // Backend supports a single status filter. The 'all' tab calls without it.
+  const statusParam: InvoiceStatus | undefined =
+    tab === "unpaid" ? "unpaid" : tab === "paid" ? "paid" : undefined;
+
+  const { data, isLoading, error, refetch, isFetching } = useInvoices({
+    status: statusParam,
+    limit: 100,
+  });
+  const items = data ?? [];
+
+  const stats = useMemo(() => {
+    const total = items.reduce((s, p) => s + p.totalAmount, 0);
+    const paid = items
+      .filter((p) => p.invoiceStatus === "paid")
+      .reduce((s, p) => s + p.totalAmount, 0);
+    const unpaid = items
+      .filter((p) =>
+        ["unpaid", "overdue", "partially_paid", "issued"].includes(p.invoiceStatus),
+      )
+      .reduce((s, p) => s + p.totalAmount, 0);
+    const overdue = items.filter((p) => p.invoiceStatus === "overdue").length;
+    return { total, paid, unpaid, overdue };
+  }, [items]);
 
   return (
     <AppShell title="Pembayaran" subtitle="Kelola tagihan dan transaksi sewa">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <Stat
-          icon={CreditCard}
-          label="Total Tagihan"
-          value={formatIDR(total)}
-          accent="bg-primary-soft text-primary"
-        />
-        <Stat
-          icon={CheckCircle2}
-          label="Sudah Lunas"
-          value={formatIDR(paid)}
-          accent="bg-success/15 text-success"
-        />
-        <Stat
-          icon={Clock}
-          label="Belum Dibayar"
-          value={formatIDR(unpaid)}
-          accent="bg-warning/20 text-warning-foreground"
-        />
-        <Stat
-          icon={AlertTriangle}
-          label="Jatuh Tempo"
-          value={`${overdue} tagihan`}
-          accent="bg-destructive/15 text-destructive"
-        />
+        {isLoading ? (
+          <>
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+          </>
+        ) : (
+          <>
+            <Stat
+              icon={CreditCard}
+              label="Total Tagihan"
+              value={formatIDR(stats.total)}
+              accent="bg-primary-soft text-primary"
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Sudah Lunas"
+              value={formatIDR(stats.paid)}
+              accent="bg-success/15 text-success"
+            />
+            <Stat
+              icon={Clock}
+              label="Belum Dibayar"
+              value={formatIDR(stats.unpaid)}
+              accent="bg-warning/20 text-warning-foreground"
+            />
+            <Stat
+              icon={AlertTriangle}
+              label="Jatuh Tempo"
+              value={`${stats.overdue} tagihan`}
+              accent="bg-destructive/15 text-destructive"
+            />
+          </>
+        )}
       </div>
 
       <Card>
@@ -63,20 +129,36 @@ function PaymentsPage() {
           <CardTitle className="text-base">Daftar Tagihan</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="all">
+          <Tabs value={tab} onValueChange={(v) => setTab(isInvoiceTab(v) ? v : "all")}>
             <TabsList>
               <TabsTrigger value="all">Semua</TabsTrigger>
               <TabsTrigger value="unpaid">Belum Lunas</TabsTrigger>
               <TabsTrigger value="paid">Riwayat</TabsTrigger>
             </TabsList>
-            <TabsContent value="all" className="mt-4">
-              <PaymentList items={list} onPay={pay} />
-            </TabsContent>
-            <TabsContent value="unpaid" className="mt-4">
-              <PaymentList items={list.filter((p) => p.status !== "paid")} onPay={pay} />
-            </TabsContent>
-            <TabsContent value="paid" className="mt-4">
-              <PaymentList items={list.filter((p) => p.status === "paid")} onPay={pay} />
+            <TabsContent value={tab} className="mt-4">
+              {error ? (
+                <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat tagihan" />
+              ) : isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
+                </div>
+              ) : items.length === 0 ? (
+                <EmptyState
+                  icon={<Receipt className="h-5 w-5" />}
+                  title="Tidak ada tagihan"
+                  description={
+                    tab === "unpaid"
+                      ? "Tidak ada tagihan menunggu pembayaran saat ini."
+                      : tab === "paid"
+                        ? "Belum ada riwayat pembayaran."
+                        : "Tagihan akan tampil saat invoice diterbitkan."
+                  }
+                />
+              ) : (
+                <PaymentList items={items} isFetching={isFetching} />
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -115,33 +197,52 @@ function Stat({
   );
 }
 
-function PaymentList({ items, onPay }: { items: Payment[]; onPay: (id: string) => void }) {
-  if (items.length === 0)
-    return <div className="py-12 text-center text-muted-foreground text-sm">Tidak ada tagihan</div>;
+function StatSkeleton() {
   return (
-    <div className="space-y-2">
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-6 w-32" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentList({ items, isFetching }: { items: InvoiceRecord[]; isFetching: boolean }) {
+  return (
+    <div className={cn("space-y-2", isFetching && "opacity-90 transition-opacity")}>
       {items.map((p) => (
         <div
           key={p.id}
           className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors"
         >
           <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold shrink-0">
-            {p.tenantName.charAt(0)}
+            {p.snapshotResidentName.charAt(0).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{p.tenantName}</p>
+            <p className="font-medium truncate">{p.snapshotResidentName}</p>
             <p className="text-xs text-muted-foreground">
-              Kamar #{p.roomNumber} · Jatuh tempo {formatDate(p.dueDate)}
+              Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo{" "}
+              {formatDate(p.dueDate)}
             </p>
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-            <p className="font-semibold">{formatIDR(p.amount)}</p>
-            <StatusBadge status={p.status} />
-            {p.status !== "paid" && (
-              <Button size="sm" onClick={() => onPay(p.id)}>
-                Bayar
-              </Button>
-            )}
+            <p className="font-semibold">{formatIDR(p.totalAmount)}</p>
+            <InvoiceStatusBadge status={p.invoiceStatus} />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button size="sm" disabled>
+                      Catat Bayar
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Pencatatan pembayaran &amp; verifikasi bukti tersedia di M11E.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       ))}

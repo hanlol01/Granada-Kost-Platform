@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -11,70 +12,82 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EmptyState } from "@/components/state/EmptyState";
+import { ErrorState } from "@/components/state/ErrorState";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/status-badge";
-import { rooms as initial, type Room, type RoomStatus } from "@/lib/mock-data";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useRooms, type RoomStatus } from "@/hooks/useRooms";
 import { formatIDR } from "@/lib/format";
-import { useMemo, useState } from "react";
 import { Plus, Search, Pencil, Trash2, BedDouble } from "lucide-react";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/rooms")({ component: RoomsPage });
 
-function RoomsPage() {
-  const [rooms, setRooms] = useState<Room[]>(initial);
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<string>("all");
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Room | null>(null);
+const STATUS_LABEL: Record<RoomStatus, { label: string; cls: string }> = {
+  occupied: { label: "Terisi", cls: "bg-primary-soft text-primary" },
+  vacant: { label: "Kosong", cls: "bg-success/15 text-success" },
+  reserved: { label: "Dipesan", cls: "bg-chart-4/15 text-chart-4" },
+  maintenance: { label: "Maintenance", cls: "bg-warning/20 text-warning-foreground" },
+  inactive: { label: "Tidak Aktif", cls: "bg-muted text-muted-foreground" },
+};
 
-  const filtered = useMemo(
-    () =>
-      rooms.filter(
-        (r) =>
-          (filter === "all" || r.status === filter) &&
-          (q === "" || r.number.includes(q) || r.type.toLowerCase().includes(q.toLowerCase())),
-      ),
-    [rooms, q, filter],
+function RoomStatusBadge({ status }: { status: RoomStatus }) {
+  const item = STATUS_LABEL[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+        item.cls,
+      )}
+    >
+      {item.label}
+    </span>
   );
+}
 
-  const onSave = (data: Room) => {
-    if (editing) {
-      setRooms((p) => p.map((r) => (r.id === editing.id ? data : r)));
-      toast.success("Kamar diperbarui");
-    } else {
-      setRooms((p) => [...p, { ...data, id: `r${Date.now()}` }]);
-      toast.success("Kamar ditambahkan");
-    }
-    setOpen(false);
-    setEditing(null);
-  };
+function RoomsPage() {
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<"all" | RoomStatus>("all");
 
-  const onDelete = (id: string) => {
-    setRooms((p) => p.filter((r) => r.id !== id));
-    toast.success("Kamar dihapus");
-  };
+  const { data, isLoading, error, refetch, isFetching } = useRooms({
+    status: status === "all" ? undefined : status,
+  });
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    if (!q) return data;
+    const needle = q.toLowerCase();
+    return data.filter(
+      (r) =>
+        r.number.toLowerCase().includes(needle) ||
+        (r.unitCode?.toLowerCase().includes(needle) ?? false) ||
+        (r.floor?.toLowerCase().includes(needle) ?? false),
+    );
+  }, [data, q]);
+
+  const hasFilter = q !== "" || status !== "all";
 
   return (
     <AppShell
       title="Manajemen Kamar"
-      subtitle={`${rooms.length} kamar terdaftar`}
+      subtitle={data ? `${data.length} kamar terdaftar` : "Memuat..."}
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setOpen(true);
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0}>
+                <Button disabled>
+                  <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Tambah/edit kamar tersedia di M11E.</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       }
     >
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -83,11 +96,11 @@ function RoomsPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari nomor atau tipe kamar..."
+            placeholder="Cari nomor, unit, atau lantai..."
             className="pl-9"
           />
         </div>
-        <Select value={filter} onValueChange={setFilter}>
+        <Select value={status} onValueChange={(v) => setStatus(v as "all" | RoomStatus)}>
           <SelectTrigger className="sm:w-48">
             <SelectValue />
           </SelectTrigger>
@@ -95,21 +108,50 @@ function RoomsPage() {
             <SelectItem value="all">Semua Status</SelectItem>
             <SelectItem value="occupied">Terisi</SelectItem>
             <SelectItem value="vacant">Kosong</SelectItem>
+            <SelectItem value="reserved">Dipesan</SelectItem>
             <SelectItem value="maintenance">Maintenance</SelectItem>
+            <SelectItem value="inactive">Tidak Aktif</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {filtered.length === 0 ? (
+      {error ? (
+        <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat kamar" />
+      ) : isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-5 space-y-3">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-7 w-24" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-8 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <Card>
-          <CardContent className="py-16 text-center">
-            <BedDouble className="h-12 w-12 mx-auto text-muted-foreground/40" />
-            <p className="mt-3 font-medium">Tidak ada kamar ditemukan</p>
-            <p className="text-sm text-muted-foreground">Coba ubah pencarian atau filter</p>
+          <CardContent className="py-12">
+            <EmptyState
+              icon={<BedDouble className="h-5 w-5" />}
+              title={hasFilter ? "Tidak ada kamar cocok" : "Belum ada kamar"}
+              description={
+                hasFilter
+                  ? "Coba ubah pencarian atau filter status."
+                  : "Kamar akan tampil setelah ditambahkan oleh admin (M11E)."
+              }
+            />
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          className={cn(
+            "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
+            isFetching && "opacity-90 transition-opacity",
+          )}
+        >
           {filtered.map((r) => (
             <Card key={r.id} className="hover:shadow-md transition-all hover:-translate-y-0.5">
               <CardContent className="p-5">
@@ -117,21 +159,24 @@ function RoomsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Kamar</p>
                     <p className="text-2xl font-bold tracking-tight">{r.number}</p>
-                    <p className="text-sm text-muted-foreground">{r.type}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {r.unitCode ?? "–"}
+                      {r.floor ? ` · Lt. ${r.floor}` : ""}
+                    </p>
                   </div>
-                  <StatusBadge status={r.status} />
+                  <RoomStatusBadge status={r.roomStatus} />
                 </div>
                 <p className="text-lg font-semibold text-primary">
-                  {formatIDR(r.price)}
+                  {formatIDR(r.monthlyPrice)}
                   <span className="text-xs text-muted-foreground font-normal">/bulan</span>
                 </p>
                 <div className="flex flex-wrap gap-1 mt-3 mb-4 min-h-[2rem]">
                   {r.facilities.slice(0, 4).map((f) => (
                     <span
-                      key={f}
+                      key={f.id}
                       className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
                     >
-                      {f}
+                      {f.name}
                     </span>
                   ))}
                   {r.facilities.length > 4 && (
@@ -141,124 +186,34 @@ function RoomsPage() {
                   )}
                 </div>
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      setEditing(r);
-                      setOpen(true);
-                    }}
-                  >
-                    <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => onDelete(r.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex-1">
+                          <Button variant="outline" size="sm" className="w-full" disabled>
+                            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit kamar tersedia di M11E.</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Button variant="outline" size="sm" disabled>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>Hapus kamar tersedia di M11E.</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-
-      <RoomDialog
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (!o) setEditing(null);
-        }}
-        room={editing}
-        onSave={onSave}
-      />
     </AppShell>
-  );
-}
-
-function RoomDialog({
-  open,
-  onOpenChange,
-  room,
-  onSave,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  room: Room | null;
-  onSave: (r: Room) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{room ? "Edit Kamar" : "Tambah Kamar Baru"}</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            onSave({
-              id: room?.id ?? "",
-              number: f.get("number") as string,
-              type: f.get("type") as string,
-              price: Number(f.get("price")),
-              status: f.get("status") as RoomStatus,
-              facilities: (f.get("facilities") as string)
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            });
-          }}
-          className="space-y-4"
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="number">Nomor</Label>
-              <Input id="number" name="number" defaultValue={room?.number} required />
-            </div>
-            <div>
-              <Label htmlFor="type">Tipe</Label>
-              <Input id="type" name="type" defaultValue={room?.type ?? "Standard"} required />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="price">Harga / bulan</Label>
-            <Input
-              id="price"
-              name="price"
-              type="number"
-              defaultValue={room?.price ?? 800000}
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="status">Status</Label>
-            <Select name="status" defaultValue={room?.status ?? "vacant"}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vacant">Kosong</SelectItem>
-                <SelectItem value="occupied">Terisi</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="facilities">Fasilitas (pisah dengan koma)</Label>
-            <Input
-              id="facilities"
-              name="facilities"
-              defaultValue={room?.facilities.join(", ") ?? "Kasur, Lemari"}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Batal
-            </Button>
-            <Button type="submit">Simpan</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

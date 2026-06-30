@@ -14,6 +14,8 @@ import {
   History,
   CalendarCheck,
   ClipboardList,
+  Bike,
+  ParkingSquare,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RoleCode } from "@granada-kost/domain";
@@ -44,6 +46,8 @@ export const navItems: readonly NavItem[] = [
     icon: MessageSquareWarning,
     roles: ["owner", "manager", "admin", "technician"],
   },
+  { to: "/vehicles", label: "Kendaraan", icon: Bike, roles: ["owner", "manager", "admin"] },
+  { to: "/parking", label: "Parkir", icon: ParkingSquare, roles: ["owner", "manager", "admin"] },
   {
     to: "/cctv",
     label: "CCTV",

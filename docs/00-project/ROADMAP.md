@@ -86,7 +86,18 @@
 - Smart Lock API layer with RBAC, property scope, resident self-scope, and simulated Tuya gateway response.
 - Status: selesai sampai 10E.
 
+## Milestone 11 - Frontend Integration Planning
+
+- M11A - Frontend Integration Plan (Admin + Penghuni).
+- M11AF - Frontend Architecture Freeze Review.
+- Output:
+  - `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md`.
+  - `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` (ADR ringan, frozen).
+- Status: selesai.
+- Verdict: Frontend Architecture Frozen. Implementasi M11B siap dimulai.
+
 ## Next Milestone
 
-- M10F - Smart Lock Runtime Integration.
+- M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya menunggu akses fisik).
+- M11B - Frontend Foundation (API client, auth, query layer, route guards).
 - File upload implementation, CCTV, dan worker/provider integration belum dimulai.

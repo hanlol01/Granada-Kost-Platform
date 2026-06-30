@@ -496,3 +496,77 @@ Alasan:
 - Risiko utama yang tersisa (R-02 token, R-04 property scope, R-08 file upload) sudah punya mitigasi yang jelas pada bagian 18 dan tetap konsisten dengan `BACKEND_ARCHITECTURE.md` dan `API_PLANNING.md`.
 
 Audit frontend tambahan tidak diperlukan sebelum M11B. Audit tambahan baru perlu dilakukan setelah M11E (sebelum Reports) untuk memastikan PII masking dan permission gating sudah konsisten lintas halaman.
+
+---
+
+## 23. M11AF — Architecture Freeze Review (Addendum)
+
+> Status: Reviewed dan dibekukan pada 2026-06-30.
+> Peran reviewer: Principal Software Architect.
+> Hasil: Frontend Architecture Frozen. ADR final ada di `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md`.
+
+### 23.1 Hasil Review per Pertanyaan
+
+1. **Urutan milestone frontend** — Tepat. M11B (foundation) → M11C (Admin core) → M11D (Admin operational + Vehicle/Parking) → M11E (Notifications/Settings/RBAC) → M11F (Penghuni core) → M11G (Reports) → M11H (Smart Lock live) → M11I (CCTV) → M11J (Phase 2 surfaces). Penomoran di bagian 20 disinkronkan: M11D kini juga memuat Vehicle/Parking, dan M11F adalah Penghuni Core.
+
+2. **Dependency yang terlupakan** — Tiga yang sebelumnya implisit dijadikan eksplisit di addendum ini: (a) File API harus diintegrasikan sebelum payment proof, complaint photo, dan resident KTP; (b) `packages/domain` harus rilis di M11B bersamaan dengan `packages/api-client`; (c) generator OpenAPI/Swagger dari backend belum disepakati — diputuskan tetap hand-written types untuk Phase 1 (lihat ADR-FE-001).
+
+3. **Risiko yang belum terdokumentasi** — Ditambah di bagian 18 melalui addendum 23.4: R-14 (file upload patterns), R-15 (correlation-id propagation), R-16 (PropertyProvider cache bleed saat property switch).
+
+4. **Mapping backend ↔ frontend** — Seluruh modul backend yang sudah selesai sudah punya mapping kecuali Vehicle/Parking yang baru ditambahkan di addendum 23.2.
+
+5. **Endpoint tanpa rencana UI** — `/api/v1/audit/*`, `/api/v1/files/{id}/access-logs`, dan `/api/v1/property-owner/*` belum punya UI Phase 1. Diputuskan: audit viewer minimum masuk M11G; Property Owner portal minimum read-only di M11E (atau dipisah ke aplikasi sendiri di Phase 2 jika scope membesar).
+
+6. **Halaman yang sebaiknya ditunda** — Booking (`/booking`, `/bookings`) dan Chat Penghuni tetap ditunda Phase 2 di balik feature flag (ADR-FE-006). CCTV tetap placeholder sampai gateway lokal tersedia.
+
+7. **Halaman yang justru sebaiknya diprioritaskan** — Vehicle + Parking dinaikkan ke M11D karena backend M8 sudah selesai, datanya operasional harian, dan tidak ada blocker provider.
+
+8. **Dashboard Admin sebagai halaman pertama** — Tidak. Dashboard memanggil agregat lintas modul (`/api/v1/admin/dashboard/summary`, `/queues/operational`) sehingga bergantung pada Rooms/Residents/Billing/Complaint terintegrasi lebih dulu. Urutan benar: M11B foundation → Rooms → Residents → Billing → Complaint → Dashboard (akhir M11C). Penjelasan ditambahkan di bagian 7.
+
+9. **Vehicle & Parking lebih awal** — Ya. Dimasukkan ke M11D dengan endpoint `GET /api/v1/vehicles`, `POST /api/v1/vehicles`, `GET /api/v1/parking/zones`, `GET /api/v1/parking/slots`, `POST /api/v1/parking/assignments` (mengacu pada `docs/02-domains/VEHICLE_DOMAIN.md`). UI baru di Admin tanpa redesign tema.
+
+10. **Smart Lock simulated strategy** — Tepat. Disahkan sebagai ADR-FE-010. Frontend memanggil endpoint nyata, backend mengembalikan hasil simulated sampai M10G. Toggle melalui `VITE_FEATURE_SMARTLOCK_MODE`.
+
+11. **Konsistensi terhadap backend architecture** — Konsisten. Cocok dengan `BACKEND_ARCHITECTURE.md` pada: backend sebagai policy enforcement point, secret backend-only, property scoping, resident self-scope, correlation id, error taxonomy, idempotency, dan File API sebagai jalur akses sensitif.
+
+12. **Keputusan baru yang dibekukan** — Sebelas ADR (ADR-FE-001..ADR-FE-011) di `FRONTEND_ARCHITECTURE_DECISIONS.md`. Tiga ADR baru ditambahkan di freeze ini: ADR-FE-009 (File Upload Pattern), ADR-FE-010 (Smart Lock Simulated Strategy), ADR-FE-011 (Observability on Frontend).
+
+### 23.2 Penyesuaian Mapping — Vehicle & Parking (Admin)
+
+UI baru di M11D, mengikuti pola tabel + dialog yang sudah ada di Admin:
+
+| Halaman baru | Endpoint utama | Catatan |
+|---|---|---|
+| `/vehicles` | `GET /api/v1/vehicles`, `POST /api/v1/vehicles`, `PATCH /api/v1/vehicles/{id}`, `DELETE /api/v1/vehicles/{id}` | Filter property/resident/type |
+| `/parking` | `GET /api/v1/parking/zones`, `GET /api/v1/parking/slots`, `GET /api/v1/parking/assignments` | Visualisasi zona + slot |
+| `/parking/assignments` | `POST /api/v1/parking/assignments`, `PATCH /api/v1/parking/assignments/{id}`, `DELETE /api/v1/parking/assignments/{id}` | Pairing kendaraan ↔ slot |
+
+Penghuni: tampilkan kendaraan miliknya di Profil (read-only) memakai `GET /api/v1/penghuni/me/vehicles` (jika tersedia) atau turunkan dari payload `me` saat dibutuhkan. Konfirmasi route tepat dilakukan saat M11F.
+
+### 23.3 Penyesuaian Urutan Prioritas (bagian 7)
+
+Klarifikasi yang dibekukan:
+- Dashboard Admin BUKAN halaman pertama. Dashboard diintegrasikan di akhir M11C setelah Rooms/Residents/Billing/Complaint live.
+- Vehicle/Parking dinaikkan ke M11D, sebelum Notifications/Settings.
+- Reports digeser ke M11G (sebelumnya disebut M11F di draft awal); penomoran final mengikuti bagian 20 yang sudah diperbarui di addendum ini.
+
+### 23.4 Tambahan Risiko
+
+- **R-14 — File upload tanpa standar.** Mitigasi: ADR-FE-009 menetapkan jalur File API, MIME allowlist, dan ukuran maksimum.
+- **R-15 — Correlation-id hilang antar retry/refresh.** Mitigasi: ADR-FE-011 memastikan id dipertahankan per operasi logis; refresh queue tidak meng-overwrite.
+- **R-16 — Cache bleed saat ganti property.** Mitigasi: ADR-FE-005 menetapkan `removeQueries` ber-predicate berdasarkan `propertyId` yang lama.
+
+### 23.5 Endpoint Backend Tanpa UI Phase 1 — Diputuskan
+
+| Endpoint | Keputusan |
+|---|---|
+| `/api/v1/audit/*` | Viewer read-only minimum (owner/manager) di M11G. Export job tetap. |
+| `/api/v1/files/{id}/access-logs` | Tidak ada halaman dedicated Phase 1. Diakses melalui audit viewer M11G bila perlu. |
+| `/api/v1/property-owner/*` | Read-only portal minimum di M11E sebagai route group `/property-owner` di Admin. Aplikasi terpisah dipertimbangkan untuk Phase 2. |
+| `/api/v1/penghuni/lease-extension-requests`, `/api/v1/penghuni/check-out-requests` | UI di Profil Penghuni di M11F. |
+
+### 23.6 Verdict Akhir M11AF
+
+**A. Frontend Architecture Frozen.**
+
+Implementasi M11B boleh dimulai. Tidak ada perubahan arsitektur yang diperbolehkan di tengah jalan kecuali melalui ADR baru di `FRONTEND_ARCHITECTURE_DECISIONS.md`.

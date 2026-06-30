@@ -89,3 +89,20 @@
 - Property scope and resident active access grant self-scope
 - Command endpoint uses simulated gateway response and rate limit helper
 - Build and lint passed
+
+## 2026-06-30
+
+### Frontend Integration Planning (M11A)
+- Added `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md`
+- Mapping Admin and Penghuni pages to backend endpoints
+- Priority list, milestone sequencing (M11B..M11J)
+- Risks, Definition of Done, deferred items documented
+- Verdict: ready to proceed to M11B
+
+### Frontend Architecture Freeze (M11AF)
+- Added `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` with ADR-FE-001..ADR-FE-011
+- Appended M11AF review addendum (section 23) to `FRONTEND_INTEGRATION_PLAN.md`
+- Promoted Vehicle + Parking UI to M11D (backend M8 already done)
+- Clarified Dashboard Admin integrated at end of M11C, not first
+- Confirmed Smart Lock simulated strategy until M10G real Tuya runtime ships
+- Verdict: Frontend Architecture Frozen

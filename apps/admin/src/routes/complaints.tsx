@@ -5,16 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/state/EmptyState";
+import { ErrorState } from "@/components/state/ErrorState";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { complaints as seed, type Complaint, type ComplaintStatus } from "@/lib/mock-data";
+  useComplaints,
+  useComplaintCategories,
+  type ComplaintPriority,
+  type ComplaintRecord,
+  type StoredComplaintStatus,
+} from "@/hooks/useComplaints";
 import { formatDate } from "@/lib/format";
 import {
   Search,
@@ -22,134 +30,192 @@ import {
   Clock,
   CheckCircle2,
   Loader2,
-  Upload,
-  UserCog,
   Inbox,
+  UserCog,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { toast } from "sonner";
-import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid } from "recharts";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/complaints")({ component: ComplaintsPage });
 
-type ComplaintTab = "all" | ComplaintStatus;
+type ComplaintTab = "all" | "open" | "in_progress" | "resolved" | "closed";
 
-const statusMeta: Record<ComplaintStatus, { label: string; cls: string; icon: LucideIcon }> = {
-  waiting: {
+function isComplaintTab(value: string): value is ComplaintTab {
+  return ["all", "open", "in_progress", "resolved", "closed"].includes(value);
+}
+
+// Map UI tab -> backend status. The backend has 9 stored statuses; we group
+// them visually into the 4 buckets the Lovable design exposes.
+function tabToStatusFilter(tab: ComplaintTab): StoredComplaintStatus | undefined {
+  switch (tab) {
+    case "open":
+      return "submitted";
+    case "in_progress":
+      return "in_progress";
+    case "resolved":
+      return "resolved";
+    case "closed":
+      return "closed";
+    default:
+      return undefined;
+  }
+}
+
+const STATUS_META: Record<
+  StoredComplaintStatus,
+  { label: string; cls: string; icon: LucideIcon }
+> = {
+  submitted: {
     label: "Menunggu",
     cls: "bg-warning/20 text-warning-foreground border-warning/30",
     icon: Clock,
   },
-  processing: {
+  acknowledged: {
+    label: "Dilihat",
+    cls: "bg-primary-soft text-primary border-primary/20",
+    icon: Clock,
+  },
+  in_progress: {
     label: "Diproses",
     cls: "bg-primary-soft text-primary border-primary/20",
     icon: Loader2,
   },
-  done: {
+  on_hold: {
+    label: "Ditahan",
+    cls: "bg-muted text-muted-foreground border-border",
+    icon: Clock,
+  },
+  escalated: {
+    label: "Eskalasi",
+    cls: "bg-destructive/15 text-destructive border-destructive/30",
+    icon: MessageSquareWarning,
+  },
+  resolved: {
     label: "Selesai",
     cls: "bg-success/15 text-success border-success/30",
     icon: CheckCircle2,
   },
+  reopened: {
+    label: "Dibuka Ulang",
+    cls: "bg-warning/20 text-warning-foreground border-warning/30",
+    icon: MessageSquareWarning,
+  },
+  closed: {
+    label: "Ditutup",
+    cls: "bg-muted text-muted-foreground border-border",
+    icon: CheckCircle2,
+  },
+  cancelled: {
+    label: "Dibatalkan",
+    cls: "bg-muted text-muted-foreground border-border line-through",
+    icon: MessageSquareWarning,
+  },
 };
 
-function isComplaintTab(value: string): value is ComplaintTab {
-  return value === "all" || value === "waiting" || value === "processing" || value === "done";
-}
-
-const prioMeta = {
+const PRIO_META: Record<ComplaintPriority, string> = {
   low: "bg-muted text-muted-foreground",
   medium: "bg-warning/20 text-warning-foreground",
   high: "bg-destructive/15 text-destructive",
-} as const;
+  urgent: "bg-destructive/25 text-destructive",
+};
 
 function ComplaintsPage() {
-  const [items, setItems] = useState<Complaint[]>(seed);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<"all" | ComplaintStatus>("all");
-  const [selected, setSelected] = useState<Complaint | null>(null);
+  const [tab, setTab] = useState<ComplaintTab>("all");
+  const [selected, setSelected] = useState<ComplaintRecord | null>(null);
 
-  const filtered = useMemo(
-    () =>
-      items.filter((c) => {
-        if (tab !== "all" && c.status !== tab) return false;
-        if (
-          q &&
-          !`${c.tenantName} ${c.roomNumber} ${c.category} ${c.description}`
-            .toLowerCase()
-            .includes(q.toLowerCase())
-        )
-          return false;
-        return true;
-      }),
-    [items, q, tab],
-  );
+  const status = tabToStatusFilter(tab);
+  const { data, isLoading, error, refetch, isFetching } = useComplaints({
+    status,
+    limit: 100,
+  });
+  const categoriesQuery = useComplaintCategories();
 
-  const stats = {
-    total: items.length,
-    done: items.filter((i) => i.status === "done").length,
-    processing: items.filter((i) => i.status === "processing").length,
-    avg: "1.4 hari",
-  };
+  const categoryById = useMemo(() => {
+    const map = new Map<string, string>();
+    (categoriesQuery.data ?? []).forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [categoriesQuery.data]);
+
+  const items = data ?? [];
+
+  const filtered = useMemo(() => {
+    if (!q) return items;
+    const needle = q.toLowerCase();
+    return items.filter(
+      (c) =>
+        c.snapshotResidentName.toLowerCase().includes(needle) ||
+        c.title.toLowerCase().includes(needle) ||
+        c.description.toLowerCase().includes(needle) ||
+        (c.snapshotRoomNumber?.toLowerCase().includes(needle) ?? false) ||
+        (categoryById.get(c.categoryId)?.toLowerCase().includes(needle) ?? false),
+    );
+  }, [items, q, categoryById]);
+
+  const stats = useMemo(() => {
+    const total = items.length;
+    const done = items.filter((i) => ["resolved", "closed"].includes(i.complaintStatus)).length;
+    const inProgress = items.filter((i) =>
+      ["submitted", "acknowledged", "in_progress", "reopened"].includes(i.complaintStatus),
+    ).length;
+    return { total, done, inProgress };
+  }, [items]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    items.forEach((i) => map.set(i.category, (map.get(i.category) || 0) + 1));
+    items.forEach((i) => {
+      const name = categoryById.get(i.categoryId) ?? "Lainnya";
+      map.set(name, (map.get(name) ?? 0) + 1);
+    });
     return Array.from(map, ([category, count]) => ({ category, count }));
-  }, [items]);
-
-  const updateStatus = (id: string, status: ComplaintStatus) => {
-    setItems((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              status,
-              timeline: [
-                ...c.timeline,
-                {
-                  time: new Date().toLocaleString("id-ID"),
-                  label: `Status diubah ke ${statusMeta[status].label}`,
-                },
-              ],
-            }
-          : c,
-      ),
-    );
-    setSelected((s) => (s && s.id === id ? { ...s, status } : s));
-    toast.success(`Status komplain diperbarui: ${statusMeta[status].label}`);
-  };
+  }, [items, categoryById]);
 
   return (
     <AppShell title="Komplain Penghuni" subtitle="Kelola tiket keluhan & maintenance">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {
-            l: "Total Bulan Ini",
-            v: stats.total,
-            c: "bg-primary-soft text-primary",
-            i: MessageSquareWarning,
-          },
-          { l: "Selesai", v: stats.done, c: "bg-success/15 text-success", i: CheckCircle2 },
-          {
-            l: "Diproses",
-            v: stats.processing,
-            c: "bg-warning/20 text-warning-foreground",
-            i: Loader2,
-          },
-          { l: "Rata-rata Penyelesaian", v: stats.avg, c: "bg-chart-4/15 text-chart-4", i: Clock },
-        ].map((s) => (
-          <Card key={s.l} className="hover:shadow-md transition-all">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">{s.l}</p>
-                <p className="text-2xl font-semibold mt-1.5">{s.v}</p>
-              </div>
-              <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${s.c}`}>
-                <s.i className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {isLoading ? (
+          <>
+            <KpiSkeleton />
+            <KpiSkeleton />
+            <KpiSkeleton />
+            <KpiSkeleton />
+          </>
+        ) : (
+          [
+            {
+              l: "Total Bulan Ini",
+              v: stats.total,
+              c: "bg-primary-soft text-primary",
+              i: MessageSquareWarning,
+            },
+            { l: "Selesai", v: stats.done, c: "bg-success/15 text-success", i: CheckCircle2 },
+            {
+              l: "Diproses",
+              v: stats.inProgress,
+              c: "bg-warning/20 text-warning-foreground",
+              i: Loader2,
+            },
+            {
+              l: "Kategori",
+              v: categoriesQuery.data?.length ?? 0,
+              c: "bg-chart-4/15 text-chart-4",
+              i: Clock,
+            },
+          ].map((s) => (
+            <Card key={s.l} className="hover:shadow-md transition-all">
+              <CardContent className="p-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{s.l}</p>
+                  <p className="text-2xl font-semibold mt-1.5">{s.v}</p>
+                </div>
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${s.c}`}>
+                  <s.i className="h-5 w-5" />
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <Card className="mt-4">
@@ -158,38 +224,45 @@ function ComplaintsPage() {
         </CardHeader>
         <CardContent>
           <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byCategory}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="var(--color-border)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="category"
-                  stroke="var(--color-muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="var(--color-muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="count" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {byCategory.length === 0 ? (
+              <EmptyState
+                title="Belum ada data"
+                description="Distribusi muncul setelah tiket komplain pertama dibuat."
+              />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byCategory}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="var(--color-border)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="category"
+                    stroke="var(--color-muted-foreground)"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="var(--color-muted-foreground)"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <RTooltip
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Bar dataKey="count" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -217,24 +290,42 @@ function ComplaintsPage() {
           >
             <TabsList>
               <TabsTrigger value="all">Semua</TabsTrigger>
-              <TabsTrigger value="waiting">Menunggu</TabsTrigger>
-              <TabsTrigger value="processing">Diproses</TabsTrigger>
-              <TabsTrigger value="done">Selesai</TabsTrigger>
+              <TabsTrigger value="open">Menunggu</TabsTrigger>
+              <TabsTrigger value="in_progress">Diproses</TabsTrigger>
+              <TabsTrigger value="resolved">Selesai</TabsTrigger>
+              <TabsTrigger value="closed">Ditutup</TabsTrigger>
             </TabsList>
           </Tabs>
 
-          {filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <Inbox className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="font-medium">Belum ada komplain</p>
-              <p className="text-sm text-muted-foreground">
-                Tiket akan tampil di sini saat penghuni mengajukan.
-              </p>
-            </div>
-          ) : (
+          {error ? (
+            <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat komplain" />
+          ) : isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<Inbox className="h-5 w-5" />}
+              title={q ? "Tidak ada tiket cocok" : "Belum ada komplain"}
+              description={
+                q
+                  ? "Coba ubah kata kunci pencarian atau pindah tab."
+                  : "Tiket akan tampil saat penghuni mengajukan komplain."
+              }
+            />
+          ) : (
+            <div
+              className={cn(
+                "grid grid-cols-1 md:grid-cols-2 gap-3",
+                isFetching && "opacity-90 transition-opacity",
+              )}
+            >
               {filtered.map((c) => {
-                const Icon = statusMeta[c.status].icon;
+                const meta = STATUS_META[c.complaintStatus];
+                const Icon = meta.icon;
+                const categoryName = categoryById.get(c.categoryId) ?? "–";
                 return (
                   <button
                     key={c.id}
@@ -245,30 +336,29 @@ function ComplaintsPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-sm">
-                            #{c.id.toUpperCase()} · {c.category}
+                            {c.complaintCode} · {categoryName}
                           </p>
                           <span
-                            className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${prioMeta[c.priority]}`}
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[c.priority]}`}
                           >
                             {c.priority}
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                        <p className="text-sm font-medium mt-1 truncate">{c.title}</p>
+                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
                           {c.description}
                         </p>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`shrink-0 gap-1 ${statusMeta[c.status].cls}`}
-                      >
-                        <Icon className="h-3 w-3" /> {statusMeta[c.status].label}
+                      <Badge variant="outline" className={`shrink-0 gap-1 ${meta.cls}`}>
+                        <Icon className="h-3 w-3" /> {meta.label}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
                       <span>
-                        {c.tenantName} · Kamar {c.roomNumber}
+                        {c.snapshotResidentName}
+                        {c.snapshotRoomNumber ? ` · Kamar ${c.snapshotRoomNumber}` : ""}
                       </span>
-                      <span>{formatDate(c.date)}</span>
+                      <span>{formatDate(c.submittedAt.slice(0, 10))}</span>
                     </div>
                   </button>
                 );
@@ -284,87 +374,68 @@ function ComplaintsPage() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  Tiket #{selected.id.toUpperCase()}
+                  Tiket {selected.complaintCode}
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${prioMeta[selected.priority]}`}
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[selected.priority]}`}
                   >
                     {selected.priority}
                   </span>
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <img
-                  src={selected.photo}
-                  alt="kerusakan"
-                  className="w-full h-56 object-cover rounded-lg border border-border"
-                />
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs">Penghuni</p>
-                    <p className="font-medium">{selected.tenantName}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Kamar</p>
-                    <p className="font-medium">{selected.roomNumber}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Kategori</p>
-                    <p className="font-medium">{selected.category}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Tanggal</p>
-                    <p className="font-medium">{formatDate(selected.date)}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-muted-foreground text-xs">Teknisi</p>
-                    <p className="font-medium flex items-center gap-1.5">
-                      <UserCog className="h-3.5 w-3.5" />
-                      {selected.technician || "Belum ditugaskan"}
-                    </p>
-                  </div>
+                  <Info label="Penghuni" value={selected.snapshotResidentName} />
+                  <Info
+                    label="Kamar"
+                    value={selected.snapshotRoomNumber ?? "–"}
+                  />
+                  <Info
+                    label="Kategori"
+                    value={categoryById.get(selected.categoryId) ?? "–"}
+                  />
+                  <Info label="Tanggal" value={formatDate(selected.submittedAt.slice(0, 10))} />
+                  <Info label="Status" value={STATUS_META[selected.complaintStatus].label} />
+                  <Info label="SLA" value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Judul</p>
+                  <p className="text-sm font-medium">{selected.title}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Deskripsi</p>
-                  <p className="text-sm">{selected.description}</p>
+                  <p className="text-sm whitespace-pre-wrap">{selected.description}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Timeline Progress</p>
-                  <ol className="relative border-l border-border ml-2 space-y-3">
-                    {selected.timeline.map((t, i) => (
-                      <li key={i} className="ml-4">
-                        <span className="absolute -left-1.5 h-3 w-3 rounded-full bg-primary" />
-                        <p className="text-sm font-medium">{t.label}</p>
-                        <p className="text-xs text-muted-foreground">{t.time}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
+                {selected.locationNote ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Catatan Lokasi</p>
+                    <p className="text-sm">{selected.locationNote}</p>
+                  </div>
+                ) : null}
                 <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border">
-                  <Select
-                    value={selected.status}
-                    onValueChange={(v) => updateStatus(selected.id, v as ComplaintStatus)}
-                  >
-                    <SelectTrigger className="sm:w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="waiting">Menunggu</SelectItem>
-                      <SelectItem value="processing">Diproses</SelectItem>
-                      <SelectItem value="done">Selesai</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    onClick={() => toast.success("Foto berhasil diupload (dummy)")}
-                  >
-                    <Upload className="h-4 w-4 mr-1" /> Upload Foto
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => toast.success("Teknisi ditugaskan (dummy)")}
-                  >
-                    <UserCog className="h-4 w-4 mr-1" /> Assign Teknisi
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="sm:flex-1">
+                          <Button variant="outline" className="w-full" disabled>
+                            <UserCog className="h-4 w-4 mr-1" /> Assign Teknisi
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>Assign teknisi tersedia di M11E.</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="sm:flex-1">
+                          <Button className="w-full" disabled>
+                            Ubah Status
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Transisi status komplain tersedia di M11E.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
             </>
@@ -372,5 +443,25 @@ function ComplaintsPage() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-muted-foreground text-xs">{label}</p>
+      <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+function KpiSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-3">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-7 w-16" />
+      </CardContent>
+    </Card>
   );
 }

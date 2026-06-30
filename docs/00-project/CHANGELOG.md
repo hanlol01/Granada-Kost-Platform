@@ -106,3 +106,38 @@
 - Clarified Dashboard Admin integrated at end of M11C, not first
 - Confirmed Smart Lock simulated strategy until M10G real Tuya runtime ships
 - Verdict: Frontend Architecture Frozen
+
+### Frontend Foundation (M11B / M11BV)
+- `packages/api-client`: fetch wrapper, single-flight refresh queue, idempotency, correlation id, ApiError normalization
+- `packages/domain`: shared types, enums, envelopes, error codes, money + date helpers
+- Admin app: env validation, query client defaults, AuthProvider + AuthGuard + login/logout/refresh, PropertyProvider with cache-bleed protection, RBAC-aware nav items
+- Penghuni app: equivalent foundation pieces wired (login, AuthGuard, base routes)
+- Build, lint, typecheck passed
+
+### Admin Core Data (M11C / M11CV)
+- Rooms list integrated (`GET /rooms`) with property scope and search
+- Residents list integrated (`GET /residents`) with server search + PII masking
+- Dashboard summary aggregated from `/rooms`, `/residents`, `/billing/aging-summary`
+- Skeleton, empty, filtered-empty, and error states for every list
+- Build, lint, typecheck passed
+
+### Admin Operational (M11D / M11DV)
+- Billing list integrated (`GET /invoices`, `GET /payments`) with tabs and aging stats
+- Complaint list integrated (`GET /complaints`, `GET /complaint-categories`) with status mapping and per-category chart
+- Vehicle list integrated (`GET /vehicles`) with status + type filter
+- Parking list integrated (`GET /parking/zones`, `GET /parking/slots`) with capacity pill
+- All disabled action buttons labeled "tersedia di M11E"
+- Build, lint, typecheck passed
+
+### Admin Operational Mutations (M11E)
+- Mutation infrastructure: `lib/idempotency.ts`, `lib/mutation-feedback.ts`, `components/confirm/ConfirmDialog.tsx`
+- Domain hooks: `useRoomMutations`, `useResidentMutations`, `useOccupancyMutations` (check-in), `useBillingMutations`, `useComplaintMutations`, `useVehicleMutations`, `useParkingMutations`
+- Rooms: create, edit, update status (`POST /rooms`, `PATCH /rooms/:id`, `PATCH /rooms/:id/status`)
+- Residents: create, edit, update status (`POST /residents`, `PATCH /residents/:id`, `PATCH /residents/:id/status`)
+- Occupancy: completeCheckIn from Tenants (`POST /check-ins`); check-out lifecycle deferred (no occupancy picker)
+- Billing: invoice issue + cancel (`POST /invoices/:id/issue`, `.../cancel`); payment verify + reject (`POST /payments/:id/verify`, `.../reject`); invoice create + payment-proof verdict deferred (no HTTP route for proof verdict, no snapshot picker)
+- Complaints: acknowledge, resolve, close, reopen, cancel (`POST /complaints/:id/{acknowledge,resolve,close,reopen,cancel}`); assign deferred (no technician picker)
+- Vehicles: approve, reject, suspend, reactivate, deactivate (`POST /vehicles/:id/{approve,reject,suspend,reactivate,deactivate}`); create/edit deferred (no resident picker)
+- Parking: assign + release slot (`POST /parking/slots/:id/{assign,release}`); zone/slot create deferred
+- UX: idempotency-key on every write, react-hook-form + zod inline validation, ConfirmDialog for sensitive verbs with typed reason (MinLength 3) where backend requires, sonner toast with ApiError correlationId, RBAC-aware action visibility, no PII in console
+- Build, lint, typecheck passed

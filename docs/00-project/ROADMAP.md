@@ -86,18 +86,30 @@
 - Smart Lock API layer with RBAC, property scope, resident self-scope, and simulated Tuya gateway response.
 - Status: selesai sampai 10E.
 
-## Milestone 11 - Frontend Integration Planning
+## Milestone 11 - Frontend Integration
 
-- M11A - Frontend Integration Plan (Admin + Penghuni).
-- M11AF - Frontend Architecture Freeze Review.
-- Output:
-  - `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md`.
-  - `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` (ADR ringan, frozen).
-- Status: selesai.
-- Verdict: Frontend Architecture Frozen. Implementasi M11B siap dimulai.
+- M11A - Frontend Integration Plan (Admin + Penghuni). Status: selesai.
+- M11AF - Frontend Architecture Freeze Review. Status: selesai.
+- M11B - Frontend Foundation (api-client, domain, auth, query layer, route guards, env validation, property context). Status: selesai.
+- M11BV - Foundation verification. Status: selesai.
+- M11C - Admin Core Data (Rooms, Residents read; Dashboard summary). Status: selesai.
+- M11CV - Admin Core Data verification. Status: selesai.
+- M11D - Admin Operational read (Billing, Complaint, Vehicle, Parking). Status: selesai.
+- M11DV - Admin Operational verification. Status: selesai.
+- M11E - Admin Operational Mutations (rooms / residents / check-in / invoices / payments / complaints / vehicles / parking writes). Status: selesai.
+- Output kunci:
+  - `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md` (M11A) + addendum M11AF/M11E.
+  - `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` (frozen).
+  - `packages/api-client`, `packages/domain` (rilis M11B).
+  - Halaman Admin live: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking. Smart Lock & CCTV tetap placeholder.
+- Verdict: Frontend Architecture tetap Frozen. M11F siap dimulai untuk Penghuni Core.
 
 ## Next Milestone
 
 - M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya menunggu akses fisik).
-- M11B - Frontend Foundation (API client, auth, query layer, route guards).
-- File upload implementation, CCTV, dan worker/provider integration belum dimulai.
+- M11F - Penghuni Core (PWA: me, room, billing current/history, complaint, notifikasi, info, profile).
+- M11G - Reports + Audit minimum (Admin Reports occupancy/revenue/aging/payments + audit viewer minimum + Notifications/Settings).
+- M11H - Smart Lock UI Integration (setelah M10G real Tuya).
+- M11I - CCTV preview (saat gateway lokal tersedia).
+- M11J - Phase 2 surfaces (booking publik, chat, payment gateway, push/WhatsApp).
+- File upload implementation dan worker/provider integration sebagian dimulai bersama M11F (File API untuk payment proof + complaint photo).

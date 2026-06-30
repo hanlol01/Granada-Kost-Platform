@@ -12,18 +12,27 @@ import {
   Clock,
 } from "lucide-react";
 import {
-  currentUser,
   currentBill,
   announcements,
   paymentHistory,
   formatIDR,
 } from "@/lib/dummy-data";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/")({
   component: HomePage,
 });
 
 function HomePage() {
+  // M11C: greeting + room derived from /auth/me. Bill, payment history and announcements
+  // are M11F scope and still come from dummy-data until those endpoints are wired.
+  const { user } = useAuth();
+  const displayName = user?.name ?? "Penghuni";
+  const initials = (displayName.split(" ").map((p) => p[0]).join("") || "P")
+    .slice(0, 2)
+    .toUpperCase();
+  const roomLabel = user?.properties?.[0]?.name ?? "-";
+
   const daysToDue = Math.ceil(
     (new Date(currentBill.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   );
@@ -37,14 +46,13 @@ function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs opacity-80">Selamat datang,</p>
-            <h1 className="text-xl font-semibold">{currentUser.name} 👋</h1>
+            <h1 className="text-xl font-semibold">{displayName} 👋</h1>
             <p className="mt-1 text-xs opacity-80">
-              Kamar <span className="font-medium opacity-100">{currentUser.room}</span> ·{" "}
-              {currentUser.status}
+              Kamar <span className="font-medium opacity-100">{roomLabel}</span> · Aktif
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur">
-            {currentUser.avatar}
+            {initials}
           </div>
         </div>
 

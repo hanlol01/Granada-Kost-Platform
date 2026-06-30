@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Sidebar, BottomNav } from "./nav";
+import { UserMenu } from "./user-menu";
 import { Bell, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
@@ -46,6 +47,7 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
                 <Bell className="h-4 w-4" />
                 <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
               </Button>
+              <UserMenu />
             </div>
           </div>
         </header>

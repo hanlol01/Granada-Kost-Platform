@@ -15,26 +15,80 @@ import {
   CalendarCheck,
   ClipboardList,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { RoleCode } from "@granada-kost/domain";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { isCctvEnabled, isBookingEnabled } from "@/lib/features";
 
-export const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/rooms", label: "Kamar", icon: BedDouble },
-  { to: "/tenants", label: "Penghuni", icon: Users },
-  { to: "/payments", label: "Pembayaran", icon: CreditCard },
-  { to: "/complaints", label: "Komplain", icon: MessageSquareWarning },
-  { to: "/cctv", label: "CCTV", icon: Cctv },
-  { to: "/smart-lock", label: "Smart Lock", icon: Lock },
-  { to: "/access-history", label: "Access History", icon: History },
-  { to: "/booking", label: "Booking Kamar", icon: CalendarCheck },
-  { to: "/bookings", label: "Manajemen Booking", icon: ClipboardList },
-  { to: "/reports", label: "Laporan", icon: BarChart3 },
-  { to: "/notifications", label: "Notifikasi", icon: Bell },
-  { to: "/settings", label: "Pengaturan", icon: Settings },
+// Sidebar items are filtered by RBAC at render time (ADR-FE-004 + ADR-FE-006).
+// `roles` field is an allowlist; an item shown only if user holds at least one role.
+// `requiresFlag` hides UI when a Phase 1 feature flag is off (Smart Lock UI is always shown
+// because it uses simulated backend per ADR-FE-010).
+type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  roles: RoleCode[];
+  requiresFlag?: "cctv" | "booking";
+};
+
+export const navItems: readonly NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "manager", "admin"] },
+  { to: "/rooms", label: "Kamar", icon: BedDouble, roles: ["owner", "manager", "admin"] },
+  { to: "/tenants", label: "Penghuni", icon: Users, roles: ["owner", "manager", "admin"] },
+  { to: "/payments", label: "Pembayaran", icon: CreditCard, roles: ["owner", "manager", "admin"] },
+  {
+    to: "/complaints",
+    label: "Komplain",
+    icon: MessageSquareWarning,
+    roles: ["owner", "manager", "admin", "technician"],
+  },
+  {
+    to: "/cctv",
+    label: "CCTV",
+    icon: Cctv,
+    roles: ["owner", "manager"],
+    requiresFlag: "cctv",
+  },
+  { to: "/smart-lock", label: "Smart Lock", icon: Lock, roles: ["owner", "manager"] },
+  { to: "/access-history", label: "Access History", icon: History, roles: ["owner", "manager"] },
+  {
+    to: "/booking",
+    label: "Booking Kamar",
+    icon: CalendarCheck,
+    roles: ["owner", "manager", "admin"],
+    requiresFlag: "booking",
+  },
+  {
+    to: "/bookings",
+    label: "Manajemen Booking",
+    icon: ClipboardList,
+    roles: ["owner", "manager", "admin"],
+    requiresFlag: "booking",
+  },
+  { to: "/reports", label: "Laporan", icon: BarChart3, roles: ["owner", "manager", "admin"] },
+  {
+    to: "/notifications",
+    label: "Notifikasi",
+    icon: Bell,
+    roles: ["owner", "manager", "admin", "technician"],
+  },
+  { to: "/settings", label: "Pengaturan", icon: Settings, roles: ["owner", "manager"] },
 ] as const;
+
+function useVisibleNavItems(): readonly NavItem[] {
+  const { hasRole } = useAuth();
+  return navItems.filter((item) => {
+    if (item.requiresFlag === "cctv" && !isCctvEnabled()) return false;
+    if (item.requiresFlag === "booking" && !isBookingEnabled()) return false;
+    return hasRole(item.roles);
+  });
+}
 
 export function Sidebar() {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const items = useVisibleNavItems();
   return (
     <aside className="hidden lg:flex w-64 flex-col border-r border-sidebar-border bg-sidebar sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-6 py-6 border-b border-sidebar-border">
@@ -47,7 +101,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const active = path === item.to;
           const Icon = item.icon;
           return (
@@ -79,7 +133,7 @@ export function Sidebar() {
 
 export function BottomNav() {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const items = navItems.slice(0, 5);
+  const items = useVisibleNavItems().slice(0, 5);
   return (
     <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-border">
       <div className="grid grid-cols-5">

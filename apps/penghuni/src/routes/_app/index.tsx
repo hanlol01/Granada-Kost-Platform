@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Wifi,
   Receipt,
   Wrench,
   MessageCircle,
@@ -11,33 +10,33 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import { currentBill, announcements, paymentHistory, formatIDR } from "@/lib/dummy-data";
-import { useAuth } from "@/lib/auth";
+import { LoadingState, ErrorState, EmptyState } from "@/components/state";
+import { usePenghuniHome } from "@/hooks/usePenghuniHome";
+import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/")({
   component: HomePage,
 });
 
 function HomePage() {
-  // M11C: greeting + room derived from /auth/me. Bill, payment history and announcements
-  // are M11F scope and still come from dummy-data until those endpoints are wired.
-  const { user } = useAuth();
-  const displayName = user?.name ?? "Penghuni";
-  const initials = (
-    displayName
-      .split(" ")
-      .map((p) => p[0])
-      .join("") || "P"
-  )
-    .slice(0, 2)
-    .toUpperCase();
-  const roomLabel = user?.properties?.[0]?.name ?? "-";
+  // M11F: home is composed from /auth/me + /my/invoices + /my/payments +
+  // /my/notifications/unread-count. Announcements remain a placeholder until
+  // a resident-scoped endpoint ships.
+  const home = usePenghuniHome();
 
-  const daysToDue = Math.ceil(
-    (new Date(currentBill.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-  );
-  const paidMonths = paymentHistory.length;
-  const progress = Math.min(100, (paidMonths / (paidMonths + 1)) * 100);
+  if (home.isLoading) {
+    return <LoadingState label="Memuat data..." />;
+  }
+  if (home.isError) {
+    return <ErrorState error={home.error} onRetry={() => void home.refetch()} />;
+  }
+
+  const { profile, currentInvoice, recentPayments, unreadNotifications } = home;
+  const daysToDue = currentInvoice ? daysUntil(currentInvoice.dueDate) : null;
+  const paidCount = recentPayments.filter((p) => p.paymentStatus === "verified").length;
+  const progressDenominator = paidCount + (currentInvoice ? 1 : 0);
+  const progress =
+    progressDenominator > 0 ? Math.min(100, (paidCount / progressDenominator) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-5 animate-[fade-in_0.4s_ease-out]">
@@ -46,48 +45,66 @@ function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs opacity-80">Selamat datang,</p>
-            <h1 className="text-xl font-semibold">{displayName} 👋</h1>
+            <h1 className="text-xl font-semibold">{profile.displayName} 👋</h1>
             <p className="mt-1 text-xs opacity-80">
-              Kamar <span className="font-medium opacity-100">{roomLabel}</span> · Aktif
+              {currentInvoice
+                ? <>Kamar <span className="font-medium opacity-100">{currentInvoice.snapshotRoomNumber}</span> · Aktif</>
+                : profile.roomLabel
+                  ? <>Properti <span className="font-medium opacity-100">{profile.roomLabel}</span></>
+                  : <>Status hunian akan tampil di sini</>}
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur">
-            {initials}
+            {profile.initials}
           </div>
         </div>
 
         {/* Bill card overlay */}
-        <Link
-          to="/billing"
-          className="mt-6 block rounded-2xl bg-white/15 p-4 backdrop-blur-md ring-1 ring-white/20 transition hover:bg-white/20"
-        >
-          <div className="flex items-center justify-between text-xs opacity-90">
-            <span>Tagihan {currentBill.period}</span>
-            <span className="rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold text-warning-foreground">
-              Belum Lunas
-            </span>
+        {currentInvoice ? (
+          <Link
+            to="/billing"
+            className="mt-6 block rounded-2xl bg-white/15 p-4 backdrop-blur-md ring-1 ring-white/20 transition hover:bg-white/20"
+          >
+            <div className="flex items-center justify-between text-xs opacity-90">
+              <span>Tagihan {formatPeriodKey(currentInvoice.snapshotPeriodKey)}</span>
+              <InvoiceStatusBadge status={currentInvoice.invoiceStatus} />
+            </div>
+            <div className="mt-2 text-2xl font-bold tracking-tight">
+              {formatIDR(currentInvoice.totalAmount)}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs opacity-90">
+              <span className="inline-flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                {daysToDue === null
+                  ? `Jatuh tempo ${formatDate(currentInvoice.dueDate)}`
+                  : daysToDue >= 0
+                    ? `Jatuh tempo ${daysToDue} hari lagi`
+                    : `Telat ${Math.abs(daysToDue)} hari`}
+              </span>
+              <span className="inline-flex items-center gap-0.5 font-medium">
+                Detail <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+            </div>
+          </Link>
+        ) : (
+          <div className="mt-6 rounded-2xl bg-white/15 p-4 backdrop-blur-md ring-1 ring-white/20 text-xs opacity-90">
+            Tidak ada tagihan yang menunggu pembayaran.
           </div>
-          <div className="mt-2 text-2xl font-bold tracking-tight">
-            {formatIDR(currentBill.amount)}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs opacity-90">
-            <span className="inline-flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> Jatuh tempo {daysToDue} hari lagi
-            </span>
-            <span className="inline-flex items-center gap-0.5 font-medium">
-              Bayar <ChevronRight className="h-3.5 w-3.5" />
-            </span>
-          </div>
-        </Link>
+        )}
       </section>
 
       {/* Quick actions */}
       <section className="-mt-4 px-5">
         <div className="grid grid-cols-4 gap-2 rounded-2xl bg-card p-3 shadow-[var(--shadow-card)]">
-          <QuickAction to="/billing" icon={Receipt} label="Bayar" />
+          <QuickAction to="/billing" icon={Receipt} label="Tagihan" />
           <QuickAction to="/complaints" icon={Wrench} label="Komplain" />
           <QuickAction to="/info" icon={Megaphone} label="Info" />
-          <QuickAction to="/chat" icon={MessageCircle} label="Chat" />
+          <QuickAction
+            to="/notifications"
+            icon={MessageCircle}
+            label="Notif"
+            badge={unreadNotifications > 0 ? unreadNotifications : undefined}
+          />
         </div>
       </section>
 
@@ -95,15 +112,15 @@ function HomePage() {
       <section className="grid grid-cols-2 gap-3 px-5">
         <StatCard
           icon={<CheckCircle2 className="h-4 w-4 text-success" />}
-          label="Bulan Lunas"
-          value={`${paidMonths}x`}
-          hint="Track pembayaran"
+          label="Pembayaran Diverifikasi"
+          value={`${paidCount}x`}
+          hint="Terhitung dari riwayat terbaru"
         />
         <StatCard
-          icon={<Wifi className="h-4 w-4 text-primary" />}
-          label="WiFi Kos"
-          value="98 Mbps"
-          hint="Status: Online"
+          icon={<Receipt className="h-4 w-4 text-primary" />}
+          label="Tagihan Aktif"
+          value={currentInvoice ? "1" : "0"}
+          hint={currentInvoice ? formatPeriodKey(currentInvoice.snapshotPeriodKey) : "Tidak ada"}
         />
       </section>
 
@@ -111,9 +128,9 @@ function HomePage() {
       <section className="mx-5 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs text-muted-foreground">Progress pembayaran tahun ini</p>
+            <p className="text-xs text-muted-foreground">Progress pembayaran (riwayat terbaru)</p>
             <p className="mt-1 text-sm font-semibold">
-              {paidMonths} dari {paidMonths + 1} bulan
+              {paidCount} dari {progressDenominator || "-"} entri
             </p>
           </div>
           <Sparkles className="h-4 w-4 text-primary" />
@@ -126,28 +143,14 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Announcements */}
+      {/* Announcements (placeholder until M11F+ backend endpoint) */}
       <section className="px-5">
         <SectionTitle title="Pengumuman Terbaru" to="/info" />
-        <div className="mt-3 flex flex-col gap-2">
-          {announcements.slice(0, 2).map((a) => (
-            <Link
-              key={a.id}
-              to="/info"
-              className="flex items-start gap-3 rounded-2xl bg-card p-3.5 shadow-[var(--shadow-soft)] transition hover:bg-accent"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-                <Megaphone className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-semibold">{a.title}</p>
-                  <PriorityBadge p={a.priority} />
-                </div>
-                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
-              </div>
-            </Link>
-          ))}
+        <div className="mt-3 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
+          <EmptyState
+            title="Belum tersedia"
+            description="Endpoint pengumuman untuk Penghuni belum dirilis di Phase 1."
+          />
         </div>
       </section>
 
@@ -155,28 +158,41 @@ function HomePage() {
       <section className="px-5">
         <SectionTitle title="Pembayaran Terakhir" to="/billing" />
         <div className="mt-3 flex flex-col gap-2">
-          {paymentHistory.slice(0, 3).map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center gap-3 rounded-2xl bg-card p-3.5 shadow-[var(--shadow-soft)]"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-success/15 text-success">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{p.period}</p>
-                <p className="text-xs text-muted-foreground">
-                  {p.method} · {p.id}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold">{formatIDR(p.amount)}</p>
-                <p className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                  <Clock className="h-3 w-3" /> {p.date}
-                </p>
-              </div>
+          {recentPayments.length === 0 ? (
+            <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
+              <EmptyState title="Belum ada pembayaran" description="Pembayaran yang sudah diverifikasi akan tampil di sini." />
             </div>
-          ))}
+          ) : (
+            recentPayments.slice(0, 3).map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-3 rounded-2xl bg-card p-3.5 shadow-[var(--shadow-soft)]"
+              >
+                <div
+                  className={
+                    "flex h-9 w-9 items-center justify-center rounded-xl " +
+                    (p.paymentStatus === "verified"
+                      ? "bg-success/15 text-success"
+                      : "bg-warning/20 text-warning-foreground")
+                  }
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{p.paymentCode}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {paymentMethodLabel(p.paymentMethod)} · {paymentStatusLabel(p.paymentStatus)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold">{formatIDR(p.amount)}</p>
+                  <p className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> {formatDate(p.paidAt ?? p.createdAt)}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
     </div>
@@ -187,20 +203,27 @@ function QuickAction({
   to,
   icon: Icon,
   label,
+  badge,
 }: {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  badge?: number;
 }) {
   return (
     <Link
       to={to}
-      className="flex flex-col items-center gap-1.5 rounded-xl py-2 text-xs font-medium text-foreground transition active:scale-95"
+      className="relative flex flex-col items-center gap-1.5 rounded-xl py-2 text-xs font-medium text-foreground transition active:scale-95"
     >
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-primary">
         <Icon className="h-5 w-5" />
       </span>
       {label}
+      {badge ? (
+        <span className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -238,19 +261,48 @@ function SectionTitle({ title, to }: { title: string; to: string }) {
   );
 }
 
-function PriorityBadge({ p }: { p: string }) {
-  const map: Record<string, string> = {
-    high: "bg-destructive/15 text-destructive",
-    medium: "bg-warning/20 text-warning-foreground",
-    low: "bg-success/15 text-success",
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    overdue: { label: "Telat", cls: "bg-destructive text-destructive-foreground" },
+    unpaid: { label: "Belum Lunas", cls: "bg-warning text-warning-foreground" },
+    issued: { label: "Diterbitkan", cls: "bg-warning text-warning-foreground" },
+    partially_paid: { label: "Sebagian", cls: "bg-warning text-warning-foreground" },
+    draft: { label: "Draft", cls: "bg-secondary text-foreground" },
+    paid: { label: "Lunas", cls: "bg-success text-success-foreground" },
+    void: { label: "Dibatalkan", cls: "bg-secondary text-foreground" },
   };
+  const s = map[status] ?? { label: status, cls: "bg-secondary text-foreground" };
   return (
-    <span
-      className={
-        "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase " + (map[p] ?? "")
-      }
-    >
-      {p}
+    <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + s.cls}>
+      {s.label}
     </span>
   );
+}
+
+function paymentMethodLabel(method: string): string {
+  switch (method) {
+    case "bank_transfer":
+      return "Transfer Bank";
+    case "qris":
+      return "QRIS";
+    case "ewallet":
+      return "E-Wallet";
+    case "cash":
+      return "Tunai";
+    default:
+      return "Lainnya";
+  }
+}
+
+function paymentStatusLabel(status: string): string {
+  switch (status) {
+    case "verified":
+      return "Terverifikasi";
+    case "pending":
+      return "Menunggu";
+    case "void":
+      return "Dibatalkan";
+    default:
+      return status;
+  }
 }

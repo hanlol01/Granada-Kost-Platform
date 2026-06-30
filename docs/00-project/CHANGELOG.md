@@ -142,6 +142,19 @@
 - Self-scope: tidak ada `resident_id` yang dikirim dari frontend; seluruh endpoint berbasis `/my/*` dan `/auth/*` mengandalkan identitas token.
 - Build, lint, typecheck passed di workspace Penghuni.
 
+### Reports + Audit Minimum (M11G / M11GV)
+- Shared selectors `apps/admin/src/lib/reports-selectors.ts`: occupancy, resident, billing aging, revenue (per tahun), complaint, vehicle, parking, maintenance. Fungsi murni, dependency-free, dapat dipakai unit test.
+- Hook baru `apps/admin/src/hooks/useReports.ts`: `useQueries` lintas resource (rooms, residents, invoices, payments, complaints, vehicles, parking zones + slots fan-out per zone, work-orders), property-scoped sesuai ADR-FE-005.
+- Hook baru `apps/admin/src/hooks/useAuditLogs.ts`: mengembalikan `available: false` karena `/audit/*` belum tersedia di backend; kontrak siap di-swap satu file saat endpoint dirilis.
+- Hook baru `apps/admin/src/hooks/useWorkOrders.ts`: read-only list `/work-orders` untuk Maintenance Summary.
+- `useDashboardSummary` di-refactor di atas `useReports`; panggilan spekulatif `/billing/aging-summary` (404) dihapus. Dashboard dan Reports kini menghasilkan angka identik karena memakai selector yang sama.
+- Halaman `apps/admin/src/routes/reports.tsx` ditulis ulang menggunakan komponen shadcn + recharts existing: KPI strip (revenue tahun terpilih, rata-rata bulanan, total piutang), chart Pendapatan Bulanan, chart Okupansi Kamar, SummaryCard untuk Billing Aging / Pembayaran / Komplain / Maintenance / Kendaraan / Parkir, snapshot Penghuni, dan Audit Viewer section.
+- UX coverage: Loading skeleton, Empty / Filtered-empty state per chart, Error state dengan correlation id + tombol Retry, Forbidden state untuk role di luar `owner | manager | admin`, filter tahun aktif, tombol Export disabled dengan tooltip eksplisit.
+- Endpoint backend yang dipakai (semuanya sudah live Phase 1): `GET /rooms`, `/residents`, `/invoices`, `/payments`, `/complaints`, `/vehicles`, `/parking/zones`, `/parking/slots`, `/work-orders`. Tidak ada endpoint baru di backend. Tidak ada perubahan ADR.
+- Tetap placeholder: Audit Viewer (`/audit/*` belum ada) dan Export laporan (`/reports/exports` belum ada). Tidak ada laporan dummy. Tidak ada export client-side.
+- M11GV validation: hook order Reports diperbaiki (RBAC gate dipindah ke parent, body ke child component agar tidak kondisional), parking slots query distabilkan dengan property-scope, format admin dijalankan.
+- npm install, lint:admin (0 errors / 15 warnings), lint:penghuni (0 errors / 9 warnings), typecheck admin + penghuni, build admin + penghuni: PASS.
+
 ### Admin Operational Mutations (M11E)
 - Mutation infrastructure: `lib/idempotency.ts`, `lib/mutation-feedback.ts`, `components/confirm/ConfirmDialog.tsx`
 - Domain hooks: `useRoomMutations`, `useResidentMutations`, `useOccupancyMutations` (check-in), `useBillingMutations`, `useComplaintMutations`, `useVehicleMutations`, `useParkingMutations`

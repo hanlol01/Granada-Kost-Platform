@@ -101,14 +101,18 @@ Admin - sudah live (read + mutation):
 - Kendaraan (`/vehicles`) - list + approve/reject/suspend/reactivate/deactivate.
 - Parkir (`/parking`) - zones + slots + assign/release.
 
+Admin - sudah live tambahan (per M11G, 2026-06-30):
+- Laporan (`/reports`) - live agregasi dari endpoint Phase 1 melalui `useReports` + shared selectors (`apps/admin/src/lib/reports-selectors.ts`). KPI strip, Pendapatan Bulanan (per tahun), Okupansi Kamar, SummaryCard untuk Billing Aging / Pembayaran / Komplain / Maintenance / Kendaraan / Parkir, snapshot Penghuni. Loading skeleton, empty, filtered-empty, error+correlation id, retry, year filter, Forbidden untuk role di luar allowlist. Dashboard dan Reports memakai selector yang sama sehingga angka konsisten.
+- Audit Viewer section (di halaman Reports) - placeholder eksplisit. Hook `useAuditLogs` mengembalikan `available: false` sampai endpoint `/audit/*` tersedia.
+- Export Readiness - tombol Export di Reports dirender disabled dengan tooltip `"Export laporan tersedia setelah backend membuka /reports/exports."`. Struktur UI sudah siap di-swap tanpa redesign saat endpoint export rilis.
+
 Admin - masih placeholder/dummy:
 - Smart Lock (`/smart-lock`) - `smartLocks`, `lockActivityHourly`, `lockAlerts`. Live setelah M10G + M11H.
 - Access History (`/access-history`) - dummy log. Live di M11H.
 - CCTV (`/cctv`) - placeholder list kamera. Live di M11I.
 - Booking (`/booking`, `/bookings`) - `bookingRooms`, `BOOKING_FEE`. Phase 2 (M11J).
-- Notifikasi (`/notifications`) - list dummy. Wired di M11G.
-- Laporan (`/reports`) - diturunkan dari `payments` + `monthlyIncome`. Wired di M11G.
-- Pengaturan (`/settings`) - form statis tanpa persistensi. Wired di M11G/M11J.
+- Notifikasi (`/notifications`) - list dummy. Dipindah ke milestone berikutnya (di luar M11G karena scope M11G hanya Reports + Audit minimum).
+- Pengaturan (`/settings`) - form statis tanpa persistensi. Dipindah ke milestone berikutnya.
 
 Penghuni - status per M11F (2026-06-30):
 - Home (`/_app/`) - live. Komposisi `/auth/me` + `/my/invoices` (selector current invoice) + `/my/payments` + `/my/notifications/unread-count`. Bagian Pengumuman menjadi empty-state eksplisit sampai endpoint resident tersedia.
@@ -451,10 +455,14 @@ M11F — Penghuni Core:
 - Payment proof upload (multipart) via File API.
 - Lease extension request, check-out request.
 
-M11G — Reports + Audit minimum:
-- Reports occupancy, revenue, billing aging, payments, complaints, maintenance.
-- Export jobs (audit + report exports) UI minimum.
-- Audit log viewer untuk owner/manager (read-only).
+M11G — Reports + Audit minimum: SELESAI.
+- Reports occupancy, revenue (per tahun), billing aging, payments, complaints, maintenance, vehicles, parking, resident snapshot: live, agregasi client-side dari endpoint list yang sudah ada (tidak ada `/reports/*` di backend).
+- Shared selectors `apps/admin/src/lib/reports-selectors.ts` dipakai bersama Dashboard untuk menjamin konsistensi angka.
+- Hooks: `useReports`, `useAuditLogs` (placeholder), `useWorkOrders`. `useDashboardSummary` di-refactor di atasnya.
+- Audit Viewer untuk owner/manager: render placeholder dengan pesan eksplisit; siap di-swap ke tabel saat `/audit/logs` rilis.
+- Export jobs UI: tombol Export disabled dengan tooltip eksplisit; siap di-swap saat `/reports/exports` rilis.
+- Tidak ada endpoint baru di backend. Tidak ada perubahan ADR. Tidak ada laporan dummy. Tidak ada export client-side.
+- Endpoint backend yang masih ditunggu untuk fitur M11G penuh: `/api/v1/audit/logs`, `/audit/auth-events`, `/audit/smart-lock-events`, `/audit/cctv-events`, `/audit/exports`, `/reports/exports`, dan opsional `/reports/*` dedicated, `/billing/aging-summary`, `/admin/dashboard/*`.
 
 M11H — Smart Lock UI Integration (setelah M10G real Tuya):
 - Admin Smart Lock dashboard switch ke data live (tetap UI Lovable, hanya ganti sumber).

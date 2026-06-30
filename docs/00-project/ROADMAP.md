@@ -104,12 +104,27 @@
   - Halaman Admin live: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking. Smart Lock & CCTV tetap placeholder.
 - Verdict: Frontend Architecture tetap Frozen. M11F siap dimulai untuk Penghuni Core.
 
+## Milestone 12 - Reports + Audit Minimum
+
+- M11G - Operational Reports & Audit Readiness. Status: selesai.
+  - Halaman Reports Admin live: KPI strip, Pendapatan Bulanan, Okupansi Kamar, SummaryCard untuk Billing Aging / Pembayaran / Komplain / Maintenance / Kendaraan / Parkir, Resident snapshot, Audit Viewer section.
+  - Shared selectors `apps/admin/src/lib/reports-selectors.ts` menjamin Dashboard dan Reports menghasilkan angka identik.
+  - Hooks baru: `useReports`, `useAuditLogs` (placeholder), `useWorkOrders`. `useDashboardSummary` di-refactor di atas `useReports`.
+  - Audit Viewer dan Export tetap placeholder dengan label eksplisit karena endpoint `/audit/*` dan `/reports/exports` belum tersedia. Tidak ada laporan dummy. Tidak ada export client-side.
+  - RBAC UX: Reports `owner | manager | admin`; Audit `owner | manager`. Backend tetap final authority.
+- M11GV - Validation. Status: PASS.
+  - lint, typecheck, build admin + penghuni passed.
+  - Dashboard dan Reports memakai selector yang sama.
+  - Reports property-scoped (termasuk parking slots fan-out), tanpa direct `fetch()` di routes/hooks, tanpa import `mock-data`.
+  - Hook order Reports diperbaiki: RBAC gating dipindah ke parent, body Reports dengan `useReports` dan `useAuditLogs` di-render lewat child component agar tidak kondisional.
+  - Export tetap disabled. Audit Viewer tetap placeholder. ErrorState menampilkan correlation id.
+  - Verdict: M11GV PASS.
+
 ## Next Milestone
 
 - M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya menunggu akses fisik).
-- M11F - Penghuni Core (PWA: me, room, billing current/history, complaint, notifikasi, info, profile).
-- M11G - Reports + Audit minimum (Admin Reports occupancy/revenue/aging/payments + audit viewer minimum + Notifications/Settings).
 - M11H - Smart Lock UI Integration (setelah M10G real Tuya).
 - M11I - CCTV preview (saat gateway lokal tersedia).
 - M11J - Phase 2 surfaces (booking publik, chat, payment gateway, push/WhatsApp).
 - File upload implementation dan worker/provider integration sebagian dimulai bersama M11F (File API untuk payment proof + complaint photo).
+- Backend follow-up untuk membuka endpoint `/audit/*` dan `/reports/exports` agar Audit Viewer dan Export di Reports dapat diaktifkan tanpa redesign.

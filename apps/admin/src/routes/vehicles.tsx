@@ -5,35 +5,52 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useVehicles, type VehicleStatus, type VehicleType } from "@/hooks/useVehicles";
-import { Search, Plus, Bike, Car, Zap, CircleDot } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { useVehicles, type VehicleRecord, type VehicleStatus, type VehicleType } from "@/hooks/useVehicles";
+import {
+  useApproveVehicle,
+  useDeactivateVehicle,
+  useReactivateVehicle,
+  useRejectVehicle,
+  useSuspendVehicle,
+} from "@/hooks/useVehicleMutations";
+import { useAuth } from "@/lib/auth";
+import {
+  Search,
+  Plus,
+  Bike,
+  Car,
+  Zap,
+  CircleDot,
+  MoreHorizontal,
+  Check,
+  Ban,
+  Pause,
+  Play,
+  PowerOff,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/vehicles")({ component: VehiclesPage });
 
 const STATUS_LABEL: Record<VehicleStatus, { label: string; cls: string }> = {
-  pending_approval: {
-    label: "Menunggu Approval",
-    cls: "bg-warning/20 text-warning-foreground",
-  },
+  pending_approval: { label: "Menunggu Approval", cls: "bg-warning/20 text-warning-foreground" },
   active: { label: "Aktif", cls: "bg-success/15 text-success" },
   rejected: { label: "Ditolak", cls: "bg-destructive/15 text-destructive" },
   suspended: { label: "Suspended", cls: "bg-warning/20 text-warning-foreground" },
-  transfer_pending: {
-    label: "Transfer",
-    cls: "bg-chart-4/15 text-chart-4",
-  },
+  transfer_pending: { label: "Transfer", cls: "bg-chart-4/15 text-chart-4" },
   inactive: { label: "Tidak Aktif", cls: "bg-muted text-muted-foreground" },
 };
 
@@ -45,33 +62,52 @@ const TYPE_ICON: Record<VehicleType, LucideIcon> = {
   other: CircleDot,
 };
 
+type TransitionKind = "approve" | "reject" | "suspend" | "reactivate" | "deactivate";
+
 function VehicleStatusBadge({ status }: { status: VehicleStatus }) {
-  const meta = STATUS_LABEL[status] ?? {
-    label: status,
-    cls: "bg-muted text-muted-foreground",
-  };
+  const meta = STATUS_LABEL[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
   return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
-        meta.cls,
-      )}
-    >
+    <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium", meta.cls)}>
       {meta.label}
     </span>
   );
+}
+
+function availableActions(status: VehicleStatus): TransitionKind[] {
+  switch (status) {
+    case "pending_approval":
+      return ["approve", "reject"];
+    case "active":
+      return ["suspend", "deactivate"];
+    case "suspended":
+      return ["reactivate", "deactivate"];
+    case "transfer_pending":
+      return ["approve", "reject"];
+    default:
+      return [];
+  }
 }
 
 function VehiclesPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | VehicleStatus>("all");
   const [type, setType] = useState<"all" | VehicleType>("all");
+  const [pending, setPending] = useState<{ vehicle: VehicleRecord; kind: TransitionKind } | null>(null);
+
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("vehicle.manage");
 
   const { data, isLoading, error, refetch, isFetching } = useVehicles({
     status: status === "all" ? undefined : status,
     vehicleType: type === "all" ? undefined : type,
     limit: 100,
   });
+
+  const approveMut = useApproveVehicle();
+  const rejectMut = useRejectVehicle();
+  const suspendMut = useSuspendVehicle();
+  const reactivateMut = useReactivateVehicle();
+  const deactivateMut = useDeactivateVehicle();
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -87,6 +123,40 @@ function VehiclesPage() {
   }, [data, q]);
 
   const hasFilter = q !== "" || status !== "all" || type !== "all";
+  const mutationPending =
+    approveMut.isPending ||
+    rejectMut.isPending ||
+    suspendMut.isPending ||
+    reactivateMut.isPending ||
+    deactivateMut.isPending;
+
+  const transitionMeta = (kind: TransitionKind) => {
+    switch (kind) {
+      case "approve":
+        return { title: "Setujui kendaraan", confirm: "Setujui", destructive: false, requiresReason: false };
+      case "reject":
+        return { title: "Tolak kendaraan", confirm: "Tolak", destructive: true, requiresReason: true };
+      case "suspend":
+        return { title: "Suspend kendaraan", confirm: "Suspend", destructive: true, requiresReason: true };
+      case "reactivate":
+        return { title: "Aktifkan kembali", confirm: "Aktifkan", destructive: false, requiresReason: false };
+      case "deactivate":
+        return { title: "Nonaktifkan kendaraan", confirm: "Nonaktifkan", destructive: true, requiresReason: true };
+    }
+  };
+
+  const runTransition = async (vehicle: VehicleRecord, kind: TransitionKind, reason?: string) => {
+    try {
+      if (kind === "approve") await approveMut.mutateAsync({ vehicleId: vehicle.id });
+      else if (kind === "reject") await rejectMut.mutateAsync({ vehicleId: vehicle.id, reason: reason! });
+      else if (kind === "suspend") await suspendMut.mutateAsync({ vehicleId: vehicle.id, reason: reason! });
+      else if (kind === "reactivate") await reactivateMut.mutateAsync({ vehicleId: vehicle.id });
+      else if (kind === "deactivate") await deactivateMut.mutateAsync({ vehicleId: vehicle.id, reason: reason! });
+      setPending(null);
+    } catch {
+      // Already toasted by hook.
+    }
+  };
 
   return (
     <AppShell
@@ -102,7 +172,7 @@ function VehiclesPage() {
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>Pendaftaran kendaraan tersedia di M11E.</TooltipContent>
+            <TooltipContent>Picker penghuni belum tersedia di Phase 1.</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       }
@@ -110,12 +180,7 @@ function VehiclesPage() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari plat, kode, penghuni, atau kamar..."
-            className="pl-9"
-          />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari plat, kode, penghuni, atau kamar..." className="pl-9" />
         </div>
         <Select value={status} onValueChange={(v) => setStatus(v as "all" | VehicleStatus)}>
           <SelectTrigger className="sm:w-48">
@@ -171,11 +236,7 @@ function VehiclesPage() {
             <EmptyState
               icon={<Bike className="h-5 w-5" />}
               title={hasFilter ? "Tidak ada kendaraan cocok" : "Belum ada kendaraan terdaftar"}
-              description={
-                hasFilter
-                  ? "Ubah pencarian atau filter status/jenis."
-                  : "Daftar kendaraan akan tampil setelah penghuni mendaftarkannya."
-              }
+              description={hasFilter ? "Ubah pencarian atau filter status/jenis." : "Daftar kendaraan akan tampil setelah penghuni mendaftarkannya."}
             />
           </CardContent>
         </Card>
@@ -191,16 +252,15 @@ function VehiclesPage() {
                     <th className="px-5 py-3 font-medium">Plat</th>
                     <th className="px-5 py-3 font-medium">Jenis</th>
                     <th className="px-5 py-3 font-medium">Status</th>
+                    {canManage ? <th className="px-5 py-3 font-medium text-right">Aksi</th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((v) => {
                     const Icon = TYPE_ICON[v.vehicleType] ?? CircleDot;
+                    const actions = availableActions(v.vehicleStatus);
                     return (
-                      <tr
-                        key={v.id}
-                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                      >
+                      <tr key={v.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 rounded-xl bg-primary-soft text-primary flex items-center justify-center">
@@ -216,17 +276,61 @@ function VehiclesPage() {
                         </td>
                         <td className="px-5 py-3">
                           <p className="font-medium">{v.snapshotResidentName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {v.snapshotRoomNumber ? `Kamar ${v.snapshotRoomNumber}` : "–"}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{v.snapshotRoomNumber ? `Kamar ${v.snapshotRoomNumber}` : "–"}</p>
                         </td>
                         <td className="px-5 py-3 font-mono text-xs">{v.plateNumber}</td>
-                        <td className="px-5 py-3 text-muted-foreground capitalize">
-                          {v.vehicleType.replace("_", " ")}
-                        </td>
+                        <td className="px-5 py-3 text-muted-foreground capitalize">{v.vehicleType.replace("_", " ")}</td>
                         <td className="px-5 py-3">
                           <VehicleStatusBadge status={v.vehicleStatus} />
                         </td>
+                        {canManage ? (
+                          <td className="px-5 py-3 text-right">
+                            {actions.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">–</span>
+                            ) : (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm" aria-label="Aksi kendaraan">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {actions.map((kind, idx) => (
+                                    <div key={kind}>
+                                      {idx > 0 ? <DropdownMenuSeparator /> : null}
+                                      <DropdownMenuItem
+                                        className={kind === "deactivate" || kind === "reject" ? "text-destructive" : undefined}
+                                        onClick={() => setPending({ vehicle: v, kind })}
+                                      >
+                                        {kind === "approve" ? (
+                                          <>
+                                            <Check className="h-3.5 w-3.5 mr-2" /> Setujui
+                                          </>
+                                        ) : kind === "reject" ? (
+                                          <>
+                                            <Ban className="h-3.5 w-3.5 mr-2" /> Tolak
+                                          </>
+                                        ) : kind === "suspend" ? (
+                                          <>
+                                            <Pause className="h-3.5 w-3.5 mr-2" /> Suspend
+                                          </>
+                                        ) : kind === "reactivate" ? (
+                                          <>
+                                            <Play className="h-3.5 w-3.5 mr-2" /> Aktifkan
+                                          </>
+                                        ) : (
+                                          <>
+                                            <PowerOff className="h-3.5 w-3.5 mr-2" /> Nonaktifkan
+                                          </>
+                                        )}
+                                      </DropdownMenuItem>
+                                    </div>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -237,6 +341,7 @@ function VehiclesPage() {
             <div className="md:hidden divide-y divide-border">
               {filtered.map((v) => {
                 const Icon = TYPE_ICON[v.vehicleType] ?? CircleDot;
+                const actions = availableActions(v.vehicleStatus);
                 return (
                   <div key={v.id} className="p-4 flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-primary-soft text-primary flex items-center justify-center">
@@ -252,6 +357,34 @@ function VehiclesPage() {
                       </p>
                     </div>
                     <VehicleStatusBadge status={v.vehicleStatus} />
+                    {canManage && actions.length > 0 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" aria-label="Aksi kendaraan">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {actions.map((kind) => (
+                            <DropdownMenuItem
+                              key={kind}
+                              className={kind === "deactivate" || kind === "reject" ? "text-destructive" : undefined}
+                              onClick={() => setPending({ vehicle: v, kind })}
+                            >
+                              {kind === "approve"
+                                ? "Setujui"
+                                : kind === "reject"
+                                  ? "Tolak"
+                                  : kind === "suspend"
+                                    ? "Suspend"
+                                    : kind === "reactivate"
+                                      ? "Aktifkan"
+                                      : "Nonaktifkan"}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </div>
                 );
               })}
@@ -259,6 +392,30 @@ function VehiclesPage() {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={pending ? transitionMeta(pending.kind).title : ""}
+        description={
+          pending
+            ? `${pending.vehicle.brand} · ${pending.vehicle.plateNumber} (${pending.vehicle.vehicleCode})`
+            : null
+        }
+        confirmLabel={pending ? transitionMeta(pending.kind).confirm : "Konfirmasi"}
+        destructive={pending ? transitionMeta(pending.kind).destructive : false}
+        reason={
+          pending && transitionMeta(pending.kind).requiresReason
+            ? { label: "Alasan", minLength: 3 }
+            : undefined
+        }
+        pending={mutationPending}
+        onConfirm={async (reason) => {
+          if (!pending) return;
+          if (transitionMeta(pending.kind).requiresReason && !reason) return;
+          await runTransition(pending.vehicle, pending.kind, reason);
+        }}
+      />
     </AppShell>
   );
 }

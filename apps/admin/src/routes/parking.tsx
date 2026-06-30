@@ -2,16 +2,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { AssignSlotDialog } from "@/components/forms/AssignSlotDialog";
 import {
   useParkingZones,
   useParkingSlots,
+  type ParkingSlotRecord,
   type ParkingSlotStatus,
   type ParkingZoneRecord,
 } from "@/hooks/useParking";
-import { ParkingSquare, Bike, Car, CircleDot } from "lucide-react";
+import { useReleaseParkingSlot } from "@/hooks/useParkingMutations";
+import { useAuth } from "@/lib/auth";
+import { ParkingSquare, Bike, Car, CircleDot, Link as LinkIcon, Unlink } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,8 +39,14 @@ const SLOT_STATUS_LABEL: Record<ParkingSlotStatus, { label: string; cls: string 
 function ParkingPage() {
   const zonesQuery = useParkingZones(true);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [assignTarget, setAssignTarget] = useState<ParkingSlotRecord | null>(null);
+  const [releaseTarget, setReleaseTarget] = useState<ParkingSlotRecord | null>(null);
 
-  // Auto-select first zone when list resolves.
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("parking.manage");
+
+  const releaseMut = useReleaseParkingSlot();
+
   useEffect(() => {
     if (!selectedZoneId && zonesQuery.data && zonesQuery.data.length > 0) {
       setSelectedZoneId(zonesQuery.data[0].id);
@@ -57,11 +69,7 @@ function ParkingPage() {
           </CardHeader>
           <CardContent>
             {zonesQuery.error ? (
-              <ErrorState
-                error={zonesQuery.error}
-                onRetry={() => zonesQuery.refetch()}
-                title="Gagal memuat zona"
-              />
+              <ErrorState error={zonesQuery.error} onRetry={() => zonesQuery.refetch()} title="Gagal memuat zona" />
             ) : zonesQuery.isLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -72,7 +80,7 @@ function ParkingPage() {
               <EmptyState
                 icon={<ParkingSquare className="h-5 w-5" />}
                 title="Belum ada zona"
-                description="Zona parkir akan tampil setelah dibuat (M11E)."
+                description="Pembuatan zona parkir belum tersedia di Phase 1."
               />
             ) : (
               <div className="space-y-1">
@@ -85,20 +93,13 @@ function ParkingPage() {
                       onClick={() => setSelectedZoneId(z.id)}
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
-                        active
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-muted text-foreground",
+                        active ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground",
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <div className="min-w-0 flex-1 text-left">
                         <p className="font-medium truncate">{z.zoneName}</p>
-                        <p
-                          className={cn(
-                            "text-[11px] truncate",
-                            active ? "opacity-90" : "text-muted-foreground",
-                          )}
-                        >
+                        <p className={cn("text-[11px] truncate", active ? "opacity-90" : "text-muted-foreground")}>
                           {z.zoneCode} · {z.capacity} slot
                         </p>
                       </div>
@@ -113,9 +114,7 @@ function ParkingPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base">
-                {selectedZone ? selectedZone.zoneName : "Detail Zona"}
-              </CardTitle>
+              <CardTitle className="text-base">{selectedZone ? selectedZone.zoneName : "Detail Zona"}</CardTitle>
               {selectedZone ? (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {selectedZone.locationDescription ?? "Tanpa keterangan lokasi"}
@@ -123,50 +122,35 @@ function ParkingPage() {
               ) : null}
             </div>
             {selectedZone ? (
-              <CapacityPill
-                capacity={selectedZone.capacity}
-                slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)}
-              />
+              <CapacityPill capacity={selectedZone.capacity} slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)} />
             ) : null}
           </CardHeader>
           <CardContent>
             {!selectedZone ? (
-              <EmptyState
-                title="Pilih zona"
-                description="Detail slot akan tampil di sini setelah zona dipilih."
-              />
+              <EmptyState title="Pilih zona" description="Detail slot akan tampil di sini setelah zona dipilih." />
             ) : slotsQuery.error ? (
-              <ErrorState
-                error={slotsQuery.error}
-                onRetry={() => slotsQuery.refetch()}
-                title="Gagal memuat slot"
-              />
+              <ErrorState error={slotsQuery.error} onRetry={() => slotsQuery.refetch()} title="Gagal memuat slot" />
             ) : slotsQuery.isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 rounded-lg" />
+                  <Skeleton key={i} className="h-20 rounded-lg" />
                 ))}
               </div>
             ) : (slotsQuery.data ?? []).length === 0 ? (
               <EmptyState
                 icon={<ParkingSquare className="h-5 w-5" />}
                 title="Belum ada slot"
-                description="Slot parkir untuk zona ini belum ditambahkan (M11E)."
+                description="Slot parkir untuk zona ini belum ditambahkan."
               />
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                 {(slotsQuery.data ?? []).map((s) => {
                   const meta = SLOT_STATUS_LABEL[s.slotStatus];
                   return (
-                    <div
-                      key={s.id}
-                      className="rounded-lg border border-border p-3 hover:shadow-sm transition-all"
-                    >
+                    <div key={s.id} className="rounded-lg border border-border p-3 hover:shadow-sm transition-all">
                       <div className="flex items-center justify-between">
                         <p className="font-semibold text-sm">{s.slotNumber}</p>
-                        <span className="text-[10px] text-muted-foreground capitalize">
-                          {s.slotType}
-                        </span>
+                        <span className="text-[10px] text-muted-foreground capitalize">{s.slotType}</span>
                       </div>
                       <span
                         className={cn(
@@ -176,6 +160,29 @@ function ParkingPage() {
                       >
                         {meta.label}
                       </span>
+                      {canManage ? (
+                        <div className="mt-2">
+                          {s.slotStatus === "available" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-7 text-[11px]"
+                              onClick={() => setAssignTarget(s)}
+                            >
+                              <LinkIcon className="h-3 w-3 mr-1" /> Assign
+                            </Button>
+                          ) : s.slotStatus === "occupied" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-7 text-[11px]"
+                              onClick={() => setReleaseTarget(s)}
+                            >
+                              <Unlink className="h-3 w-3 mr-1" /> Lepas
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -184,6 +191,35 @@ function ParkingPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AssignSlotDialog
+        open={assignTarget !== null}
+        onOpenChange={(o) => !o && setAssignTarget(null)}
+        slot={assignTarget}
+      />
+
+      <ConfirmDialog
+        open={releaseTarget !== null}
+        onOpenChange={(o) => !o && setReleaseTarget(null)}
+        title="Lepas slot parkir"
+        description={
+          releaseTarget
+            ? `Slot ${releaseTarget.slotNumber} akan dibebaskan dan kendaraan ditandai keluar.`
+            : null
+        }
+        confirmLabel="Lepas Slot"
+        destructive
+        pending={releaseMut.isPending}
+        onConfirm={async () => {
+          if (!releaseTarget) return;
+          try {
+            await releaseMut.mutateAsync({ slotId: releaseTarget.id });
+            setReleaseTarget(null);
+          } catch {
+            // Already toasted by hook.
+          }
+        }}
+      />
     </AppShell>
   );
 }

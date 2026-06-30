@@ -4,12 +4,17 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider, AuthGuard } from "@/lib/auth";
+import { PropertyProvider } from "@/lib/property";
+
+const PUBLIC_ROUTES = new Set<string>(["/login"]);
 
 function NotFoundComponent() {
   return (
@@ -113,13 +118,29 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function GuardedOutlet() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  if (PUBLIC_ROUTES.has(pathname)) {
+    return <Outlet />;
+  }
+  return (
+    <AuthGuard>
+      <PropertyProvider>
+        <Outlet />
+      </PropertyProvider>
+    </AuthGuard>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster richColors position="top-right" />
+      <AuthProvider>
+        <GuardedOutlet />
+        <Toaster richColors position="top-right" />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -47,12 +47,7 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-9 gap-2 px-2"
-          aria-label="Akun pengguna"
-        >
+        <Button variant="ghost" size="sm" className="h-9 gap-2 px-2" aria-label="Akun pengguna">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
             {initials}
           </span>
@@ -69,9 +64,7 @@ export function UserMenu() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           <span className="text-sm">{user?.name ?? "Pengguna"}</span>
-          {user?.email ? (
-            <span className="text-xs text-muted-foreground">{user.email}</span>
-          ) : null}
+          {user?.email ? <span className="text-xs text-muted-foreground">{user.email}</span> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled className="text-xs">

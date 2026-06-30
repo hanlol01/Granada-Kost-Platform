@@ -168,3 +168,22 @@ Reason: Backend already standardizes correlation id; surfacing it on the UI clos
 ## Change Log of ADRs
 
 - 2026-06-30 — Initial freeze at M11AF. ADR-FE-001 through ADR-FE-011 ratified.
+
+Seluruh implementasi WAJIB mengikuti keputusan ADR yang telah dibekukan.
+
+Apabila menemukan inkonsistensi kecil pada implementasi M11B, lakukan perbaikan seminimal mungkin tanpa mengubah keputusan arsitektur.
+
+Jangan membuat ADR baru kecuali benar-benar terdapat blocker arsitektur.
+
+Output:
+
+- ringkasan implementasi
+- endpoint backend yang digunakan
+- halaman yang berhasil terintegrasi
+- file baru
+- file berubah
+- build
+- lint
+- typecheck
+- risiko tersisa
+- verdict M11C

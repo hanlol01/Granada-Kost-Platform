@@ -11,12 +11,7 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import {
-  currentBill,
-  announcements,
-  paymentHistory,
-  formatIDR,
-} from "@/lib/dummy-data";
+import { currentBill, announcements, paymentHistory, formatIDR } from "@/lib/dummy-data";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/")({
@@ -28,7 +23,12 @@ function HomePage() {
   // are M11F scope and still come from dummy-data until those endpoints are wired.
   const { user } = useAuth();
   const displayName = user?.name ?? "Penghuni";
-  const initials = (displayName.split(" ").map((p) => p[0]).join("") || "P")
+  const initials = (
+    displayName
+      .split(" ")
+      .map((p) => p[0])
+      .join("") || "P"
+  )
     .slice(0, 2)
     .toUpperCase();
   const roomLabel = user?.properties?.[0]?.name ?? "-";

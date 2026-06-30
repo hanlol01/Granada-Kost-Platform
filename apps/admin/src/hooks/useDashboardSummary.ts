@@ -113,8 +113,7 @@ export function useDashboardSummary() {
     const maintenance = roomRows.filter(
       (r) => r.status === "maintenance" || r.status === "reserved",
     ).length;
-    const total =
-      (roomsQ.data as RoomsResponse | undefined)?.meta?.total ?? roomRows.length;
+    const total = (roomsQ.data as RoomsResponse | undefined)?.meta?.total ?? roomRows.length;
     const occupancyPercent = total > 0 ? Math.round((occupied / total) * 100) : 0;
 
     const totalResidents = listTotal(residentsQ.data as ResidentsResponse | undefined);

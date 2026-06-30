@@ -52,7 +52,12 @@ function ProfilePage() {
   };
 
   const displayName = user?.name ?? "Penghuni";
-  const initials = (displayName.split(" ").map((p) => p[0]).join("") || "P")
+  const initials = (
+    displayName
+      .split(" ")
+      .map((p) => p[0])
+      .join("") || "P"
+  )
     .slice(0, 2)
     .toUpperCase();
   const roomLabel = user?.properties?.[0]?.name ?? "-";
@@ -91,11 +96,7 @@ function ProfilePage() {
           <Divider />
           <InfoRow icon={Mail} label="Email" value={email} />
           <Divider />
-          <InfoRow
-            icon={Phone}
-            label="Nomor HP"
-            value="Tersedia di M11F"
-          />
+          <InfoRow icon={Phone} label="Nomor HP" value="Tersedia di M11F" />
           <Divider />
           <InfoRow icon={CalendarDays} label="Tanggal Masuk" value="Tersedia di M11F" />
         </div>

@@ -1,125 +1,193 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
-import { tenants as initial, type Tenant } from "@/lib/mock-data";
-import { formatDate } from "@/lib/format";
-import { Search, Eye, Pencil, Users, Phone } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useMemo, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/state/EmptyState";
+import { ErrorState } from "@/components/state/ErrorState";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Search, Eye, Pencil, Users, Phone, Mail } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useResidents, type ResidentRecord } from "@/hooks/useResidents";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tenants")({ component: TenantsPage });
 
-function TenantsPage() {
-  const [list] = useState<Tenant[]>(initial);
-  const [q, setQ] = useState("");
-  const [view, setView] = useState<Tenant | null>(null);
-
-  const filtered = useMemo(
-    () =>
-      list.filter(
-        (t) =>
-          q === "" ||
-          t.name.toLowerCase().includes(q.toLowerCase()) ||
-          t.roomNumber.includes(q) ||
-          t.phone.includes(q),
-      ),
-    [list, q],
+function StatusPill({ status }: { status: ResidentRecord["residentStatus"] }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+        status === "active"
+          ? "bg-success/15 text-success"
+          : "bg-muted text-muted-foreground",
+      )}
+    >
+      {status === "active" ? "Aktif" : "Tidak Aktif"}
+    </span>
   );
+}
+
+function TenantsPage() {
+  const [q, setQ] = useState("");
+  const [view, setView] = useState<ResidentRecord | null>(null);
+
+  // Backend filters by ?q= server-side. We pass it through to keep the search
+  // single-source-of-truth and avoid client/server divergence on large data.
+  const { data, isLoading, error, refetch } = useResidents({ q });
+  const list = data ?? [];
+  const hasFilter = q !== "";
 
   return (
-    <AppShell title="Data Penghuni" subtitle={`${list.length} penghuni terdaftar`}>
+    <AppShell
+      title="Data Penghuni"
+      subtitle={data ? `${list.length} penghuni" : "Memuat..."}
+    >
       <div className="relative mb-4 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari nama, kamar, atau HP..."
+          placeholder="Cari nama, telepon, atau email..."
           className="pl-9"
         />
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 border-b border-border">
-                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Penghuni</th>
-                  <th className="px-5 py-3 font-medium">Kamar</th>
-                  <th className="px-5 py-3 font-medium">Kontak</th>
-                  <th className="px-5 py-3 font-medium">Tanggal Masuk</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((t) => (
-                  <tr
-                    key={t.id}
-                    className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold text-sm">
-                          {t.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-medium">{t.name}</p>
-                          <p className="text-xs text-muted-foreground">{t.ktp}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="font-medium">#{t.roomNumber}</span>
-                    </td>
-                    <td className="px-5 py-3 text-muted-foreground">{t.phone}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatDate(t.joinDate)}</td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={t.paymentStatus} />
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setView(t)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="md:hidden divide-y divide-border">
-            {filtered.map((t) => (
-              <div key={t.id} className="p-4 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold">
-                  {t.name.charAt(0)}
+      {error ? (
+        <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat penghuni" />
+      ) : isLoading ? (
+        <Card>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="p-4 flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-56" />
+                  </div>
+                  <Skeleton className="h-6 w-16 rounded-full" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{t.name}</p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {t.phone} · Kamar {t.roomNumber}
-                  </p>
-                </div>
-                <StatusBadge status={t.paymentStatus} />
-              </div>
-            ))}
-          </div>
-
-          {filtered.length === 0 && (
-            <div className="py-16 text-center">
-              <Users className="h-12 w-12 mx-auto text-muted-foreground/40" />
-              <p className="mt-3 font-medium">Tidak ada penghuni</p>
+              ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : list.length === 0 ? (
+        <Card>
+          <CardContent className="py-12">
+            <EmptyState
+              icon={<Users className="h-5 w-5" />}
+              title={hasFilter ? "Tidak ada penghuni cocok" : "Belum ada penghuni"}
+              description={
+                hasFilter
+                  ? "Ubah kata kunci pencarian atau kosongkan filter."
+                  : "Penghuni akan tampil setelah onboarding pertama (M11E)."
+              }
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 border-b border-border">
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-5 py-3 font-medium">Penghuni</th>
+                    <th className="px-5 py-3 font-medium">Kontak</th>
+                    <th className="px-5 py-3 font-medium">Gender</th>
+                    <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold text-sm">
+                            {t.fullName.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium">{t.fullName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.ktpNumber ? `KTP · ${maskKtp(t.ktpNumber)}` : "–"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground">
+                        <span className="block">{t.phone ?? "–"}</span>
+                        <span className="block text-xs">{t.email ?? "–"}</span>
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground capitalize">
+                        {t.gender ?? "–"}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusPill status={t.residentStatus} />
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => setView(t)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>
+                                <Button variant="ghost" size="sm" disabled>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>Edit penghuni tersedia di M11E.</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-border">
+              {list.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setView(t)}
+                  className="w-full text-left p-4 flex items-center gap-3"
+                >
+                  <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold">
+                    {t.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{t.fullName}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {t.phone ?? "–"}
+                    </p>
+                  </div>
+                  <StatusPill status={t.residentStatus} />
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={!!view} onOpenChange={(o) => !o && setView(null)}>
         <DialogContent>
@@ -130,20 +198,39 @@ function TenantsPage() {
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-4 pb-4 border-b">
                 <div className="h-14 w-14 rounded-full bg-primary-soft text-primary flex items-center justify-center text-xl font-semibold">
-                  {view.name.charAt(0)}
+                  {view.fullName.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <p className="font-semibold text-base">{view.name}</p>
-                  <p className="text-xs text-muted-foreground">Kamar #{view.roomNumber}</p>
+                  <p className="font-semibold text-base">{view.fullName}</p>
+                  <StatusPill status={view.residentStatus} />
                 </div>
               </div>
-              <Row label="Nomor HP" value={view.phone} />
-              <Row label="Nomor KTP" value={view.ktp} />
-              <Row label="Tanggal Masuk" value={formatDate(view.joinDate)} />
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Status Pembayaran</span>
-                <StatusBadge status={view.paymentStatus} />
-              </div>
+              <Row
+                icon={<Phone className="h-3.5 w-3.5" />}
+                label="Nomor HP"
+                value={view.phone ?? "–"}
+              />
+              <Row
+                icon={<Mail className="h-3.5 w-3.5" />}
+                label="Email"
+                value={view.email ?? "–"}
+              />
+              <Row label="Nomor KTP" value={view.ktpNumber ? maskKtp(view.ktpNumber) : "–"} />
+              <Row label="Gender" value={view.gender ?? "–"} />
+              <Row label="Terdaftar" value={new Date(view.createdAt).toLocaleDateString("id-ID")} />
+              {view.emergencyContacts.length > 0 && (
+                <div className="pt-3 border-t">
+                  <p className="text-xs text-muted-foreground mb-2">Kontak Darurat</p>
+                  <ul className="space-y-1">
+                    {view.emergencyContacts.map((c) => (
+                      <li key={c.id} className="text-sm">
+                        <span className="font-medium">{c.contactName}</span>
+                        <span className="text-muted-foreground"> · {c.phone}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -152,11 +239,27 @@ function TenantsPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}) {
   return (
     <div className="flex justify-between gap-4">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground inline-flex items-center gap-1">
+        {icon} {label}
+      </span>
       <span className="font-medium text-right">{value}</span>
     </div>
   );
+}
+
+function maskKtp(ktp: string): string {
+  // Show first 6 and last 4 only — align with PII masking norms (ADR-FE-008).
+  if (ktp.length <= 10) return ktp;
+  return `${ktp.slice(0, 6)}******${ktp.slice(-4)}`;
 }

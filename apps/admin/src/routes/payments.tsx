@@ -6,30 +6,58 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useInvoices, type InvoiceRecord, type InvoiceStatus } from "@/hooks/useBilling";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import {
+  useInvoices,
+  usePayments,
+  type InvoiceRecord,
+  type InvoiceStatus,
+  type PaymentRecord,
+} from "@/hooks/useBilling";
+import {
+  useCancelInvoice,
+  useIssueInvoice,
+  useRejectPayment,
+  useVerifyPayment,
+} from "@/hooks/useBillingMutations";
+import { useAuth } from "@/lib/auth";
 import { formatIDR, formatDate } from "@/lib/format";
-import { CheckCircle2, CreditCard, Clock, AlertTriangle, Receipt } from "lucide-react";
+import {
+  CheckCircle2,
+  CreditCard,
+  Clock,
+  AlertTriangle,
+  Receipt,
+  MoreHorizontal,
+  Send,
+  Ban,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/payments")({ component: PaymentsPage });
 
-type InvoiceTab = "all" | "unpaid" | "paid";
+type InvoiceTab = "all" | "unpaid" | "paid" | "payments";
 
 function isInvoiceTab(value: string): value is InvoiceTab {
-  return value === "all" || value === "unpaid" || value === "paid";
+  return value === "all" || value === "unpaid" || value === "paid" || value === "payments";
 }
 
 const INVOICE_STATUS_LABEL: Record<InvoiceStatus, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-muted text-muted-foreground" },
   issued: { label: "Terkirim", cls: "bg-primary-soft text-primary" },
   unpaid: { label: "Belum Lunas", cls: "bg-warning/20 text-warning-foreground" },
-  partially_paid: {
-    label: "Bayar Sebagian",
-    cls: "bg-chart-4/15 text-chart-4",
-  },
+  partially_paid: { label: "Bayar Sebagian", cls: "bg-chart-4/15 text-chart-4" },
   paid: { label: "Lunas", cls: "bg-success/15 text-success" },
   overdue: { label: "Jatuh Tempo", cls: "bg-destructive/15 text-destructive" },
   void: { label: "Void", cls: "bg-muted text-muted-foreground line-through" },
@@ -54,16 +82,17 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
 
 function PaymentsPage() {
   const [tab, setTab] = useState<InvoiceTab>("all");
+  const { hasPermission } = useAuth();
+  const canManageInvoice = hasPermission("billing.manage");
+  const canVerifyPayment = hasPermission("payment.verify");
 
-  // Backend supports a single status filter. The 'all' tab calls without it.
   const statusParam: InvoiceStatus | undefined =
     tab === "unpaid" ? "unpaid" : tab === "paid" ? "paid" : undefined;
 
-  const { data, isLoading, error, refetch, isFetching } = useInvoices({
-    status: statusParam,
-    limit: 100,
-  });
-  const items = data ?? [];
+  const invoices = useInvoices({ status: statusParam, limit: 100 });
+  const payments = usePayments({ status: "pending", limit: 100 });
+
+  const items = invoices.data ?? [];
 
   const stats = useMemo(() => {
     const total = items.reduce((s, p) => s + p.totalAmount, 0);
@@ -77,10 +106,20 @@ function PaymentsPage() {
     return { total, paid, unpaid, overdue };
   }, [items]);
 
+  const issueMut = useIssueInvoice();
+  const cancelMut = useCancelInvoice();
+  const verifyMut = useVerifyPayment();
+  const rejectMut = useRejectPayment();
+
+  const [issueTarget, setIssueTarget] = useState<InvoiceRecord | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<InvoiceRecord | null>(null);
+  const [verifyTarget, setVerifyTarget] = useState<PaymentRecord | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<PaymentRecord | null>(null);
+
   return (
     <AppShell title="Pembayaran" subtitle="Kelola tagihan dan transaksi sewa">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        {isLoading ? (
+        {invoices.isLoading ? (
           <>
             <StatSkeleton />
             <StatSkeleton />
@@ -89,37 +128,17 @@ function PaymentsPage() {
           </>
         ) : (
           <>
-            <Stat
-              icon={CreditCard}
-              label="Total Tagihan"
-              value={formatIDR(stats.total)}
-              accent="bg-primary-soft text-primary"
-            />
-            <Stat
-              icon={CheckCircle2}
-              label="Sudah Lunas"
-              value={formatIDR(stats.paid)}
-              accent="bg-success/15 text-success"
-            />
-            <Stat
-              icon={Clock}
-              label="Belum Dibayar"
-              value={formatIDR(stats.unpaid)}
-              accent="bg-warning/20 text-warning-foreground"
-            />
-            <Stat
-              icon={AlertTriangle}
-              label="Jatuh Tempo"
-              value={`${stats.overdue} tagihan`}
-              accent="bg-destructive/15 text-destructive"
-            />
+            <Stat icon={CreditCard} label="Total Tagihan" value={formatIDR(stats.total)} accent="bg-primary-soft text-primary" />
+            <Stat icon={CheckCircle2} label="Sudah Lunas" value={formatIDR(stats.paid)} accent="bg-success/15 text-success" />
+            <Stat icon={Clock} label="Belum Dibayar" value={formatIDR(stats.unpaid)} accent="bg-warning/20 text-warning-foreground" />
+            <Stat icon={AlertTriangle} label="Jatuh Tempo" value={`${stats.overdue} tagihan`} accent="bg-destructive/15 text-destructive" />
           </>
         )}
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Daftar Tagihan</CardTitle>
+          <CardTitle className="text-base">Daftar Tagihan & Pembayaran</CardTitle>
         </CardHeader>
         <CardContent>
           <Tabs value={tab} onValueChange={(v) => setTab(isInvoiceTab(v) ? v : "all")}>
@@ -127,11 +146,34 @@ function PaymentsPage() {
               <TabsTrigger value="all">Semua</TabsTrigger>
               <TabsTrigger value="unpaid">Belum Lunas</TabsTrigger>
               <TabsTrigger value="paid">Riwayat</TabsTrigger>
+              {canVerifyPayment ? <TabsTrigger value="payments">Verifikasi</TabsTrigger> : null}
             </TabsList>
             <TabsContent value={tab} className="mt-4">
-              {error ? (
-                <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat tagihan" />
-              ) : isLoading ? (
+              {tab === "payments" ? (
+                payments.error ? (
+                  <ErrorState error={payments.error} onRetry={() => payments.refetch()} title="Gagal memuat pembayaran" />
+                ) : payments.isLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full" />
+                    ))}
+                  </div>
+                ) : (payments.data ?? []).length === 0 ? (
+                  <EmptyState
+                    icon={<Receipt className="h-5 w-5" />}
+                    title="Tidak ada pembayaran pending"
+                    description="Pembayaran menunggu verifikasi akan tampil di sini."
+                  />
+                ) : (
+                  <PendingPaymentList
+                    items={payments.data ?? []}
+                    onVerify={setVerifyTarget}
+                    onReject={setRejectTarget}
+                  />
+                )
+              ) : invoices.error ? (
+                <ErrorState error={invoices.error} onRetry={() => invoices.refetch()} title="Gagal memuat tagihan" />
+              ) : invoices.isLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Skeleton key={i} className="h-16 w-full" />
@@ -150,35 +192,121 @@ function PaymentsPage() {
                   }
                 />
               ) : (
-                <PaymentList items={items} isFetching={isFetching} />
+                <InvoiceList
+                  items={items}
+                  isFetching={invoices.isFetching}
+                  canManage={canManageInvoice}
+                  onIssue={setIssueTarget}
+                  onCancel={setCancelTarget}
+                />
               )}
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={issueTarget !== null}
+        onOpenChange={(o) => !o && setIssueTarget(null)}
+        title="Terbitkan invoice"
+        description={
+          issueTarget
+            ? `Invoice ${issueTarget.invoiceCode} untuk ${issueTarget.snapshotResidentName} akan diterbitkan dan dikirim ke penghuni.`
+            : null
+        }
+        confirmLabel="Terbitkan"
+        pending={issueMut.isPending}
+        onConfirm={async () => {
+          if (!issueTarget) return;
+          try {
+            await issueMut.mutateAsync({ invoiceId: issueTarget.id });
+            setIssueTarget(null);
+          } catch {
+            // Already toasted by hook.
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onOpenChange={(o) => !o && setCancelTarget(null)}
+        title="Batalkan invoice"
+        description={
+          cancelTarget
+            ? `Invoice ${cancelTarget.invoiceCode} akan dibatalkan. Tindakan ini dicatat audit log.`
+            : null
+        }
+        confirmLabel="Batalkan Invoice"
+        destructive
+        reason={{ label: "Alasan pembatalan", placeholder: "Mis. duplikat, salah input", minLength: 3 }}
+        pending={cancelMut.isPending}
+        onConfirm={async (reason) => {
+          if (!cancelTarget || !reason) return;
+          try {
+            await cancelMut.mutateAsync({ invoiceId: cancelTarget.id, reason });
+            setCancelTarget(null);
+          } catch {
+            // Already toasted.
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={verifyTarget !== null}
+        onOpenChange={(o) => !o && setVerifyTarget(null)}
+        title="Verifikasi pembayaran"
+        description={
+          verifyTarget
+            ? `Pembayaran ${verifyTarget.paymentCode} senilai ${formatIDR(verifyTarget.amount)} akan ditandai sebagai terverifikasi.`
+            : null
+        }
+        confirmLabel="Verifikasi"
+        pending={verifyMut.isPending}
+        onConfirm={async () => {
+          if (!verifyTarget) return;
+          try {
+            await verifyMut.mutateAsync({ paymentId: verifyTarget.id });
+            setVerifyTarget(null);
+          } catch {
+            // Already toasted.
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={rejectTarget !== null}
+        onOpenChange={(o) => !o && setRejectTarget(null)}
+        title="Tolak pembayaran"
+        description={
+          rejectTarget
+            ? `Pembayaran ${rejectTarget.paymentCode} akan ditolak dan dicatat audit log.`
+            : null
+        }
+        confirmLabel="Tolak Pembayaran"
+        destructive
+        reason={{ label: "Alasan penolakan", placeholder: "Mis. bukti tidak valid", minLength: 3 }}
+        pending={rejectMut.isPending}
+        onConfirm={async (reason) => {
+          if (!rejectTarget || !reason) return;
+          try {
+            await rejectMut.mutateAsync({ paymentId: rejectTarget.id, reason });
+            setRejectTarget(null);
+          } catch {
+            // Already toasted.
+          }
+        }}
+      />
     </AppShell>
   );
 }
 
-function Stat({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  accent: string;
-}) {
+function Stat({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: string; value: string; accent: string }) {
   return (
     <Card>
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {label}
-            </p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
             <p className="text-lg lg:text-xl font-semibold mt-2 tracking-tight">{value}</p>
           </div>
           <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${accent}`}>
@@ -201,40 +329,105 @@ function StatSkeleton() {
   );
 }
 
-function PaymentList({ items, isFetching }: { items: InvoiceRecord[]; isFetching: boolean }) {
+function InvoiceList({
+  items,
+  isFetching,
+  canManage,
+  onIssue,
+  onCancel,
+}: {
+  items: InvoiceRecord[];
+  isFetching: boolean;
+  canManage: boolean;
+  onIssue: (inv: InvoiceRecord) => void;
+  onCancel: (inv: InvoiceRecord) => void;
+}) {
   return (
     <div className={cn("space-y-2", isFetching && "opacity-90 transition-opacity")}>
+      {items.map((p) => {
+        const canIssue = canManage && p.invoiceStatus === "draft";
+        const canCancel = canManage && p.invoiceStatus !== "paid" && p.invoiceStatus !== "void";
+        return (
+          <div
+            key={p.id}
+            className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors"
+          >
+            <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold shrink-0">
+              {p.snapshotResidentName.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{p.snapshotResidentName}</p>
+              <p className="text-xs text-muted-foreground">
+                Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo {formatDate(p.dueDate)}
+              </p>
+            </div>
+            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+              <p className="font-semibold">{formatIDR(p.totalAmount)}</p>
+              <InvoiceStatusBadge status={p.invoiceStatus} />
+              {canManage ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" aria-label="Aksi invoice">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canIssue ? (
+                      <DropdownMenuItem onClick={() => onIssue(p)}>
+                        <Send className="h-3.5 w-3.5 mr-2" /> Terbitkan
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canCancel ? (
+                      <>
+                        {canIssue ? <DropdownMenuSeparator /> : null}
+                        <DropdownMenuItem className="text-destructive" onClick={() => onCancel(p)}>
+                          <Ban className="h-3.5 w-3.5 mr-2" /> Batalkan
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                    {!canIssue && !canCancel ? (
+                      <DropdownMenuItem disabled>Tidak ada aksi tersedia</DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PendingPaymentList({
+  items,
+  onVerify,
+  onReject,
+}: {
+  items: PaymentRecord[];
+  onVerify: (p: PaymentRecord) => void;
+  onReject: (p: PaymentRecord) => void;
+}) {
+  return (
+    <div className="space-y-2">
       {items.map((p) => (
         <div
           key={p.id}
-          className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors"
+          className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border"
         >
-          <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold shrink-0">
-            {p.snapshotResidentName.charAt(0).toUpperCase()}
-          </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{p.snapshotResidentName}</p>
+            <p className="font-medium">{p.paymentCode}</p>
             <p className="text-xs text-muted-foreground">
-              Kamar #{p.snapshotRoomNumber} · {p.invoiceCode} · Jatuh tempo {formatDate(p.dueDate)}
+              {p.paymentMethod.toUpperCase()} · {formatIDR(p.amount)} · Pending review
             </p>
           </div>
-          <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-            <p className="font-semibold">{formatIDR(p.totalAmount)}</p>
-            <InvoiceStatusBadge status={p.invoiceStatus} />
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button size="sm" disabled>
-                      Catat Bayar
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Pencatatan pembayaran &amp; verifikasi bukti tersedia di M11E.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => onVerify(p)}>
+              <ThumbsUp className="h-3.5 w-3.5 mr-1" /> Verifikasi
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onReject(p)}>
+              <ThumbsDown className="h-3.5 w-3.5 mr-1 text-destructive" /> Tolak
+            </Button>
           </div>
         </div>
       ))}

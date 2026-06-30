@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Eye, Pencil, Users, Phone, Mail } from "lucide-react";
+import { Search, Eye, Pencil, Users, Phone, Mail, UserCheck, UserX, LogIn, Plus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
+import { CheckInDialog } from "@/components/forms/CheckInDialog";
 import { useResidents, type ResidentRecord } from "@/hooks/useResidents";
+import { useUpdateResidentStatus } from "@/hooks/useResidentMutations";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tenants")({ component: TenantsPage });
@@ -31,10 +35,20 @@ function StatusPill({ status }: { status: ResidentRecord["residentStatus"] }) {
 function TenantsPage() {
   const [q, setQ] = useState("");
   const [view, setView] = useState<ResidentRecord | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ResidentRecord | null>(null);
+  const [statusTarget, setStatusTarget] = useState<{
+    resident: ResidentRecord;
+    next: ResidentRecord["residentStatus"];
+  } | null>(null);
+  const [checkInTarget, setCheckInTarget] = useState<ResidentRecord | null>(null);
 
-  // Backend filters by ?q= server-side. We pass it through to keep the search
-  // single-source-of-truth and avoid client/server divergence on large data.
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("resident.manage");
+  const canCheckIn = hasPermission("lease.manage");
+
   const { data, isLoading, error, refetch } = useResidents({ q });
+  const statusMut = useUpdateResidentStatus();
   const list = data ?? [];
   const hasFilter = q !== "";
 
@@ -42,6 +56,13 @@ function TenantsPage() {
     <AppShell
       title="Data Penghuni"
       subtitle={data ? `${list.length} penghuni terdaftar` : "Memuat..."}
+      actions={
+        canManage ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Tambah Penghuni
+          </Button>
+        ) : null
+      }
     >
       <div className="relative mb-4 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -81,7 +102,9 @@ function TenantsPage() {
               description={
                 hasFilter
                   ? "Ubah kata kunci pencarian atau kosongkan filter."
-                  : "Penghuni akan tampil setelah onboarding pertama (M11E)."
+                  : canManage
+                    ? "Klik 'Tambah Penghuni' untuk onboarding pertama."
+                    : "Anda tidak memiliki izin untuk menambah penghuni."
               }
             />
           </CardContent>
@@ -133,18 +156,11 @@ function TenantsPage() {
                         <Button variant="ghost" size="sm" onClick={() => setView(t)}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span>
-                                <Button variant="ghost" size="sm" disabled>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit penghuni tersedia di M11E.</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {canManage ? (
+                          <Button variant="ghost" size="sm" onClick={() => setEditTarget(t)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -219,10 +235,104 @@ function TenantsPage() {
                   </ul>
                 </div>
               )}
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-border">
+                {canManage ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="sm:flex-1"
+                    onClick={() => {
+                      setEditTarget(view);
+                      setView(null);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" /> Edit
+                  </Button>
+                ) : null}
+                {canCheckIn ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="sm:flex-1"
+                    onClick={() => {
+                      setCheckInTarget(view);
+                      setView(null);
+                    }}
+                  >
+                    <LogIn className="h-4 w-4 mr-1" /> Check-in
+                  </Button>
+                ) : null}
+                {canManage ? (
+                  view.residentStatus === "active" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="sm:flex-1"
+                      onClick={() => setStatusTarget({ resident: view, next: "inactive" })}
+                    >
+                      <UserX className="h-4 w-4 mr-1" /> Nonaktifkan
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="sm:flex-1"
+                      onClick={() => setStatusTarget({ resident: view, next: "active" })}
+                    >
+                      <UserCheck className="h-4 w-4 mr-1" /> Aktifkan
+                    </Button>
+                  )
+                ) : null}
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <ResidentFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <ResidentFormDialog
+        open={editTarget !== null}
+        onOpenChange={(o) => !o && setEditTarget(null)}
+        initial={editTarget}
+      />
+
+      <ConfirmDialog
+        open={statusTarget !== null}
+        onOpenChange={(o) => !o && setStatusTarget(null)}
+        title={
+          statusTarget?.next === "active" ? "Aktifkan penghuni" : "Nonaktifkan penghuni"
+        }
+        description={
+          statusTarget
+            ? `Konfirmasi ubah status ${statusTarget.resident.fullName} menjadi ${
+                statusTarget.next === "active" ? "aktif" : "tidak aktif"
+              }?`
+            : null
+        }
+        confirmLabel={statusTarget?.next === "active" ? "Aktifkan" : "Nonaktifkan"}
+        destructive={statusTarget?.next === "inactive"}
+        pending={statusMut.isPending}
+        onConfirm={async () => {
+          if (!statusTarget) return;
+          try {
+            await statusMut.mutateAsync({
+              residentId: statusTarget.resident.id,
+              status: statusTarget.next,
+            });
+            setStatusTarget(null);
+          } catch {
+            // Already toasted by hook.
+          }
+        }}
+      />
+
+      <CheckInDialog
+        open={checkInTarget !== null}
+        onOpenChange={(o) => !o && setCheckInTarget(null)}
+        residentId={checkInTarget?.id ?? null}
+        residentName={checkInTarget?.fullName}
+      />
     </AppShell>
   );
 }

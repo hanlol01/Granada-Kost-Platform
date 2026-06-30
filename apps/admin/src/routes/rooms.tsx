@@ -14,10 +14,20 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRooms, type RoomStatus } from "@/hooks/useRooms";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { RoomFormDialog } from "@/components/forms/RoomFormDialog";
+import { useRooms, type RoomRecord, type RoomStatus } from "@/hooks/useRooms";
+import { useUpdateRoomStatus } from "@/hooks/useRoomMutations";
+import { useAuth } from "@/lib/auth";
 import { formatIDR } from "@/lib/format";
-import { Plus, Search, Pencil, Trash2, BedDouble } from "lucide-react";
+import { Plus, Search, Pencil, BedDouble, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/rooms")({ component: RoomsPage });
@@ -29,6 +39,8 @@ const STATUS_LABEL: Record<RoomStatus, { label: string; cls: string }> = {
   maintenance: { label: "Maintenance", cls: "bg-warning/20 text-warning-foreground" },
   inactive: { label: "Tidak Aktif", cls: "bg-muted text-muted-foreground" },
 };
+
+const STATUS_OPTIONS: RoomStatus[] = ["vacant", "reserved", "occupied", "maintenance", "inactive"];
 
 function RoomStatusBadge({ status }: { status: RoomStatus }) {
   const item = STATUS_LABEL[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
@@ -47,10 +59,19 @@ function RoomStatusBadge({ status }: { status: RoomStatus }) {
 function RoomsPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | RoomStatus>("all");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<RoomRecord | null>(null);
+  const [statusTarget, setStatusTarget] = useState<{ room: RoomRecord; next: RoomStatus } | null>(
+    null,
+  );
+
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("room.manage");
 
   const { data, isLoading, error, refetch, isFetching } = useRooms({
     status: status === "all" ? undefined : status,
   });
+  const statusMut = useUpdateRoomStatus();
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -71,18 +92,11 @@ function RoomsPage() {
       title="Manajemen Kamar"
       subtitle={data ? `${data.length} kamar terdaftar` : "Memuat..."}
       actions={
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0}>
-                <Button disabled>
-                  <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Tambah/edit kamar tersedia di M11E.</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        canManage ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
+          </Button>
+        ) : null
       }
     >
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -135,7 +149,9 @@ function RoomsPage() {
               description={
                 hasFilter
                   ? "Coba ubah pencarian atau filter status."
-                  : "Kamar akan tampil setelah ditambahkan oleh admin (M11E)."
+                  : canManage
+                    ? "Klik 'Tambah Kamar' untuk membuat data pertama."
+                    : "Anda tidak memiliki izin untuk menambah kamar."
               }
             />
           </CardContent>
@@ -181,34 +197,83 @@ function RoomsPage() {
                   )}
                 </div>
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex-1">
-                          <Button variant="outline" size="sm" className="w-full" disabled>
-                            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                  {canManage ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setEditTarget(r)}
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" aria-label="Ubah status">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
                           </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>Edit kamar tersedia di M11E.</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <Button variant="outline" size="sm" disabled>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>Hapus kamar tersedia di M11E.</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                            Ubah Status
+                          </div>
+                          <DropdownMenuSeparator />
+                          {STATUS_OPTIONS.filter((s) => s !== r.roomStatus).map((s) => (
+                            <DropdownMenuItem
+                              key={s}
+                              onClick={() => setStatusTarget({ room: r, next: s })}
+                            >
+                              {STATUS_LABEL[s].label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Hanya owner/manager/admin dengan permission room.manage.
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Create + edit form. The same dialog handles both modes. */}
+      <RoomFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <RoomFormDialog
+        open={editTarget !== null}
+        onOpenChange={(o) => !o && setEditTarget(null)}
+        initial={editTarget}
+      />
+
+      <ConfirmDialog
+        open={statusTarget !== null}
+        onOpenChange={(o) => !o && setStatusTarget(null)}
+        title="Ubah status kamar"
+        description={
+          statusTarget
+            ? `Ubah status kamar ${statusTarget.room.number} menjadi ${STATUS_LABEL[statusTarget.next].label}?`
+            : null
+        }
+        confirmLabel="Ubah Status"
+        destructive={statusTarget?.next === "inactive"}
+        pending={statusMut.isPending}
+        onConfirm={async () => {
+          if (!statusTarget) return;
+          try {
+            await statusMut.mutateAsync({
+              roomId: statusTarget.room.id,
+              status: statusTarget.next,
+            });
+            setStatusTarget(null);
+          } catch {
+            // Already toasted; let user retry from the dialog.
+          }
+        }}
+      />
     </AppShell>
   );
 }

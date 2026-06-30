@@ -39,7 +39,6 @@ export function useAuditLogs(): UseAuditLogsResult {
     isLoading: false,
     error: null,
     refetch: () => undefined,
-    reason:
-      "Audit Viewer akan tersedia setelah backend membuka endpoint audit.",
+    reason: "Audit Viewer akan tersedia setelah backend membuka endpoint audit.",
   };
 }

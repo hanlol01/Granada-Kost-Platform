@@ -40,7 +40,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState, ErrorState, ForbiddenState } from "@/components/state";
 import { useAuth } from "@/lib/auth";
 import { useReports } from "@/hooks/useReports";
@@ -80,6 +85,10 @@ function ReportsPage() {
     );
   }
 
+  return <ReportsContent />;
+}
+
+function ReportsContent() {
   const years = yearRange();
   const [year, setYear] = useState<number>(years[0]!);
   const { data, isLoading, error, refetch } = useReports({ year });
@@ -170,8 +179,16 @@ type ReportsBodyProps = {
 };
 
 function ReportsBody({ data, year }: ReportsBodyProps) {
-  const { occupancy, residents, billingAging, revenue, complaints, vehicles, parking, maintenance } =
-    data;
+  const {
+    occupancy,
+    residents,
+    billingAging,
+    revenue,
+    complaints,
+    vehicles,
+    parking,
+    maintenance,
+  } = data;
 
   const occupancyChart = [
     { name: "Terisi", value: occupancy.occupied, color: "var(--color-primary)" },
@@ -217,10 +234,10 @@ function ReportsBody({ data, year }: ReportsBodyProps) {
         </Card>
         <Card>
           <CardContent className="p-5">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Total Piutang
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Piutang</p>
+            <p className="text-2xl font-semibold mt-2">
+              {formatIDR(billingAging.outstandingAmount)}
             </p>
-            <p className="text-2xl font-semibold mt-2">{formatIDR(billingAging.outstandingAmount)}</p>
             <p className="text-xs text-muted-foreground mt-1">
               {billingAging.unpaid} belum dibayar, {billingAging.overdue} overdue
             </p>
@@ -264,7 +281,9 @@ function ReportsBody({ data, year }: ReportsBodyProps) {
                       fontSize={12}
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(v) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}jt` : `${v}`)}
+                      tickFormatter={(v) =>
+                        v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}jt` : `${v}`
+                      }
                     />
                     <Tooltip
                       contentStyle={{
@@ -425,13 +444,7 @@ function ReportsBody({ data, year }: ReportsBodyProps) {
   );
 }
 
-function SummaryCard({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: { label: string; value: string }[];
-}) {
+function SummaryCard({ title, rows }: { title: string; rows: { label: string; value: string }[] }) {
   const isEmpty = rows.every((r) => r.value === "0" || r.value === formatIDR(0));
   return (
     <Card>
@@ -440,9 +453,7 @@ function SummaryCard({
       </CardHeader>
       <CardContent>
         {isEmpty ? (
-          <p className="text-xs text-muted-foreground">
-            Belum ada data pada properti ini.
-          </p>
+          <p className="text-xs text-muted-foreground">Belum ada data pada properti ini.</p>
         ) : (
           <dl className="divide-y divide-border">
             {rows.map((row) => (
@@ -464,9 +475,8 @@ function SummaryCard({
 
 function AuditSection() {
   const { hasRole } = useAuth();
-  if (!hasRole(["owner", "manager"])) return null;
-
   const audit = useAuditLogs();
+  if (!hasRole(["owner", "manager"])) return null;
 
   return (
     <Card className="mt-6">

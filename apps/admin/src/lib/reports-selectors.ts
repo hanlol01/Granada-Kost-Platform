@@ -12,21 +12,10 @@
 
 import type { RoomRecord, RoomStatus } from "@/hooks/useRooms";
 import type { ResidentRecord } from "@/hooks/useResidents";
-import type {
-  InvoiceRecord,
-  InvoiceStatus,
-  PaymentRecord,
-} from "@/hooks/useBilling";
-import type {
-  ComplaintRecord,
-  StoredComplaintStatus,
-} from "@/hooks/useComplaints";
+import type { InvoiceRecord, InvoiceStatus, PaymentRecord } from "@/hooks/useBilling";
+import type { ComplaintRecord, StoredComplaintStatus } from "@/hooks/useComplaints";
 import type { VehicleRecord, VehicleStatus } from "@/hooks/useVehicles";
-import type {
-  ParkingSlotRecord,
-  ParkingSlotStatus,
-  ParkingZoneRecord,
-} from "@/hooks/useParking";
+import type { ParkingSlotRecord, ParkingSlotStatus, ParkingZoneRecord } from "@/hooks/useParking";
 import type { WorkOrderRecord, WorkOrderStatus } from "@/hooks/useWorkOrders";
 
 // ---------------------------------------------------------------------------

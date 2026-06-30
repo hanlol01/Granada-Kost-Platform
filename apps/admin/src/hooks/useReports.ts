@@ -17,10 +17,7 @@ import type { ResidentRecord } from "@/hooks/useResidents";
 import type { InvoiceRecord, PaymentRecord } from "@/hooks/useBilling";
 import type { ComplaintRecord } from "@/hooks/useComplaints";
 import type { VehicleRecord } from "@/hooks/useVehicles";
-import type {
-  ParkingZoneRecord,
-  ParkingSlotRecord,
-} from "@/hooks/useParking";
+import type { ParkingZoneRecord, ParkingSlotRecord } from "@/hooks/useParking";
 import type { WorkOrderRecord } from "@/hooks/useWorkOrders";
 import {
   selectBillingAgingSummary,
@@ -87,19 +84,21 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
     queries: [
       {
         queryKey: ["rooms", "list", { propertyId: currentPropertyId }, {}] as const,
-        queryFn: () =>
-          apiClient.get<RoomRecord[]>("/rooms", { query: propertyParam }),
+        queryFn: () => apiClient.get<RoomRecord[]>("/rooms", { query: propertyParam }),
         enabled,
       },
       {
         queryKey: ["residents", "list", { propertyId: currentPropertyId }, {}] as const,
-        queryFn: () =>
-          apiClient.get<ResidentRecord[]>("/residents", { query: propertyParam }),
+        queryFn: () => apiClient.get<ResidentRecord[]>("/residents", { query: propertyParam }),
         enabled,
       },
       {
-        queryKey:
-          ["billing", "invoices", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: [
+          "billing",
+          "invoices",
+          { propertyId: currentPropertyId },
+          { limit: 500 },
+        ] as const,
         queryFn: () =>
           apiClient.get<InvoiceRecord[]>("/invoices", {
             query: { ...propertyParam, limit: 500 },
@@ -107,8 +106,12 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
         enabled,
       },
       {
-        queryKey:
-          ["billing", "payments", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: [
+          "billing",
+          "payments",
+          { propertyId: currentPropertyId },
+          { limit: 500 },
+        ] as const,
         queryFn: () =>
           apiClient.get<PaymentRecord[]>("/payments", {
             query: { ...propertyParam, limit: 500 },
@@ -116,8 +119,12 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
         enabled,
       },
       {
-        queryKey:
-          ["complaints", "list", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: [
+          "complaints",
+          "list",
+          { propertyId: currentPropertyId },
+          { limit: 500 },
+        ] as const,
         queryFn: () =>
           apiClient.get<ComplaintRecord[]>("/complaints", {
             query: { ...propertyParam, limit: 500 },
@@ -125,8 +132,7 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
         enabled,
       },
       {
-        queryKey:
-          ["vehicles", "list", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: ["vehicles", "list", { propertyId: currentPropertyId }, { limit: 500 }] as const,
         queryFn: () =>
           apiClient.get<VehicleRecord[]>("/vehicles", {
             query: { ...propertyParam, limit: 500 },
@@ -134,8 +140,12 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
         enabled,
       },
       {
-        queryKey:
-          ["parking", "zones", { propertyId: currentPropertyId }, { activeOnly: true }] as const,
+        queryKey: [
+          "parking",
+          "zones",
+          { propertyId: currentPropertyId },
+          { activeOnly: true },
+        ] as const,
         queryFn: () =>
           apiClient.get<ParkingZoneRecord[]>("/parking/zones", {
             query: { ...propertyParam, active_only: true },
@@ -143,8 +153,12 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
         enabled,
       },
       {
-        queryKey:
-          ["work-orders", "list", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: [
+          "work-orders",
+          "list",
+          { propertyId: currentPropertyId },
+          { limit: 500 },
+        ] as const,
         queryFn: () =>
           apiClient.get<WorkOrderRecord[]>("/work-orders", {
             query: { ...propertyParam, limit: 500 },
@@ -158,14 +172,18 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
     queries;
 
   // Parking slots require zone_id. Fan out one query per zone using useQueries.
-  const zones = (zonesQ.data ?? []) as ParkingZoneRecord[];
+  const zones = useMemo(() => (zonesQ.data ?? []) as ParkingZoneRecord[], [zonesQ.data]);
   const slotsQueries = useQueries({
     queries: zones.map((zone) => ({
-      queryKey:
-        ["parking", "slots", { propertyId: currentPropertyId }, { zoneId: zone.id }] as const,
+      queryKey: [
+        "parking",
+        "slots",
+        { propertyId: currentPropertyId },
+        { zoneId: zone.id },
+      ] as const,
       queryFn: () =>
         apiClient.get<ParkingSlotRecord[]>("/parking/slots", {
-          query: { zone_id: zone.id },
+          query: { ...propertyParam, zone_id: zone.id },
         }),
       enabled: enabled && Boolean(zone.id),
     })),
@@ -183,21 +201,16 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
     complaints: !complaintsQ.isLoading && !complaintsQ.error,
     vehicles: !vehiclesQ.isLoading && !vehiclesQ.error,
     parking:
-      !zonesQ.isLoading &&
-      !zonesQ.error &&
-      slotsQueries.every((q) => !q.isLoading && !q.error),
+      !zonesQ.isLoading && !zonesQ.error && slotsQueries.every((q) => !q.isLoading && !q.error),
     maintenance: !workOrdersQ.isLoading && !workOrdersQ.error,
   } as const;
 
-  const isLoading =
-    queries.some((q) => q.isLoading) || slotsQueries.some((q) => q.isLoading);
-  const isFetching =
-    queries.some((q) => q.isFetching) || slotsQueries.some((q) => q.isFetching);
+  const isLoading = queries.some((q) => q.isLoading) || slotsQueries.some((q) => q.isLoading);
+  const isFetching = queries.some((q) => q.isFetching) || slotsQueries.some((q) => q.isFetching);
   // Surface the first error so the page can render a single ErrorState with
   // its correlation id (ADR-FE-008). Individual sub-resource readiness is
   // still exposed via `ready` so partial errors degrade gracefully.
-  const error =
-    [...queries, ...slotsQueries].find((q) => q.error)?.error ?? null;
+  const error = [...queries, ...slotsQueries].find((q) => q.error)?.error ?? null;
 
   const refetch = () => {
     queries.forEach((q) => void q.refetch());

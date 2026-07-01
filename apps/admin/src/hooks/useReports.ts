@@ -38,6 +38,8 @@ import {
   type VehicleSummary,
 } from "@/lib/reports-selectors";
 
+const REPORTS_PAGE_LIMIT = 100;
+
 export type ReportsFilters = {
   // Year is used to slice the Revenue / Payments report. Default: current year.
   year?: number;
@@ -97,11 +99,11 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
           "billing",
           "invoices",
           { propertyId: currentPropertyId },
-          { limit: 500 },
+          { limit: REPORTS_PAGE_LIMIT },
         ] as const,
         queryFn: () =>
           apiClient.get<InvoiceRecord[]>("/invoices", {
-            query: { ...propertyParam, limit: 500 },
+            query: { ...propertyParam, limit: REPORTS_PAGE_LIMIT },
           }),
         enabled,
       },
@@ -110,11 +112,11 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
           "billing",
           "payments",
           { propertyId: currentPropertyId },
-          { limit: 500 },
+          { limit: REPORTS_PAGE_LIMIT },
         ] as const,
         queryFn: () =>
           apiClient.get<PaymentRecord[]>("/payments", {
-            query: { ...propertyParam, limit: 500 },
+            query: { ...propertyParam, limit: REPORTS_PAGE_LIMIT },
           }),
         enabled,
       },
@@ -123,19 +125,24 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
           "complaints",
           "list",
           { propertyId: currentPropertyId },
-          { limit: 500 },
+          { limit: REPORTS_PAGE_LIMIT },
         ] as const,
         queryFn: () =>
           apiClient.get<ComplaintRecord[]>("/complaints", {
-            query: { ...propertyParam, limit: 500 },
+            query: { ...propertyParam, limit: REPORTS_PAGE_LIMIT },
           }),
         enabled,
       },
       {
-        queryKey: ["vehicles", "list", { propertyId: currentPropertyId }, { limit: 500 }] as const,
+        queryKey: [
+          "vehicles",
+          "list",
+          { propertyId: currentPropertyId },
+          { limit: REPORTS_PAGE_LIMIT },
+        ] as const,
         queryFn: () =>
           apiClient.get<VehicleRecord[]>("/vehicles", {
-            query: { ...propertyParam, limit: 500 },
+            query: { ...propertyParam, limit: REPORTS_PAGE_LIMIT },
           }),
         enabled,
       },
@@ -157,11 +164,11 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
           "work-orders",
           "list",
           { propertyId: currentPropertyId },
-          { limit: 500 },
+          { limit: REPORTS_PAGE_LIMIT },
         ] as const,
         queryFn: () =>
           apiClient.get<WorkOrderRecord[]>("/work-orders", {
-            query: { ...propertyParam, limit: 500 },
+            query: { ...propertyParam, limit: REPORTS_PAGE_LIMIT },
           }),
         enabled,
       },
@@ -183,7 +190,7 @@ export function useReports(filters: ReportsFilters = {}): UseReportsResult {
       ] as const,
       queryFn: () =>
         apiClient.get<ParkingSlotRecord[]>("/parking/slots", {
-          query: { ...propertyParam, zone_id: zone.id },
+          query: { zone_id: zone.id },
         }),
       enabled: enabled && Boolean(zone.id),
     })),

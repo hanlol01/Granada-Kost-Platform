@@ -209,7 +209,7 @@ async function setupCrossPropertyVehicle(client: PoolClient): Promise<void> {
     `INSERT INTO residents (
        id, property_id, full_name, phone, email, ktp_number, gender, resident_status, created_by_user_id, updated_by_user_id
      )
-     VALUES ($1, $2, 'Dev Cross Resident', '+6280088000001', 'dev.cross.resident@example.test', '8888000000000001', 'male', 'active', $3, $3)
+     VALUES ($1, $2, 'Dev Cross Resident', '+6280088000001', 'dev.cross.resident@kostation.test', '8888000000000001', 'male', 'active', $3, $3)
      ON CONFLICT (id) DO UPDATE
      SET property_id = EXCLUDED.property_id,
          full_name = EXCLUDED.full_name,
@@ -249,10 +249,10 @@ async function main(): Promise<void> {
     await cleanupValidationData(client);
     await setupCrossPropertyVehicle(client);
 
-    const adminToken = await validationToken(client, 'dev.admin@example.test');
-    const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@example.test');
-    const residentBravoToken = await validationToken(client, 'dev.resident.bravo@example.test');
-    const propertyOwnerToken = await validationToken(client, 'dev.property.owner@example.test');
+    const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+    const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
+    const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
+    const propertyOwnerToken = await validationToken(client, 'dev.property.owner@kostation.test');
 
     const createdVehicle = await request<VehicleResponse>('POST', '/my/vehicles', residentAlphaToken, {
       plate_number: `d   7777   val`,

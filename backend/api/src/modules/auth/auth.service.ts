@@ -15,7 +15,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthRateLimiterService } from './auth-rate-limiter.service';
-import { AuthTokenResponse, SessionResponse } from './types/auth-response.types';
+import { AuthTokenResponse, AuthUserResponse, SessionResponse } from './types/auth-response.types';
 
 type RequestContext = {
   ipAddress?: string;
@@ -91,6 +91,13 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto, context: RequestContext): Promise<AuthTokenResponse> {
+    if (!dto.refresh_token) {
+      throw new UnauthorizedException({
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+
     const tokenParts = this.parseRefreshToken(dto.refresh_token);
     const session = await this.iam.findSessionById(tokenParts.sessionId);
 
@@ -172,7 +179,7 @@ export class AuthService {
     return { success: true };
   }
 
-  me(user: UserAccessContext): Omit<UserAccessContext, 'sessionId'> {
+  me(user: UserAccessContext): AuthUserResponse {
     return this.serializeUser(user);
   }
 
@@ -308,7 +315,7 @@ export class AuthService {
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
 
-  private serializeUser(user: UserAccessContext): Omit<UserAccessContext, 'sessionId'> {
+  private serializeUser(user: UserAccessContext): AuthUserResponse {
     return {
       id: user.id,
       email: user.email,
@@ -317,6 +324,7 @@ export class AuthService {
       roles: user.roles,
       permissions: user.permissions,
       propertyIds: user.propertyIds,
+      property_ids: user.propertyIds,
     };
   }
 

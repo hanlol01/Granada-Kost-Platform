@@ -207,9 +207,9 @@ async function main(): Promise<void> {
   try {
     await resetNotificationSeedState(client);
 
-    const adminToken = await validationToken(client, 'dev.admin@example.test');
-    const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@example.test');
-    const residentBravoToken = await validationToken(client, 'dev.resident.bravo@example.test');
+    const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+    const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
+    const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
 
     const alphaNotifications = await request<NotificationResponse[]>(
       'GET',
@@ -285,7 +285,7 @@ async function main(): Promise<void> {
       'delivery response exposes raw recipient address, content snapshot, or provider secret',
     );
     assert(
-      deliveries.some((delivery) => delivery.recipient_address_masked && delivery.recipient_address_masked !== 'dev.resident.alpha@example.test'),
+      deliveries.some((delivery) => delivery.recipient_address_masked && delivery.recipient_address_masked !== 'dev.resident.alpha@kostation.test'),
       'delivery response did not expose a masked recipient address',
     );
 

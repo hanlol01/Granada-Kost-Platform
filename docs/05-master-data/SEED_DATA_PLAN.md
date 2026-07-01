@@ -238,9 +238,9 @@ Untuk Production dan Development:
 
 | Field | Nilai Production | Nilai Development |
 |---|---|---|
-| `email` | `owner@granada.id` | `owner@granada.dev` |
+| `email` | `owner@granada.id` | `owner@kostation.test` |
 | `display_name` | `System Owner` | `Dev Owner` |
-| `password_hash` | **Hashed dari password kuat yang digenerate saat deployment** | Hashed dari password development (e.g., `Granada@Dev2026!`) |
+| `password_hash` | **Hashed dari password kuat yang digenerate saat deployment** | Hashed dari password development (`Demo123@`) |
 | `user_status` | `active` | `active` |
 
 > [!WARNING]
@@ -250,12 +250,12 @@ Untuk Production dan Development:
 
 | email | display_name | Role assignment |
 |---|---|---|
-| `manager@granada.dev` | `Dev Manager` | `manager` → property Granada |
-| `admin@granada.dev` | `Dev Admin` | `admin` → property Granada |
-| `teknisi@granada.dev` | `Dev Teknisi` | `technician` → property Granada |
-| `penghuni01@granada.dev` | `Dev Penghuni 01` | `resident` → property Granada |
-| `penghuni02@granada.dev` | `Dev Penghuni 02` | `resident` → property Granada |
-| `investor@granada.dev` | `Dev Investor` | `property_owner` → property Granada |
+| `manager@kostation.test` | `Dev Manager` | `manager` → property Granada |
+| `admin@kostation.test` | `Dev Admin` | `admin` → property Granada |
+| `teknisi@kostation.test` | `Dev Teknisi` | `technician` → property Granada |
+| `penghuni01@kostation.test` | `Dev Penghuni 01` | `resident` → property Granada |
+| `penghuni02@kostation.test` | `Dev Penghuni 02` | `resident` → property Granada |
+| `investor@kostation.test` | `Dev Investor` | `property_owner` → property Granada |
 
 ---
 
@@ -787,7 +787,7 @@ Function: validateSeed()
 
 ### 16.1 Layer 6-DEV: Users Tambahan
 
-Lihat Section 4.5 untuk daftar lengkap. Semua users development menggunakan domain `@granada.dev`.
+Lihat Section 4.5 untuk daftar lengkap. Semua users development menggunakan domain `@kostation.test`.
 
 ### 16.2 Layer 6-DEV: Residents Fiktif
 
@@ -862,7 +862,7 @@ Untuk development, assign semua 8 fasilitas ke semua 163 kamar = **163 × 8 = 1.
 | NO-08 | **Notification records** | Notifikasi harus dari event domain sah | Notification module |
 | NO-09 | **Audit logs** | Audit harus dari operasi riil — seed boleh menghasilkan audit log untuk seed operation itu sendiri, tapi bukan log fiktif | Audit module |
 | NO-10 | **Password lemah** (`password123`, `admin`) | Security risk | Generate strong password saat deployment |
-| NO-11 | **Users @granada.dev** | Domain development tidak boleh masuk production | Gunakan @granada.id atau email riil |
+| NO-11 | **Users @kostation.test** | Domain development tidak boleh masuk production | Gunakan @granada.id atau email riil |
 | NO-12 | **Room facility assignments yang belum dikonfirmasi** | Data fasilitas per kamar belum divalidasi pengelola | Input via admin panel setelah konfirmasi |
 
 ### 17.2 Data yang BOLEH Masuk Production
@@ -884,7 +884,7 @@ Untuk development, assign semua 8 fasilitas ke semua 163 kamar = **163 × 8 = 1.
 |---|---|---|
 | Users | 7 users (owner + 6 dev users) | 1 user (owner saja) |
 | Password | Deterministic, boleh weak | Strong, dari env var |
-| User domain | `@granada.dev` | `@granada.id` atau email riil |
+| User domain | `@kostation.test` | `@granada.id` atau email riil |
 | Residents | 10 fiktif | 0 |
 | Occupancies | 8 fiktif | 0 |
 | Room status | 8 occupied, 155 vacant | 163 vacant |

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-01
+
+### Frontend Phase 1 Demo Readiness (M11G / M11GV)
+- M11G selesai: Reports + Audit Minimum di Admin live dengan agregasi Phase 1 dan Audit/Export placeholder eksplisit.
+- M11GV PASS: lint, typecheck, dan build untuk Admin + Penghuni berhasil.
+- Frontend Admin/Penghuni Phase 1 dinyatakan demoable.
+- Admin demoable: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking, Reports.
+- Penghuni demoable: Home, Billing, Complaints read, Notifications, Info, Profile/session.
+- Fitur deferred tetap eksplisit: Smart Lock real UI, CCTV preview, Booking, Chat, File upload fisik, Audit endpoint, dan Reports export.
+
 ## 2026-06-17
 
 ### Backend Foundation

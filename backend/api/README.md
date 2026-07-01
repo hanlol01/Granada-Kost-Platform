@@ -129,7 +129,7 @@ npm run db:seed:dev
 `db:seed:dev` menambahkan development-only dummy data:
 
 - 10 Penghuni fiktif dengan email `.test`, telepon dummy, dan KTP dummy.
-- 10 user login Penghuni fiktif dengan password `GranadaResident@Dev2026!`.
+- 10 user login Penghuni fiktif dengan password `Demo123@`.
 - 10 emergency contacts fiktif.
 - 8 active occupancies.
 - 8 check-in records.

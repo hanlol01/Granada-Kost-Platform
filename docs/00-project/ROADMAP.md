@@ -97,12 +97,17 @@
 - M11D - Admin Operational read (Billing, Complaint, Vehicle, Parking). Status: selesai.
 - M11DV - Admin Operational verification. Status: selesai.
 - M11E - Admin Operational Mutations (rooms / residents / check-in / invoices / payments / complaints / vehicles / parking writes). Status: selesai.
+- M11F - Penghuni Core (home, billing, complaints read, notifications, info, profile/session). Status: selesai.
+- M11G - Reports + Audit Minimum. Status: selesai.
+- M11GV - Frontend validation. Status: PASS.
 - Output kunci:
   - `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md` (M11A) + addendum M11AF/M11E.
   - `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` (frozen).
   - `packages/api-client`, `packages/domain` (rilis M11B).
-  - Halaman Admin live: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking. Smart Lock & CCTV tetap placeholder.
-- Verdict: Frontend Architecture tetap Frozen. M11F siap dimulai untuk Penghuni Core.
+  - Halaman Admin live: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking, Reports.
+  - Halaman Penghuni live: Home, Billing, Complaints read, Notifications, Info, Profile/session.
+  - Smart Lock, CCTV, Booking, Chat, dan file upload fisik tetap placeholder/deferred sesuai scope.
+- Verdict: M11G selesai, M11GV PASS. Frontend Admin/Penghuni Phase 1 demoable.
 
 ## Milestone 12 - Reports + Audit Minimum
 
@@ -119,6 +124,10 @@
   - Hook order Reports diperbaiki: RBAC gating dipindah ke parent, body Reports dengan `useReports` dan `useAuditLogs` di-render lewat child component agar tidak kondisional.
   - Export tetap disabled. Audit Viewer tetap placeholder. ErrorState menampilkan correlation id.
   - Verdict: M11GV PASS.
+- Frontend Admin/Penghuni Phase 1. Status: demoable.
+  - Admin Phase 1 demoable untuk operasional inti: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking, Reports.
+  - Penghuni Phase 1 demoable untuk self-service dasar: Home, Billing, Complaints read, Notifications, Info, Profile/session.
+  - Placeholder/deferred tetap eksplisit untuk fitur yang menunggu milestone backend/provider berikutnya.
 
 ## Next Milestone
 

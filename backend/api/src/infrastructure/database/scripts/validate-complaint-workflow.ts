@@ -134,11 +134,11 @@ async function main(): Promise<void> {
   const pool = new Pool(databaseConfigFromEnv());
   const client = await pool.connect();
 
-  const adminToken = await validationToken(client, 'dev.admin@example.test');
-  const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@example.test');
-  const residentBravoToken = await validationToken(client, 'dev.resident.bravo@example.test');
-  const technicianToken = await validationToken(client, 'dev.technician.budi@example.test');
-  const propertyOwnerToken = await validationToken(client, 'dev.property.owner@example.test');
+  const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+  const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
+  const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
+  const technicianToken = await validationToken(client, 'dev.technician.budi@kostation.test');
+  const propertyOwnerToken = await validationToken(client, 'dev.property.owner@kostation.test');
 
   const categories = await request<ComplaintCategoryResponse[]>(
     'GET',

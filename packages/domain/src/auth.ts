@@ -12,9 +12,12 @@ export type AuthMe = {
   id: string;
   email?: string;
   name?: string;
+  displayName?: string;
+  phone?: string | null;
   roles: RoleCode[];
   permissions: string[];
   property_ids: string[];
+  propertyIds?: string[];
   properties?: PropertyScopeRef[];
   resident_id?: string | null;
   session_id?: string;
@@ -41,4 +44,5 @@ export type LoginResponse = {
   // refresh_token is delivered via HTTP-only cookie (ADR-FE-003).
   // Backend MAY return it in the body in dev; client ignores it.
   refresh_token?: string;
+  user?: AuthMe;
 };

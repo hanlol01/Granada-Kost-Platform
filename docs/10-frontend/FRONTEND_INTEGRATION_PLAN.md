@@ -1,7 +1,7 @@
 # Frontend Integration Plan — Granada Kost Platform
 
 > Milestone: M11A — Frontend Integration Planning
-> Status: Planning only. Tidak mengubah kode frontend maupun backend.
+> Status: Phase 1 demoable after M11G/M11GV.
 > Tanggal: 2026-06-30
 > Peran pembuat: Technical Architect & Frontend Integration Planner
 > Cakupan: Admin (`apps/admin`) dan Penghuni (`apps/penghuni`) terhadap backend NestJS di `backend/api`.
@@ -15,6 +15,8 @@ Backend Granada Kost Platform sudah menyelesaikan modul inti Phase 1: IAM/RBAC, 
 Frontend Admin dan Penghuni hasil generasi Lovable saat ini sepenuhnya bekerja dengan data lokal (`apps/admin/src/lib/mock-data.ts` dan `apps/penghuni/src/lib/dummy-data.ts`). Tidak ada API client, tidak ada auth flow, tidak ada query layer terhubung ke backend, dan tidak ada guard route. Routing TanStack Router sudah rapi dan UI sudah memakai shadcn/ui + Tailwind dengan kualitas yang baik.
 
 Dokumen ini menetapkan rencana integrasi bertahap mulai dari fondasi infrastruktur klien (API client, auth, query layer) hingga penggantian dummy data per domain. Prinsip utama: tidak redesign UI, hanya mengganti sumber data, dan menegakkan business rule tetap di backend.
+
+Status terkini per 2026-07-01: M11G selesai, M11GV PASS, dan Frontend Admin/Penghuni Phase 1 demoable. Admin sudah demoable untuk Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking, dan Reports. Penghuni sudah demoable untuk Home, Billing, Complaints read, Notifications, Info, dan Profile/session. Smart Lock real UI, CCTV preview, Booking, Chat, File upload fisik, Audit endpoint, dan Reports export tetap deferred/placeholder eksplisit.
 
 Verdict akhir tersedia di bagian 22.
 
@@ -462,6 +464,9 @@ M11G — Reports + Audit minimum: SELESAI.
 - Audit Viewer untuk owner/manager: render placeholder dengan pesan eksplisit; siap di-swap ke tabel saat `/audit/logs` rilis.
 - Export jobs UI: tombol Export disabled dengan tooltip eksplisit; siap di-swap saat `/reports/exports` rilis.
 - Tidak ada endpoint baru di backend. Tidak ada perubahan ADR. Tidak ada laporan dummy. Tidak ada export client-side.
+- Status: M11G selesai.
+- Validation: M11GV PASS.
+- Verdict: Frontend Admin/Penghuni Phase 1 demoable.
 - Endpoint backend yang masih ditunggu untuk fitur M11G penuh: `/api/v1/audit/logs`, `/audit/auth-events`, `/audit/smart-lock-events`, `/audit/cctv-events`, `/audit/exports`, `/reports/exports`, dan opsional `/reports/*` dedicated, `/billing/aging-summary`, `/admin/dashboard/*`.
 
 M11H — Smart Lock UI Integration (setelah M10G real Tuya):
@@ -500,6 +505,11 @@ Smart Lock UI di kedua app boleh tetap simulated/skeleton sampai M10G selesai. T
 ## 22. Verdict
 
 Verdict: A. Siap lanjut M11B.
+
+Update 2026-07-01:
+- M11G selesai.
+- M11GV PASS.
+- Frontend Admin/Penghuni Phase 1 demoable.
 
 Alasan:
 - Backend Phase 1 untuk Property, Room, Resident, Occupancy, Billing, Complaint/Maintenance, Vehicle/Parking, Notification, dan Smart Lock foundation sudah selesai dan terdokumentasi rapi.

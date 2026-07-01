@@ -79,7 +79,7 @@ function ownerPasswordFor(environment: SeedEnvironment): string {
     throw new Error('SEED_OWNER_PASSWORD is required for production seed.');
   }
 
-  return 'Granada@Dev2026!';
+  return 'Demo123@';
 }
 
 function shouldSeedDevelopmentData(environment: SeedEnvironment): boolean {
@@ -334,7 +334,7 @@ async function seedComplaintCategories(client: PoolClient): Promise<void> {
 }
 
 async function seedDevelopmentData(client: PoolClient): Promise<void> {
-  const residentPasswordHash = await argon2.hash('GranadaResident@Dev2026!');
+  const residentPasswordHash = await argon2.hash('Demo123@');
 
   for (const resident of DEV_RESIDENT_SEEDS) {
     await client.query(
@@ -693,8 +693,8 @@ async function seedDevelopmentSmartLockRuntime(client: PoolClient): Promise<void
 }
 
 async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promise<void> {
-  const staffPasswordHash = await argon2.hash('GranadaStaff@Dev2026!');
-  const technicianPasswordHash = await argon2.hash('GranadaTechnician@Dev2026!');
+  const staffPasswordHash = await argon2.hash('Demo123@');
+  const technicianPasswordHash = await argon2.hash('Demo123@');
 
   for (const user of DEV_USER_SEEDS) {
     await client.query(

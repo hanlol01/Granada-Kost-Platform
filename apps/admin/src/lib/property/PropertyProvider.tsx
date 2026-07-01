@@ -38,7 +38,7 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
 
   const availableProperties = useMemo<PropertyScopeRef[]>(() => {
     if (user?.properties && user.properties.length > 0) return user.properties;
-    return (user?.property_ids ?? []).map((id) => ({ id }));
+    return (user?.property_ids ?? user?.propertyIds ?? []).map((id) => ({ id }));
   }, [user]);
 
   const [currentPropertyId, setCurrentPropertyIdState] = useState<string | null>(null);

@@ -15,7 +15,22 @@ Repository saat ini berada pada kondisi yang **stabil untuk internal demo**: sel
 
 Kualitas kode terjaga: shared selectors menjamin **Dashboard dan Reports menghasilkan angka yang identik**, arsitektur frontend tetap sesuai ADR yang dibekukan pada M11AF, dan tidak ada perubahan backend atau ADR yang dilakukan di sepanjang M11B–M11G. Risiko utama sebelum staging berada di dua area: (a) sisi produk—Audit Viewer dan Export masih menunggu endpoint backend, (b) sisi operasional—smoke test Penghuni end-to-end belum dilakukan secara terstruktur pasca M11FV.
 
-**Verdict akhir dituangkan di bagian 14.**
+**Verdict akhir dituangkan di bagian akhir dokumen.**
+
+---
+
+## Architecture Stability
+
+Salah satu indikator kesehatan yang paling penting dari siklus ini adalah bahwa seluruh implementasi Backend Phase 1, Smart Lock Foundation, dan Frontend Phase 1 berhasil diselesaikan **tanpa mengubah keputusan arsitektur yang telah dibekukan**. Secara konkret:
+
+- **Domain Model** tidak berubah. Bounded context IAM/RBAC, Property, Room, Resident, Occupancy, Billing, Complaint, Maintenance, Vehicle, Parking, Notification, dan Smart Lock tetap sesuai `DOMAIN_MODEL.md` dan `BACKEND_ARCHITECTURE.md`.
+- **Database Schema utama** tidak berubah. Migration bertambah secara aditif (Layer 5–6 seed dan migration modul baru) tanpa mengubah tabel-tabel inti yang sudah dirilis pada milestone sebelumnya.
+- **API Contract** tetap konsisten dengan `API_PLANNING.md`. Endpoint yang belum dibuka tetap masuk daftar Phase 1/Phase 2 tanpa memutar balik keputusan sebelumnya, dan endpoint yang sudah rilis tidak mengalami breaking change.
+- **Backend Architecture** (`BACKEND_ARCHITECTURE.md`) tetap sebagai blueprint tunggal. Modular monolith NestJS, PostgreSQL sebagai system of record, Redis untuk ephemeral workloads, provider abstraction, dan policy enforcement point di backend semuanya dipatuhi.
+- **Frontend ADR** (`FRONTEND_ARCHITECTURE_DECISIONS.md`) yang dibekukan di M11AF tetap utuh. Tidak ada ADR baru yang ditambahkan setelah freeze; seluruh implementasi M11B–M11G/M11GV mengikuti ADR-FE-001 s/d ADR-FE-011.
+- **UI Design Lovable** dipertahankan verbatim. Perubahan yang dilakukan hanya menambahkan skeleton, empty/error state, wiring data, dan RBAC visibility — tidak ada redesign visual.
+
+Stabilitas ini menegaskan bahwa arsitektur yang dirancang di awal proyek berhasil menampung seluruh implementasi Phase 1 tanpa perlu revisi mendasar. Ini menjadi indikator kualitas planning dan mengurangi risiko rework saat memasuki Phase 2.
 
 ---
 
@@ -66,6 +81,8 @@ Halaman yang masih placeholder atau menunggu milestone berikutnya:
 Infrastruktur frontend Admin sudah lengkap dan sesuai ADR yang dibekukan: `api-client` dengan single-flight refresh queue, `domain` package sebagai single source of truth tipe, `AuthProvider` dengan token in-memory, `PropertyProvider` dengan cache-bleed protection, RBAC-aware nav dan RoleGate.
 
 Kesehatan: **hijau untuk scope Phase 1 harian**; area yang belum tersentuh berada di kolom "menunggu backend" atau "menunggu perangkat fisik", bukan "gagal implementasi".
+
+Secara lintas aplikasi, seluruh workflow operasional utama kini telah menggunakan backend nyata. Read dan mutation pada Rooms, Residents, Payments, Complaints, Vehicles, Parking, Notifications Penghuni, dan Reports semuanya mengalir melalui endpoint Phase 1 yang telah dirilis, bukan lagi dari `mock-data.ts` atau `dummy-data.ts`. Dummy data hanya tersisa pada halaman yang memang belum menjadi scope Phase 1 — Smart Lock UI, Access History, CCTV, Booking, Notifications Admin, Settings, dan Chat Penghuni — dan semuanya berada di balik label eksplisit atau feature flag sehingga tidak berpotensi menyesatkan pengguna saat demo.
 
 ---
 
@@ -187,6 +204,7 @@ Hutang teknis yang tercatat, dikelompokkan berdasarkan prioritas:
 **Prioritas menengah**:
 
 - Agregasi Reports client-side dengan `limit=500` per resource. Aman untuk skala Granada (~163 kamar), tetapi harus digantikan endpoint `/reports/*` dedicated saat volume tumbuh.
+- **Dashboard dan Reports saat ini menggunakan client-side aggregation** melalui `useReports` dan shared selectors. Pendekatan ini menjaga konsistensi angka antar surface, tetapi menempatkan beban perhitungan pada browser dan mengambil beberapa list endpoint sekaligus per kunjungan halaman. Direkomendasikan **dipindahkan ke backend melalui endpoint agregasi khusus** (`/admin/dashboard/summary`, `/reports/*`, `/billing/aging-summary`) sebelum production untuk mengurangi payload, latency, dan risiko inkonsistensi saat volume data tumbuh.
 - Filter Reports masih per tahun; date-range bebas menunggu DatePicker komponen dan query date pada `/payments`/`/invoices`.
 - Halaman `Notifications` dan `Settings` di Admin masih memakai dummy data. Karena masuk scope milestone berikutnya, tidak dinaikkan ke tinggi.
 - Warning ESLint `exhaustive-deps` pada `complaints.tsx` dan `payments.tsx` yang bersifat legacy (tidak menyebabkan bug fungsional).
@@ -283,6 +301,31 @@ Rekomendasi berdasarkan urgensi bisnis dan blocker eksternal:
 4. **M10G Smart Lock Runtime Integration** — begitu akses fisik ke lokasi diperoleh, ini menjadi jalur kritis untuk M11H (UI Smart Lock live).
 5. **Notifications Admin dan Settings** — angkat dari dummy ke live. Karena endpoint sebagian besar sudah tersedia, ini menjadi milestone kecil yang cepat.
 6. **M11H, M11I, M11J** — mengikuti ROADMAP tanpa perubahan urutan.
+
+---
+
+## Deployment Readiness
+
+Ringkasan status kesiapan build, kualitas kode, pengujian, dan lingkungan operasional menjelang deployment:
+
+| Aspek | Status |
+|---|---|
+| Backend Build | PASS |
+| Frontend Admin Build | PASS |
+| Frontend Penghuni Build | PASS |
+| Lint | PASS (0 error, warning legacy tercatat di Technical Debt) |
+| Typecheck | PASS (Admin + Penghuni) |
+| Smoke Test Admin | PASS (Dashboard, Rooms, Residents, Payments, Complaints, Vehicles, Parking, Reports) |
+| Smoke Test Penghuni | Perlu validasi end-to-end (M11FV sudah PASS, smoke test menyeluruh pasca M11G belum dijalankan) |
+| CI/CD | Belum tersedia (belum ada pipeline lint/typecheck/build/test otomatis pada MR) |
+| VPS Deployment | Belum dilakukan (belum ada image/artifact yang dideploy ke VPS target) |
+| Production Environment | Belum divalidasi (CORS produksi, cookie SameSite, secret management, health check produksi belum diuji end-to-end) |
+
+Implikasi:
+
+- Kesiapan **kualitas kode** dan **build** sudah pada level yang aman untuk internal demo.
+- Kesiapan **lingkungan operasional** belum tuntas. CI/CD, deployment ke VPS, dan validasi environment produksi perlu dijadikan pekerjaan tersendiri sebelum staging/soft-launch.
+- Smoke test Penghuni end-to-end merupakan gap yang perlu ditutup sebelum demo eksternal, meskipun tidak menahan internal demo.
 
 ---
 

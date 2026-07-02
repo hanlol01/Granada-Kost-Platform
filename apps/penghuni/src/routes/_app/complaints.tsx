@@ -19,6 +19,7 @@ import {
   type MyComplaintStatus,
 } from "@/hooks/usePenghuniComplaints";
 import { formatDate } from "@/lib/format";
+import { isChatEnabled } from "@/lib/features";
 
 export const Route = createFileRoute("/_app/complaints")({
   component: ComplaintsPage,
@@ -27,12 +28,12 @@ export const Route = createFileRoute("/_app/complaints")({
 function ComplaintsPage() {
   const complaints = useMyComplaints({ limit: 50 });
   const [showCreate, setShowCreate] = useState(false);
+  const chatEnabled = isChatEnabled();
 
   return (
     <>
       <AppHeader title="Komplain & Maintenance" subtitle="Laporan & tiket Anda" />
       <div className="flex flex-col gap-4 px-5 py-5 animate-[fade-in_0.4s_ease-out]">
-        {/* Info banner: create flow gated by category endpoint */}
         <div className="flex items-start gap-3 rounded-2xl bg-accent p-4 text-xs text-primary">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0">
@@ -44,15 +45,7 @@ function ComplaintsPage() {
           </div>
         </div>
 
-        <Link
-          to="/chat"
-          className="flex items-center justify-between rounded-2xl bg-card p-4 text-sm font-medium shadow-[var(--shadow-soft)]"
-        >
-          <span className="inline-flex items-center gap-2 text-primary">
-            <MessageCircle className="h-4 w-4" /> Chat dengan admin
-          </span>
-          <span className="text-xs text-muted-foreground">Buka →</span>
-        </Link>
+        <ChatSupportAction enabled={chatEnabled} />
 
         <div>
           <p className="text-sm font-semibold">Riwayat Tiket</p>
@@ -76,7 +69,6 @@ function ComplaintsPage() {
         </div>
       </div>
 
-      {/* FAB: open the gated create dialog (M11F: explicit disabled state). */}
       <button
         onClick={() => setShowCreate(true)}
         className="fixed bottom-24 right-1/2 z-30 flex h-14 w-14 translate-x-[calc(50%+150px)] items-center justify-center rounded-full bg-[image:var(--gradient-primary)] text-primary-foreground shadow-[var(--shadow-glow)] transition active:scale-95"
@@ -87,6 +79,33 @@ function ComplaintsPage() {
 
       {showCreate && <CreateComplaintGate onClose={() => setShowCreate(false)} />}
     </>
+  );
+}
+
+function ChatSupportAction({ enabled }: { enabled: boolean }) {
+  if (!enabled) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm shadow-[var(--shadow-soft)]">
+        <span className="inline-flex items-center gap-2 font-medium text-muted-foreground">
+          <MessageCircle className="h-4 w-4" /> Chat dengan admin belum tersedia
+        </span>
+        <p className="mt-1 text-xs text-muted-foreground">
+          VITE_FEATURE_CHAT_ENABLED=false. Untuk komplain baru, hubungi admin secara langsung.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to="/chat"
+      className="flex items-center justify-between rounded-2xl bg-card p-4 text-sm font-medium shadow-[var(--shadow-soft)]"
+    >
+      <span className="inline-flex items-center gap-2 text-primary">
+        <MessageCircle className="h-4 w-4" /> Chat dengan admin
+      </span>
+      <span className="text-xs text-muted-foreground">Buka</span>
+    </Link>
   );
 }
 
@@ -145,11 +164,8 @@ function ComplaintStatusBadge({ status }: { status: MyComplaintStatus }) {
 }
 
 function CreateComplaintGate({ onClose }: { onClose: () => void }) {
-  // The create endpoint POST /my/complaints requires a category UUID from
-  // /complaint-categories, which is gated by complaint.manage permission and
-  // not callable by a resident token. Until a resident-scoped category list
-  // endpoint ships, we keep the action visible but explicitly disabled to
-  // avoid producing a fake workflow (FRONTEND_INTEGRATION_PLAN.md §19).
+  const chatEnabled = isChatEnabled();
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 backdrop-blur-sm"
@@ -176,17 +192,22 @@ function CreateComplaintGate({ onClose }: { onClose: () => void }) {
           <p className="mt-1">
             Backend memerlukan daftar kategori komplain yang khusus untuk Penghuni. Endpoint
             tersebut belum tersedia di Phase 1, sehingga pengajuan dari aplikasi tidak dapat
-            divalidasi dengan aman. Sementara ini, silakan hubungi admin melalui chat atau telepon
-            kos.
+            divalidasi dengan aman. Sementara ini, silakan hubungi admin melalui kontak kos.
           </p>
         </div>
-        <Link
-          to="/chat"
-          onClick={onClose}
-          className="mt-4 flex h-12 items-center justify-center gap-2 rounded-2xl bg-[image:var(--gradient-primary)] text-sm font-semibold text-primary-foreground active:scale-[0.98]"
-        >
-          <MessageCircle className="h-4 w-4" /> Hubungi admin
-        </Link>
+        {chatEnabled ? (
+          <Link
+            to="/chat"
+            onClick={onClose}
+            className="mt-4 flex h-12 items-center justify-center gap-2 rounded-2xl bg-[image:var(--gradient-primary)] text-sm font-semibold text-primary-foreground active:scale-[0.98]"
+          >
+            <MessageCircle className="h-4 w-4" /> Hubungi admin
+          </Link>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-border bg-secondary p-3 text-center text-xs text-muted-foreground">
+            Chat belum aktif. Silakan hubungi admin melalui kontak kos yang tersedia.
+          </div>
+        )}
       </div>
     </div>
   );

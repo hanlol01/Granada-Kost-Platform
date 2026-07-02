@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { smartLocks, lockActivityHourly, lockAlerts, type SmartLock } from "@/lib/mock-data";
+import { isSmartLockSimulated } from "@/lib/features";
 import {
   Lock,
   Unlock,
@@ -196,6 +197,7 @@ function LockCard({
 }
 
 function SmartLockPage() {
+  const simulatedMode = isSmartLockSimulated();
   const [list, setList] = useState<SmartLock[]>(smartLocks);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<{ lock: SmartLock; action: "lock" | "unlock" } | null>(
@@ -236,7 +238,9 @@ function SmartLockPage() {
       );
       setBusyId(null);
       toast.success(`${action === "lock" ? "Locked" : "Unlocked"} kamar ${lock.roomNumber}`, {
-        description: `Perintah dikirim ke device ${lock.deviceId}`,
+        description: simulatedMode
+          ? `Mode simulasi: status UI device ${lock.deviceId} diperbarui lokal.`
+          : `Perintah dikirim ke device ${lock.deviceId}`,
       });
     }, 900);
   };
@@ -244,17 +248,43 @@ function SmartLockPage() {
   return (
     <AppShell
       title="Smart Door Lock"
-      subtitle="Kontrol & monitoring smart lock kamar secara realtime"
+      subtitle={
+        simulatedMode
+          ? "Mode simulasi untuk readiness site visit"
+          : "Kontrol & monitoring smart lock kamar secara realtime"
+      }
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => toast.success("Sinkronisasi device selesai")}
-        >
-          <RefreshCw className="h-4 w-4 mr-1.5" /> Sync
-        </Button>
+        <div className="flex items-center gap-2">
+          {simulatedMode ? <Badge variant="secondary">SIMULATED</Badge> : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              toast.success("Sinkronisasi device selesai", {
+                description: simulatedMode
+                  ? "Mode simulasi: tidak ada provider Smart Lock yang dipanggil."
+                  : undefined,
+              })
+            }
+          >
+            <RefreshCw className="h-4 w-4 mr-1.5" /> Sync
+          </Button>
+        </div>
       }
     >
+      {simulatedMode ? (
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+          <p className="font-semibold text-warning-foreground">
+            Smart Lock berjalan dalam simulasi
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Device, alert, grafik, dan aksi lock/unlock di halaman ini belum memanggil provider
+            Smart Lock live. Gunakan sebagai preview sebelum validasi perangkat fisik dan site
+            visit.
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <StatCard icon={Shield} label="Total Device" value={stats.total} tone="primary" />
         <StatCard icon={Wifi} label="Online" value={stats.online} tone="success" />

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { chatMessages } from "@/lib/dummy-data";
+import { isChatEnabled } from "@/lib/features";
 import { Send, Phone, ShieldAlert } from "lucide-react";
 
 export const Route = createFileRoute("/_app/chat")({
@@ -11,88 +11,90 @@ export const Route = createFileRoute("/_app/chat")({
 type Msg = { id: number; from: "me" | "admin"; text: string; time: string };
 
 function ChatPage() {
-  const [msgs, setMsgs] = useState<Msg[]>(chatMessages as Msg[]);
-  const [text, setText] = useState("");
-  const [typing, setTyping] = useState(false);
+  const enabled = isChatEnabled();
+  const msgs = chatMessages as Msg[];
 
-  const send = () => {
-    if (!text.trim()) return;
-    const t = text.trim();
-    const now = new Date();
-    const time = now.toTimeString().slice(0, 5);
-    setMsgs((m) => [...m, { id: Date.now(), from: "me", text: t, time }]);
-    setText("");
-    setTyping(true);
-    setTimeout(() => {
-      setMsgs((m) => [
-        ...m,
-        {
-          id: Date.now() + 1,
-          from: "admin",
-          text: "Terima kasih atas pesannya, kami akan segera respon ya. 🙏",
-          time: new Date().toTimeString().slice(0, 5),
-        },
-      ]);
-      setTyping(false);
-    }, 1400);
-  };
+  if (!enabled) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <AppHeader
+          title="Chat dengan Admin"
+          subtitle="Fitur dinonaktifkan untuk release saat ini"
+          back
+        />
+        <div className="flex flex-1 items-center justify-center px-5">
+          <div className="w-full rounded-2xl border border-dashed border-border bg-card p-5 text-center shadow-[var(--shadow-soft)]">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+              <ShieldAlert className="h-5 w-5" />
+            </div>
+            <p className="mt-3 text-sm font-semibold">Chat belum tersedia</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              VITE_FEATURE_CHAT_ENABLED=false. Untuk saat ini, gunakan kontak darurat atau hubungi
+              admin secara langsung.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">
       <AppHeader
         title="Admin Kos"
-        subtitle="Online · biasanya membalas <5 menit"
+        subtitle="Mode placeholder - belum terhubung ke backend chat"
         back
         action={
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-success/15 text-success">
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-muted-foreground"
+            disabled
+            aria-label="Panggilan belum tersedia"
+          >
             <Phone className="h-4 w-4" />
           </button>
         }
       />
+
+      <div className="mx-5 mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-[11px] text-muted-foreground">
+        <p className="font-semibold text-warning-foreground">Chat masih placeholder</p>
+        <p className="mt-0.5">
+          Percakapan di bawah adalah contoh UI. Pengiriman pesan dinonaktifkan sampai backend chat
+          dan inbox admin tersedia.
+        </p>
+      </div>
 
       <div className="mx-5 mt-3 flex items-center gap-2 rounded-xl bg-destructive/10 p-2.5 text-[11px] text-destructive">
         <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
         Untuk darurat, hubungi: <strong>+62 811-9000-119</strong>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 pb-32">
+      <div className="flex-1 overflow-y-auto px-5 py-4 pb-36">
         <div className="flex flex-col gap-2">
           {msgs.map((m) => (
             <Bubble key={m.id} m={m} />
           ))}
-          {typing && (
-            <div className="self-start rounded-2xl rounded-bl-md bg-card px-4 py-3 shadow-[var(--shadow-soft)]">
-              <div className="flex gap-1">
-                <Dot delay={0} />
-                <Dot delay={150} />
-                <Dot delay={300} />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
       <div className="fixed bottom-0 inset-x-0 z-30 mx-auto max-w-md border-t border-border bg-card/90 p-3 backdrop-blur-xl">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send();
-          }}
-          className="flex items-center gap-2"
-        >
+        <form onSubmit={(e) => e.preventDefault()} className="flex items-center gap-2">
           <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Tulis pesan..."
-            className="h-11 flex-1 rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary"
+            placeholder="Chat real belum tersedia"
+            disabled
+            className="h-11 flex-1 rounded-full border border-border bg-secondary px-4 text-sm text-muted-foreground outline-none disabled:opacity-70"
           />
           <button
             type="submit"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-[image:var(--gradient-primary)] text-primary-foreground shadow-[var(--shadow-glow)] active:scale-95"
+            disabled
+            aria-label="Kirim pesan belum tersedia"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground"
           >
             <Send className="h-4 w-4" />
           </button>
         </form>
+        <p className="mt-2 text-center text-[10px] text-muted-foreground">
+          Pengiriman pesan menunggu backend chat dan inbox admin.
+        </p>
         <div className="h-[env(safe-area-inset-bottom)]" />
       </div>
     </div>
@@ -117,14 +119,5 @@ function Bubble({ m }: { m: Msg }) {
         {m.time}
       </p>
     </div>
-  );
-}
-
-function Dot({ delay }: { delay: number }) {
-  return (
-    <span
-      className="h-1.5 w-1.5 rounded-full bg-muted-foreground"
-      style={{ animation: `fade-in 0.6s ease-in-out ${delay}ms infinite alternate` }}
-    />
   );
 }

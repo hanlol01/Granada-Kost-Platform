@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cameras, type Camera } from "@/lib/mock-data";
+import { isCctvEnabled } from "@/lib/features";
 import {
   Search,
   Camera as CameraIcon,
@@ -121,6 +123,18 @@ function CctvPage() {
   const online = cameras.filter((c) => c.online).length;
   const offline = cameras.length - online;
 
+  if (!isCctvEnabled()) {
+    return (
+      <AppShell title="Monitoring CCTV" subtitle="Fitur dinonaktifkan untuk release saat ini">
+        <EmptyState
+          title="CCTV belum tersedia"
+          description="Menu CCTV disembunyikan karena VITE_FEATURE_CCTV_ENABLED=false. Fitur ini menunggu gateway/stream lokal dan validasi site visit."
+          icon={<CameraIcon className="h-5 w-5" />}
+        />
+      </AppShell>
+    );
+  }
+
   const refresh = () => {
     setLoading(true);
     toast.success("Stream di-refresh");
@@ -137,6 +151,14 @@ function CctvPage() {
         </Button>
       }
     >
+      <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+        <p className="font-semibold text-warning-foreground">Mode preview CCTV</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Tampilan ini belum terhubung ke gateway/stream produksi. Data kamera dan snapshot masih
+          bersifat demo sampai integrasi CCTV disetujui setelah site visit.
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { l: "Kamera Aktif", v: online, c: "bg-success/15 text-success", i: Wifi },

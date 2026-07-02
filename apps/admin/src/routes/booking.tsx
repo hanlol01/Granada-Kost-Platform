@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { bookingRooms as initialRooms, type BookingRoom, BOOKING_FEE } from "@/lib/mock-data";
 import { formatIDR } from "@/lib/format";
+import { isBookingEnabled } from "@/lib/features";
 import { useMemo, useState } from "react";
 import { Search, MapPin, Maximize2, Wallet, CheckCircle2, Building2 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,6 +68,18 @@ function BookingPage() {
 
   const byFloor = (f: number) => filtered.filter((r) => r.floor === f);
 
+  if (!isBookingEnabled()) {
+    return (
+      <AppShell title="Booking Kamar" subtitle="Fitur dinonaktifkan untuk release saat ini">
+        <EmptyState
+          title="Booking kamar belum tersedia"
+          description="Menu Booking disembunyikan karena VITE_FEATURE_BOOKING_ENABLED=false. Fitur ini menunggu scope backend booking dan payment flow yang aman."
+          icon={<Building2 className="h-5 w-5" />}
+        />
+      </AppShell>
+    );
+  }
+
   const submitBooking = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selected) return;
@@ -93,6 +107,14 @@ function BookingPage() {
       title="Booking Kamar"
       subtitle="Pilih kamar yang tersedia dan lakukan pemesanan online"
     >
+      <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+        <p className="font-semibold text-warning-foreground">Mode placeholder booking</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Alur ini belum terhubung ke backend booking atau payment gateway. Aktifkan hanya untuk
+          preview internal, bukan operasi produksi.
+        </p>
+      </div>
+
       {/* Legend */}
       <div className="flex flex-wrap gap-3 mb-4 text-xs">
         {(Object.keys(statusMap) as Array<keyof typeof statusMap>).map((s) => (

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ import {
   type BookingStatus,
 } from "@/lib/mock-data";
 import { formatIDR, formatDate } from "@/lib/format";
+import { isBookingEnabled } from "@/lib/features";
 import { useMemo, useState } from "react";
 import {
   Search,
@@ -153,11 +155,31 @@ function BookingsAdminPage() {
     },
   ];
 
+  if (!isBookingEnabled()) {
+    return (
+      <AppShell title="Manajemen Booking" subtitle="Fitur dinonaktifkan untuk release saat ini">
+        <EmptyState
+          title="Manajemen booking belum tersedia"
+          description="Menu Manajemen Booking disembunyikan karena VITE_FEATURE_BOOKING_ENABLED=false. Fitur ini menunggu backend booking, verifikasi fee, dan kebijakan operasional."
+          icon={<ClipboardList className="h-5 w-5" />}
+        />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       title="Manajemen Booking"
       subtitle={`${stats.total} booking total — kelola permintaan booking online`}
     >
+      <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+        <p className="font-semibold text-warning-foreground">Mode placeholder booking</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Data dan aksi approval di halaman ini masih preview internal. Belum ada kontrak backend
+          booking/payment fee untuk dipakai sebagai alur produksi.
+        </p>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         {cards.map((c) => {

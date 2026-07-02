@@ -22,6 +22,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/state";
 import { useAuth } from "@/lib/auth";
+import { isChatEnabled } from "@/lib/features";
 import {
   useActiveSessions,
   useLogoutAll,
@@ -46,6 +47,7 @@ function ProfilePage() {
   const navigate = useNavigate();
   const [dark, setDark] = useState(false);
   const [pending, setPending] = useState(false);
+  const chatEnabled = isChatEnabled();
 
   const toggleDark = () => {
     setDark(!dark);
@@ -96,6 +98,9 @@ function ProfilePage() {
               <Pencil className="h-4 w-4" />
             </button>
           </div>
+          <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[11px] opacity-90">
+            Edit profil belum tersedia sampai endpoint update profil Penghuni dirilis.
+          </p>
         </div>
 
         {/* Info */}
@@ -199,7 +204,15 @@ function ProfilePage() {
 
         {/* Links */}
         <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
-          <NavRow to="/chat" icon={MessageCircle} label="Chat dengan Admin" />
+          {chatEnabled ? (
+            <NavRow to="/chat" icon={MessageCircle} label="Chat dengan Admin" />
+          ) : (
+            <DisabledRow
+              icon={MessageCircle}
+              label="Chat dengan Admin"
+              hint="Fitur chat belum aktif untuk release saat ini"
+            />
+          )}
           <Divider />
           <NavRow to="/info" icon={HelpCircle} label="Informasi & FAQ" />
           <Divider />

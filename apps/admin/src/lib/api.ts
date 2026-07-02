@@ -29,3 +29,9 @@ export const apiClient = new ApiClient({
     }
   },
 });
+
+// Expose token getter for authorized raw fetch (e.g. binary blob download).
+// Uses the same proxyTokenProvider — no second auth source (ADR-FE-003).
+export function getAccessToken(): string | null {
+  return proxyTokenProvider.getAccessToken();
+}

@@ -12,3 +12,4 @@ export * from "./enums";
 export * from "./auth";
 export * from "./money";
 export * from "./date";
+export * from "./file";

@@ -1,0 +1,137 @@
+{
+  "pass": true,
+  "checks": [
+    {
+      "id": "admin-cctv-disabled",
+      "pass": true
+    },
+    {
+      "id": "admin-booking-disabled",
+      "pass": true
+    },
+    {
+      "id": "admin-bookings-disabled",
+      "pass": true
+    },
+    {
+      "id": "admin-smartlock-simulated-label",
+      "pass": true
+    },
+    {
+      "id": "admin-smartlock-no-live-provider-claim",
+      "pass": true
+    },
+    {
+      "id": "penghuni-chat-disabled-or-placeholder",
+      "pass": true
+    },
+    {
+      "id": "penghuni-chat-send-disabled-if-visible",
+      "pass": true
+    },
+    {
+      "id": "penghuni-complaint-create-gated",
+      "pass": true
+    },
+    {
+      "id": "penghuni-complaint-no-chat-route-when-disabled",
+      "pass": true
+    },
+    {
+      "id": "penghuni-profile-chat-respects-flag",
+      "pass": true
+    },
+    {
+      "id": "penghuni-profile-disabled-helper-texts",
+      "pass": true
+    },
+    {
+      "id": "no-broken-navigation",
+      "pass": true
+    },
+    {
+      "id": "placeholder-labeled",
+      "pass": true
+    },
+    {
+      "id": "no-fatal-console-network",
+      "pass": true,
+      "details": []
+    }
+  ],
+  "routesTested": [
+    "admin:/cctv",
+    "admin:/booking",
+    "admin:/bookings",
+    "admin:/smart-lock",
+    "penghuni:/chat",
+    "penghuni:/complaints",
+    "penghuni:/profile"
+  ],
+  "screenshots": {
+    "admin-cctv": "artifacts/m12b-placeholder-verification/admin-cctv.png",
+    "admin-booking": "artifacts/m12b-placeholder-verification/admin-booking.png",
+    "admin-bookings": "artifacts/m12b-placeholder-verification/admin-bookings.png",
+    "admin-smart-lock": "artifacts/m12b-placeholder-verification/admin-smart-lock.png",
+    "admin-smart-lock-after-action": "artifacts/m12b-placeholder-verification/admin-smart-lock-after-action.png",
+    "penghuni-chat": "artifacts/m12b-placeholder-verification/penghuni-chat.png",
+    "penghuni-complaints": "artifacts/m12b-placeholder-verification/penghuni-complaints.png",
+    "penghuni-profile": "artifacts/m12b-placeholder-verification/penghuni-profile.png"
+  },
+  "consoleNetwork": {
+    "admin": [
+      {
+        "app": "admin",
+        "type": "network",
+        "status": 401,
+        "url": "http://localhost:3000/api/v1/auth/refresh"
+      },
+      {
+        "app": "admin",
+        "type": "log",
+        "level": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "url": "http://localhost:3000/api/v1/auth/refresh"
+      },
+      {
+        "app": "admin",
+        "type": "console",
+        "level": "error",
+        "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=a39b216c-85ec-473b-923d-8c07edbe842d"
+      }
+    ],
+    "penghuni": [
+      {
+        "app": "penghuni",
+        "type": "network",
+        "status": 401,
+        "url": "http://localhost:3000/api/v1/auth/refresh"
+      },
+      {
+        "app": "penghuni",
+        "type": "log",
+        "level": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "url": "http://localhost:3000/api/v1/auth/refresh"
+      },
+      {
+        "app": "penghuni",
+        "type": "console",
+        "level": "error",
+        "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=74a5c4bc-2060-4297-a534-aba421bd0083"
+      }
+    ],
+    "fatalEvents": []
+  },
+  "issues": [],
+  "excerpts": {
+    "admin-cctv": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nMonitoring CCTV\n\nFitur dinonaktifkan untuk release saat ini\n\nD\ndev.admin@kostation.test\nAdmin\n\nCCTV belum tersedia\n\nMenu CCTV disembunyikan karena VITE_FEATURE_CCTV_ENABLED=false. Fitur ini menunggu gateway/stream lokal dan validasi site visit.",
+    "admin-booking": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nBooking Kamar\n\nFitur dinonaktifkan untuk release saat ini\n\nD\ndev.admin@kostation.test\nAdmin\n\nBooking kamar belum tersedia\n\nMenu Booking disembunyikan karena VITE_FEATURE_BOOKING_ENABLED=false. Fitur ini menunggu scope backend booking dan payment flow yang aman.",
+    "admin-bookings": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nManajemen Booking\n\nFitur dinonaktifkan untuk release saat ini\n\nD\ndev.admin@kostation.test\nAdmin\n\nManajemen booking belum tersedia\n\nMenu Manajemen Booking disembunyikan karena VITE_FEATURE_BOOKING_ENABLED=false. Fitur ini menunggu backend booking, verifikasi fee, dan kebijakan operasional.",
+    "admin-smart-lock": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nSmart Door Lock\n\nMode simulasi untuk readiness site visit\n\nSIMULATED\nSync\nD\ndev.admin@kostation.test\nAdmin\n\nSmart Lock berjalan dalam simulasi\n\nDevice, alert, grafik, dan aksi lock/unlock di halaman ini belum memanggil provider Smart Lock live. Gunakan sebagai preview sebelum validasi perangkat fisik dan site visit.\n\nTotal Device\n\n10\n\nOnline\n\n7\n\nOffline\n\n3\n\nLocked\n\n8\n\nUnlocked\n\n2\n\nRestricted\n\n3\n\nAuto-lock billing\n\nAktivitas Lock / Unlock Hari Ini\n00:00\n02:00\n04:00\n06:00\n08:00\n10:00\n12:00\n14:00\n16:00\n18:00\n20:00\n22:00\n0\n3\n6\n9\n12\nAlert Sma",
+    "admin-smart-lock-after-action": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nSmart Door Lock\n\nMode simulasi untuk readiness site visit\n\nSIMULATED\nSync\nD\ndev.admin@kostation.test\nAdmin\n\nSmart Lock berjalan dalam simulasi\n\nDevice, alert, grafik, dan aksi lock/unlock di halaman ini belum memanggil provider Smart Lock live. Gunakan sebagai preview sebelum validasi perangkat fisik dan site visit.\n\nTotal Device\n\n10\n\nOnline\n\n7\n\nOffline\n\n3\n\nLocked\n\n8\n\nUnlocked\n\n2\n\nRestricted\n\n3\n\nAuto-lock billing\n\nAktivitas Lock / Unlock Hari Ini\n00:00\n02:00\n04:00\n06:00\n08:00\n10:00\n12:00\n14:00\n16:00\n18:00\n20:00\n22:00\n0\n3\n6\n9\n12\nAlert Sma",
+    "penghuni-chat": "Chat dengan Admin\n\nFitur dinonaktifkan untuk release saat ini\n\nChat belum tersedia\n\nVITE_FEATURE_CHAT_ENABLED=false. Untuk saat ini, gunakan kontak darurat atau hubungi admin secara langsung.\n\nHome\nTagihan\nKomplain\nNotif\nProfil",
+    "penghuni-complaints": "Komplain & Maintenance\n\nLaporan & tiket Anda\n\nBuat tiket baru tersedia di milestone berikutnya\n\nUntuk saat ini, hubungi admin secara langsung. Riwayat tiket Anda tetap muncul di bawah.\n\nChat dengan admin belum tersedia\n\nVITE_FEATURE_CHAT_ENABLED=false. Untuk komplain baru, hubungi admin secara langsung.\n\nRiwayat Tiket\n\nValidation common area 1781682241802\n\nMenunggu\n\nDevelopment validation common area complaint.\n\nTKT-GSH-2026-0014\n17 Jun 2026\n\nValidation AC complaint 1781682241802\n\nDiproses\n\nDevelopment validation complaint created by resident alpha.\n\nTKT-GSH-2026-0013\n17 Jun 2026\n\nValidation AC complaint 1781682069276\n\nMenunggu\n\nDevelopment validation complaint created by resident alpha.\n\nTK",
+    "penghuni-profile": "Profil Saya\nDA\n\nDev Resident Alpha\n\ndev.resident.alpha@kostation.test\n\nAktif\n\nEdit profil belum tersedia sampai endpoint update profil Penghuni dirilis.\n\nProperti\n\n-\n\nEmail\n\ndev.resident.alpha@kostation.test\n\nNomor HP\n\nBelum tersedia\n\nTanggal Masuk\n\nBelum tersedia\n\nSesi Aktif\n\nKeluar dari semua\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nDark Mode\n\nPreferensi tampilan lokal\n\nNotifikasi\n\nAkan terhubung ke preferensi backend\n\nChat dengan Admin\n\nFitur chat belum aktif untuk release saat ini\n\nInformasi & FAQ\n\nUbah Kata Sandi\n\nForm ubah kata sandi tersedia di milesto"
+  }
+}

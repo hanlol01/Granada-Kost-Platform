@@ -43,4 +43,12 @@ export default () => ({
     fonnteEnabled: process.env.FONNTE_ENABLED === 'true',
     pushEnabled: process.env.PUSH_NOTIFICATION_ENABLED === 'true',
   },
+  upload: {
+    storagePath: process.env.UPLOAD_STORAGE_PATH ?? './uploads',
+    maxFileSizeMb: Number(process.env.UPLOAD_MAX_FILE_SIZE_MB ?? 5),
+    propertyQuotaMb:
+      process.env.UPLOAD_PROPERTY_QUOTA_MB === undefined || process.env.UPLOAD_PROPERTY_QUOTA_MB === ''
+        ? undefined
+        : Number(process.env.UPLOAD_PROPERTY_QUOTA_MB),
+  },
 });

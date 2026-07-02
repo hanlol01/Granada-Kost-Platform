@@ -10,3 +10,6 @@ dist/
 .cache/
 coverage/
 *.log
+/mockup/
+uploads/
+backend/api/uploads/

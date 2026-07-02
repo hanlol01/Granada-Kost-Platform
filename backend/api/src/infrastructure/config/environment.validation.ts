@@ -35,4 +35,8 @@ export const environmentValidationSchema = Joi.object({
   FONNTE_API_KEY: Joi.string().allow('').optional(),
   FONNTE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   PUSH_NOTIFICATION_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+
+  UPLOAD_STORAGE_PATH: Joi.string().default('./uploads'),
+  UPLOAD_MAX_FILE_SIZE_MB: Joi.number().integer().min(1).max(5).default(5),
+  UPLOAD_PROPERTY_QUOTA_MB: Joi.number().integer().min(1).optional(),
 });

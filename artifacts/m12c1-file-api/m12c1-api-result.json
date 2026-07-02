@@ -1,0 +1,178 @@
+{
+  "generated_at": "2026-07-02T15:54:31.544Z",
+  "base": "http://127.0.0.1:3000/api/v1",
+  "test_account": "dev.admin@kostation.test",
+  "password_masked": "********",
+  "test_files": {
+    "small_png": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c1-file-api\\m12c1-small.png",
+    "oversized_png": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c1-file-api\\m12c1-oversized-property-logo.png",
+    "unsupported_txt": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c1-file-api\\m12c1-unsupported.txt"
+  },
+  "uploaded_file_id": "96c34da6-266f-45aa-92bc-3a8392d6c3f7",
+  "checks": [
+    {
+      "name": "backend health",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "info": {
+            "database": {
+              "status": "up"
+            },
+            "redis": {
+              "status": "up"
+            }
+          },
+          "error": {},
+          "details": {
+            "database": {
+              "status": "up"
+            },
+            "redis": {
+              "status": "up"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "authenticated login",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "user": "dev.admin@kostation.test"
+      }
+    },
+    {
+      "name": "valid PNG upload",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "96c34da6-266f-45aa-92bc-3a8392d6c3f7",
+        "mime_type": "image/png",
+        "file_size_bytes": 68
+      }
+    },
+    {
+      "name": "unauthenticated metadata rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "metadata fetch",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": "96c34da6-266f-45aa-92bc-3a8392d6c3f7",
+        "is_deleted": false
+      }
+    },
+    {
+      "name": "authorized content fetch",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 68
+      }
+    },
+    {
+      "name": "oversized upload rejected",
+      "pass": true,
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "name": "unsupported MIME rejected",
+      "pass": true,
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "name": "delete endpoint accepted",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "file": {
+            "id": "96c34da6-266f-45aa-92bc-3a8392d6c3f7",
+            "property_id": "20000000-0000-4000-8000-000000000001",
+            "uploader_user_id": "81000000-0000-4000-8000-000000000001",
+            "original_filename": "m12c1-small.png",
+            "sanitized_filename": "m12c1-small.png",
+            "mime_type": "image/png",
+            "file_extension": "png",
+            "file_size_bytes": 68,
+            "file_purpose": "property_logo",
+            "storage_driver": "local",
+            "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+            "is_deleted": true,
+            "deleted_at": "2026-07-02T15:54:31.364Z",
+            "created_at": "2026-07-02T15:54:30.969Z",
+            "updated_at": "2026-07-02T15:54:31.364Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "deleted metadata inaccessible as active",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "deleted content inaccessible",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "database soft delete state",
+      "pass": true,
+      "detail": {
+        "id": "96c34da6-266f-45aa-92bc-3a8392d6c3f7",
+        "storage_driver": "local",
+        "storage_path": "20000000-0000-4000-8000-000000000001/property_logo/96c34da6-266f-45aa-92bc-3a8392d6c3f7.png",
+        "is_deleted": true,
+        "deleted_at": "2026-07-02T15:54:31.364Z",
+        "file_size_bytes": "68",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "name": "audit log entries",
+      "pass": true,
+      "detail": {
+        "actions": [
+          "file.upload:success",
+          "file.download:success",
+          "file.delete:success"
+        ]
+      }
+    },
+    {
+      "name": "storage outside public web root",
+      "pass": true,
+      "detail": {
+        "storage_path": "20000000-0000-4000-8000-000000000001/property_logo/96c34da6-266f-45aa-92bc-3a8392d6c3f7.png",
+        "existingPath": "D:\\PROJECT CODING\\Granada Kost Platform\\backend\\api\\uploads\\20000000-0000-4000-8000-000000000001\\property_logo\\96c34da6-266f-45aa-92bc-3a8392d6c3f7.png",
+        "publicRoots": [
+          "D:\\PROJECT CODING\\Granada Kost Platform\\apps\\admin\\public",
+          "D:\\PROJECT CODING\\Granada Kost Platform\\apps\\penghuni\\public",
+          "D:\\PROJECT CODING\\Granada Kost Platform\\public",
+          "D:\\PROJECT CODING\\Granada Kost Platform\\backend\\api\\public"
+        ]
+      }
+    }
+  ],
+  "pass": true
+}

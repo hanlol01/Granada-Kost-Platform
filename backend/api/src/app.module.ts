@@ -23,6 +23,7 @@ import { VehicleModule } from './modules/vehicle/vehicle.module';
 import { ParkingModule } from './modules/parking/parking.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
+import { FileModule } from './modules/file/file.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
     ParkingModule,
     NotificationModule,
     SmartLockModule,
+    FileModule,
     HealthModule,
   ],
 })

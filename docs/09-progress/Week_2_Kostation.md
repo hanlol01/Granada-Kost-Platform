@@ -197,4 +197,26 @@ Setelah dua minggu pengembangan, seluruh modul operasional inti telah selesai di
 
 Dengan fondasi yang telah matang dan strategi yang telah tersusun, **Granada Kost Platform kini siap memasuki tahap integrasi dengan perangkat Smart Lock fisik** pada minggu berikutnya, sekaligus mulai mengembangkan modul CCTV dan menyempurnakan tampilan untuk Admin dan Penghuni. Lalu juga diharapkan sistem aplikasi ini mendapatkan feedback terlebih dahulu terkait workflow bisnis sehingga mendapatkan hasil apa yang perlu direvisi dikemudian hari.
 
+QA-01 Final Regression
+PASS
+
+Internal Demo Ready
+
+Known Issues:
+0
+
+Open Bugs:
+0
+
+## Penutup Minggu Kedua
+
+Pada akhir minggu kedua seluruh implementasi Frontend Phase 1 berhasil diselesaikan dan tervalidasi.
+
+Seluruh workflow utama Admin dan Penghuni telah menggunakan backend nyata.
+
+QA-01 Final Regression dinyatakan PASS.
+
+Status proyek meningkat menjadi Internal Demo Ready.
+
+Milestone 11 resmi dinyatakan selesai.
 **Granada Kost Platform** · Progress Report W2 · Juni 2026

@@ -41,7 +41,7 @@ function allowedVehicleTypes(slotType: ParkingSlotRecord["slotType"]): VehicleTy
 
 export function AssignSlotDialog({ open, onOpenChange, slot }: AssignSlotDialogProps) {
   const assign = useAssignParkingSlot();
-  const vehicles = useVehicles({ status: "active", limit: 200 });
+  const vehicles = useVehicles({ status: "active", limit: 100 });
   const [vehicleId, setVehicleId] = useState<string>("");
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-﻿# Roadmap
+# Roadmap
 
 ## Milestone 1 - Monorepo Foundation
 
@@ -86,20 +86,18 @@
 - Smart Lock API layer with RBAC, property scope, resident self-scope, and simulated Tuya gateway response.
 - Status: selesai sampai 10E.
 
-## Milestone 11 - Frontend Integration
+## Milestone 11 - Frontend Integration Phase 1
 
-- M11A - Frontend Integration Plan (Admin + Penghuni). Status: selesai.
-- M11AF - Frontend Architecture Freeze Review. Status: selesai.
-- M11B - Frontend Foundation (api-client, domain, auth, query layer, route guards, env validation, property context). Status: selesai.
-- M11BV - Foundation verification. Status: selesai.
-- M11C - Admin Core Data (Rooms, Residents read; Dashboard summary). Status: selesai.
-- M11CV - Admin Core Data verification. Status: selesai.
-- M11D - Admin Operational read (Billing, Complaint, Vehicle, Parking). Status: selesai.
-- M11DV - Admin Operational verification. Status: selesai.
-- M11E - Admin Operational Mutations (rooms / residents / check-in / invoices / payments / complaints / vehicles / parking writes). Status: selesai.
-- M11F - Penghuni Core (home, billing, complaints read, notifications, info, profile/session). Status: selesai.
-- M11G - Reports + Audit Minimum. Status: selesai.
-- M11GV - Frontend validation. Status: PASS.
+Status: ✅ COMPLETE
+
+Tanggal selesai: 2026-07-02
+
+Catatan:
+- M11A–M11G selesai.
+- M11BV, M11CV, M11DV, M11EV, M11FV, dan M11GV seluruhnya PASS.
+- QA-01 Final Regression PASS.
+- Internal Demo Ready.
+
 - Output kunci:
   - `docs/10-frontend/FRONTEND_INTEGRATION_PLAN.md` (M11A) + addendum M11AF/M11E.
   - `docs/01-architecture/FRONTEND_ARCHITECTURE_DECISIONS.md` (frozen).
@@ -107,8 +105,7 @@
   - Halaman Admin live: Dashboard, Rooms, Tenants, Payments, Complaints, Vehicles, Parking, Reports.
   - Halaman Penghuni live: Home, Billing, Complaints read, Notifications, Info, Profile/session.
   - Smart Lock, CCTV, Booking, Chat, dan file upload fisik tetap placeholder/deferred sesuai scope.
-- Verdict: M11G selesai, M11GV PASS. Frontend Admin/Penghuni Phase 1 demoable.
-
+- Verdict: Milestone 11 selesai, seluruh validation gate PASS, Frontend Admin/Penghuni Phase 1 Internal Demo Ready.
 ## Milestone 12 - Reports + Audit Minimum
 
 - M11G - Operational Reports & Audit Readiness. Status: selesai.

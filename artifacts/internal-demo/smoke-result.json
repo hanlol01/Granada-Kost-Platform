@@ -1,0 +1,329 @@
+{
+  "startedAt": "2026-07-02T01:19:49.016Z",
+  "finishedAt": "2026-07-02T01:21:10.510Z",
+  "environment": {
+    "adminUrl": "http://localhost:8080",
+    "penghuniUrl": "http://localhost:8081",
+    "apiUrl": "http://localhost:3000/api/v1"
+  },
+  "accounts": {
+    "admin": "dev.admin@kostation.test",
+    "penghuni": "dev.resident.alpha@kostation.test",
+    "passwordMasked": "********"
+  },
+  "admin": {
+    "app": "admin",
+    "results": [
+      {
+        "name": "Dashboard",
+        "url": "http://localhost:8080/",
+        "expected": [
+          "Dashboard",
+          "Ringkasan"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Dashboard",
+        "screenshot": "artifacts/internal-demo/admin-dashboard.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nDashboard\n\nRingkasan pengelolaan rumah kos Anda\n\nTambah Kamar\nD\ndev.admin@kostation.test\nAdmin\n\nTOTAL KAMAR\n\n163\n\n156 kosong tersedia\n\nTOTAL PENGHUNI\n\n8\n\n6 kamar terisi\n\nTOTAL PIUTANG\n\nRp 14.400.000\n\n8 overdue\n\nTAGIHAN BELUM DIBAYAR\n\n8\n\nPerlu tindak lanjut\n\nPemasukan Bulanan\n\nTersedia setelah modul Billing terintegrasi penuh\n\nBelum tersedia\n"
+      },
+      {
+        "name": "Rooms",
+        "url": "http://localhost:8080/rooms",
+        "expected": [
+          "Kamar",
+          "Kelola"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Manajemen Kamar",
+        "screenshot": "artifacts/internal-demo/admin-rooms.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nManajemen Kamar\n\n163 kamar terdaftar\n\nTambah Kamar\nD\ndev.admin@kostation.test\nAdmin\nSemua Status\n\nKamar\n\nAK-05A-1B\n\n05A\n\nKosong\n\nRp 1.800.000/bulan\n\nEdit\n\nKamar\n\nAK-05A-2B\n\n05A\n\nKosong\n\nRp 1.800.000/bulan\n\nEdit\n\nKamar\n\nAK-05A-3A\n\n05A\n\nKosong\n\nRp 1.800.000/bulan\n\nEdit\n\nKamar\n\nAK-05A-4A\n\n05A\n\nKosong\n\nRp 1.800.000/bulan\n\nEdit\n\nKamar\n\nAK-05B-1B\n"
+      },
+      {
+        "name": "Tenants",
+        "url": "http://localhost:8080/tenants",
+        "expected": [
+          "Data Penghuni",
+          "penghuni"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Data Penghuni",
+        "screenshot": "artifacts/internal-demo/admin-tenants.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nData Penghuni\n\n10 penghuni terdaftar\n\nTambah Penghuni\nD\ndev.admin@kostation.test\nAdmin\nPENGHUNI\tKONTAK\tGENDER\tSTATUS\tAKSI\n\nD\n\nDev Resident Alpha\n\nKTP · 000000******0001\n\n\t\n+6280000000001\ndev.resident.alpha@kostation.test\n\tMale\tAktif\t\n\n\nD\n\nDev Resident Bravo\n\nKTP · 000000******0002\n\n\t\n+6280000000002\ndev.resident.bravo@kostation.test\n\tMale\tAkt"
+      },
+      {
+        "name": "Payments",
+        "url": "http://localhost:8080/payments",
+        "expected": [
+          "Pembayaran",
+          "Tagihan"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Pembayaran",
+        "screenshot": "artifacts/internal-demo/admin-payments.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nPembayaran\n\nKelola tagihan dan transaksi sewa\n\nD\ndev.admin@kostation.test\nAdmin\n\nTOTAL TAGIHAN\n\nRp 16.200.000\n\nSUDAH LUNAS\n\nRp 1.800.000\n\nBELUM DIBAYAR\n\nRp 14.400.000\n\nJATUH TEMPO\n\n0 tagihan\n\nDaftar Tagihan & Pembayaran\nSemua\nBelum Lunas\nRiwayat\nVerifikasi\nD\n\nDev Resident Alpha\n\nKamar #RK-02-01 · WF-6E-INV-WF-6E-2026-07-RK-02-01 · Jatuh temp"
+      },
+      {
+        "name": "Complaints",
+        "url": "http://localhost:8080/complaints",
+        "expected": [
+          "Komplain",
+          "Keluhan"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Komplain Penghuni",
+        "screenshot": "artifacts/internal-demo/admin-complaints.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nKomplain Penghuni\n\nKelola tiket keluhan & maintenance\n\nD\ndev.admin@kostation.test\nAdmin\n\nTOTAL BULAN INI\n\n14\n\nSELESAI\n\n3\n\nDIPROSES\n\n9\n\nKATEGORI\n\n10\n\nKomplain per Kategori\nFasilitas Umum\nAC\nKeamanan\nFasilitas Kamar\nKebersihan\nKebisingan\nListrik\nAir\nInternet\n0\n2\n4\n6\n8\nDaftar Tiket\nSemua\nMenunggu\nDiproses\nSelesai\nDitutup\n\nTKT-GSH-2026-0014 · Fa"
+      },
+      {
+        "name": "Vehicles",
+        "url": "http://localhost:8080/vehicles",
+        "expected": [
+          "Kendaraan",
+          "Vehicles"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Kendaraan",
+        "screenshot": "artifacts/internal-demo/admin-vehicles.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nKendaraan\n\n10 kendaraan terdaftar\n\nDaftar Kendaraan\nD\ndev.admin@kostation.test\nAdmin\nSemua Status\nSemua Jenis\nKENDARAAN\tPENGHUNI\tPLAT\tJENIS\tSTATUS\tAKSI\n\n\nYamaha Fazzio · Green\n\nVEH-GSH-2026-0009\n\n\t\n\nDev Resident Hotel\n\nKamar RK-08-01\n\n\tD 1009 DEV\tMotorcycle\tAktif\t\n\n\n\nHonda Vario · Black\n\nVEH-GSH-2026-0001\n\n\t\n\nDev Resident Alpha\n\nKamar RK-02-"
+      },
+      {
+        "name": "Parking",
+        "url": "http://localhost:8080/parking",
+        "expected": [
+          "Parkir",
+          "Parking"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Parkir",
+        "screenshot": "artifacts/internal-demo/admin-parking.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nParkir\n\nKelola zona dan slot parkir\n\nD\ndev.admin@kostation.test\nAdmin\nZona Parkir\n\nMotorcycle Front Yard\n\nMTR-FRONT · 12 slot\n\nMotorcycle Back Yard\n\nMTR-BACK · 8 slot\n\nCar Main Parking\n\nCAR-MAIN · 4 slot\n\nValidation Zone 1781709644075\n\nVAL-1781709644075 · 1 slot\n\nMotorcycle Front Yard\n\nDevelopment dummy motorcycle zone near front gate.\n\nUtil"
+      },
+      {
+        "name": "Reports",
+        "url": "http://localhost:8080/reports",
+        "expected": [
+          "Laporan",
+          "Reports"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Laporan",
+        "screenshot": "artifacts/internal-demo/admin-reports.png",
+        "excerpt": "Kos Management\n\nSistem Pengelolaan\n\nDashboard\nKamar\nPenghuni\nPembayaran\nKomplain\nKendaraan\nParkir\nLaporan\nNotifikasi\n\nPremium Plan\n\nKelola hingga 100 kamar\n\nLaporan\n\nRingkasan operasional dari data backend\n\nExport (segera)\nD\ndev.admin@kostation.test\nAdmin\n2026\n\nPENDAPATAN TERVERIFIKASI (2026)\n\nRp 1.800.000\n\n2 pembayaran terverifikasi\n\nRATA-RATA BULANAN\n\nRp 1.800.000\n\nBulan terbaik: Jun (Rp 1.800.000)\n\nTOTAL PIUTANG\n\nRp 14.400.000\n\n8 belum dibayar, 8 overdue\n\nPendapatan Bulanan\n\nDari pembayaran t"
+      }
+    ],
+    "logoutResult": {
+      "url": "http://localhost:8080/login",
+      "title": "Kos Management System",
+      "text": "Kos Management\n\nMasuk untuk melanjutkan\n\nEmail atau Nomor Telepon\nKata Sandi\nMasuk\nBerhasil keluar\n0",
+      "fatal": [],
+      "loading": []
+    },
+    "events": {
+      "consoleErrors": [
+        {
+          "appName": "admin",
+          "text": "Failed to load resource: the server responded with a status of 404 ()",
+          "url": "http://localhost:8080/favicon.ico"
+        },
+        {
+          "appName": "admin",
+          "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        },
+        {
+          "appName": "admin",
+          "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=4b99ee48-c3ac-4279-b620-8e53ca279885"
+        }
+      ],
+      "exceptions": [],
+      "networkErrors": [
+        {
+          "appName": "admin",
+          "status": 404,
+          "url": "http://localhost:8080/favicon.ico"
+        },
+        {
+          "appName": "admin",
+          "status": 401,
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        }
+      ],
+      "failedRequests": [],
+      "observations": []
+    }
+  },
+  "penghuni": {
+    "app": "penghuni",
+    "results": [
+      {
+        "name": "Home",
+        "url": "http://localhost:8081/",
+        "expected": [
+          "Halo",
+          "Tagihan",
+          "Kamar"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Dev Resident Alpha 👋",
+        "screenshot": "artifacts/internal-demo/penghuni-home.png",
+        "excerpt": "Selamat datang,\n\nDev Resident Alpha 👋\n\nKamar RK-02-01 · Aktif\n\nDA\nTagihan Jun 2026\nDiterbitkan\nRp 1.800.000\nTelat 8 hari\nDetail\nTagihan\nKomplain\nInfo\nNotif\nPembayaran Diverifikasi\n\n2x\n\nTerhitung dari riwayat terbaru\n\nTagihan Aktif\n\n1\n\nJun 2026\n\nProgress pembayaran (riwayat terbaru)\n\n2 dari 3 entri\n\nPengumuman Terbaru\nLihat\n\nBelum tersedia\n\nEndpoint pengumuman untuk Penghuni belum dirilis di Phase 1.\n\nPembayaran Terakhir\nLihat\n\nWF-6E-PAY-PARTIAL-WF-6E-2026-07\n\nTransfer Bank · Terverifikasi\n\nRp 9"
+      },
+      {
+        "name": "Billing",
+        "url": "http://localhost:8081/billing",
+        "expected": [
+          "Tagihan",
+          "Pembayaran"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Tagihan & Pembayaran",
+        "screenshot": "artifacts/internal-demo/penghuni-billing.png",
+        "excerpt": "Tagihan & Pembayaran\n\nPeriode Jun 2026\n\nInvoice DEV-INV-2026-06-RK-02-01\nDiterbitkan\n\nRp 1.800.000\n\nTelat 8 hari (24 Jun 2026)\nSubtotal\nRp 1.800.000\nTotal\nRp 1.800.000\n\nUpload bukti pembayaran\n\nFitur ini menunggu File API yang stabil. Saat tersedia, Anda dapat mengirim bukti transfer langsung dari aplikasi.\n\nTersedia setelah File API rilis\n\nRiwayat Tagihan\n\nSemua\n\nJun WF\n\nWF-6E-INV-WF-6E-2026-07-RK-02-01 · 24 Jul 2026\n\nRp 1.800.000\n\nLunas\n\nPembayaran Anda\n\nSumber: pembayaran yang sudah tercatat "
+      },
+      {
+        "name": "Complaints",
+        "url": "http://localhost:8081/complaints",
+        "expected": [
+          "Komplain",
+          "Keluhan"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Komplain & Maintenance",
+        "screenshot": "artifacts/internal-demo/penghuni-complaints.png",
+        "excerpt": "Komplain & Maintenance\n\nLaporan & tiket Anda\n\nBuat tiket baru tersedia di milestone berikutnya\n\nUntuk saat ini, hubungi admin secara langsung. Riwayat tiket Anda tetap muncul di bawah.\n\nChat dengan admin\nBuka →\n\nRiwayat Tiket\n\nValidation common area 1781682241802\n\nMenunggu\n\nDevelopment validation common area complaint.\n\nTKT-GSH-2026-0014\n17 Jun 2026\n\nValidation AC complaint 1781682241802\n\nDiproses\n\nDevelopment validation complaint created by resident alpha.\n\nTKT-GSH-2026-0013\n17 Jun 2026\n\nValida"
+      },
+      {
+        "name": "Notifications",
+        "url": "http://localhost:8081/notifications",
+        "expected": [
+          "Notifikasi",
+          "Notif"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Notifikasi",
+        "screenshot": "artifacts/internal-demo/penghuni-notifications.png",
+        "excerpt": "Notifikasi\n\n0 belum dibaca\n\nComplaint AC sudah diselesaikan\n\nComplaint AC kurang dingin telah diselesaikan. Silakan cek detail di aplikasi.\n\n12 hari lalu\n\nTagihan Juni 2026 sudah terbit\n\nTagihan Juni 2026 sebesar Rp 1.800.000 untuk kamar RK-02-01 sudah terbit.\n\n12 hari lalu\n\nKendaraan D 1001 DEV disetujui\n\nKendaraan D 1001 DEV telah aktif untuk Granada Student House Jatinangor.\n\n12 hari lalu\n\nCheck-in berhasil\n\nCheck-in kamar RK-02-01 berhasil pada data development.\n\n12 hari lalu\n\nHome\nTagihan\nK"
+      },
+      {
+        "name": "Info",
+        "url": "http://localhost:8081/info",
+        "expected": [
+          "Informasi",
+          "FAQ"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Informasi Kos",
+        "screenshot": "artifacts/internal-demo/penghuni-info.png",
+        "excerpt": "Informasi Kos\nPengumuman\nPeraturan\nFAQ\n\nBelum tersedia\n\nEndpoint pengumuman untuk Penghuni belum tersedia di Phase 1.\n\nHome\nTagihan\nKomplain\nNotif\nProfil"
+      },
+      {
+        "name": "Profile",
+        "url": "http://localhost:8081/profile",
+        "expected": [
+          "Profil",
+          "Sesi Aktif"
+        ],
+        "pass": true,
+        "fatal": [],
+        "loading": [],
+        "title": "Profil Saya",
+        "screenshot": "artifacts/internal-demo/penghuni-profile.png",
+        "excerpt": "Profil Saya\nDA\n\nDev Resident Alpha\n\ndev.resident.alpha@kostation.test\n\nAktif\n\nProperti\n\n-\n\nEmail\n\ndev.resident.alpha@kostation.test\n\nNomor HP\n\nBelum tersedia\n\nTanggal Masuk\n\nBelum tersedia\n\nSesi Aktif\n\nKeluar dari semua\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nPerangkat tidak dikenal\n\n-\n\nCabut\n\nDark Mode\n\nPreferensi tampilan lokal\n\nNotifikasi\n\nAkan terhubung ke preferensi backend\n\nChat dengan Admin\n\nInformasi & FAQ\n\nUbah Kata Sandi"
+      }
+    ],
+    "logoutResult": {
+      "url": "http://localhost:8081/login",
+      "title": "Kos Resident App — Aplikasi Penghuni Kos Modern",
+      "text": "Selamat datang\n\nMasuk ke aplikasi Penghuni\n\nEmail atau Nomor Telepon\nKata Sandi\nMasuk\nBerhasil keluar",
+      "fatal": [],
+      "loading": []
+    },
+    "events": {
+      "consoleErrors": [
+        {
+          "appName": "penghuni",
+          "text": "Failed to load resource: the server responded with a status of 404 ()",
+          "url": "http://localhost:8081/favicon.ico"
+        },
+        {
+          "appName": "penghuni",
+          "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        },
+        {
+          "appName": "penghuni",
+          "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=bc3a35d4-4ba8-4d56-86b8-49c153afbe56"
+        },
+        {
+          "appName": "penghuni",
+          "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "url": "http://localhost:3000/api/v1/auth/sessions"
+        },
+        {
+          "appName": "penghuni",
+          "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        },
+        {
+          "appName": "penghuni",
+          "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=c870acf2-bfb3-44ce-89f7-cf93aa105cfa"
+        },
+        {
+          "appName": "penghuni",
+          "text": "[api] UNAUTHENTICATED 401 Authentication token is required cid=4e032047-9194-472e-8b7d-b9b89d73d319"
+        }
+      ],
+      "exceptions": [],
+      "networkErrors": [
+        {
+          "appName": "penghuni",
+          "status": 404,
+          "url": "http://localhost:8081/favicon.ico"
+        },
+        {
+          "appName": "penghuni",
+          "status": 401,
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        },
+        {
+          "appName": "penghuni",
+          "status": 401,
+          "url": "http://localhost:3000/api/v1/auth/sessions"
+        },
+        {
+          "appName": "penghuni",
+          "status": 401,
+          "url": "http://localhost:3000/api/v1/auth/refresh"
+        }
+      ],
+      "failedRequests": [],
+      "observations": []
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@granada-kost/api-client";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,11 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
 
-  if (status === "authenticated") {
-    void navigate({ to: search.next ?? "/" });
-  }
+  useEffect(() => {
+    if (status === "authenticated") {
+      void navigate({ to: search.next ?? "/" });
+    }
+  }, [status, navigate, search.next]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -35,7 +37,6 @@ function LoginPage() {
     try {
       await login(identifier.trim(), password);
       toast.success("Berhasil masuk");
-      void navigate({ to: search.next ?? "/" });
     } catch (err) {
       const msg = ApiError.isApiError(err) ? err.message : "Login gagal";
       toast.error(msg);

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-02
+
+### QA-01 Final Regression
+
+Added
+- Final browser regression completed.
+- Internal Demo Checklist updated.
+- QA-01-BUG-001 closed.
+- QA-01-BUG-002 closed.
+- Bug Triage updated.
+
+Validation
+- Admin Build PASS
+- Penghuni Build PASS
+- Admin Lint PASS
+- Penghuni Lint PASS
+- Admin Typecheck PASS
+- Penghuni Typecheck PASS
+
+Status
+- Internal Demo Ready.
+- Milestone 11 completed.
 ## 2026-07-01
 
 ### Frontend Phase 1 Demo Readiness (M11G / M11GV)

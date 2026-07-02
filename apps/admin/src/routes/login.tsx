@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
-import { Building2 } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Building2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@granada-kost/api-client";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,14 @@ function LoginPage() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
 
-  if (status === "authenticated") {
-    void navigate({ to: search.next ?? "/" });
-  }
+  useEffect(() => {
+    if (status === "authenticated") {
+      void navigate({ to: search.next ?? "/" });
+    }
+  }, [status, navigate, search.next]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -37,7 +40,6 @@ function LoginPage() {
     try {
       await login(identifier.trim(), password);
       toast.success("Berhasil masuk");
-      void navigate({ to: search.next ?? "/" });
     } catch (err) {
       const msg = ApiError.isApiError(err) ? err.message : "Login gagal";
       toast.error(msg);
@@ -72,14 +74,28 @@ function LoginPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Kata Sandi</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((current) => !current)}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Memproses..." : "Masuk"}

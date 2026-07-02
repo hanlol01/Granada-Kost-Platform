@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { FileModule } from '../file/file.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { BillingPeriodRepository } from './repositories/billing-period.repository';
 import { InvoiceRepository } from './repositories/invoice.repository';
 import { PaymentProofRepository } from './repositories/payment-proof.repository';
+import { PaymentProofFileRepository } from './repositories/payment-proof-file.repository';
 import { PaymentAccountRepository } from './repositories/payment-account.repository';
 import { PaymentRepository } from './repositories/payment.repository';
 import { BillingService } from './services/billing.service';
@@ -18,7 +20,7 @@ import { PaymentProofService } from './services/payment-proof.service';
 import { PaymentService } from './services/payment.service';
 
 @Module({
-  imports: [PropertyModule, RbacModule],
+  imports: [FileModule, PropertyModule, RbacModule],
   controllers: [
     InvoiceController,
     PaymentController,
@@ -32,6 +34,7 @@ import { PaymentService } from './services/payment.service';
     InvoiceRepository,
     PaymentRepository,
     PaymentProofRepository,
+    PaymentProofFileRepository,
     PaymentAccountRepository,
     BillingService,
     InvoiceService,

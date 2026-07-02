@@ -105,6 +105,15 @@ export type PaymentProofRecord = {
   updatedAt: Date;
 };
 
+export type PaymentProofFileRecord = {
+  id: string;
+  paymentProofId: string;
+  fileId: string;
+  uploadedByUserId: string | null;
+  caption: string | null;
+  createdAt: Date;
+};
+
 export type LateFeeAssessmentRecord = {
   id: string;
   propertyId: string;
@@ -159,6 +168,14 @@ export type CreatePaymentProofInput = {
   paymentMethod: PaymentMethod;
   uploadedByUserId: string;
   notes?: string;
+  fileIds?: string[];
+};
+
+export type CreatePaymentProofFileInput = {
+  paymentProofId: string;
+  fileId: string;
+  uploadedByUserId?: string;
+  caption?: string;
 };
 
 export type AuditActorContext = {

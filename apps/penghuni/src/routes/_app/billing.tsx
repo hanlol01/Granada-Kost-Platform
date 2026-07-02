@@ -1,23 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Calendar, CheckCircle2, Clock, Filter, ImagePlus, Receipt } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  FileCheck2,
+  Filter,
+  ImagePlus,
+  Receipt,
+} from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { FilePickerButton } from "@/components/file/FilePickerButton";
+import { FilePreview } from "@/components/file/FilePreview";
+import { FileUploadProgress } from "@/components/file/FileUploadProgress";
+import { WhatsAppFallbackButton } from "@/components/file/WhatsAppFallbackButton";
 import { LoadingState, EmptyState, ErrorState } from "@/components/state";
+import { useFileUpload } from "@/hooks/useFileUpload";
 import {
   selectCurrentInvoice,
   useMyInvoices,
   useMyPayments,
+  useSubmitPaymentProof,
   type MyInvoiceRecord,
   type MyInvoiceStatus,
+  type MyPaymentMethod,
   type MyPaymentRecord,
+  type MyPaymentProofRecord,
 } from "@/hooks/usePenghuniBilling";
+import { env } from "@/lib/env";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
+import type { FileResponse, FileValidationResult } from "@granada-kost/domain";
 
 export const Route = createFileRoute("/_app/billing")({
   component: BillingPage,
 });
 
 type HistoryFilter = "all" | "paid";
+type FilePickerValidationError = Extract<FileValidationResult, { valid: false }>;
 
 function BillingPage() {
   const invoicesQuery = useMyInvoices({ limit: 50 });
@@ -63,8 +83,8 @@ function BillingPage() {
             {/* Current bill */}
             {current ? <CurrentBillCard invoice={current} /> : <NoBillCard />}
 
-            {/* Payment action (disabled until File API ships) */}
-            <PayActionDisabled />
+            {/* Manual payment proof upload */}
+            {current ? <ManualPaymentProofUpload invoice={current} /> : null}
 
             {/* History */}
             <div>
@@ -176,31 +196,238 @@ function NoBillCard() {
   );
 }
 
-function PayActionDisabled() {
+function ManualPaymentProofUpload({ invoice }: { invoice: MyInvoiceRecord }) {
+  const [uploadedFile, setUploadedFile] = useState<FileResponse | null>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<MyPaymentMethod>("bank_transfer");
+  const [notes, setNotes] = useState("");
+  const [validationError, setValidationError] = useState<FilePickerValidationError | null>(null);
+  const [submittedProof, setSubmittedProof] = useState<MyPaymentProofRecord | null>(null);
+
+  const upload = useFileUpload({
+    onUploadSuccess: (file) => {
+      setUploadedFile(file);
+      setSubmittedProof(null);
+      setValidationError(null);
+    },
+  });
+  const submitProof = useSubmitPaymentProof();
+
+  const canSubmitForInvoice = ["issued", "unpaid", "overdue", "partially_paid"].includes(
+    invoice.invoiceStatus,
+  );
+  const showWhatsAppFallback =
+    validationError?.code === "CLIENT_FILE_TOO_LARGE" ||
+    Boolean(upload.uploadError) ||
+    submitProof.isError;
+  const isBusy = upload.isUploading || submitProof.isPending;
+
+  async function handleFilesSelected(files: File[]) {
+    const file = files[0];
+    if (!file) return;
+
+    setSelectedFilename(file.name);
+    setUploadedFile(null);
+    setSubmittedProof(null);
+    setValidationError(null);
+
+    try {
+      await upload.uploadAsync({
+        file,
+        propertyId: invoice.propertyId,
+        filePurpose: "payment_proof",
+      });
+    } catch {
+      // Toast + inline fallback are handled by the hook and render state.
+    }
+  }
+
+  async function handleSubmit() {
+    if (!uploadedFile || !canSubmitForInvoice) return;
+
+    try {
+      const proof = await submitProof.mutateAsync({
+        invoice_id: invoice.id,
+        claimed_amount: invoice.totalAmount,
+        payment_method: paymentMethod,
+        notes: notes.trim() || undefined,
+        file_ids: [uploadedFile.id],
+      });
+      setSubmittedProof(proof);
+    } catch {
+      // Toast + inline fallback are handled by mutation state.
+    }
+  }
+
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-xs text-muted-foreground">
+    <div className="rounded-2xl border border-border bg-card p-4 text-xs text-muted-foreground shadow-[var(--shadow-soft)]">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-foreground">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <ImagePlus className="h-4 w-4" />
         </div>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground">Upload bukti pembayaran</p>
+          <p className="text-sm font-semibold text-foreground">Upload Bukti Pembayaran Manual</p>
           <p className="mt-0.5">
-            Fitur ini menunggu File API yang stabil. Saat tersedia, Anda dapat mengirim bukti
-            transfer langsung dari aplikasi.
+            Bukti akan diperiksa admin. Status tagihan belum otomatis lunas sampai admin
+            memverifikasi pembayaran manual ini.
           </p>
-          <button
-            type="button"
-            disabled
-            aria-disabled
-            className="mt-3 inline-flex h-10 items-center justify-center rounded-xl bg-secondary px-4 text-xs font-semibold text-muted-foreground"
-          >
-            Tersedia setelah File API rilis
-          </button>
+          <p className="mt-1">
+            Pembayaran online/payment gateway akan ditangani di milestone berikutnya. Upload ini
+            tetap menjadi fallback untuk transfer manual, tunai, gangguan gateway, atau
+            rekonsiliasi.
+          </p>
+
+          {!canSubmitForInvoice ? (
+            <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/40 p-3">
+              Tagihan ini belum siap untuk upload bukti manual. Upload tersedia untuk tagihan yang
+              sudah diterbitkan, belum lunas, terlambat, atau sebagian terbayar.
+            </div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Invoice dipilih
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {invoice.invoiceCode}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatPeriodKey(invoice.snapshotPeriodKey)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-bold text-foreground">
+                    {formatIDR(invoice.totalAmount)}
+                  </p>
+                </div>
+              </div>
+
+              <FilePickerButton
+                filePurpose="payment_proof"
+                onFilesSelected={(files) => void handleFilesSelected(files)}
+                onValidationError={(result) =>
+                  setValidationError(result?.valid === false ? result : null)
+                }
+                disabled={isBusy}
+              />
+
+              {upload.isUploading && selectedFilename ? (
+                <FileUploadProgress filename={selectedFilename} />
+              ) : null}
+
+              {uploadedFile ? (
+                <div className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
+                  <FilePreview file={uploadedFile} size={64} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {uploadedFile.original_filename}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      File sudah diupload. Lanjutkan dengan kirim bukti manual.
+                    </p>
+                  </div>
+                  <FileCheck2 className="h-5 w-5 shrink-0 text-success" />
+                </div>
+              ) : null}
+
+              <label className="block">
+                <span className="text-xs font-medium text-foreground">Metode pembayaran</span>
+                <select
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value as MyPaymentMethod)}
+                  disabled={isBusy || Boolean(submittedProof)}
+                  className="mt-1 h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                >
+                  <option value="bank_transfer">Transfer Bank</option>
+                  <option value="qris">QRIS Manual</option>
+                  <option value="ewallet">E-Wallet</option>
+                  <option value="cash">Tunai</option>
+                  <option value="other">Lainnya</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-foreground">Catatan opsional</span>
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  disabled={isBusy || Boolean(submittedProof)}
+                  rows={3}
+                  placeholder="Contoh: Transfer BCA dari Farhan, 3 Juli 2026."
+                  className="mt-1 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                />
+              </label>
+
+              {upload.uploadError ? (
+                <InlineError message={errorMessage(upload.uploadError)} />
+              ) : null}
+              {submitProof.isError ? (
+                <InlineError message={errorMessage(submitProof.error)} />
+              ) : null}
+
+              {showWhatsAppFallback ? (
+                <div className="rounded-xl border border-dashed border-green-600/40 bg-green-50 p-3 text-xs text-green-900">
+                  <p className="mb-2 font-medium">
+                    Jika upload gagal atau file terlalu besar, kirim bukti ke admin via WhatsApp.
+                  </p>
+                  <WhatsAppFallbackButton
+                    context={`bukti pembayaran manual untuk invoice ${invoice.invoiceCode}`}
+                    adminPhone={env.VITE_ADMIN_WHATSAPP_PHONE}
+                    className="w-full"
+                  />
+                </div>
+              ) : null}
+
+              {submittedProof ? (
+                <div className="rounded-xl border border-success/40 bg-success/10 p-3 text-xs text-foreground">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                    <div>
+                      <p className="font-semibold">Bukti manual terkirim.</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        Status: menunggu review admin. Tagihan belum otomatis lunas sampai
+                        diverifikasi.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                disabled={!uploadedFile || isBusy || Boolean(submittedProof)}
+                onClick={() => void handleSubmit()}
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:bg-secondary disabled:text-muted-foreground"
+              >
+                {submitProof.isPending
+                  ? "Mengirim bukti..."
+                  : submittedProof
+                    ? "Menunggu review admin"
+                    : "Kirim Bukti Manual"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message);
+  }
+  return "Terjadi kendala. Coba lagi atau hubungi admin.";
 }
 
 function BreakdownRow({ label, amount, bold }: { label: string; amount: number; bold?: boolean }) {

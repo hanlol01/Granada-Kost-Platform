@@ -4,6 +4,7 @@ import { z } from "zod";
 export const FrontendEnvSchema = z.object({
   VITE_API_BASE_URL: z.string().url().default("http://localhost:3000/api/v1"),
   VITE_APP_NAME: z.string().default("Granada Kost"),
+  VITE_ADMIN_WHATSAPP_PHONE: z.string().default("6281234567890"),
   // Feature flags (booleans encoded as strings in Vite env).
   VITE_FEATURE_SMARTLOCK_MODE: z.enum(["simulated", "live"]).default("simulated"),
   VITE_FEATURE_CCTV_ENABLED: z

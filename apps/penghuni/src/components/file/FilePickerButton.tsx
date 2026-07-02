@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   FILE_PURPOSE_POLICIES,
   type FilePurpose,
+  type FileValidationResult,
   type SupportedMimeType,
 } from "@granada-kost/domain";
 import { validateFileForPurpose, formatFileSize } from "@/lib/file-utils";
@@ -21,6 +22,8 @@ export type FilePickerButtonProps = {
   filePurpose: FilePurpose;
   /** Called when files pass client-side validation. */
   onFilesSelected: (files: File[]) => void;
+  /** Called when validation state changes. */
+  onValidationError?: (result: FileValidationResult | null) => void;
   /** Allow selecting multiple files. Default: false. */
   multiple?: boolean;
   /** Mobile camera capture attribute ("environment" | "user"). */
@@ -34,6 +37,7 @@ export type FilePickerButtonProps = {
 export function FilePickerButton({
   filePurpose,
   onFilesSelected,
+  onValidationError,
   multiple = false,
   capture,
   disabled = false,
@@ -54,6 +58,7 @@ export function FilePickerButton({
 
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
     setValidationError(null);
+    onValidationError?.(null);
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
@@ -61,7 +66,13 @@ export function FilePickerButton({
     const maxFiles = multiple ? policy.maxFilesPerEntity : 1;
 
     if (files.length > maxFiles) {
-      setValidationError(`Maksimum ${maxFiles} file.`);
+      const result: FileValidationResult = {
+        valid: false,
+        code: "CLIENT_TOO_MANY_FILES",
+        message: `Maksimum ${maxFiles} file.`,
+      };
+      setValidationError(result.message);
+      onValidationError?.(result);
       resetInput();
       return;
     }
@@ -71,6 +82,7 @@ export function FilePickerButton({
       const result = validateFileForPurpose(file, filePurpose);
       if (!result.valid) {
         setValidationError(result.message);
+        onValidationError?.(result);
         resetInput();
         return;
       }

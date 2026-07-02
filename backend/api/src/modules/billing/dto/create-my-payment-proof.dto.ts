@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateMyPaymentProofDto {
   @IsUUID()
@@ -18,4 +18,11 @@ export class CreateMyPaymentProofDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  file_ids?: string[];
 }

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
 import { RequirePermissions } from '../../rbac/decorators/permissions.decorator';
@@ -38,17 +39,34 @@ export class MyBillingController {
   }
 
   @Post('payment-proofs')
-  async createPaymentProof(@CurrentUser() user: UserAccessContext, @Body() dto: CreateMyPaymentProofDto) {
+  async createPaymentProof(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: CreateMyPaymentProofDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     const invoice = await this.invoices.getForUser(dto.invoice_id, user.id);
-    return this.proofs.submitProof({
-      propertyId: invoice.propertyId,
-      residentId: invoice.residentId,
-      invoiceId: invoice.id,
-      paymentAccountId: dto.payment_account_id,
-      claimedAmount: dto.claimed_amount,
-      paymentMethod: dto.payment_method,
-      uploadedByUserId: user.id,
-      notes: dto.notes,
-    });
+    return this.proofs.submitProof(
+      {
+        propertyId: invoice.propertyId,
+        residentId: invoice.residentId,
+        invoiceId: invoice.id,
+        paymentAccountId: dto.payment_account_id,
+        claimedAmount: dto.claimed_amount,
+        paymentMethod: dto.payment_method,
+        uploadedByUserId: user.id,
+        notes: dto.notes,
+        fileIds: dto.file_ids,
+      },
+      this.contextFromRequest(user, request),
+    );
+  }
+
+  private contextFromRequest(user: UserAccessContext, request: RequestWithCorrelationId) {
+    return {
+      actorUserId: user.id,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+      correlationId: request.correlationId,
+    };
   }
 }

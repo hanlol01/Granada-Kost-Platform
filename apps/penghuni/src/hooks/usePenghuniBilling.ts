@@ -15,11 +15,9 @@
 // invoice from /my/invoices. Consistent with Admin deriving aging stats from
 // list endpoints.
 //
-// File upload for payment proof is NOT wired here. The backend payment-proof
-// endpoint accepts metadata only (CreateMyPaymentProofDto exposes no file_id),
-// and the File API itself is not part of M11F. The submit mutation is exported
-// but route components keep the upload button disabled with an explicit label
-// until both pieces land together.
+// M12C3 wires manual payment-proof uploads as a fallback flow. Uploads are
+// submitted as file_ids; admin verification remains the authority for marking
+// a manual payment as paid.
 
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
@@ -152,6 +150,7 @@ export type SubmitPaymentProofInput = {
   claimed_amount: number;
   payment_method: MyPaymentMethod;
   notes?: string;
+  file_ids?: string[];
 };
 
 export function useSubmitPaymentProof() {

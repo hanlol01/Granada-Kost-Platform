@@ -1,0 +1,910 @@
+{
+  "generated_at": "2026-07-02T18:08:27.287Z",
+  "routes": [
+    "http://localhost:8081/login",
+    "http://localhost:8081/billing"
+  ],
+  "test_account": "dev.resident.alpha@kostation.test",
+  "password_masked": "********",
+  "test_files": {
+    "smallPngPath": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\m12c3-payment-proof-small.png",
+    "oversizedPngPath": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\m12c3-payment-proof-oversized.png",
+    "unsupportedTxtPath": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\m12c3-payment-proof-unsupported.txt"
+  },
+  "checks": [
+    {
+      "name": "backend health endpoint PASS",
+      "pass": true,
+      "detail": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "Penghuni login works",
+      "pass": true,
+      "detail": {
+        "url": "http://localhost:8081/"
+      }
+    },
+    {
+      "name": "Billing route renders manual upload UI",
+      "pass": true,
+      "detail": {
+        "route": "http://localhost:8081/billing"
+      }
+    },
+    {
+      "name": "manual fallback copy visible",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "admin review copy visible",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "invoice not auto-paid copy visible",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "payment gateway not implemented here copy visible",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "oversized image rejected clearly in UI",
+      "pass": true,
+      "detail": {
+        "visible": "File terlalu besar. Maksimum 2 MB untuk bukti pembayaran.\nMetode pembayaran\nTransfer Bank\nQRIS Manual\nE-Wallet\nTunai\nLainnya\nCatatan opsional\n\nJika upload gagal atau file terlalu"
+      }
+    },
+    {
+      "name": "WhatsApp fallback appears after oversized upload block",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "unsupported file type rejected clearly in UI",
+      "pass": true,
+      "detail": {
+        "visible": "Format file tidak didukung. Gunakan JPEG, PNG, PDF.\nMetode pembayaran\nTransfer Bank\nQRIS Manual\nE-Wallet\nTunai\nLainnya\nCatatan opsional\nKirim Bukti Manual\n\nRiwayat Tagihan\n\nSemua\n\nJun WF"
+      }
+    },
+    {
+      "name": "POST /files returns 201",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "48faeadf-8eb5-48b0-8b61-7afae6722e69",
+        "file_purpose": "payment_proof",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "name": "uploaded file purpose is payment_proof",
+      "pass": true,
+      "detail": {
+        "id": "48faeadf-8eb5-48b0-8b61-7afae6722e69",
+        "property_id": "20000000-0000-4000-8000-000000000001",
+        "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+        "original_filename": "m12c3-payment-proof-small.png",
+        "sanitized_filename": "m12c3-payment-proof-small.png",
+        "mime_type": "image/png",
+        "file_extension": "png",
+        "file_size_bytes": 68,
+        "file_purpose": "payment_proof",
+        "storage_driver": "local",
+        "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+        "is_deleted": false,
+        "deleted_at": null,
+        "created_at": "2026-07-02T18:08:33.194Z",
+        "updated_at": "2026-07-02T18:08:33.194Z"
+      }
+    },
+    {
+      "name": "preview uses backend-mediated file access",
+      "pass": true,
+      "detail": {
+        "requestId": "24412.404",
+        "method": "GET",
+        "url": "http://localhost:3000/api/v1/files/48faeadf-8eb5-48b0-8b61-7afae6722e69/content",
+        "status": 200,
+        "mimeType": "image/png",
+        "bodyText": "",
+        "bodyJson": null
+      }
+    },
+    {
+      "name": "valid upload preview appears in UI",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /my/payment-proofs succeeds",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "38b6614f-e69b-4f07-b386-6fe513429fe4",
+        "proofStatus": "pending_review",
+        "invoiceId": "72000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "name": "UI shows pending review",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "UI says invoice still not auto-paid after submit",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "DB proof created with file_ids",
+      "pass": true,
+      "detail": {
+        "id": "38b6614f-e69b-4f07-b386-6fe513429fe4",
+        "invoice_id": "72000000-0000-4000-8000-000000000001",
+        "proof_status": "pending_review",
+        "notes": "QA M12C3 manual proof 1783015714982",
+        "file_ids": [
+          "48faeadf-8eb5-48b0-8b61-7afae6722e69"
+        ]
+      }
+    },
+    {
+      "name": "invoice not automatically marked paid",
+      "pass": true,
+      "detail": {
+        "id": "72000000-0000-4000-8000-000000000001",
+        "invoice_status": "issued",
+        "paid_at": null
+      }
+    },
+    {
+      "name": "proof status remains pending_review",
+      "pass": true,
+      "detail": {
+        "responseStatus": "pending_review",
+        "dbStatus": "pending_review"
+      }
+    },
+    {
+      "name": "unauthenticated file content rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "resident cannot submit deleted file",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "PAYMENT_PROOF_FILE_NOT_FOUND",
+            "message": "Payment proof file was not found or has been deleted"
+          },
+          "correlation_id": "df8c1d03-37b0-4c26-b068-5b8e0e338646",
+          "timestamp": "2026-07-02T18:08:37.451Z"
+        }
+      }
+    },
+    {
+      "name": "resident cannot attach non-payment_proof file",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "PAYMENT_PROOF_FILE_PURPOSE_INVALID",
+            "message": "Attached file must use payment_proof purpose"
+          },
+          "correlation_id": "643ddd66-bd3d-457f-a4a3-6f45c891c219",
+          "timestamp": "2026-07-02T18:08:37.523Z"
+        }
+      }
+    },
+    {
+      "name": "no fatal console error",
+      "pass": true,
+      "detail": {
+        "fatalConsole": []
+      }
+    },
+    {
+      "name": "no unexpected 400/500 on happy path",
+      "pass": true,
+      "detail": {
+        "unexpectedNetwork": []
+      }
+    }
+  ],
+  "endpoint_results": [
+    {
+      "name": "GET /health",
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "POST /auth/login resident for API security checks",
+      "status": 201
+    },
+    {
+      "name": "GET /files/:fileId/content unauthenticated",
+      "status": 401
+    },
+    {
+      "name": "POST /my/payment-proofs with deleted file",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "PAYMENT_PROOF_FILE_NOT_FOUND",
+          "message": "Payment proof file was not found or has been deleted"
+        },
+        "correlation_id": "df8c1d03-37b0-4c26-b068-5b8e0e338646",
+        "timestamp": "2026-07-02T18:08:37.451Z"
+      }
+    },
+    {
+      "name": "POST /my/payment-proofs with non-payment_proof file",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "PAYMENT_PROOF_FILE_PURPOSE_INVALID",
+          "message": "Attached file must use payment_proof purpose"
+        },
+        "correlation_id": "643ddd66-bd3d-457f-a4a3-6f45c891c219",
+        "timestamp": "2026-07-02T18:08:37.523Z"
+      }
+    }
+  ],
+  "network": [
+    {
+      "requestId": "6E6B19D47EE7329C24E79D604AC9F9B7",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.188",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 401,
+      "mimeType": "application/json",
+      "bodyText": "{\"success\":false,\"error\":{\"code\":\"INVALID_REFRESH_TOKEN\",\"message\":\"Refresh token is invalid or expired\"},\"correlation_id\":\"5362be92-ebd2-43ee-bc89-09b6a96ee81c\",\"timestamp\":\"2026-07-02T18:08:28.588Z\"}",
+      "bodyJson": {
+        "success": false,
+        "error": {
+          "code": "INVALID_REFRESH_TOKEN",
+          "message": "Refresh token is invalid or expired"
+        },
+        "correlation_id": "5362be92-ebd2-43ee-bc89-09b6a96ee81c",
+        "timestamp": "2026-07-02T18:08:28.588Z"
+      }
+    },
+    {
+      "requestId": "D968134D74135A3190E095D23CFD5A6F",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/login",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.189",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/auth/login",
+      "status": 201,
+      "mimeType": "application/json",
+      "bodyText": "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MTAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzZXNzaW9uX2lkIjoiNzFmM2NhMWYtMjk4OS00NjIwLWIyYWUtOGJiMjdlZjE3MWM5Iiwicm9sZXMiOlsicmVzaWRlbnQiXSwicHJvcGVydHlfaWRzIjpbIjIwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJdLCJpYXQiOjE3ODMwMTU3MDksImV4cCI6MTc4MzAxNjYwOX0.HTXJLW93-ib_AvXS1kHIJWJfOixLB2wSgiZI8pne1jw\",\"refresh_token\":\"71f3ca1f-2989-4620-b2ae-8bb27ef171c9.vUfbuGiLBCDKG6YSIlvtSZy00kxRQGB5K2DE5gdAd_Zzy3IiUmmOSyO6pyD2XHPq\",\"token_type\":\"Bearer\",\"expires_in\":900,\"user\":{\"id\":\"51000000-0000-4000-8000-000000000001\",\"email\":\"dev.resident.alpha@kostation.test\",\"phone\":null,\"displayName\":\"Dev Resident Alpha\",\"roles\":[\"resident\"],\"permissions\":[\"billing.self.read\",\"property.read\",\"room.read\"],\"propertyIds\":[\"20000000-0000-4000-8000-000000000001\"],\"property_ids\":[\"20000000-0000-4000-8000-000000000001\"]}}",
+      "bodyJson": {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MTAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzZXNzaW9uX2lkIjoiNzFmM2NhMWYtMjk4OS00NjIwLWIyYWUtOGJiMjdlZjE3MWM5Iiwicm9sZXMiOlsicmVzaWRlbnQiXSwicHJvcGVydHlfaWRzIjpbIjIwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJdLCJpYXQiOjE3ODMwMTU3MDksImV4cCI6MTc4MzAxNjYwOX0.HTXJLW93-ib_AvXS1kHIJWJfOixLB2wSgiZI8pne1jw",
+        "refresh_token": "71f3ca1f-2989-4620-b2ae-8bb27ef171c9.vUfbuGiLBCDKG6YSIlvtSZy00kxRQGB5K2DE5gdAd_Zzy3IiUmmOSyO6pyD2XHPq",
+        "token_type": "Bearer",
+        "expires_in": 900,
+        "user": {
+          "id": "51000000-0000-4000-8000-000000000001",
+          "email": "dev.resident.alpha@kostation.test",
+          "phone": null,
+          "displayName": "Dev Resident Alpha",
+          "roles": [
+            "resident"
+          ],
+          "permissions": [
+            "billing.self.read",
+            "property.read",
+            "room.read"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "requestId": "504048449A65BE0CF5669EA0A11A2DF0",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.190",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "{\"id\":\"51000000-0000-4000-8000-000000000001\",\"email\":\"dev.resident.alpha@kostation.test\",\"phone\":null,\"displayName\":\"Dev Resident Alpha\",\"roles\":[\"resident\"],\"permissions\":[\"billing.self.read\",\"property.read\",\"room.read\"],\"propertyIds\":[\"20000000-0000-4000-8000-000000000001\"],\"property_ids\":[\"20000000-0000-4000-8000-000000000001\"]}",
+      "bodyJson": {
+        "id": "51000000-0000-4000-8000-000000000001",
+        "email": "dev.resident.alpha@kostation.test",
+        "phone": null,
+        "displayName": "Dev Resident Alpha",
+        "roles": [
+          "resident"
+        ],
+        "permissions": [
+          "billing.self.read",
+          "property.read",
+          "room.read"
+        ],
+        "propertyIds": [
+          "20000000-0000-4000-8000-000000000001"
+        ],
+        "property_ids": [
+          "20000000-0000-4000-8000-000000000001"
+        ]
+      }
+    },
+    {
+      "requestId": "B3B30B963EF5ED82D1D139C8A200CBC8",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/invoices?limit=12",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "62FEBF89B2E9D1F254710E3B86796299",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/payments?limit=5",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "3A4603A18B68F7EAB9C9690B49BA9775",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/notifications/unread-count",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.204",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/invoices?limit=12",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "[{\"id\":\"74000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"73000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"WF-6E-INV-WF-6E-2026-07-RK-02-01\",\"invoiceStatus\":\"paid\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-07-24\",\"issuedAt\":\"2026-06-17T04:12:52.044Z\",\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"WF-6E-2026-07\",\"snapshotPeriodStartDate\":\"2026-06-30\",\"snapshotPeriodEndDate\":\"2026-07-30\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"},{\"id\":\"72000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"71000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"DEV-INV-2026-06-RK-02-01\",\"invoiceStatus\":\"issued\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-06-24\",\"issuedAt\":\"2026-06-17T04:12:44.071Z\",\"paidAt\":null,\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"2026-06\",\"snapshotPeriodStartDate\":\"2026-05-31\",\"snapshotPeriodEndDate\":\"2026-06-29\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:44.071Z\",\"updatedAt\":\"2026-06-30T15:09:28.554Z\"}]",
+      "bodyJson": [
+        {
+          "id": "74000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "73000000-0000-4000-8000-000000000001",
+          "invoiceCode": "WF-6E-INV-WF-6E-2026-07-RK-02-01",
+          "invoiceStatus": "paid",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-07-24",
+          "issuedAt": "2026-06-17T04:12:52.044Z",
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "WF-6E-2026-07",
+          "snapshotPeriodStartDate": "2026-06-30",
+          "snapshotPeriodEndDate": "2026-07-30",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        },
+        {
+          "id": "72000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "71000000-0000-4000-8000-000000000001",
+          "invoiceCode": "DEV-INV-2026-06-RK-02-01",
+          "invoiceStatus": "issued",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-06-24",
+          "issuedAt": "2026-06-17T04:12:44.071Z",
+          "paidAt": null,
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "2026-06",
+          "snapshotPeriodStartDate": "2026-05-31",
+          "snapshotPeriodEndDate": "2026-06-29",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:44.071Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      ]
+    },
+    {
+      "requestId": "24412.206",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/notifications/unread-count",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "24412.205",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/payments?limit=5",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "24412.398",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 201,
+      "mimeType": "application/json",
+      "bodyText": "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MTAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzZXNzaW9uX2lkIjoiNzFmM2NhMWYtMjk4OS00NjIwLWIyYWUtOGJiMjdlZjE3MWM5Iiwicm9sZXMiOlsicmVzaWRlbnQiXSwicHJvcGVydHlfaWRzIjpbIjIwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJdLCJpYXQiOjE3ODMwMTU3MTAsImV4cCI6MTc4MzAxNjYxMH0.QGhIGQnmZ8b-GzkEtVjA59fRKeee86SEcVHb6Xg3e5k\",\"refresh_token\":\"71f3ca1f-2989-4620-b2ae-8bb27ef171c9.Lm_iyb3W8KUS1zoGsIM2tEDWSRPlbF7WcMFsGip82j_VoSzHIQdF4AVzc2j7G4xx\",\"token_type\":\"Bearer\",\"expires_in\":900,\"user\":{\"id\":\"51000000-0000-4000-8000-000000000001\",\"email\":\"dev.resident.alpha@kostation.test\",\"phone\":null,\"displayName\":\"Dev Resident Alpha\",\"roles\":[\"resident\"],\"permissions\":[\"billing.self.read\",\"property.read\",\"room.read\"],\"propertyIds\":[\"20000000-0000-4000-8000-000000000001\"],\"property_ids\":[\"20000000-0000-4000-8000-000000000001\"]}}",
+      "bodyJson": {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MTAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzZXNzaW9uX2lkIjoiNzFmM2NhMWYtMjk4OS00NjIwLWIyYWUtOGJiMjdlZjE3MWM5Iiwicm9sZXMiOlsicmVzaWRlbnQiXSwicHJvcGVydHlfaWRzIjpbIjIwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJdLCJpYXQiOjE3ODMwMTU3MTAsImV4cCI6MTc4MzAxNjYxMH0.QGhIGQnmZ8b-GzkEtVjA59fRKeee86SEcVHb6Xg3e5k",
+        "refresh_token": "71f3ca1f-2989-4620-b2ae-8bb27ef171c9.Lm_iyb3W8KUS1zoGsIM2tEDWSRPlbF7WcMFsGip82j_VoSzHIQdF4AVzc2j7G4xx",
+        "token_type": "Bearer",
+        "expires_in": 900,
+        "user": {
+          "id": "51000000-0000-4000-8000-000000000001",
+          "email": "dev.resident.alpha@kostation.test",
+          "phone": null,
+          "displayName": "Dev Resident Alpha",
+          "roles": [
+            "resident"
+          ],
+          "permissions": [
+            "billing.self.read",
+            "property.read",
+            "room.read"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "requestId": "24412.399",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "{\"id\":\"51000000-0000-4000-8000-000000000001\",\"email\":\"dev.resident.alpha@kostation.test\",\"phone\":null,\"displayName\":\"Dev Resident Alpha\",\"roles\":[\"resident\"],\"permissions\":[\"billing.self.read\",\"property.read\",\"room.read\"],\"propertyIds\":[\"20000000-0000-4000-8000-000000000001\"],\"property_ids\":[\"20000000-0000-4000-8000-000000000001\"]}",
+      "bodyJson": {
+        "id": "51000000-0000-4000-8000-000000000001",
+        "email": "dev.resident.alpha@kostation.test",
+        "phone": null,
+        "displayName": "Dev Resident Alpha",
+        "roles": [
+          "resident"
+        ],
+        "permissions": [
+          "billing.self.read",
+          "property.read",
+          "room.read"
+        ],
+        "propertyIds": [
+          "20000000-0000-4000-8000-000000000001"
+        ],
+        "property_ids": [
+          "20000000-0000-4000-8000-000000000001"
+        ]
+      }
+    },
+    {
+      "requestId": "E3D1E39DAE87DC19C0E6AAE679B9098E",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/invoices?limit=50",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "BEACD198FA66E7B299DCA168B0B13134",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/payments?limit=50",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.401",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/payments?limit=50",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "[{\"id\":\"75000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"paymentCode\":\"WF-6E-PAY-PARTIAL-WF-6E-2026-07\",\"paymentMethod\":\"bank_transfer\",\"paymentStatus\":\"verified\",\"amount\":900000,\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"verifiedAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"referenceNumber\":\"WF-6E-WF-6E-2026-07-PARTIAL\",\"notes\":\"Workflow validation partial manual payment\",\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"},{\"id\":\"75000000-0000-4000-8000-000000000002\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"paymentCode\":\"WF-6E-PAY-FINAL-WF-6E-2026-07\",\"paymentMethod\":\"bank_transfer\",\"paymentStatus\":\"verified\",\"amount\":900000,\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"verifiedAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"referenceNumber\":\"WF-6E-WF-6E-2026-07-FINAL\",\"notes\":\"Workflow validation payment from verified proof\",\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"}]",
+      "bodyJson": [
+        {
+          "id": "75000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "paymentCode": "WF-6E-PAY-PARTIAL-WF-6E-2026-07",
+          "paymentMethod": "bank_transfer",
+          "paymentStatus": "verified",
+          "amount": 900000,
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "verifiedAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "referenceNumber": "WF-6E-WF-6E-2026-07-PARTIAL",
+          "notes": "Workflow validation partial manual payment",
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        },
+        {
+          "id": "75000000-0000-4000-8000-000000000002",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "paymentCode": "WF-6E-PAY-FINAL-WF-6E-2026-07",
+          "paymentMethod": "bank_transfer",
+          "paymentStatus": "verified",
+          "amount": 900000,
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "verifiedAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "referenceNumber": "WF-6E-WF-6E-2026-07-FINAL",
+          "notes": "Workflow validation payment from verified proof",
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        }
+      ]
+    },
+    {
+      "requestId": "24412.400",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/invoices?limit=50",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "[{\"id\":\"74000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"73000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"WF-6E-INV-WF-6E-2026-07-RK-02-01\",\"invoiceStatus\":\"paid\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-07-24\",\"issuedAt\":\"2026-06-17T04:12:52.044Z\",\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"WF-6E-2026-07\",\"snapshotPeriodStartDate\":\"2026-06-30\",\"snapshotPeriodEndDate\":\"2026-07-30\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"},{\"id\":\"72000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"71000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"DEV-INV-2026-06-RK-02-01\",\"invoiceStatus\":\"issued\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-06-24\",\"issuedAt\":\"2026-06-17T04:12:44.071Z\",\"paidAt\":null,\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"2026-06\",\"snapshotPeriodStartDate\":\"2026-05-31\",\"snapshotPeriodEndDate\":\"2026-06-29\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:44.071Z\",\"updatedAt\":\"2026-06-30T15:09:28.554Z\"}]",
+      "bodyJson": [
+        {
+          "id": "74000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "73000000-0000-4000-8000-000000000001",
+          "invoiceCode": "WF-6E-INV-WF-6E-2026-07-RK-02-01",
+          "invoiceStatus": "paid",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-07-24",
+          "issuedAt": "2026-06-17T04:12:52.044Z",
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "WF-6E-2026-07",
+          "snapshotPeriodStartDate": "2026-06-30",
+          "snapshotPeriodEndDate": "2026-07-30",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        },
+        {
+          "id": "72000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "71000000-0000-4000-8000-000000000001",
+          "invoiceCode": "DEV-INV-2026-06-RK-02-01",
+          "invoiceStatus": "issued",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-06-24",
+          "issuedAt": "2026-06-17T04:12:44.071Z",
+          "paidAt": null,
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "2026-06",
+          "snapshotPeriodStartDate": "2026-05-31",
+          "snapshotPeriodEndDate": "2026-06-29",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:44.071Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      ]
+    },
+    {
+      "requestId": "E479C9CCDD4D668EA6C720913527E3BD",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.403",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/files",
+      "status": 201,
+      "mimeType": "application/json",
+      "bodyText": "{\"id\":\"48faeadf-8eb5-48b0-8b61-7afae6722e69\",\"property_id\":\"20000000-0000-4000-8000-000000000001\",\"uploader_user_id\":\"51000000-0000-4000-8000-000000000001\",\"original_filename\":\"m12c3-payment-proof-small.png\",\"sanitized_filename\":\"m12c3-payment-proof-small.png\",\"mime_type\":\"image/png\",\"file_extension\":\"png\",\"file_size_bytes\":68,\"file_purpose\":\"payment_proof\",\"storage_driver\":\"local\",\"checksum_sha256\":\"4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844\",\"is_deleted\":false,\"deleted_at\":null,\"created_at\":\"2026-07-02T18:08:33.194Z\",\"updated_at\":\"2026-07-02T18:08:33.194Z\"}",
+      "bodyJson": {
+        "id": "48faeadf-8eb5-48b0-8b61-7afae6722e69",
+        "property_id": "20000000-0000-4000-8000-000000000001",
+        "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+        "original_filename": "m12c3-payment-proof-small.png",
+        "sanitized_filename": "m12c3-payment-proof-small.png",
+        "mime_type": "image/png",
+        "file_extension": "png",
+        "file_size_bytes": 68,
+        "file_purpose": "payment_proof",
+        "storage_driver": "local",
+        "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+        "is_deleted": false,
+        "deleted_at": null,
+        "created_at": "2026-07-02T18:08:33.194Z",
+        "updated_at": "2026-07-02T18:08:33.194Z"
+      }
+    },
+    {
+      "requestId": "F9BA78ED2F4A5F7928260F1EB365F849",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files/48faeadf-8eb5-48b0-8b61-7afae6722e69/content",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.404",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/files/48faeadf-8eb5-48b0-8b61-7afae6722e69/content",
+      "status": 200,
+      "mimeType": "image/png",
+      "bodyText": "",
+      "bodyJson": null
+    },
+    {
+      "requestId": "C10A5DB5BA368C9771CA9DAA4E489AC8",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/payment-proofs",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "24412.407",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/my/payment-proofs",
+      "status": 201,
+      "mimeType": "application/json",
+      "bodyText": "{\"id\":\"38b6614f-e69b-4f07-b386-6fe513429fe4\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"invoiceId\":\"72000000-0000-4000-8000-000000000001\",\"paymentAccountId\":null,\"proofStatus\":\"pending_review\",\"claimedAmount\":1800000,\"paymentMethod\":\"bank_transfer\",\"notes\":\"QA M12C3 manual proof 1783015714982\",\"uploadedByUserId\":\"51000000-0000-4000-8000-000000000001\",\"uploadedAt\":\"2026-07-02T18:08:35.015Z\",\"reviewedByUserId\":null,\"reviewedAt\":null,\"rejectReason\":null,\"paymentId\":null,\"createdAt\":\"2026-07-02T18:08:35.015Z\",\"updatedAt\":\"2026-07-02T18:08:35.015Z\"}",
+      "bodyJson": {
+        "id": "38b6614f-e69b-4f07-b386-6fe513429fe4",
+        "propertyId": "20000000-0000-4000-8000-000000000001",
+        "residentId": "50000000-0000-4000-8000-000000000001",
+        "invoiceId": "72000000-0000-4000-8000-000000000001",
+        "paymentAccountId": null,
+        "proofStatus": "pending_review",
+        "claimedAmount": 1800000,
+        "paymentMethod": "bank_transfer",
+        "notes": "QA M12C3 manual proof 1783015714982",
+        "uploadedByUserId": "51000000-0000-4000-8000-000000000001",
+        "uploadedAt": "2026-07-02T18:08:35.015Z",
+        "reviewedByUserId": null,
+        "reviewedAt": null,
+        "rejectReason": null,
+        "paymentId": null,
+        "createdAt": "2026-07-02T18:08:35.015Z",
+        "updatedAt": "2026-07-02T18:08:35.015Z"
+      }
+    },
+    {
+      "requestId": "24412.409",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/payments?limit=50",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "[{\"id\":\"75000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"paymentCode\":\"WF-6E-PAY-PARTIAL-WF-6E-2026-07\",\"paymentMethod\":\"bank_transfer\",\"paymentStatus\":\"verified\",\"amount\":900000,\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"verifiedAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"referenceNumber\":\"WF-6E-WF-6E-2026-07-PARTIAL\",\"notes\":\"Workflow validation partial manual payment\",\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"},{\"id\":\"75000000-0000-4000-8000-000000000002\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"paymentCode\":\"WF-6E-PAY-FINAL-WF-6E-2026-07\",\"paymentMethod\":\"bank_transfer\",\"paymentStatus\":\"verified\",\"amount\":900000,\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"verifiedAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"referenceNumber\":\"WF-6E-WF-6E-2026-07-FINAL\",\"notes\":\"Workflow validation payment from verified proof\",\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"}]",
+      "bodyJson": [
+        {
+          "id": "75000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "paymentCode": "WF-6E-PAY-PARTIAL-WF-6E-2026-07",
+          "paymentMethod": "bank_transfer",
+          "paymentStatus": "verified",
+          "amount": 900000,
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "verifiedAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "referenceNumber": "WF-6E-WF-6E-2026-07-PARTIAL",
+          "notes": "Workflow validation partial manual payment",
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        },
+        {
+          "id": "75000000-0000-4000-8000-000000000002",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "paymentCode": "WF-6E-PAY-FINAL-WF-6E-2026-07",
+          "paymentMethod": "bank_transfer",
+          "paymentStatus": "verified",
+          "amount": 900000,
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "verifiedAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "referenceNumber": "WF-6E-WF-6E-2026-07-FINAL",
+          "notes": "Workflow validation payment from verified proof",
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        }
+      ]
+    },
+    {
+      "requestId": "24412.408",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/invoices?limit=50",
+      "status": 200,
+      "mimeType": "application/json",
+      "bodyText": "[{\"id\":\"74000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"73000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"WF-6E-INV-WF-6E-2026-07-RK-02-01\",\"invoiceStatus\":\"paid\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-07-24\",\"issuedAt\":\"2026-06-17T04:12:52.044Z\",\"paidAt\":\"2026-06-17T04:12:52.044Z\",\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"WF-6E-2026-07\",\"snapshotPeriodStartDate\":\"2026-06-30\",\"snapshotPeriodEndDate\":\"2026-07-30\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:52.044Z\",\"updatedAt\":\"2026-06-17T04:12:52.044Z\"},{\"id\":\"72000000-0000-4000-8000-000000000001\",\"propertyId\":\"20000000-0000-4000-8000-000000000001\",\"residentId\":\"50000000-0000-4000-8000-000000000001\",\"roomId\":\"14cb38fc-a67e-4319-af2d-c891a9a0f6d8\",\"occupancyId\":\"60000000-0000-4000-8000-000000000001\",\"billingPeriodId\":\"71000000-0000-4000-8000-000000000001\",\"invoiceCode\":\"DEV-INV-2026-06-RK-02-01\",\"invoiceStatus\":\"issued\",\"subtotalAmount\":1800000,\"lateFeeAmount\":0,\"totalAmount\":1800000,\"dueDate\":\"2026-06-24\",\"issuedAt\":\"2026-06-17T04:12:44.071Z\",\"paidAt\":null,\"voidedAt\":null,\"voidReason\":null,\"snapshotPeriodKey\":\"2026-06\",\"snapshotPeriodStartDate\":\"2026-05-31\",\"snapshotPeriodEndDate\":\"2026-06-29\",\"snapshotRoomNumber\":\"RK-02-01\",\"snapshotResidentName\":\"Dev Resident Alpha\",\"snapshotMonthlyPrice\":1800000,\"createdAt\":\"2026-06-17T04:12:44.071Z\",\"updatedAt\":\"2026-06-30T15:09:28.554Z\"}]",
+      "bodyJson": [
+        {
+          "id": "74000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "73000000-0000-4000-8000-000000000001",
+          "invoiceCode": "WF-6E-INV-WF-6E-2026-07-RK-02-01",
+          "invoiceStatus": "paid",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-07-24",
+          "issuedAt": "2026-06-17T04:12:52.044Z",
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "WF-6E-2026-07",
+          "snapshotPeriodStartDate": "2026-06-30",
+          "snapshotPeriodEndDate": "2026-07-30",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        },
+        {
+          "id": "72000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "71000000-0000-4000-8000-000000000001",
+          "invoiceCode": "DEV-INV-2026-06-RK-02-01",
+          "invoiceStatus": "issued",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-06-24",
+          "issuedAt": "2026-06-17T04:12:44.071Z",
+          "paidAt": null,
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "2026-06",
+          "snapshotPeriodStartDate": "2026-05-31",
+          "snapshotPeriodEndDate": "2026-06-29",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:44.071Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      ]
+    }
+  ],
+  "console": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "error",
+      "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=5362be92-ebd2-43ee-bc89-09b6a96ee81c"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    }
+  ],
+  "screenshots": {
+    "login": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\penghuni-login.png",
+    "billingInitial": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\penghuni-billing-initial.png",
+    "oversizedError": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\penghuni-billing-oversized-error.png",
+    "uploadedPreview": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\penghuni-billing-uploaded-preview.png",
+    "pendingReview": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c3-payment-proof\\penghuni-billing-pending-review.png"
+  },
+  "issues": [],
+  "submissionNote": "QA M12C3 manual proof 1783015714982",
+  "pass": true
+}

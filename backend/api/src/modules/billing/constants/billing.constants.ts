@@ -11,6 +11,7 @@ export const BILLING_AUDIT_ACTIONS = {
   invoiceCancel: 'invoice.cancel',
   paymentRecord: 'payment.record',
   paymentAllocate: 'payment.allocate',
+  paymentProofSubmit: 'payment_proof.submit',
   paymentVerify: 'payment.verify',
   paymentReject: 'payment.reject',
 } as const;

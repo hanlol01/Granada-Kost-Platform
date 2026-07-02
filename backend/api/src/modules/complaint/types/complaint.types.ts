@@ -119,6 +119,7 @@ export type CreateComplaintInput = {
   snapshotRoomNumber?: string;
   snapshotResidentName: string;
   createdByUserId: string;
+  fileIds?: string[];
 };
 
 export type ComplaintStatusTransitionInput = {

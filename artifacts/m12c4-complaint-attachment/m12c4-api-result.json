@@ -1,0 +1,502 @@
+{
+  "generated_at": "2026-07-02T18:42:19.589Z",
+  "base": "http://127.0.0.1:3000/api/v1",
+  "test_accounts": [
+    "dev.resident.alpha@kostation.test",
+    "dev.resident.bravo@kostation.test"
+  ],
+  "password_masked": "********",
+  "test_files": [
+    "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c4-complaint-attachment\\m12c4-complaint-attachment-small.png"
+  ],
+  "checks": [
+    {
+      "name": "health endpoint PASS",
+      "pass": true,
+      "detail": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "resident alpha login PASS",
+      "pass": true,
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "name": "resident bravo login PASS",
+      "pass": true,
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "name": "active resident context and category available",
+      "pass": true,
+      "detail": {
+        "alpha": {
+          "email": "dev.resident.alpha@kostation.test",
+          "user_id": "51000000-0000-4000-8000-000000000001",
+          "resident_id": "50000000-0000-4000-8000-000000000001",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "room_id": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "room_number": "RK-02-01"
+        },
+        "bravo": {
+          "email": "dev.resident.bravo@kostation.test",
+          "user_id": "51000000-0000-4000-8000-000000000002",
+          "resident_id": "50000000-0000-4000-8000-000000000002",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "room_id": "bdb150bf-90b3-44ac-bfc7-f1021a9748e8",
+          "room_number": "AK-18A-1B"
+        },
+        "category": {
+          "id": "80000000-0000-4000-8000-000000000001",
+          "name": "AC"
+        }
+      }
+    },
+    {
+      "name": "unauthenticated POST /my/complaints rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "complaint create without file_ids PASS",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "62bb505c-f35c-44e3-9dec-34194057de0a"
+      }
+    },
+    {
+      "name": "existing complaint list works",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "count": 7
+      }
+    },
+    {
+      "name": "existing complaint read works",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": "62bb505c-f35c-44e3-9dec-34194057de0a"
+      }
+    },
+    {
+      "name": "upload valid complaint_attachment file PASS",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "f633869e-d325-4a06-8d5d-b1b29baf526e",
+        "file_purpose": "complaint_attachment"
+      }
+    },
+    {
+      "name": "complaint create with valid attachment PASS",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "id": "3b1ae2ab-f8d7-4ea3-8b80-938aee77c3c9"
+      }
+    },
+    {
+      "name": "complaint_files junction created",
+      "pass": true,
+      "detail": {
+        "file_count": 1,
+        "history_count": 1,
+        "attach_audit_count": 1,
+        "create_audit_count": 1
+      }
+    },
+    {
+      "name": "complaint history initial status exists",
+      "pass": true,
+      "detail": {
+        "file_count": 1,
+        "history_count": 1,
+        "attach_audit_count": 1,
+        "create_audit_count": 1
+      }
+    },
+    {
+      "name": "complaint.file_attach audit exists",
+      "pass": true,
+      "detail": {
+        "file_count": 1,
+        "history_count": 1,
+        "attach_audit_count": 1,
+        "create_audit_count": 1
+      }
+    },
+    {
+      "name": "complaint.create audit exists",
+      "pass": true,
+      "detail": {
+        "file_count": 1,
+        "history_count": 1,
+        "attach_audit_count": 1,
+        "create_audit_count": 1
+      }
+    },
+    {
+      "name": "payment_proof file rejected for complaint attachment",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "COMPLAINT_ATTACHMENT_FILE_PURPOSE_INVALID",
+            "message": "Attached file must use complaint_attachment purpose"
+          },
+          "correlation_id": "ff8e2fe0-59d7-43a8-83b5-b25391a42906",
+          "timestamp": "2026-07-02T18:42:21.009Z"
+        }
+      }
+    },
+    {
+      "name": "wrong purpose validation creates no orphan complaint",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "deleted complaint_attachment file rejected",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "COMPLAINT_ATTACHMENT_FILE_NOT_FOUND",
+            "message": "Complaint attachment file was not found or has been deleted"
+          },
+          "correlation_id": "e3bd1cf6-fea2-4d68-90dd-2ce95d4aceeb",
+          "timestamp": "2026-07-02T18:42:21.054Z"
+        }
+      }
+    },
+    {
+      "name": "deleted file validation creates no orphan complaint",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "another resident file rejected",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "COMPLAINT_ATTACHMENT_FILE_OWNER_MISMATCH",
+            "message": "Resident can only attach files they uploaded"
+          },
+          "correlation_id": "dd6512bd-91bb-44a8-8042-6f8b76a2d710",
+          "timestamp": "2026-07-02T18:42:21.084Z"
+        }
+      }
+    },
+    {
+      "name": "wrong user validation creates no orphan complaint",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "nonexistent file_id rejected",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "COMPLAINT_ATTACHMENT_FILE_NOT_FOUND",
+            "message": "Complaint attachment file was not found or has been deleted"
+          },
+          "correlation_id": "f4172ac6-2e0a-40cb-b719-2ab816f2e633",
+          "timestamp": "2026-07-02T18:42:21.099Z"
+        }
+      }
+    },
+    {
+      "name": "invalid file_ids validation happens before insert",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    }
+  ],
+  "endpoint_results": [
+    {
+      "name": "GET /health",
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "POST /auth/login alpha",
+      "status": 201,
+      "user": "dev.resident.alpha@kostation.test"
+    },
+    {
+      "name": "POST /auth/login bravo",
+      "status": 201,
+      "user": "dev.resident.bravo@kostation.test"
+    },
+    {
+      "name": "POST /my/complaints unauthenticated",
+      "status": 401,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "8efd6864-9991-4662-b439-2c1b019e1a91",
+        "timestamp": "2026-07-02T18:42:20.574Z"
+      }
+    },
+    {
+      "name": "POST /my/complaints without file_ids",
+      "status": 201,
+      "body": {
+        "id": "62bb505c-f35c-44e3-9dec-34194057de0a",
+        "propertyId": "20000000-0000-4000-8000-000000000001",
+        "residentId": "50000000-0000-4000-8000-000000000001",
+        "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+        "categoryId": "80000000-0000-4000-8000-000000000001",
+        "complaintCode": "TKT-GSH-2026-0015",
+        "title": "QA M12C4 no file 1783017740586",
+        "description": "QA M12C4 backward compatibility complaint without file_ids.",
+        "priority": "high",
+        "complaintStatus": "submitted",
+        "reopenCount": 0,
+        "responseSlaBreached": false,
+        "resolutionSlaBreached": false,
+        "locationNote": null,
+        "assignedToUserId": null,
+        "submittedAt": "2026-07-02T18:42:20.631Z",
+        "acknowledgedAt": null,
+        "resolvedAt": null,
+        "closedAt": null,
+        "cancelledAt": null,
+        "cancelReason": null,
+        "snapshotRoomNumber": "RK-02-01",
+        "snapshotResidentName": "Dev Resident Alpha",
+        "createdByUserId": "51000000-0000-4000-8000-000000000001",
+        "createdAt": "2026-07-02T18:42:20.631Z",
+        "updatedAt": "2026-07-02T18:42:20.631Z"
+      }
+    },
+    {
+      "name": "GET /my/complaints",
+      "status": 200,
+      "count": 7
+    },
+    {
+      "name": "GET /my/complaints/:id",
+      "status": 200,
+      "id": "62bb505c-f35c-44e3-9dec-34194057de0a"
+    },
+    {
+      "name": "POST /files complaint_attachment",
+      "status": 201,
+      "id": "f633869e-d325-4a06-8d5d-b1b29baf526e",
+      "file_purpose": "complaint_attachment"
+    },
+    {
+      "name": "POST /my/complaints with valid file_ids",
+      "status": 201,
+      "id": "3b1ae2ab-f8d7-4ea3-8b80-938aee77c3c9",
+      "body": {
+        "id": "3b1ae2ab-f8d7-4ea3-8b80-938aee77c3c9",
+        "propertyId": "20000000-0000-4000-8000-000000000001",
+        "residentId": "50000000-0000-4000-8000-000000000001",
+        "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+        "categoryId": "80000000-0000-4000-8000-000000000001",
+        "complaintCode": "TKT-GSH-2026-0016",
+        "title": "QA M12C4 attached 1783017740946",
+        "description": "QA M12C4 complaint with valid attachment file_ids.",
+        "priority": "high",
+        "complaintStatus": "submitted",
+        "reopenCount": 0,
+        "responseSlaBreached": false,
+        "resolutionSlaBreached": false,
+        "locationNote": null,
+        "assignedToUserId": null,
+        "submittedAt": "2026-07-02T18:42:20.967Z",
+        "acknowledgedAt": null,
+        "resolvedAt": null,
+        "closedAt": null,
+        "cancelledAt": null,
+        "cancelReason": null,
+        "snapshotRoomNumber": "RK-02-01",
+        "snapshotResidentName": "Dev Resident Alpha",
+        "createdByUserId": "51000000-0000-4000-8000-000000000001",
+        "createdAt": "2026-07-02T18:42:20.967Z",
+        "updatedAt": "2026-07-02T18:42:20.967Z"
+      }
+    },
+    {
+      "name": "POST /my/complaints with payment_proof file",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_PURPOSE_INVALID",
+          "message": "Attached file must use complaint_attachment purpose"
+        },
+        "correlation_id": "ff8e2fe0-59d7-43a8-83b5-b25391a42906",
+        "timestamp": "2026-07-02T18:42:21.009Z"
+      }
+    },
+    {
+      "name": "POST /my/complaints with deleted complaint_attachment file",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_NOT_FOUND",
+          "message": "Complaint attachment file was not found or has been deleted"
+        },
+        "correlation_id": "e3bd1cf6-fea2-4d68-90dd-2ce95d4aceeb",
+        "timestamp": "2026-07-02T18:42:21.054Z"
+      }
+    },
+    {
+      "name": "POST /my/complaints with another resident file",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_OWNER_MISMATCH",
+          "message": "Resident can only attach files they uploaded"
+        },
+        "correlation_id": "dd6512bd-91bb-44a8-8042-6f8b76a2d710",
+        "timestamp": "2026-07-02T18:42:21.084Z"
+      }
+    },
+    {
+      "name": "POST /my/complaints with nonexistent file_id",
+      "status": 400,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_NOT_FOUND",
+          "message": "Complaint attachment file was not found or has been deleted"
+        },
+        "correlation_id": "f4172ac6-2e0a-40cb-b719-2ab816f2e633",
+        "timestamp": "2026-07-02T18:42:21.099Z"
+      }
+    }
+  ],
+  "db_checks": [
+    {
+      "name": "active resident/category context",
+      "alpha": {
+        "email": "dev.resident.alpha@kostation.test",
+        "user_id": "51000000-0000-4000-8000-000000000001",
+        "resident_id": "50000000-0000-4000-8000-000000000001",
+        "property_id": "20000000-0000-4000-8000-000000000001",
+        "room_id": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+        "room_number": "RK-02-01"
+      },
+      "bravo": {
+        "email": "dev.resident.bravo@kostation.test",
+        "user_id": "51000000-0000-4000-8000-000000000002",
+        "resident_id": "50000000-0000-4000-8000-000000000002",
+        "property_id": "20000000-0000-4000-8000-000000000001",
+        "room_id": "bdb150bf-90b3-44ac-bfc7-f1021a9748e8",
+        "room_number": "AK-18A-1B"
+      },
+      "category": {
+        "id": "80000000-0000-4000-8000-000000000001",
+        "name": "AC"
+      }
+    },
+    {
+      "name": "attached complaint db checks",
+      "complaintId": "3b1ae2ab-f8d7-4ea3-8b80-938aee77c3c9",
+      "fileId": "f633869e-d325-4a06-8d5d-b1b29baf526e",
+      "file_count": 1,
+      "history_count": 1,
+      "attach_audit_count": 1,
+      "create_audit_count": 1
+    }
+  ],
+  "transaction_checks": [
+    {
+      "name": "wrong purpose no orphan",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "name": "deleted file no orphan",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "name": "wrong user no orphan",
+      "before": 0,
+      "after": 0
+    },
+    {
+      "name": "nonexistent file no orphan",
+      "before": 0,
+      "after": 0
+    }
+  ],
+  "issues": [],
+  "pass": true
+}

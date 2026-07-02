@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { ComplaintHistoryRecord, ComplaintStatusTransitionInput, StoredComplaintStatus } from '../types/complaint.types';
+
+type QueryClient = Pool | PoolClient;
 
 type ComplaintHistoryRow = {
   id: string;
@@ -28,8 +31,8 @@ export class ComplaintHistoryRepository {
     return result.rows.map((row) => this.map(row));
   }
 
-  async record(input: ComplaintStatusTransitionInput): Promise<ComplaintHistoryRecord> {
-    const result = await this.database.client.query<ComplaintHistoryRow>(
+  async record(input: ComplaintStatusTransitionInput, client: QueryClient = this.database.client): Promise<ComplaintHistoryRecord> {
+    const result = await client.query<ComplaintHistoryRow>(
       `INSERT INTO complaint_status_histories (
          complaint_id, from_status, to_status, label, changed_by_user_id, notes
        )

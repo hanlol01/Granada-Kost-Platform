@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import {
   ActiveResidentComplaintContext,
@@ -8,6 +9,8 @@ import {
   CreateComplaintInput,
   StoredComplaintStatus,
 } from '../types/complaint.types';
+
+type QueryClient = Pool | PoolClient;
 
 type ComplaintRow = {
   id: string;
@@ -154,8 +157,8 @@ export class ComplaintRepository {
     };
   }
 
-  async create(input: CreateComplaintInput): Promise<ComplaintRecord> {
-    const result = await this.database.client.query<ComplaintRow>(
+  async create(input: CreateComplaintInput, client: QueryClient = this.database.client): Promise<ComplaintRecord> {
+    const result = await client.query<ComplaintRow>(
       `INSERT INTO complaints (
          property_id, resident_id, room_id, category_id, complaint_code, title, description,
          priority, complaint_status, location_note, snapshot_room_number,

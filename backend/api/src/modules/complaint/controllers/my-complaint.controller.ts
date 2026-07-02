@@ -46,6 +46,7 @@ export class MyComplaintController {
         snapshotRoomNumber: roomId ? active.roomNumber : undefined,
         snapshotResidentName: active.residentName,
         createdByUserId: user.id,
+        fileIds: dto.file_ids,
       },
       auditContext(user, request),
     );

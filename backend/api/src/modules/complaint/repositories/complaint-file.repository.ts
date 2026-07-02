@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { ComplaintFileRecord, CreateComplaintFileInput } from '../types/complaint.types';
+
+type QueryClient = Pool | PoolClient;
 
 type ComplaintFileRow = {
   id: string;
@@ -26,8 +29,8 @@ export class ComplaintFileRepository {
     return result.rows.map((row) => this.map(row));
   }
 
-  async attach(input: CreateComplaintFileInput): Promise<ComplaintFileRecord> {
-    const result = await this.database.client.query<ComplaintFileRow>(
+  async attach(input: CreateComplaintFileInput, client: QueryClient = this.database.client): Promise<ComplaintFileRecord> {
+    const result = await client.query<ComplaintFileRow>(
       `INSERT INTO complaint_files (complaint_id, file_id, uploaded_by_user_id, caption)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (complaint_id, file_id) DO UPDATE

@@ -34,6 +34,7 @@ export const COMPLAINT_AUDIT_ACTIONS = {
   close: 'complaint.close',
   reopen: 'complaint.reopen',
   cancel: 'complaint.cancel',
+  fileAttach: 'complaint.file_attach',
 } as const;
 
 export const COMPLAINT_SLA_TARGETS = {

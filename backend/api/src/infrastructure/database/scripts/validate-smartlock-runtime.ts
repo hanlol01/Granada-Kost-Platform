@@ -367,6 +367,34 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
     assert(result.errorCode === 'TUYA_GATEWAY_NOT_IMPLEMENTED', 'unexpected gateway error code');
     return 'no real Tuya API execution';
   });
+
+  // M13C gate checks: provider=tuya with live_enabled=true and NO credentials must stay safe
+  // (no network call is made on either path below).
+  const tuyaModeConfig = new ConfigService({
+    smartLock: { provider: 'tuya', liveEnabled: true, commandTimeoutMs: 15_000, tuya: {} },
+  });
+  const tuyaModeConfigService = new SmartLockTuyaConfigService(tuyaModeConfig);
+  const tuyaModeProvider = new TuyaSmartLockProvider(
+    gateway,
+    tuyaModeConfigService,
+    new SmartLockSecretResolutionService(tuyaModeConfig),
+    new TuyaHttpClientService(tuyaModeConfigService),
+    offlineTokenCache,
+  );
+
+  await record(results, 'Runtime', 'M13C live command gate returns LIVE_COMMAND_DISABLED', async () => {
+    const result = await tuyaModeProvider.executeCommand(providerContext, 'unlock');
+    assert(result.success === false, 'live command must not succeed in M13C');
+    assert(result.errorCode === 'LIVE_COMMAND_DISABLED', 'expected LIVE_COMMAND_DISABLED');
+    return 'live unlock disabled even with provider=tuya and live_enabled=true';
+  });
+
+  await record(results, 'Runtime', 'M13C tuya mode with missing config reports CONFIG_MISSING safely', async () => {
+    const health = await tuyaModeProvider.healthCheck(providerContext);
+    assert(health.healthStatus === 'unhealthy', 'missing Tuya config should report unhealthy');
+    assert(health.errorCode === 'CONFIG_MISSING', 'expected CONFIG_MISSING');
+    return 'CONFIG_MISSING fail-safe without live behavior';
+  });
 }
 
 async function appendRedisChecks(redis: Redis, results: CheckResult[]): Promise<void> {

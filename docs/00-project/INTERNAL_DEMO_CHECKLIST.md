@@ -147,3 +147,32 @@ Reason:
 - Full Admin and Penghuni Internal Demo smoke test passed.
 - `QA-01-BUG-001` and `QA-01-BUG-002` are closed.
 - Lint, typecheck, and build passed for Admin and Penghuni.
+
+## 12. M12 File Upload Demo Additions (Added 2026-07-03 - PENDING QA)
+
+Cakupan demo bertambah setelah M12C1-M12C5 (File Upload Foundation) dan M12D (Penghuni Complaint Create). Seluruh item di bawah **BELUM diuji browser** pada QA-01 (2026-07-02) dan berstatus **PENDING** sampai sesi QA berikutnya dijalankan. Jangan mendemokan surface ini secara eksternal sebelum seluruh item PASS.
+
+Placeholder lama pada Section 6 ("Payment proof upload disabled" dan "Complaint create resident disabled") tidak lagi berlaku - lihat catatan pembaruan pada Section 6.
+
+### Positive checks
+
+| Check | Result |
+| --- | --- |
+| Penghuni Billing: upload bukti pembayaran manual (JPEG/PNG/PDF) lalu submit proof dengan `file_ids` | PENDING |
+| Penghuni Billing: proof tersubmit berstatus menunggu review admin; tagihan TIDAK otomatis lunas | PENDING |
+| Admin Payments: buka detail proof ("Lihat Bukti"), thumbnail lampiran tampil, `FilePreviewModal` menampilkan gambar penuh | PENDING |
+| Admin Payments: verifikasi / tolak proof dari dialog review | PENDING |
+| Penghuni Complaints: buat tiket TANPA lampiran (kategori, judul, deskripsi, lokasi) - sukses dan muncul di Riwayat Tiket | PENDING |
+| Penghuni Complaints: buat tiket DENGAN 1-5 lampiran foto; preview tampil; hapus lampiran sebelum submit berfungsi | PENDING |
+| Penghuni Complaints: bila submit gagal setelah upload sukses, preview lampiran tetap tampil dan retry tidak perlu upload ulang | PENDING |
+| Admin Complaints: detail komplain menampilkan thumbnail lampiran + preview penuh terotorisasi | PENDING |
+
+### Negative checks
+
+| Check | Result |
+| --- | --- |
+| File melebihi batas ukuran (mis. gambar > 2 MB) ditolak dengan pesan Indonesia yang jelas + WhatsApp fallback tampil | PENDING |
+| Tipe file tidak didukung (mis. `.exe`, `.svg`, `.html`, video) ditolak di client dan backend | PENDING |
+| Network tab: tidak ada URL storage publik; seluruh byte file mengalir lewat `GET /api/v1/files/:id/content` terotorisasi | PENDING |
+| Response API file/proof/complaint tidak memuat `storage_path` atau path internal lainnya | PENDING |
+| Resident tidak dapat mengakses file resident lain / properti lain (403/404 tanpa membocorkan keberadaan resource) | PENDING |

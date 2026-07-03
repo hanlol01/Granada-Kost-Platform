@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-07-03
+
+### M12E - Documentation & Project State Refresh
+- `docs/README.md` ditulis ulang sebagai indeks lengkap (termasuk 09-progress, 10-frontend, 11-qa, 12-product-readiness) dengan peta dokumen File Upload / Payment Proof / Complaint Attachment.
+- `ROADMAP.md`: M12A-M12D dicatat selesai dengan ringkasan deliverable; daftar Next Milestone diperbarui.
+- `PROJECT_HEALTH_REVIEW_V1.md`: Addendum 2026-07-03 (File API live, alur bukti pembayaran manual dan lampiran komplain operasional, R-02 ditutup, item deferred tidak berubah).
+- `INTERNAL_DEMO_CHECKLIST.md`: Section 12 berisi item demo M12 (positif + negatif) berstatus PENDING QA.
+- Dokumentasi saja. Tidak ada perubahan kode. Tidak ada perintah validasi yang dijalankan pada milestone ini.
+
+### M12D - Penghuni Complaint Create UI + Attachment
+- Form buat tiket Penghuni live: kategori, judul, deskripsi, lokasi (kamar sendiri / area umum + catatan lokasi).
+- Lampiran opsional 1-5 foto (JPEG/PNG, maks 2 MB per foto) via upload engine M12C2 dengan purpose `complaint_attachment`, kompresi client-side, preview blob terotorisasi.
+- `POST /my/complaints` dengan `file_ids` hanya jika ada lampiran; saat submit gagal, preview lampiran dipertahankan sehingga retry tidak perlu upload ulang.
+- Backend aditif: `GET /my/complaints/categories` (resident-safe, properti dari occupancy aktif) menutup blocker kategori resident-scope.
+- WhatsApp fallback saat upload gagal, file terlalu besar, atau submit gagal.
+- Validasi lint/typecheck/build dijadwalkan via Codex (lihat `PENGHUNI_COMPLAINT_CREATE_ATTACHMENT_IMPLEMENTATION.md`).
+
+### M12C5 - Admin File Preview / Review
+- Endpoint metadata: `GET /payment-proofs/:proofId/files` dan `GET /complaints/:complaintId/files` (respons aman via `FileService.toResponse()`, tanpa `storage_path`).
+- Admin Payments: PendingProofList + PaymentProofReviewDialog (thumbnail lampiran, FilePreviewModal full-size, verify/reject di dalam dialog).
+- Admin Complaints: ComplaintAttachments di detail komplain.
+- Seluruh preview melalui authorized blob fetch - tanpa URL storage publik. Validasi tercatat di dokumen implementasi.
+
+### M12C4 - Complaint Attachment Backend Readiness
+- `POST /my/complaints` menerima `file_ids` opsional (maks 5 unik, purpose `complaint_attachment`). Backward compatible.
+- Validasi otoritatif: file ada, tidak soft-deleted, purpose tepat, properti sama, di-upload oleh resident yang sama.
+- Attach transaksional: complaint + history + `complaint_files` dalam satu transaksi PostgreSQL dengan rollback utuh.
+- Audit `complaint.file_attach`. Validasi tercatat di dokumen implementasi.
+
+### M12C3 - Penghuni Manual Payment Proof Upload
+- Penghuni upload bukti manual lalu submit `POST /my/payment-proofs` dengan `file_ids` (maks 3, purpose `payment_proof`).
+- Proof berstatus `pending_review`; verifikasi admin tetap satu-satunya otoritas settlement - tagihan tidak otomatis lunas.
+- Placeholder `PayActionDisabled` diganti alur upload nyata di billing Penghuni; WhatsApp fallback saat upload gagal / file terlalu besar.
+- Audit `payment_proof.submit` mencakup file IDs. Validasi tercatat di dokumen implementasi.
+
+### M12C2 - Generic Frontend Upload Engine (2026-07-02)
+- `packages/domain/src/file.ts`: purpose policies, limits storage-conscious, error codes, kompresi constants.
+- Hooks `useFileUpload` / `useFilePreview` / `useFileDelete` dan komponen `FilePickerButton` / `FilePreview` / `FilePreviewModal` / `FileUploadProgress` / `WhatsAppFallbackButton` untuk Admin dan Penghuni.
+- Kompresi gambar canvas (max 1600px, JPEG 0.75); preview via authorized blob fetch dengan token dari `getAccessToken()`.
+- Tanpa dependency npm baru; tanpa perubahan `packages/api-client` (frozen M11B). Validasi tercatat di dokumen implementasi.
+
+### M12C1 - Backend File API Foundation (2026-07-02)
+- Migration `011_files.sql`: tabel `files` sebagai source of truth metadata file di PostgreSQL.
+- Endpoint `POST /files`, `GET /files/:id`, `GET /files/:id/content`, `DELETE /files/:id` (soft-delete) - seluruh akses dimediasi backend per ADR-BE-FILE-001.
+- Validasi otoritatif: MIME allowlist per purpose, magic bytes (`file-type`), 2 MB gambar / 5 MB PDF, blocklist ekstensi berbahaya, checksum SHA256, rate limit upload, audit lifecycle lengkap (upload/download/delete/denied).
+- Storage provider abstraction (`LocalFileStorage`, siap S3). Tidak ada URL storage publik; direktori upload di luar web root.
+
+Deferred (tidak berubah): payment gateway/Midtrans, receipt/nota, Smart Lock live Tuya/PALOMA, CCTV live, chat attachment, video upload.
+
 ## 2026-07-02
 
 ### QA-01 Final Regression

@@ -126,11 +126,46 @@ Catatan:
   - Penghuni Phase 1 demoable untuk self-service dasar: Home, Billing, Complaints read, Notifications, Info, Profile/session.
   - Placeholder/deferred tetap eksplisit untuk fitur yang menunggu milestone backend/provider berikutnya.
 
+## Milestone 12C/12D - File Upload Foundation + Attachment Flows
+
+Status: selesai (M12A, M12B, M12C1-M12C5, M12D). Validasi lint/typecheck/build M12D dijadwalkan melalui Codex; belum dijalankan pada refresh dokumentasi ini.
+
+Sumber kebenaran: dokumen implementasi di `docs/12-product-readiness/` dan `docs/01-architecture/ADR-BE-FILE-001_BACKEND_MEDIATED_FILE_ACCESS.md`.
+
+- M12A - Mockup Feature Gap Audit. Status: selesai.
+- M12B - Feature Flag / Placeholder Hardening. Status: selesai.
+- M12C1 - Backend File API Foundation. Status: selesai.
+  - Tabel `files` (migration `011_files.sql`) sebagai source of truth metadata di PostgreSQL; storage provider abstraction (local disk, siap swap ke S3 via config).
+  - Endpoint `POST /files`, `GET /files/:id`, `GET /files/:id/content`, `DELETE /files/:id` (soft-delete). Seluruh akses file dimediasi backend (ADR-BE-FILE-001): tanpa URL storage publik, `storage_path` tidak diekspos.
+  - Validasi otoritatif backend: MIME allowlist per purpose, magic bytes (`file-type`), batas ukuran storage-conscious (2 MB gambar / 5 MB PDF), blocklist ekstensi berbahaya, checksum SHA256, rate limit upload, audit lifecycle lengkap.
+- M12C2 - Generic Frontend Upload Engine. Status: selesai.
+  - `packages/domain/src/file.ts` (purpose policies, limits, error codes); hooks `useFileUpload`/`useFilePreview`/`useFileDelete`; komponen `FilePickerButton`/`FilePreview`/`FilePreviewModal`/`FileUploadProgress`/`WhatsAppFallbackButton` per app (Admin + Penghuni).
+  - Kompresi gambar client-side (canvas, max 1600px, JPEG 0.75); preview via authorized blob fetch. Validasi frontend UX-only; backend tetap otoritatif. Tanpa dependency baru dan tanpa perubahan `packages/api-client`.
+- M12C3 - Penghuni Manual Payment Proof Upload. Status: selesai.
+  - Penghuni upload bukti manual lalu submit `POST /my/payment-proofs` dengan `file_ids` (maks 3) -> proof `pending_review`. Verifikasi admin tetap otoritas settlement; tagihan tidak otomatis lunas. WhatsApp fallback saat upload gagal atau file terlalu besar.
+- M12C4 - Complaint Attachment Backend Readiness. Status: selesai.
+  - `POST /my/complaints` menerima `file_ids` opsional (maks 5 unik, purpose `complaint_attachment`); validasi kepemilikan/properti/soft-delete/purpose; attach transaksional (complaint + history + files, rollback utuh); audit `complaint.file_attach`.
+- M12C5 - Admin File Preview / Review. Status: selesai.
+  - `GET /payment-proofs/:id/files` dan `GET /complaints/:id/files` (metadata aman tanpa `storage_path`); Admin review bukti pembayaran (dialog review + verify/reject) dan preview lampiran komplain via authorized blob fetch.
+- M12D - Penghuni Complaint Create UI + Attachment. Status: selesai (validasi Codex menyusul).
+  - Endpoint resident-safe `GET /my/complaints/categories` (properti dari occupancy aktif) menutup blocker kategori.
+  - Form buat tiket Penghuni live: kategori, judul, deskripsi, lokasi (kamar sendiri / area umum + catatan lokasi), lampiran opsional 1-5 foto (JPEG/PNG maks 2 MB) via upload engine M12C2. `file_ids` dikirim hanya jika ada lampiran; preview dipertahankan saat submit gagal.
+
+Catatan lingkup (tidak berubah, jangan dianggap selesai):
+
+- Payment gateway / Midtrans: deferred, milestone mendatang.
+- Receipt / nota: deferred, milestone mendatang.
+- Chat attachment: tidak didukung fase ini.
+- Video upload: tidak didukung fase ini.
+
 ## Next Milestone
 
-- M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya menunggu akses fisik).
+- M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya/PALOMA menunggu akses fisik perangkat).
 - M11H - Smart Lock UI Integration (setelah M10G real Tuya).
 - M11I - CCTV preview (saat gateway lokal tersedia).
-- M11J - Phase 2 surfaces (booking publik, chat, payment gateway, push/WhatsApp).
-- File upload implementation dan worker/provider integration sebagian dimulai bersama M11F (File API untuk payment proof + complaint photo).
+- M11J - Phase 2 surfaces (booking publik, chat, payment gateway/Midtrans, push/WhatsApp).
+- Receipt/nota untuk pembayaran terverifikasi (milestone mendatang, setelah alur proof stabil).
+- QA browser untuk surface M12 (lihat `INTERNAL_DEMO_CHECKLIST.md` Section 12, status PENDING) + validasi Codex M12D.
 - Backend follow-up untuk membuka endpoint `/audit/*` dan `/reports/exports` agar Audit Viewer dan Export di Reports dapat diaktifkan tanpa redesign.
+- Penghuni complaint detail dengan thumbnail lampiran (endpoint file resident-facing belum diekspos).
+- Otomasi cleanup file (cron) menggantikan `npm run file:cleanup` manual (Phase 2).

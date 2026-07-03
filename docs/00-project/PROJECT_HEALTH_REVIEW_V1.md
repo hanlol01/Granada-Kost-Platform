@@ -367,4 +367,50 @@ Internal Demo status upgraded to Ready.
 
 
 
-**Granada Kost Platform · Project Health Review v1 · 2026-06-30**
+Update 03 July 2026 :
+M12 File Upload Foundation (M12C1-M12C5) dan M12D Penghuni Complaint Create selesai.
+Lihat Addendum 2026-07-03 di bawah.
+
+---
+
+## Addendum - 2026-07-03 · M12 File Upload Foundation & Attachment Flows
+
+> Sifat: addendum advisory. Tidak mengubah isi review v1 di atas. Sumber kebenaran:
+> dokumen implementasi di `docs/12-product-readiness/` dan
+> `docs/01-architecture/ADR-BE-FILE-001_BACKEND_MEDIATED_FILE_ACCESS.md`.
+
+### Perubahan status sejak v1
+
+- **File API kini ada dan backend-mediated.** `POST /files`, `GET /files/:id`, `GET /files/:id/content`, `DELETE /files/:id` live (M12C1). Seluruh upload/preview/download melalui otorisasi backend; tidak ada URL storage publik; `storage_path` tidak pernah diekspos ke frontend. Catatan: bentuk final memakai `GET /files/:id/content` (bukan `access-url` seperti draft awal ADR-FE-009).
+- **Alur bukti pembayaran manual operasional end-to-end:** Penghuni upload bukti (M12C3) -> proof `pending_review` -> Admin preview lampiran via blob terotorisasi (M12C5) -> Admin verify/reject. Verifikasi admin tetap satu-satunya otoritas settlement; tagihan tidak otomatis lunas.
+- **Alur lampiran komplain operasional end-to-end:** Penghuni membuat komplain dengan 0-5 foto opsional (M12D) -> backend memvalidasi dan meng-attach file secara transaksional (M12C4) -> Admin preview lampiran di detail komplain (M12C5). Endpoint kategori resident-safe (`GET /my/complaints/categories`) menutup blocker lama pada Section 11.
+- **Risiko R-02 (File API belum ada) ditutup.** Entri "File API" pada Section 11 kini terpenuhi; "kategori komplain resident-scope" pada daftar Penghuni self-service juga terpenuhi. Payment proof submit dan complaint create Penghuni tidak lagi placeholder.
+- **Upload bersifat bounded dan storage-conscious:** batas 2 MB gambar / 5 MB PDF per purpose, magic-byte validation, blocklist ekstensi, checksum SHA256, rate limit per user/properti, kebijakan cleanup 24 jam / 30 hari / 90 hari - dirancang untuk budget +-40 GB pada VPS 80 GB SSD. Kostation bukan platform penyimpanan file; upload hanya untuk bukti operasional.
+
+### Tetap deferred (tidak berubah dari v1)
+
+- Payment gateway / Midtrans - milestone mendatang. Tidak boleh dianggap selesai.
+- Receipt / nota - milestone mendatang.
+- Smart Lock live Tuya/PALOMA (M10G) - menunggu akses fisik perangkat.
+- CCTV live integration - menunggu gateway lokal.
+- Chat attachment - tidak didukung fase ini.
+- Video upload - tidak didukung fase ini.
+- `/audit/*`, `/reports/exports`, `PATCH /penghuni/me` - masih backlog backend.
+
+### Invarian arsitektur (dipertahankan pada seluruh M12)
+
+- Backend adalah titik penegakan kebijakan final; validasi frontend UX-only.
+- PostgreSQL system of record (tabel `files` untuk metadata file); Redis hanya runtime/cache/queue/rate-limit - bukan penyimpanan file.
+- Property scoping wajib pada setiap akses file; resident self-scope ditegakkan backend (kepemilikan file + resource induk).
+- Preview file hanya melalui authorized blob fetch yang dimediasi backend. Tidak ada URL file publik.
+
+### Catatan kejujuran status
+
+- Validasi lint/typecheck/build M12D dijadwalkan melalui Codex; belum dijalankan pada sesi dokumentasi ini (M12E adalah refresh dokumentasi, tanpa akses shell).
+- Item demo M12 pada `INTERNAL_DEMO_CHECKLIST.md` Section 12 berstatus PENDING QA browser.
+- Kesiapan CI/CD, deployment VPS, dan validasi environment produksi tidak berubah dari review v1 (belum tersedia/tervalidasi).
+- Kesimpulan kesehatan tetap: **Internal Demo Ready** - kini dengan permukaan file upload yang menunggu QA pass sebelum didemokan secara eksternal. Ini bukan pernyataan production readiness.
+
+---
+
+**Granada Kost Platform · Project Health Review v1 · 2026-06-30 (Addendum 2026-07-03)**

@@ -1,0 +1,67 @@
+{
+  "verdict": "FAIL",
+  "commands": [
+    "npm.cmd run db:migrate:api",
+    "GET /api/v1/health",
+    "Chromium CDP visual E2E via localhost"
+  ],
+  "testAccounts": {
+    "penghuni": "dev.resident.alpha@kostation.test",
+    "admin": "dev.admin@kostation.test"
+  },
+  "routesTested": [
+    "http://localhost:8081/login",
+    "http://localhost:8081/billing",
+    "http://localhost:8081/complaints",
+    "http://localhost:8080/login",
+    "http://localhost:8080/payments"
+  ],
+  "screenshots": [
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-manual-proof.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-proof-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-proof-pending-review.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaints-list.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-no-attachment.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-success.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-upload-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-with-attachment-success.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/invalid-file-error.png"
+  ],
+  "testData": {
+    "paymentNotes": "QA-M12H payment proof 20260703044100",
+    "complaintNoFileTitle": "QA-M12H no attachment 20260703044100",
+    "complaintWithFileTitle": "QA-M12H with attachment 20260703044100"
+  },
+  "ui": {
+    "scopeA": {
+      "manualUiVisible": true,
+      "previewAppeared": true,
+      "pendingReviewVisible": true,
+      "invoiceNotAutoPaid": true
+    },
+    "scopeC": {
+      "successUi": true,
+      "listRefreshObserved": true
+    },
+    "scopeD": {
+      "previewAppeared": true,
+      "successUi": true,
+      "listRefreshObserved": true
+    },
+    "scopeF": {
+      "unsupportedFileErrorVisible": true,
+      "oversizedTested": false,
+      "oversizedNote": "Not practical in CDP without allocating large in-page Blob; unsupported type negative UX verified."
+    }
+  },
+  "network": {
+    "fetches": [],
+    "keyRequests": [],
+    "securityFindings": [],
+    "unexpected": []
+  },
+  "console": [],
+  "issues": [
+    "Error: waitFor timeout last=false\n    at Tab.waitFor ([stdin]:19:215)\n    at async [stdin]:40:362"
+  ]
+}

@@ -1,0 +1,271 @@
+{
+  "verdict": "FAIL",
+  "screenshots": [
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payments-verification.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payment-proof-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payment-proof-full-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-complaint-detail-attachments.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-complaint-attachment-preview.png"
+  ],
+  "ui": {
+    "paymentsLoaded": true,
+    "verificationTabActive": false,
+    "m12hPaymentProofVisible": false,
+    "pendingProofRows": 0,
+    "paymentDialogOpen": false,
+    "paymentThumbnailVisible": false,
+    "paymentVerifyRejectVisible": false,
+    "complaintCreatedRowVisible": true,
+    "complaintAttachmentLabelVisible": true,
+    "complaintThumbnailVisible": true
+  },
+  "network": {
+    "contentRequests": [
+      "204 http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content",
+      "200 http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content"
+    ],
+    "apiResponses": [
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/auth/refresh",
+        "mimeType": ""
+      },
+      {
+        "status": 201,
+        "url": "http://localhost:3000/api/v1/auth/refresh",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/auth/me",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/auth/me",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/rooms?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/residents?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/invoices?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/payments?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/vehicles?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/parking/zones?property_id=20000000-0000-4000-8000-000000000001&active_only=true",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/work-orders?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/rooms?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/invoices?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/payments?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/vehicles?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/residents?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/parking/zones?property_id=20000000-0000-4000-8000-000000000001&active_only=true",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/work-orders?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000001",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000002",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000003",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=15744506-7d05-43ee-896e-f76c764f5c77",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000002",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000001",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=86000000-0000-4000-8000-000000000003",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/parking/slots?zone_id=15744506-7d05-43ee-896e-f76c764f5c77",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/auth/login",
+        "mimeType": ""
+      },
+      {
+        "status": 201,
+        "url": "http://localhost:3000/api/v1/auth/login",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 201,
+        "url": "http://localhost:3000/api/v1/auth/refresh",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/auth/me",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/payment-proofs?property_id=20000000-0000-4000-8000-000000000001&status=pending_review&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/payment-proofs?property_id=20000000-0000-4000-8000-000000000001&status=pending_review&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/invoices?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/auth/refresh",
+        "mimeType": ""
+      },
+      {
+        "status": 201,
+        "url": "http://localhost:3000/api/v1/auth/refresh",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/auth/me",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/auth/me",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": ""
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/complaint-categories?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/complaint-categories?property_id=20000000-0000-4000-8000-000000000001",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/complaints/f5290b68-e71b-419d-b359-381dcda45802/files",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/complaints/f5290b68-e71b-419d-b359-381dcda45802/files",
+        "mimeType": "application/json"
+      },
+      {
+        "status": 204,
+        "url": "http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content",
+        "mimeType": ""
+      },
+      {
+        "status": 200,
+        "url": "http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "console": [],
+  "issues": [
+    "no Lihat Bukti row after Verifikasi tab click",
+    "payment proof review dialog not visible",
+    "payment verify/reject controls not visible"
+  ]
+}

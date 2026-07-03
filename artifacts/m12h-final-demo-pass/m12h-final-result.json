@@ -1,0 +1,140 @@
+{
+  "verdict": "PASS",
+  "commands": [
+    "npm.cmd run db:migrate:api",
+    "GET /api/v1/health",
+    "Chromium CDP visual E2E via localhost",
+    "Admin CDP focused retry",
+    "API/DB security cross-check"
+  ],
+  "testAccounts": {
+    "penghuni": "dev.resident.alpha@kostation.test",
+    "admin": "dev.admin@kostation.test"
+  },
+  "routesTested": [
+    "http://localhost:8081/login",
+    "http://localhost:8081/billing",
+    "http://localhost:8081/complaints",
+    "http://localhost:8080/login",
+    "http://localhost:8080/payments",
+    "http://localhost:8080/complaints"
+  ],
+  "testData": {
+    "paymentNotes": "QA-M12H payment proof 20260703044100",
+    "complaintNoFileTitle": "QA-M12H no attachment 20260703044100",
+    "complaintWithFileTitle": "QA-M12H with attachment 20260703044100",
+    "ids": {
+      "proof_id": "0484e431-4cc1-45e8-af4b-c6b7492e7e82",
+      "proof_status": "pending_review",
+      "invoice_id": "72000000-0000-4000-8000-000000000001",
+      "invoice_status": "issued",
+      "proof_file_id": "575295af-9b89-4f43-b296-0a274ea66ad1",
+      "proof_file_purpose": "payment_proof",
+      "no_file_complaint_id": "f5991f49-1184-4edf-b4b9-5d26d409238f",
+      "attachment_complaint_id": "f5290b68-e71b-419d-b359-381dcda45802",
+      "complaint_file_id": "5ceb84d5-8279-44fe-b03f-995b148c4d44",
+      "complaint_file_purpose": "complaint_attachment"
+    }
+  },
+  "ui": {
+    "scopeA": {
+      "manualUiVisible": true,
+      "previewAppeared": true,
+      "pendingReviewVisible": true,
+      "invoiceNotAutoPaid": true
+    },
+    "scopeB": {
+      "click": {
+        "ok": true,
+        "idx": 6
+      },
+      "verificationTabActive": true,
+      "m12hPaymentProofVisible": true,
+      "pendingProofRows": 4,
+      "paymentDialogOpen": true,
+      "paymentThumbnailVisible": true,
+      "paymentVerifyRejectVisible": true
+    },
+    "scopeC": {
+      "successUi": true,
+      "listRefreshObserved": true
+    },
+    "scopeD": {
+      "previewAppeared": true,
+      "successUi": true,
+      "listRefreshObserved": true
+    },
+    "scopeE": {
+      "complaintCreatedRowVisible": true,
+      "complaintAttachmentLabelVisible": true,
+      "complaintThumbnailVisible": true
+    },
+    "scopeF": {
+      "unsupportedFileErrorVisible": true,
+      "oversizedTested": true,
+      "oversizedNote": "Oversized synthetic PNG selected from browser and clear file-size UX state captured.",
+      "oversizedScreenshot": "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/oversized-file-error.png"
+    }
+  },
+  "networkSecurity": {
+    "paymentContentRequests": [
+      "204 http://localhost:3000/api/v1/files/575295af-9b89-4f43-b296-0a274ea66ad1/content",
+      "200 http://localhost:3000/api/v1/files/575295af-9b89-4f43-b296-0a274ea66ad1/content"
+    ],
+    "complaintContentRequests": [
+      "204 http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content",
+      "200 http://localhost:3000/api/v1/files/5ceb84d5-8279-44fe-b03f-995b148c4d44/content"
+    ],
+    "apiChecks": {
+      "paymentProofPending": true,
+      "invoiceNotPaid": true,
+      "paymentProofPurpose": true,
+      "complaintAttachmentPurpose": true,
+      "noAttachmentComplaintHasZeroFiles": true,
+      "adminProofFilesStatusOk": true,
+      "adminComplaintFilesStatusOk": true,
+      "proofContentStatusOk": true,
+      "complaintContentStatusOk": true,
+      "unauthContentRejected": true,
+      "residentAdminFilesRejected": true,
+      "noLeakage": true
+    },
+    "observations": {
+      "proofContent": {
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 68
+      },
+      "complaintContent": {
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 68
+      },
+      "unauthContentStatus": 401,
+      "residentAdminEndpointStatus": 403,
+      "proofFilesCount": 1,
+      "complaintFilesCount": 1
+    },
+    "noStoragePathOrPublicUrl": true,
+    "noFatalConsoleErrors": true,
+    "noUnexpectedHappyPath400Or500": true
+  },
+  "screenshots": [
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-manual-proof.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-proof-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-billing-proof-pending-review.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaints-list.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-no-attachment.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-success.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-upload-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/penghuni-complaint-create-with-attachment-success.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/invalid-file-error.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payments-verification.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payment-proof-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-payment-proof-full-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-complaint-detail-attachments.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/admin-complaint-attachment-preview.png",
+    "D:/PROJECT CODING/Granada Kost Platform/artifacts/m12h-final-demo-pass/oversized-file-error.png"
+  ],
+  "issues": []
+}

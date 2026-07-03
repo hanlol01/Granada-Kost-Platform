@@ -19,6 +19,7 @@ import {
   scopedPropertyIds,
   toSmartLockDeviceResponse,
   toSmartLockDiagnosticResponse,
+  toSmartLockSyncResponse,
 } from './smart-lock-controller.util';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -111,9 +112,13 @@ export class SmartLockDeviceController {
   @Post(':deviceId/sync-status')
   @RequirePermissions('smart_lock.manage')
   async syncStatus(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
-    const device = await this.devices.get(deviceId);
-    await this.properties.assertCanReadProperty(user, device.propertyId);
-    return this.devices.syncStatus(deviceId, auditContext(user, request));
+    return this.syncReadOnlyDevice(user, deviceId, request);
+  }
+
+  @Post(':deviceId/sync-readonly')
+  @RequirePermissions('smart_lock.manage')
+  async syncReadOnly(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
+    return this.syncReadOnlyDevice(user, deviceId, request);
   }
 
   @Post(':deviceId/decommission')
@@ -170,5 +175,11 @@ export class SmartLockDeviceController {
       source: action === 'emergency_unlock' ? 'emergency_override' : 'admin_dashboard',
       context: auditContext(user, request),
     });
+  }
+
+  private async syncReadOnlyDevice(user: UserAccessContext, deviceId: string, request: RequestWithCorrelationId) {
+    const device = await this.devices.get(deviceId);
+    await this.properties.assertCanReadProperty(user, device.propertyId);
+    return toSmartLockSyncResponse(await this.devices.syncStatus(device, auditContext(user, request)));
   }
 }

@@ -1,5 +1,9 @@
 import { SmartLockGatewayResult } from '../../gateways/smart-lock-gateway.interface';
-import { SmartLockAccessAction } from '../../types/smart-lock.types';
+import {
+  SmartLockAccessAction,
+  SmartLockConnectionStatus,
+  SmartLockState,
+} from '../../types/smart-lock.types';
 import type { SmartLockProviderErrorCode } from '../providers/tuya/tuya-error-normalization';
 
 export type SmartLockProviderType = 'tuya';
@@ -179,6 +183,52 @@ export type SmartLockReadOnlyDiagnosticResult = {
     status: SmartLockDiagnosticSection<{ values: SmartLockDiagnosticStatusEntry[] }>;
     functions: SmartLockDiagnosticSection<{ capabilities: SmartLockDiagnosticCapability[] }>;
     specifications: SmartLockDiagnosticSection<{ capabilities: SmartLockDiagnosticCapability[] }>;
+  };
+};
+
+export type SmartLockReadOnlySyncCapabilitySummary = {
+  supportsRemoteUnlock: boolean | null;
+  supportsRemoteLock: boolean | null;
+  supportsTemporaryPin: boolean | null;
+  supportsBatteryStatus: boolean | null;
+  supportsDoorStatus: boolean | null;
+  supportsEventLogs: boolean | null;
+  observedCodes: string[];
+};
+
+export type SmartLockReadOnlySyncData = {
+  syncPurpose: 'read_only_sync';
+  providerMode: 'simulated' | 'tuya';
+  liveCommandEnabled: false;
+  syncResultStatus: SmartLockDiagnosticResultStatus;
+  providerDeviceIdMasked: string | null;
+  healthStatus: SmartLockGatewayHealthStatus;
+  reason?: string;
+  latencyMs?: number;
+  normalized: {
+    connectionStatus?: SmartLockConnectionStatus;
+    lockState?: SmartLockState;
+    batteryPercent?: number;
+    batteryStatus?: string;
+    doorState?: 'open' | 'closed' | 'unknown';
+    firmwareVersion?: string;
+    model?: string;
+  };
+  capabilitySummary: SmartLockReadOnlySyncCapabilitySummary;
+  statusCodes: string[];
+  sectionStatuses: {
+    health: SmartLockDiagnosticSectionStatus;
+    metadata: SmartLockDiagnosticSectionStatus;
+    status: SmartLockDiagnosticSectionStatus;
+    functions: SmartLockDiagnosticSectionStatus;
+    specifications: SmartLockDiagnosticSectionStatus;
+  };
+  errorCodes: {
+    health?: SmartLockProviderErrorCode;
+    metadata?: SmartLockProviderErrorCode;
+    status?: SmartLockProviderErrorCode;
+    functions?: SmartLockProviderErrorCode;
+    specifications?: SmartLockProviderErrorCode;
   };
 };
 

@@ -310,7 +310,7 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
   const httpClient = new TuyaHttpClientService(tuyaConfig);
   const offlineTokenCache = new SmartLockTokenCacheService({ client: null } as unknown as RedisService);
   const secretResolver = new SmartLockSecretResolutionService(simulatedConfig);
-  const provider = new TuyaSmartLockProvider(gateway, tuyaConfig, secretResolver, httpClient, offlineTokenCache);
+  const provider = new TuyaSmartLockProvider(tuyaConfig, secretResolver, httpClient, offlineTokenCache);
   const providerRegistry = new SmartLockProviderRegistryService(provider);
   const retryPolicy = new SmartLockRetryPolicyService();
   const failover = new SmartLockFailoverService();
@@ -375,7 +375,6 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
   });
   const tuyaModeConfigService = new SmartLockTuyaConfigService(tuyaModeConfig);
   const tuyaModeProvider = new TuyaSmartLockProvider(
-    gateway,
     tuyaModeConfigService,
     new SmartLockSecretResolutionService(tuyaModeConfig),
     new TuyaHttpClientService(tuyaModeConfigService),
@@ -441,8 +440,7 @@ async function appendHealthChecks(client: PoolClient, redis: Redis, results: Che
       client,
       `SELECT count(*)
        FROM smart_lock_gateway_health
-       WHERE gateway_id = ANY($1::uuid[])
-         AND health_status = 'unknown'`,
+       WHERE gateway_id = ANY($1::uuid[])`,
       [DEV_SMART_LOCK_GATEWAY_SEEDS.map(({ id }) => id)],
     );
     assert(healthCount === DEV_SMART_LOCK_GATEWAY_SEEDS.length, `expected health snapshots, got ${healthCount}`);

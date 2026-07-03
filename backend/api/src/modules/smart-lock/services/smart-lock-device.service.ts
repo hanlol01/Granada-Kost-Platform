@@ -1,9 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { SMART_LOCK_AUDIT_ACTIONS } from '../constants/smart-lock.constants';
+import { SmartLockGatewayResult } from '../gateways/smart-lock-gateway.interface';
 import { SmartLockStatusTransitionHelper } from '../helpers/smart-lock-status-transition.helper';
 import { SmartLockDeviceRepository } from '../repositories/smart-lock-device.repository';
+import { SmartLockGatewayHealthRepository } from '../runtime/repositories/smart-lock-gateway-health.repository';
 import { SmartLockRuntimeService } from '../runtime/services/smart-lock-runtime.service';
-import { SmartLockReadOnlyDiagnosticResult } from '../runtime/types/smart-lock-runtime.types';
+import {
+  SmartLockGatewayHealthRecord,
+  SmartLockGatewayHealthStatus,
+  SmartLockReadOnlyDiagnosticResult,
+  SmartLockReadOnlySyncData,
+} from '../runtime/types/smart-lock-runtime.types';
 import {
   RegisterSmartLockDeviceInput,
   SmartLockAccessAction,
@@ -16,11 +23,20 @@ import {
 } from '../types/smart-lock.types';
 import { SmartLockAuditService } from './smart-lock-audit.service';
 
+export type SmartLockDeviceSyncResult = {
+  providerResult: SmartLockGatewayResult;
+  device: SmartLockDeviceRecord;
+  persisted: boolean;
+  persistedFields: string[];
+  gatewayHealth: SmartLockGatewayHealthRecord | null;
+};
+
 @Injectable()
 export class SmartLockDeviceService {
   constructor(
     private readonly devices: SmartLockDeviceRepository,
     private readonly runtime: SmartLockRuntimeService,
+    private readonly gatewayHealth: SmartLockGatewayHealthRepository,
     private readonly audit: SmartLockAuditService,
   ) {}
 
@@ -77,19 +93,48 @@ export class SmartLockDeviceService {
     return updated;
   }
 
-  async syncStatus(deviceId: string, context: SmartLockAuditContext = {}) {
-    const device = await this.get(deviceId);
+  async syncStatus(device: SmartLockDeviceRecord, context: SmartLockAuditContext = {}): Promise<SmartLockDeviceSyncResult> {
     const result = await this.runtime.syncDeviceStatus(device, context.correlationId);
+    const syncData = asReadOnlySyncData(result.data);
+    const { patch, fields } = result.success && syncData ? this.buildReadOnlySyncPatch(syncData) : { patch: {}, fields: [] };
+    let syncedDevice = device;
+    if (result.success) {
+      const updated = await this.devices.updateStatus(device.id, patch);
+      if (!updated) {
+        throw new BadRequestException({ code: 'SMART_LOCK_DEVICE_SYNC_FAILED', message: 'Smart lock device sync failed' });
+      }
+      syncedDevice = updated;
+      fields.push('last_synced_at');
+    }
+    const gatewayHealth = await this.recordGatewayHealth(result, syncData);
     await this.audit.writeDomainAudit({
-      action: SMART_LOCK_AUDIT_ACTIONS.deviceStatusSync,
+      action: SMART_LOCK_AUDIT_ACTIONS.deviceReadOnlySync,
       resourceType: 'smart_lock_device',
       resourceId: device.id,
       propertyId: device.propertyId,
-      afterData: { provider: result.provider, resultStatus: result.resultStatus, errorCode: result.errorCode },
+      beforeData: this.auditSnapshot(device),
+      afterData: {
+        provider: result.provider,
+        providerMode: syncData?.providerMode,
+        resultStatus: result.resultStatus,
+        syncResultStatus: syncData?.syncResultStatus,
+        reason: syncData?.reason,
+        errorCode: result.errorCode,
+        gatewayId: safeStringFromData(result.data, 'gatewayId'),
+        persistedFields: fields,
+        normalized: syncData?.normalized,
+        capabilitySummary: syncData?.capabilitySummary,
+      },
       resultStatus: result.success ? 'success' : 'failed',
       context,
     });
-    return result;
+    return {
+      providerResult: result,
+      device: syncedDevice,
+      persisted: result.success,
+      persistedFields: fields,
+      gatewayHealth,
+    };
   }
 
   async readDiagnostics(
@@ -203,6 +248,76 @@ export class SmartLockDeviceService {
     };
   }
 
+  private buildReadOnlySyncPatch(data: SmartLockReadOnlySyncData): { patch: SmartLockDeviceStatusPatch; fields: string[] } {
+    const patch: SmartLockDeviceStatusPatch = {};
+    const fields: string[] = [];
+    if (data.normalized.connectionStatus) {
+      patch.connectionStatus = data.normalized.connectionStatus;
+      fields.push('connection_status');
+    }
+    if (data.normalized.lockState) {
+      patch.lockState = data.normalized.lockState;
+      fields.push('lock_state');
+    }
+    if (typeof data.normalized.batteryPercent === 'number') {
+      patch.batteryPercent = data.normalized.batteryPercent;
+      fields.push('battery_percent');
+    }
+    if (data.normalized.firmwareVersion) {
+      patch.firmwareVersion = data.normalized.firmwareVersion;
+      fields.push('firmware_version');
+    }
+    if (data.normalized.model) {
+      patch.model = data.normalized.model;
+      fields.push('model');
+    }
+    return { patch, fields };
+  }
+
+  private async recordGatewayHealth(
+    result: SmartLockGatewayResult,
+    data: SmartLockReadOnlySyncData | null,
+  ): Promise<SmartLockGatewayHealthRecord | null> {
+    const gatewayId = safeStringFromData(result.data, 'gatewayId');
+    if (!gatewayId) {
+      return null;
+    }
+    const healthStatus = data?.healthStatus ?? this.healthStatusFromResult(result);
+    return this.gatewayHealth.upsert({
+      gatewayId,
+      healthStatus,
+      latencyMs: data?.latencyMs,
+      errorCode: result.errorCode,
+      errorMessage: result.errorMessage,
+      metadata: {
+        operation: 'read_only_sync',
+        provider: result.provider,
+        providerMode: data?.providerMode,
+        syncResultStatus: data?.syncResultStatus,
+        reason: data?.reason,
+        liveCommandEnabled: data?.liveCommandEnabled,
+        retryable: safeBooleanFromData(result.data, 'retryable'),
+        failoverReason: safeStringFromData(result.data, 'failoverReason'),
+        providerDeviceIdMasked: data?.providerDeviceIdMasked,
+        sectionStatuses: data?.sectionStatuses,
+        errorCodes: data?.errorCodes,
+        normalized: data?.normalized,
+        capabilitySummary: data?.capabilitySummary,
+        statusCodes: data?.statusCodes,
+      },
+    });
+  }
+
+  private healthStatusFromResult(result: SmartLockGatewayResult): SmartLockGatewayHealthStatus {
+    if (result.success) {
+      return 'healthy';
+    }
+    if (result.resultStatus === 'device_offline' || result.resultStatus === 'timeout') {
+      return 'degraded';
+    }
+    return 'unhealthy';
+  }
+
   private commandAuditAction(action: SmartLockAccessAction): string {
     const actions: Partial<Record<SmartLockAccessAction, string>> = {
       lock: SMART_LOCK_AUDIT_ACTIONS.lock,
@@ -215,4 +330,28 @@ export class SmartLockDeviceService {
     };
     return actions[action] ?? `smart_lock.${action}`;
   }
+}
+
+function asReadOnlySyncData(value: unknown): SmartLockReadOnlySyncData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return record.syncPurpose === 'read_only_sync' ? (value as SmartLockReadOnlySyncData) : null;
+}
+
+function safeStringFromData(data: unknown, key: string): string | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function safeBooleanFromData(data: unknown, key: string): boolean | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === 'boolean' ? value : undefined;
 }

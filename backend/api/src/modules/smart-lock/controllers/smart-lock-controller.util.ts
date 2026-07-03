@@ -5,8 +5,10 @@ import type {
   SmartLockDiagnosticCapability,
   SmartLockDiagnosticSection,
   SmartLockDiagnosticStatusEntry,
+  SmartLockReadOnlySyncData,
   SmartLockReadOnlyDiagnosticResult,
 } from '../runtime/types/smart-lock-runtime.types';
+import type { SmartLockDeviceSyncResult } from '../services/smart-lock-device.service';
 import {
   SmartLockAccessLogRecord,
   SmartLockAlertRecord,
@@ -103,6 +105,34 @@ export function toSmartLockDiagnosticResponse(result: SmartLockReadOnlyDiagnosti
   };
 }
 
+export function toSmartLockSyncResponse(result: SmartLockDeviceSyncResult) {
+  const providerData = asReadOnlySyncData(result.providerResult.data);
+  return {
+    accepted: result.providerResult.success,
+    provider: result.providerResult.provider,
+    result_status: result.providerResult.resultStatus,
+    provider_request_id: result.providerResult.providerRequestId,
+    error_code: result.providerResult.errorCode,
+    error_message: result.providerResult.errorMessage,
+    persisted: result.persisted,
+    persisted_fields: result.persistedFields,
+    device: toSmartLockDeviceResponse(result.device),
+    gateway_health: result.gatewayHealth
+      ? {
+          gateway_id: result.gatewayHealth.gatewayId,
+          health_status: result.gatewayHealth.healthStatus,
+          last_checked_at: result.gatewayHealth.lastCheckedAt,
+          last_success_at: result.gatewayHealth.lastSuccessAt,
+          latency_ms: result.gatewayHealth.latencyMs,
+          error_code: result.gatewayHealth.errorCode,
+          consecutive_failures: result.gatewayHealth.consecutiveFailures,
+        }
+      : undefined,
+    read_only_sync: providerData ? toReadOnlySyncDataResponse(providerData) : undefined,
+    data: providerData ? toReadOnlySyncDataResponse(providerData) : undefined,
+  };
+}
+
 function toDiagnosticSectionResponse<TData>(
   section: SmartLockDiagnosticSection<TData>,
   mapData: (data: TData) => unknown = (data) => data,
@@ -132,6 +162,60 @@ function toCapabilityResponse(capability: SmartLockDiagnosticCapability) {
     name: capability.name,
     value_type: capability.valueType,
   };
+}
+
+function toReadOnlySyncDataResponse(data: SmartLockReadOnlySyncData) {
+  return {
+    sync_purpose: data.syncPurpose,
+    provider_mode: data.providerMode,
+    live_command_enabled: data.liveCommandEnabled,
+    sync_result_status: data.syncResultStatus,
+    provider_device_id_masked: data.providerDeviceIdMasked,
+    health_status: data.healthStatus,
+    reason: data.reason,
+    latency_ms: data.latencyMs,
+    normalized: {
+      connection_status: data.normalized.connectionStatus,
+      lock_state: data.normalized.lockState,
+      battery_percent: data.normalized.batteryPercent,
+      battery_status: data.normalized.batteryStatus,
+      door_state: data.normalized.doorState,
+      firmware_version: data.normalized.firmwareVersion,
+      model: data.normalized.model,
+    },
+    capability_summary: {
+      supports_remote_unlock: data.capabilitySummary.supportsRemoteUnlock,
+      supports_remote_lock: data.capabilitySummary.supportsRemoteLock,
+      supports_temporary_pin: data.capabilitySummary.supportsTemporaryPin,
+      supports_battery_status: data.capabilitySummary.supportsBatteryStatus,
+      supports_door_status: data.capabilitySummary.supportsDoorStatus,
+      supports_event_logs: data.capabilitySummary.supportsEventLogs,
+      observed_codes: data.capabilitySummary.observedCodes,
+    },
+    status_codes: data.statusCodes,
+    section_statuses: {
+      health: data.sectionStatuses.health,
+      metadata: data.sectionStatuses.metadata,
+      status: data.sectionStatuses.status,
+      functions: data.sectionStatuses.functions,
+      specifications: data.sectionStatuses.specifications,
+    },
+    error_codes: {
+      health: data.errorCodes.health,
+      metadata: data.errorCodes.metadata,
+      status: data.errorCodes.status,
+      functions: data.errorCodes.functions,
+      specifications: data.errorCodes.specifications,
+    },
+  };
+}
+
+function asReadOnlySyncData(value: unknown): SmartLockReadOnlySyncData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return record.syncPurpose === 'read_only_sync' ? (value as SmartLockReadOnlySyncData) : null;
 }
 
 export function toSmartLockCredentialResponse(credential: SmartLockCredentialRecord) {

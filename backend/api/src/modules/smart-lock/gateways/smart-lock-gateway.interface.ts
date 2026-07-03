@@ -3,7 +3,7 @@ import { SmartLockAccessAction, SmartLockCredentialType } from '../types/smart-l
 export type SmartLockGatewayResult<T = Record<string, unknown>> = {
   success: boolean;
   resultStatus: 'success' | 'failed' | 'queued' | 'device_offline' | 'timeout';
-  provider: 'tuya';
+  provider: 'tuya' | 'simulated';
   providerRequestId?: string;
   errorCode?: string;
   errorMessage?: string;

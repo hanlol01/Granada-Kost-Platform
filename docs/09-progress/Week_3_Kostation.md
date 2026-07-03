@@ -80,6 +80,24 @@ Seluruh dokumen tingkat proyek diselaraskan dengan kondisi nyata repository: roa
 
 **Status: ✅ SELESAI**
 
+### 9. 🔐 QA Keamanan Boundary File Lintas-Scope (QA-M12G)
+
+Verifikasi keamanan menyeluruh terhadap batas akses file dijalankan **eksternal via Codex GPT-5.5 High** terhadap API yang berjalan, dengan verdict **PASS**. Ini adalah pekerjaan verifikasi/QA - tidak ada pengembangan fitur baru.
+
+Hasil ringkas:
+
+- Boundary autentikasi: akses metadata/content file tanpa login ditolak (401).
+- Resident self-scope: penghuni dapat mengakses file miliknya sendiri (200), dan ditolak saat mengakses file penghuni lain (403).
+- Boundary lintas-properti: admin/property owner yang ter-scope ditolak mengakses file properti lain (403).
+- Penolakan attach: file milik resident lain (400), file dengan purpose salah (400), file yang sudah dihapus (400); content file terhapus (404).
+- Tidak ada `storage_path` dan tidak ada URL file publik pada respons; akses konten hanya via `GET /api/v1/files/:fileId/content`.
+- Pemeriksaan database: 0 baris orphan/invalid pada tabel komplain, lampiran komplain, bukti pembayaran, dan lampiran bukti pembayaran.
+- Tidak ada error 500 tak terduga. Tidak ada temuan (issues: none).
+
+Detail lengkap dan keterbatasan uji tercatat di `INTERNAL_DEMO_CHECKLIST.md` Section 12.
+
+**Status: ✅ PASS (QA eksternal Codex)**
+
 ## Keputusan Arsitektur yang Dipertahankan
 
 - Backend adalah titik penegakan kebijakan final; validasi di aplikasi hanya untuk kenyamanan pengguna.
@@ -94,8 +112,9 @@ Seluruh dokumen tingkat proyek diselaraskan dengan kondisi nyata repository: roa
 - QA-01 Final Regression (2 Juli 2026): PASS - Admin dan Penghuni Internal Demo Ready.
 - M12C1-M12C5: hasil lint/build tercatat PASS pada masing-masing dokumen implementasi di `docs/12-product-readiness/`.
 - M12D: validasi lint/typecheck/build dijadwalkan melalui Codex.
-- Item demo M12 pada `INTERNAL_DEMO_CHECKLIST.md` Section 12 dicatat sesuai evidensi QA M12C/M12D; satu pemeriksaan lintas-scope masih PENDING.
-- M12E/M12F adalah milestone dokumentasi - tidak ada QA baru yang dijalankan pada keduanya.
+- Item demo M12 pada `INTERNAL_DEMO_CHECKLIST.md` Section 12 dicatat sesuai evidensi QA M12C/M12D.
+- QA-M12G (eksternal via Codex GPT-5.5 High): PASS - boundary autentikasi, resident self-scope, penolakan lintas-properti, penolakan attach resident/purpose salah dan file terhapus, tanpa `storage_path`/URL publik, 0 baris orphan pada tabel komplain/bukti pembayaran.
+- M12E/M12F/M12G adalah milestone dokumentasi - tidak ada QA yang dijalankan oleh agen dokumentasi; QA-M12G dijalankan eksternal oleh Codex.
 
 ## Risiko dan Scope yang Ditunda
 

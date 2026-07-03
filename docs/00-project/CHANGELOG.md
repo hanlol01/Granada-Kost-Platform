@@ -40,7 +40,7 @@
 - `POST /my/complaints` dengan `file_ids` hanya jika ada lampiran; saat submit gagal, preview lampiran dipertahankan sehingga retry tidak perlu upload ulang.
 - Backend aditif: `GET /my/complaints/categories` (resident-safe, properti dari occupancy aktif) menutup blocker kategori resident-scope.
 - WhatsApp fallback saat upload gagal, file terlalu besar, atau submit gagal.
-- Validasi lint/typecheck/build dijadwalkan via Codex (lihat `PENGHUNI_COMPLAINT_CREATE_ATTACHMENT_IMPLEMENTATION.md`).
+- Validasi selesai dengan PASS (Update 2026-07-03, eksternal via Codex GPT-5.5 High): `lint:penghuni` PASS (setelah perbaikan format Prettier terbatas), typecheck penghuni PASS, `build:penghuni` PASS, `lint:api` PASS, `build:api` PASS, `git diff --check` bersih (hanya warning line-ending Git). Perbaikan minimal Prettier-only pada 3 file penghuni, tanpa perubahan logika. (Lihat `PENGHUNI_COMPLAINT_CREATE_ATTACHMENT_IMPLEMENTATION.md`.)
 
 ### M12C5 - Admin File Preview / Review
 - Endpoint metadata: `GET /payment-proofs/:proofId/files` dan `GET /complaints/:complaintId/files` (respons aman via `FileService.toResponse()`, tanpa `storage_path`).

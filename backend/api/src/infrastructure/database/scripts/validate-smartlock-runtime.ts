@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { ConfigService } from '@nestjs/config';
 import { config as loadEnv } from 'dotenv';
 import Redis from 'ioredis';
 import { Pool, PoolClient } from 'pg';
@@ -8,6 +9,8 @@ import { CORE_SEED_IDS, DEV_SMART_LOCK_GATEWAY_SEEDS } from '../seeds/core-seed.
 import { RedisService } from '../../redis/redis.service';
 import { TuyaSmartLockGateway } from '../../../modules/smart-lock/gateways/tuya-smart-lock.gateway';
 import { TuyaSmartLockProvider } from '../../../modules/smart-lock/runtime/providers/tuya-smart-lock.provider';
+import { SmartLockTuyaConfigService } from '../../../modules/smart-lock/runtime/providers/tuya/smart-lock-tuya-config.service';
+import { TuyaHttpClientService } from '../../../modules/smart-lock/runtime/providers/tuya/tuya-http-client.service';
 import { SmartLockFailoverService } from '../../../modules/smart-lock/runtime/services/smart-lock-failover.service';
 import { SmartLockProviderRegistryService } from '../../../modules/smart-lock/runtime/services/smart-lock-provider-registry.service';
 import { SmartLockRetryPolicyService } from '../../../modules/smart-lock/runtime/services/smart-lock-retry-policy.service';

@@ -24,6 +24,8 @@ M13D implementation note: `13-smart-lock/SMART_LOCK_READ_ONLY_DIAGNOSTIC_IMPLEME
 
 M13F-B implementation note: `13-smart-lock/SMART_LOCK_COMMAND_GUARD_IMPLEMENTATION.md` documents the backend command guard, idempotency, rate-limit, validation, and audit behavior. Live commands remain disabled.
 
+M13F-C1 site trial runbook: `13-smart-lock/SMART_LOCK_CONTROLLED_LIVE_COMMAND_SITE_TRIAL_RUNBOOK.md` defines the readiness checklists (approvals, credentials, device mapping, backend dry-run), the dry-run sequence, the future controlled live trial sequence, rollback/emergency procedure, evidence template, Go/No-Go conditions, and the M13F-C2 implementation contract — documentation only. Live commands remain disabled and are not implemented.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

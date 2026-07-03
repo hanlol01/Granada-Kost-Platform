@@ -18,6 +18,7 @@ Indeks dokumentasi proyek. Untuk status milestone terbaru (M12 File Upload Found
 | `10-frontend/` | Frontend integration plan (M11) |
 | `11-qa/` | QA dan bug triage |
 | `12-product-readiness/` | Product readiness dan File Upload Foundation (M12) |
+| `13-smart-lock/` | Smart Lock live Tuya/PALOMA readiness (M13): `SMART_LOCK_TUYA_SITE_READINESS_PLAN.md` (M13A site readiness plan; legacy PoC `reference/tuya-paloma-poc/` diaudit sebagai referensi saja) |
 
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 

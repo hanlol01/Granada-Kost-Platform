@@ -131,7 +131,7 @@ Detail lengkap dan keterbatasan uji tercatat di `INTERNAL_DEMO_CHECKLIST.md` Sec
 | **#** | **Target** | **Prioritas** |
 | --- | --- | --- |
 | 1 | Validasi Codex untuk M12D (lint, typecheck, build) | 🔴 Tinggi |
-| 2 | QA browser surface M12 (checklist Section 12) + penyelesaian item lintas-scope | 🔴 Tinggi |
+| 2 | QA browser end-to-end surface M12 (kelengkapan visual; boundary keamanan sudah PASS via QA-M12G) | 🟡 Sedang |
 | 3 | Backend follow-up `/audit/*` dan `/reports/exports` | 🟡 Sedang |
 | 4 | Otomasi cleanup file + monitoring kuota storage | 🟡 Sedang |
 | 5 | M10G Smart Lock live saat akses fisik tersedia | 🟡 Sedang (blocker eksternal) |

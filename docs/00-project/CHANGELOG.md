@@ -2,6 +2,14 @@
 
 ## 2026-07-03
 
+### M12F - Project State Hardening & API Documentation Refresh
+- `PROJECT_MASTER.md`: status proyek per 2026-07-03 (M12C1-M12D selesai), daftar deferred eksplisit, prinsip arsitektur mengikat; backend tidak lagi berstatus "terencana".
+- `BACKLOG.md`: item selesai dianotasi keluar dari backlog aktif; TD-004 (File Metadata Integration) ditandai Resolved oleh M12C1; section tindak lanjut File & Upload ditambahkan.
+- `API_PLANNING.md`: section status implementasi M12 - endpoint file yang shipped didokumentasikan dengan rute aktual, aktor/role, auth, perilaku metadata aman, tanpa `storage_path`, preview backend-mediated; `access-url`/`access-logs` ditandai belum shipped.
+- `docs/09-progress/Week_3_Kostation.md` dibuat (laporan mingguan M12A-M12F); indeks 09-progress dan `docs/README.md` diperbarui.
+- `INTERNAL_DEMO_CHECKLIST.md` Section 12: status dicatat sesuai evidensi QA M12C/M12D; satu pemeriksaan lintas-scope tetap PENDING. Tidak ada QA baru dijalankan pada M12F.
+- Dokumentasi saja. Tidak ada perubahan kode. Tidak ada perintah validasi yang dijalankan.
+
 ### M12E - Documentation & Project State Refresh
 - `docs/README.md` ditulis ulang sebagai indeks lengkap (termasuk 09-progress, 10-frontend, 11-qa, 12-product-readiness) dengan peta dokumen File Upload / Payment Proof / Complaint Attachment.
 - `ROADMAP.md`: M12A-M12D dicatat selesai dengan ringkasan deliverable; daftar Next Milestone diperbarui.

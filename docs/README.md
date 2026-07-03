@@ -14,7 +14,7 @@ Indeks dokumentasi proyek. Untuk status milestone terbaru (M12 File Upload Found
 | `05-master-data/` | Master data dan seed plan |
 | `06-analysis/` | Research dan gap analysis |
 | `07-reports/` | Laporan mingguan untuk stakeholder |
-| `09-progress/` | Progress mingguan internal (`Week_1_Kostation.md`, `Week_2_Kostation.md`) |
+| `09-progress/` | Progress mingguan internal (`Week_1_Kostation.md`, `Week_2_Kostation.md`, `Week_3_Kostation.md`) |
 | `10-frontend/` | Frontend integration plan (M11) |
 | `11-qa/` | QA dan bug triage |
 | `12-product-readiness/` | Product readiness dan File Upload Foundation (M12) |

@@ -1,17 +1,37 @@
 # Backlog
 
+> Update 2026-07-03 (M12F): item yang telah selesai ditandai "Selesai" dan tidak lagi dianggap backlog aktif. Item File API yang dulu bergantung pada "File Module belum ada" telah diselesaikan oleh M12C1 (lihat TD-004).
+
 ## Foundation
 
-- Scaffold NestJS backend di `backend/api`.
-- Tambahkan env schema bersama untuk backend dan frontend.
-- Tambahkan CI lint/build untuk workspaces.
-- Audit dependensi duplicate antara Admin dan Penghuni.
+- Scaffold NestJS backend di `backend/api`. (Selesai - Milestone 2.)
+- Tambahkan env schema bersama untuk backend dan frontend. (Selesai - env validation backend + `packages/domain` env schema frontend.)
+- Tambahkan CI lint/build untuk workspaces. (Masih terbuka.)
+- Audit dependensi duplicate antara Admin dan Penghuni. (Masih terbuka.)
 
 ## Product
 
-- Definisikan modul Penghuni, kamar, tagihan, pembayaran, smart lock, CCTV, komplain, dan notifikasi.
-- Susun kontrak API awal di `packages/domain`.
-- Buat typed API client di `packages/api-client`.
+- Definisikan modul Penghuni, kamar, tagihan, pembayaran, smart lock, CCTV, komplain, dan notifikasi. (Selesai untuk cakupan Phase 1; CCTV live dan smart lock live masih deferred.)
+- Susun kontrak API awal di `packages/domain`. (Selesai - M11B.)
+- Buat typed API client di `packages/api-client`. (Selesai - M11B, frozen.)
+
+## File & Upload (M12) - Status dan Tindak Lanjut
+
+Selesai (keluar dari backlog aktif): Backend File API Foundation (M12C1), Generic Frontend Upload Engine (M12C2), Penghuni Manual Payment Proof Upload (M12C3), Complaint Attachment Backend Readiness (M12C4), Admin File Preview/Review (M12C5), Penghuni Complaint Create UI + Attachment (M12D).
+
+Tindak lanjut (backlog aktif, jangan ditandai selesai):
+
+- Penghuni complaint detail dengan thumbnail lampiran (endpoint file resident-facing untuk komplain belum diekspos).
+- Otomasi cleanup file via cron menggantikan `npm run file:cleanup` manual + monitoring orphan file.
+- Monitoring kuota storage upload di `/health` (total file, total bytes, persentase kuota) dan enforcement kuota per properti.
+- Reports export (`/reports/exports`).
+- Audit viewer (`/audit/*`).
+- Payment gateway demo/sandbox (Midtrans) - future milestone, jalur manual proof tetap fallback.
+- Receipt/nota untuk pembayaran terverifikasi - future milestone.
+- Smart Lock live Tuya/PALOMA (M10G) - menunggu akses fisik perangkat.
+- CCTV live integration - menunggu gateway lokal.
+
+Tidak didukung fase ini (bukan backlog): chat attachment, video upload.
 
 ## Security
 

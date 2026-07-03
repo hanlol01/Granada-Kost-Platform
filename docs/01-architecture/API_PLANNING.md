@@ -541,6 +541,42 @@ Rules:
 - Identity files, payment proofs, complaint photos, deposit evidence, check-out photos, and CCTV snapshots require stricter authorization.
 - Resident can only upload/read files tied to their own allowed workflows.
 
+## Status Implementasi File API - Update M12 (2026-07-03)
+
+Tabel File API di atas adalah rencana awal (draft 2026-06-16). Berikut status aktual setelah M12C1-M12C5 dan M12D. Sumber kebenaran: dokumen implementasi di `docs/12-product-readiness/` dan `docs/01-architecture/ADR-BE-FILE-001_BACKEND_MEDIATED_FILE_ACCESS.md`. Rute di bawah adalah rute aktual di kode - bukan spekulasi.
+
+### Shipped - File API inti (M12C1)
+
+| Method | Endpoint | Tujuan | Aktor/Role | Auth | Catatan keamanan |
+|---|---|---|---|---|---|
+| POST | `/api/v1/files` | Upload file multipart (`file`, `property_id`, `file_purpose`). | owner, manager, admin, technician, resident (purpose-scoped; resident hanya untuk konteks miliknya) | JWT + RBAC + validasi purpose/ownership | Validasi otoritatif backend: MIME allowlist per purpose, magic bytes (`file-type`), 2 MB gambar / 5 MB PDF, blocklist ekstensi berbahaya, checksum SHA256, rate limit upload. Audit `file.upload`. |
+| GET | `/api/v1/files/{fileId}` | Metadata file. | Scoped: role + property + ownership | JWT + access check | Respons aman via `FileService.toResponse()` - `storage_path` TIDAK pernah diekspos. |
+| GET | `/api/v1/files/{fileId}/content` | Stream konten file (preview/download). | Scoped: role + property + ownership | JWT + access check | Backend-mediated streaming menggantikan rencana `POST /files/{fileId}/access-url` (tidak ada signed URL publik). Header `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=300`. Audit `file.download`. |
+| DELETE | `/api/v1/files/{fileId}` | Soft-delete file. | owner, manager, admin | JWT + RBAC + property scope | Audit `file.delete`. Physical cleanup mengikuti retention policy (24 jam / 30 hari / 90 hari). |
+
+### Shipped - endpoint terkait file per domain (M12C3, M12C4, M12C5, M12D)
+
+| Method | Endpoint | Tujuan | Aktor/Role | Auth | Catatan |
+|---|---|---|---|---|---|
+| POST | `/api/v1/my/payment-proofs` | Submit bukti pembayaran manual; menerima `file_ids` opsional (maks 3, purpose `payment_proof`, uploader = resident sendiri, properti sama dengan invoice). | resident | JWT + RBAC resident + invoice self-scope | Proof menjadi `pending_review`; verifikasi admin tetap satu-satunya otoritas settlement - tagihan tidak otomatis lunas. Audit `payment_proof.submit`. Catatan: rute aktual memakai prefix `/my/*`, bukan `/penghuni/payments/proofs` seperti draft. |
+| GET | `/api/v1/payment-proofs/{proofId}/files` | Metadata file lampiran proof untuk review Admin. | owner, manager, admin | JWT + `assertCanReadProperty` | Metadata aman via `toResponse()` (tanpa `storage_path`); preview konten tetap lewat `GET /files/{fileId}/content`. |
+| GET | `/api/v1/my/complaints/categories` | Kategori komplain aktif untuk properti occupancy aktif resident. | resident | JWT + RBAC resident + active occupancy context | Ditambahkan M12D; menutup blocker `GET /complaint-categories` yang membutuhkan `complaint.manage` (admin-only). |
+| POST | `/api/v1/my/complaints` | Buat komplain; menerima `file_ids` opsional (maks 5 unik, purpose `complaint_attachment`). | resident | JWT + RBAC resident + self-scope | Validasi file: ada, tidak soft-deleted, purpose tepat, properti sama, di-upload resident yang sama. Attach transaksional (complaint + history + files, rollback utuh). Audit `complaint.file_attach`. |
+| GET | `/api/v1/complaints/{complaintId}/files` | Metadata file lampiran komplain untuk staf. | owner, manager, admin | JWT + `assertCanReadProperty` | Metadata aman; preview via `GET /files/{fileId}/content`. |
+
+### Belum shipped (tetap rencana / superseded)
+
+- `POST /api/v1/files/{fileId}/access-url` - superseded oleh backend-mediated content streaming per ADR-BE-FILE-001; tidak akan dibangun kecuali ada keputusan arsitektur baru.
+- `GET /api/v1/files/{fileId}/access-logs` - menunggu Audit API surface.
+- `POST /api/v1/complaints/{complaintId}/files` dan `POST /api/v1/residents/{residentId}/files` - pola aktual yang shipped: upload dulu ke `POST /files`, lalu kirim `file_ids` pada create/submit domain terkait.
+
+### Prinsip yang berlaku pada seluruh endpoint file di atas
+
+- Backend adalah otoritas final; validasi frontend UX-only.
+- Property scoping wajib; resident self-scope ditegakkan backend.
+- Tidak ada URL storage publik; `storage_path` tidak pernah diekspos; preview hanya melalui `GET /files/{fileId}/content` terotorisasi.
+- Tidak ada video upload dan tidak ada chat attachment pada fase ini.
+
 ---
 
 # Audit API

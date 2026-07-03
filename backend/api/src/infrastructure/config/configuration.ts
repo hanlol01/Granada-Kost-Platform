@@ -51,4 +51,24 @@ export default () => ({
         ? undefined
         : Number(process.env.UPLOAD_PROPERTY_QUOTA_MB),
   },
+  smartLock: {
+    provider: process.env.SMART_LOCK_PROVIDER ?? 'simulated',
+    liveEnabled: process.env.SMART_LOCK_LIVE_ENABLED === 'true',
+    commandTimeoutMs: Number(process.env.SMART_LOCK_COMMAND_TIMEOUT_MS ?? 15000),
+    maxUnlockPerMinute:
+      process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === undefined || process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === ''
+        ? undefined
+        : Number(process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE),
+    tuya: {
+      // Env bootstrap secret source (local/site test only). Production path resolves
+      // credentials via credential_ref through SmartLockSecretResolutionService.
+      clientId: process.env.TUYA_CLIENT_ID,
+      clientSecret: process.env.TUYA_CLIENT_SECRET,
+      region: process.env.TUYA_REGION,
+      baseUrl: process.env.TUYA_BASE_URL,
+      projectId: process.env.TUYA_PROJECT_ID,
+      // Diagnostic-only device id for local/site-test health checks; never used on production command paths.
+      deviceIdTest: process.env.TUYA_DEVICE_ID_TEST,
+    },
+  },
 });

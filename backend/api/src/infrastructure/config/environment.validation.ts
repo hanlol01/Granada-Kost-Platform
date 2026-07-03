@@ -39,4 +39,29 @@ export const environmentValidationSchema = Joi.object({
   UPLOAD_STORAGE_PATH: Joi.string().default('./uploads'),
   UPLOAD_MAX_FILE_SIZE_MB: Joi.number().integer().min(1).max(5).default(5),
   UPLOAD_PROPERTY_QUOTA_MB: Joi.number().integer().min(1).optional(),
+
+  SMART_LOCK_PROVIDER: Joi.string().valid('simulated', 'tuya').default('simulated'),
+  SMART_LOCK_LIVE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  SMART_LOCK_COMMAND_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(15000),
+  SMART_LOCK_MAX_UNLOCK_PER_MINUTE: Joi.number().integer().min(1).optional(),
+  TUYA_CLIENT_ID: Joi.when('SMART_LOCK_PROVIDER', {
+    is: 'tuya',
+    then: Joi.string().trim().min(1).required().messages({
+      'any.required': 'CONFIG_MISSING: TUYA_CLIENT_ID is required when SMART_LOCK_PROVIDER=tuya',
+      'string.empty': 'CONFIG_MISSING: TUYA_CLIENT_ID must not be empty when SMART_LOCK_PROVIDER=tuya',
+    }),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  TUYA_CLIENT_SECRET: Joi.when('SMART_LOCK_PROVIDER', {
+    is: 'tuya',
+    then: Joi.string().trim().min(1).required().messages({
+      'any.required': 'CONFIG_MISSING: TUYA_CLIENT_SECRET is required when SMART_LOCK_PROVIDER=tuya',
+      'string.empty': 'CONFIG_MISSING: TUYA_CLIENT_SECRET must not be empty when SMART_LOCK_PROVIDER=tuya',
+    }),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  TUYA_REGION: Joi.string().valid('sg', 'us', 'ueaz', 'eu', 'weaz', 'cn').allow('').optional(),
+  TUYA_BASE_URL: Joi.string().uri().allow('').optional(),
+  TUYA_PROJECT_ID: Joi.string().allow('').optional(),
+  TUYA_DEVICE_ID_TEST: Joi.string().allow('').optional(),
 });

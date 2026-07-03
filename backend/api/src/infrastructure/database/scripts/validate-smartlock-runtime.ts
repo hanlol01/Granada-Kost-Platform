@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { ConfigService } from '@nestjs/config';
 import { config as loadEnv } from 'dotenv';
 import Redis from 'ioredis';
 import { Pool, PoolClient } from 'pg';
@@ -8,6 +9,8 @@ import { CORE_SEED_IDS, DEV_SMART_LOCK_GATEWAY_SEEDS } from '../seeds/core-seed.
 import { RedisService } from '../../redis/redis.service';
 import { TuyaSmartLockGateway } from '../../../modules/smart-lock/gateways/tuya-smart-lock.gateway';
 import { TuyaSmartLockProvider } from '../../../modules/smart-lock/runtime/providers/tuya-smart-lock.provider';
+import { SmartLockTuyaConfigService } from '../../../modules/smart-lock/runtime/providers/tuya/smart-lock-tuya-config.service';
+import { TuyaHttpClientService } from '../../../modules/smart-lock/runtime/providers/tuya/tuya-http-client.service';
 import { SmartLockFailoverService } from '../../../modules/smart-lock/runtime/services/smart-lock-failover.service';
 import { SmartLockProviderRegistryService } from '../../../modules/smart-lock/runtime/services/smart-lock-provider-registry.service';
 import { SmartLockRetryPolicyService } from '../../../modules/smart-lock/runtime/services/smart-lock-retry-policy.service';
@@ -299,11 +302,18 @@ async function appendPermissionChecks(client: PoolClient, results: CheckResult[]
 
 async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
   const gateway = new TuyaSmartLockGateway();
-  const provider = new TuyaSmartLockProvider(gateway);
+  // Deterministic simulated-mode config: the runtime regression must not depend on local env.
+  const simulatedConfig = new ConfigService({
+    smartLock: { provider: 'simulated', liveEnabled: false, commandTimeoutMs: 15_000, tuya: {} },
+  });
+  const tuyaConfig = new SmartLockTuyaConfigService(simulatedConfig);
+  const httpClient = new TuyaHttpClientService(tuyaConfig);
+  const offlineTokenCache = new SmartLockTokenCacheService({ client: null } as unknown as RedisService);
+  const secretResolver = new SmartLockSecretResolutionService(simulatedConfig);
+  const provider = new TuyaSmartLockProvider(gateway, tuyaConfig, secretResolver, httpClient, offlineTokenCache);
   const providerRegistry = new SmartLockProviderRegistryService(provider);
   const retryPolicy = new SmartLockRetryPolicyService();
   const failover = new SmartLockFailoverService();
-  const secretResolver = new SmartLockSecretResolutionService();
 
   const gatewayRecord = sampleGatewayRecord();
   const credentialRecord = sampleCredentialRecord(gatewayRecord);
@@ -356,6 +366,34 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
     assert(result.success === false, 'skeleton gateway should not execute real command');
     assert(result.errorCode === 'TUYA_GATEWAY_NOT_IMPLEMENTED', 'unexpected gateway error code');
     return 'no real Tuya API execution';
+  });
+
+  // M13C gate checks: provider=tuya with live_enabled=true and NO credentials must stay safe
+  // (no network call is made on either path below).
+  const tuyaModeConfig = new ConfigService({
+    smartLock: { provider: 'tuya', liveEnabled: true, commandTimeoutMs: 15_000, tuya: {} },
+  });
+  const tuyaModeConfigService = new SmartLockTuyaConfigService(tuyaModeConfig);
+  const tuyaModeProvider = new TuyaSmartLockProvider(
+    gateway,
+    tuyaModeConfigService,
+    new SmartLockSecretResolutionService(tuyaModeConfig),
+    new TuyaHttpClientService(tuyaModeConfigService),
+    offlineTokenCache,
+  );
+
+  await record(results, 'Runtime', 'M13C live command gate returns LIVE_COMMAND_DISABLED', async () => {
+    const result = await tuyaModeProvider.executeCommand(providerContext, 'unlock');
+    assert(result.success === false, 'live command must not succeed in M13C');
+    assert(result.errorCode === 'LIVE_COMMAND_DISABLED', 'expected LIVE_COMMAND_DISABLED');
+    return 'live unlock disabled even with provider=tuya and live_enabled=true';
+  });
+
+  await record(results, 'Runtime', 'M13C tuya mode with missing config reports CONFIG_MISSING safely', async () => {
+    const health = await tuyaModeProvider.healthCheck(providerContext);
+    assert(health.healthStatus === 'unhealthy', 'missing Tuya config should report unhealthy');
+    assert(health.errorCode === 'CONFIG_MISSING', 'expected CONFIG_MISSING');
+    return 'CONFIG_MISSING fail-safe without live behavior';
   });
 }
 

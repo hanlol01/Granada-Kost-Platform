@@ -19,6 +19,8 @@ import { SmartLockCredentialRepository } from './repositories/smart-lock-credent
 import { SmartLockDeviceRepository } from './repositories/smart-lock-device.repository';
 import { SmartLockRestrictionRepository } from './repositories/smart-lock-restriction.repository';
 import { TuyaSmartLockProvider } from './runtime/providers/tuya-smart-lock.provider';
+import { SmartLockTuyaConfigService } from './runtime/providers/tuya/smart-lock-tuya-config.service';
+import { TuyaHttpClientService } from './runtime/providers/tuya/tuya-http-client.service';
 import { SmartLockDeviceGatewayRepository } from './runtime/repositories/smart-lock-device-gateway.repository';
 import { SmartLockGatewayCredentialRepository } from './runtime/repositories/smart-lock-gateway-credential.repository';
 import { SmartLockGatewayHealthRepository } from './runtime/repositories/smart-lock-gateway-health.repository';

@@ -8,6 +8,7 @@
 - Evidensi: `artifacts/m12h-final-demo-pass/m12h-final-result.json` + 15 screenshot di `artifacts/m12h-final-demo-pass/`. Git status aman untuk source/docs (hanya direktori artifact yang untracked).
 - `INTERNAL_DEMO_CHECKLIST.md` Section 12: subseksi Visual E2E demo pass (QA-M12H) ditambahkan; catatan Section 6 diperbarui (QA visual tidak lagi PENDING).
 - `Week_3_Kostation.md` diperbarui dengan hasil QA-M12H. `PROJECT_HEALTH_REVIEW_V1.md`: catatan status singkat ditambahkan.
+- Patch: hasil validasi M12D yang telah selesai dicatat sebagai **PASS** (eksternal via Codex GPT-5.5 High); catatan stale "validasi M12D dijadwalkan" dihapus dari dokumen terkait.
 - Dokumentasi saja. Tidak ada perubahan kode. QA dijalankan eksternal oleh Codex, bukan oleh agen dokumentasi.
 
 ### M12G - Security QA Evidence & Handoff Docs Refresh

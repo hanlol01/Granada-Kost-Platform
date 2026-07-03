@@ -128,11 +128,11 @@ Detail per-scope tercatat di `INTERNAL_DEMO_CHECKLIST.md` Section 12.
 
 - QA-01 Final Regression (2 Juli 2026): PASS - Admin dan Penghuni Internal Demo Ready.
 - M12C1-M12C5: hasil lint/build tercatat PASS pada masing-masing dokumen implementasi di `docs/12-product-readiness/`.
-- M12D: validasi lint/typecheck/build dijadwalkan melalui Codex.
+- M12D: validasi selesai dengan PASS (eksternal via Codex GPT-5.5 High) - `lint:penghuni` PASS (setelah perbaikan format Prettier terbatas), typecheck penghuni PASS, `build:penghuni` PASS, `lint:api` PASS, `build:api` PASS, `git diff --check` bersih (hanya warning line-ending Git). Perbaikan minimal Prettier-only pada `apps/penghuni/src/lib/query-client.ts`, `apps/penghuni/src/hooks/usePenghuniComplaints.ts`, `apps/penghuni/src/routes/_app/complaints.tsx` - tanpa perubahan logika.
 - Item demo M12 pada `INTERNAL_DEMO_CHECKLIST.md` Section 12 dicatat sesuai evidensi QA M12C/M12D.
 - QA-M12G (eksternal via Codex GPT-5.5 High): PASS - boundary autentikasi, resident self-scope, penolakan lintas-properti, penolakan attach resident/purpose salah dan file terhapus, tanpa `storage_path`/URL publik, 0 baris orphan pada tabel komplain/bukti pembayaran.
 - QA-M12H (eksternal via Codex GPT-5.5 High): PASS - final visual E2E demo pass seluruh permukaan M12, Scope A-F PASS, security checks PASS, 15 screenshot tercapture di `artifacts/m12h-final-demo-pass/`.
-- M12E/M12F/M12G/M12H adalah milestone dokumentasi - tidak ada QA yang dijalankan oleh agen dokumentasi; QA-M12G dan QA-M12H dijalankan eksternal oleh Codex.
+- M12E/M12F/M12G/M12H adalah milestone dokumentasi - tidak ada QA/validasi yang dijalankan oleh agen dokumentasi; validasi M12D, QA-M12G, dan QA-M12H dijalankan eksternal oleh Codex.
 
 ## Risiko dan Scope yang Ditunda
 
@@ -148,7 +148,7 @@ Detail per-scope tercatat di `INTERNAL_DEMO_CHECKLIST.md` Section 12.
 
 | **#** | **Target** | **Prioritas** |
 | --- | --- | --- |
-| 1 | Validasi Codex untuk M12D (lint, typecheck, build) | 🔴 Tinggi |
+| 1 | Validasi Codex untuk M12D (lint, typecheck, build) - ✅ Selesai (PASS, eksternal via Codex GPT-5.5 High) | 🔴 Tinggi |
 | 2 | QA browser end-to-end surface M12 - ✅ Selesai via QA-M12H (2026-07-03, visual E2E PASS; boundary keamanan sudah PASS via QA-M12G) | 🟡 Sedang |
 | 3 | Backend follow-up `/audit/*` dan `/reports/exports` | 🟡 Sedang |
 | 4 | Otomasi cleanup file + monitoring kuota storage | 🟡 Sedang |
@@ -157,6 +157,6 @@ Detail per-scope tercatat di `INTERNAL_DEMO_CHECKLIST.md` Section 12.
 
 ## Kesimpulan
 
-Minggu ketiga menutup Milestone 11 dengan QA PASS dan menyelesaikan seluruh rangkaian M12: fondasi upload file yang aman, alur bukti pembayaran manual end-to-end, dan alur komplain berlampiran end-to-end - tanpa satu pun file yang dapat diakses publik. Dokumentasi proyek kini selaras dengan kondisi nyata repository. Permukaan M12 telah lulus verifikasi keamanan boundary (QA-M12G) dan final visual E2E demo pass (QA-M12H), keduanya dijalankan eksternal via Codex dengan verdict PASS. Fokus berikutnya adalah validasi M12D, membuka endpoint audit/export, dan menyiapkan integrasi perangkat fisik.
+Minggu ketiga menutup Milestone 11 dengan QA PASS dan menyelesaikan seluruh rangkaian M12: fondasi upload file yang aman, alur bukti pembayaran manual end-to-end, dan alur komplain berlampiran end-to-end - tanpa satu pun file yang dapat diakses publik. Dokumentasi proyek kini selaras dengan kondisi nyata repository. Permukaan M12 telah lulus validasi M12D (lint/typecheck/build), verifikasi keamanan boundary (QA-M12G), dan final visual E2E demo pass (QA-M12H) - seluruhnya dijalankan eksternal via Codex dengan hasil PASS. Fokus berikutnya adalah membuka endpoint audit/export dan menyiapkan integrasi perangkat fisik.
 
 **Granada Kost Platform** · Progress Report W3 · Juli 2026

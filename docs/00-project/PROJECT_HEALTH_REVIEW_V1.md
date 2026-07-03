@@ -406,7 +406,7 @@ Lihat Addendum 2026-07-03 di bawah.
 
 ### Catatan kejujuran status
 
-- Validasi lint/typecheck/build M12D dijadwalkan melalui Codex; belum dijalankan pada sesi dokumentasi ini (M12E adalah refresh dokumentasi, tanpa akses shell).
+- Validasi M12D selesai dengan **PASS**, dijalankan eksternal via Codex GPT-5.5 High: `lint:penghuni` PASS (setelah perbaikan format Prettier terbatas), typecheck penghuni PASS, `build:penghuni` PASS, `lint:api` PASS, `build:api` PASS, `git diff --check` bersih (hanya warning line-ending Git). Perbaikan minimal Prettier-only pada 3 file, tanpa perubahan logika. Tidak ada validasi yang dijalankan oleh agen dokumentasi.
 - Item demo M12 pada `INTERNAL_DEMO_CHECKLIST.md` Section 12 berstatus PENDING QA browser. (Update 2026-07-03 M12H: final visual E2E demo pass M12 selesai dengan verdict PASS via QA-M12H, dijalankan eksternal di Codex GPT-5.5 High; Scope A-F PASS, evidensi di `artifacts/m12h-final-demo-pass/`.)
 - Kesiapan CI/CD, deployment VPS, dan validasi environment produksi tidak berubah dari review v1 (belum tersedia/tervalidasi).
 - Kesimpulan kesehatan tetap: **Internal Demo Ready** - kini dengan permukaan file upload yang menunggu QA pass sebelum didemokan secara eksternal. Ini bukan pernyataan production readiness.

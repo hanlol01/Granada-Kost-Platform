@@ -92,12 +92,15 @@ Target: Production Hardening Phase
 #### TD-004 — File Metadata Integration
 
 Priority: Medium
-Status: Deferred
+Status: Resolved — M12C1 (2026-07-03)
 
-Description:
-`payment_proof_files.file_id` saat ini belum memiliki foreign key karena File Module belum diimplementasikan.
+Resolution:
+File Module telah diimplementasikan pada M12C1. Tabel `files` menjadi source of truth metadata (migration `011_files.sql`), FK pada junction table ditambahkan melalui conditional migration, soft-delete + retention policy diterapkan, dan strategi signed URL digantikan oleh backend-mediated content streaming (`GET /files/:fileId/content`) sesuai ADR-BE-FILE-001.
 
-Saat File Module dibuat:
+Original description (historis):
+`payment_proof_files.file_id` saat itu belum memiliki foreign key karena File Module belum diimplementasikan.
+
+Checklist asli saat File Module dibuat (kini terpenuhi via M12C1):
 - Review relasi `payment_proof_files`
 - Tambahkan FK ke file metadata table
 - Evaluasi soft delete strategy

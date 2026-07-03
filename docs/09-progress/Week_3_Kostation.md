@@ -23,6 +23,7 @@ Seluruh milestone M12A sampai M12F selesai pada minggu ini. Penghuni kini dapat 
 | Preview file untuk Admin (M12C5) | ✅ Selesai |
 | Form buat komplain Penghuni + lampiran (M12D) | ✅ Selesai |
 | Penyegaran dokumentasi proyek (M12E/M12F) | ✅ Selesai |
+| QA keamanan boundary file lintas-scope (QA-M12G) | ✅ PASS (eksternal via Codex) |
 
 ## Fokus Pekerjaan Minggu Ini
 

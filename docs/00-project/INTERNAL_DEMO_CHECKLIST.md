@@ -148,11 +148,11 @@ Reason:
 - `QA-01-BUG-001` and `QA-01-BUG-002` are closed.
 - Lint, typecheck, and build passed for Admin and Penghuni.
 
-## 12. M12 File Upload Demo Additions (Updated 2026-07-03 via M12F)
+## 12. M12 File Upload Demo Additions (Updated 2026-07-03 via M12F, M12G)
 
 Cakupan demo bertambah setelah M12C1-M12C5 (File Upload Foundation) dan M12D (Penghuni Complaint Create).
 
-Catatan status: hasil PASS di bawah dicatat pada M12F berdasarkan evidensi QA milestone M12C/M12D yang dinyatakan pada instruksi rilis M12F. **Tidak ada QA baru yang dijalankan pada M12F** (milestone dokumentasi, tanpa akses shell/browser). Item yang belum memiliki evidensi tetap PENDING.
+Catatan status: hasil PASS pada Positive/Negative checks dicatat pada M12F berdasarkan evidensi QA milestone M12C/M12D. Hasil pada subseksi Security Boundary dicatat pada M12G berdasarkan **QA-M12G Cross-Scope File Security Boundary Verification** yang dijalankan **eksternal di Codex GPT-5.5 High** dengan verdict **PASS**. Tidak ada QA yang dijalankan oleh agen dokumentasi (M12F/M12G tanpa akses shell/browser).
 
 Placeholder lama pada Section 6 ("Payment proof upload disabled" dan "Complaint create resident disabled") tidak lagi berlaku - lihat catatan pembaruan pada Section 6.
 
@@ -177,6 +177,33 @@ Placeholder lama pada Section 6 ("Payment proof upload disabled" dan "Complaint 
 | Tipe file tidak didukung (mis. `.exe`, `.svg`, `.html`, video) ditolak di client dan backend | PASS |
 | Network tab: tidak ada URL storage publik; seluruh byte file mengalir lewat `GET /api/v1/files/:id/content` terotorisasi | PASS |
 | Response API file/proof/complaint tidak memuat `storage_path` atau path internal lainnya | PASS |
-| Resident tidak dapat mengakses file resident lain / properti lain (403/404 tanpa membocorkan keberadaan resource) | PENDING |
+| Resident tidak dapat mengakses file resident lain / properti lain (403/404 tanpa membocorkan keberadaan resource) | PASS (QA-M12G) |
 
-Catatan: item Smart Lock live, CCTV live, dan payment gateway TIDAK termasuk cakupan ini dan tetap deferred.
+### Security boundary checks (QA-M12G - Codex GPT-5.5 High, 2026-07-03, verdict PASS)
+
+Eksekusi eksternal via Codex: `npm.cmd run db:migrate:api`, health check `GET /api/v1/health` (200), skrip boundary API via node terhadap `http://127.0.0.1:3000/api/v1`, pemeriksaan DB via `pg`. Akun uji: `dev.admin@kostation.test`, `dev.resident.alpha@kostation.test`, `dev.resident.bravo@kostation.test`, `dev.property.owner@kostation.test`, `owner@kostation.test`.
+
+| Check | Result |
+| --- | --- |
+| Auth login (201) dan health (200) | PASS |
+| Upload file valid (201) | PASS |
+| Metadata/content file tanpa autentikasi ditolak (401) | PASS |
+| Resident (Alpha) mengakses metadata/content file miliknya sendiri (200) | PASS |
+| Resident (Alpha) mengakses content file resident lain (Bravo) ditolak (403) | PASS |
+| Endpoint metadata file Admin tanpa autentikasi ditolak (401) | PASS |
+| Resident mengakses endpoint file Admin ditolak (403) | PASS |
+| Admin mengakses file complaint/payment yang terotorisasi (200) | PASS |
+| Admin/property owner ter-scope mengakses file lintas properti ditolak (403) | PASS |
+| Attach file milik resident lain ditolak (400) | PASS |
+| Attach file dengan purpose salah ditolak (400) | PASS |
+| Content file yang sudah dihapus ditolak (404) | PASS |
+| Attach file yang sudah dihapus ditolak (400) | PASS |
+| Tidak ada 500 tak terduga pada seluruh skenario boundary | PASS |
+| DB: 0 baris invalid pada `complaints`, `complaint_files`, payment proofs, `payment_proof_files` (tidak ada orphan setelah attach gagal) | PASS |
+| Tidak ada `storage_path`/`storagePath` pada respons apa pun | PASS |
+| Tidak ada URL file publik; akses konten hanya via `GET /api/v1/files/:fileId/content` | PASS |
+| Source/docs tidak berubah selama QA (`git status --short` dan `git diff --stat` bersih) | PASS |
+
+Keterbatasan QA-M12G yang tercatat: uji cross-resident memakai akun seed pada properti yang sama; boundary lintas-properti diverifikasi memakai file yang dibuat global owner pada properti "Validation Cross Property" - admin/property owner ter-scope ditolak (403). Issues found: none.
+
+Catatan: item Smart Lock live, CCTV live, payment gateway, receipt/nota, reports export, dan audit viewer TIDAK termasuk cakupan ini dan tetap deferred.

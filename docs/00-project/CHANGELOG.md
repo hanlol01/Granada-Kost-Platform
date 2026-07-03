@@ -2,6 +2,14 @@
 
 ## 2026-07-03
 
+### M12G - Security QA Evidence & Handoff Docs Refresh
+- Evidensi **QA-M12G Cross-Scope File Security Boundary Verification** dicatat - dijalankan eksternal via Codex GPT-5.5 High, verdict **PASS**: auth boundary (401), resident self-scope (200/403), cross-property scoped denial (403), attach resident/purpose salah (400), file terhapus (404/400), tanpa 500 tak terduga, 0 baris orphan pada complaint/complaint_files/payment proof/payment_proof_files, tanpa `storage_path`, tanpa URL file publik (konten hanya via `GET /api/v1/files/:fileId/content`).
+- `INTERNAL_DEMO_CHECKLIST.md` Section 12: item lintas-scope PENDING -> PASS; subseksi Security Boundary (QA-M12G) ditambahkan dengan keterbatasan uji yang tercatat.
+- `PROJECT_HANDOFF.md` ditulis ulang dari kondisi stale ("backend belum discaffold") ke kondisi aktual: status M12C1-M12D/M12E/M12F/M12G, catatan arsitektur file upload, alur operasional (manual proof = fallback, verifikasi admin = otoritas settlement), daftar deferred.
+- `DEVELOPMENT_WORKFLOW.md`: perintah backend/typecheck/migrasi ditambahkan; pembagian peran agen dan validasi didokumentasikan (Duo/Claude = dokumentasi + implementasi tanpa klaim validasi; Codex = shell/API/browser validation; Principal/QA/Release role separation).
+- `Week_3_Kostation.md` diperbarui dengan hasil QA-M12G.
+- Dokumentasi saja. Tidak ada perubahan kode. QA dijalankan eksternal oleh Codex, bukan oleh agen dokumentasi.
+
 ### M12F - Project State Hardening & API Documentation Refresh
 - `PROJECT_MASTER.md`: status proyek per 2026-07-03 (M12C1-M12D selesai), daftar deferred eksplisit, prinsip arsitektur mengikat; backend tidak lagi berstatus "terencana".
 - `BACKLOG.md`: item selesai dianotasi keluar dari backlog aktif; TD-004 (File Metadata Integration) ditandai Resolved oleh M12C1; section tindak lanjut File & Upload ditambahkan.

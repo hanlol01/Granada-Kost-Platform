@@ -57,6 +57,17 @@ export class MyComplaintController {
     return this.complaints.listForUser(user.id, query.limit, query.offset);
   }
 
+  // Resident-safe category listing for the complaint create form (M12D).
+  // Scoped to the authenticated resident's active occupancy property.
+  // Returns active categories only (repository default excludes inactive).
+  // NOTE: must be declared before @Get(':complaintId') so the static
+  // 'categories' path is matched before the param route.
+  @Get('categories')
+  async listCategories(@CurrentUser() user: UserAccessContext) {
+    const active = await this.complaints.activeResidentContextForUser(user.id);
+    return this.categories.list(active.propertyId);
+  }
+
   @Get(':complaintId')
   get(@CurrentUser() user: UserAccessContext, @Param('complaintId') complaintId: string) {
     return this.complaints.getForUser(complaintId, user.id);

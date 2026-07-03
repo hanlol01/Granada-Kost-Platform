@@ -2,16 +2,20 @@
 //
 // Backend (MyComplaintController @Controller('my/complaints')):
 //   GET  /my/complaints?limit=&offset=
+//   GET  /my/complaints/categories   (resident-safe active categories, M12D)
 //   GET  /my/complaints/:id
-//   POST /my/complaints   (CreateMyComplaintDto: { category_id, title, description, ... })
+//   POST /my/complaints   (CreateMyComplaintDto: { category_id, room_id?, title,
+//                          description, location_note?, file_ids? })
 //
-// IMPORTANT: GET /complaint-categories requires the `complaint.manage`
-// permission and is therefore NOT callable by a `resident` token (see
-// backend/api/src/modules/complaint/controllers/complaint-category.controller.ts).
-// Without a category UUID picker the create form cannot satisfy backend
-// validation, so the create mutation is exported but the Penghuni UI keeps
-// the submit button disabled with a clear label until a resident-scoped
-// category endpoint ships in a future milestone.
+// Attachments (M12C4/M12D): `file_ids` must reference files uploaded through the
+// File API with file_purpose = 'complaint_attachment' (max 5 per complaint).
+// The backend is the final authority for file ownership, property scope,
+// soft-delete state, and purpose validation. Frontend validation is UX-only.
+//
+// Location behavior (backend contract): when `location_note` is provided
+// WITHOUT `room_id`, the complaint is created as a property-level report
+// (no room). When neither is provided, the backend defaults to the
+// resident's active room.
 
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
@@ -59,6 +63,20 @@ export type MyComplaintRecord = {
   updatedAt: string;
 };
 
+export type MyComplaintCategoryRecord = {
+  id: string;
+  propertyId: string;
+  name: string;
+  normalizedCode: string;
+  defaultPriority: MyComplaintPriority;
+  description: string | null;
+  icon: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export function useMyComplaints(
   filters: { limit?: number; offset?: number } = {},
 ): UseQueryResult<MyComplaintRecord[]> {
@@ -71,12 +89,27 @@ export function useMyComplaints(
   });
 }
 
+/**
+ * Resident-safe complaint category list for the create form.
+ * Backend scopes categories to the resident's active occupancy property and
+ * returns active categories only. Treated as master data per ADR-FE-002.
+ */
+export function useMyComplaintCategories(): UseQueryResult<MyComplaintCategoryRecord[]> {
+  return useQuery<MyComplaintCategoryRecord[]>({
+    queryKey: qk.penghuni.complaintCategories(),
+    queryFn: () => apiClient.get<MyComplaintCategoryRecord[]>("/my/complaints/categories"),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export type CreateMyComplaintInput = {
   category_id: string;
   room_id?: string;
   title: string;
   description: string;
   location_note?: string;
+  /** File IDs uploaded with file_purpose = 'complaint_attachment' (max 5). */
+  file_ids?: string[];
 };
 
 export function useCreateMyComplaint() {

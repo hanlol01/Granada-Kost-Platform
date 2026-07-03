@@ -14,7 +14,12 @@ import { NormalOpenModeDto } from '../dto/normal-open-mode.dto';
 import { UpdateSmartLockDeviceDto } from '../dto/update-smart-lock-device.dto';
 import { SmartLockRateLimitHelper } from '../helpers/smart-lock-rate-limit.helper';
 import { SmartLockDeviceService } from '../services/smart-lock-device.service';
-import { auditContext, scopedPropertyIds, toSmartLockDeviceResponse } from './smart-lock-controller.util';
+import {
+  auditContext,
+  scopedPropertyIds,
+  toSmartLockDeviceResponse,
+  toSmartLockDiagnosticResponse,
+} from './smart-lock-controller.util';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -44,6 +49,14 @@ export class SmartLockDeviceController {
     const device = await this.devices.get(deviceId);
     await this.properties.assertCanReadProperty(user, device.propertyId);
     return toSmartLockDeviceResponse(device);
+  }
+
+  @Get(':deviceId/diagnostics')
+  @RequirePermissions('smart_lock.read')
+  async diagnostics(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
+    const device = await this.devices.get(deviceId);
+    await this.properties.assertCanReadProperty(user, device.propertyId);
+    return toSmartLockDiagnosticResponse(await this.devices.readDiagnostics(device, auditContext(user, request)));
   }
 
   @Post()

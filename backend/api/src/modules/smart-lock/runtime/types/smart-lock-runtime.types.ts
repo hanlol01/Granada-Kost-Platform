@@ -1,5 +1,6 @@
 import { SmartLockGatewayResult } from '../../gateways/smart-lock-gateway.interface';
 import { SmartLockAccessAction } from '../../types/smart-lock.types';
+import type { SmartLockProviderErrorCode } from '../providers/tuya/tuya-error-normalization';
 
 export type SmartLockProviderType = 'tuya';
 export type SmartLockGatewayStatus = 'active' | 'degraded' | 'maintenance' | 'draining' | 'disabled';
@@ -120,9 +121,71 @@ export type SmartLockProviderHealthResult = {
   metadata?: Record<string, unknown>;
 };
 
+export type SmartLockDiagnosticResultStatus =
+  | 'success'
+  | 'partial'
+  | 'failed'
+  | 'skipped'
+  | 'timeout'
+  | 'device_offline';
+
+export type SmartLockDiagnosticSectionStatus = 'success' | 'failed' | 'skipped' | 'timeout' | 'device_offline';
+
+export type SmartLockDiagnosticSection<TData = Record<string, unknown>> = {
+  resultStatus: SmartLockDiagnosticSectionStatus;
+  operation: 'device_metadata' | 'device_status' | 'device_functions' | 'device_specifications' | 'provider_health';
+  source?: 'tuya_v1' | 'tuya_iot_03_fallback' | 'simulated';
+  data?: TData;
+  errorCode?: SmartLockProviderErrorCode;
+  errorMessage?: string;
+  latencyMs?: number;
+};
+
+export type SmartLockDiagnosticCapability = {
+  code: string;
+  type?: string;
+  name?: string;
+  valueType?: string;
+};
+
+export type SmartLockDiagnosticStatusEntry = {
+  code: string;
+  value: string | number | boolean | null;
+};
+
+export type SmartLockReadOnlyDiagnosticResult = {
+  provider: SmartLockProviderType;
+  providerMode: 'simulated' | 'tuya';
+  liveCommandEnabled: boolean;
+  resultStatus: SmartLockDiagnosticResultStatus;
+  providerDeviceIdMasked: string | null;
+  timestamp: string;
+  correlationId?: string;
+  gateway: {
+    id: string;
+    code: string;
+    status: SmartLockGatewayStatus;
+    region: string | null;
+    resolutionSource?: SmartLockResolvedGatewayContext['resolutionSource'];
+  };
+  health: SmartLockDiagnosticSection<{
+    healthStatus: SmartLockGatewayHealthStatus;
+    tokenCheck?: string;
+    deviceCheck?: string;
+    credentialSource?: string;
+  }>;
+  sections: {
+    metadata: SmartLockDiagnosticSection<Record<string, unknown>>;
+    status: SmartLockDiagnosticSection<{ values: SmartLockDiagnosticStatusEntry[] }>;
+    functions: SmartLockDiagnosticSection<{ capabilities: SmartLockDiagnosticCapability[] }>;
+    specifications: SmartLockDiagnosticSection<{ capabilities: SmartLockDiagnosticCapability[] }>;
+  };
+};
+
 export type SmartLockProvider = {
   readonly providerType: SmartLockProviderType;
   healthCheck(context: SmartLockProviderContext): Promise<SmartLockProviderHealthResult>;
+  readDiagnostics(context: SmartLockProviderContext): Promise<SmartLockReadOnlyDiagnosticResult>;
   syncDeviceStatus(context: SmartLockProviderContext): Promise<SmartLockGatewayResult>;
   executeCommand(context: SmartLockProviderContext, action: SmartLockAccessAction): Promise<SmartLockGatewayResult>;
 };

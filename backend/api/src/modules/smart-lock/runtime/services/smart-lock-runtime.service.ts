@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SmartLockGatewayResult } from '../../gateways/smart-lock-gateway.interface';
 import { SmartLockAccessAction, SmartLockDeviceRecord } from '../../types/smart-lock.types';
-import { SmartLockGatewayCapability } from '../types/smart-lock-runtime.types';
+import { SmartLockGatewayCapability, SmartLockReadOnlyDiagnosticResult } from '../types/smart-lock-runtime.types';
 import { SmartLockFailoverService } from './smart-lock-failover.service';
 import { SmartLockGatewayResolverService } from './smart-lock-gateway-resolver.service';
 import { SmartLockProviderRegistryService } from './smart-lock-provider-registry.service';
@@ -34,6 +34,19 @@ export class SmartLockRuntimeService {
     const retryable = this.retryPolicy.shouldRetry(result);
     const failover = this.failover.classify(result, resolved);
     return this.withRuntimeMetadata(result, resolved.gateway.id, retryable, failover.reason);
+  }
+
+  async readDiagnostics(device: SmartLockDeviceRecord, correlationId?: string): Promise<SmartLockReadOnlyDiagnosticResult> {
+    const { resolved, providerContext } = await this.resolver.resolveDiagnosticsForDevice(device, correlationId);
+    const provider = this.providers.resolve(providerContext.gateway.providerType);
+    const result = await provider.readDiagnostics(providerContext);
+    return {
+      ...result,
+      gateway: {
+        ...result.gateway,
+        resolutionSource: resolved.resolutionSource,
+      },
+    };
   }
 
   private capabilityForAction(action: SmartLockAccessAction): SmartLockGatewayCapability {

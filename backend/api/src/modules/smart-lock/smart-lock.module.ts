@@ -64,6 +64,8 @@ const services = [
   SmartLockGatewayRegistryService,
   SmartLockGatewayResolverService,
   SmartLockProviderRegistryService,
+  SmartLockTuyaConfigService,
+  TuyaHttpClientService,
   SmartLockSecretResolutionService,
   SmartLockTokenCacheService,
   SmartLockRetryPolicyService,

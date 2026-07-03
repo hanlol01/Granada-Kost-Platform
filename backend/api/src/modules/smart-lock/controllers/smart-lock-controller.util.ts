@@ -1,6 +1,12 @@
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
+import type {
+  SmartLockDiagnosticCapability,
+  SmartLockDiagnosticSection,
+  SmartLockDiagnosticStatusEntry,
+  SmartLockReadOnlyDiagnosticResult,
+} from '../runtime/types/smart-lock-runtime.types';
 import {
   SmartLockAccessLogRecord,
   SmartLockAlertRecord,
@@ -57,6 +63,74 @@ export function toSmartLockDeviceResponse(device: SmartLockDeviceRecord, include
     decommissioned_at: device.decommissionedAt,
     created_at: device.createdAt,
     updated_at: device.updatedAt,
+  };
+}
+
+export function toSmartLockDiagnosticResponse(result: SmartLockReadOnlyDiagnosticResult) {
+  return {
+    provider: result.provider,
+    provider_mode: result.providerMode,
+    live_command_enabled: result.liveCommandEnabled,
+    result_status: result.resultStatus,
+    provider_device_id_masked: result.providerDeviceIdMasked,
+    timestamp: result.timestamp,
+    correlation_id: result.correlationId,
+    gateway: {
+      id: result.gateway.id,
+      code: result.gateway.code,
+      status: result.gateway.status,
+      region: result.gateway.region,
+      resolution_source: result.gateway.resolutionSource,
+    },
+    health: toDiagnosticSectionResponse(result.health, (data) => ({
+      health_status: data.healthStatus,
+      token_check: data.tokenCheck,
+      device_check: data.deviceCheck,
+      credential_source: data.credentialSource,
+    })),
+    sections: {
+      metadata: toDiagnosticSectionResponse(result.sections.metadata),
+      status: toDiagnosticSectionResponse(result.sections.status, (data) => ({
+        values: data.values.map(toStatusEntryResponse),
+      })),
+      functions: toDiagnosticSectionResponse(result.sections.functions, (data) => ({
+        capabilities: data.capabilities.map(toCapabilityResponse),
+      })),
+      specifications: toDiagnosticSectionResponse(result.sections.specifications, (data) => ({
+        capabilities: data.capabilities.map(toCapabilityResponse),
+      })),
+    },
+  };
+}
+
+function toDiagnosticSectionResponse<TData>(
+  section: SmartLockDiagnosticSection<TData>,
+  mapData: (data: TData) => unknown = (data) => data,
+) {
+  return {
+    result_status: section.resultStatus,
+    operation: section.operation,
+    source: section.source,
+    data: section.data === undefined ? undefined : mapData(section.data),
+    error_code: section.errorCode,
+    error_message: section.errorMessage,
+    latency_ms: section.latencyMs,
+  };
+}
+
+function toStatusEntryResponse(entry: SmartLockDiagnosticStatusEntry) {
+  return {
+    code: entry.code,
+    value: entry.value,
+  };
+}
+
+function toCapabilityResponse(capability: SmartLockDiagnosticCapability) {
+  return {
+    code: capability.code,
+    type: capability.type,
+    name: capability.name,
+    value_type: capability.valueType,
   };
 }
 

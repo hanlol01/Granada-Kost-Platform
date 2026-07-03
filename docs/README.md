@@ -20,6 +20,8 @@ Indeks dokumentasi proyek. Untuk status milestone terbaru (M12 File Upload Found
 | `12-product-readiness/` | Product readiness dan File Upload Foundation (M12) |
 | `13-smart-lock/` | Smart Lock live Tuya/PALOMA readiness (M13): `SMART_LOCK_TUYA_SITE_READINESS_PLAN.md` (M13A site readiness plan; legacy PoC `reference/tuya-paloma-poc/` diaudit sebagai referensi saja), `SMART_LOCK_LIVE_INTEGRATION_ARCHITECTURE_FREEZE.md` (M13B architecture freeze — binding untuk M13C–M13H), `SMART_LOCK_TUYA_PROVIDER_CONFIG_CLIENT_IMPLEMENTATION.md` (M13C provider config + client skeleton — live commands tetap disabled) |
 
+M13D implementation note: `13-smart-lock/SMART_LOCK_READ_ONLY_DIAGNOSTIC_IMPLEMENTATION.md` documents the backend read-only diagnostic/capability discovery endpoint. Live commands remain disabled.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

@@ -9,6 +9,7 @@ export const SMART_LOCK_DEFAULTS = {
 export const SMART_LOCK_AUDIT_ACTIONS = {
   deviceRegister: 'smart_lock.device.register',
   deviceStatusSync: 'smart_lock.device.status_sync',
+  deviceDiagnosticRead: 'smart_lock.device.diagnostic_read',
   lock: 'smart_lock.lock',
   unlock: 'smart_lock.unlock',
   remoteUnlock: 'smart_lock.remote_unlock',

@@ -52,6 +52,41 @@ export class SmartLockGatewayResolverService {
     };
   }
 
+  async resolveDiagnosticsForDevice(
+    device: SmartLockDeviceRecord,
+    correlationId?: string,
+  ): Promise<{ resolved: SmartLockResolvedGatewayContext; providerContext: SmartLockProviderContext }> {
+    const mapping = await this.deviceGateways.findActiveForDevice(device.id);
+    if (!mapping) {
+      throw new BadRequestException({
+        code: 'DEVICE_NOT_MAPPED',
+        message: 'Smart lock device has no active gateway mapping for provider diagnostics',
+      });
+    }
+
+    const gateway = await this.gateways.findById(mapping.gatewayId);
+    if (!gateway) {
+      throw new BadRequestException({ code: 'SMART_LOCK_GATEWAY_MAPPING_BROKEN', message: 'Smart lock gateway mapping is invalid' });
+    }
+    this.assertGatewayCanServe(gateway.gatewayStatus, Boolean(gateway.capabilities.sync_status ?? true));
+    const credential = await this.credentials.findActiveForGateway(gateway.id);
+    const resolved = {
+      gateway,
+      providerDeviceId: mapping.providerDeviceId,
+      mapping,
+      resolutionSource: 'device_mapping' as const,
+    };
+    return {
+      resolved,
+      providerContext: {
+        gateway,
+        providerDeviceId: mapping.providerDeviceId,
+        correlationId,
+        secretRef: this.secrets.resolve(gateway, credential),
+      },
+    };
+  }
+
   private async resolveLegacy(
     device: SmartLockDeviceRecord,
     correlationId?: string,

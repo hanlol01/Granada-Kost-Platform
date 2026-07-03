@@ -3,6 +3,7 @@ import { SMART_LOCK_AUDIT_ACTIONS } from '../constants/smart-lock.constants';
 import { SmartLockStatusTransitionHelper } from '../helpers/smart-lock-status-transition.helper';
 import { SmartLockDeviceRepository } from '../repositories/smart-lock-device.repository';
 import { SmartLockRuntimeService } from '../runtime/services/smart-lock-runtime.service';
+import { SmartLockReadOnlyDiagnosticResult } from '../runtime/types/smart-lock-runtime.types';
 import {
   RegisterSmartLockDeviceInput,
   SmartLockAccessAction,
@@ -86,6 +87,42 @@ export class SmartLockDeviceService {
       propertyId: device.propertyId,
       afterData: { provider: result.provider, resultStatus: result.resultStatus, errorCode: result.errorCode },
       resultStatus: result.success ? 'success' : 'failed',
+      context,
+    });
+    return result;
+  }
+
+  async readDiagnostics(
+    device: SmartLockDeviceRecord,
+    context: SmartLockAuditContext = {},
+  ): Promise<SmartLockReadOnlyDiagnosticResult> {
+    const result = await this.runtime.readDiagnostics(device, context.correlationId);
+    await this.audit.writeDomainAudit({
+      action: SMART_LOCK_AUDIT_ACTIONS.deviceDiagnosticRead,
+      resourceType: 'smart_lock_device',
+      resourceId: device.id,
+      propertyId: device.propertyId,
+      afterData: {
+        provider: result.provider,
+        providerMode: result.providerMode,
+        gatewayId: result.gateway.id,
+        resultStatus: result.resultStatus,
+        sectionStatuses: {
+          health: result.health.resultStatus,
+          metadata: result.sections.metadata.resultStatus,
+          status: result.sections.status.resultStatus,
+          functions: result.sections.functions.resultStatus,
+          specifications: result.sections.specifications.resultStatus,
+        },
+        errorCodes: {
+          health: result.health.errorCode,
+          metadata: result.sections.metadata.errorCode,
+          status: result.sections.status.errorCode,
+          functions: result.sections.functions.errorCode,
+          specifications: result.sections.specifications.errorCode,
+        },
+      },
+      resultStatus: result.resultStatus === 'failed' ? 'failed' : 'success',
       context,
     });
     return result;

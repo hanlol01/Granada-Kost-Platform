@@ -84,7 +84,7 @@ Correct in principle: all signing and secrets live in the PoC backend; the front
 
 | Risk | Finding |
 | --- | --- |
-| Secrets in env/config | Present by design in the PoC. **Hygiene finding:** the PoC root `.env.example` ships `SAFE_MODE=false` as default and contains a non-empty fragment in the client-secret field. It must be sanitized (empty values, `SAFE_MODE=true`) and any credential that ever appeared in PoC files must be treated as compromised and rotated before site testing. Do not quote or preserve any value from it. |
+| Secrets in env/config | Present by design in the PoC. **Hygiene finding:** the PoC root `.env.example` shipped `SAFE_MODE=false` as default and contained a non-empty fragment in the client-secret field. **Remediated:** the file has been sanitized in the M13A hygiene MR (all credential fields emptied, `SAFE_MODE=true`). This fixes the working tree only — any credential that ever appeared in PoC files or repository history must still be treated as compromised and rotated before site testing. Do not quote or preserve any historical value from it. |
 | Single-device assumption | Yes — one global device ID; incompatible with multi-property/multi-gateway Kostation. |
 | Missing property scoping | Yes — none. |
 | Missing RBAC | Yes — endpoints are fully unauthenticated. |

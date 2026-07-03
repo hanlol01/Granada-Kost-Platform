@@ -3,6 +3,10 @@ export const SMART_LOCK_DEFAULTS = {
   deviceSyncIntervalSeconds: 5 * 60,
   commandRateLimitWindowSeconds: 60,
   commandRateLimitMaxAttempts: 10,
+  controlledUnlockMaxPerMinute: 3,
+  controlledEmergencyUnlockMaxPerMinute: 1,
+  commandIdempotencyTtlSeconds: 10 * 60,
+  commandSyncStalenessMinutes: 24 * 60,
   pinLength: 6,
 } as const;
 
@@ -15,6 +19,8 @@ export const SMART_LOCK_AUDIT_ACTIONS = {
   unlock: 'smart_lock.unlock',
   remoteUnlock: 'smart_lock.remote_unlock',
   emergencyUnlock: 'smart_lock.emergency_unlock',
+  controlledCommandIntent: 'smart_lock.command.intent',
+  controlledCommandResult: 'smart_lock.command.result',
   accessGrantCreate: 'smart_lock.access_grant.create',
   accessGrantRevoke: 'smart_lock.access_grant.revoke',
   credentialCreate: 'smart_lock.credential.create',

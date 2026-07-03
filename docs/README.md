@@ -22,6 +22,8 @@ Indeks dokumentasi proyek. Untuk status milestone terbaru (M12 File Upload Found
 
 M13D implementation note: `13-smart-lock/SMART_LOCK_READ_ONLY_DIAGNOSTIC_IMPLEMENTATION.md` documents the backend read-only diagnostic/capability discovery endpoint. M13E implementation note: `13-smart-lock/SMART_LOCK_READ_ONLY_SYNC_IMPLEMENTATION.md` documents backend read-only sync persistence and gateway health updates. M13F-A safety freeze: `13-smart-lock/SMART_LOCK_CONTROLLED_LIVE_COMMAND_SAFETY_FREEZE.md` freezes the safety gates, RBAC/property-scope, idempotency, rate-limit, confirmation, audit, response contract, rollback, and site-trial rules for future controlled live commands — documentation only, binding for M13F-B onward. Live commands remain disabled.
 
+M13F-B implementation note: `13-smart-lock/SMART_LOCK_COMMAND_GUARD_IMPLEMENTATION.md` documents the backend command guard, idempotency, rate-limit, validation, and audit behavior. Live commands remain disabled.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

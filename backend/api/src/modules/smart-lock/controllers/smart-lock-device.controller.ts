@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
@@ -11,8 +11,9 @@ import { RbacGuard } from '../../rbac/guards/rbac.guard';
 import { CreateSmartLockDeviceDto } from '../dto/create-smart-lock-device.dto';
 import { ListSmartLockDevicesQueryDto } from '../dto/list-smart-lock-devices-query.dto';
 import { NormalOpenModeDto } from '../dto/normal-open-mode.dto';
+import { SmartLockCommandRequestDto } from '../dto/smart-lock-command-request.dto';
 import { UpdateSmartLockDeviceDto } from '../dto/update-smart-lock-device.dto';
-import { SmartLockRateLimitHelper } from '../helpers/smart-lock-rate-limit.helper';
+import { SmartLockCommandGuardService, SmartLockControlledCommandType } from '../services/smart-lock-command-guard.service';
 import { SmartLockDeviceService } from '../services/smart-lock-device.service';
 import {
   auditContext,
@@ -30,7 +31,7 @@ export class SmartLockDeviceController {
     private readonly devices: SmartLockDeviceService,
     private readonly properties: PropertyService,
     private readonly rooms: RoomService,
-    private readonly rateLimit: SmartLockRateLimitHelper,
+    private readonly commandGuard: SmartLockCommandGuardService,
   ) {}
 
   @Get()
@@ -129,50 +130,91 @@ export class SmartLockDeviceController {
     return toSmartLockDeviceResponse(await this.devices.decommission(deviceId, auditContext(user, request)));
   }
 
+  @Post(':deviceId/commands')
+  @RequireRoles('manager', 'admin')
+  @RequirePermissions('smart_lock.manage')
+  async controlledCommand(
+    @CurrentUser() user: UserAccessContext,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SmartLockCommandRequestDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.executeControlledCommand(user, deviceId, request, dto, this.normalizeCommandType(dto), idempotencyKey);
+  }
+
   @Post(':deviceId/lock')
-  @RequirePermissions('smart_lock.command')
-  commandLock(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
-    return this.executeCommand(user, deviceId, request, 'lock');
+  @RequireRoles('manager', 'admin')
+  @RequirePermissions('smart_lock.manage')
+  commandLock(
+    @CurrentUser() user: UserAccessContext,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SmartLockCommandRequestDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.executeControlledCommand(user, deviceId, request, dto, 'remote_lock', idempotencyKey);
   }
 
   @Post(':deviceId/unlock')
-  @RequirePermissions('smart_lock.command')
-  commandUnlock(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
-    return this.executeCommand(user, deviceId, request, 'unlock');
+  @RequireRoles('manager', 'admin')
+  @RequirePermissions('smart_lock.manage')
+  commandUnlock(
+    @CurrentUser() user: UserAccessContext,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SmartLockCommandRequestDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.executeControlledCommand(user, deviceId, request, dto, 'remote_unlock', idempotencyKey);
   }
 
   @Post(':deviceId/emergency-unlock')
-  @RequirePermissions('smart_lock.command')
-  commandEmergencyUnlock(@CurrentUser() user: UserAccessContext, @Param('deviceId') deviceId: string, @Req() request: RequestWithCorrelationId) {
-    return this.executeCommand(user, deviceId, request, 'emergency_unlock');
+  @RequireRoles('manager', 'admin')
+  @RequirePermissions('smart_lock.manage')
+  commandEmergencyUnlock(
+    @CurrentUser() user: UserAccessContext,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SmartLockCommandRequestDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.executeControlledCommand(user, deviceId, request, dto, 'emergency_unlock', idempotencyKey);
   }
 
   @Post(':deviceId/normal-open-mode')
-  @RequireRoles('owner', 'manager')
-  @RequirePermissions('smart_lock.command')
+  @RequireRoles('manager', 'admin')
+  @RequirePermissions('smart_lock.manage')
   async normalOpenMode(
     @CurrentUser() user: UserAccessContext,
     @Param('deviceId') deviceId: string,
-    @Body() dto: NormalOpenModeDto,
+    @Body() dto: NormalOpenModeDto & SmartLockCommandRequestDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.executeCommand(user, deviceId, request, dto.enabled ? 'normal_open_mode_on' : 'normal_open_mode_off');
+    return this.executeControlledCommand(user, deviceId, request, dto, this.normalizeCommandType({ action: 'normal_open_mode' }), idempotencyKey);
   }
 
-  private async executeCommand(
+  private async executeControlledCommand(
     user: UserAccessContext,
     deviceId: string,
     request: RequestWithCorrelationId,
-    action: 'lock' | 'unlock' | 'emergency_unlock' | 'normal_open_mode_on' | 'normal_open_mode_off',
+    dto: SmartLockCommandRequestDto,
+    commandType: SmartLockControlledCommandType,
+    rawIdempotencyKey: string | string[] | undefined,
   ) {
+    this.assertCommandRequest(dto, rawIdempotencyKey);
     const device = await this.devices.get(deviceId);
     await this.properties.assertCanReadProperty(user, device.propertyId);
-    const rate = await this.rateLimit.consumeCommandAttempt(device.id, user.id);
-    if (!rate.allowed) {
-      return { accepted: false, result_status: 'denied', reason: 'SMART_LOCK_COMMAND_RATE_LIMITED', remaining: rate.remaining };
-    }
-    return this.devices.executeCommand(deviceId, action, {
-      source: action === 'emergency_unlock' ? 'emergency_override' : 'admin_dashboard',
+
+    return this.commandGuard.execute({
+      device,
+      actor: user,
+      commandType,
+      reason: dto.reason!.trim(),
+      confirmed: true,
+      emergency: Boolean(dto.emergency) || commandType === 'emergency_unlock',
+      idempotencyKey: this.idempotencyKey(rawIdempotencyKey),
       context: auditContext(user, request),
     });
   }
@@ -181,5 +223,50 @@ export class SmartLockDeviceController {
     const device = await this.devices.get(deviceId);
     await this.properties.assertCanReadProperty(user, device.propertyId);
     return toSmartLockSyncResponse(await this.devices.syncStatus(device, auditContext(user, request)));
+  }
+
+  private assertCommandRequest(dto: SmartLockCommandRequestDto, rawIdempotencyKey: string | string[] | undefined): void {
+    if (dto.confirmed !== true) {
+      throw new BadRequestException({
+        code: 'SMART_LOCK_CONFIRMATION_REQUIRED',
+        message: 'Smart Lock command requires explicit confirmation',
+      });
+    }
+
+    if (!dto.reason?.trim()) {
+      throw new BadRequestException({
+        code: 'SMART_LOCK_REASON_REQUIRED',
+        message: 'Smart Lock command requires a reason',
+      });
+    }
+
+    if (!this.idempotencyKey(rawIdempotencyKey)) {
+      throw new BadRequestException({
+        code: 'SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Smart Lock command requires an Idempotency-Key header',
+      });
+    }
+  }
+
+  private normalizeCommandType(dto: Pick<SmartLockCommandRequestDto, 'command_type' | 'action'>): SmartLockControlledCommandType {
+    const raw = (dto.command_type ?? dto.action ?? '').trim();
+    if (raw === 'remote_unlock' || raw === 'unlock') {
+      return 'remote_unlock';
+    }
+    if (raw === 'emergency_unlock') {
+      return 'emergency_unlock';
+    }
+    if (raw === 'remote_lock' || raw === 'lock') {
+      return 'remote_lock';
+    }
+    throw new BadRequestException({
+      code: 'UNSUPPORTED_CAPABILITY',
+      message: 'Smart Lock command type is unsupported',
+    });
+  }
+
+  private idempotencyKey(raw: string | string[] | undefined): string {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return value?.trim() ?? '';
   }
 }

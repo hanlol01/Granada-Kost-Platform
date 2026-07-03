@@ -55,10 +55,17 @@ export default () => ({
     provider: process.env.SMART_LOCK_PROVIDER ?? 'simulated',
     liveEnabled: process.env.SMART_LOCK_LIVE_ENABLED === 'true',
     commandTimeoutMs: Number(process.env.SMART_LOCK_COMMAND_TIMEOUT_MS ?? 15000),
+    commandIdempotencyTtlSeconds: Number(process.env.SMART_LOCK_COMMAND_IDEMPOTENCY_TTL_SECONDS ?? 600),
+    commandSyncStalenessMinutes: Number(process.env.SMART_LOCK_COMMAND_SYNC_STALENESS_MINUTES ?? 1440),
     maxUnlockPerMinute:
       process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === undefined || process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === ''
         ? undefined
         : Number(process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE),
+    maxEmergencyUnlockPerMinute:
+      process.env.SMART_LOCK_MAX_EMERGENCY_UNLOCK_PER_MINUTE === undefined ||
+      process.env.SMART_LOCK_MAX_EMERGENCY_UNLOCK_PER_MINUTE === ''
+        ? undefined
+        : Number(process.env.SMART_LOCK_MAX_EMERGENCY_UNLOCK_PER_MINUTE),
     tuya: {
       // Env bootstrap secret source (local/site test only). Production path resolves
       // credentials via credential_ref through SmartLockSecretResolutionService.

@@ -37,6 +37,7 @@ import { SmartLockTokenCacheService } from './runtime/services/smart-lock-token-
 import { SmartLockAccessGrantService } from './services/smart-lock-access-grant.service';
 import { SmartLockAlertService } from './services/smart-lock-alert.service';
 import { SmartLockAuditService } from './services/smart-lock-audit.service';
+import { SmartLockCommandGuardService } from './services/smart-lock-command-guard.service';
 import { SmartLockCredentialService } from './services/smart-lock-credential.service';
 import { SmartLockDeviceService } from './services/smart-lock-device.service';
 import { SmartLockRestrictionService } from './services/smart-lock-restriction.service';
@@ -61,6 +62,7 @@ const services = [
   SmartLockRestrictionService,
   SmartLockAlertService,
   SmartLockAuditService,
+  SmartLockCommandGuardService,
   SmartLockGatewayRegistryService,
   SmartLockGatewayResolverService,
   SmartLockProviderRegistryService,

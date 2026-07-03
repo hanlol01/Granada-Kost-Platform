@@ -43,7 +43,10 @@ export const environmentValidationSchema = Joi.object({
   SMART_LOCK_PROVIDER: Joi.string().valid('simulated', 'tuya').default('simulated'),
   SMART_LOCK_LIVE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   SMART_LOCK_COMMAND_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(15000),
+  SMART_LOCK_COMMAND_IDEMPOTENCY_TTL_SECONDS: Joi.number().integer().min(60).max(3600).default(600),
+  SMART_LOCK_COMMAND_SYNC_STALENESS_MINUTES: Joi.number().integer().min(1).max(10080).default(1440),
   SMART_LOCK_MAX_UNLOCK_PER_MINUTE: Joi.number().integer().min(1).optional(),
+  SMART_LOCK_MAX_EMERGENCY_UNLOCK_PER_MINUTE: Joi.number().integer().min(1).optional(),
   TUYA_CLIENT_ID: Joi.when('SMART_LOCK_PROVIDER', {
     is: 'tuya',
     then: Joi.string().trim().min(1).required().messages({

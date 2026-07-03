@@ -302,11 +302,18 @@ async function appendPermissionChecks(client: PoolClient, results: CheckResult[]
 
 async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
   const gateway = new TuyaSmartLockGateway();
-  const provider = new TuyaSmartLockProvider(gateway);
+  // Deterministic simulated-mode config: the runtime regression must not depend on local env.
+  const simulatedConfig = new ConfigService({
+    smartLock: { provider: 'simulated', liveEnabled: false, commandTimeoutMs: 15_000, tuya: {} },
+  });
+  const tuyaConfig = new SmartLockTuyaConfigService(simulatedConfig);
+  const httpClient = new TuyaHttpClientService(tuyaConfig);
+  const offlineTokenCache = new SmartLockTokenCacheService({ client: null } as unknown as RedisService);
+  const secretResolver = new SmartLockSecretResolutionService(simulatedConfig);
+  const provider = new TuyaSmartLockProvider(gateway, tuyaConfig, secretResolver, httpClient, offlineTokenCache);
   const providerRegistry = new SmartLockProviderRegistryService(provider);
   const retryPolicy = new SmartLockRetryPolicyService();
   const failover = new SmartLockFailoverService();
-  const secretResolver = new SmartLockSecretResolutionService();
 
   const gatewayRecord = sampleGatewayRecord();
   const credentialRecord = sampleCredentialRecord(gatewayRecord);

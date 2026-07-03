@@ -1,0 +1,1780 @@
+{
+  "generated_at": "2026-07-03T03:00:59.732Z",
+  "runId": 1783047656074,
+  "routes": [
+    "http://localhost:8081/complaints"
+  ],
+  "titles": {
+    "titleNoAttachment": "QA M12D UI no attachment 1783047656074",
+    "titleWithAttachment": "QA M12D UI with attachment 1783047656074"
+  },
+  "testFiles": {
+    "validPng": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\m12d-ui-current-valid.png",
+    "invalidTxt": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\m12d-ui-current-invalid.txt",
+    "oversizedPng": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\m12d-ui-current-oversized.png"
+  },
+  "checks": [
+    {
+      "name": "Complaint list loads",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "Create complaint button/FAB visible",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "Categories load in form",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /my/complaints no attachment returns 201",
+      "pass": true,
+      "detail": {
+        "category_id": "80000000-0000-4000-8000-000000000001",
+        "title": "QA M12D UI no attachment 1783047656074",
+        "description": "QA M12D browser UI no attachment."
+      }
+    },
+    {
+      "name": "file_ids omitted without attachment",
+      "pass": true,
+      "detail": {
+        "category_id": "80000000-0000-4000-8000-000000000001",
+        "title": "QA M12D UI no attachment 1783047656074",
+        "description": "QA M12D browser UI no attachment."
+      }
+    },
+    {
+      "name": "List refreshes and shows no-attachment complaint",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "Uploaded preview appears",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /files returns 201",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /my/complaints with attachment returns 201",
+      "pass": true,
+      "detail": {
+        "category_id": "80000000-0000-4000-8000-000000000001",
+        "title": "QA M12D UI with attachment 1783047656074",
+        "description": "QA M12D browser UI with PNG attachment.",
+        "file_ids": [
+          "f42cbaba-efb0-4c7a-a9df-487de5d65b1d"
+        ]
+      }
+    },
+    {
+      "name": "file_ids sent only for attachment submission",
+      "pass": true,
+      "detail": {
+        "category_id": "80000000-0000-4000-8000-000000000001",
+        "title": "QA M12D UI with attachment 1783047656074",
+        "description": "QA M12D browser UI with PNG attachment.",
+        "file_ids": [
+          "f42cbaba-efb0-4c7a-a9df-487de5d65b1d"
+        ]
+      }
+    },
+    {
+      "name": "List refreshes and shows attachment complaint",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "Unsupported file shows clear UI error",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "Oversized file shows clear UI error",
+      "pass": true,
+      "detail": {
+        "whatsAppFallbackVisible": true
+      }
+    },
+    {
+      "name": "GET /my/complaints/categories returns 200",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /files returns 201",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "POST /my/complaints returns 201",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "name": "No fatal console error",
+      "pass": true,
+      "detail": {
+        "fatalConsole": []
+      }
+    },
+    {
+      "name": "No unexpected happy-path 400/500",
+      "pass": true,
+      "detail": {
+        "unexpectedErrors": []
+      }
+    }
+  ],
+  "network": [
+    {
+      "requestId": "5C5A46CFF6DC38E66422BE556FADECDB",
+      "method": "GET",
+      "url": "http://localhost:8081/complaints",
+      "status": 200,
+      "mimeType": "text/html"
+    },
+    {
+      "requestId": "14612.218",
+      "method": "GET",
+      "url": "http://localhost:8081/src/styles.css",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "requestId": "14612.220",
+      "method": "GET",
+      "url": "http://localhost:8081/@id/virtual:tanstack-start-dev-client-entry",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.219",
+      "method": "GET",
+      "url": "http://localhost:8081/@tanstack-start/styles.css?routes=__root__%2C%2F_app%2C%2F_app%2Fcomplaints",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "requestId": "14612.225",
+      "method": "GET",
+      "url": "http://localhost:8081/@react-refresh",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.226",
+      "method": "GET",
+      "url": "http://localhost:8081/@vite/client",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.227",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/vite/dist/client/env.mjs",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.229",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/plugin/default-entry/client.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.232",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/client.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.230",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/react.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.233",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.234",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.235",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/chunk-B-1-B7_t.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.236",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/hydrateStart.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.237",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/StartClient.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.238",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.240",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/react_jsx-runtime.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.239",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.dev.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.241",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/hydrateStart.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.231",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/react-dom_client.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.242",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/utils.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.243",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/awaited.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.244",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/CatchBoundary.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.245",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ClientOnly.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.246",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouter.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.249",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderDeps.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.251",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useSearch.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.250",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useParams.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.253",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouteContext.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.254",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/link.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.258",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/not-found.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.248",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderData.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.247",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useMatch.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.252",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useNavigate.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.263",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/RouterProvider.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.257",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/lazyRouteComponent.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.259",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScriptOnce.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.255",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/route.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.262",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/router.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.256",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/fileRoute.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.264",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScrollRestoration.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.260",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Match.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.261",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Matches.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.266",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouterState.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.267",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLocation.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.268",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useCanGoBack.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.265",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useBlocker.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.269",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Asset.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.271",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Scripts.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.270",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/headContentUtils.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.274",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/ServerFunctionSerializationAdapter.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.273",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.dev.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.275",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/client.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.272",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.277",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/empty-plugin-adapters.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.276",
+      "method": "GET",
+      "url": "http://localhost:8081/src/start.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.278",
+      "method": "GET",
+      "url": "http://localhost:8081/src/router.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.280",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.279",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/react-dom.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.281",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerContext.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.282",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/@tanstack_react-router_n_@tanstack_react-store.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.283",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/isServer/development.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.284",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/matchContext.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.285",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerStores.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.286",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/SafeFragment.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.287",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/renderRouteNotFound.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.288",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/scroll-restoration.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.291",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/createClientRpc.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.293",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/json.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.290",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/constants.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.295",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.297",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.298",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routeTree.gen.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.296",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/history/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.292",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/headers.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.301",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/invariant.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.294",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-client.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.289",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Transitioner.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.300",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/utils.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.299",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/query-client.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.303",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/not-found.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.302",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/path.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.305",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/qss.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.304",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.306",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchParams.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.307",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/root.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.308",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/redirect.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.309",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/rewrite.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.310",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/stores.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.312",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/defer.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.313",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/link.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.314",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/manifest.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.315",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/Matches.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.317",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/config.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.316",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/route.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.319",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/transformer.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.318",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchMiddleware.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.322",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration-script/client.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.321",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/seroval-plugins.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.320",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/RawStream.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.311",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/router.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.323",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartOptions.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.325",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/useServerFn.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.327",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/Hydrate.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.326",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.324",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/serverFnFetcher.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.329",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-match-id.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.328",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/cookie-es/dist/index.mjs?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.331",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/api-client/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.332",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/new-process-route-tree.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.330",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/@tanstack_react-query.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.333",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/__root.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.334",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/login.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.335",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.338",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/notifications.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.337",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/profile.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.336",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/index.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.339",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/info.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.343",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/lru-cache.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.344",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/constants.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.346",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/ShallowErrorPlugin.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.347",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval-plugins/dist/esm/development/web.mjs?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.341",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/chat.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.340",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/complaints.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.348",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/load-matches.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.342",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/billing.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.349",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/safeObjectMerge.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.354",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getRouterInstance.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.356",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getGlobalStartContext.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.352",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createCsrfMiddleware.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.351",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createMiddleware.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.357",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/index.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.353",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createStart.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.355",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getDefaultSerovalPlugins.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.350",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createServerFn.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.358",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/frame-decoder.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.359",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.345",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval/dist/esm/development/index.mjs?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.360",
+      "method": "GET",
+      "url": "http://localhost:8081/src/styles.css?url",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.361",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/ui/sonner.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.362",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/auth/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.363",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartContextServerOnly.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.364",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/createIsomorphicFn.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.365",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/envOnly.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.366",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/envelopes.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.367",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/errors.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.368",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/enums.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.369",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/auth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.370",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/money.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.371",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/date.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.373",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/sonner.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.372",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/file.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.375",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/auth/useAuth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.376",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/auth/AuthGuard.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.374",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/auth/AuthProvider.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.377",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/state/LoadingState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.378",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/state/ForbiddenState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.379",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/api.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.381",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.382",
+      "method": "GET",
+      "url": "http://localhost:8081/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.383",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/zod.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.380",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/lucide-react.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.384",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.385",
+      "method": "GET",
+      "url": "http://localhost:8081/src/routes/_app/complaints.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.389",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/file/FilePreview.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.391",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/file/FileUploadProgress.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.393",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/state/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.392",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/file/WhatsAppFallbackButton.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.394",
+      "method": "GET",
+      "url": "http://localhost:8081/src/hooks/useFileUpload.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.395",
+      "method": "GET",
+      "url": "http://localhost:8081/src/hooks/usePenghuniComplaints.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.386",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/BottomNav.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.388",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/file/FilePickerButton.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.396",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/format.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.397",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/features.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.390",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/file/FilePreviewModal.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.387",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/AppHeader.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.398",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/file-utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.400",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/state/ErrorState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.399",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/state/EmptyState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.401",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/idempotency.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.402",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/mutation-feedback.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.403",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/ui/button.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.404",
+      "method": "GET",
+      "url": "http://localhost:8081/src/components/ui/dialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.406",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/class-variance-authority.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.405",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/@radix-ui_react-slot.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.407",
+      "method": "GET",
+      "url": "http://localhost:8081/src/lib/utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.408",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.409",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/clsx.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.410",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/dist-C-WlvFLd.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.412",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/dist-DRI9wJEh.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "14612.411",
+      "method": "GET",
+      "url": "http://localhost:8081/node_modules/.vite/deps/tailwind-merge.js?v=659b7def",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "requestId": "E12C13BE7ED4272DA1EDFA25533AC351",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.413",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "F48563D9CBEDBD87E348AE5E8D90317F",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.414",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "B890D729771335539076986FF1C17C56",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.415",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "6234378F5B0D73D28F90D5245B937721",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints/categories",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.416",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints/categories",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "13200D19BDCE46EDFEFAAEBF78575BD3",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.417",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "14612.418",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "14612.419",
+      "method": "GET",
+      "url": "blob:http://localhost:8081/3850bd2d-4e65-44f9-ad49-8504e894036b",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "requestId": "1D960D6DAC4BDB043A39288F5BE6B734",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.420",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/files",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "F84F06A1EE92C18A5ABB64B0E2D143EC",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files/f42cbaba-efb0-4c7a-a9df-487de5d65b1d/content",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "requestId": "14612.421",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/files/f42cbaba-efb0-4c7a-a9df-487de5d65b1d/content",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "requestId": "14612.422",
+      "method": "GET",
+      "url": "blob:http://localhost:8081/8ea4994f-9969-4719-bee5-4a4a415d657f",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "requestId": "14612.424",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "requestId": "14612.425",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "status": 200,
+      "mimeType": "application/json"
+    }
+  ],
+  "requestBodies": [
+    {
+      "requestId": "E12C13BE7ED4272DA1EDFA25533AC351",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "postData": null
+    },
+    {
+      "requestId": "14612.413",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "postData": null
+    },
+    {
+      "requestId": "14612.414",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "postData": null
+    },
+    {
+      "requestId": "F48563D9CBEDBD87E348AE5E8D90317F",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "postData": null
+    },
+    {
+      "requestId": "B890D729771335539076986FF1C17C56",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "postData": null
+    },
+    {
+      "requestId": "14612.415",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "postData": null
+    },
+    {
+      "requestId": "6234378F5B0D73D28F90D5245B937721",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints/categories",
+      "postData": null
+    },
+    {
+      "requestId": "14612.416",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints/categories",
+      "postData": null
+    },
+    {
+      "requestId": "14612.417",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "postData": "{\"category_id\":\"80000000-0000-4000-8000-000000000001\",\"title\":\"QA M12D UI no attachment 1783047656074\",\"description\":\"QA M12D browser UI no attachment.\"}"
+    },
+    {
+      "requestId": "13200D19BDCE46EDFEFAAEBF78575BD3",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "postData": null
+    },
+    {
+      "requestId": "14612.418",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "postData": null
+    },
+    {
+      "requestId": "14612.420",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/files",
+      "postData": null
+    },
+    {
+      "requestId": "1D960D6DAC4BDB043A39288F5BE6B734",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files",
+      "postData": null
+    },
+    {
+      "requestId": "F84F06A1EE92C18A5ABB64B0E2D143EC",
+      "method": "OPTIONS",
+      "url": "http://localhost:3000/api/v1/files/f42cbaba-efb0-4c7a-a9df-487de5d65b1d/content",
+      "postData": null
+    },
+    {
+      "requestId": "14612.421",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/files/f42cbaba-efb0-4c7a-a9df-487de5d65b1d/content",
+      "postData": null
+    },
+    {
+      "requestId": "14612.424",
+      "method": "POST",
+      "url": "http://localhost:3000/api/v1/my/complaints",
+      "postData": "{\"category_id\":\"80000000-0000-4000-8000-000000000001\",\"title\":\"QA M12D UI with attachment 1783047656074\",\"description\":\"QA M12D browser UI with PNG attachment.\",\"file_ids\":[\"f42cbaba-efb0-4c7a-a9df-487de5d65b1d\"]}"
+    },
+    {
+      "requestId": "14612.425",
+      "method": "GET",
+      "url": "http://localhost:3000/api/v1/my/complaints?limit=50",
+      "postData": null
+    }
+  ],
+  "console": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "error",
+      "text": "[api] INVALID_REFRESH_TOKEN 401 Refresh token is invalid or expired cid=c084d607-3afc-4cd5-847b-38fc46f6a22f"
+    },
+    {
+      "type": "error",
+      "text": "[api] INVALID_CREDENTIALS 401 Invalid identifier or password cid=7378a769-db89-4d00-9181-98fbc64e01d5"
+    },
+    {
+      "type": "error",
+      "text": "[api] INVALID_CREDENTIALS 401 Invalid identifier or password cid=cd3347a4-62c3-4995-becf-8ba9283fe945"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 ()",
+      "url": "http://localhost:8081/favicon.ico"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "url": "http://localhost:3000/api/v1/auth/refresh"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "url": "http://localhost:3000/api/v1/auth/login"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "url": "http://localhost:3000/api/v1/auth/login"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    }
+  ],
+  "screenshots": {
+    "penghuni-complaints-list": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-complaints-list.png",
+    "penghuni-create-form": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-create-form.png",
+    "penghuni-create-no-attachment-success": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-create-no-attachment-success.png",
+    "penghuni-upload-preview": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-upload-preview.png",
+    "penghuni-create-with-attachment-success": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-create-with-attachment-success.png",
+    "penghuni-invalid-file-error": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12d-complaint-create\\penghuni-invalid-file-error.png"
+  },
+  "issues": [],
+  "pass": true
+}

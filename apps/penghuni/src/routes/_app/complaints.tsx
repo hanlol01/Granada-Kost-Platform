@@ -400,8 +400,8 @@ function CreateComplaintSheet({ onClose }: { onClose: () => void }) {
               Kategori komplain belum tersedia
             </p>
             <p className="mt-1">
-              Pengelola belum mengonfigurasi kategori komplain untuk properti Anda. Silakan
-              hubungi admin kos secara langsung.
+              Pengelola belum mengonfigurasi kategori komplain untuk properti Anda. Silakan hubungi
+              admin kos secara langsung.
             </p>
           </div>
         ) : (
@@ -428,8 +428,8 @@ function CreateComplaintSheet({ onClose }: { onClose: () => void }) {
               </select>
               {selectedCategory ? (
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Prioritas awal: {priorityLabel(selectedCategory.defaultPriority)} (ditentukan
-                  dari kategori).
+                  Prioritas awal: {priorityLabel(selectedCategory.defaultPriority)} (ditentukan dari
+                  kategori).
                 </p>
               ) : null}
             </label>
@@ -509,9 +509,7 @@ function CreateComplaintSheet({ onClose }: { onClose: () => void }) {
             </div>
 
             <div>
-              <span className="text-xs font-medium text-foreground">
-                Lampiran foto (opsional)
-              </span>
+              <span className="text-xs font-medium text-foreground">Lampiran foto (opsional)</span>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Maksimum {MAX_COMPLAINT_ATTACHMENTS} foto (JPEG/PNG, maks. 2 MB per foto). Foto
                 dapat membantu memperjelas laporan.

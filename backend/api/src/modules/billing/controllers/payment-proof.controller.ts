@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { FileService } from '../../file/file.service';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
@@ -18,6 +19,7 @@ export class PaymentProofController {
   constructor(
     private readonly proofs: PaymentProofService,
     private readonly properties: PropertyService,
+    private readonly fileService: FileService,
   ) {}
 
   @Get()
@@ -34,5 +36,14 @@ export class PaymentProofController {
     const proof = await this.proofs.get(proofId);
     await this.properties.assertCanReadProperty(user, proof.propertyId);
     return proof;
+  }
+
+  /** Returns safe file metadata for a payment proof (no storage_path). */
+  @Get(':proofId/files')
+  async listFiles(@CurrentUser() user: UserAccessContext, @Param('proofId') proofId: string) {
+    const proof = await this.proofs.get(proofId);
+    await this.properties.assertCanReadProperty(user, proof.propertyId);
+    const records = await this.proofs.listFiles(proofId);
+    return records.map((r) => this.fileService.toResponse(r));
   }
 }

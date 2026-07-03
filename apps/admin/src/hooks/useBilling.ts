@@ -69,10 +69,40 @@ export type PaymentProofStatus = "pending_review" | "verified" | "rejected" | "e
 export type PaymentProofRecord = {
   id: string;
   propertyId: string;
-  status: PaymentProofStatus;
+  residentId: string;
+  invoiceId: string;
+  paymentAccountId: string | null;
+  proofStatus: PaymentProofStatus;
+  claimedAmount: number;
+  paymentMethod: PaymentMethod;
+  notes: string | null;
+  uploadedByUserId: string;
+  uploadedAt: string;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  paymentId: string | null;
   createdAt: string;
   updatedAt: string;
-  [key: string]: unknown;
+};
+
+/** Safe file metadata returned by GET /payment-proofs/:id/files and GET /complaints/:id/files. */
+export type FileMetadataRecord = {
+  id: string;
+  property_id: string;
+  uploader_user_id: string | null;
+  original_filename: string;
+  sanitized_filename: string;
+  mime_type: string;
+  file_extension: string;
+  file_size_bytes: number;
+  file_purpose: string;
+  storage_driver: string;
+  checksum_sha256: string;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type UseInvoicesFilters = {
@@ -133,5 +163,24 @@ export function usePaymentProofs(
         },
       }),
     enabled: Boolean(currentPropertyId),
+  });
+}
+
+/** Fetches a single payment proof by ID. */
+export function usePaymentProofDetail(proofId: string | null) {
+  return useQuery<PaymentProofRecord>({
+    queryKey: ["billing", "payment-proof", proofId] as const,
+    queryFn: () => apiClient.get<PaymentProofRecord>(`/payment-proofs/${proofId}`),
+    enabled: Boolean(proofId),
+  });
+}
+
+/** Fetches safe file metadata attached to a payment proof. */
+export function usePaymentProofFiles(proofId: string | null) {
+  return useQuery<FileMetadataRecord[]>({
+    queryKey: ["billing", "payment-proof-files", proofId] as const,
+    queryFn: () => apiClient.get<FileMetadataRecord[]>(`/payment-proofs/${proofId}/files`),
+    enabled: Boolean(proofId),
+    staleTime: 2 * 60_000,
   });
 }

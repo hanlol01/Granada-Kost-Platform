@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { FileService } from '../../file/file.service';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
@@ -21,6 +22,7 @@ export class ComplaintController {
   constructor(
     private readonly complaints: ComplaintService,
     private readonly properties: PropertyService,
+    private readonly fileService: FileService,
   ) {}
 
   @Get()
@@ -37,6 +39,15 @@ export class ComplaintController {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
     return complaint;
+  }
+
+  /** Returns safe file metadata for a complaint's attachments (no storage_path). */
+  @Get(':complaintId/files')
+  async listFiles(@CurrentUser() user: UserAccessContext, @Param('complaintId') complaintId: string) {
+    const complaint = await this.complaints.get(complaintId);
+    await this.properties.assertCanReadProperty(user, complaint.propertyId);
+    const records = await this.complaints.listFileRecords(complaintId);
+    return records.map((r) => this.fileService.toResponse(r));
   }
 
   @Post(':complaintId/acknowledge')

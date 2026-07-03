@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import {
   useComplaints,
   useComplaintCategories,
+  useComplaintFiles,
   type ComplaintPriority,
   type ComplaintRecord,
   type StoredComplaintStatus,
@@ -51,6 +52,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { AttachedFilesPreview } from "@/components/file/AttachedFilesPreview";
 
 export const Route = createFileRoute("/complaints")({ component: ComplaintsPage });
 
@@ -472,6 +474,7 @@ function ComplaintsPage() {
                     <p className="text-sm">{selected.locationNote}</p>
                   </div>
                 ) : null}
+                <ComplaintAttachments complaintId={selected.id} />
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                   {canManage ? (
                     <>
@@ -629,5 +632,19 @@ function KpiSkeleton() {
         <Skeleton className="h-7 w-16" />
       </CardContent>
     </Card>
+  );
+}
+
+/** Fetches and displays complaint attachments inside the detail dialog. */
+function ComplaintAttachments({ complaintId }: { complaintId: string }) {
+  const filesQuery = useComplaintFiles(complaintId);
+
+  return (
+    <AttachedFilesPreview
+      files={filesQuery.data}
+      isLoading={filesQuery.isLoading}
+      label="Lampiran Komplain"
+      size={64}
+    />
   );
 }

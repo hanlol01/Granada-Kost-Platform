@@ -14,13 +14,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { AttachedFilesPreview } from "@/components/file/AttachedFilesPreview";
 import {
   useInvoices,
-  usePayments,
+  usePaymentProofs,
+  usePaymentProofFiles,
   type InvoiceRecord,
   type InvoiceStatus,
-  type PaymentRecord,
+  type PaymentProofRecord,
+  type PaymentProofStatus,
 } from "@/hooks/useBilling";
 import {
   useCancelInvoice,
@@ -41,6 +51,8 @@ import {
   Ban,
   ThumbsUp,
   ThumbsDown,
+  Eye,
+  FileText,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,7 +102,7 @@ function PaymentsPage() {
     tab === "unpaid" ? "unpaid" : tab === "paid" ? "paid" : undefined;
 
   const invoices = useInvoices({ status: statusParam, limit: 100 });
-  const payments = usePayments({ status: "pending", limit: 100 });
+  const proofs = usePaymentProofs({ status: "pending_review" as PaymentProofStatus, limit: 100 });
 
   const items = invoices.data ?? [];
 
@@ -113,8 +125,9 @@ function PaymentsPage() {
 
   const [issueTarget, setIssueTarget] = useState<InvoiceRecord | null>(null);
   const [cancelTarget, setCancelTarget] = useState<InvoiceRecord | null>(null);
-  const [verifyTarget, setVerifyTarget] = useState<PaymentRecord | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<PaymentRecord | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<PaymentProofRecord | null>(null);
+  const [verifyTarget, setVerifyTarget] = useState<PaymentProofRecord | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<PaymentProofRecord | null>(null);
 
   return (
     <AppShell title="Pembayaran" subtitle="Kelola tagihan dan transaksi sewa">
@@ -170,27 +183,28 @@ function PaymentsPage() {
             </TabsList>
             <TabsContent value={tab} className="mt-4">
               {tab === "payments" ? (
-                payments.error ? (
+                proofs.error ? (
                   <ErrorState
-                    error={payments.error}
-                    onRetry={() => payments.refetch()}
-                    title="Gagal memuat pembayaran"
+                    error={proofs.error}
+                    onRetry={() => proofs.refetch()}
+                    title="Gagal memuat bukti pembayaran"
                   />
-                ) : payments.isLoading ? (
+                ) : proofs.isLoading ? (
                   <div className="space-y-2">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Skeleton key={i} className="h-16 w-full" />
                     ))}
                   </div>
-                ) : (payments.data ?? []).length === 0 ? (
+                ) : (proofs.data ?? []).length === 0 ? (
                   <EmptyState
                     icon={<Receipt className="h-5 w-5" />}
-                    title="Tidak ada pembayaran pending"
-                    description="Pembayaran menunggu verifikasi akan tampil di sini."
+                    title="Tidak ada bukti pembayaran pending"
+                    description="Bukti pembayaran manual menunggu verifikasi akan tampil di sini."
                   />
                 ) : (
-                  <PendingPaymentList
-                    items={payments.data ?? []}
+                  <PendingProofList
+                    items={proofs.data ?? []}
+                    onReview={setReviewTarget}
                     onVerify={setVerifyTarget}
                     onReject={setRejectTarget}
                   />
@@ -283,13 +297,21 @@ function PaymentsPage() {
         }}
       />
 
+      {/* Payment proof review dialog with file preview */}
+      <PaymentProofReviewDialog
+        proof={reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        onVerify={setVerifyTarget}
+        onReject={setRejectTarget}
+      />
+
       <ConfirmDialog
         open={verifyTarget !== null}
         onOpenChange={(o) => !o && setVerifyTarget(null)}
-        title="Verifikasi pembayaran"
+        title="Verifikasi bukti pembayaran"
         description={
           verifyTarget
-            ? `Pembayaran ${verifyTarget.paymentCode} senilai ${formatIDR(verifyTarget.amount)} akan ditandai sebagai terverifikasi.`
+            ? `Bukti pembayaran senilai ${formatIDR(verifyTarget.claimedAmount)} (${verifyTarget.paymentMethod.toUpperCase()}) akan diverifikasi dan dicatat sebagai pembayaran lunas.`
             : null
         }
         confirmLabel="Verifikasi"
@@ -299,6 +321,7 @@ function PaymentsPage() {
           try {
             await verifyMut.mutateAsync({ paymentId: verifyTarget.id });
             setVerifyTarget(null);
+            setReviewTarget(null);
           } catch {
             // Already toasted.
           }
@@ -308,13 +331,13 @@ function PaymentsPage() {
       <ConfirmDialog
         open={rejectTarget !== null}
         onOpenChange={(o) => !o && setRejectTarget(null)}
-        title="Tolak pembayaran"
+        title="Tolak bukti pembayaran"
         description={
           rejectTarget
-            ? `Pembayaran ${rejectTarget.paymentCode} akan ditolak dan dicatat audit log.`
+            ? `Bukti pembayaran senilai ${formatIDR(rejectTarget.claimedAmount)} akan ditolak dan dicatat audit log.`
             : null
         }
-        confirmLabel="Tolak Pembayaran"
+        confirmLabel="Tolak Bukti"
         destructive
         reason={{ label: "Alasan penolakan", placeholder: "Mis. bukti tidak valid", minLength: 3 }}
         pending={rejectMut.isPending}
@@ -323,6 +346,7 @@ function PaymentsPage() {
           try {
             await rejectMut.mutateAsync({ paymentId: rejectTarget.id, reason });
             setRejectTarget(null);
+            setReviewTarget(null);
           } catch {
             // Already toasted.
           }
@@ -444,38 +468,152 @@ function InvoiceList({
   );
 }
 
-function PendingPaymentList({
+const PROOF_STATUS_LABEL: Record<PaymentProofStatus, { label: string; cls: string }> = {
+  pending_review: { label: "Menunggu Review", cls: "bg-warning/20 text-warning-foreground" },
+  verified: { label: "Diverifikasi", cls: "bg-success/15 text-success" },
+  rejected: { label: "Ditolak", cls: "bg-destructive/15 text-destructive" },
+  expired: { label: "Kadaluarsa", cls: "bg-muted text-muted-foreground" },
+};
+
+function PendingProofList({
   items,
+  onReview,
   onVerify,
   onReject,
 }: {
-  items: PaymentRecord[];
-  onVerify: (p: PaymentRecord) => void;
-  onReject: (p: PaymentRecord) => void;
+  items: PaymentProofRecord[];
+  onReview: (p: PaymentProofRecord) => void;
+  onVerify: (p: PaymentProofRecord) => void;
+  onReject: (p: PaymentProofRecord) => void;
 }) {
   return (
     <div className="space-y-2">
-      {items.map((p) => (
-        <div
-          key={p.id}
-          className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border"
-        >
-          <div className="flex-1 min-w-0">
-            <p className="font-medium">{p.paymentCode}</p>
-            <p className="text-xs text-muted-foreground">
-              {p.paymentMethod.toUpperCase()} · {formatIDR(p.amount)} · Pending review
-            </p>
+      {items.map((p) => {
+        const statusMeta = PROOF_STATUS_LABEL[p.proofStatus] ?? {
+          label: p.proofStatus,
+          cls: "bg-muted text-muted-foreground",
+        };
+        return (
+          <div
+            key={p.id}
+            className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl border border-border hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm">{p.paymentMethod.toUpperCase()}</p>
+                <span
+                  className={cn(
+                    "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
+                    statusMeta.cls,
+                  )}
+                >
+                  {statusMeta.label}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {formatIDR(p.claimedAmount)}
+                {p.notes ? ` · ${p.notes}` : ""}
+                {" · "}
+                {formatDate(p.uploadedAt.slice(0, 10))}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => onReview(p)}>
+                <Eye className="h-3.5 w-3.5 mr-1" /> Lihat Bukti
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onVerify(p)}>
+                <ThumbsUp className="h-3.5 w-3.5 mr-1" /> Verifikasi
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onReject(p)}>
+                <ThumbsDown className="h-3.5 w-3.5 mr-1 text-destructive" /> Tolak
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => onVerify(p)}>
-              <ThumbsUp className="h-3.5 w-3.5 mr-1" /> Verifikasi
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onReject(p)}>
-              <ThumbsDown className="h-3.5 w-3.5 mr-1 text-destructive" /> Tolak
-            </Button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
+  );
+}
+
+/** Dialog showing payment proof details and attached file previews. */
+function PaymentProofReviewDialog({
+  proof,
+  onClose,
+  onVerify,
+  onReject,
+}: {
+  proof: PaymentProofRecord | null;
+  onClose: () => void;
+  onVerify: (p: PaymentProofRecord) => void;
+  onReject: (p: PaymentProofRecord) => void;
+}) {
+  const isOpen = proof !== null;
+  const filesQuery = usePaymentProofFiles(proof?.id ?? null);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        {proof && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sm">
+                <FileText className="h-4 w-4" />
+                Review Bukti Pembayaran Manual
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Periksa bukti sebelum memverifikasi atau menolak.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Metode</p>
+                  <p className="font-medium">{proof.paymentMethod.toUpperCase()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Jumlah Klaim</p>
+                  <p className="font-medium">{formatIDR(proof.claimedAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tanggal Upload</p>
+                  <p className="font-medium">{formatDate(proof.uploadedAt.slice(0, 10))}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="font-medium">
+                    {PROOF_STATUS_LABEL[proof.proofStatus]?.label ?? proof.proofStatus}
+                  </p>
+                </div>
+              </div>
+              {proof.notes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Catatan Penghuni</p>
+                  <p className="text-sm">{proof.notes}</p>
+                </div>
+              )}
+
+              {/* Attached proof files */}
+              <AttachedFilesPreview
+                files={filesQuery.data}
+                isLoading={filesQuery.isLoading}
+                label="Bukti Pembayaran"
+                size={80}
+              />
+
+              {proof.proofStatus === "pending_review" && (
+                <div className="flex gap-2 pt-2 border-t border-border">
+                  <Button size="sm" onClick={() => onVerify(proof)}>
+                    <ThumbsUp className="h-3.5 w-3.5 mr-1" /> Verifikasi
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => onReject(proof)}>
+                    <ThumbsDown className="h-3.5 w-3.5 mr-1 text-destructive" /> Tolak
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

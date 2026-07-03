@@ -5,8 +5,9 @@ import { BILLING_AUDIT_ACTIONS } from '../constants/billing.constants';
 import { InvoiceRepository } from '../repositories/invoice.repository';
 import { PaymentProofFileRepository } from '../repositories/payment-proof-file.repository';
 import { PaymentProofRepository } from '../repositories/payment-proof.repository';
-import { AuditActorContext, CreatePaymentProofInput, PaymentProofRecord } from '../types/billing.types';
+import { AuditActorContext, CreatePaymentProofInput, PaymentProofFileRecord, PaymentProofRecord } from '../types/billing.types';
 import { PaymentService } from './payment.service';
+import type { FileRecord } from '../../file/types/file.types';
 
 const MAX_PAYMENT_PROOF_FILES = 3;
 
@@ -31,6 +32,19 @@ export class PaymentProofService {
 
   get(proofId: string): Promise<PaymentProofRecord> {
     return this.requireProof(proofId);
+  }
+
+  /** Returns file records attached to a payment proof (safe metadata only). */
+  async listFiles(proofId: string): Promise<FileRecord[]> {
+    const junctions: PaymentProofFileRecord[] = await this.paymentProofFiles.list(proofId);
+    const records: FileRecord[] = [];
+    for (const junction of junctions) {
+      const file = await this.files.findById(junction.fileId);
+      if (file && !file.isDeleted) {
+        records.push(file);
+      }
+    }
+    return records;
   }
 
   async submitProof(input: CreatePaymentProofInput, context: AuditActorContext = {}): Promise<PaymentProofRecord> {

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { FileRepository } from '../../file/file.repository';
+import type { FileRecord } from '../../file/types/file.types';
 import { COMPLAINT_AUDIT_ACTIONS } from '../constants/complaint.constants';
 import { ComplaintCodeGenerator } from '../helpers/complaint-code-generator';
 import { SlaCalculationHelper } from '../helpers/sla-calculation.helper';
@@ -194,6 +195,19 @@ export class ComplaintService {
 
   listFiles(complaintId: string): Promise<ComplaintFileRecord[]> {
     return this.complaintFiles.list(complaintId);
+  }
+
+  /** Returns file records for a complaint's attachments (resolves through junction). */
+  async listFileRecords(complaintId: string): Promise<FileRecord[]> {
+    const junctions = await this.complaintFiles.list(complaintId);
+    const records: FileRecord[] = [];
+    for (const junction of junctions) {
+      const file = await this.files.findById(junction.fileId);
+      if (file && !file.isDeleted) {
+        records.push(file);
+      }
+    }
+    return records;
   }
 
   async refreshSlaFlags(complaintId: string, comparedAt = new Date()): Promise<ComplaintRecord> {

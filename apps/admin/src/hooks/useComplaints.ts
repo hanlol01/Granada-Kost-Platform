@@ -6,6 +6,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { useProperty } from "@/lib/property";
+import type { FileMetadataRecord } from "./useBilling";
 
 export type ComplaintPriority = "low" | "medium" | "high" | "urgent";
 export type StoredComplaintStatus =
@@ -95,5 +96,15 @@ export function useComplaintCategories(): UseQueryResult<ComplaintCategoryRecord
     // Categories are master data — slightly longer cache lifetime per ADR-FE-002.
     staleTime: 5 * 60_000,
     enabled: Boolean(currentPropertyId),
+  });
+}
+
+/** Fetches safe file metadata attached to a complaint. */
+export function useComplaintFiles(complaintId: string | null) {
+  return useQuery<FileMetadataRecord[]>({
+    queryKey: ["complaints", "files", complaintId] as const,
+    queryFn: () => apiClient.get<FileMetadataRecord[]>(`/complaints/${complaintId}/files`),
+    enabled: Boolean(complaintId),
+    staleTime: 2 * 60_000,
   });
 }

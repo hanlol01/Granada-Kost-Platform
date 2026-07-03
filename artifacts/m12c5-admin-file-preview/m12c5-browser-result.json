@@ -1,0 +1,4315 @@
+{
+  "generated_at": "2026-07-02T19:32:27.706Z",
+  "setup": {
+    "proofId": "c4195a9b-d562-4260-bf4a-6e5913170f2e",
+    "proofNote": "QA M12C5 payment proof 1783019924646",
+    "paymentFileId": "dde6391e-a121-4621-bef5-55cca1d00c77",
+    "complaintId": "d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f",
+    "complaintTitle": "QA M12C5 complaint attachment 1783019924696",
+    "complaintFileId": "087371e6-20d7-4314-952b-7d15f4eb05fb",
+    "invoiceId": "72000000-0000-4000-8000-000000000001",
+    "propertyId": "20000000-0000-4000-8000-000000000001"
+  },
+  "checks": [
+    {
+      "name": "Admin login works",
+      "pass": true,
+      "detail": {
+        "url": "http://localhost:8080/"
+      }
+    },
+    {
+      "name": "Payments Verifikasi tab renders proof records",
+      "pass": true,
+      "detail": {
+        "hasProofNote": true
+      }
+    },
+    {
+      "name": "PaymentProofReviewDialog opens",
+      "pass": true,
+      "detail": {
+        "thumbnails": 1,
+        "verifyVisible": true,
+        "rejectVisible": true
+      }
+    },
+    {
+      "name": "Payment proof full-size preview opens",
+      "pass": true,
+      "detail": {
+        "contentEndpointUsed": true
+      }
+    },
+    {
+      "name": "ComplaintAttachments component appears",
+      "pass": true,
+      "detail": {
+        "thumbnails": 1
+      }
+    },
+    {
+      "name": "Complaint attachment full-size preview opens",
+      "pass": true,
+      "detail": {
+        "contentEndpointUsed": true
+      }
+    },
+    {
+      "name": "No public storage URL used in browser network",
+      "pass": true,
+      "detail": {
+        "badNetwork": []
+      }
+    },
+    {
+      "name": "No fatal console errors",
+      "pass": true,
+      "detail": {
+        "fatalConsole": []
+      }
+    },
+    {
+      "name": "No unexpected 400/500 in browser happy path",
+      "pass": true,
+      "detail": {
+        "unexpectedErrors": []
+      }
+    }
+  ],
+  "network": [
+    {
+      "method": "",
+      "url": "http://localhost:8080/login",
+      "status": 200,
+      "mimeType": "text/html"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@id/virtual:tanstack-start-dev-client-entry",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@tanstack-start/styles.css?routes=__root__%2C%2Flogin",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@react-refresh",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@vite/client",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/vite/dist/client/env.mjs",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/plugin/default-entry/client.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/chunk-B-1-B7_t.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/StartClient.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom_client.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/awaited.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/CatchBoundary.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ClientOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useMatch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderData.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderDeps.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useSearch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouteContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/lazyRouteComponent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/fileRoute.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useNavigate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/RouterProvider.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScrollRestoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScriptOnce.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouterState.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Match.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useBlocker.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useCanGoBack.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLocation.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Asset.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Scripts.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/headContentUtils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/ServerFunctionSerializationAdapter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/empty-plugin-adapters.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/start.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/router.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/isServer/development.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/matchContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-router_n_@tanstack_react-store.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerStores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Transitioner.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/renderRouteNotFound.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/SafeFragment.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/createClientRpc.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/headers.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/json.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/history/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routeTree.gen.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/query-client.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/invariant.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/path.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/qss.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/root.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/redirect.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/rewrite.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/stores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/defer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/manifest.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/config.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/transformer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/seroval-plugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/RawStream.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration-script/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartOptions.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/serverFnFetcher.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/cookie-es/dist/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-match-id.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/useServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/Hydrate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/tenants.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/__root.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/smart-lock.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/vehicles.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/settings.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/rooms.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/reports.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/payments.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/parking.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/login.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/notifications.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/cctv.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/complaints.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/booking.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/bookings.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/lru-cache.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/index.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/access-history.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/new-process-route-tree.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/ShallowErrorPlugin.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/load-matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/api-client/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getDefaultSerovalPlugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/frame-decoder.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval-plugins/dist/esm/development/web.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-query.js?v=e0f2dc75",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval/dist/esm/development/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/safeObjectMerge.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createCsrfMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getRouterInstance.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getGlobalStartContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css?url",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/sonner.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartContextServerOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/createIsomorphicFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/envOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/sonner.js?v=e338fb3e",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/useAuth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthProvider.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/useProperty.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthGuard.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/envelopes.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/PropertyProvider.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/errors.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/enums.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/auth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/money.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/date.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/file.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/api.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/LoadingState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ForbiddenState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/zod.js?v=d37de9ac",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/lucide-react.js?v=cf47f64b",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/login.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/button.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/label.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/input.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/card.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-slot.js?v=1228c973",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/class-variance-authority.js?v=726dbf80",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-label.js?v=ae573059",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/clsx.js?v=ed572e91",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-B-bbxpXd.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BeYQYf9E.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/tailwind-merge.js?v=3ba19a7c",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/index.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/app-shell.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/skeleton.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/progress.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ErrorState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/EmptyState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useDashboardSummary.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/format.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/nav.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-progress.js?v=0f875dee",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/user-menu.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useReports.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/features.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DrzfAkzb.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/dropdown-menu.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/reports-selectors.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-dropdown-menu.js?v=b2751f3d",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-CwMr7YCs.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BH97ZNbK.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DYyd6n5S.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BhkOs3TF.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-Bm1gYwBH.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/es2015-CHnf7SK3.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-C5Tzqn9d.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DC-SnrTl.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/rooms?property_id=20000000-0000-4000-8000-000000000001",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/residents?property_id=20000000-0000-4000-8000-000000000001",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/invoices?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payments?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/vehicles?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/parking/zones?property_id=20000000-0000-4000-8000-000000000001&active_only=true",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/work-orders?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/rooms?property_id=20000000-0000-4000-8000-000000000001",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payments?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/vehicles?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/parking/zones?property_id=20000000-0000-4000-8000-000000000001&active_only=true",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/payments",
+      "status": 200,
+      "mimeType": "text/html"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css",
+      "status": 304,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@id/virtual:tanstack-start-dev-client-entry",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@tanstack-start/styles.css?routes=__root__%2C%2Fpayments",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@react-refresh",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@vite/client",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/vite/dist/client/env.mjs",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/plugin/default-entry/client.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom_client.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/chunk-B-1-B7_t.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/StartClient.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/awaited.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/CatchBoundary.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ClientOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useMatch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderData.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderDeps.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useSearch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useNavigate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouteContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/fileRoute.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/lazyRouteComponent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScriptOnce.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Match.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/RouterProvider.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScrollRestoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useBlocker.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouterState.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLocation.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useCanGoBack.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Asset.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/headContentUtils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Scripts.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/ServerFunctionSerializationAdapter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/empty-plugin-adapters.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/matchContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-router_n_@tanstack_react-store.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/isServer/development.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/SafeFragment.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/renderRouteNotFound.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Transitioner.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerStores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/history/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/createClientRpc.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/headers.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/json.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/invariant.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/path.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/qss.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/root.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/redirect.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/rewrite.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/stores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/defer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/manifest.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/config.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/transformer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/RawStream.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/seroval-plugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration-script/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/start.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/router.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartOptions.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/serverFnFetcher.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/cookie-es/dist/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-match-id.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/new-process-route-tree.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/lru-cache.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/load-matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval/dist/esm/development/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/ShallowErrorPlugin.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval-plugins/dist/esm/development/web.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getDefaultSerovalPlugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/frame-decoder.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/useServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/Hydrate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/safeObjectMerge.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createCsrfMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getRouterInstance.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getGlobalStartContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartContextServerOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/createIsomorphicFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/envOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routeTree.gen.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/query-client.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-query.js?v=e0f2dc75",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/__root.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/vehicles.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/tenants.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/smart-lock.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/settings.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/rooms.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/reports.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/payments.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/parking.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/notifications.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/login.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/complaints.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/cctv.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/bookings.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/booking.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/access-history.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/index.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/api-client/src/index.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css?url",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/sonner.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/index.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/sonner.js?v=e338fb3e",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/index.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/index.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthProvider.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/useAuth.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthGuard.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/PropertyProvider.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/useProperty.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/envelopes.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/errors.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/enums.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/auth.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/money.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/date.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/file.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/api.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/LoadingState.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ForbiddenState.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/lucide-react.js?v=cf47f64b",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/env.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/env.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/zod.js?v=d37de9ac",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/payments.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/app-shell.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/card.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/button.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/skeleton.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/EmptyState.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ErrorState.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/dropdown-menu.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/tabs.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-slot.js?v=1228c973",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/class-variance-authority.js?v=726dbf80",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/dialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-B-bbxpXd.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/clsx.js?v=ed572e91",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/confirm/ConfirmDialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useBilling.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/AttachedFilesPreview.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/format.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useBillingMutations.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/utils.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-dropdown-menu.js?v=b2751f3d",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DrzfAkzb.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-CwMr7YCs.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BH97ZNbK.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BeYQYf9E.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DYyd6n5S.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/es2015-CHnf7SK3.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BhkOs3TF.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-C5Tzqn9d.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-Bm1gYwBH.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DC-SnrTl.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/nav.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/tailwind-merge.js?v=3ba19a7c",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/user-menu.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=0f189298",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=5825f033",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/label.tsx",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/alert-dialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/textarea.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/idempotency.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/FilePreview.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-label.js?v=ae573059",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/FilePreviewModal.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/mutation-feedback.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/features.ts",
+      "status": 304,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-alert-dialog.js?v=6da0d74d",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useFileUpload.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/file-utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payment-proofs?property_id=20000000-0000-4000-8000-000000000001&status=pending_review&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/invoices?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payment-proofs?property_id=20000000-0000-4000-8000-000000000001&status=pending_review&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payment-proofs/c4195a9b-d562-4260-bf4a-6e5913170f2e/files",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/payment-proofs/c4195a9b-d562-4260-bf4a-6e5913170f2e/files",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/files/dde6391e-a121-4621-bef5-55cca1d00c77/content",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/files/dde6391e-a121-4621-bef5-55cca1d00c77/content",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "method": "",
+      "url": "blob:http://localhost:8080/8727b1f6-5f61-4f1b-9b86-0b46ca91ee95",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/complaints",
+      "status": 200,
+      "mimeType": "text/html"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css",
+      "status": 304,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@id/virtual:tanstack-start-dev-client-entry",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@tanstack-start/styles.css?routes=__root__%2C%2Fcomplaints",
+      "status": 200,
+      "mimeType": "text/css"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@react-refresh",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@vite/client",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/vite/dist/client/env.mjs",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/plugin/default-entry/client.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom_client.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/chunk-B-1-B7_t.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react-dom.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/StartClient.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/react_jsx-runtime.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/hydrateStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/awaited.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/CatchBoundary.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ClientOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useMatch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderData.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLoaderDeps.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useSearch.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useNavigate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouteContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/fileRoute.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/lazyRouteComponent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScriptOnce.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Match.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/RouterProvider.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/ScrollRestoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useBlocker.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useRouterState.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useLocation.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/useCanGoBack.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Asset.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/headContentUtils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Scripts.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.dev.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client/ServerFunctionSerializationAdapter.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/empty-plugin-adapters.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/matchContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-router_n_@tanstack_react-store.js?v=10f6b9ae",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/isServer/development.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/SafeFragment.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/renderRouteNotFound.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/Transitioner.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/routerStores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-router/dist/esm/HeadContent.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/history/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/createClientRpc.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/headers.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/json.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/utils.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/invariant.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/path.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/not-found.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/qss.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchParams.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/root.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/redirect.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/rewrite.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/stores.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/router.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/defer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/link.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/manifest.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/Matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/route.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/config.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/searchMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/transformer.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/RawStream.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/seroval-plugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/scroll-restoration-script/client.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/start.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/router.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartOptions.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/serverFnFetcher.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/cookie-es/dist/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/ssr-match-id.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/new-process-route-tree.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/lru-cache.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/load-matches.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/constants.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval/dist/esm/development/index.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/router-core/dist/esm/ssr/serializer/ShallowErrorPlugin.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/seroval-plugins/dist/esm/development/web.mjs?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getDefaultSerovalPlugins.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/client-rpc/frame-decoder.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start/dist/esm/useServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/react-start-client/dist/esm/Hydrate.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/safeObjectMerge.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createServerFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createCsrfMiddleware.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/createStart.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getRouterInstance.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getGlobalStartContext.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/index.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-client-core/dist/esm/getStartContextServerOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/createIsomorphicFn.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/node_modules/@tanstack/start-fn-stubs/dist/esm/envOnly.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routeTree.gen.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/query-client.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@tanstack_react-query.js?v=e0f2dc75",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/__root.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/vehicles.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/rooms.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/tenants.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/settings.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/smart-lock.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/payments.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/reports.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/parking.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/notifications.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/login.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/complaints.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/cctv.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/bookings.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/booking.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/index.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/access-history.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/api-client/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/styles.css?url",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/sonner.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/sonner.js?v=e338fb3e",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/index.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/envelopes.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/useProperty.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthGuard.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/property/PropertyProvider.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/useAuth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/auth/AuthProvider.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/errors.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/auth.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/enums.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/money.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/date.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/file.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/LoadingState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/lucide-react.js?v=cf47f64b",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ForbiddenState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/api.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/@fs/D:/PROJECT%20CODING/Granada%20Kost%20Platform/packages/domain/src/env.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/zod.js?v=d37de9ac",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/routes/complaints.tsx?tsr-split=component",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/app-shell.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/card.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/button.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-slot.js?v=1228c973",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/class-variance-authority.js?v=726dbf80",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-B-bbxpXd.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/clsx.js?v=ed572e91",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/skeleton.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/input.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/EmptyState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/state/ErrorState.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/dialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/tabs.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-dialog.js?v=5825f033",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=0f189298",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/confirm/ConfirmDialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DrzfAkzb.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-CwMr7YCs.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BH97ZNbK.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BeYQYf9E.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DYyd6n5S.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/es2015-CHnf7SK3.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-BhkOs3TF.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-Bm1gYwBH.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/format.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/tailwind-merge.js?v=3ba19a7c",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/AttachedFilesPreview.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/nav.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/layout/user-menu.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/alert-dialog.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-alert-dialog.js?v=6da0d74d",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/label.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-label.js?v=ae573059",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/textarea.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/FilePreview.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/file/FilePreviewModal.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/features.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/dropdown-menu.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-dropdown-menu.js?v=b2751f3d",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-C5Tzqn9d.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-DC-SnrTl.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useFileUpload.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/file-utils.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/badge.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/idempotency.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/components/ui/tooltip.tsx",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/lib/mutation-feedback.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useComplaints.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/src/hooks/useComplaintMutations.ts",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=388ab5ed",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/dist-PLb723Vi.js?v=a79f0d15",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:8080/node_modules/.vite/deps/recharts.js?v=c6909f73",
+      "status": 200,
+      "mimeType": "text/javascript"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/refresh",
+      "status": 201,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/auth/me",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaint-categories?property_id=20000000-0000-4000-8000-000000000001",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints?property_id=20000000-0000-4000-8000-000000000001&limit=100",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaint-categories?property_id=20000000-0000-4000-8000-000000000001",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints/d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f/files",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/complaints/d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f/files",
+      "status": 200,
+      "mimeType": "application/json"
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/files/087371e6-20d7-4314-952b-7d15f4eb05fb/content",
+      "status": 204,
+      "mimeType": ""
+    },
+    {
+      "method": "",
+      "url": "http://localhost:3000/api/v1/files/087371e6-20d7-4314-952b-7d15f4eb05fb/content",
+      "status": 200,
+      "mimeType": "image/png"
+    },
+    {
+      "method": "",
+      "url": "blob:http://localhost:8080/da7c10ee-28cc-4086-aebc-5b3a96f0d8a2",
+      "status": 200,
+      "mimeType": "image/png"
+    }
+  ],
+  "console": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "warning",
+      "text": "Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}."
+    },
+    {
+      "type": "warning",
+      "text": "Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}."
+    }
+  ],
+  "screenshots": {
+    "admin-login": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-login.png",
+    "admin-payments-verification": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-payments-verification.png",
+    "admin-payment-proof-dialog": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-payment-proof-dialog.png",
+    "admin-payment-proof-preview": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-payment-proof-preview.png",
+    "admin-complaints-list": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-complaints-list.png",
+    "admin-complaint-detail-attachments": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-complaint-detail-attachments.png",
+    "admin-complaint-preview": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\admin-complaint-preview.png"
+  },
+  "issues": [],
+  "pass": true
+}

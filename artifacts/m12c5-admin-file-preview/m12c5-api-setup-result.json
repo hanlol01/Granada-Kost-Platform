@@ -1,0 +1,363 @@
+{
+  "generated_at": "2026-07-02T19:18:43.539Z",
+  "base": "http://127.0.0.1:3000/api/v1",
+  "test_file": "D:\\PROJECT CODING\\Granada Kost Platform\\artifacts\\m12c5-admin-file-preview\\m12c5-small.png",
+  "checks": [
+    {
+      "name": "health PASS",
+      "pass": true,
+      "detail": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "admin login PASS",
+      "pass": true,
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "name": "resident login PASS",
+      "pass": true,
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "name": "resident context/invoice/category available",
+      "pass": true,
+      "detail": {
+        "resident": {
+          "user_id": "51000000-0000-4000-8000-000000000001",
+          "resident_id": "50000000-0000-4000-8000-000000000001",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "room_id": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8"
+        },
+        "invoice": {
+          "id": "72000000-0000-4000-8000-000000000001",
+          "total_amount": 1800000
+        },
+        "category": {
+          "id": "80000000-0000-4000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "name": "setup payment proof file uploaded",
+      "pass": true,
+      "detail": {
+        "id": "dde6391e-a121-4621-bef5-55cca1d00c77"
+      }
+    },
+    {
+      "name": "setup pending payment proof created",
+      "pass": true,
+      "detail": {
+        "id": "c4195a9b-d562-4260-bf4a-6e5913170f2e",
+        "note": "QA M12C5 payment proof 1783019924646"
+      }
+    },
+    {
+      "name": "setup complaint attachment file uploaded",
+      "pass": true,
+      "detail": {
+        "id": "087371e6-20d7-4314-952b-7d15f4eb05fb"
+      }
+    },
+    {
+      "name": "setup complaint with attachment created",
+      "pass": true,
+      "detail": {
+        "id": "d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f",
+        "title": "QA M12C5 complaint attachment 1783019924696"
+      }
+    },
+    {
+      "name": "GET /payment-proofs/:id/files returns metadata",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "count": 1
+      }
+    },
+    {
+      "name": "payment proof metadata hides storage_path",
+      "pass": true,
+      "detail": [
+        {
+          "id": "dde6391e-a121-4621-bef5-55cca1d00c77",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m12c5-payment-proof.png",
+          "sanitized_filename": "m12c5-payment-proof.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "payment_proof",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-02T19:18:44.625Z",
+          "updated_at": "2026-07-02T19:18:44.625Z"
+        }
+      ]
+    },
+    {
+      "name": "GET /complaints/:id/files returns metadata",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "count": 1
+      }
+    },
+    {
+      "name": "complaint metadata hides storage_path",
+      "pass": true,
+      "detail": [
+        {
+          "id": "087371e6-20d7-4314-952b-7d15f4eb05fb",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m12c5-complaint-attachment.png",
+          "sanitized_filename": "m12c5-complaint-attachment.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "complaint_attachment",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-02T19:18:44.692Z",
+          "updated_at": "2026-07-02T19:18:44.692Z"
+        }
+      ]
+    },
+    {
+      "name": "unauth payment proof files rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "unauth complaint files rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "unauth file content rejected",
+      "pass": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "non-admin token rejected from payment proof file metadata",
+      "pass": true,
+      "detail": {
+        "status": 403
+      }
+    },
+    {
+      "name": "non-admin token rejected from complaint file metadata",
+      "pass": true,
+      "detail": {
+        "status": 403
+      }
+    }
+  ],
+  "endpoint_results": [
+    {
+      "name": "GET /health",
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "info": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        },
+        "error": {},
+        "details": {
+          "database": {
+            "status": "up"
+          },
+          "redis": {
+            "status": "up"
+          }
+        }
+      }
+    },
+    {
+      "name": "POST /auth/login admin",
+      "status": 201,
+      "user": "dev.admin@kostation.test"
+    },
+    {
+      "name": "POST /auth/login resident",
+      "status": 201,
+      "user": "dev.resident.alpha@kostation.test"
+    },
+    {
+      "name": "POST /files payment_proof",
+      "status": 201,
+      "id": "dde6391e-a121-4621-bef5-55cca1d00c77",
+      "file_purpose": "payment_proof"
+    },
+    {
+      "name": "POST /my/payment-proofs setup",
+      "status": 201,
+      "id": "c4195a9b-d562-4260-bf4a-6e5913170f2e",
+      "proofStatus": "pending_review"
+    },
+    {
+      "name": "POST /files complaint_attachment",
+      "status": 201,
+      "id": "087371e6-20d7-4314-952b-7d15f4eb05fb",
+      "file_purpose": "complaint_attachment"
+    },
+    {
+      "name": "POST /my/complaints setup",
+      "status": 201,
+      "id": "d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f"
+    },
+    {
+      "name": "GET /payment-proofs/:id/files admin",
+      "status": 200,
+      "body": [
+        {
+          "id": "dde6391e-a121-4621-bef5-55cca1d00c77",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m12c5-payment-proof.png",
+          "sanitized_filename": "m12c5-payment-proof.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "payment_proof",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-02T19:18:44.625Z",
+          "updated_at": "2026-07-02T19:18:44.625Z"
+        }
+      ]
+    },
+    {
+      "name": "GET /complaints/:id/files admin",
+      "status": 200,
+      "body": [
+        {
+          "id": "087371e6-20d7-4314-952b-7d15f4eb05fb",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m12c5-complaint-attachment.png",
+          "sanitized_filename": "m12c5-complaint-attachment.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "complaint_attachment",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-02T19:18:44.692Z",
+          "updated_at": "2026-07-02T19:18:44.692Z"
+        }
+      ]
+    },
+    {
+      "name": "GET /payment-proofs/:id/files unauth",
+      "status": 401,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "7fac5b6c-dea5-44db-a6a7-ef3234866398",
+        "timestamp": "2026-07-02T19:18:44.780Z"
+      }
+    },
+    {
+      "name": "GET /complaints/:id/files unauth",
+      "status": 401,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "d3ca9ded-eca4-4537-b483-c9c0e48c86d8",
+        "timestamp": "2026-07-02T19:18:44.782Z"
+      }
+    },
+    {
+      "name": "GET /files/:id/content unauth",
+      "status": 401
+    },
+    {
+      "name": "GET /payment-proofs/:id/files resident token",
+      "status": 403,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "76f60f57-937d-40f8-ab48-81b0913768da",
+        "timestamp": "2026-07-02T19:18:44.791Z"
+      }
+    },
+    {
+      "name": "GET /complaints/:id/files resident token",
+      "status": 403,
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "ee99f5c5-bbd6-489f-a79c-65649308b50b",
+        "timestamp": "2026-07-02T19:18:44.798Z"
+      }
+    }
+  ],
+  "setup": {
+    "proofId": "c4195a9b-d562-4260-bf4a-6e5913170f2e",
+    "proofNote": "QA M12C5 payment proof 1783019924646",
+    "paymentFileId": "dde6391e-a121-4621-bef5-55cca1d00c77",
+    "complaintId": "d0e03faa-f8e7-4a6f-bdb6-13d18f8cec5f",
+    "complaintTitle": "QA M12C5 complaint attachment 1783019924696",
+    "complaintFileId": "087371e6-20d7-4314-952b-7d15f4eb05fb",
+    "invoiceId": "72000000-0000-4000-8000-000000000001",
+    "propertyId": "20000000-0000-4000-8000-000000000001"
+  },
+  "pass": true
+}

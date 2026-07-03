@@ -206,4 +206,19 @@ Eksekusi eksternal via Codex: `npm.cmd run db:migrate:api`, health check `GET /a
 
 Keterbatasan QA-M12G yang tercatat: uji cross-resident memakai akun seed pada properti yang sama; boundary lintas-properti diverifikasi memakai file yang dibuat global owner pada properti "Validation Cross Property" - admin/property owner ter-scope ditolak (403). Issues found: none.
 
+### Visual E2E demo pass (QA-M12H - Codex GPT-5.5 High, 2026-07-03, verdict PASS)
+
+Final visual E2E demo pass untuk seluruh permukaan M12 dijalankan **eksternal di Codex GPT-5.5 High** dengan verdict **PASS**. Evidensi: file hasil akhir `artifacts/m12h-final-demo-pass/m12h-final-result.json` dan 15 screenshot di `artifacts/m12h-final-demo-pass/`. Hasil dicatat pada M12H (dokumentasi saja; tidak ada QA yang dijalankan oleh agen dokumentasi).
+
+| Scope | Cakupan | Result |
+| --- | --- | --- |
+| A | Penghuni Manual Payment Proof: UI bukti pembayaran manual tampil, upload PNG/JPG valid, preview tampil, submit proof sukses, status `pending_review` tampil, tagihan TIDAK otomatis lunas | PASS |
+| B | Admin Payment Proof Preview: tab Verifikasi di Payments tampil, "Lihat Bukti" membuka dialog review, thumbnail tampil, preview penuh terbuka, kontrol verify/reject tetap tampil | PASS |
+| C | Penghuni Complaint Create tanpa lampiran: form/sheet tampil, submit tanpa lampiran sukses, UI sukses tampil, list refresh, request tanpa `file_ids` atau payload kosong yang kompatibel | PASS |
+| D | Penghuni Complaint Create dengan lampiran: upload PNG/JPG valid sukses, preview tampil, `POST /files` memakai `file_purpose = complaint_attachment`, `POST /my/complaints` menyertakan `file_ids`, UI sukses tampil, list refresh | PASS |
+| E | Admin Complaint Attachment Preview: detail komplain menampilkan "Lampiran Komplain", thumbnail tampil, preview penuh terbuka via `/api/v1/files/:fileId/content` | PASS |
+| F | Negative File UX: tipe file tidak didukung ditolak dengan error UI jelas, gambar oversize ditolak dengan error UI jelas, WhatsApp fallback tampil di tempat yang diimplementasikan | PASS |
+
+Security checks (QA-M12H): tanpa `storage_path`/`storagePath` pada respons; tanpa URL file publik; preview/content hanya via `/api/v1/files/:fileId/content`. Tanpa fatal console error; tanpa 400/500 tak terduga pada happy path. Git status aman untuk source/docs: hanya `artifacts/m12h-final-demo-pass/` yang untracked.
+
 Catatan: item Smart Lock live, CCTV live, payment gateway, receipt/nota, reports export, dan audit viewer TIDAK termasuk cakupan ini dan tetap deferred.

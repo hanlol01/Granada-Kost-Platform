@@ -2,6 +2,14 @@
 
 ## 2026-07-03
 
+### M12H - Final Visual E2E Demo Pass Documentation
+- Evidensi **QA-M12H Final Visual E2E Demo Pass** untuk permukaan M12 dicatat - dijalankan eksternal via Codex GPT-5.5 High, verdict **PASS**: seluruh Scope A-F PASS (A: payment proof manual Penghuni, B: preview proof Admin, C: complaint create tanpa lampiran, D: complaint create dengan lampiran, E: preview lampiran komplain Admin, F: negative file UX).
+- Security checks PASS: tanpa `storage_path`/`storagePath`, tanpa URL file publik, preview/content hanya via `GET /api/v1/files/:fileId/content`. Tanpa fatal console error; tanpa 400/500 tak terduga pada happy path.
+- Evidensi: `artifacts/m12h-final-demo-pass/m12h-final-result.json` + 15 screenshot di `artifacts/m12h-final-demo-pass/`. Git status aman untuk source/docs (hanya direktori artifact yang untracked).
+- `INTERNAL_DEMO_CHECKLIST.md` Section 12: subseksi Visual E2E demo pass (QA-M12H) ditambahkan; catatan Section 6 diperbarui (QA visual tidak lagi PENDING).
+- `Week_3_Kostation.md` diperbarui dengan hasil QA-M12H. `PROJECT_HEALTH_REVIEW_V1.md`: catatan status singkat ditambahkan.
+- Dokumentasi saja. Tidak ada perubahan kode. QA dijalankan eksternal oleh Codex, bukan oleh agen dokumentasi.
+
 ### M12G - Security QA Evidence & Handoff Docs Refresh
 - Evidensi **QA-M12G Cross-Scope File Security Boundary Verification** dicatat - dijalankan eksternal via Codex GPT-5.5 High, verdict **PASS**: auth boundary (401), resident self-scope (200/403), cross-property scoped denial (403), attach resident/purpose salah (400), file terhapus (404/400), tanpa 500 tak terduga, 0 baris orphan pada complaint/complaint_files/payment proof/payment_proof_files, tanpa `storage_path`, tanpa URL file publik (konten hanya via `GET /api/v1/files/:fileId/content`).
 - `INTERNAL_DEMO_CHECKLIST.md` Section 12: item lintas-scope PENDING -> PASS; subseksi Security Boundary (QA-M12G) ditambahkan dengan keterbatasan uji yang tercatat.

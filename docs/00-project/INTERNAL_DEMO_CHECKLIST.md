@@ -89,8 +89,8 @@ Accepted placeholders, not counted as failures:
 - Chat real not tested.
 - Audit Viewer placeholder.
 - Export disabled.
-- Payment proof upload disabled.
-- Complaint create resident disabled.
+- Payment proof upload disabled. (Update 2026-07-03: RESOLVED oleh M12C3 - lihat Section 12, QA masih PENDING.)
+- Complaint create resident disabled. (Update 2026-07-03: RESOLVED oleh M12D - lihat Section 12, QA masih PENDING.)
 - Admin Notifications page may still be placeholder if not in current scope.
 - Admin Settings may still be placeholder if not in current scope.
 - Penghuni Info announcement endpoint placeholder is visible and accepted for current scope.

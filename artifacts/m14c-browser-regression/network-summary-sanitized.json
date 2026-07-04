@@ -1,0 +1,36 @@
+{
+  "allErrors": [
+    {
+      "url": "http://127.0.0.1:55333/favicon.ico",
+      "status": 404,
+      "type": "Other"
+    },
+    {
+      "url": "http://127.0.0.1:3018/api/v1/auth/refresh",
+      "status": 401,
+      "type": "Fetch"
+    },
+    {
+      "url": "http://127.0.0.1:55334/favicon.ico",
+      "status": 404,
+      "type": "Other"
+    },
+    {
+      "url": "http://127.0.0.1:3018/api/v1/auth/refresh",
+      "status": 401,
+      "type": "Fetch"
+    }
+  ],
+  "unexpectedNetwork": [
+    {
+      "url": "http://127.0.0.1:55333/favicon.ico",
+      "status": 404,
+      "type": "Other"
+    },
+    {
+      "url": "http://127.0.0.1:55334/favicon.ico",
+      "status": 404,
+      "type": "Other"
+    }
+  ]
+}

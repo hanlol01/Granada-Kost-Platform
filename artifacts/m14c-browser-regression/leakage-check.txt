@@ -1,0 +1,3 @@
+Leakage findings: 0
+No storage_path/storagePath/public storage URL/Tuya secret/local_key/ticket_key/raw provider payload found in captured API JSON bodies.
+Note: auth/login normally returns an application access_token and was not treated as Tuya/provider leakage.

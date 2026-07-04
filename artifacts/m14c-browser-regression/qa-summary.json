@@ -1,0 +1,109 @@
+{
+  "status": "PASS",
+  "executedAt": "2026-07-04T06:08:12.424Z",
+  "environment": {
+    "apiBase": "http://127.0.0.1:3018/api/v1",
+    "adminBase": "http://127.0.0.1:55333",
+    "penghuniBase": "http://127.0.0.1:55334",
+    "smartLockProvider": "simulated",
+    "smartLockLiveEnabled": "false"
+  },
+  "accounts": {
+    "admin": "dev.admin@kostation.test",
+    "penghuni": "dev.resident.alpha@kostation.test",
+    "password": "***"
+  },
+  "commands": [
+    "node dist/main.js",
+    "npm.cmd --workspace @granada-kost/admin run dev -- --host 127.0.0.1 --port 55333 --strictPort",
+    "npm.cmd --workspace @granada-kost/penghuni run dev -- --host 127.0.0.1 --port 55334 --strictPort",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --role=admin --remote-debugging-port=19222",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --role=penghuni --remote-debugging-port=19223"
+  ],
+  "routesTested": [
+    "http://127.0.0.1:55333/login",
+    "http://127.0.0.1:55334/login",
+    "http://127.0.0.1:55334/billing",
+    "http://127.0.0.1:55333/payments",
+    "http://127.0.0.1:55334/complaints",
+    "http://127.0.0.1:55333/complaints",
+    "http://127.0.0.1:55333/smart-lock"
+  ],
+  "results": {
+    "health": "PASS",
+    "unauthAdminFileEndpoint": "PASS",
+    "paymentProof": "PASS",
+    "adminPaymentPreview": "PASS",
+    "complaintNoAttachment": "PASS",
+    "complaintWithAttachment": "PASS",
+    "adminComplaintPreview": "PASS",
+    "negativeUploadUx": "PASS",
+    "smartLockSafeState": "PASS"
+  },
+  "testData": {
+    "complaintNoAttachmentTitle": "M14C no attachment 1783145262283",
+    "complaintWithAttachmentTitle": "M14C with attachment 1783145265487"
+  },
+  "screenshots": [
+    "artifacts/m14c-browser-regression/screenshots/admin-login.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-dashboard.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-login.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-dashboard.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-billing-manual-proof.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-billing-proof-preview.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-billing-proof-pending-review.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-payments-before-verification-tab.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-payments-verification.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-payment-proof-preview.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-complaints-list.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-complaint-create-no-attachment.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-complaint-create-success.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-complaint-upload-preview.png",
+    "artifacts/m14c-browser-regression/screenshots/penghuni-complaint-create-with-attachment-success.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-complaint-detail-attachments.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-complaint-attachment-preview.png",
+    "artifacts/m14c-browser-regression/screenshots/invalid-file-error.png",
+    "artifacts/m14c-browser-regression/screenshots/oversized-file-error.png",
+    "artifacts/m14c-browser-regression/screenshots/admin-smart-lock-simulated-safe-state.png"
+  ],
+  "console": {
+    "total": 24,
+    "fatalCandidates": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 ()"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 ()"
+      },
+      {
+        "type": "warning",
+        "text": "Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}."
+      },
+      {
+        "type": "warning",
+        "text": "Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}."
+      }
+    ]
+  },
+  "network": {
+    "errorCandidates": [
+      {
+        "url": "http://127.0.0.1:55333/favicon.ico",
+        "status": 404,
+        "type": "Other"
+      },
+      {
+        "url": "http://127.0.0.1:55334/favicon.ico",
+        "status": 404,
+        "type": "Other"
+      }
+    ]
+  },
+  "leakageFindings": [],
+  "issues": [],
+  "limitations": [
+    "Automated login, invalid-login, and browser RBAC credential-entry checks were skipped by request for Hybrid Interactive QA; login was completed manually in Chrome."
+  ]
+}

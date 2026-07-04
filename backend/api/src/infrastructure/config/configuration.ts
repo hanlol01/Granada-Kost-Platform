@@ -51,6 +51,20 @@ export default () => ({
         ? undefined
         : Number(process.env.UPLOAD_PROPERTY_QUOTA_MB),
   },
+  paymentGateway: {
+    enabled: process.env.PAYMENT_GATEWAY_ENABLED === 'true',
+    provider: process.env.PAYMENT_GATEWAY_PROVIDER ?? 'none',
+    returnUrl: process.env.PAYMENT_RETURN_URL,
+    cancelUrl: process.env.PAYMENT_CANCEL_URL,
+    webhookBaseUrl: process.env.PAYMENT_WEBHOOK_BASE_URL,
+    sessionExpiryMinutes: Number(process.env.PAYMENT_SESSION_EXPIRY_MINUTES ?? 1440),
+    activeAttemptPolicy: process.env.PAYMENT_ACTIVE_ATTEMPT_POLICY ?? 'single_active',
+    midtrans: {
+      env: process.env.MIDTRANS_ENV ?? 'sandbox',
+      serverKey: process.env.MIDTRANS_SERVER_KEY,
+      clientKey: process.env.MIDTRANS_CLIENT_KEY,
+    },
+  },
   smartLock: {
     provider: process.env.SMART_LOCK_PROVIDER ?? 'simulated',
     liveEnabled: process.env.SMART_LOCK_LIVE_ENABLED === 'true',

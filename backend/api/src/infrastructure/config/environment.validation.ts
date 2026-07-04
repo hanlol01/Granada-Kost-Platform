@@ -40,6 +40,17 @@ export const environmentValidationSchema = Joi.object({
   UPLOAD_MAX_FILE_SIZE_MB: Joi.number().integer().min(1).max(5).default(5),
   UPLOAD_PROPERTY_QUOTA_MB: Joi.number().integer().min(1).optional(),
 
+  PAYMENT_GATEWAY_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  PAYMENT_GATEWAY_PROVIDER: Joi.string().valid('none', 'midtrans').default('none'),
+  MIDTRANS_ENV: Joi.string().valid('sandbox', 'production').default('sandbox'),
+  MIDTRANS_SERVER_KEY: Joi.string().allow('').optional(),
+  MIDTRANS_CLIENT_KEY: Joi.string().allow('').optional(),
+  PAYMENT_RETURN_URL: Joi.string().uri().allow('').optional(),
+  PAYMENT_CANCEL_URL: Joi.string().uri().allow('').optional(),
+  PAYMENT_WEBHOOK_BASE_URL: Joi.string().uri().allow('').optional(),
+  PAYMENT_SESSION_EXPIRY_MINUTES: Joi.number().integer().min(5).max(10080).default(1440),
+  PAYMENT_ACTIVE_ATTEMPT_POLICY: Joi.string().valid('single_active').default('single_active'),
+
   SMART_LOCK_PROVIDER: Joi.string().valid('simulated', 'tuya').default('simulated'),
   SMART_LOCK_LIVE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   SMART_LOCK_COMMAND_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(15000),

@@ -24,6 +24,7 @@ import { ParkingModule } from './modules/parking/parking.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
 import { FileModule } from './modules/file/file.module';
+import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { FileModule } from './modules/file/file.module';
     NotificationModule,
     SmartLockModule,
     FileModule,
+    PaymentGatewayModule,
     HealthModule,
   ],
 })

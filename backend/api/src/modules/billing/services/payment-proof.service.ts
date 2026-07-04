@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
 import { FileRepository } from '../../file/file.repository';
 import { BILLING_AUDIT_ACTIONS } from '../constants/billing.constants';
@@ -125,6 +125,12 @@ export class PaymentProofService {
       throw new BadRequestException({
         code: 'PAYMENT_PROOF_INVOICE_SCOPE_MISMATCH',
         message: 'Payment proof invoice does not match resident or property context',
+      });
+    }
+    if (invoice.invoiceStatus === 'paid' || invoice.paidAt) {
+      throw new ConflictException({
+        code: 'PAYMENT_INVOICE_ALREADY_PAID',
+        message: 'Tagihan sudah lunas.',
       });
     }
   }

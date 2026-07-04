@@ -30,6 +30,8 @@ M13F-C2 implementation note: `13-smart-lock/SMART_LOCK_LIVE_UNLOCK_TRANSPORT_IMP
 
 M13F-C4 Go/No-Go decision: `13-smart-lock/SMART_LOCK_LIVE_SITE_TRIAL_GO_NO_GO_DECISION.md` records the readiness decision for the first controlled live `remote_unlock` site trial — **CONDITIONAL GO** for scheduling/preparation, **NO-GO** for live execution until all approvals, credential rotation confirmation, device readiness, and site dry-run evidence are signed off. Documentation only; no live command was executed and live commands remain disabled.
 
+M13F-D freeze: `13-smart-lock/SMART_LOCK_READY_FOR_SITE_TRIAL_EXECUTION_PENDING_FREEZE.md` closes M13F as **"Ready for controlled site trial preparation, execution pending"** — backend technical foundation ready, local/placeholder C3-class dry-run evidence recorded (`artifacts/m13f-c4-site-evidence-pack/`, B-23 partially closed), live execution remains NO-GO, and the next allowed milestone is M13F-C5 (real site preflight + one-device live trial) only after all approvals and site-env evidence are complete. Documentation only; no live command was executed and `SMART_LOCK_LIVE_ENABLED` remains `false`.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

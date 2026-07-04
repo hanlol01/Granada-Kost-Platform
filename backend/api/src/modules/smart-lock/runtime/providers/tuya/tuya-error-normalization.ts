@@ -72,12 +72,11 @@ export function normalizeTuyaApiError(code?: number | string, msg?: string): Nor
     errorCode = 'UNKNOWN_PROVIDER_ERROR';
   }
   const resultStatus = errorCode === 'DEVICE_OFFLINE' ? 'device_offline' : 'failed';
-  const suffix = numericCode !== undefined && Number.isFinite(numericCode) ? ` (tuya_code=${numericCode})` : '';
   return {
     errorCode,
     resultStatus,
-    // Safe generic copy only; the raw Tuya `msg` text is intentionally discarded here.
-    errorMessage: `${SAFE_MESSAGES[errorCode] ?? 'Tuya provider request failed.'}${suffix}`,
+    // Safe generic copy only; raw Tuya `code`/`msg` values are intentionally discarded here.
+    errorMessage: SAFE_MESSAGES[errorCode] ?? 'Tuya provider request failed.',
   };
 }
 

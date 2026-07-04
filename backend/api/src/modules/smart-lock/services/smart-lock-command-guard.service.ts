@@ -30,6 +30,7 @@ export type SmartLockCommandResponse = {
   command_type: SmartLockControlledCommandType;
   provider: 'tuya' | 'simulated';
   result_status: 'success' | 'failed' | 'queued' | 'device_offline' | 'timeout';
+  provider_latency_ms?: number;
   error_code?: string;
   error_message?: string;
   idempotency_replayed: boolean;
@@ -140,6 +141,10 @@ export class SmartLockCommandGuardService {
     await this.writeCommandResult(input, response, idempotencyKeyRef, {
       gatewayId: safeString(providerResult.data, 'gatewayId'),
       providerRequestId: providerResult.providerRequestId,
+      providerLatencyMs: safeNumber(providerResult.data, 'providerLatencyMs'),
+      commandTransport: safeString(providerResult.data, 'commandTransport'),
+      legacyFallbackAttempted: safeBoolean(providerResult.data, 'legacyFallbackAttempted'),
+      doorOperateAttempted: safeBoolean(providerResult.data, 'doorOperateAttempted'),
       retryable: safeBoolean(providerResult.data, 'retryable'),
       failoverReason: safeString(providerResult.data, 'failoverReason'),
     });
@@ -255,6 +260,7 @@ export class SmartLockCommandGuardService {
       command_type: input.commandType,
       provider: result.provider,
       result_status: result.resultStatus,
+      provider_latency_ms: safeNumber(result.data, 'providerLatencyMs'),
       error_code: result.errorCode,
       error_message: result.errorMessage ?? (result.errorCode ? this.safeErrorMessage(result.errorCode) : undefined),
       idempotency_replayed: false,
@@ -524,4 +530,12 @@ function safeBoolean(data: unknown, key: string): boolean | undefined {
   }
   const value = (data as Record<string, unknown>)[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function safeNumber(data: unknown, key: string): number | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

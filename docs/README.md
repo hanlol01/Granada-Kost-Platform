@@ -26,6 +26,8 @@ M13F-B implementation note: `13-smart-lock/SMART_LOCK_COMMAND_GUARD_IMPLEMENTATI
 
 M13F-C1 site trial runbook: `13-smart-lock/SMART_LOCK_CONTROLLED_LIVE_COMMAND_SITE_TRIAL_RUNBOOK.md` defines the readiness checklists (approvals, credentials, device mapping, backend dry-run), the dry-run sequence, the future controlled live trial sequence, rollback/emergency procedure, evidence template, Go/No-Go conditions, and the M13F-C2 implementation contract — documentation only. Live commands remain disabled and are not implemented.
 
+M13F-C2 implementation note: `13-smart-lock/SMART_LOCK_LIVE_UNLOCK_TRANSPORT_IMPLEMENTATION.md` documents the backend Tuya live remote-unlock transport behind the existing command guard. Default simulated mode and Tuya dry-run mode remain disabled; no physical site trial was authorized or executed. Remote lock, temporary PIN, frontend UI, and Raw API Tester remain out of scope.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

@@ -368,8 +368,26 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
     return 'no real Tuya API execution';
   });
 
-  // M13C gate checks: provider=tuya with live_enabled=true and NO credentials must stay safe
-  // (no network call is made on either path below).
+  // M13F-C2 gate checks: dry-run Tuya mode must stay disabled, live remote lock
+  // remains unsupported, and live remote unlock without config fails safely before IO.
+  const tuyaDryRunConfig = new ConfigService({
+    smartLock: { provider: 'tuya', liveEnabled: false, commandTimeoutMs: 15_000, tuya: {} },
+  });
+  const tuyaDryRunConfigService = new SmartLockTuyaConfigService(tuyaDryRunConfig);
+  const tuyaDryRunProvider = new TuyaSmartLockProvider(
+    tuyaDryRunConfigService,
+    new SmartLockSecretResolutionService(tuyaDryRunConfig),
+    new TuyaHttpClientService(tuyaDryRunConfigService),
+    offlineTokenCache,
+  );
+
+  await record(results, 'Runtime', 'M13F-C2 dry-run Tuya live command gate returns LIVE_COMMAND_DISABLED', async () => {
+    const result = await tuyaDryRunProvider.executeCommand(providerContext, 'remote_unlock');
+    assert(result.success === false, 'dry-run live command must not succeed');
+    assert(result.errorCode === 'LIVE_COMMAND_DISABLED', 'expected LIVE_COMMAND_DISABLED');
+    return 'live unlock disabled with provider=tuya and live_enabled=false';
+  });
+
   const tuyaModeConfig = new ConfigService({
     smartLock: { provider: 'tuya', liveEnabled: true, commandTimeoutMs: 15_000, tuya: {} },
   });
@@ -381,14 +399,21 @@ async function appendRuntimeChecks(results: CheckResult[]): Promise<void> {
     offlineTokenCache,
   );
 
-  await record(results, 'Runtime', 'M13C live command gate returns LIVE_COMMAND_DISABLED', async () => {
-    const result = await tuyaModeProvider.executeCommand(providerContext, 'unlock');
-    assert(result.success === false, 'live command must not succeed in M13C');
-    assert(result.errorCode === 'LIVE_COMMAND_DISABLED', 'expected LIVE_COMMAND_DISABLED');
-    return 'live unlock disabled even with provider=tuya and live_enabled=true';
+  await record(results, 'Runtime', 'M13F-C2 live remote lock remains unsupported', async () => {
+    const result = await tuyaModeProvider.executeCommand(providerContext, 'lock');
+    assert(result.success === false, 'remote lock must not succeed in M13F-C2');
+    assert(result.errorCode === 'UNSUPPORTED_CAPABILITY', 'expected UNSUPPORTED_CAPABILITY');
+    return 'remote lock unsupported even with provider=tuya and live_enabled=true';
   });
 
-  await record(results, 'Runtime', 'M13C tuya mode with missing config reports CONFIG_MISSING safely', async () => {
+  await record(results, 'Runtime', 'M13F-C2 live remote unlock with missing config reports CONFIG_MISSING safely', async () => {
+    const result = await tuyaModeProvider.executeCommand(providerContext, 'remote_unlock');
+    assert(result.success === false, 'missing Tuya config should not execute live unlock');
+    assert(result.errorCode === 'CONFIG_MISSING', 'expected CONFIG_MISSING');
+    return 'CONFIG_MISSING fail-safe before live unlock transport';
+  });
+
+  await record(results, 'Runtime', 'M13F-C2 tuya mode with missing config reports CONFIG_MISSING safely', async () => {
     const health = await tuyaModeProvider.healthCheck(providerContext);
     assert(health.healthStatus === 'unhealthy', 'missing Tuya config should report unhealthy');
     assert(health.errorCode === 'CONFIG_MISSING', 'expected CONFIG_MISSING');

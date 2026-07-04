@@ -36,10 +36,10 @@ type TuyaApiEnvelope = {
  * Backend-only signed HTTP client for the Tuya Cloud Open API (M13C skeleton).
  *
  * Deliberate constraints (M13B freeze, Section 6):
- * - Read-only: only GET is exposed. No mutating method, no raw signed pass-through
- *   endpoint, no Raw API Tester.
+ * - Only provider-chosen GET/POST calls are exposed. No raw signed pass-through
+ *   endpoint, no Raw API Tester, and no client-supplied path/payload.
  * - Exact-body signing: the body string is serialized once and the identical bytes are
- *   signed and sent (M13C only issues body-less GETs, signed over the empty string).
+ *   signed and sent.
  * - Raw Tuya payloads/messages never leave the provider layer; failures are normalized.
  * - Secrets and tokens are never logged; device ids are masked in debug logs.
  */
@@ -86,9 +86,30 @@ export class TuyaHttpClientService {
     path: string,
     accessToken?: string,
   ): Promise<TuyaClientResponse<T>> {
-    const method = 'GET';
+    return this.request<T>(baseUrl, credentials, 'GET', path, '', accessToken);
+  }
+
+  /** Signed POST against a relative Tuya path and body chosen by the provider layer. */
+  async post<T>(
+    baseUrl: string,
+    credentials: TuyaClientCredentials,
+    path: string,
+    body: Record<string, unknown>,
+    accessToken: string,
+  ): Promise<TuyaClientResponse<T>> {
     // Exact-body signing rule: serialize once, sign those bytes, send those bytes.
-    const bodyContent = '';
+    const bodyContent = JSON.stringify(body);
+    return this.request<T>(baseUrl, credentials, 'POST', path, bodyContent, accessToken);
+  }
+
+  private async request<T>(
+    baseUrl: string,
+    credentials: TuyaClientCredentials,
+    method: 'GET' | 'POST',
+    path: string,
+    bodyContent: string,
+    accessToken?: string,
+  ): Promise<TuyaClientResponse<T>> {
     const t = Date.now().toString();
     const nonce = createNonce();
     const stringToSign = buildStringToSign(method, bodyContent, path);
@@ -111,13 +132,21 @@ export class TuyaHttpClientService {
     if (accessToken) {
       headers.access_token = accessToken;
     }
+    if (method === 'POST') {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const controller = new AbortController();
     const timeoutMs = this.tuyaConfig.commandTimeoutMs;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const started = Date.now();
     try {
-      const response = await fetch(`${baseUrl}${path}`, { method, headers, signal: controller.signal });
+      const response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers,
+        body: method === 'POST' ? bodyContent : undefined,
+        signal: controller.signal,
+      });
       const latencyMs = Date.now() - started;
       let envelope: TuyaApiEnvelope;
       try {

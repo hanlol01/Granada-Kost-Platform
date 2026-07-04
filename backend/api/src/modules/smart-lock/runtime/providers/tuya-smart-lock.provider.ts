@@ -23,18 +23,27 @@ import {
   TuyaClientResponse,
   TuyaHttpClientService,
 } from './tuya/tuya-http-client.service';
+import type { SmartLockProviderErrorCode } from './tuya/tuya-error-normalization';
 
 const TOKEN_REFRESH_AHEAD_MS = 60_000;
 const SENSITIVE_KEY_PATTERN = /(secret|token|ticket|password|passwd|pwd|pin|local_key|access_key|refresh|credential)/i;
+const TUYA_UNLOCK_PATHS = {
+  passwordTicket: (deviceId: string) => `/v1.0/smart-lock/devices/${deviceId}/password-ticket`,
+  doorOperate: (deviceId: string) => `/v1.0/smart-lock/devices/${deviceId}/password-free/door-operate`,
+  legacyOpenDoor: (deviceId: string) => `/v1.0/devices/${deviceId}/door-lock/password-free/open-door`,
+} as const;
+
+type TuyaCommandMetadata = Record<string, string | number | boolean | undefined>;
 
 /**
  * Tuya Smart Lock provider.
  *
-   * - SMART_LOCK_PROVIDER=simulated (default): returns normalized skipped read-only sync
-   *   and disabled command results without touching the legacy skeleton gateway.
-   * - SMART_LOCK_PROVIDER=tuya: supports read-only healthCheck, fixed allow-listed
-   *   diagnostics, and M13E read-only sync. Live commands return LIVE_COMMAND_DISABLED
- *   even when SMART_LOCK_LIVE_ENABLED=true.
+ * - SMART_LOCK_PROVIDER=simulated (default): returns normalized skipped read-only sync
+ *   and disabled command results without touching the legacy skeleton gateway.
+ * - SMART_LOCK_PROVIDER=tuya: supports read-only healthCheck, fixed allow-listed
+ *   diagnostics, M13E read-only sync, and M13F-C2 live remote unlock transport only
+ *   when SMART_LOCK_LIVE_ENABLED=true and the command guard has already passed.
+ * - Remote lock, temporary PIN, and raw API tester flows remain unavailable.
  *
  * Raw Tuya payloads never leave this provider; results are normalized (M13B freeze, Sections 3/12).
  */
@@ -260,16 +269,117 @@ export class TuyaSmartLockProvider implements SmartLockProvider {
     };
   }
 
-  executeCommand(context: SmartLockProviderContext, action: SmartLockAccessAction): Promise<SmartLockGatewayResult> {
-    void action;
-    // M13E hard gate: live commands are not implemented regardless of provider mode.
-    // A live-intent request is never silently rerouted to the simulated gateway.
-    return Promise.resolve({
-      success: false,
-      resultStatus: 'failed',
-      provider: this.tuyaConfig.isTuyaSelected() ? 'tuya' : 'simulated',
-      errorCode: 'LIVE_COMMAND_DISABLED',
-      errorMessage: 'Live Smart Lock commands are disabled in M13E. Controlled live commands arrive in M13F.',
+  async executeCommand(context: SmartLockProviderContext, action: SmartLockAccessAction): Promise<SmartLockGatewayResult> {
+    if (!this.tuyaConfig.isTuyaSelected()) {
+      return this.liveCommandDisabled('simulated');
+    }
+    if (!this.tuyaConfig.liveEnabled) {
+      return this.liveCommandDisabled('tuya');
+    }
+    if (action !== 'remote_unlock' && action !== 'emergency_unlock') {
+      return this.commandFailure(
+        'UNSUPPORTED_CAPABILITY',
+        'Only live remote unlock is enabled for Tuya in M13F-C2.',
+        'failed',
+        undefined,
+        { commandSupported: false },
+      );
+    }
+
+    const started = Date.now();
+    const providerDeviceId = context.providerDeviceId?.trim();
+    if (!providerDeviceId) {
+      return this.commandFailure(
+        'DEVICE_NOT_MAPPED',
+        'Smart lock device has no mapped provider device id.',
+        'failed',
+        started,
+        { ticketRequested: false, doorOperateAttempted: false, legacyFallbackAttempted: false },
+      );
+    }
+
+    const credentials = this.secrets.resolveTuyaCredentials(context.secretRef);
+    const baseUrl = this.tuyaConfig.resolveBaseUrl();
+    if (!credentials || !baseUrl) {
+      return this.commandFailure('CONFIG_MISSING', 'Tuya provider configuration is incomplete.', 'failed', started, {
+        ticketRequested: false,
+        doorOperateAttempted: false,
+        legacyFallbackAttempted: false,
+      });
+    }
+
+    const encodedDeviceId = encodeURIComponent(providerDeviceId);
+    const ticket = await this.signedPostWithTokenRetry<Record<string, unknown>>(
+      context.gateway.id,
+      baseUrl,
+      credentials,
+      TUYA_UNLOCK_PATHS.passwordTicket(encodedDeviceId),
+      {},
+    );
+    if (!ticket.ok) {
+      return this.commandFailureFromTuya(ticket, started, {
+        commandTransport: 'password_ticket',
+        ticketRequested: true,
+        doorOperateAttempted: false,
+        legacyFallbackAttempted: false,
+      });
+    }
+
+    const ticketId = extractTicketId(ticket.result);
+    if (!ticketId) {
+      return this.commandFailure('UNKNOWN_PROVIDER_ERROR', 'Tuya unlock ticket response was incomplete.', 'failed', started, {
+        commandTransport: 'password_ticket',
+        ticketRequested: true,
+        doorOperateAttempted: false,
+        legacyFallbackAttempted: false,
+      });
+    }
+
+    const operate = await this.signedPostWithTokenRetry<unknown>(
+      context.gateway.id,
+      baseUrl,
+      credentials,
+      TUYA_UNLOCK_PATHS.doorOperate(encodedDeviceId),
+      { ticket_id: ticketId, open: true },
+    );
+    if (operate.ok) {
+      return this.commandSuccess(started, {
+        commandTransport: 'password_free_door_operate',
+        ticketRequested: true,
+        doorOperateAttempted: true,
+        legacyFallbackAttempted: false,
+      });
+    }
+
+    if (shouldAttemptLegacyUnlockFallback(operate)) {
+      const legacy = await this.signedPostWithTokenRetry<unknown>(
+        context.gateway.id,
+        baseUrl,
+        credentials,
+        TUYA_UNLOCK_PATHS.legacyOpenDoor(encodedDeviceId),
+        {},
+      );
+      if (legacy.ok) {
+        return this.commandSuccess(started, {
+          commandTransport: 'legacy_password_free_open_door',
+          ticketRequested: true,
+          doorOperateAttempted: true,
+          legacyFallbackAttempted: true,
+        });
+      }
+      return this.commandFailureFromTuya(legacy, started, {
+        commandTransport: 'legacy_password_free_open_door',
+        ticketRequested: true,
+        doorOperateAttempted: true,
+        legacyFallbackAttempted: true,
+      });
+    }
+
+    return this.commandFailureFromTuya(operate, started, {
+      commandTransport: 'password_free_door_operate',
+      ticketRequested: true,
+      doorOperateAttempted: true,
+      legacyFallbackAttempted: false,
     });
   }
 
@@ -516,6 +626,90 @@ export class TuyaSmartLockProvider implements SmartLockProvider {
     return response;
   }
 
+  private async signedPostWithTokenRetry<T>(
+    gatewayId: string,
+    baseUrl: string,
+    credentials: SmartLockTuyaResolvedCredentials,
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<TuyaClientResponse<T>> {
+    const clientCredentials = this.asClientCredentials(credentials);
+    const token = await this.acquireToken(gatewayId, baseUrl, credentials);
+    if (!token.ok) {
+      return token;
+    }
+    let response = await this.httpClient.post<T>(baseUrl, clientCredentials, path, body, token.result.accessToken);
+    if (!response.ok && response.errorCode === 'TOKEN_ERROR') {
+      // Retry once only for token errors. Other command outcomes are not retried blindly.
+      try {
+        await this.tokenCache.clearToken(gatewayId);
+      } catch {
+        // Non-fatal.
+      }
+      const fresh = await this.httpClient.grantToken(baseUrl, clientCredentials);
+      if (!fresh.ok) {
+        return fresh;
+      }
+      response = await this.httpClient.post<T>(baseUrl, clientCredentials, path, body, fresh.result.accessToken);
+    }
+    return response;
+  }
+
+  private liveCommandDisabled(provider: 'tuya' | 'simulated'): SmartLockGatewayResult {
+    return {
+      success: false,
+      resultStatus: 'failed',
+      provider,
+      errorCode: 'LIVE_COMMAND_DISABLED',
+      errorMessage: 'Live Smart Lock command is disabled.',
+      data: {
+        ticketRequested: false,
+        doorOperateAttempted: false,
+        legacyFallbackAttempted: false,
+      },
+    };
+  }
+
+  private commandSuccess(started: number, data: TuyaCommandMetadata): SmartLockGatewayResult {
+    return {
+      success: true,
+      resultStatus: 'success',
+      provider: 'tuya',
+      data: {
+        ...data,
+        providerLatencyMs: Date.now() - started,
+      },
+    };
+  }
+
+  private commandFailure(
+    errorCode: SmartLockProviderErrorCode,
+    errorMessage: string,
+    resultStatus: SmartLockGatewayResult['resultStatus'] = 'failed',
+    started?: number,
+    data: TuyaCommandMetadata = {},
+  ): SmartLockGatewayResult {
+    return {
+      success: false,
+      resultStatus,
+      provider: 'tuya',
+      errorCode,
+      errorMessage,
+      data: {
+        ...data,
+        providerLatencyMs: started === undefined ? undefined : Date.now() - started,
+      },
+    };
+  }
+
+  private commandFailureFromTuya(
+    failure: TuyaClientFailure,
+    started: number,
+    data: TuyaCommandMetadata,
+  ): SmartLockGatewayResult {
+    return this.commandFailure(failure.errorCode, failure.errorMessage, failure.resultStatus, started, data);
+  }
+
   private asClientCredentials(credentials: SmartLockTuyaResolvedCredentials): TuyaClientCredentials {
     return { clientId: credentials.clientId, clientSecret: credentials.clientSecret };
   }
@@ -674,6 +868,22 @@ function simulatedReadOnlySyncResult(context: SmartLockProviderContext): SmartLo
       errorCodes: {},
     },
   };
+}
+
+function extractTicketId(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    return trimmed ? trimmed : null;
+  }
+  const object = asRecord(payload);
+  if (!object) {
+    return null;
+  }
+  return safeString(object.ticket_id) ?? safeString(object.ticketId) ?? safeString(object.ticket) ?? null;
+}
+
+function shouldAttemptLegacyUnlockFallback(failure: TuyaClientFailure): boolean {
+  return failure.errorCode === 'INSTRUCTION_NOT_SUPPORTED';
 }
 
 function normalizeConnectionStatus(

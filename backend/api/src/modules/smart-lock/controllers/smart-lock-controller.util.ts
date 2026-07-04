@@ -116,7 +116,7 @@ export function toSmartLockSyncResponse(result: SmartLockDeviceSyncResult) {
     error_message: result.providerResult.errorMessage,
     persisted: result.persisted,
     persisted_fields: result.persistedFields,
-    device: toSmartLockDeviceResponse(result.device),
+    device: toSmartLockDeviceResponse(result.device, false),
     gateway_health: result.gatewayHealth
       ? {
           gateway_id: result.gatewayHealth.gatewayId,

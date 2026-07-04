@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-07-04T04:57:55.980Z",
+  "commit_sha": "5f1b96b",
+  "branch": "master",
+  "commands_run": [
+    "git status --short",
+    "git branch --show-current",
+    "git rev-parse --short HEAD",
+    "git log --oneline -8",
+    "git diff --cached --name-only",
+    "git ls-files '.env*' '**/.env*'",
+    "npm.cmd run lint:api",
+    "npm.cmd run build:api",
+    "npm.cmd run smartlock:validate-runtime",
+    "git diff --check",
+    "npm.cmd run db:migrate:api",
+    "node artifacts/m14b-api-regression-smoke/m14b-runner.mjs"
+  ],
+  "environment": {
+    "api_base_url": "http://127.0.0.1:3016/api/v1",
+    "smart_lock_provider": "simulated",
+    "smart_lock_live_enabled": false,
+    "browser_qa": false,
+    "live_unlock_executed": false
+  },
+  "test_accounts": {
+    "admin": "dev.admin@kostation.test",
+    "resident_alpha": "dev.resident.alpha@kostation.test",
+    "resident_bravo": "dev.resident.bravo@kostation.test",
+    "property_owner": "dev.property.owner@kostation.test",
+    "passwords": "[masked]"
+  },
+  "health_result": "PASS",
+  "auth_result": "PASS",
+  "rbac_result": "PASS",
+  "property_scope_result": "PASS",
+  "file_api_result": "PASS",
+  "payment_proof_result": "PASS",
+  "complaint_result": "PASS",
+  "smart_lock_read_only_result": "PASS",
+  "smart_lock_command_guard_result": "PASS",
+  "audit_result": "PASS",
+  "leakage_result": "PASS",
+  "verdict": "PASS",
+  "limitations": [
+    "Cross-property denial was not fully testable because only one local seed property was exposed to admin."
+  ],
+  "issues": []
+}

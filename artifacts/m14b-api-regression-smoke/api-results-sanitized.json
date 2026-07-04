@@ -1,0 +1,1757 @@
+{
+  "endpoint_results": [
+    {
+      "label": "login admin",
+      "method": "POST",
+      "route": "/auth/login",
+      "status": 201,
+      "body": {
+        "user": {
+          "id": "81000000-0000-4000-8000-000000000001",
+          "email": "dev.admin@kostation.test",
+          "phone": null,
+          "displayName": "Dev Admin Complaint",
+          "roles": [
+            "admin"
+          ],
+          "permissions": [
+            "billing.read",
+            "cctv.view",
+            "checkout.manage",
+            "complaint.manage",
+            "lease.manage",
+            "maintenance.manage",
+            "notification.manage",
+            "parking.manage",
+            "payment.verify",
+            "property.read",
+            "report.view",
+            "resident.manage",
+            "resident.read",
+            "room.manage",
+            "room.read",
+            "smart_lock.gateway.read",
+            "smart_lock.manage",
+            "smart_lock.read",
+            "smart_lock.view",
+            "vehicle.manage"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "label": "login resident alpha",
+      "method": "POST",
+      "route": "/auth/login",
+      "status": 201,
+      "body": {
+        "user": {
+          "id": "51000000-0000-4000-8000-000000000001",
+          "email": "dev.resident.alpha@kostation.test",
+          "phone": null,
+          "displayName": "Dev Resident Alpha",
+          "roles": [
+            "resident"
+          ],
+          "permissions": [
+            "billing.self.read",
+            "property.read",
+            "room.read"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "label": "login resident bravo",
+      "method": "POST",
+      "route": "/auth/login",
+      "status": 201,
+      "body": {
+        "user": {
+          "id": "51000000-0000-4000-8000-000000000002",
+          "email": "dev.resident.bravo@kostation.test",
+          "phone": null,
+          "displayName": "Dev Resident Bravo",
+          "roles": [
+            "resident"
+          ],
+          "permissions": [
+            "billing.self.read",
+            "property.read",
+            "room.read"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "label": "login property owner",
+      "method": "POST",
+      "route": "/auth/login",
+      "status": 201,
+      "body": {
+        "user": {
+          "id": "81000000-0000-4000-8000-000000000002",
+          "email": "dev.property.owner@kostation.test",
+          "phone": null,
+          "displayName": "Dev Property Owner",
+          "roles": [
+            "property_owner"
+          ],
+          "permissions": [
+            "billing.read",
+            "property.read",
+            "property_owner.report.view",
+            "resident.read",
+            "room.read"
+          ],
+          "propertyIds": [
+            "20000000-0000-4000-8000-000000000001"
+          ],
+          "property_ids": [
+            "20000000-0000-4000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "label": "invalid login rejected",
+      "method": "POST",
+      "route": "/auth/login",
+      "status": 401,
+      "code": "INVALID_CREDENTIALS",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "INVALID_CREDENTIALS",
+          "message": "Invalid identifier or password"
+        },
+        "correlation_id": "ee230f6f-517a-4be6-8b8e-974f4d102846",
+        "timestamp": "2026-07-04T04:58:00.032Z"
+      }
+    },
+    {
+      "label": "unauth protected route 401",
+      "method": "GET",
+      "route": "/properties",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "3b434ae9-e0ee-41fc-bf38-1b783901ac1c",
+        "timestamp": "2026-07-04T04:58:00.037Z"
+      }
+    },
+    {
+      "label": "admin properties list",
+      "method": "GET",
+      "route": "/properties",
+      "status": 200,
+      "body": {
+        "count": 1,
+        "sample": {
+          "id": "20000000-0000-4000-8000-000000000001",
+          "name": "Granada Student House Jatinangor",
+          "address": "Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang",
+          "phone": null,
+          "email": null,
+          "timezone": "Asia/Jakarta",
+          "status": "active",
+          "createdAt": "2026-06-17T04:12:44.071Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      }
+    },
+    {
+      "label": "resident denied admin proof list",
+      "method": "GET",
+      "route": "/payment-proofs",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "26ce16b0-2943-4e1b-95ea-14d3379315e8",
+        "timestamp": "2026-07-04T04:58:00.064Z"
+      }
+    },
+    {
+      "label": "property owner scoped properties",
+      "method": "GET",
+      "route": "/property-owner/properties",
+      "status": 200,
+      "body": {
+        "count": 1,
+        "sample": {
+          "id": "20000000-0000-4000-8000-000000000001",
+          "name": "Granada Student House Jatinangor",
+          "address": "Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang",
+          "phone": null,
+          "email": null,
+          "timezone": "Asia/Jakarta",
+          "status": "active",
+          "createdAt": "2026-06-17T04:12:44.071Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      }
+    },
+    {
+      "label": "resident alpha invoices",
+      "method": "GET",
+      "route": "/my/invoices?limit=20",
+      "status": 200,
+      "body": {
+        "count": 2,
+        "sample": {
+          "id": "74000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "roomId": "14cb38fc-a67e-4319-af2d-c891a9a0f6d8",
+          "occupancyId": "60000000-0000-4000-8000-000000000001",
+          "billingPeriodId": "73000000-0000-4000-8000-000000000001",
+          "invoiceCode": "WF-6E-INV-WF-6E-2026-07-RK-02-01",
+          "invoiceStatus": "paid",
+          "subtotalAmount": 1800000,
+          "lateFeeAmount": 0,
+          "totalAmount": 1800000,
+          "dueDate": "2026-07-24",
+          "issuedAt": "2026-06-17T04:12:52.044Z",
+          "paidAt": "2026-06-17T04:12:52.044Z",
+          "voidedAt": null,
+          "voidReason": null,
+          "snapshotPeriodKey": "WF-6E-2026-07",
+          "snapshotPeriodStartDate": "2026-06-30",
+          "snapshotPeriodEndDate": "2026-07-30",
+          "snapshotRoomNumber": "RK-02-01",
+          "snapshotResidentName": "Dev Resident Alpha",
+          "snapshotMonthlyPrice": 1800000,
+          "createdAt": "2026-06-17T04:12:52.044Z",
+          "updatedAt": "2026-06-17T04:12:52.044Z"
+        }
+      }
+    },
+    {
+      "label": "alpha upload payment_proof png",
+      "method": "POST",
+      "route": "/files",
+      "status": 201,
+      "body": {
+        "id": "f3c6aa50-dc5f-4344-86fc-1e4a1c087f31",
+        "file_purpose": "payment_proof",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "file metadata safe",
+      "method": "GET",
+      "route": "/files/:uuid",
+      "status": 200,
+      "body": {
+        "id": "f3c6aa50-dc5f-4344-86fc-1e4a1c087f31",
+        "file_purpose": "payment_proof",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "file content authorized binary",
+      "method": "GET",
+      "route": "/files/:uuid/content",
+      "status": 200,
+      "body": {
+        "binary_bytes": 68,
+        "content_type": "image/png",
+        "content_disposition": "inline; filename=\"m14b-payment-proof.png\""
+      }
+    },
+    {
+      "label": "unauth file metadata rejected",
+      "method": "GET",
+      "route": "/files/:uuid",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "69fc54e0-1289-40d9-a116-97ebf39abb0d",
+        "timestamp": "2026-07-04T04:58:00.274Z"
+      }
+    },
+    {
+      "label": "unauth file content rejected",
+      "method": "GET",
+      "route": "/files/:uuid/content",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "e128907e-fce7-4e05-b4cc-bf8651601533",
+        "timestamp": "2026-07-04T04:58:00.277Z"
+      }
+    },
+    {
+      "label": "unsupported upload rejected",
+      "method": "POST",
+      "route": "/files",
+      "status": 400,
+      "code": "FILE_TYPE_UNSUPPORTED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FILE_TYPE_UNSUPPORTED",
+          "message": "File type could not be detected"
+        },
+        "correlation_id": "e61c7875-7b10-46b6-85f3-cd427df3e7db",
+        "timestamp": "2026-07-04T04:58:00.295Z"
+      }
+    },
+    {
+      "label": "oversized upload rejected",
+      "method": "POST",
+      "route": "/files",
+      "status": 400,
+      "code": "FILE_TOO_LARGE_FOR_PURPOSE",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FILE_TOO_LARGE_FOR_PURPOSE",
+          "message": "File exceeds the purpose-specific size limit",
+          "details": {
+            "max_bytes": 2097152,
+            "actual_bytes": 2097228,
+            "file_purpose": "complaint_attachment"
+          }
+        },
+        "correlation_id": "ca2133b2-e963-47e6-aff5-2db56605ec39",
+        "timestamp": "2026-07-04T04:58:00.326Z"
+      }
+    },
+    {
+      "label": "bravo upload payment_proof png",
+      "method": "POST",
+      "route": "/files",
+      "status": 201,
+      "body": {
+        "id": "705790c4-4699-47d0-884d-0153ea6534ee",
+        "file_purpose": "payment_proof",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "alpha denied bravo file content",
+      "method": "GET",
+      "route": "/files/:uuid/content",
+      "status": 403,
+      "code": "FILE_ACCESS_DENIED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FILE_ACCESS_DENIED",
+          "message": "User is not allowed to access this file"
+        },
+        "correlation_id": "5db85744-e103-4c61-822e-6a4723e6b6ae",
+        "timestamp": "2026-07-04T04:58:00.355Z"
+      }
+    },
+    {
+      "label": "submit manual payment proof",
+      "method": "POST",
+      "route": "/my/payment-proofs",
+      "status": 201,
+      "body": {
+        "id": "a7a8c819-29fc-4d89-ad7c-a2ccffb3f7a8",
+        "proofStatus": "pending_review"
+      }
+    },
+    {
+      "label": "invoice after proof submit",
+      "method": "GET",
+      "route": "/my/invoices/:uuid",
+      "status": 200,
+      "body": {
+        "id": "72000000-0000-4000-8000-000000000001",
+        "invoiceStatus": "issued"
+      }
+    },
+    {
+      "label": "admin payment proof review queue",
+      "method": "GET",
+      "route": "/payment-proofs?status=pending_review&limit=20",
+      "status": 200,
+      "body": {
+        "count": 6,
+        "sample": {
+          "id": "a7a8c819-29fc-4d89-ad7c-a2ccffb3f7a8",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "residentId": "50000000-0000-4000-8000-000000000001",
+          "invoiceId": "72000000-0000-4000-8000-000000000001",
+          "paymentAccountId": null,
+          "proofStatus": "pending_review",
+          "claimedAmount": 100000,
+          "paymentMethod": "bank_transfer",
+          "notes": "M14B smoke 2026-07-04T04:57:55.980Z",
+          "uploadedByUserId": "51000000-0000-4000-8000-000000000001",
+          "uploadedAt": "2026-07-04T04:58:00.367Z",
+          "reviewedByUserId": null,
+          "reviewedAt": null,
+          "rejectReason": null,
+          "paymentId": null,
+          "createdAt": "2026-07-04T04:58:00.367Z",
+          "updatedAt": "2026-07-04T04:58:00.367Z"
+        }
+      }
+    },
+    {
+      "label": "admin payment proof files safe metadata",
+      "method": "GET",
+      "route": "/payment-proofs/:uuid/files",
+      "status": 200,
+      "body": {
+        "count": 1,
+        "sample": {
+          "id": "f3c6aa50-dc5f-4344-86fc-1e4a1c087f31",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m14b-payment-proof.png",
+          "sanitized_filename": "m14b-payment-proof.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "payment_proof",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-04T04:58:00.234Z",
+          "updated_at": "2026-07-04T04:58:00.234Z"
+        }
+      }
+    },
+    {
+      "label": "resident denied admin proof files endpoint",
+      "method": "GET",
+      "route": "/payment-proofs/:uuid/files",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "a18f303b-3587-4a13-ad53-78cae386dedf",
+        "timestamp": "2026-07-04T04:58:00.414Z"
+      }
+    },
+    {
+      "label": "alpha cannot attach bravo payment proof file",
+      "method": "POST",
+      "route": "/my/payment-proofs",
+      "status": 400,
+      "code": "PAYMENT_PROOF_FILE_OWNER_MISMATCH",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "PAYMENT_PROOF_FILE_OWNER_MISMATCH",
+          "message": "Resident can only attach files they uploaded"
+        },
+        "correlation_id": "d24dd04e-cf73-488c-802d-9a51f5f7ad4d",
+        "timestamp": "2026-07-04T04:58:00.426Z"
+      }
+    },
+    {
+      "label": "resident complaint categories",
+      "method": "GET",
+      "route": "/my/complaints/categories",
+      "status": 200,
+      "body": {
+        "count": 10,
+        "sample": {
+          "id": "80000000-0000-4000-8000-000000000001",
+          "propertyId": "20000000-0000-4000-8000-000000000001",
+          "name": "AC",
+          "normalizedCode": "ac",
+          "defaultPriority": "high",
+          "description": "Masalah pendingin ruangan atau kebocoran AC.",
+          "icon": null,
+          "isActive": true,
+          "sortOrder": 1,
+          "createdByUserId": "10000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-06-17T07:29:38.558Z",
+          "updatedAt": "2026-06-30T15:09:28.554Z"
+        }
+      }
+    },
+    {
+      "label": "unauth complaint categories rejected",
+      "method": "GET",
+      "route": "/my/complaints/categories",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "d7d1c8dc-f646-4362-81ca-6ff27a6f0163",
+        "timestamp": "2026-07-04T04:58:00.448Z"
+      }
+    },
+    {
+      "label": "create complaint without attachment",
+      "method": "POST",
+      "route": "/my/complaints",
+      "status": 201,
+      "body": {
+        "id": "19745dd7-1dff-4a7a-960d-fa40af8c7fd3",
+        "complaintStatus": "submitted"
+      }
+    },
+    {
+      "label": "alpha upload complaint_attachment png",
+      "method": "POST",
+      "route": "/files",
+      "status": 201,
+      "body": {
+        "id": "8932f3a3-0397-4e81-9a8a-94cdfc3b1421",
+        "file_purpose": "complaint_attachment",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "create complaint with attachment",
+      "method": "POST",
+      "route": "/my/complaints",
+      "status": 201,
+      "body": {
+        "id": "b85ece19-7a74-4008-a66c-d548da3fb5c9",
+        "complaintStatus": "submitted"
+      }
+    },
+    {
+      "label": "admin complaint files safe metadata",
+      "method": "GET",
+      "route": "/complaints/:uuid/files",
+      "status": 200,
+      "body": {
+        "count": 1,
+        "sample": {
+          "id": "8932f3a3-0397-4e81-9a8a-94cdfc3b1421",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m14b-complaint-attachment.png",
+          "sanitized_filename": "m14b-complaint-attachment.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "complaint_attachment",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": false,
+          "deleted_at": null,
+          "created_at": "2026-07-04T04:58:00.487Z",
+          "updated_at": "2026-07-04T04:58:00.487Z"
+        }
+      }
+    },
+    {
+      "label": "resident denied admin complaint files endpoint",
+      "method": "GET",
+      "route": "/complaints/:uuid/files",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "11636321-edf7-431b-9023-d02c1dbec88c",
+        "timestamp": "2026-07-04T04:58:00.531Z"
+      }
+    },
+    {
+      "label": "wrong purpose payment file rejected for complaint",
+      "method": "POST",
+      "route": "/my/complaints",
+      "status": 400,
+      "code": "COMPLAINT_ATTACHMENT_FILE_PURPOSE_INVALID",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_PURPOSE_INVALID",
+          "message": "Attached file must use complaint_attachment purpose"
+        },
+        "correlation_id": "e52e005f-60f6-4af7-bce5-02db0c187bc5",
+        "timestamp": "2026-07-04T04:58:00.545Z"
+      }
+    },
+    {
+      "label": "wrong purpose complaint file rejected for payment proof",
+      "method": "POST",
+      "route": "/my/payment-proofs",
+      "status": 400,
+      "code": "PAYMENT_PROOF_FILE_PURPOSE_INVALID",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "PAYMENT_PROOF_FILE_PURPOSE_INVALID",
+          "message": "Attached file must use payment_proof purpose"
+        },
+        "correlation_id": "98a9b75a-2b9a-4daa-8670-2bde31288c74",
+        "timestamp": "2026-07-04T04:58:00.556Z"
+      }
+    },
+    {
+      "label": "alpha upload then delete file",
+      "method": "POST",
+      "route": "/files",
+      "status": 201,
+      "body": {
+        "id": "0de38b24-15f0-49cd-b4e0-3c4924f81427",
+        "file_purpose": "payment_proof",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "soft delete file",
+      "method": "DELETE",
+      "route": "/files/:uuid",
+      "status": 200,
+      "body": {
+        "success": true,
+        "file": {
+          "id": "0de38b24-15f0-49cd-b4e0-3c4924f81427",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "uploader_user_id": "51000000-0000-4000-8000-000000000001",
+          "original_filename": "m14b-deleted-payment-proof.png",
+          "sanitized_filename": "m14b-deleted-payment-proof.png",
+          "mime_type": "image/png",
+          "file_extension": "png",
+          "file_size_bytes": 68,
+          "file_purpose": "payment_proof",
+          "storage_driver": "local",
+          "checksum_sha256": "4b5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844",
+          "is_deleted": true,
+          "deleted_at": "2026-07-04T04:58:00.580Z",
+          "created_at": "2026-07-04T04:58:00.569Z",
+          "updated_at": "2026-07-04T04:58:00.580Z"
+        }
+      }
+    },
+    {
+      "label": "deleted file content rejected",
+      "method": "GET",
+      "route": "/files/:uuid/content",
+      "status": 404,
+      "code": "FILE_NOT_FOUND",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FILE_NOT_FOUND",
+          "message": "File not found"
+        },
+        "correlation_id": "abbd7b7c-36b4-490c-93dd-fecf2e3365ea",
+        "timestamp": "2026-07-04T04:58:00.593Z"
+      }
+    },
+    {
+      "label": "deleted file attach rejected",
+      "method": "POST",
+      "route": "/my/payment-proofs",
+      "status": 400,
+      "code": "PAYMENT_PROOF_FILE_NOT_FOUND",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "PAYMENT_PROOF_FILE_NOT_FOUND",
+          "message": "Payment proof file was not found or has been deleted"
+        },
+        "correlation_id": "a48f8273-0ff5-46ec-9ce6-f2dafa7bae20",
+        "timestamp": "2026-07-04T04:58:00.605Z"
+      }
+    },
+    {
+      "label": "bravo upload complaint_attachment png",
+      "method": "POST",
+      "route": "/files",
+      "status": 201,
+      "body": {
+        "id": "03c55444-365f-4c7e-93b4-634076171d52",
+        "file_purpose": "complaint_attachment",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "label": "alpha cannot attach bravo complaint file",
+      "method": "POST",
+      "route": "/my/complaints",
+      "status": 400,
+      "code": "COMPLAINT_ATTACHMENT_FILE_OWNER_MISMATCH",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "COMPLAINT_ATTACHMENT_FILE_OWNER_MISMATCH",
+          "message": "Resident can only attach files they uploaded"
+        },
+        "correlation_id": "e31476de-1f3c-4da7-a6e5-3df7fddbb850",
+        "timestamp": "2026-07-04T04:58:00.637Z"
+      }
+    },
+    {
+      "label": "admin smart lock devices list",
+      "method": "GET",
+      "route": "/smart-lock/devices?limit=10",
+      "status": 200,
+      "body": {
+        "count": 5,
+        "sample": {
+          "id": "32c774ff-0ee9-4dc5-bdad-78329e1f5fbd",
+          "property_id": "20000000-0000-4000-8000-000000000001",
+          "room_id": "e3489af6-2916-447f-a3ae-4b6baa75be54",
+          "device_name": "QA M13F-C4 Evidence 2026-07-04T02:48:05.951Z",
+          "tuya_device_id": "[redacted]",
+          "model": "QA dry-run fake Tuya mapping",
+          "connection_status": "unknown",
+          "lock_state": "unknown",
+          "device_status": "provisioned",
+          "battery_percent": null,
+          "auto_lock_enabled": true,
+          "auto_lock_delay_seconds": 5,
+          "firmware_version": null,
+          "normal_open_mode": false,
+          "last_synced_at": "2026-07-04T04:55:45.183Z",
+          "last_activity_at": "2026-07-04T04:55:45.183Z",
+          "commissioned_at": "2026-07-04T02:48:07.479Z",
+          "decommissioned_at": null,
+          "created_at": "2026-07-04T02:48:07.479Z",
+          "updated_at": "2026-07-04T04:55:45.183Z"
+        }
+      }
+    },
+    {
+      "label": "unauth diagnostic rejected",
+      "method": "GET",
+      "route": "/smart-lock/devices/:uuid/diagnostics",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "6ec3d2da-8662-44c7-81eb-3a7490b347b0",
+        "timestamp": "2026-07-04T04:58:00.656Z"
+      }
+    },
+    {
+      "label": "resident diagnostic denied",
+      "method": "GET",
+      "route": "/smart-lock/devices/:uuid/diagnostics",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "e82e8d53-25d2-4142-a7c7-5050098f406f",
+        "timestamp": "2026-07-04T04:58:00.663Z"
+      }
+    },
+    {
+      "label": "property owner diagnostic denied",
+      "method": "GET",
+      "route": "/smart-lock/devices/:uuid/diagnostics",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "81cc7002-d5cb-41f4-a67d-c32fc0fff595",
+        "timestamp": "2026-07-04T04:58:00.670Z"
+      }
+    },
+    {
+      "label": "admin diagnostic safe",
+      "method": "GET",
+      "route": "/smart-lock/devices/:uuid/diagnostics",
+      "status": 400,
+      "code": "DEVICE_NOT_MAPPED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "DEVICE_NOT_MAPPED",
+          "message": "Smart lock device has no active gateway mapping for provider diagnostics"
+        },
+        "correlation_id": "2fe70cb7-2bc0-423e-9c74-798362f006ff",
+        "timestamp": "2026-07-04T04:58:00.684Z"
+      }
+    },
+    {
+      "label": "unauth sync-readonly rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/sync-readonly",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "6d3f5deb-9cd9-4e0e-8514-4c11cde74e8f",
+        "timestamp": "2026-07-04T04:58:00.687Z"
+      }
+    },
+    {
+      "label": "resident sync-readonly denied",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/sync-readonly",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "37d64404-980d-491c-aed1-6494247fdae5",
+        "timestamp": "2026-07-04T04:58:00.694Z"
+      }
+    },
+    {
+      "label": "property owner sync-readonly denied",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/sync-readonly",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "d21dc518-4269-48bc-95c9-21b088afe647",
+        "timestamp": "2026-07-04T04:58:00.701Z"
+      }
+    },
+    {
+      "label": "admin sync-readonly safe",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/sync-readonly",
+      "status": 201,
+      "body": {
+        "accepted": true,
+        "provider": "simulated",
+        "result_status": "success"
+      }
+    },
+    {
+      "label": "admin sync-status compatibility safe",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/sync-status",
+      "status": 201,
+      "body": {
+        "accepted": true,
+        "provider": "simulated",
+        "result_status": "success"
+      }
+    },
+    {
+      "label": "unauth command rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 401,
+      "code": "UNAUTHENTICATED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Authentication token is required"
+        },
+        "correlation_id": "3e0a7e7e-0af0-447b-85cb-121c36bf33a4",
+        "timestamp": "2026-07-04T04:58:00.745Z"
+      }
+    },
+    {
+      "label": "resident command denied",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "cfaa6b88-6aad-4ea1-83a3-2205df55d017",
+        "timestamp": "2026-07-04T04:58:00.754Z"
+      }
+    },
+    {
+      "label": "property owner command denied",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Required role is missing"
+        },
+        "correlation_id": "44fbebaa-5737-409e-b6a6-b1cd205e511f",
+        "timestamp": "2026-07-04T04:58:00.761Z"
+      }
+    },
+    {
+      "label": "missing confirmed rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 400,
+      "code": "SMART_LOCK_CONFIRMATION_REQUIRED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "SMART_LOCK_CONFIRMATION_REQUIRED",
+          "message": "Smart Lock command requires explicit confirmation"
+        },
+        "correlation_id": "482882c3-b750-4e1f-8017-18fb759ab75a",
+        "timestamp": "2026-07-04T04:58:00.769Z"
+      }
+    },
+    {
+      "label": "missing reason rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 400,
+      "code": "SMART_LOCK_REASON_REQUIRED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "SMART_LOCK_REASON_REQUIRED",
+          "message": "Smart Lock command requires a reason"
+        },
+        "correlation_id": "b68ae4b6-6b4c-4275-8ddc-f511088ae899",
+        "timestamp": "2026-07-04T04:58:00.778Z"
+      }
+    },
+    {
+      "label": "missing idempotency rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 400,
+      "code": "SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED",
+          "message": "Smart Lock command requires an Idempotency-Key header"
+        },
+        "correlation_id": "70cba462-e05c-400d-9c6c-9d6b15998da5",
+        "timestamp": "2026-07-04T04:58:00.786Z"
+      }
+    },
+    {
+      "label": "unsupported command rejected",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 400,
+      "code": "UNSUPPORTED_CAPABILITY",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "UNSUPPORTED_CAPABILITY",
+          "message": "Smart Lock command type is unsupported"
+        },
+        "correlation_id": "d79e5815-7b2d-4d75-b99f-b96ccaff68c2",
+        "timestamp": "2026-07-04T04:58:00.795Z"
+      }
+    },
+    {
+      "label": "valid remote_unlock live disabled",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 201,
+      "code": "LIVE_COMMAND_DISABLED",
+      "body": {
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": false
+      }
+    },
+    {
+      "label": "duplicate idempotency replay",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 201,
+      "code": "LIVE_COMMAND_DISABLED",
+      "body": {
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": true
+      }
+    },
+    {
+      "label": "rate limit attempt 1",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 201,
+      "code": "LIVE_COMMAND_DISABLED",
+      "body": {
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": false
+      }
+    },
+    {
+      "label": "rate limit attempt 2",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 201,
+      "code": "LIVE_COMMAND_DISABLED",
+      "body": {
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": false
+      }
+    },
+    {
+      "label": "rate limit attempt 3",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/commands",
+      "status": 201,
+      "code": "RATE_LIMITED",
+      "body": {
+        "error_code": "RATE_LIMITED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": false
+      }
+    },
+    {
+      "label": "resident self unlock denied",
+      "method": "POST",
+      "route": "/my/smart-lock/unlock",
+      "status": 403,
+      "code": "FORBIDDEN",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Resident Smart Lock commands are disabled in M13F"
+        },
+        "correlation_id": "61e0ef21-006a-4ec6-b749-5636be689473",
+        "timestamp": "2026-07-04T04:58:00.874Z"
+      }
+    },
+    {
+      "label": "remote lock unsupported or disabled",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/lock",
+      "status": 201,
+      "code": "LIVE_COMMAND_DISABLED",
+      "body": {
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "accepted": false,
+        "provider": "simulated",
+        "result_status": "failed",
+        "idempotency_replayed": false
+      }
+    },
+    {
+      "label": "temporary PIN endpoint absent or denied",
+      "method": "POST",
+      "route": "/smart-lock/devices/:uuid/temporary-pin",
+      "status": 404,
+      "code": "NOT_FOUND",
+      "body": {
+        "success": false,
+        "error": {
+          "code": "NOT_FOUND",
+          "message": "Cannot POST /api/v1/smart-lock/devices/32c774ff-0ee9-4dc5-bdad-78329e1f5fbd/temporary-pin"
+        },
+        "correlation_id": "dffdb1ca-fa61-4038-bbd3-31cd742ba4cd",
+        "timestamp": "2026-07-04T04:58:00.908Z"
+      }
+    }
+  ],
+  "check_groups": {
+    "auth": [
+      {
+        "name": "health endpoint",
+        "result": "PASS",
+        "details": {
+          "status": "ok",
+          "info": {
+            "database": {
+              "status": "up"
+            },
+            "redis": {
+              "status": "up"
+            }
+          },
+          "error": {},
+          "details": {
+            "database": {
+              "status": "up"
+            },
+            "redis": {
+              "status": "up"
+            }
+          }
+        }
+      },
+      {
+        "name": "admin login",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "roles": [
+            "admin"
+          ]
+        }
+      },
+      {
+        "name": "resident alpha login",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "roles": [
+            "resident"
+          ]
+        }
+      },
+      {
+        "name": "resident bravo login",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "roles": [
+            "resident"
+          ]
+        }
+      },
+      {
+        "name": "property owner login",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "roles": [
+            "property_owner"
+          ]
+        }
+      },
+      {
+        "name": "invalid login rejected",
+        "result": "PASS",
+        "details": {
+          "status": 401,
+          "code": "INVALID_CREDENTIALS"
+        }
+      },
+      {
+        "name": "unauthenticated protected route returns 401",
+        "result": "PASS",
+        "details": {
+          "status": 401,
+          "code": "UNAUTHENTICATED"
+        }
+      }
+    ],
+    "rbac": [
+      {
+        "name": "admin can access allowed admin route",
+        "result": "PASS",
+        "details": {
+          "status": 200
+        }
+      },
+      {
+        "name": "resident cannot access admin routes",
+        "result": "PASS",
+        "details": {
+          "status": 403,
+          "code": "FORBIDDEN"
+        }
+      },
+      {
+        "name": "property_owner self scoped route works",
+        "result": "PASS",
+        "details": {
+          "status": 200
+        }
+      },
+      {
+        "name": "resident self-scope route works",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "invoice_count": 2
+        }
+      }
+    ],
+    "propertyScope": [
+      {
+        "name": "resident alpha cannot access bravo file content",
+        "result": "PASS",
+        "details": {
+          "status": 403,
+          "code": "FILE_ACCESS_DENIED"
+        }
+      },
+      {
+        "name": "resident alpha cannot attach bravo file to payment proof",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "PAYMENT_PROOF_FILE_OWNER_MISMATCH"
+        }
+      },
+      {
+        "name": "resident alpha cannot attach bravo file to complaint",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "COMPLAINT_ATTACHMENT_FILE_OWNER_MISMATCH"
+        }
+      }
+    ],
+    "fileApi": [
+      {
+        "name": "authorized upload works for allowed PNG/payment_proof",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "file_id": "f3c6aa50...7f31"
+        }
+      },
+      {
+        "name": "metadata endpoint works and does not expose storage_path",
+        "result": "PASS",
+        "details": {
+          "status": 200
+        }
+      },
+      {
+        "name": "content endpoint returns authorized binary content safely",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "bytes": 68,
+          "content_type": "image/png"
+        }
+      },
+      {
+        "name": "unauth file metadata rejected 401",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "unauth file content rejected 401",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "unsupported upload rejected",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "FILE_TYPE_UNSUPPORTED"
+        }
+      },
+      {
+        "name": "oversized purpose upload rejected",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "FILE_TOO_LARGE_FOR_PURPOSE"
+        }
+      },
+      {
+        "name": "soft delete works",
+        "result": "PASS",
+        "details": {
+          "status": 200
+        }
+      },
+      {
+        "name": "deleted file content cannot be fetched",
+        "result": "PASS",
+        "details": {
+          "status": 404,
+          "code": "FILE_NOT_FOUND"
+        }
+      },
+      {
+        "name": "deleted file cannot be attached",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "PAYMENT_PROOF_FILE_NOT_FOUND"
+        }
+      }
+    ],
+    "paymentProof": [
+      {
+        "name": "resident submits manual payment proof with file_ids",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "proof_id": "a7a8c819...f7a8",
+          "proof_status": "pending_review"
+        }
+      },
+      {
+        "name": "payment proof remains pending_review",
+        "result": "PASS",
+        "details": {
+          "proof_status": "pending_review"
+        }
+      },
+      {
+        "name": "invoice is not auto-paid after proof upload",
+        "result": "PASS",
+        "details": {
+          "before": "issued",
+          "after": "issued"
+        }
+      },
+      {
+        "name": "admin can list pending payment proof review queue",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "count": 6
+        }
+      },
+      {
+        "name": "admin can fetch proof files without storage_path",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "count": 1
+        }
+      },
+      {
+        "name": "resident cannot access admin proof endpoint",
+        "result": "PASS",
+        "details": {
+          "status": 403,
+          "code": "FORBIDDEN"
+        }
+      },
+      {
+        "name": "complaint_attachment file cannot be attached as payment_proof",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "PAYMENT_PROOF_FILE_PURPOSE_INVALID"
+        }
+      }
+    ],
+    "complaint": [
+      {
+        "name": "resident-safe complaint categories load",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "count": 10
+        }
+      },
+      {
+        "name": "unauthenticated complaint categories rejected",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "resident creates complaint without attachment",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "complaint_id": "19745dd7...7fd3"
+        }
+      },
+      {
+        "name": "complaint attachment upload uses complaint_attachment purpose",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "file_id": "8932f3a3...1421"
+        }
+      },
+      {
+        "name": "resident creates complaint with file_ids",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "complaint_id": "b85ece19...b5c9"
+        }
+      },
+      {
+        "name": "admin can view complaint files without storage_path",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "count": 1
+        }
+      },
+      {
+        "name": "resident cannot access admin complaint file endpoint",
+        "result": "PASS",
+        "details": {
+          "status": 403,
+          "code": "FORBIDDEN"
+        }
+      },
+      {
+        "name": "payment_proof file cannot be attached as complaint_attachment",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "COMPLAINT_ATTACHMENT_FILE_PURPOSE_INVALID"
+        }
+      }
+    ],
+    "smartLockReadOnly": [
+      {
+        "name": "admin can list smart lock devices",
+        "result": "PASS",
+        "details": {
+          "status": 200,
+          "count": 5
+        }
+      },
+      {
+        "name": "diagnostic endpoint requires auth",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "resident diagnostic denied",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "property_owner diagnostic denied",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "admin diagnostic returns safe simulated response",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "DEVICE_NOT_MAPPED"
+        }
+      },
+      {
+        "name": "sync-readonly requires auth",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "resident sync-readonly denied",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "property_owner sync-readonly denied",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "admin sync-readonly returns safe response",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "accepted": true,
+          "provider": "simulated",
+          "result_status": "success"
+        }
+      },
+      {
+        "name": "sync-status compatibility route safe",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "accepted": true,
+          "provider": "simulated",
+          "result_status": "success"
+        }
+      }
+    ],
+    "smartLockCommandGuard": [
+      {
+        "name": "command endpoint requires auth",
+        "result": "PASS",
+        "details": {
+          "status": 401
+        }
+      },
+      {
+        "name": "resident command denied 403",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "property_owner command denied 403",
+        "result": "PASS",
+        "details": {
+          "status": 403
+        }
+      },
+      {
+        "name": "missing confirmed -> SMART_LOCK_CONFIRMATION_REQUIRED",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "SMART_LOCK_CONFIRMATION_REQUIRED"
+        }
+      },
+      {
+        "name": "missing reason -> SMART_LOCK_REASON_REQUIRED",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "SMART_LOCK_REASON_REQUIRED"
+        }
+      },
+      {
+        "name": "missing Idempotency-Key -> SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED"
+        }
+      },
+      {
+        "name": "unsupported command -> UNSUPPORTED_CAPABILITY",
+        "result": "PASS",
+        "details": {
+          "status": 400,
+          "code": "UNSUPPORTED_CAPABILITY"
+        }
+      },
+      {
+        "name": "valid remote_unlock with live disabled -> LIVE_COMMAND_DISABLED",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "provider": "simulated",
+          "error_code": "LIVE_COMMAND_DISABLED"
+        }
+      },
+      {
+        "name": "duplicate Idempotency-Key -> idempotency_replayed=true",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "idempotency_replayed": true
+        }
+      },
+      {
+        "name": "rate limit -> RATE_LIMITED",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "error_code": "RATE_LIMITED"
+        }
+      },
+      {
+        "name": "resident self-unlock remains 403",
+        "result": "PASS",
+        "details": {
+          "status": 403,
+          "code": "FORBIDDEN"
+        }
+      },
+      {
+        "name": "remote_lock remains unsupported/disabled",
+        "result": "PASS",
+        "details": {
+          "status": 201,
+          "error_code": "LIVE_COMMAND_DISABLED"
+        }
+      },
+      {
+        "name": "temporary PIN endpoint absent or denied",
+        "result": "PASS",
+        "details": {
+          "status": 404,
+          "code": "NOT_FOUND"
+        }
+      }
+    ],
+    "audit": [
+      {
+        "name": "file upload/download audit rows written",
+        "result": "PASS",
+        "details": {
+          "observed": [
+            "file.upload",
+            "file.delete",
+            "file.download.denied",
+            "file.upload.failed",
+            "file.download"
+          ]
+        }
+      },
+      {
+        "name": "payment proof submit audit row written",
+        "result": "PASS",
+        "details": {
+          "observed": [
+            "payment_proof.submit"
+          ]
+        }
+      },
+      {
+        "name": "complaint create/file_attach audit rows written",
+        "result": "PASS",
+        "details": {
+          "observed": [
+            "complaint.file_attach",
+            "complaint.create"
+          ]
+        }
+      },
+      {
+        "name": "smart_lock.command.result audit row written",
+        "result": "PASS",
+        "details": {
+          "observed": [
+            "smart_lock.command.result"
+          ]
+        }
+      },
+      {
+        "name": "smart_lock.device.sync_readonly audit row written",
+        "result": "PASS",
+        "details": {
+          "observed": [
+            "smart_lock.device.sync_readonly"
+          ]
+        }
+      },
+      {
+        "name": "smart lock access logs include fail-closed outcomes",
+        "result": "PASS",
+        "details": {
+          "failure_reasons": [
+            "LIVE_COMMAND_DISABLED",
+            "RATE_LIMITED",
+            "LIVE_COMMAND_DISABLED",
+            "LIVE_COMMAND_DISABLED",
+            "LIVE_COMMAND_DISABLED"
+          ]
+        }
+      },
+      {
+        "name": "idempotency records contain normalized response only",
+        "result": "PASS",
+        "details": {
+          "sample_count": 5
+        }
+      },
+      {
+        "name": "gateway health metadata safe",
+        "result": "PASS",
+        "details": {
+          "rows_checked": 2
+        }
+      },
+      {
+        "name": "uploaded files stored outside public web root",
+        "result": "PASS",
+        "details": {
+          "rows_checked": 5
+        }
+      },
+      {
+        "name": "no fatal backend error in captured QA logs",
+        "result": "PASS",
+        "details": {
+          "log_lines": 2
+        }
+      }
+    ],
+    "leakage": [
+      {
+        "name": "no forbidden provider/storage markers in captured non-auth evidence",
+        "result": "PASS",
+        "details": {
+          "hits": [],
+          "provider_id_values_checked": 5
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+M14B leakage check
+
+Patterns/classes checked:
+- Tuya client secret marker
+- provider access token marker
+- provider refresh token marker
+- ticket key marker
+- local key marker
+- storage path fields
+- raw Tuya envelope shape
+- raw provider device id values from local DB
+
+Result: PASS
+Hits: none
+Provider id values checked: 5
+
+Notes:
+- First-party auth access and refresh tokens from login responses were used only in memory and are excluded from stored evidence.
+- This file lists pattern names intentionally; evidence response snippets are sanitized separately in api-results-sanitized.json.

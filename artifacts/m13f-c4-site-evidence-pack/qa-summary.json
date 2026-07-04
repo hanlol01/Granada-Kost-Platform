@@ -1,0 +1,223 @@
+{
+  "timestamp_utc": "2026-07-04T02:48:05.951Z",
+  "timestamp_local": "2026-07-04 09:48:05 Asia/Jakarta",
+  "branch": "master",
+  "commit_sha": "4f911e5",
+  "git_status_at_start": "clean",
+  "staged_files_at_start": [],
+  "tracked_env_files_at_start": [],
+  "environment_mode": {
+    "SMART_LOCK_PROVIDER": "tuya",
+    "SMART_LOCK_LIVE_ENABLED": false,
+    "tuya_credential_mode": "placeholder/fake local QA values",
+    "real_site_device_mapping_available": false,
+    "backend_port": 3013
+  },
+  "precheck_validation": {
+    "lint_api": "PASS",
+    "build_api": "PASS",
+    "smartlock_validate_runtime": "PASS (28/28)",
+    "git_diff_check": "PASS",
+    "no_env_staged_or_tracked": true
+  },
+  "command_validation_results": {
+    "missing_confirmed": {
+      "http_status": 400,
+      "code": "SMART_LOCK_CONFIRMATION_REQUIRED",
+      "expected_code": "SMART_LOCK_CONFIRMATION_REQUIRED",
+      "pass": true
+    },
+    "missing_reason": {
+      "http_status": 400,
+      "code": "SMART_LOCK_REASON_REQUIRED",
+      "expected_code": "SMART_LOCK_REASON_REQUIRED",
+      "pass": true
+    },
+    "missing_idempotency_key": {
+      "http_status": 400,
+      "code": "SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED",
+      "expected_code": "SMART_LOCK_IDEMPOTENCY_KEY_REQUIRED",
+      "pass": true
+    },
+    "unsupported_command": {
+      "http_status": 400,
+      "code": "UNSUPPORTED_CAPABILITY",
+      "expected_code": "UNSUPPORTED_CAPABILITY",
+      "pass": true
+    }
+  },
+  "auth_rbac_results": {
+    "unauthenticated_command": {
+      "http_status": 401,
+      "expected": 401,
+      "pass": true
+    },
+    "resident_command": {
+      "http_status": 403,
+      "expected": 403,
+      "pass": true
+    },
+    "property_owner_command": {
+      "http_status": 403,
+      "expected": 403,
+      "pass": true
+    },
+    "resident_self_unlock": {
+      "http_status": 403,
+      "expected": 403,
+      "pass": true
+    }
+  },
+  "dry_run_command_result": {
+    "http_status": 201,
+    "accepted": false,
+    "provider": "tuya",
+    "result_status": "failed",
+    "error_code": "LIVE_COMMAND_DISABLED",
+    "idempotency_replayed": false,
+    "command_reference_present": true,
+    "correlation_id_present": true,
+    "expected_error_code": "LIVE_COMMAND_DISABLED",
+    "pass": true
+  },
+  "idempotency_result": {
+    "http_status": 201,
+    "accepted": false,
+    "provider": "tuya",
+    "result_status": "failed",
+    "error_code": "LIVE_COMMAND_DISABLED",
+    "idempotency_replayed": true,
+    "command_reference_present": true,
+    "correlation_id_present": true,
+    "key_hash_ref": "64a72445bc31",
+    "expected_replayed": true,
+    "pass": true
+  },
+  "rate_limit_result": {
+    "attempts": [
+      {
+        "http_status": 201,
+        "accepted": false,
+        "provider": "tuya",
+        "result_status": "failed",
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "idempotency_replayed": false,
+        "command_reference_present": true,
+        "correlation_id_present": true
+      },
+      {
+        "http_status": 201,
+        "accepted": false,
+        "provider": "tuya",
+        "result_status": "failed",
+        "error_code": "LIVE_COMMAND_DISABLED",
+        "idempotency_replayed": false,
+        "command_reference_present": true,
+        "correlation_id_present": true
+      },
+      {
+        "http_status": 201,
+        "accepted": false,
+        "provider": "tuya",
+        "result_status": "failed",
+        "error_code": "RATE_LIMITED",
+        "idempotency_replayed": false,
+        "command_reference_present": true,
+        "correlation_id_present": true
+      },
+      {
+        "http_status": 201,
+        "accepted": false,
+        "provider": "tuya",
+        "result_status": "failed",
+        "error_code": "RATE_LIMITED",
+        "idempotency_replayed": false,
+        "command_reference_present": true,
+        "correlation_id_present": true
+      },
+      {
+        "http_status": 201,
+        "accepted": false,
+        "provider": "tuya",
+        "result_status": "failed",
+        "error_code": "RATE_LIMITED",
+        "idempotency_replayed": false,
+        "command_reference_present": true,
+        "correlation_id_present": true
+      }
+    ],
+    "observed_rate_limited": true,
+    "pass": true
+  },
+  "diagnostic_sync_result": {
+    "diagnostic": {
+      "http_status": 400,
+      "error_code": "DEVICE_NOT_MAPPED",
+      "provider_device_id_masked_present": false,
+      "raw_provider_id_present": false,
+      "safe_failure_accepted_for_placeholder_env": true,
+      "note": "Safe normalized failure is acceptable for placeholder env without real active gateway mapping."
+    },
+    "sync_readonly": {
+      "http_status": 201,
+      "accepted": false,
+      "result_status": "failed",
+      "error_code": "PROVIDER_CONNECTION_ERROR",
+      "provider": "tuya",
+      "provider_device_id_masked_present": true,
+      "raw_provider_id_present": false,
+      "safe_failure_accepted_for_placeholder_env": true,
+      "note": "Safe normalized failure is acceptable for placeholder env without real site Tuya credentials/device mapping."
+    },
+    "sync_status": {
+      "http_status": 201,
+      "accepted": false,
+      "result_status": "failed",
+      "error_code": "PROVIDER_CONNECTION_ERROR",
+      "provider": "tuya",
+      "provider_device_id_masked_present": true,
+      "raw_provider_id_present": false,
+      "safe_failure_accepted_for_placeholder_env": true,
+      "note": "Compatibility route returned same safe shape; provider id field not exposed."
+    }
+  },
+  "db_audit_redis_observations": {
+    "db_audit": {
+      "performed": true,
+      "audit_action_counts": {
+        "smart_lock.device.sync_readonly": 2,
+        "smart_lock.command.result": 7
+      },
+      "access_log_count": 6,
+      "access_failure_reasons": [
+        "RATE_LIMITED",
+        "LIVE_COMMAND_DISABLED"
+      ],
+      "gateway_health_rows_for_synthetic_device": 0,
+      "leakage_hits": {
+        "audit_payload": 0,
+        "access_log": 0,
+        "gateway_health": 0
+      }
+    },
+    "redis": {
+      "performed": true,
+      "new_idempotency_records_observed": 6,
+      "rate_limit_keys_for_synthetic_device": 1,
+      "raw_idempotency_key_leak_hits": 0,
+      "provider_id_or_secret_leak_hits": 0
+    }
+  },
+  "leakage_result": {
+    "pass": true,
+    "response_leak_hits": 0,
+    "audit_leak_hits": 0,
+    "access_log_leak_hits": 0,
+    "gateway_health_leak_hits": 0,
+    "redis_leak_hits": 0,
+    "artifact_self_check": "PASS"
+  },
+  "b23_status": "PARTIALLY_CLOSED_PLACEHOLDER_ENV",
+  "verdict": "PASS",
+  "issues": []
+}

@@ -1,0 +1,27 @@
+{
+  "db_audit": {
+    "performed": true,
+    "audit_action_counts": {
+      "smart_lock.device.sync_readonly": 2,
+      "smart_lock.command.result": 7
+    },
+    "access_log_count": 6,
+    "access_failure_reasons": [
+      "RATE_LIMITED",
+      "LIVE_COMMAND_DISABLED"
+    ],
+    "gateway_health_rows_for_synthetic_device": 0,
+    "leakage_hits": {
+      "audit_payload": 0,
+      "access_log": 0,
+      "gateway_health": 0
+    }
+  },
+  "redis": {
+    "performed": true,
+    "new_idempotency_records_observed": 6,
+    "rate_limit_keys_for_synthetic_device": 1,
+    "raw_idempotency_key_leak_hits": 0,
+    "provider_id_or_secret_leak_hits": 0
+  }
+}

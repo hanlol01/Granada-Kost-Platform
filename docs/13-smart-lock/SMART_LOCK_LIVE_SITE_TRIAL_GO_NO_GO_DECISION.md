@@ -67,6 +67,8 @@ As recorded in the binding implementation notes (validated earlier via Codex; no
 
 **Evidence gap noted:** the M13F-C3 dry-run PASS is referenced from the milestone record and the C3 leakage-fix commit, but a dedicated committed C3 evidence artifact/document was not found under `artifacts/` or `docs/13-smart-lock/` at the time of this decision. Section 4 item E-23 therefore requires the C3 (or re-run) dry-run evidence to be recorded in the Section 6 evidence table before execution GO.
 
+**M13F-C4.1 evidence update:** a sanitized C3-class dry-run evidence pack was created at `artifacts/m13f-c4-site-evidence-pack/` on 2026-07-04. It records `SMART_LOCK_PROVIDER=tuya`, `SMART_LOCK_LIVE_ENABLED=false`, health/auth/RBAC/validation/idempotency/rate-limit/audit/Redis/leakage checks, and confirms no live physical unlock was executed. Because the run used placeholder/fake local Tuya values and a synthetic QA device instead of real site credentials and the selected mapped site device, this **partially closes B-23 only**. B-23 still requires a site-env rerun with approved credentials, the selected non-occupied mapped device, and required sign-offs before execution GO.
+
 ## 4. Mandatory Go Criteria
 
 Execution GO requires **every** item below checked with an evidence reference in Section 6. Any unchecked item = execution NO-GO (fail-closed).
@@ -158,7 +160,7 @@ One row per mandatory criterion (extend as needed). Store completed evidence und
 | D-13..D-20 | Device/mapping readiness | DB mapping check record (masked), battery/online record | `<ref>` | PENDING | One device only |
 | B-21 | Diagnostic PASS | Normalized diagnostic response (masked) | `<ref>` | PENDING | |
 | B-22 | Sync-readonly PASS | Persisted summary + gateway health record | `<ref>` | PENDING | |
-| B-23 | Site dry-run PASS | 10-step dry-run evidence (Runbook Section 9 template) | `<ref>` | PENDING | C3 PASS recorded in milestone history; committed artifact not found — re-record on site env |
+| B-23 | Site dry-run PASS | 10-step dry-run evidence (Runbook Section 9 template) | `artifacts/m13f-c4-site-evidence-pack/` | PARTIAL | C3-class dry-run evidence recorded with placeholder/fake local env and synthetic QA device; site-env rerun still required before execution GO |
 | B-24 | Idempotency PASS | Replay response `idempotency_replayed:true` | `<ref>` | PENDING | Hash ref only |
 | B-25 | Rate limit PASS | `RATE_LIMITED` response record | `<ref>` | PENDING | |
 | B-26 | Audit/access log PASS | Audit + access-log row IDs | `<ref>` | PENDING | |
@@ -196,7 +198,7 @@ Evaluation is fail-closed: an unknown or unverifiable criterion counts as not PA
 Based on repository evidence available at the time of writing:
 
 - Technical readiness is **PASS** (M13F-B, M13F-C2, C3 dry-run with leakage fix, live-flag boundary verified as `LIVE_COMMAND_DISABLED`).
-- Site readiness evidence is **absent from the repository**: no named approvals (A-01..A-06), no written credential rotation confirmation (C-07), no recorded test-device mapping/battery/online evidence (D-13..D-20), no site-environment dry-run evidence artifact (B-23).
+- Site readiness evidence remains **incomplete**: no named approvals (A-01..A-06), no written credential rotation confirmation (C-07), no recorded real test-device mapping/battery/online evidence (D-13..D-20), and no real site-environment dry-run for B-23. A sanitized local/placeholder C3-class evidence pack exists at `artifacts/m13f-c4-site-evidence-pack/`, but it is partial only.
 
 **Recommendation:**
 
@@ -211,7 +213,7 @@ This distinction is binding: *GO to schedule/prepare* never implies *GO to execu
 2. Confirm credential rotation in writing (C-07) — hard precondition before any real-device testing.
 3. Confirm exactly one test device mapping (active gateway mapping, `provider_device_id` backend-only, non-occupied door).
 4. Run M13D diagnostic and M13E `sync-readonly` on the site environment for the test device; record results.
-5. Re-run the C3-class dry-run (Runbook Section 6, all 10 steps) on the site environment with the M13F-C2 build; record evidence per the Runbook Section 9 template (closes the B-23 artifact gap).
+5. Re-run the C3-class dry-run (Runbook Section 6, all 10 steps) on the site environment with the M13F-C2 build; record evidence per the Runbook Section 9 template (fully closes the remaining B-23 site-env gap).
 6. Complete the Section 6 evidence table (all rows PASS with references).
 7. Re-evaluate this document per Section 8; update Section 1 to GO only if everything passes.
 8. Only then execute the **M13F-C5** live trial session under Section 11 constraints and the Runbook Section 7 sequence.
@@ -253,7 +255,7 @@ M13F-C5 (live trial session) may run **only after** this document records GO for
 
 | # | Question | Blocking? |
 | --- | --- | --- |
-| Q-01 | Committed M13F-C3 dry-run evidence artifact was not found under `artifacts/` — will the site-environment dry-run re-run (Section 10 step 5) serve as the canonical B-23 evidence? | Blocks execution GO (B-23), not scheduling |
+| Q-01 | M13F-C4.1 created a sanitized local/placeholder C3-class evidence pack at `artifacts/m13f-c4-site-evidence-pack/`; will the required site-environment dry-run re-run (Section 10 step 5) serve as the final B-23 evidence for execution GO? | Blocks execution GO (B-23), not scheduling |
 | Q-02 | Who is the named owner/building approver and technical lead for the first session? | Blocks execution GO (A-01, A-02) |
 | Q-03 | Has credential rotation for PoC/history exposure been confirmed in writing anywhere outside the repository? If yes, record the reference in Section 6 (C-07). | Blocks execution GO (C-07) |
 | Q-04 | Which physical door/device is the candidate test device (non-occupied, mapped, online)? | Blocks execution GO (D-13..D-20) |
@@ -265,3 +267,4 @@ M13F-C5 (live trial session) may run **only after** this document records GO for
 | Version | Status | Description |
 | --- | --- | --- |
 | v1 | Recorded | M13F-C4 Go/No-Go decision authored from M13A–M13F-C2 docs, M13F-C3 milestone record, ADR-SL-001, and policy docs. Decision: CONDITIONAL GO (schedule/prepare) / NO-GO (execute). |
+| v2 | Updated | M13F-C4.1 sanitized local/placeholder C3-class evidence pack recorded at `artifacts/m13f-c4-site-evidence-pack/`; B-23 marked PARTIAL pending real site-env rerun and sign-offs. |

@@ -1,0 +1,25 @@
+# Leakage Check
+
+Timestamp UTC: 2026-07-04T02:48:05.951Z
+
+Scope:
+- API responses from dry-run command, replay, resident self-unlock, diagnostic, sync-readonly, and sync-status.
+- Domain audit rows and smart_lock_access_logs for the synthetic QA device.
+- Redis idempotency/rate-limit records created during this run.
+- Generated evidence artifact files.
+
+Marker method:
+- In-memory scan for the synthetic provider id, raw idempotency key, placeholder client secret value, token-like fields, local-key fields, credential-ticket fields, and provider command path fragments.
+- Artifact self-check scans for generated sensitive values before final PASS is recorded.
+
+Results:
+- API response leak hits: 0
+- Audit payload leak hits: 0
+- Access-log leak hits: 0
+- Gateway-health leak hits: 0
+- Redis leak hits: 0
+- Artifact self-check: see qa-summary.json leakage_result.artifact_self_check.
+
+Result: PASS
+
+Note: Marker names are described only as categories; no real credential, token, provider device id, or raw provider payload value is stored here.

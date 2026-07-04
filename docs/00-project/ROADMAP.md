@@ -128,7 +128,7 @@ Catatan:
 
 ## Milestone 12C/12D - File Upload Foundation + Attachment Flows
 
-Status: selesai (M12A, M12B, M12C1-M12C5, M12D). Validasi lint/typecheck/build M12D dijadwalkan melalui Codex; belum dijalankan pada refresh dokumentasi ini.
+Status: selesai dan tervalidasi (M12A-M12H): QA-M12G cross-scope security boundary PASS dan QA-M12H visual E2E demo pass PASS (2026-07-03, eksekusi eksternal via Codex); re-regression M14B (API) dan M14C (browser) PASS (2026-07-04).
 
 Sumber kebenaran: dokumen implementasi di `docs/12-product-readiness/` dan `docs/01-architecture/ADR-BE-FILE-001_BACKEND_MEDIATED_FILE_ACCESS.md`.
 
@@ -147,7 +147,7 @@ Sumber kebenaran: dokumen implementasi di `docs/12-product-readiness/` dan `docs
   - `POST /my/complaints` menerima `file_ids` opsional (maks 5 unik, purpose `complaint_attachment`); validasi kepemilikan/properti/soft-delete/purpose; attach transaksional (complaint + history + files, rollback utuh); audit `complaint.file_attach`.
 - M12C5 - Admin File Preview / Review. Status: selesai.
   - `GET /payment-proofs/:id/files` dan `GET /complaints/:id/files` (metadata aman tanpa `storage_path`); Admin review bukti pembayaran (dialog review + verify/reject) dan preview lampiran komplain via authorized blob fetch.
-- M12D - Penghuni Complaint Create UI + Attachment. Status: selesai (validasi Codex menyusul).
+- M12D - Penghuni Complaint Create UI + Attachment. Status: selesai (tervalidasi: QA-M12H visual E2E PASS).
   - Endpoint resident-safe `GET /my/complaints/categories` (properti dari occupancy aktif) menutup blocker kategori.
   - Form buat tiket Penghuni live: kategori, judul, deskripsi, lokasi (kamar sendiri / area umum + catatan lokasi), lampiran opsional 1-5 foto (JPEG/PNG maks 2 MB) via upload engine M12C2. `file_ids` dikirim hanya jika ada lampiran; preview dipertahankan saat submit gagal.
 
@@ -158,14 +158,44 @@ Catatan lingkup (tidak berubah, jangan dianggap selesai):
 - Chat attachment: tidak didukung fase ini.
 - Video upload: tidak didukung fase ini.
 
+## Milestone 13 - Smart Lock Live Backend Foundation (Tuya/PALOMA)
+
+Status: selesai sampai M13F-D (dokumen: `docs/13-smart-lock/`).
+
+- M13A - Site readiness plan; legacy PoC diaudit sebagai referensi saja. Selesai.
+- M13B - Live integration architecture freeze (binding untuk M13C-M13H). Selesai.
+- M13C - Tuya provider config + client skeleton (HMAC-SHA256 signing, token cache Redis; default `simulated`, live disabled). Selesai dan tervalidasi.
+- M13D - Read-only diagnostic / capability discovery. Selesai dan tervalidasi.
+- M13E - Read-only sync + gateway health (provider device ID ter-mask). Selesai dan tervalidasi.
+- M13F-A - Controlled live command safety freeze. Selesai.
+- M13F-B - Backend command guard (fail-closed gates, RBAC, confirmation/reason/idempotency, rate limit, audit). Selesai dan tervalidasi.
+- M13F-C1 - Site trial readiness runbook. Selesai.
+- M13F-C2 - Guarded live unlock transport (`remote_unlock`/`emergency_unlock` saja; `remote_lock` = `UNSUPPORTED_CAPABILITY`). Selesai dan tervalidasi (dry-run/fake-server, eksekusi eksternal).
+- M13F-C3 - Dry-run live-disabled PASS (setelah fix leakage provider ID, commit `757b0db9`).
+- M13F-C4 - Go/No-Go decision: CONDITIONAL GO untuk persiapan/penjadwalan, NO-GO untuk eksekusi live. Selesai.
+- M13F-C4.1 - Sanitized C3-class evidence pack `artifacts/m13f-c4-site-evidence-pack/` (PASS; B-23 partially closed di env placeholder). Selesai.
+- M13F-D - Freeze: **"Ready for controlled site trial preparation, execution pending."** Selesai.
+
+Catatan mengikat: eksekusi live unlock fisik BELUM pernah dilakukan dan tetap **NO-GO** sampai syarat M13F-C4 terpenuhi. Smart Lock live integration TIDAK complete tanpa evidence site trial nyata. `SMART_LOCK_LIVE_ENABLED` tetap `false` default di semua environment.
+
+## Milestone 14 - Production Readiness / Internal Demo Refresh
+
+- M14A - Production Readiness Audit: internal demo READY, production NOT READY; production blockers + deployment/env checklist (belum dieksekusi). Status: selesai.
+- M14B - API Regression & Security Smoke: verdict **PASS** (eksekusi eksternal via Codex). Status: selesai.
+- M14C - Browser Regression / Internal Demo Flow: verdict **PASS** (Hybrid Interactive Login; eksekusi eksternal via Codex). Status: selesai.
+- M14D - Internal Demo Script Refresh: `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md`. Status: selesai.
+- M14E - Documentation/Roadmap/Handoff Refresh (dokumen ini, `PROJECT_MASTER.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`). Status: selesai.
+- M14F - Release Readiness Verdict. Status: **next milestone.** Memutuskan: kelengkapan paket demo internal; apakah rilis production tetap diblokir; apakah rilis dibekukan sebagai internal-demo-only; prasyarat wajib sebelum production; apakah Smart Lock tetap site-trial-pending.
+
 ## Next Milestone
 
-- M10F - Smart Lock Runtime Integration (M10FV selesai; M10G real Tuya/PALOMA menunggu akses fisik perangkat).
-- M11H - Smart Lock UI Integration (setelah M10G real Tuya).
+- **M14F - Release Readiness Verdict** (lihat Milestone 14 di atas).
+- Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).
+- Production readiness: **NOT READY** sampai verdict M14F dan blocker produksi (M14A Section 5) terselesaikan.
+- M11H - Smart Lock UI Integration (hanya setelah live trial backend sukses; dilarang sebelumnya per M13F-D).
 - M11I - CCTV preview (saat gateway lokal tersedia).
 - M11J - Phase 2 surfaces (booking publik, chat, payment gateway/Midtrans, push/WhatsApp).
-- Receipt/nota untuk pembayaran terverifikasi (milestone mendatang, setelah alur proof stabil).
-- QA browser untuk surface M12 (lihat `INTERNAL_DEMO_CHECKLIST.md` Section 12, status PENDING) + validasi Codex M12D.
+- Receipt/nota untuk pembayaran terverifikasi (milestone mendatang).
 - Backend follow-up untuk membuka endpoint `/audit/*` dan `/reports/exports` agar Audit Viewer dan Export di Reports dapat diaktifkan tanpa redesign.
 - Penghuni complaint detail dengan thumbnail lampiran (endpoint file resident-facing belum diekspos).
 - Otomasi cleanup file (cron) menggantikan `npm run file:cleanup` manual (Phase 2).

@@ -222,3 +222,26 @@ Final visual E2E demo pass untuk seluruh permukaan M12 dijalankan **eksternal di
 Security checks (QA-M12H): tanpa `storage_path`/`storagePath` pada respons; tanpa URL file publik; preview/content hanya via `/api/v1/files/:fileId/content`. Tanpa fatal console error; tanpa 400/500 tak terduga pada happy path. Git status aman untuk source/docs: hanya `artifacts/m12h-final-demo-pass/` yang untracked.
 
 Catatan: item Smart Lock live, CCTV live, payment gateway, receipt/nota, reports export, dan audit viewer TIDAK termasuk cakupan ini dan tetap deferred.
+
+## 13. M14 Demo Script Refresh Pointer (Updated 2026-07-04 via M14E)
+
+Skrip demo internal terbaru dan yang wajib dipakai untuk demo berikutnya: **`docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md`** (M14D), berbasis evidensi M14B (API regression & security smoke PASS) dan M14C (browser regression PASS). Pendekatan login yang divalidasi M14C adalah **Hybrid Interactive Login**: login manual pada profil browser terisolasi (Admin dan Penghuni terpisah) + regression otomatis pasca-login. Evidensi browser terbaru: `artifacts/m14c-browser-regression/` (qa-summary.json + 20 screenshot).
+
+**Cakupan demo aman (per M14C/M14D):**
+
+- Auth (Admin + Penghuni), logout, session handling.
+- Dashboard Admin.
+- Dashboard/Home Penghuni.
+- Upload bukti pembayaran manual (Penghuni) + preview/review Admin (verify/reject; `pending_review`, tagihan tidak otomatis lunas).
+- Complaint create dengan/tanpa lampiran (Penghuni) + preview lampiran Admin.
+- Smart Lock HANYA dalam kondisi simulated / read-only / guarded disabled (perintah berakhir `LIVE_COMMAND_DISABLED` - itu perilaku fail-closed yang benar).
+
+**JANGAN didemokan sebagai production-ready:**
+
+- Physical live unlock (belum pernah dieksekusi; NO-GO).
+- Remote lock (`UNSUPPORTED_CAPABILITY`).
+- Temporary PIN (M13G, belum dibangun).
+- Resident unlock (ditolak `403` oleh kebijakan yang dibekukan).
+- Fleet rollout (constraint satu perangkat uji).
+
+Eksekusi live Smart Lock tetap **NO-GO** per M13F-C4/M13F-D; `SMART_LOCK_LIVE_ENABLED` tetap `false`.

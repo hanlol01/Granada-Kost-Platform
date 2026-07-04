@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-07-04
+
+### M14E - Documentation / Roadmap / Handoff Refresh
+- `PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, dan `INTERNAL_DEMO_CHECKLIST.md` diperbarui pasca M12/M13/M14A-M14D.
+- Status resmi: **internal demo READY**, **production NOT READY**. Smart Lock: **"ready for controlled site trial preparation, execution pending"**; eksekusi live tetap NO-GO.
+- `INTERNAL_DEMO_CHECKLIST.md` Section 13: pointer ke skrip demo M14D + cakupan demo aman + larangan overclaim Smart Lock.
+- Dokumentasi saja. Tidak ada perubahan kode. Tidak ada QA/validasi terminal dijalankan oleh agen dokumentasi.
+
+### M14D - Internal Demo Script Refresh
+- `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md` dibuat: skrip demo internal aman dan repeatable (segmen A-K bersegmen waktu, naskah presenter Bahasa Indonesia, skrip payment proof + complaint attachment, batasan kata Smart Lock, security talking points, fallback plan, referensi artefak). Dokumentasi saja.
+
+### M14C - Browser Regression / Internal Demo Flow
+- Verdict **PASS** (eksekusi eksternal via Codex; **Hybrid Interactive Login** + regression otomatis pasca-login pada profil Chrome terisolasi). 0 temuan leakage; tanpa fatal console error. Evidensi: `artifacts/m14c-browser-regression/` (qa-summary + 20 screenshot) dan `docs/14-production-readiness/BROWSER_REGRESSION_INTERNAL_DEMO_FLOW.md`.
+
+### M14B - API Regression & Security Smoke
+- Verdict **PASS** (eksekusi eksternal via Codex; commit `5f1b96b`): auth/session, RBAC/role boundary, property/self scope, File API, manual payment proof (tetap `pending_review`, invoice tidak otomatis lunas), complaint attachment, Smart Lock read-only + command guard (fail-closed, live disabled), audit/leakage. Evidensi: `artifacts/m14b-api-regression-smoke/` dan `docs/14-production-readiness/API_REGRESSION_SECURITY_SMOKE.md`.
+
+### M14A - Production Readiness Audit
+- Audit readiness pasca M12+M13: **internal demo READY**, **production NOT READY**; feature readiness matrix, klarifikasi status Smart Lock (execution pending), production blockers P0-P2, deployment/env checklist (belum dieksekusi), documentation gaps, QA track M14B-M14F. `docs/14-production-readiness/PRODUCTION_READINESS_AUDIT.md`. Dokumentasi saja.
+
+### M13 (rekap A sampai F-D) - Smart Lock Live Backend Foundation (Tuya/PALOMA)
+- Fondasi backend selesai: site readiness plan (M13A), architecture freeze (M13B), provider config + client (M13C), read-only diagnostic (M13D), read-only sync dengan provider ID ter-mask (M13E), safety freeze (M13F-A), command guard fail-closed (M13F-B), site trial runbook (M13F-C1), guarded live unlock transport `remote_unlock`/`emergency_unlock` (M13F-C2), dry-run live-disabled PASS setelah fix leakage `757b0db9` (M13F-C3), Go/No-Go: CONDITIONAL GO persiapan / NO-GO eksekusi (M13F-C4), sanitized evidence pack `artifacts/m13f-c4-site-evidence-pack/` (M13F-C4.1).
+- M13F-D membekukan status: **"Ready for controlled site trial preparation, execution pending."** Eksekusi live unlock fisik BELUM pernah dilakukan; `SMART_LOCK_LIVE_ENABLED` tetap `false`. Smart Lock live integration TIDAK complete tanpa site trial nyata.
+
+### M12 (rekap) - File Upload / Manual Payment Proof / Complaint Attachment
+- Track M12 (A-H) selesai dan tervalidasi: File API backend-mediated (ADR-BE-FILE-001), generic upload engine, upload bukti pembayaran manual (`pending_review`; verifikasi admin = otoritas settlement), lampiran komplain 0-5 foto transaksional, preview/review Admin. QA-M12G security boundary PASS + QA-M12H visual E2E PASS (detail pada entri 2026-07-03 di bawah); re-regression M14B/M14C PASS.
+
 ## 2026-07-03
 
 ### M12H - Final Visual E2E Demo Pass Documentation

@@ -38,6 +38,21 @@ import {
   useRejectPayment,
   useVerifyPayment,
 } from "@/hooks/useBillingMutations";
+import {
+  usePaymentTransactions,
+  usePaymentTransactionDetail,
+  type PaymentTransactionRecord,
+} from "@/hooks/usePaymentTransactions";
+import { ForbiddenState } from "@/components/state/ForbiddenState";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ApiError } from "@granada-kost/api-client";
 import { useAuth } from "@/lib/auth";
 import { formatIDR, formatDate } from "@/lib/format";
 import {
@@ -59,10 +74,16 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/payments")({ component: PaymentsPage });
 
-type InvoiceTab = "all" | "unpaid" | "paid" | "payments";
+type InvoiceTab = "all" | "unpaid" | "paid" | "payments" | "online";
 
 function isInvoiceTab(value: string): value is InvoiceTab {
-  return value === "all" || value === "unpaid" || value === "paid" || value === "payments";
+  return (
+    value === "all" ||
+    value === "unpaid" ||
+    value === "paid" ||
+    value === "payments" ||
+    value === "online"
+  );
 }
 
 const INVOICE_STATUS_LABEL: Record<InvoiceStatus, { label: string; cls: string }> = {
@@ -103,6 +124,8 @@ function PaymentsPage() {
 
   const invoices = useInvoices({ status: statusParam, limit: 100 });
   const proofs = usePaymentProofs({ status: "pending_review" as PaymentProofStatus, limit: 100 });
+  // Gateway (online) transactions — fetched only when the tab is active.
+  const gatewayTx = usePaymentTransactions({ limit: 100 }, { enabled: tab === "online" });
 
   const items = invoices.data ?? [];
 
@@ -128,6 +151,7 @@ function PaymentsPage() {
   const [reviewTarget, setReviewTarget] = useState<PaymentProofRecord | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<PaymentProofRecord | null>(null);
   const [rejectTarget, setRejectTarget] = useState<PaymentProofRecord | null>(null);
+  const [txDetailId, setTxDetailId] = useState<string | null>(null);
 
   return (
     <AppShell title="Pembayaran" subtitle="Kelola tagihan dan transaksi sewa">
@@ -179,10 +203,40 @@ function PaymentsPage() {
               <TabsTrigger value="all">Semua</TabsTrigger>
               <TabsTrigger value="unpaid">Belum Lunas</TabsTrigger>
               <TabsTrigger value="paid">Riwayat</TabsTrigger>
+              <TabsTrigger value="online">Online</TabsTrigger>
               {canVerifyPayment ? <TabsTrigger value="payments">Verifikasi</TabsTrigger> : null}
             </TabsList>
             <TabsContent value={tab} className="mt-4">
-              {tab === "payments" ? (
+              {tab === "online" ? (
+                gatewayTx.error ? (
+                  isForbiddenError(gatewayTx.error) ? (
+                    <ForbiddenState />
+                  ) : (
+                    <ErrorState
+                      error={gatewayTx.error}
+                      onRetry={() => gatewayTx.refetch()}
+                      title="Gagal memuat transaksi pembayaran online"
+                    />
+                  )
+                ) : gatewayTx.isLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full" />
+                    ))}
+                  </div>
+                ) : (gatewayTx.data ?? []).length === 0 ? (
+                  <EmptyState
+                    icon={<CreditCard className="h-5 w-5" />}
+                    title="Belum ada transaksi pembayaran online"
+                    description="Transaksi gateway (Pembayaran Online) akan tampil di sini setelah penghuni memulai pembayaran."
+                  />
+                ) : (
+                  <GatewayTransactionTable
+                    items={gatewayTx.data ?? []}
+                    onDetail={(t) => setTxDetailId(t.id)}
+                  />
+                )
+              ) : tab === "payments" ? (
                 proofs.error ? (
                   <ErrorState
                     error={proofs.error}
@@ -351,6 +405,12 @@ function PaymentsPage() {
             // Already toasted.
           }
         }}
+      />
+
+      {/* Gateway (online) transaction detail — safe normalized fields only. */}
+      <PaymentTransactionDetailDialog
+        transactionId={txDetailId}
+        onClose={() => setTxDetailId(null)}
       />
     </AppShell>
   );
@@ -615,5 +675,221 @@ function PaymentProofReviewDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// --- Payment gateway (online) transactions — M15C-E2A ---
+
+const GATEWAY_TX_STATUS_LABEL: Record<string, { label: string; cls: string }> = {
+  created: { label: "Dibuat", cls: "bg-muted text-muted-foreground" },
+  pending: { label: "Menunggu", cls: "bg-warning/20 text-warning-foreground" },
+  paid: { label: "Lunas", cls: "bg-success/15 text-success" },
+  failed: { label: "Gagal", cls: "bg-destructive/15 text-destructive" },
+  expired: { label: "Kadaluarsa", cls: "bg-muted text-muted-foreground" },
+  cancelled: { label: "Dibatalkan", cls: "bg-muted text-muted-foreground" },
+  denied: { label: "Ditolak", cls: "bg-destructive/15 text-destructive" },
+  challenge: { label: "Perlu Tinjauan", cls: "bg-warning/20 text-warning-foreground" },
+  requires_review: { label: "Perlu Tinjauan", cls: "bg-warning/20 text-warning-foreground" },
+  unknown: { label: "Perlu Tinjauan", cls: "bg-warning/20 text-warning-foreground" },
+};
+
+function isForbiddenError(error: unknown): boolean {
+  return ApiError.isApiError(error) && error.status === 403;
+}
+
+function GatewayTxStatusBadge({ status }: { status: string }) {
+  const meta = GATEWAY_TX_STATUS_LABEL[status] ?? {
+    label: "Perlu Tinjauan",
+    cls: "bg-warning/20 text-warning-foreground",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
+        meta.cls,
+      )}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function GatewaySourceBadge() {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary-soft text-primary">
+      Gateway
+    </span>
+  );
+}
+
+function AutoConfirmedChip() {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-success/15 text-success">
+      Terkonfirmasi Otomatis
+    </span>
+  );
+}
+
+function gatewayMethodLabel(method?: string | null): string {
+  switch (method) {
+    case "bank_transfer":
+      return "Transfer Bank";
+    case "qris":
+      return "QRIS";
+    case "ewallet":
+      return "E-Wallet";
+    case "card":
+    case "credit_card":
+      return "Kartu";
+    case null:
+    case undefined:
+    case "":
+      return "-";
+    default:
+      return "Lainnya";
+  }
+}
+
+function fmtDateSafe(value?: string | null): string {
+  return value ? formatDate(value.slice(0, 10)) : "-";
+}
+
+function GatewayTransactionTable({
+  items,
+  onDetail,
+}: {
+  items: PaymentTransactionRecord[];
+  onDetail: (t: PaymentTransactionRecord) => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Invoice</TableHead>
+            <TableHead>Penghuni</TableHead>
+            <TableHead>Jumlah</TableHead>
+            <TableHead>Sumber</TableHead>
+            <TableHead>Provider</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Metode</TableHead>
+            <TableHead>Dibuat</TableHead>
+            <TableHead>Lunas</TableHead>
+            <TableHead className="text-right">Aksi</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((t) => (
+            <TableRow key={t.id}>
+              <TableCell className="font-medium">{t.invoiceCode ?? t.invoiceId ?? "-"}</TableCell>
+              <TableCell>{t.residentName ?? "-"}</TableCell>
+              <TableCell>{typeof t.amount === "number" ? formatIDR(t.amount) : "-"}</TableCell>
+              <TableCell>
+                <GatewaySourceBadge />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{t.provider ?? "-"}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1.5">
+                  <GatewayTxStatusBadge status={String(t.status)} />
+                  {String(t.status) === "paid" ? <AutoConfirmedChip /> : null}
+                </div>
+              </TableCell>
+              <TableCell>{gatewayMethodLabel(t.paymentMethod)}</TableCell>
+              <TableCell>{fmtDateSafe(t.createdAt)}</TableCell>
+              <TableCell>{fmtDateSafe(t.paidAt)}</TableCell>
+              <TableCell className="text-right">
+                <Button variant="outline" size="sm" onClick={() => onDetail(t)}>
+                  <Eye className="h-3.5 w-3.5 mr-1" /> Detail
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Pembayaran gateway yang lunas terkonfirmasi otomatis oleh sistem (webhook) dan tidak perlu
+        verifikasi manual. Bukti pembayaran manual tetap diverifikasi pada tab Verifikasi.
+      </p>
+    </div>
+  );
+}
+
+/** Detail dialog for a gateway transaction — normalized, sanitized fields only. */
+function PaymentTransactionDetailDialog({
+  transactionId,
+  onClose,
+}: {
+  transactionId: string | null;
+  onClose: () => void;
+}) {
+  const isOpen = transactionId !== null;
+  const detail = usePaymentTransactionDetail(transactionId);
+  const t = detail.data ?? null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            <CreditCard className="h-4 w-4" />
+            Detail Transaksi Pembayaran Online
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Data ternormalisasi dan aman — tanpa payload mentah provider, signature, atau
+            kredensial.
+          </DialogDescription>
+        </DialogHeader>
+        {detail.isLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : detail.error ? (
+          <ErrorState
+            error={detail.error}
+            onRetry={() => detail.refetch()}
+            title="Gagal memuat detail transaksi"
+          />
+        ) : t ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <TxDetailField label="Sumber" value="Gateway" />
+              <TxDetailField label="Provider" value={t.provider ?? "-"} />
+              <TxDetailField label="Order ID" value={t.providerOrderId ?? "-"} mono />
+              <TxDetailField label="Transaction ID" value={t.providerTransactionId ?? "-"} mono />
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <GatewayTxStatusBadge status={String(t.status)} />
+                  {String(t.status) === "paid" ? <AutoConfirmedChip /> : null}
+                </div>
+              </div>
+              <TxDetailField label="Metode" value={gatewayMethodLabel(t.paymentMethod)} />
+              <TxDetailField
+                label="Jumlah"
+                value={typeof t.amount === "number" ? formatIDR(t.amount) : "-"}
+              />
+              <TxDetailField label="Mata Uang" value={t.currency ?? "IDR"} />
+              <TxDetailField label="Dibuat" value={fmtDateSafe(t.createdAt)} />
+              <TxDetailField label="Kedaluwarsa" value={fmtDateSafe(t.expiresAt)} />
+              <TxDetailField label="Lunas" value={fmtDateSafe(t.paidAt)} />
+              <TxDetailField label="Invoice" value={t.invoiceCode ?? t.invoiceId ?? "-"} />
+            </div>
+            {["requires_review", "challenge", "unknown"].includes(String(t.status)) ? (
+              <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs">
+                <span className="font-medium">Perlu Tinjauan:</span> transaksi ini membutuhkan
+                tindak lanjut manual admin. Tidak ada aksi settlement otomatis dari halaman ini.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TxDetailField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn("font-medium break-all", mono && "font-mono text-xs")}>{value}</p>
+    </div>
   );
 }

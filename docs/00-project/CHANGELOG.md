@@ -1,6 +1,43 @@
 # Changelog
 
+## 2026-07-05
+
+### M15C-G - Payment Gateway Documentation / Release Update
+- Governance docs (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`, `docs/README.md`) diperbarui pasca track M15C. Ringkasan penutup: `docs/15c-payment-gateway/PAYMENT_GATEWAY_RELEASE_UPDATE.md`.
+- Status resmi: **Payment Gateway sandbox/staging ready** - Midtrans Sandbox validated; **production payment activation pending**; **Payment Gateway is not production-ready**. Webhook is the source of truth; redirect is UX only; manual payment proof remains fallback.
+- Production tetap **NOT READY**; Smart Lock tetap **"ready for controlled site trial preparation, execution pending"** (eksekusi live NO-GO). Dokumentasi saja: tidak ada perubahan kode, tidak ada kredensial, tidak ada QA/validasi terminal dijalankan oleh agen dokumentasi.
+
+### M15C-F/F2 - Payment Gateway Sandbox E2E QA
+- Verdict **PASS** di VPS staging (Midtrans Sandbox): deployment freshness, static validation, health/env posture, Hybrid Manual Browser QA (Penghuni "Bayar Online" -> halaman Snap Sandbox terbuka), signed webhook settlement, duplicate/idempotency + invalid-signature checks, dan paid-guard bukti manual. Evidensi: `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md`. Payment Gateway tetap sandbox/staging only.
+
+### M15C-E2A/E2B - Frontend Payment CTA / Admin Status UI
+- Penghuni: `OnlinePaymentCard` state A-F ("Bayar Online", "Menunggu Pembayaran Online", post-return, "Lunas" + label sumber, gagal/kadaluarsa/dibatalkan, "Perlu Tinjauan"), polling terbatas, bukti manual tetap fallback dan disembunyikan saat lunas. Admin: tab "Online" (tabel + detail dialog transaksi gateway, badge Gateway/"Terkonfirmasi Otomatis"/"Perlu Tinjauan", tanpa verify/reject untuk baris gateway). Validasi teknis (lint/typecheck/build + API smoke) dieksekusi eksternal (Codex). Tanpa server key/raw provider payload di frontend. Dokumen: `docs/15c-payment-gateway/FRONTEND_PAYMENT_CTA_ADMIN_STATUS_UI_IMPLEMENTATION.md`.
+
+### M15C-E1 - Frontend Payment UX Plan
+- Kontrak UX/implementasi frontend untuk M15C-E2: state machine billing Penghuni, aturan mengikat (paid hanya dari status backend/webhook; redirect is UX only; CTA disembunyikan saat lunas), rencana UI Admin, copy Bahasa Indonesia, mapping error. Dokumentasi saja. `docs/15c-payment-gateway/FRONTEND_PAYMENT_CTA_ADMIN_STATUS_UI_PLAN.md`.
+
+### M15C-D - Midtrans Sandbox Snap + Webhook Settlement
+- Backend: pembuatan sesi Snap Midtrans Sandbox nyata (server key backend-only) + verifikasi `signature_key` webhook; event paid terverifikasi menandai transaksi gateway + invoice lunas secara atomik dan idempoten; event non-paid/mismatch/refund/chargeback/challenge tidak pernah menandai lunas. Tervalidasi di VPS staging. Sandbox only; not production-ready. `docs/15c-payment-gateway/MIDTRANS_SANDBOX_SNAP_WEBHOOK_SETTLEMENT.md`.
+
+### M15B-A - VPS Staging Baseline Smoke & Environment Hardening
+- **PASS** untuk baseline staging/internal demo (`kelola`/`app`/`api.kostation.web.id`): service systemd, port posture, Nginx/TLS, env hardening; Smart Lock simulated / live disabled. Production tetap NOT READY. `docs/15b-deployment/VPS_STAGING_BASELINE_SMOKE_ENV_HARDENING.md`.
+
 ## 2026-07-04
+
+### M15C-C - Backend Payment Gateway Foundation
+- Modul payment-gateway provider-agnostic dengan default fail-closed (`PAYMENT_GATEWAY_ENABLED=false`, `PAYMENT_GATEWAY_PROVIDER=none`), migrasi `payment_transactions` + `payment_webhook_events`, endpoint resident/admin provider-neutral, guard `PAYMENT_INVOICE_ALREADY_PAID` untuk bukti manual pada invoice lunas, adapter Midtrans skeleton (tanpa call nyata). `docs/15c-payment-gateway/BACKEND_PAYMENT_GATEWAY_FOUNDATION.md`.
+
+### M15C-B - Midtrans Provider Contract Freeze
+- Kontrak provider Midtrans Sandbox dibekukan sebelum implementasi: keputusan Snap, kontrak method `PaymentGatewayProvider`, format provider order ID, verifikasi webhook SHA512, mapping status, idempotency/replay, kontrak API backend->frontend, env/error/audit. Dokumentasi saja; arsitektur tidak dikunci ke Midtrans. `docs/15c-payment-gateway/MIDTRANS_PROVIDER_CONTRACT_FREEZE.md`.
+
+### M15C-A - Payment Gateway Architecture Freeze
+- Arsitektur payment gateway provider-agnostic dibekukan: `PaymentGatewayProvider` interface + adapter (Midtrans Sandbox pertama), webhook is the source of truth, redirect is UX only, manual payment proof remains fallback, aturan security/env, rencana DB, milestone M15C-B..G. Dokumentasi saja. `docs/15c-payment-gateway/PAYMENT_GATEWAY_ARCHITECTURE_FREEZE.md`.
+
+### M15A - Internal Demo Delivery Package
+- Paket delivery demo internal / stakeholder review: tujuan demo, scope aman, agenda, checklist presenter, form feedback, wording Smart Lock aman. Dokumentasi saja. `docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`.
+
+### M14F - Release Readiness Verdict
+- Verdict penutup track M14: **Internal Demo READY, Production NOT READY, Smart Lock live execution NO-GO / site trial pending**. Dokumentasi/keputusan saja. `docs/14-production-readiness/RELEASE_READINESS_VERDICT.md`.
 
 ### M14E - Documentation / Roadmap / Handoff Refresh
 - `PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, dan `INTERNAL_DEMO_CHECKLIST.md` diperbarui pasca M12/M13/M14A-M14D.

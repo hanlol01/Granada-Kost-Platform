@@ -245,3 +245,21 @@ Skrip demo internal terbaru dan yang wajib dipakai untuk demo berikutnya: **`doc
 - Fleet rollout (constraint satu perangkat uji).
 
 Eksekusi live Smart Lock tetap **NO-GO** per M13F-C4/M13F-D; `SMART_LOCK_LIVE_ENABLED` tetap `false`.
+
+## 14. Payment Gateway Sandbox Demo Note (Added 2026-07-05 via M15C-G)
+
+Payment Gateway kini dapat didemokan **hanya dalam mode staging/sandbox** (VPS staging + Midtrans Sandbox). Evidensi QA: `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` (M15C-F/F2, verdict PASS).
+
+**Cakupan demo aman:**
+
+- Penghuni "Bayar Online" dari halaman Billing.
+- Halaman pembayaran Midtrans **Sandbox** (Snap TEST) terbuka.
+- Status lunas dikonfirmasi backend via **webhook** bertanda tangan (webhook is the source of truth; redirect is UX only - jangan klaim lunas dari redirect/return).
+- Admin tab "Online": tabel/detail transaksi gateway (badge Gateway / "Terkonfirmasi Otomatis" / "Perlu Tinjauan"; tanpa verify/reject untuk baris gateway).
+- Manual payment proof remains fallback - alur bukti manual Section 12/13 tetap boleh didemokan berdampingan.
+
+**JANGAN:**
+
+- Mempresentasikan sebagai aktivasi payment production - **production payment activation pending; Payment Gateway is not production-ready**.
+- Menggunakan Midtrans **production keys** dalam bentuk apa pun (sandbox only; secrets backend-only dan tidak pernah ditampilkan).
+- Mengubah postur Smart Lock untuk demo (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`).

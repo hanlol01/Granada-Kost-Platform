@@ -56,6 +56,8 @@ M15C-E2A/E2B frontend payment implementation and technical validation: `15c-paym
 
 M15C-F/F2 payment gateway sandbox E2E QA: `15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` records the VPS staging QA run — deployment freshness/static validation/health/build/leakage checks passed, Hybrid Manual Browser QA confirmed Penghuni and Admin UI behavior, Midtrans Sandbox Snap opened from the UI, signed webhook simulation settled the invoice, duplicate/idempotency and invalid-signature checks passed, and manual proof paid-guard remained intact. Payment Gateway remains sandbox/staging only and NOT production-ready.
 
+M15C-G payment gateway release/documentation update: `15c-payment-gateway/PAYMENT_GATEWAY_RELEASE_UPDATE.md` closes the M15C track — **Payment Gateway sandbox/staging ready; Midtrans Sandbox validated; production payment activation pending; Payment Gateway is not production-ready**. Webhook is the source of truth; redirect is UX only; manual payment proof remains fallback. Governance docs refreshed (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md` Section 14, this index). Documentation only; no code changes, no credentials, no QA executed, Smart Lock status unchanged (site trial pending; live execution NO-GO), production remains NOT READY.
+
 ## File Upload, Payment Proof, dan Complaint Attachment (M12)
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:

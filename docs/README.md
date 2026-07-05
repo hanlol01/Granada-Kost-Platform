@@ -83,4 +83,5 @@ Seluruh dokumen milestone M12 berada di `12-product-readiness/`:
 - Property scoping wajib. Resident self-scope ditegakkan oleh backend.
 - Tidak ada URL file publik. Preview file menggunakan akses terotorisasi yang dimediasi backend. `storage_path` tidak pernah diekspos ke frontend.
 - Tidak didukung pada fase ini: video upload, chat attachment.
-- Milestone mendatang: payment gateway (Midtrans), receipt/nota, Smart Lock live Tuya/PALOMA, CCTV live.
+- Payment Gateway (M15C): **sandbox/staging ready** — Midtrans Sandbox validated; **production payment activation pending**; Payment Gateway is not production-ready. Webhook is the source of truth; redirect is UX only; manual payment proof remains fallback.
+- Milestone mendatang: receipt/nota, payment production activation readiness, Smart Lock live site trial (execution pending), CCTV live.

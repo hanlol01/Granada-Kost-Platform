@@ -185,16 +185,33 @@ Catatan mengikat: eksekusi live unlock fisik BELUM pernah dilakukan dan tetap **
 - M14C - Browser Regression / Internal Demo Flow: verdict **PASS** (Hybrid Interactive Login; eksekusi eksternal via Codex). Status: selesai.
 - M14D - Internal Demo Script Refresh: `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md`. Status: selesai.
 - M14E - Documentation/Roadmap/Handoff Refresh (dokumen ini, `PROJECT_MASTER.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`). Status: selesai.
-- M14F - Release Readiness Verdict. Status: **next milestone.** Memutuskan: kelengkapan paket demo internal; apakah rilis production tetap diblokir; apakah rilis dibekukan sebagai internal-demo-only; prasyarat wajib sebelum production; apakah Smart Lock tetap site-trial-pending.
+- M14F - Release Readiness Verdict: **Internal Demo READY, Production NOT READY, Smart Lock live execution NO-GO / site trial pending** (`docs/14-production-readiness/RELEASE_READINESS_VERDICT.md`). Status: selesai (2026-07-04).
+
+## Milestone 15 - Stakeholder Demo, VPS Staging, Payment Gateway
+
+- M15A - Internal Demo Delivery Package (`docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`). Status: selesai.
+- M15B-A - VPS Staging Baseline Smoke & Environment Hardening: **PASS** untuk baseline staging/internal demo (`docs/15b-deployment/VPS_STAGING_BASELINE_SMOKE_ENV_HARDENING.md`). Production tetap NOT READY. Status: selesai.
+- M15C - Payment Gateway (dokumen: `docs/15c-payment-gateway/`). Status: **selesai (M15C-A sampai M15C-G) - Payment Gateway Sandbox/Staging Ready.**
+  - M15C-A - Payment Gateway Architecture / Product Freeze. Selesai.
+  - M15C-B - Midtrans Provider Contract Freeze. Selesai.
+  - M15C-C - Backend Payment Gateway Foundation (fail-closed default; tabel `payment_transactions` + `payment_webhook_events`). Selesai dan tervalidasi.
+  - M15C-D - Midtrans Sandbox Snap + Webhook Settlement (backend; webhook is the source of truth; redirect is UX only). Selesai dan tervalidasi di VPS staging.
+  - M15C-E1 - Frontend Payment UX Plan. Selesai.
+  - M15C-E2A/E2B - Frontend Penghuni "Bayar Online" + Admin Gateway transaction status UI; validasi teknis eksternal. Selesai.
+  - M15C-F/F2 - Payment Gateway Sandbox E2E QA: **PASS** (VPS staging, Midtrans Sandbox). Selesai.
+  - M15C-G - Documentation / Release Update (governance refresh + `docs/15c-payment-gateway/PAYMENT_GATEWAY_RELEASE_UPDATE.md`). Selesai (2026-07-05).
+
+Catatan mengikat M15C: **Payment Gateway sandbox/staging ready - Payment Gateway is not production-ready.** Midtrans Sandbox validated; **production payment activation pending**. Webhook is the source of truth; redirect is UX only; manual payment proof remains fallback.
 
 ## Next Milestone
 
-- **M14F - Release Readiness Verdict** (lihat Milestone 14 di atas).
+- **M15D / M16 - sesuai keputusan produk.** Jalur kandidat: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness.
+- **Payment Gateway Production Activation / Midtrans Production Readiness: pending/gated - BUKAN selesai.** Butuh Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder.
 - Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).
-- Production readiness: **NOT READY** sampai verdict M14F dan blocker produksi (M14A Section 5) terselesaikan.
+- Production release: **tetap diblokir (NOT READY)** sampai deployment/env checklist production (M14A Section 8) dieksekusi, blocker M14F ditutup, dan approval stakeholder diterima.
 - M11H - Smart Lock UI Integration (hanya setelah live trial backend sukses; dilarang sebelumnya per M13F-D).
 - M11I - CCTV preview (saat gateway lokal tersedia).
-- M11J - Phase 2 surfaces (booking publik, chat, payment gateway/Midtrans, push/WhatsApp).
+- M11J - Phase 2 surfaces (booking publik, chat, push/WhatsApp; payment gateway sandbox selesai via M15C - aktivasi production tetap pending).
 - Receipt/nota untuk pembayaran terverifikasi (milestone mendatang).
 - Backend follow-up untuk membuka endpoint `/audit/*` dan `/reports/exports` agar Audit Viewer dan Export di Reports dapat diaktifkan tanpa redesign.
 - Penghuni complaint detail dengan thumbnail lampiran (endpoint file resident-facing belum diekspos).

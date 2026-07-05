@@ -23,7 +23,7 @@ function flattenValidationErrors(errors: ValidationError[], parent = ''): Record
 }
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   const config = app.get(ConfigService);
 
   app.useLogger(app.get(PinoLogger));

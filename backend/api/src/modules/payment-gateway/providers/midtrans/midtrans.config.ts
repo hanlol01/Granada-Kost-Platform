@@ -12,4 +12,14 @@ export class MidtransConfig {
   environment(): 'sandbox' | 'production' {
     return this.paymentGatewayConfig.midtransEnv;
   }
+
+  serverKey(): string | undefined {
+    return this.paymentGatewayConfig.midtransServerKey;
+  }
+
+  snapEndpoint(): string {
+    return this.environment() === 'sandbox'
+      ? 'https://app.sandbox.midtrans.com/snap/v1/transactions'
+      : 'https://app.midtrans.com/snap/v1/transactions';
+  }
 }

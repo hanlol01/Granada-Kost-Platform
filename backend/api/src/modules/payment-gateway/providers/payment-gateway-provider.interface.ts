@@ -38,7 +38,7 @@ export type NormalizedWebhookEvent = {
   providerTransactionId: string | null;
   normalizedStatus: PaymentTransactionStatus;
   amount: number;
-  currency: 'IDR';
+  currency: string | null;
   paymentMethod: string | null;
   transactionTime: string | null;
   fraudStatus: string | null;

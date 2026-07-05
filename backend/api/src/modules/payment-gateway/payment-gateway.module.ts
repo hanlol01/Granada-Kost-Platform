@@ -4,6 +4,7 @@ import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PaymentGatewayAdminController } from './payment-gateway.admin.controller';
 import { PaymentGatewayController } from './payment-gateway.controller';
+import { PaymentGatewayWebhookController } from './payment-gateway.webhook.controller';
 import { PaymentGatewayConfigService } from './payment-gateway.config';
 import { PaymentGatewayRepository } from './payment-gateway.repository';
 import { PaymentGatewayService } from './payment-gateway.service';
@@ -12,7 +13,7 @@ import { MidtransPaymentGatewayProvider } from './providers/midtrans/midtrans.pr
 
 @Module({
   imports: [BillingModule, PropertyModule, RbacModule],
-  controllers: [PaymentGatewayController, PaymentGatewayAdminController],
+  controllers: [PaymentGatewayController, PaymentGatewayAdminController, PaymentGatewayWebhookController],
   providers: [
     PaymentGatewayConfigService,
     PaymentGatewayRepository,

@@ -38,6 +38,22 @@ export type PaymentTransactionRecord = {
   updatedAt: Date;
 };
 
+export type PaymentWebhookEventStatus = 'received' | 'verified' | 'duplicate' | 'rejected' | 'requires_review' | 'processed';
+
+export type PaymentWebhookEventRecord = {
+  id: string;
+  provider: PaymentGatewayProviderName;
+  eventId: string | null;
+  providerOrderId: string | null;
+  payloadHash: string;
+  receivedAt: Date;
+  processedAt: Date | null;
+  status: PaymentWebhookEventStatus;
+  normalizedResult: Record<string, unknown> | null;
+  sanitizedMetadata: Record<string, unknown> | null;
+  createdAt: Date;
+};
+
 export type CreatePaymentTransactionInput = {
   invoiceId: string;
   propertyId: string;

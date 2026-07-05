@@ -1,14 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Calendar,
   CheckCircle2,
   Clock,
+  CreditCard,
+  ExternalLink,
   FileCheck2,
   Filter,
   ImagePlus,
   Receipt,
+  RefreshCw,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { FilePickerButton } from "@/components/file/FilePickerButton";
@@ -28,7 +32,15 @@ import {
   type MyPaymentRecord,
   type MyPaymentProofRecord,
 } from "@/hooks/usePenghuniBilling";
+import {
+  isPaymentSessionExpired,
+  paymentErrorCode,
+  paymentErrorMessage,
+  useCreatePaymentSession,
+  useInvoicePaymentStatus,
+} from "@/hooks/usePaymentGateway";
 import { env } from "@/lib/env";
+import { qk } from "@/lib/query-client";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
 import type { FileResponse, FileValidationResult } from "@granada-kost/domain";
 
@@ -43,6 +55,9 @@ function BillingPage() {
   const invoicesQuery = useMyInvoices({ limit: 50 });
   const paymentsQuery = useMyPayments({ limit: 50 });
   const [filter, setFilter] = useState<HistoryFilter>("all");
+  // True when the backend confirms the current invoice is settled by the
+  // payment gateway (webhook source of truth). Hides both payment CTAs.
+  const [gatewayPaid, setGatewayPaid] = useState(false);
 
   const current = useMemo(() => selectCurrentInvoice(invoicesQuery.data), [invoicesQuery.data]);
 
@@ -83,8 +98,17 @@ function BillingPage() {
             {/* Current bill */}
             {current ? <CurrentBillCard invoice={current} /> : <NoBillCard />}
 
-            {/* Manual payment proof upload */}
-            {current ? <ManualPaymentProofUpload invoice={current} /> : null}
+            {/* Online payment (gateway). Paid status only comes from the
+                backend (webhook-settled) — never from redirect/return. */}
+            {current ? <OnlinePaymentCard invoice={current} onPaidChange={setGatewayPaid} /> : null}
+
+            {/* Manual payment proof upload — fallback path (M12C3). Hidden
+                once the gateway reports the invoice as paid. */}
+            {current && !gatewayPaid ? (
+              <div id="manual-proof-section">
+                <ManualPaymentProofUpload invoice={current} />
+              </div>
+            ) : null}
 
             {/* History */}
             <div>
@@ -173,6 +197,313 @@ function CurrentBillCard({ invoice }: { invoice: MyInvoiceRecord }) {
           <BreakdownRow label="Denda Keterlambatan" amount={invoice.lateFeeAmount} />
         ) : null}
         <BreakdownRow label="Total" amount={invoice.totalAmount} bold />
+      </div>
+    </div>
+  );
+}
+
+const GATEWAY_FAILED_LABEL: Record<string, string> = {
+  failed: "Pembayaran Gagal",
+  denied: "Pembayaran Gagal",
+  expired: "Kadaluarsa",
+  cancelled: "Dibatalkan",
+};
+
+function hasReturnFlag(key: string): boolean {
+  try {
+    return typeof window !== "undefined" && window.sessionStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setReturnFlag(key: string): void {
+  try {
+    window.sessionStorage.setItem(key, "1");
+  } catch {
+    // Storage unavailable: post-return copy simply won't show; status polling
+    // and webhook settlement are unaffected.
+  }
+}
+
+function clearReturnFlag(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
+ * Online payment card (M15C-E2A).
+ *
+ * States follow the M15C-E1 plan: A unpaid → B pending → C post-return →
+ * D paid / E failed-expired-cancelled-denied / F requires_review-challenge.
+ * The backend payment-status endpoint is the only source of truth; the
+ * redirect/return URL never marks the invoice paid.
+ */
+function OnlinePaymentCard({
+  invoice,
+  onPaidChange,
+}: {
+  invoice: MyInvoiceRecord;
+  onPaidChange: (paid: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const returnFlagKey = `kst-payment-return-${invoice.id}`;
+
+  const [justReturned, setJustReturned] = useState<boolean>(() => hasReturnFlag(returnFlagKey));
+  const [pollingStartedAt, setPollingStartedAt] = useState<number | null>(() =>
+    hasReturnFlag(returnFlagKey) ? Date.now() : null,
+  );
+  const [snapOnlyNotice, setSnapOnlyNotice] = useState(false);
+
+  const statusQuery = useInvoicePaymentStatus(invoice.id, { pollingStartedAt });
+  const createSession = useCreatePaymentSession();
+
+  const status = statusQuery.data ?? null;
+  const paymentStatus = status?.paymentStatus ? String(status.paymentStatus) : null;
+  const isPaid = status?.invoiceStatus === "paid" || paymentStatus === "paid";
+  const isPendingOnline =
+    !isPaid && (paymentStatus === "pending" || paymentStatus === "created");
+  const isFailedRetryable =
+    !isPaid && paymentStatus !== null && paymentStatus in GATEWAY_FAILED_LABEL;
+  const needsReview =
+    !isPaid &&
+    (paymentStatus === "requires_review" ||
+      paymentStatus === "challenge" ||
+      paymentStatus === "unknown");
+
+  useEffect(() => {
+    onPaidChange(isPaid);
+    if (isPaid) {
+      clearReturnFlag(returnFlagKey);
+      setJustReturned(false);
+      setPollingStartedAt(null);
+      // Refresh invoice/payment lists so the paid invoice moves to history.
+      void queryClient.invalidateQueries({ queryKey: qk.penghuni.billingHistory() });
+    }
+  }, [isPaid, onPaidChange, queryClient, returnFlagKey]);
+
+  useEffect(() => {
+    // Once a non-pending result arrives after returning, drop the
+    // "being confirmed" copy in favor of the concrete state.
+    if (justReturned && paymentStatus && !isPendingOnline) {
+      clearReturnFlag(returnFlagKey);
+      setJustReturned(false);
+    }
+  }, [justReturned, paymentStatus, isPendingOnline, returnFlagKey]);
+
+  const canPayOnline = ["issued", "unpaid", "overdue", "partially_paid"].includes(
+    invoice.invoiceStatus,
+  );
+
+  // Gateway disabled / not configured: hide the online card entirely.
+  // Manual payment proof below remains the visible payment path.
+  const statusErrorCode = paymentErrorCode(statusQuery.error);
+  if (statusErrorCode === "PAYMENT_GATEWAY_DISABLED" || statusErrorCode === "PAYMENT_CONFIG_MISSING") {
+    return null;
+  }
+  if (!canPayOnline && !isPaid) return null;
+
+  const canContinue =
+    Boolean(status?.paymentUrl) && !isPaymentSessionExpired(status?.expiresAt);
+
+  async function handlePayOnline() {
+    setSnapOnlyNotice(false);
+    try {
+      const session = await createSession.mutateAsync({ invoiceId: invoice.id });
+      if (session.paymentUrl) {
+        // Mark the in-flight attempt so the post-return copy shows when the
+        // resident lands back on this page. Redirect NEVER marks paid.
+        setReturnFlag(returnFlagKey);
+        setPollingStartedAt(Date.now());
+        window.location.assign(session.paymentUrl);
+        return;
+      }
+      if (session.snapToken) {
+        // Snap.js popup integration is intentionally not enabled in this
+        // milestone (no client key env is added). Backend normally returns
+        // paymentUrl; this is a defensive path.
+        setSnapOnlyNotice(true);
+      }
+      setPollingStartedAt(Date.now());
+    } catch (error) {
+      const code = paymentErrorCode(error);
+      if (code === "PAYMENT_INVOICE_ALREADY_PAID" || code === "PAYMENT_TRANSACTION_PENDING") {
+        void statusQuery.refetch();
+      }
+    }
+  }
+
+  function handleContinuePayment() {
+    if (!status?.paymentUrl) return;
+    setReturnFlag(returnFlagKey);
+    setPollingStartedAt(Date.now());
+    window.location.assign(status.paymentUrl);
+  }
+
+  function handleCheckStatus() {
+    setPollingStartedAt(Date.now());
+    void statusQuery.refetch();
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 text-xs text-muted-foreground shadow-[var(--shadow-soft)]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <CreditCard className="h-4 w-4" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">Pembayaran Online</p>
+            {isPaid ? (
+              <span className="rounded-full bg-success px-2 py-0.5 text-[10px] font-semibold text-success-foreground">
+                Lunas
+              </span>
+            ) : isPendingOnline ? (
+              <span className="rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold text-warning-foreground">
+                Menunggu Pembayaran Online
+              </span>
+            ) : isFailedRetryable && paymentStatus ? (
+              <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+                {GATEWAY_FAILED_LABEL[paymentStatus]}
+              </span>
+            ) : needsReview ? (
+              <span className="rounded-full bg-warning px-2 py-0.5 text-[10px] font-semibold text-warning-foreground">
+                Perlu Tinjauan
+              </span>
+            ) : null}
+          </div>
+
+          {statusQuery.isLoading ? (
+            <p className="mt-2">Memeriksa status pembayaran online...</p>
+          ) : isPaid ? (
+            <div className="mt-3 rounded-xl border border-success/40 bg-success/10 p-3 text-xs text-foreground">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+                <div>
+                  <p className="font-semibold">Tagihan sudah lunas.</p>
+                  {status?.paidAt ? (
+                    <p className="mt-0.5 text-muted-foreground">
+                      Dibayar pada {formatDate(status.paidAt)}
+                    </p>
+                  ) : null}
+                  <p className="mt-0.5 text-muted-foreground">
+                    {paymentStatus === "paid"
+                      ? "Dibayar via Pembayaran Online"
+                      : "Diverifikasi Manual"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : needsReview ? (
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
+                <p className="font-semibold">Pembayaran perlu ditinjau.</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  Pembayaran perlu ditinjau. Silakan hubungi admin apabila status tidak berubah.
+                </p>
+                {status?.safeMessage ? (
+                  <p className="mt-0.5 text-muted-foreground">{status.safeMessage}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={handleCheckStatus}
+                disabled={statusQuery.isFetching}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-xs font-semibold text-foreground disabled:opacity-60"
+              >
+                <RefreshCw className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")} />
+                Cek Status Pembayaran
+              </button>
+            </div>
+          ) : isPendingOnline ? (
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-foreground">
+                  Status lunas akan diperbarui otomatis setelah pembayaran dikonfirmasi.
+                </p>
+                {justReturned ? (
+                  <p className="mt-1">
+                    Pembayaran sedang dikonfirmasi. Silakan tunggu beberapa saat atau tekan Cek
+                    Status.
+                  </p>
+                ) : null}
+                {status?.safeMessage ? <p className="mt-1">{status.safeMessage}</p> : null}
+              </div>
+              {canContinue ? (
+                <button
+                  type="button"
+                  onClick={handleContinuePayment}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Lanjutkan Pembayaran
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleCheckStatus}
+                disabled={statusQuery.isFetching}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-xs font-semibold text-foreground disabled:opacity-60"
+              >
+                <RefreshCw className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")} />
+                Cek Status Pembayaran
+              </button>
+              <p>
+                Bukti pembayaran manual di bawah tetap tersedia sebagai fallback — gunakan hanya
+                jika Anda membayar di luar pembayaran online.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {isFailedRetryable ? (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-foreground">
+                  <p className="font-semibold">
+                    Pembayaran gagal. Anda dapat mencoba kembali atau menggunakan pembayaran
+                    manual.
+                  </p>
+                  {status?.safeMessage ? (
+                    <p className="mt-0.5 text-muted-foreground">{status.safeMessage}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p>Pembayaran online diproses melalui halaman pembayaran aman.</p>
+              )}
+
+              {snapOnlyNotice ? (
+                <div className="rounded-xl border border-dashed border-border bg-muted/40 p-3">
+                  Pembayaran online belum dapat dibuka di aplikasi ini. Silakan coba lagi nanti
+                  atau gunakan pembayaran manual di bawah.
+                </div>
+              ) : null}
+
+              {createSession.isError ? (
+                <InlineError message={paymentErrorMessage(createSession.error)} />
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => void handlePayOnline()}
+                disabled={createSession.isPending}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[image:var(--gradient-primary)] px-4 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-glow)] transition active:scale-[0.98] disabled:opacity-70"
+              >
+                {createSession.isPending ? "Memproses..." : "Bayar Online"}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById("manual-proof-section")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-border bg-background px-4 text-xs font-semibold text-foreground"
+              >
+                Upload Bukti Manual
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -272,9 +603,8 @@ function ManualPaymentProofUpload({ invoice }: { invoice: MyInvoiceRecord }) {
             memverifikasi pembayaran manual ini.
           </p>
           <p className="mt-1">
-            Pembayaran online/payment gateway akan ditangani di milestone berikutnya. Upload ini
-            tetap menjadi fallback untuk transfer manual, tunai, gangguan gateway, atau
-            rekonsiliasi.
+            Jalur utama adalah Pembayaran Online di atas. Upload ini tetap menjadi fallback untuk
+            transfer manual, tunai, gangguan gateway, atau rekonsiliasi.
           </p>
 
           {!canSubmitForInvoice ? (

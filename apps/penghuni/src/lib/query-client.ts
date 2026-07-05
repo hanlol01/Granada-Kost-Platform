@@ -36,6 +36,8 @@ export const qk = {
     billingCurrent: () => ["penghuni", "billing", "current"] as const,
     billingHistory: (filters?: Record<string, unknown>) =>
       ["penghuni", "billing", "history", { ...filters }] as const,
+    billingPaymentStatus: (invoiceId: string) =>
+      ["penghuni", "billing", "payment-status", invoiceId] as const,
     complaints: (filters?: Record<string, unknown>) =>
       ["penghuni", "complaints", { ...filters }] as const,
     complaintCategories: () => ["penghuni", "complaint-categories"] as const,

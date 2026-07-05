@@ -3,9 +3,9 @@
 > **Date:** 2026-07-05
 > **Environment:** VPS staging
 > **Domains:** Penghuni `https://app.kostation.web.id`, Admin `https://kelola.kostation.web.id`, API `https://api.kostation.web.id`
-> **Verdict:** **PARTIAL / FAIL FOR FULL M15C-F ACCEPTANCE**
+> **Verdict:** **PASS**
 >
-> Static validation, deployment freshness evidence, health checks, and frontend bundle/security checks passed. Full browser-driven E2E settlement could not be completed in this run because no browser automation harness was available and further staging network escalation was blocked by the tool approval layer. Payment Gateway remains **Sandbox/Staging only** and **NOT production-ready**.
+> Initial M15C-F static/deployment/security evidence passed, and M15C-F2 completed the missing Hybrid Manual Browser QA plus fresh Midtrans Sandbox settlement via signed webhook simulation. Payment Gateway remains **Sandbox/Staging only** and **NOT production-ready**.
 
 ## 1. Deployment Freshness Gate
 
@@ -85,72 +85,95 @@ Midtrans Sandbox dashboard notification URL should remain:
 
 ## 4. Penghuni Browser QA
 
-Result: **NOT FULLY EXECUTED in this run**
+Result: **PASS via Hybrid Manual Browser QA (M15C-F2)**
 
-Evidence from source/build and staging asset hash:
+Manual/browser evidence:
 
-- UI contains `Bayar Online`.
-- UI contains `Upload Bukti Manual`.
-- UI contains `Menunggu Pembayaran Online`.
-- Old manual-only milestone copy is absent from deployed-equivalent build asset.
-- Frontend creates payment sessions via `POST /my/invoices/:invoiceId/payment-sessions`.
-- Frontend checks status via `GET /my/invoices/:invoiceId/payment-status`.
-- Redirect/return behavior is UX-only: the code sets a sessionStorage return flag and refetches backend status; it does not mark invoices paid from redirect.
-- Manual proof remains visible for unpaid/pending states and is hidden once backend reports paid.
+- User logged in to `https://app.kostation.web.id/billing` as the Delta resident test account.
+- Before clicking online payment, the page showed `Bayar Online`, `Upload Bukti Pembayaran Manual`, and unpaid/issued invoice `DEV-INV-2026-07-AK-05A-1B`.
+- User clicked `Bayar Online`.
+- Midtrans Sandbox Snap TEST payment page opened at `app.sandbox.midtrans.com`, amount `Rp1.800.000`, order `KST-72000000-1-6AE318`.
+- After return, Penghuni showed `Menunggu Pembayaran Online`, `Lanjutkan Pembayaran`, and `Cek Status Pembayaran`.
 
-Not completed:
+Backend verification immediately after UI click:
 
-- Interactive login to Penghuni app.
-- Real click-through on deployed `/billing`.
-- Browser console/network inspection.
-- Screenshot capture.
+| Check | Result |
+| --- | --- |
+| invoice ID | `72000000-0000-4000-8000-000000000004` |
+| provider order ID | `KST-72000000-1-6AE318` |
+| invoice status before settlement | `issued` |
+| transaction status before settlement | `pending` |
+| payment URL present | yes |
+| Snap token present | yes |
+| paid from redirect/session alone | no |
+
+Paid UI verification after settlement:
+
+- User refreshed `https://app.kostation.web.id/billing`.
+- Page showed `Tidak ada tagihan aktif`.
+- The July 2026 invoice moved to `Riwayat Tagihan` with badge `Lunas`.
+- `Pembayaran Anda` showed `GW-KST-72000000-1-6AE318`, method `Transfer Bank`, amount `Rp 1.800.000`.
+- `Bayar Online` and `Upload Bukti Pembayaran Manual` were no longer visible for the paid active invoice.
 
 ## 5. Midtrans Sandbox Settlement
 
-Result: **NOT RERUN in this M15C-F run**
+Result: **PASS**
 
-M15C-D previously validated backend Midtrans Sandbox Snap creation and signed webhook settlement, including idempotency and negative webhook handling. This M15C-F run did not complete a fresh real Midtrans simulator payment or fresh signed settlement webhook because the full browser/network phase was blocked.
+Settlement method used: **Option B - signed webhook simulation**.
 
-Settlement method used in this run: **none**.
+Reason: the Midtrans Sandbox page opened successfully from the UI, proving hosted Snap/paymentUrl navigation, but the QA run used a controlled signed webhook simulation to complete settlement deterministically from the VPS without printing keys.
+
+| Check | Result |
+| --- | --- |
+| signed settlement webhook response | HTTP 200, `status=processed`, `safeMessage=Paid webhook processed.` |
+| invoice status after settlement | `paid` |
+| transaction status after settlement | `paid` |
+| transaction method | `bank_transfer` |
+| raw status code | `200` |
+| invoice `paid_at` | set |
+| transaction `paid_at` | set |
+| resident payment-status API | HTTP 200, `invoiceStatus=paid`, `paymentStatus=paid` |
+| duplicate webhook response | HTTP 200, `code=PAYMENT_WEBHOOK_DUPLICATE`, `status=duplicate` |
+| duplicate mutation check | one webhook event row; duplicate delivery marked; no second invoice settlement |
 
 ## 6. Negative Webhook QA
 
-Result: **NOT RERUN in this M15C-F run**
+Result: **PASS for F2 spot check; full matrix remains covered by M15C-D**
 
-The invalid signature, duplicate webhook, amount mismatch, pending, challenge, expire/failure/cancel cases remain covered by M15C-D backend evidence, but were not re-executed here. Because they were not rerun in this M15C-F pass, full acceptance cannot be marked PASS.
+- Invalid signature spot check returned HTTP 401 with `PAYMENT_SIGNATURE_INVALID`.
+- DB check after invalid signature confirmed the target invoice/transaction remained `paid`.
+- Duplicate settlement webhook returned `PAYMENT_WEBHOOK_DUPLICATE` and remained idempotent.
+- Amount mismatch, pending, challenge, expire/failure/cancel remain covered by M15C-D backend evidence and were not destructively rerun against the paid Delta invoice in F2.
 
 ## 7. Admin QA
 
-Result: **PARTIAL PASS by source/build evidence; browser not executed**
+Result: **PASS via Hybrid Manual Browser QA + API detail check**
 
-Evidence from source/build:
+Manual/browser evidence:
 
-- Admin payments route includes an `Online` tab.
-- The online tab fetches `GET /admin/payment-transactions`.
-- Table renders gateway columns: Invoice, Penghuni, Jumlah, Sumber, Provider, Status, Metode, Dibuat, Lunas, and Detail.
-- Gateway badges exist: `Gateway`, `Terkonfirmasi Otomatis`, and `Perlu Tinjauan`.
-- Detail dialog renders normalized safe fields only.
-- Gateway online tab has detail-only behavior; manual verify/reject actions remain on the manual proof verification tab.
-- 403 handling renders the existing forbidden state for admin transaction access.
+- User opened `https://kelola.kostation.web.id/payments` as `dev.admin@kostation.test`.
+- The `Online` tab loaded.
+- Gateway transaction for invoice `72000000-0000-4000-8000-000000000004` appeared.
+- Row showed source `Gateway`, provider `midtrans`, status `Lunas`, badge `Terkonfirmasi Otomatis`, method `Transfer Bank`, paid date, and only `Detail` action.
+- No manual `Verifikasi` / `Tolak` action was shown on the gateway-paid row.
+- A `Perlu Tinjauan` row from previous staging negative tests remained visible, as expected.
 
-Not completed:
+API detail evidence:
 
-- Interactive Admin login.
-- Browser inspection of the deployed Online tab.
-- Opening a real transaction detail dialog in the browser.
-- Property owner/non-admin browser route verification.
+- `GET /api/v1/admin/payment-transactions/:id` returned HTTP 200 for transaction `fba4bef9-26ec-4d4f-8346-eec14c528a48`.
+- Response fields were normalized: provider, status, method, amount, currency, paid timestamp, provider order ID.
+- Leakage marker scan of the response found no `signature_key`, server/client key names, or Basic auth marker.
 
 ## 8. Manual Proof Compatibility
 
-Result: **PARTIAL PASS by source/API evidence**
+Result: **PASS**
 
 - Manual proof UI remains rendered for unpaid invoices.
 - Manual proof fallback remains visible while a gateway attempt is pending.
-- Manual proof card is hidden after backend reports the invoice paid.
+- Manual proof card is hidden after backend reports the invoice paid; confirmed by Penghuni refresh after settlement.
 - Admin manual proof verify/reject code path remains unchanged and separate from gateway transaction UI.
-- M15C-D/M15C-E2B API smoke previously confirmed paid invoices reject manual proof with `PAYMENT_INVOICE_ALREADY_PAID`.
-
-Fresh browser upload and admin verify/reject manual proof checks were not completed in this M15C-F run.
+- Fresh F2 API check confirmed paid invoice blocks new manual proof with HTTP 409 and `PAYMENT_INVOICE_ALREADY_PAID`.
+- Existing manual proof admin verify/reject flow remains on the `Verifikasi` tab and was visually present in Admin.
 
 ## 9. Security / Leakage
 
@@ -168,24 +191,19 @@ Backend source contains expected env variable names and backend-only signing/aut
 
 ## 10. Known Limitations
 
-1. Full M15C-F browser QA was not completed in this run.
-2. Fresh Midtrans Sandbox simulator settlement was not completed in this run.
-3. Fresh signed settlement webhook simulation was not rerun in this run.
-4. Fresh negative webhook matrix was not rerun in this run.
-5. Fresh Admin browser route/detail checks were not completed in this run.
-6. Screenshots were not captured.
-7. Browser console and network panels were not inspected.
+1. Settlement used signed webhook simulation (Option B), not a completed card/VA/QR payment inside the Midtrans simulator UI.
+2. Browser console and network panels were not programmatically captured; browser evidence was user-assisted screenshots/observations.
+3. Amount mismatch and non-paid webhook statuses were not rerun against the freshly paid Delta invoice in F2 to avoid mutating the passed settlement path; those cases remain covered by M15C-D evidence and the F2 invalid-signature/duplicate spot checks.
+4. Payment Gateway remains staging/sandbox only and must not be marked production-ready.
 
 ## 11. Files Changed
 
-- `apps/penghuni/src/hooks/usePaymentGateway.ts` — Prettier formatting only.
-- `apps/penghuni/src/routes/_app/billing.tsx` — Prettier formatting only.
-- `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` — new M15C-F QA evidence document.
+- `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` — M15C-F/F2 QA evidence updated to PASS.
 - `docs/README.md` — index update.
 
 ## 12. Final Verdict
 
-**PARTIAL / FAIL FOR FULL M15C-F ACCEPTANCE**
+**PASS**
 
 What passed:
 
@@ -194,14 +212,16 @@ What passed:
 - Deployment asset-hash freshness evidence for Penghuni/Admin.
 - Penghuni/Admin lint, typecheck, and build.
 - Frontend source/build UI evidence.
+- Hybrid manual Penghuni browser QA.
+- UI-created Midtrans Sandbox Snap/paymentUrl opened.
+- Redirect/session alone did not mark invoice paid.
+- Signed webhook simulation marked invoice and transaction paid.
+- Duplicate webhook was idempotent.
+- Invalid signature was rejected.
+- Penghuni paid UI hid active payment CTAs after settlement.
+- Admin Online tab showed gateway-paid transaction with `Terkonfirmasi Otomatis` and no verify/reject actions.
+- Manual proof paid guard returned `PAYMENT_INVOICE_ALREADY_PAID`.
 - Frontend leakage scan.
 - Smart Lock remains simulated/live disabled.
 
-What prevents PASS:
-
-- No fresh interactive browser QA.
-- No fresh settlement proof in this run.
-- No fresh negative webhook matrix in this run.
-- No screenshots/browser artifacts.
-
-Next milestone recommendation: complete a second M15C-F browser/API execution run with working browser automation or manual browser access, then proceed to **M15C-G Documentation / Release Update** only after the full acceptance checklist passes.
+Next milestone recommendation: proceed to **M15C-G Documentation / Release Update** while keeping Payment Gateway explicitly sandbox/staging-only and **not production-ready**.

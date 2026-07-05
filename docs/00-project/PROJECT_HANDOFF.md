@@ -1,7 +1,7 @@
 # Project Handoff
 
-> Diperbarui: 2026-07-04 (M14E). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
-> Versi sebelumnya (M12G, 2026-07-03) belum memuat track M13 Smart Lock dan M14 production readiness.
+> Diperbarui: 2026-07-05 (M15C-G). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
+> Versi sebelumnya (M14E, 2026-07-04) belum memuat verdict M14F, paket demo M15A, staging M15B-A, dan track M15C Payment Gateway.
 
 ## Status Saat Ini
 
@@ -10,8 +10,13 @@
 - Frontend Phase 1 selesai (M11A-M11G). QA-01 Final Regression PASS (2026-07-02).
 - M12 (A-H) selesai dan tervalidasi: File API backend-mediated, generic upload engine, upload bukti pembayaran manual Penghuni, lampiran komplain (backend + UI create), preview/review Admin. QA-M12G security boundary PASS; QA-M12H visual E2E PASS.
 - M13 selesai sampai M13F-D: fondasi backend Smart Lock live Tuya/PALOMA (provider config + client, read-only diagnostic/sync, command guard fail-closed, guarded live unlock transport). Status dibekukan: **"ready for controlled site trial preparation, execution pending"**. Eksekusi live unlock fisik BELUM pernah dilakukan dan tetap **NO-GO**.
-- M14A-M14E selesai: Production Readiness Audit (M14A), API Regression & Security Smoke **PASS** (M14B), Browser Regression / Internal Demo Flow **PASS** (M14C, Hybrid Interactive Login), Internal Demo Script Refresh (M14D), refresh dokumentasi ini (M14E). Seluruh QA dijalankan eksternal (Codex); agen dokumentasi tidak menjalankan validasi terminal.
-- **Internal demo: READY** (alur demo aman tervalidasi). **Production: NOT READY** (belum disetujui rilis production).
+- M14A-M14E selesai: Production Readiness Audit (M14A), API Regression & Security Smoke **PASS** (M14B), Browser Regression / Internal Demo Flow **PASS** (M14C, Hybrid Interactive Login), Internal Demo Script Refresh (M14D), refresh dokumentasi (M14E).
+- M14F selesai (2026-07-04): Release Readiness Verdict - **Internal Demo READY, Production NOT READY, Smart Lock live execution NO-GO / site trial pending** (`docs/14-production-readiness/RELEASE_READINESS_VERDICT.md`).
+- M15A selesai: paket delivery demo internal / stakeholder review (`docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`).
+- M15B-A selesai: VPS staging baseline smoke + environment hardening **PASS** - Admin `https://kelola.kostation.web.id`, Penghuni `https://app.kostation.web.id`, API `https://api.kostation.web.id`.
+- M15C (A-G) selesai: **Payment Gateway sandbox/staging ready** - Midtrans Sandbox validated (Snap session + signed webhook settlement, M15C-D), frontend Penghuni "Bayar Online" + Admin tab "Online" (M15C-E2A/E2B), Sandbox E2E QA **PASS** (M15C-F/F2), documentation/release update (M15C-G). **Production payment activation pending; Payment Gateway is not production-ready.**
+- **Internal demo: READY.** **Production: NOT READY** (belum disetujui rilis production).
+- Seluruh QA dijalankan eksternal (Codex) atau hybrid manual; agen dokumentasi tidak menjalankan validasi terminal.
 
 ## Cara Kerja
 
@@ -43,10 +48,39 @@ Jalankan app di terminal terpisah jika beberapa proses perlu aktif bersamaan.
 
 ## Alur Operasional Penting
 
-- **Bukti pembayaran manual adalah jalur fallback/manual**, bukan pengganti payment gateway mendatang. Proof masuk `pending_review`.
+- **Bukti pembayaran manual adalah jalur fallback/manual** - **manual payment proof remains fallback**, bukan pengganti payment gateway. Proof masuk `pending_review`.
 - **Verifikasi Admin adalah satu-satunya otoritas settlement manual** - tagihan tidak otomatis lunas setelah upload bukti.
+- **Pembayaran online (Payment Gateway, M15C) hanya sandbox/staging**: Penghuni "Bayar Online" membuka halaman pembayaran Midtrans Sandbox (Snap); **webhook is the source of truth** - invoice lunas hanya dari webhook bertanda tangan yang terverifikasi; **redirect is UX only** dan tidak pernah menandai lunas; duplicate webhook idempoten.
+- **Invoice gateway-paid terkonfirmasi otomatis** ("Terkonfirmasi Otomatis" di Admin tab "Online") - baris gateway tidak memakai verify/reject manual; verify/reject tetap hanya untuk bukti manual.
+- Bukti manual disembunyikan/diblokir saat invoice lunas (guard backend `PAYMENT_INVOICE_ALREADY_PAID`).
 - **Lampiran komplain bersifat opsional** (0-5 foto, JPEG/PNG maks 2 MB).
 - Resident complaint create (dengan/tanpa lampiran) dan Admin preview lampiran sudah **operasional**.
+
+## Payment Gateway Posture (M15C - Mengikat)
+
+- Status: **Payment Gateway sandbox/staging ready; Midtrans Sandbox validated; production payment activation pending; Payment Gateway is not production-ready.**
+- Yang bekerja di VPS staging (evidensi: `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md`, M15C-F/F2 PASS):
+  - "Bayar Online" bekerja dari UI Penghuni; halaman Snap/pembayaran Midtrans Sandbox terbuka.
+  - Settlement via signed webhook menandai invoice lunas (atomik, idempoten); duplicate webhook idempoten; invalid signature ditolak.
+  - Admin tab "Online" menampilkan transaksi gateway (badge Gateway / "Terkonfirmasi Otomatis" / "Perlu Tinjauan"); baris gateway-paid tanpa verify/reject manual.
+  - Manual payment proof tetap fallback; paid-guard bukti manual utuh.
+- Postur env wajib untuk staging payment testing (nilai secret tidak pernah dicatat/di-commit):
+
+```text
+PAYMENT_GATEWAY_ENABLED=true
+PAYMENT_GATEWAY_PROVIDER=midtrans
+MIDTRANS_ENV=sandbox
+MIDTRANS_SERVER_KEY=<sandbox, backend-only, uncommitted>
+MIDTRANS_CLIENT_KEY=<sandbox; hanya jika dibutuhkan/publishable - saat ini Snap.js tidak diaktifkan>
+PAYMENT_RETURN_URL=https://app.kostation.web.id/billing
+PAYMENT_CANCEL_URL=https://app.kostation.web.id/billing
+PAYMENT_WEBHOOK_BASE_URL=https://api.kostation.web.id
+SMART_LOCK_PROVIDER=simulated
+SMART_LOCK_LIVE_ENABLED=false
+```
+
+- Notification URL Midtrans Sandbox: `https://api.kostation.web.id/api/v1/payment-gateways/midtrans/webhook`.
+- Larangan keras: server key tidak pernah mencapai frontend/repo/log; tidak ada raw provider payload ke frontend; **jangan gunakan Midtrans production keys** di environment mana pun pada fase ini.
 
 ## Smart Lock Live Posture (M13 - Mengikat)
 
@@ -64,25 +98,30 @@ Jalankan app di terminal terpisah jika beberapa proses perlu aktif bersamaan.
 - `artifacts/m14b-api-regression-smoke/` - M14B API regression & security smoke (verdict PASS).
 - `artifacts/m14c-browser-regression/` - M14C browser regression / internal demo flow (verdict PASS; qa-summary + 20 screenshot).
 - `artifacts/m13f-c4-site-evidence-pack/` - sanitized C3-class dry-run pack Smart Lock (PASS; 0 leakage hits; B-23 partially closed di env placeholder).
+- `docs/15b-deployment/VPS_STAGING_BASELINE_SMOKE_ENV_HARDENING.md` - M15B-A staging baseline smoke + env hardening (PASS).
+- `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` - M15C-F/F2 payment gateway sandbox E2E QA (verdict PASS; hybrid manual browser QA + signed webhook settlement + idempotency).
 - Pendukung: `artifacts/m12h-final-demo-pass/`, `artifacts/internal-demo/` (baseline QA-01).
 
 ## Blocker Diketahui (Production)
 
-- Smart Lock live site trial pending (M13F-C5): approvals, person-at-door, manual key holder, dan window uji yang disetujui belum ada.
+- **Payment production**: Midtrans production keys/aktivasi belum dikonfigurasi; notification URL production belum di-set; QA payment production belum dijalankan. **Production payment activation pending.**
+- Deployment/env checklist production belum dieksekusi (M14A Section 8); storage masih local-disk (S3 swap + otomasi cron cleanup deferred); endpoint `/audit/*` dan `/reports/exports` belum tersedia.
+- Approval stakeholder / release owner final masih pending (M14F Section 4).
+- Smart Lock live site trial pending (M13F-C5): approvals, person-at-door, manual key holder, dan window uji yang disetujui belum ada - blocker jika Smart Lock termasuk scope production.
 - Konfirmasi tertulis rotasi kredensial (C-07) pending untuk semua yang pernah ada di PoC/history.
 - Mapping perangkat nyata + evidence site-env dry-run pending (B-23 baru partially closed di env placeholder).
-- Deployment/env checklist production belum dieksekusi (M14A Section 8); storage masih local-disk (S3 swap + otomasi cron cleanup deferred); endpoint `/audit/*` dan `/reports/exports` belum tersedia.
 
 ## Langkah Operator Berikutnya
 
-1. Jalankan demo internal memakai `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md` (M14D) - scope aman + fallback plan sudah ditetapkan.
-2. Eksekusi **M14F - Release Readiness Verdict**: putuskan kelengkapan paket demo internal, status blokir rilis production, opsi freeze internal-demo-only, prasyarat production, dan status site-trial-pending Smart Lock.
-3. Jika lanjut ke site trial Smart Lock: lengkapi M13F-C4 Sections 6-7 (evidence + sign-off) sebelum M13F-C5. Jangan set `SMART_LOCK_LIVE_ENABLED=true` di luar window yang disetujui.
-4. Untuk production: eksekusi deployment/env checklist M14A Section 8 dan tutup blocker P0-P2 pada M14A Section 5.
+1. Demo internal/stakeholder: gunakan `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md` (M14D) + `docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md` (M15A). Payment Gateway boleh didemokan **staging/sandbox only** (lihat `INTERNAL_DEMO_CHECKLIST.md` Section 14) - jangan presentasikan sebagai aktivasi payment production.
+2. Putuskan jalur **M15D/M16** (keputusan produk): production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness.
+3. Jika memilih payment production activation readiness: siapkan Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder. Sampai seluruhnya selesai: **production payment activation pending** dan **Payment Gateway is not production-ready**.
+4. Jika lanjut site trial Smart Lock: lengkapi M13F-C4 Sections 6-7 (evidence + sign-off) sebelum M13F-C5. Jangan set `SMART_LOCK_LIVE_ENABLED=true` di luar window yang disetujui.
+5. Untuk production umum: eksekusi deployment/env checklist M14A Section 8 dan tutup blocker P0-P2 (M14A Section 5, M14F Section 4).
 
 ## Deferred (Jangan Dianggap Selesai)
 
-- Payment gateway / Midtrans.
+- Payment Gateway production activation / Midtrans production readiness (sandbox/staging selesai via M15C).
 - Receipt / nota.
 - Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
 - Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).
@@ -98,5 +137,6 @@ Jalankan app di terminal terpisah jika beberapa proses perlu aktif bersamaan.
 - PostgreSQL system of record; Redis hanya runtime/cache/queue/rate-limit.
 - Property scoping wajib; resident self-scope ditegakkan backend.
 - Tidak ada URL file publik; preview file via akses terotorisasi yang dimediasi backend.
+- Provider secrets (Midtrans server key, kredensial Tuya) backend-only; tidak pernah di frontend env/bundle, repo, docs, atau log.
 
-Rujukan utama: `PROJECT_MASTER.md`, `ROADMAP.md`, `docs/README.md` (indeks), `DEVELOPMENT_WORKFLOW.md` (pembagian peran agen dan validasi), `docs/14-production-readiness/` (M14A-M14D).
+Rujukan utama: `PROJECT_MASTER.md`, `ROADMAP.md`, `docs/README.md` (indeks), `DEVELOPMENT_WORKFLOW.md` (pembagian peran agen dan validasi), `docs/14-production-readiness/` (M14A-M14F), `docs/15b-deployment/` (M15B-A), `docs/15c-payment-gateway/` (M15C).

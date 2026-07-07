@@ -264,8 +264,7 @@ function OnlinePaymentCard({
   const status = statusQuery.data ?? null;
   const paymentStatus = status?.paymentStatus ? String(status.paymentStatus) : null;
   const isPaid = status?.invoiceStatus === "paid" || paymentStatus === "paid";
-  const isPendingOnline =
-    !isPaid && (paymentStatus === "pending" || paymentStatus === "created");
+  const isPendingOnline = !isPaid && (paymentStatus === "pending" || paymentStatus === "created");
   const isFailedRetryable =
     !isPaid && paymentStatus !== null && paymentStatus in GATEWAY_FAILED_LABEL;
   const needsReview =
@@ -301,13 +300,15 @@ function OnlinePaymentCard({
   // Gateway disabled / not configured: hide the online card entirely.
   // Manual payment proof below remains the visible payment path.
   const statusErrorCode = paymentErrorCode(statusQuery.error);
-  if (statusErrorCode === "PAYMENT_GATEWAY_DISABLED" || statusErrorCode === "PAYMENT_CONFIG_MISSING") {
+  if (
+    statusErrorCode === "PAYMENT_GATEWAY_DISABLED" ||
+    statusErrorCode === "PAYMENT_CONFIG_MISSING"
+  ) {
     return null;
   }
   if (!canPayOnline && !isPaid) return null;
 
-  const canContinue =
-    Boolean(status?.paymentUrl) && !isPaymentSessionExpired(status?.expiresAt);
+  const canContinue = Boolean(status?.paymentUrl) && !isPaymentSessionExpired(status?.expiresAt);
 
   async function handlePayOnline() {
     setSnapOnlyNotice(false);
@@ -414,7 +415,9 @@ function OnlinePaymentCard({
                 disabled={statusQuery.isFetching}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-xs font-semibold text-foreground disabled:opacity-60"
               >
-                <RefreshCw className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")} />
+                <RefreshCw
+                  className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")}
+                />
                 Cek Status Pembayaran
               </button>
             </div>
@@ -447,7 +450,9 @@ function OnlinePaymentCard({
                 disabled={statusQuery.isFetching}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-xs font-semibold text-foreground disabled:opacity-60"
               >
-                <RefreshCw className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")} />
+                <RefreshCw
+                  className={"h-3.5 w-3.5" + (statusQuery.isFetching ? " animate-spin" : "")}
+                />
                 Cek Status Pembayaran
               </button>
               <p>
@@ -460,8 +465,7 @@ function OnlinePaymentCard({
               {isFailedRetryable ? (
                 <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-foreground">
                   <p className="font-semibold">
-                    Pembayaran gagal. Anda dapat mencoba kembali atau menggunakan pembayaran
-                    manual.
+                    Pembayaran gagal. Anda dapat mencoba kembali atau menggunakan pembayaran manual.
                   </p>
                   {status?.safeMessage ? (
                     <p className="mt-0.5 text-muted-foreground">{status.safeMessage}</p>
@@ -473,8 +477,8 @@ function OnlinePaymentCard({
 
               {snapOnlyNotice ? (
                 <div className="rounded-xl border border-dashed border-border bg-muted/40 p-3">
-                  Pembayaran online belum dapat dibuka di aplikasi ini. Silakan coba lagi nanti
-                  atau gunakan pembayaran manual di bawah.
+                  Pembayaran online belum dapat dibuka di aplikasi ini. Silakan coba lagi nanti atau
+                  gunakan pembayaran manual di bawah.
                 </div>
               ) : null}
 

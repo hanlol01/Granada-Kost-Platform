@@ -69,7 +69,8 @@ Catatan: upload bukti pembayaran manual adalah jalur fallback/manual dan tetap t
 
 ## Next Milestone
 
-- **Pasca M16 - tergantung keputusan produk.** Jalur kandidat: (1) Booking Lead MVP / Admin Lead Management (deferred dari freeze M16A), (2) production hardening, (3) Smart Lock real site trial (M13F-C5), (4) payment production activation readiness (Midtrans production keys backend-only, notification URL production, QA payment production, checklist deployment production, dan approval stakeholder), atau (5) CCTV planning. Independen dari jalur yang dipilih: jadwalkan browser visual QA M16C/M16E saat tooling browser tersedia.
+- **M17A selesai (2026-07-07): Booking Lead MVP Architecture / UX / Safety Freeze** (`docs/17-booking-leads/BOOKING_LEAD_MVP_ARCHITECTURE_FREEZE.md`; dokumentasi saja, frozen/mengikat untuk M17B+). Booking lead BUKAN booking terkonfirmasi: tanpa reservasi otomatis, tanpa pembayaran/invoice/occupancy otomatis, tanpa nomor kamar eksak publik, tanpa dokumen identitas; konfirmasi admin via WhatsApp tetap jalur utama; **public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
+- **Berikutnya: implementasi Booking Lead MVP (M17B-M17G)** - migrasi additive `booking_leads` + backend foundation, public lead endpoint write-only rate-limited, admin lead management API + UI, form publik di `/kamar`, QA eksternal, final handoff. Jalur alternatif tetap valid tergantung keputusan produk: production hardening, Smart Lock real site trial (M13F-C5), payment production activation readiness (Midtrans production keys backend-only, notification URL production, QA payment production, checklist deployment production, dan approval stakeholder), atau CCTV planning. Independen dari jalur yang dipilih: jadwalkan browser visual QA M16C/M16E saat tooling browser tersedia.
 
 ## Prinsip Arsitektur (Mengikat)
 

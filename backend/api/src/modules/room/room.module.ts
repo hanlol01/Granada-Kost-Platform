@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PropertyOwnerRoomController } from './property-owner-room.controller';
+import { PublicRoomController } from './public-room.controller';
+import { PublicRoomRateLimiterService } from './public-room-rate-limiter.service';
+import { PublicRoomService } from './public-room.service';
 import { RoomFacilityController } from './room-facility.controller';
 import { RoomTypeController } from './room-type.controller';
 import { RoomController } from './room.controller';
@@ -15,8 +18,9 @@ import { RoomService } from './room.service';
     RoomTypeController,
     RoomFacilityController,
     PropertyOwnerRoomController,
+    PublicRoomController,
   ],
-  providers: [RoomRepository, RoomService],
+  providers: [RoomRepository, RoomService, PublicRoomService, PublicRoomRateLimiterService],
   exports: [RoomRepository, RoomService],
 })
 export class RoomModule {}

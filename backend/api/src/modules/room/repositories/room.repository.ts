@@ -11,6 +11,9 @@ import {
   RoomFacilityRecord,
   RoomFloorCode,
   RoomGenderPolicy,
+  PublicRoomAvailabilityFilters,
+  PublicRoomAvailabilityGroupRecord,
+  PublicRoomGenderPolicy,
   RoomRecord,
   RoomStatus,
   RoomTypeRecord,
@@ -55,6 +58,18 @@ type RoomRow = {
   floor_label?: string | null;
   public_visible?: boolean;
   yearly_price?: number | null;
+};
+
+type PublicAvailabilityGroupRow = {
+  category: RoomCategory;
+  gender_policy: PublicRoomGenderPolicy;
+  building_code: string;
+  building_name: string;
+  floor_code: RoomFloorCode;
+  floor_label: string | null;
+  available_count: string;
+  price_from_monthly: number | string;
+  price_from_yearly: number | string;
 };
 
 @Injectable()
@@ -281,6 +296,55 @@ export class RoomRepository {
       propertyId: row.property_id,
       status: row.room_status,
       total: Number(row.total),
+    }));
+  }
+
+  async listPublicAvailabilityGroups(
+    filters: PublicRoomAvailabilityFilters,
+  ): Promise<PublicRoomAvailabilityGroupRecord[]> {
+    const result = await this.database.client.query<PublicAvailabilityGroupRow>(
+      `SELECT room_buildings.category,
+              room_buildings.gender_policy,
+              room_buildings.building_code,
+              room_buildings.building_name,
+              rooms.floor_code,
+              COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code) AS floor_label,
+              count(*) AS available_count,
+              min(rooms.monthly_price) AS price_from_monthly,
+              min(COALESCE(rooms.yearly_price, rooms.monthly_price * 12)) AS price_from_yearly
+       FROM rooms
+       JOIN room_buildings ON room_buildings.id = rooms.building_id
+       WHERE rooms.room_status = 'vacant'
+         AND rooms.public_visible = true
+         AND room_buildings.public_visible = true
+         AND rooms.floor_code IS NOT NULL
+         AND room_buildings.category IN ('rukost', 'apartkost')
+         AND room_buildings.gender_policy IN ('male', 'female')
+         AND ($1::text IS NULL OR room_buildings.gender_policy = $1)
+         AND ($2::text IS NULL OR room_buildings.category = $2)
+         AND ($3::text IS NULL OR room_buildings.building_code = $3)
+         AND ($4::text IS NULL OR rooms.floor_code = $4)
+       GROUP BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code,
+                room_buildings.building_name, rooms.floor_code, COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code)
+       ORDER BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code, rooms.floor_code`,
+      [
+        filters.gender ?? null,
+        filters.category ?? null,
+        filters.buildingCode ?? null,
+        filters.floorCode ?? null,
+      ],
+    );
+
+    return result.rows.map((row) => ({
+      category: row.category,
+      gender: row.gender_policy,
+      buildingCode: row.building_code,
+      buildingName: row.building_name,
+      floorCode: row.floor_code,
+      floorLabel: row.floor_label ?? row.floor_code,
+      availableCount: Number(row.available_count),
+      priceFromMonthly: Number(row.price_from_monthly),
+      priceFromYearly: Number(row.price_from_yearly),
     }));
   }
 

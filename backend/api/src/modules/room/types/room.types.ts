@@ -1,6 +1,7 @@
 export type RoomStatus = 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
 export type MasterStatus = 'active' | 'inactive';
 export type RoomGenderPolicy = 'male' | 'female' | 'mixed';
+export type PublicRoomGenderPolicy = Exclude<RoomGenderPolicy, 'mixed'>;
 export type RoomCategory = 'rukost' | 'apartkost';
 export type RoomFloorCode = 'A' | 'B';
 
@@ -44,4 +45,23 @@ export type RoomRecord = {
   publicVisible: boolean;
   yearlyPrice: number | null;
   facilities: RoomFacilityRecord[];
+};
+
+export type PublicRoomAvailabilityFilters = {
+  gender?: PublicRoomGenderPolicy;
+  category?: RoomCategory;
+  buildingCode?: string;
+  floorCode?: RoomFloorCode;
+};
+
+export type PublicRoomAvailabilityGroupRecord = {
+  category: RoomCategory;
+  gender: PublicRoomGenderPolicy;
+  buildingCode: string;
+  buildingName: string;
+  floorCode: RoomFloorCode;
+  floorLabel: string;
+  availableCount: number;
+  priceFromMonthly: number;
+  priceFromYearly: number;
 };

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-07
+
+### M16F - Final Docs / Release Update / Handoff (Room Inventory & Public Booking)
+- Dokumen penutup track M16: `docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`. Governance docs (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`, `docs/README.md`) diperbarui.
+- Release verdict: **internal/demo/staging READY with known limitations**; **production NOT READY for full production public booking**; **Smart Lock live command NO-GO until site trial/evidence/signoff**; **payment booking DEFERRED - manual/WhatsApp confirmation remains the MVP path**.
+- Limitasi tercatat: browser visual QA belum tersedia di VPS (M16C/M16E pending visual smoke); lint global penghuni terblokir baseline formatting Payment/Billing yang tidak terkait; booking leads/admin lead management, pembayaran booking online, dan foto/media/fasilitas/SEO deferred.
+- Dokumentasi saja: tidak ada perubahan kode, migrasi, import/backfill, perubahan Payment Gateway/Smart Lock, atau validasi terminal oleh agen dokumentasi.
+
+### M16 (rekap A-0 sampai E) - Room Inventory & Public Booking MVP
+- **M16A-0** normalisasi data kamar: 163 kamar (RuKost 123, ApartKost 40; Putra 99, Putri 64), PII masked, koreksi ringkasan RuKost yang stale.
+- **M16A** architecture/UX freeze: strategi public listing dibekukan (agregat, tanpa nomor kamar eksak), filter gender/kategori ditegakkan backend, MVP publik memakai konfirmasi WhatsApp, tanpa payment booking.
+- **M16B** schema + staging backfill: `room_buildings` baru, `rooms` diperluas additif, 26 `room_buildings` insert, 163 kamar backfill in place, room ID dipertahankan, tanpa mutasi resident/occupancy.
+- **M16C** redesign Admin Kamar bertab (Ringkasan, Rumah Kost, Apart Kost, Ketersediaan) + field inventory untuk admin; M16C-QA **PARTIAL diterima** karena browser tooling tidak tersedia.
+- **M16D** Public Room Listing API (`/public/rooms/summary|availability|groups/:groupKey`): data agregat publik-aman tanpa auth, tanpa room ID/`room_code`/nomor kamar eksak, hanya `vacant` + `public_visible`; validasi **PASS**.
+- **M16E** UI publik `/kamar` di `apps/penghuni` (tanpa login) + WhatsApp CTA via `VITE_PUBLIC_WHATSAPP_NUMBER` (env kosong ditangani aman dengan CTA disabled); tanpa nomor kamar eksak, tanpa PII; validasi **partial diterima**. Dokumen: `docs/16-room-inventory-booking/PUBLIC_ROOM_LISTING_UI_WHATSAPP_CTA.md`.
+- Mengikat: **public booking NOT production-ready**; jalur MVP tetap konfirmasi manual/WhatsApp.
+
 ## 2026-07-05
 
 ### M15C-G - Payment Gateway Documentation / Release Update

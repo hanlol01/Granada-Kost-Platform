@@ -263,3 +263,23 @@ Payment Gateway kini dapat didemokan **hanya dalam mode staging/sandbox** (VPS s
 - Mempresentasikan sebagai aktivasi payment production - **production payment activation pending; Payment Gateway is not production-ready**.
 - Menggunakan Midtrans **production keys** dalam bentuk apa pun (sandbox only; secrets backend-only dan tidak pernah ditampilkan).
 - Mengubah postur Smart Lock untuk demo (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`).
+
+## 15. Public Room Listing Demo Note (Added 2026-07-07 via M16F)
+
+Public room listing (M16) dapat didemokan sebagai **MVP staging/demo**. Evidensi/dokumen: `docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`, `PUBLIC_ROOM_LISTING_API.md`, `PUBLIC_ROOM_LISTING_UI_WHATSAPP_CTA.md`.
+
+**Cakupan demo aman:**
+
+- Halaman publik `/kamar` pada app Penghuni **tanpa login**; filter gender Putra/Putri + kategori (Semua/Rumah Kost/Apart Kost).
+- Kartu ketersediaan agregat: judul grup, label kategori/gender, label lantai, jumlah kamar tersedia, harga mulai per bulan/tahun.
+- CTA "Tanya Ketersediaan via WhatsApp" dengan template terisi - membutuhkan `VITE_PUBLIC_WHATSAPP_NUMBER`; jika kosong CTA tampil disabled dengan "Nomor WhatsApp admin belum dikonfigurasi." (itu perilaku aman yang benar, bukan bug).
+- Admin Kamar bertab (Ringkasan, Rumah Kost, Apart Kost, Ketersediaan) dengan field inventory.
+
+**JANGAN:**
+
+- Menampilkan atau menjanjikan **nomor kamar eksak / `room_code`** di permukaan publik - konfirmasi nomor kamar tetap oleh admin via WhatsApp.
+- Mempresentasikan public booking sebagai **production-ready** atau sebagai online booking/payment - **payment booking DEFERRED; konfirmasi manual/WhatsApp adalah jalur MVP**.
+- Menghubungkan booking dengan Payment Gateway dalam bentuk apa pun.
+- Mengubah postur Smart Lock untuk demo dari `SMART_LOCK_PROVIDER=simulated` dan `SMART_LOCK_LIVE_ENABLED=false`.
+
+Catatan: browser visual QA M16C/M16E belum dieksekusi (browser tooling tidak tersedia di VPS); demo visual pertama sekaligus berfungsi sebagai sanity check visual.

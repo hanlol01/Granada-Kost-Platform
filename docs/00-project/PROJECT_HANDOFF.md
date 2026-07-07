@@ -1,7 +1,7 @@
 # Project Handoff
 
-> Diperbarui: 2026-07-05 (M15C-G). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
-> Versi sebelumnya (M14E, 2026-07-04) belum memuat verdict M14F, paket demo M15A, staging M15B-A, dan track M15C Payment Gateway.
+> Diperbarui: 2026-07-07 (M16F). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
+> Versi sebelumnya (M15C-G, 2026-07-05) belum memuat track M16 Room Inventory & Public Booking.
 
 ## Status Saat Ini
 
@@ -15,6 +15,7 @@
 - M15A selesai: paket delivery demo internal / stakeholder review (`docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`).
 - M15B-A selesai: VPS staging baseline smoke + environment hardening **PASS** - Admin `https://kelola.kostation.web.id`, Penghuni `https://app.kostation.web.id`, API `https://api.kostation.web.id`.
 - M15C (A-G) selesai: **Payment Gateway sandbox/staging ready** - Midtrans Sandbox validated (Snap session + signed webhook settlement, M15C-D), frontend Penghuni "Bayar Online" + Admin tab "Online" (M15C-E2A/E2B), Sandbox E2E QA **PASS** (M15C-F/F2), documentation/release update (M15C-G). **Production payment activation pending; Payment Gateway is not production-ready.**
+- M16 (A-0 sampai F) selesai (2026-07-07): Room Inventory & Public Booking MVP - normalisasi data kamar (163/123/40; Putra 99/Putri 64; PII masked), architecture/UX freeze, schema + staging backfill additif (26 `room_buildings`, 163 kamar in place, room ID dipertahankan), Admin Kamar bertab (M16C-QA **PARTIAL diterima**), Public Room Listing API (**PASS**), UI publik `/kamar` + WhatsApp CTA via `VITE_PUBLIC_WHATSAPP_NUMBER` (validasi **partial diterima**), final handoff `docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`. **Public booking NOT production-ready**; booking leads & pembayaran booking online deferred.
 - **Internal demo: READY.** **Production: NOT READY** (belum disetujui rilis production).
 - Seluruh QA dijalankan eksternal (Codex) atau hybrid manual; agen dokumentasi tidak menjalankan validasi terminal.
 
@@ -102,6 +103,15 @@ SMART_LOCK_LIVE_ENABLED=false
 - `docs/15c-payment-gateway/PAYMENT_GATEWAY_SANDBOX_E2E_QA.md` - M15C-F/F2 payment gateway sandbox E2E QA (verdict PASS; hybrid manual browser QA + signed webhook settlement + idempotency).
 - Pendukung: `artifacts/m12h-final-demo-pass/`, `artifacts/internal-demo/` (baseline QA-01).
 
+## Public Room Listing / Booking Posture (M16 - Mengikat)
+
+- Status: **public room listing live sebagai MVP staging/demo; public booking NOT production-ready.**
+- API publik (M16D; unauthenticated, rate-limited Redis): `GET /api/v1/public/rooms/summary`, `GET /api/v1/public/rooms/availability`, `GET /api/v1/public/rooms/groups/:groupKey`. Hanya data agregat aman: **tanpa room ID, `room_code`, nomor kamar eksak, atau PII tenant/resident/occupancy**; hanya kamar `vacant` + `public_visible` (kamar + building) yang dihitung; filter gender/kategori ditegakkan backend.
+- UI publik (M16E): route `/kamar` di `apps/penghuni` (di luar AuthGuard, tanpa login), filter gender Putra/Putri + kategori, kartu ketersediaan agregat, CTA WhatsApp dengan template terisi.
+- Konfigurasi: **`VITE_PUBLIC_WHATSAPP_NUMBER`** (frontend env tervalidasi, default kosong). Jika kosong/tidak valid: CTA disabled dengan teks "Nomor WhatsApp admin belum dikonfigurasi." - tidak pernah menghasilkan URL `wa.me` invalid. Jangan pernah hardcode nomor. (Terpisah dari `VITE_ADMIN_WHATSAPP_PHONE` untuk fallback upload file.)
+- Alur booking MVP: konfirmasi manual admin via WhatsApp. **Tanpa booking leads tersimpan, tanpa pembayaran online booking, tanpa keterlibatan Payment Gateway.** Nomor kamar eksak dikonfirmasi admin, tidak pernah tampil publik.
+- Limitasi tercatat: browser visual QA M16C/M16E belum dieksekusi (tooling tidak tersedia di VPS); lint global penghuni terblokir baseline formatting Payment/Billing yang tidak terkait; `routeTree.gen.ts` diperbarui manual dan akan di-regenerate pada build berikutnya.
+
 ## Blocker Diketahui (Production)
 
 - **Payment production**: Midtrans production keys/aktivasi belum dikonfigurasi; notification URL production belum di-set; QA payment production belum dijalankan. **Production payment activation pending.**
@@ -123,6 +133,9 @@ SMART_LOCK_LIVE_ENABLED=false
 
 - Payment Gateway production activation / Midtrans production readiness (sandbox/staging selesai via M15C).
 - Receipt / nota.
+- Booking leads / admin lead management (deferred dari track M16).
+- Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp).
+- Foto/media kamar, katalog fasilitas, halaman SEO public listing (fase lanjut).
 - Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
 - Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).
 - CCTV live integration.

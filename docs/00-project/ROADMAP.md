@@ -203,9 +203,23 @@ Catatan mengikat: eksekusi live unlock fisik BELUM pernah dilakukan dan tetap **
 
 Catatan mengikat M15C: **Payment Gateway sandbox/staging ready - Payment Gateway is not production-ready.** Midtrans Sandbox validated; **production payment activation pending**. Webhook is the source of truth; redirect is UX only; manual payment proof remains fallback.
 
+## Milestone 16 - Room Inventory & Public Booking MVP
+
+Status: selesai sampai M16F (Final Docs / Release Handoff, 2026-07-07). Dokumen: `docs/16-room-inventory-booking/` (penutup: `M16_FINAL_RELEASE_HANDOFF.md`).
+
+- M16A-0 - Room Master Data Cleanup / Normalization: 163 kamar (RuKost 123, ApartKost 40; Putra 99, Putri 64), PII masked, ringkasan RuKost stale dikoreksi. Selesai (PASS).
+- M16A - Architecture / UX Freeze: strategi public listing dibekukan (agregat tanpa nomor kamar eksak, hero gender filter), filter gender/kategori ditegakkan backend, MVP publik via konfirmasi WhatsApp, tanpa payment booking. Selesai (frozen, mengikat).
+- M16B - Backend schema + staging backfill: `room_buildings` ditambahkan, `rooms` diperluas additif, 26 `room_buildings` insert + 163 kamar backfill in place, room ID dipertahankan, tanpa mutasi resident/occupancy. Selesai.
+- M16C - Admin Room Management Redesign: `/rooms` bertab (Ringkasan, Rumah Kost, Apart Kost, Ketersediaan) + field inventory admin. Selesai; **M16C-QA PARTIAL diterima** (browser tooling tidak tersedia di VPS).
+- M16D - Public Room Listing API: `/api/v1/public/rooms/summary|availability|groups/:groupKey`, agregat publik-aman tanpa auth + rate limit, hanya `vacant` + `public_visible`, tanpa room ID/`room_code`/nomor kamar eksak. Selesai; validasi **PASS**.
+- M16E - Public Room Listing UI + WhatsApp CTA: route publik `/kamar` di `apps/penghuni` (tanpa login), filter gender/kategori, kartu ketersediaan, CTA WhatsApp via `VITE_PUBLIC_WHATSAPP_NUMBER` (env kosong = CTA disabled aman). Selesai; validasi **partial diterima**.
+- M16F - Final Docs / Release Update / Handoff (`M16_FINAL_RELEASE_HANDOFF.md`). Selesai (2026-07-07).
+
+Catatan mengikat M16: **public booking NOT production-ready**; booking leads/admin lead management deferred; pembayaran booking online deferred - **konfirmasi manual/WhatsApp adalah jalur MVP**; browser visual QA M16C/M16E dieksekusi saat tooling tersedia; lint global penghuni terblokir baseline formatting Payment/Billing yang tidak terkait (bukan akibat M16).
+
 ## Next Milestone
 
-- **M15D / M16 - sesuai keputusan produk.** Jalur kandidat: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness.
+- **Pasca M16 - sesuai keputusan produk.** Jalur kandidat: Booking Lead MVP / Admin Lead Management (deferred dari freeze M16A), production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA M16C/M16E dijalankan saat tooling browser tersedia.
 - **Payment Gateway Production Activation / Midtrans Production Readiness: pending/gated - BUKAN selesai.** Butuh Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder.
 - Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).
 - Production release: **tetap diblokir (NOT READY)** sampai deployment/env checklist production (M14A Section 8) dieksekusi, blocker M14F ditutup, dan approval stakeholder diterima.

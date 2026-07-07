@@ -21,13 +21,14 @@ Granada Kost Platform adalah monorepo untuk operasional kost dengan dua aplikasi
 - Payment gateway provider-agnostic (`PaymentGatewayProvider` interface + adapter); **Midtrans Sandbox adalah adapter pertama** (M15C). **Webhook is the source of truth** untuk status lunas otomatis; **redirect is UX only**; **manual payment proof remains fallback**. Status: **Payment Gateway sandbox/staging ready** - **production payment activation pending**; **Payment Gateway is not production-ready**.
 - Istilah UI resmi untuk resident adalah "Penghuni". Jangan gunakan istilah "tenant" pada UI.
 
-## Status Proyek (per 2026-07-05)
+## Status Proyek (per 2026-07-07)
 
 Ringkasan readiness:
 
 - **Internal demo: READY** - dipertegas verdict M14F (`docs/14-production-readiness/RELEASE_READINESS_VERDICT.md`); paket delivery demo stakeholder tersedia (M15A, `docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`).
 - **VPS staging: READY / tervalidasi** - M15B-A baseline smoke + environment hardening PASS (`docs/15b-deployment/VPS_STAGING_BASELINE_SMOKE_ENV_HARDENING.md`).
 - **Payment Gateway: sandbox/staging ready** - Midtrans Sandbox validated end-to-end di VPS staging (M15C-F/F2 Sandbox E2E QA PASS). **Production payment activation pending; Payment Gateway is not production-ready.**
+- **Public room listing (M16): READY dengan limitasi tercatat** untuk staging/demo - **public booking NOT production-ready** (`docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`).
 - **Production: NOT READY** - belum disetujui untuk rilis production (M14F; blocker di `docs/14-production-readiness/PRODUCTION_READINESS_AUDIT.md` Section 5 + blocker aktivasi payment production di bawah).
 
 Selesai:
@@ -41,6 +42,7 @@ Selesai:
 - M15A Internal Demo Delivery Package - paket delivery demo internal / stakeholder review (`docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md`). Dokumentasi saja.
 - M15B-A VPS Staging Baseline Smoke & Environment Hardening - **PASS** untuk baseline staging/internal demo (`docs/15b-deployment/VPS_STAGING_BASELINE_SMOKE_ENV_HARDENING.md`).
 - **M15C (A-G) Payment Gateway - selesai melalui Sandbox E2E QA**: architecture/product freeze (M15C-A), Midtrans provider contract freeze (M15C-B), backend foundation fail-closed (M15C-C), Midtrans Sandbox Snap + signed webhook settlement tervalidasi di staging (M15C-D), frontend UX plan (M15C-E1), frontend Penghuni "Bayar Online" + Admin Gateway transaction status UI (M15C-E2A; validasi teknis eksternal M15C-E2B), Sandbox E2E QA **PASS** (M15C-F/F2), documentation/release update (M15C-G). **Payment Gateway sandbox/staging ready; Midtrans Sandbox validated; webhook settlement tervalidasi; manual payment proof remains fallback; production payment activation pending - Payment Gateway is not production-ready.** Dokumen: `docs/15c-payment-gateway/`.
+- **M16 (A-0 sampai F) Room Inventory & Public Booking MVP - selesai dengan limitasi tercatat** (2026-07-07): normalisasi data kamar (M16A-0: 163 kamar; RuKost 123, ApartKost 40; Putra 99, Putri 64; PII masked), architecture/UX freeze (M16A), schema + staging backfill additif (M16B: 26 `room_buildings`, 163 kamar backfill in place, room ID dipertahankan, tanpa mutasi resident/occupancy), redesign Admin Kamar bertab (M16C; **M16C-QA PARTIAL diterima** - browser tooling tidak tersedia), Public Room Listing API publik-aman (M16D, validasi **PASS**), UI publik `/kamar` + WhatsApp CTA via `VITE_PUBLIC_WHATSAPP_NUMBER` (M16E, validasi **partial diterima**), final release/handoff (M16F, `docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`). **Public booking NOT production-ready; booking leads & pembayaran booking online deferred; konfirmasi manual/WhatsApp adalah jalur MVP.** Tanpa nomor kamar eksak dan tanpa PII pada permukaan publik.
 
 Smart Lock (jangan overclaim):
 
@@ -59,12 +61,15 @@ Deferred (jangan dianggap selesai):
 - Video upload (tidak didukung fase ini).
 - Reports export (`/reports/exports`).
 - Audit viewer (`/audit/*`).
+- Booking leads / admin lead management (deferred dari track M16).
+- Pembayaran booking online (deferred; hanya setelah aktivasi payment production - track terpisah; jalur MVP tetap konfirmasi manual/WhatsApp).
+- Foto/media kamar, katalog fasilitas, halaman SEO per kategori/gender (fase lanjut public listing).
 
 Catatan: upload bukti pembayaran manual adalah jalur fallback/manual dan tetap tersedia berdampingan dengan pembayaran online gateway (sandbox); verifikasi admin tetap otoritas settlement manual; invoice gateway-paid terkonfirmasi otomatis via webhook tanpa verifikasi manual.
 
 ## Next Milestone
 
-- **M15D atau M16 - tergantung keputusan produk.** Jalur kandidat: (1) production hardening, (2) Smart Lock real site trial (M13F-C5), (3) CCTV planning, atau (4) payment production activation readiness (Midtrans production keys backend-only, notification URL production, QA payment production, checklist deployment production, approval stakeholder).
+- **Pasca M16 - tergantung keputusan produk.** Jalur kandidat: (1) Booking Lead MVP / Admin Lead Management (deferred dari freeze M16A), (2) production hardening, (3) Smart Lock real site trial (M13F-C5), (4) payment production activation readiness (Midtrans production keys backend-only, notification URL production, QA payment production, checklist deployment production, dan approval stakeholder), atau (5) CCTV planning. Independen dari jalur yang dipilih: jadwalkan browser visual QA M16C/M16E saat tooling browser tersedia.
 
 ## Prinsip Arsitektur (Mengikat)
 

@@ -6,7 +6,15 @@ import { CreateRoomTypeDto } from '../dto/create-room-type.dto';
 import { ListRoomsQueryDto } from '../dto/list-rooms-query.dto';
 import { UpdateRoomDto } from '../dto/update-room.dto';
 import { UpdateRoomTypeDto } from '../dto/update-room-type.dto';
-import { RoomFacilityRecord, RoomGenderPolicy, RoomRecord, RoomStatus, RoomTypeRecord } from '../types/room.types';
+import {
+  RoomCategory,
+  RoomFacilityRecord,
+  RoomFloorCode,
+  RoomGenderPolicy,
+  RoomRecord,
+  RoomStatus,
+  RoomTypeRecord,
+} from '../types/room.types';
 
 type RoomTypeRow = {
   id: string;
@@ -38,6 +46,15 @@ type RoomRow = {
   deposit_amount: number;
   room_status: RoomStatus;
   primary_photo_file_id: string | null;
+  room_code?: string | null;
+  category?: RoomCategory | null;
+  building_id?: string | null;
+  building_code?: string | null;
+  building_name?: string | null;
+  floor_code?: RoomFloorCode | null;
+  floor_label?: string | null;
+  public_visible?: boolean;
+  yearly_price?: number | null;
 };
 
 @Injectable()
@@ -126,15 +143,20 @@ export class RoomRepository {
 
   async listRooms(query: ListRoomsQueryDto, propertyIds?: string[]): Promise<RoomRecord[]> {
     const result = await this.database.client.query<RoomRow>(
-      `SELECT id, property_id, room_type_id, number, unit_code, gender_policy, floor, size_label, monthly_price,
-              deposit_amount, room_status, primary_photo_file_id
+      `SELECT rooms.id, rooms.property_id, rooms.room_type_id, rooms.number, rooms.unit_code, rooms.gender_policy,
+              rooms.floor, rooms.size_label, rooms.monthly_price, rooms.deposit_amount, rooms.room_status,
+              rooms.primary_photo_file_id, rooms.room_code, rooms.category, rooms.building_id,
+              room_buildings.building_code, room_buildings.building_name, rooms.floor_code, rooms.floor_label,
+              rooms.public_visible, rooms.yearly_price
        FROM rooms
-       WHERE ($1::uuid[] IS NULL OR property_id = ANY($1::uuid[]))
-         AND ($2::uuid IS NULL OR property_id = $2)
-         AND ($3::text IS NULL OR room_status = $3)
-         AND ($4::text IS NULL OR floor = $4)
-         AND ($5::uuid IS NULL OR room_type_id = $5)
-       ORDER BY property_id, floor, number`,
+       LEFT JOIN room_buildings ON room_buildings.id = rooms.building_id
+       WHERE ($1::uuid[] IS NULL OR rooms.property_id = ANY($1::uuid[]))
+         AND ($2::uuid IS NULL OR rooms.property_id = $2)
+         AND ($3::text IS NULL OR rooms.room_status = $3)
+         AND ($4::text IS NULL OR rooms.floor = $4)
+         AND ($5::uuid IS NULL OR rooms.room_type_id = $5)
+       ORDER BY rooms.property_id, rooms.category NULLS LAST, room_buildings.building_code NULLS LAST,
+                rooms.floor_code NULLS LAST, rooms.room_code NULLS LAST, rooms.number`,
       [
         propertyIds?.length ? propertyIds : null,
         query.property_id ?? null,
@@ -148,10 +170,14 @@ export class RoomRepository {
 
   async findRoom(id: string): Promise<RoomRecord | null> {
     const result = await this.database.client.query<RoomRow>(
-      `SELECT id, property_id, room_type_id, number, unit_code, gender_policy, floor, size_label, monthly_price,
-              deposit_amount, room_status, primary_photo_file_id
+      `SELECT rooms.id, rooms.property_id, rooms.room_type_id, rooms.number, rooms.unit_code, rooms.gender_policy,
+              rooms.floor, rooms.size_label, rooms.monthly_price, rooms.deposit_amount, rooms.room_status,
+              rooms.primary_photo_file_id, rooms.room_code, rooms.category, rooms.building_id,
+              room_buildings.building_code, room_buildings.building_name, rooms.floor_code, rooms.floor_label,
+              rooms.public_visible, rooms.yearly_price
        FROM rooms
-       WHERE id = $1`,
+       LEFT JOIN room_buildings ON room_buildings.id = rooms.building_id
+       WHERE rooms.id = $1`,
       [id],
     );
     const rooms = await this.hydrateRooms(result.rows);
@@ -302,6 +328,15 @@ export class RoomRepository {
       depositAmount: row.deposit_amount,
       roomStatus: row.room_status,
       primaryPhotoFileId: row.primary_photo_file_id,
+      roomCode: row.room_code ?? null,
+      category: row.category ?? null,
+      buildingId: row.building_id ?? null,
+      buildingCode: row.building_code ?? row.unit_code ?? null,
+      buildingName: row.building_name ?? null,
+      floorCode: row.floor_code ?? null,
+      floorLabel: row.floor_label ?? row.floor ?? null,
+      publicVisible: row.public_visible ?? false,
+      yearlyPrice: row.yearly_price ?? null,
       facilities: byRoom.get(row.id) ?? [],
     }));
   }

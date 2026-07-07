@@ -46,6 +46,6 @@ export class UpdateRoomDto {
 }
 
 export class UpdateRoomStatusDto {
-  @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive'])
-  status!: 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive';
+  @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive', 'requires_review'])
+  status!: 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
 }

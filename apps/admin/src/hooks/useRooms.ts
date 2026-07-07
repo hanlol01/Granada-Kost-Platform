@@ -8,7 +8,15 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { useProperty } from "@/lib/property";
 
-export type RoomStatus = "vacant" | "reserved" | "occupied" | "maintenance" | "inactive";
+export type RoomStatus =
+  | "vacant"
+  | "reserved"
+  | "occupied"
+  | "maintenance"
+  | "inactive"
+  | "requires_review";
+export type RoomCategory = "rukost" | "apartkost";
+export type RoomFloorCode = "A" | "B";
 
 export type RoomRecord = {
   id: string;
@@ -23,6 +31,15 @@ export type RoomRecord = {
   depositAmount: number;
   roomStatus: RoomStatus;
   primaryPhotoFileId: string | null;
+  roomCode: string | null;
+  category: RoomCategory | null;
+  buildingId: string | null;
+  buildingCode: string | null;
+  buildingName: string | null;
+  floorCode: RoomFloorCode | null;
+  floorLabel: string | null;
+  publicVisible: boolean;
+  yearlyPrice: number | null;
   facilities: { id: string; name: string }[];
 };
 

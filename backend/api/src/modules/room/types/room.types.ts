@@ -1,6 +1,8 @@
-export type RoomStatus = 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive';
+export type RoomStatus = 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
 export type MasterStatus = 'active' | 'inactive';
 export type RoomGenderPolicy = 'male' | 'female' | 'mixed';
+export type RoomCategory = 'rukost' | 'apartkost';
+export type RoomFloorCode = 'A' | 'B';
 
 export type RoomTypeRecord = {
   id: string;
@@ -32,5 +34,14 @@ export type RoomRecord = {
   depositAmount: number;
   roomStatus: RoomStatus;
   primaryPhotoFileId: string | null;
+  roomCode: string | null;
+  category: RoomCategory | null;
+  buildingId: string | null;
+  buildingCode: string | null;
+  buildingName: string | null;
+  floorCode: RoomFloorCode | null;
+  floorLabel: string | null;
+  publicVisible: boolean;
+  yearlyPrice: number | null;
   facilities: RoomFacilityRecord[];
 };

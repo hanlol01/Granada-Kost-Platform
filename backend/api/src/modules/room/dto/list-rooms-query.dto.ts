@@ -6,7 +6,7 @@ export class ListRoomsQueryDto {
   property_id?: string;
 
   @IsOptional()
-  @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive'])
+  @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive', 'requires_review'])
   status?: string;
 
   @IsOptional()

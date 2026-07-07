@@ -46,8 +46,7 @@ const CATEGORY_OPTIONS: { value: PublicCategory | undefined; label: string }[] =
 export const Route = createFileRoute("/kamar")({
   validateSearch: (raw: Record<string, unknown>): KamarSearch => ({
     gender: raw.gender === "putra" || raw.gender === "putri" ? raw.gender : undefined,
-    category:
-      raw.category === "rukost" || raw.category === "apartkost" ? raw.category : undefined,
+    category: raw.category === "rukost" || raw.category === "apartkost" ? raw.category : undefined,
   }),
   head: () => ({
     meta: [
@@ -165,9 +164,7 @@ function KamarPage() {
         ) : availability.isError ? (
           <div className="flex min-h-[40vh] w-full flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-sm font-semibold">Data kamar belum dapat dimuat.</p>
-            <p className="text-xs text-muted-foreground">
-              Silakan coba lagi atau hubungi admin.
-            </p>
+            <p className="text-xs text-muted-foreground">Silakan coba lagi atau hubungi admin.</p>
             <Button size="sm" variant="outline" onClick={() => void availability.refetch()}>
               <RefreshCw className="h-4 w-4" />
               Coba lagi
@@ -234,9 +231,7 @@ function RoomGroupCard({
         </div>
 
         <div>
-          <p className="text-sm font-semibold">
-            Mulai {formatIDR(group.priceFromMonthly)}/bulan
-          </p>
+          <p className="text-sm font-semibold">Mulai {formatIDR(group.priceFromMonthly)}/bulan</p>
           {group.priceFromYearly ? (
             <p className="text-xs text-muted-foreground">
               atau {formatIDR(group.priceFromYearly)}/tahun

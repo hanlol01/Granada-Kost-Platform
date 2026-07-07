@@ -17,6 +17,7 @@
     "complaint:validate-workflow": "tsx src/infrastructure/database/scripts/validate-complaint-workflow.ts",
     "vehicle:validate-workflow": "tsx src/infrastructure/database/scripts/validate-vehicle-workflow.ts",
     "notification:validate-workflow": "tsx src/infrastructure/database/scripts/validate-notification-workflow.ts",
+    "room-inventory:validate": "tsx src/infrastructure/database/scripts/validate-room-inventory-import.ts",
     "smartlock:validate-runtime": "tsx src/infrastructure/database/scripts/validate-smartlock-runtime.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"*.json\" \"*.md\"",

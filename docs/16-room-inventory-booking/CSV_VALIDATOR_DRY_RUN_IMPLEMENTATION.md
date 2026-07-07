@@ -208,9 +208,19 @@ The report also compares selected DB counts before and after dry-run execution; 
 
 ## 10. Next Milestone Recommendation
 
-Proceed to **M16B-4 — Staging Backfill / Import Execution** only after the PASS dry-run report is reviewed and manual review items are explicitly accepted or resolved.
+M16B-4A update on 2026-07-07: the same script now includes an explicit guarded apply mode behind --apply, ROOM_INVENTORY_IMPORT_CONFIRM=APPLY_M16_ROOM_INVENTORY, and ROOM_INVENTORY_BACKUP_CONFIRMED=true. Default execution remains dry-run and the M16B-3B PASS baseline remains valid for pre-backfill state verification.
 
-M16B-4 must remain staging-first, no-delete, and gated by backup/snapshot plus stakeholder approval.
+Use the dry-run command for read-only validation:
+
+npm --workspace @granada-kost/api run room-inventory:validate
+
+The guarded apply command exists for the future approved staging import path:
+
+npm --workspace @granada-kost/api run room-inventory:apply
+
+For M16B-4A, only dry-run and apply-refusal without confirmation env are validated. Do not run confirmed apply until the next approved staging milestone with backup evidence.
+
+Next recommended milestone: M16B-4B staging import execution, only after review of the latest dry-run and apply-refusal reports. It must remain staging-first, no-delete, backup-gated, and stakeholder-approved.
 
 ---
 

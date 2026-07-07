@@ -21,7 +21,8 @@ type DbGender = 'male' | 'female';
 type FloorCode = 'A' | 'B';
 type CsvRoomStatus = 'vacant' | 'occupied' | 'booked' | 'maintenance' | 'requires_review';
 type DbRoomStatus = 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
-type Verdict = 'PASS' | 'FAIL' | 'PARTIAL';
+type Verdict = 'PASS' | 'FAIL' | 'PARTIAL' | 'APPLY_REFUSED';
+type RunMode = 'dry-run' | 'apply-refused' | 'apply';
 type MatchKind = 'exact' | 'inferred_legacy' | 'ambiguous' | 'missing';
 
 type Issue = {
@@ -194,6 +195,12 @@ type ProposedChange = {
   fields: string[];
 };
 
+type MatchedRoomForApply = {
+  roomCode: string;
+  dbRoomId: string;
+  dbRoomNumber: string;
+};
+
 type ManualReviewItem = {
   roomCode?: string;
   dbRoomNumber?: string;
@@ -239,17 +246,50 @@ type DbDryRunResult = {
   unmatchedCsvRooms: string[];
   unmatchedDbRooms: string[];
   proposedBuildingInserts: string[];
+  matchedRooms: MatchedRoomForApply[];
+  roomBuildingConflicts: string[];
+  roomConflicts: string[];
   proposedChanges: ProposedChange[];
   manualReview: ManualReviewItem[];
 };
 
+type ApplyEligibilityCheck = {
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
+type ApplyResult = {
+  attempted: boolean;
+  executed: boolean;
+  refusedReason?: string;
+  actual: {
+    roomBuildingInserts: number;
+    roomBuildingUpdates: number;
+    roomUpdates: number;
+  };
+  postCounts?: {
+    roomCount: number;
+    roomBuildingCount: number;
+    roomsWithRoomCode: number;
+    distinctRoomCodes: number;
+  };
+};
+
+type CliOptions = {
+  apply: boolean;
+};
+
 type ReportContext = {
+  mode: RunMode;
   runTimestamp: string;
   reportPath: string;
   gitBranch: string;
   gitCommit: string;
   csv: CsvValidationResult;
   db: DbDryRunResult;
+  applyEligibility: ApplyEligibilityCheck[];
+  applyResult: ApplyResult;
   verdict: Verdict;
 };
 
@@ -330,27 +370,36 @@ const validCategories = new Set<string>(['rukost', 'apartkost']);
 const validCsvGenders = new Set<string>(['putra', 'putri']);
 const validFloorCodes = new Set<string>(['A', 'B']);
 const validRoomStatuses = new Set<string>(['vacant', 'occupied', 'booked', 'maintenance', 'requires_review']);
+const importSource = 'm16-room-master-normalized';
+const applyConfirmationValue = 'APPLY_M16_ROOM_INVENTORY';
 
 async function main(): Promise<void> {
+  const options = parseCliOptions(process.argv.slice(2));
   const runTimestamp = jakartaTimestamp();
-  const reportPath = resolve(reportsDir, `ROOM_INVENTORY_DRY_RUN_REPORT_${runTimestamp.file}.md`);
   const csv = await validateCsvFiles();
   const db = await runDbDryRun(csv);
-  const verdict = determineVerdict(csv, db);
+  const applyEligibility = buildApplyEligibility(csv, db);
+  const applyResult = await maybeRunApply(options, csv, db, applyEligibility);
+  const mode: RunMode = options.apply ? (applyResult.executed || applyResult.attempted ? 'apply' : 'apply-refused') : 'dry-run';
+  const verdict = determineVerdict(csv, db, mode, applyResult);
+  const reportPath = resolve(reportsDir, reportFileName(mode, runTimestamp.file));
   const context: ReportContext = {
+    mode,
     runTimestamp: runTimestamp.display,
     reportPath,
     gitBranch: gitValue(['branch', '--show-current']),
     gitCommit: gitValue(['rev-parse', '--short', 'HEAD']),
     csv,
     db,
+    applyEligibility,
+    applyResult,
     verdict,
   };
 
   await writeReport(context);
   printSummary(context);
 
-  if (verdict === 'FAIL') {
+  if (verdict === 'FAIL' || verdict === 'APPLY_REFUSED') {
     process.exitCode = 1;
   }
 }
@@ -882,6 +931,9 @@ async function runDbDryRun(csv: CsvValidationResult): Promise<DbDryRunResult> {
     unmatchedCsvRooms: [],
     unmatchedDbRooms: [],
     proposedBuildingInserts: [],
+    matchedRooms: [],
+    roomBuildingConflicts: [],
+    roomConflicts: [],
     proposedChanges: [],
     manualReview: [],
   };
@@ -1113,6 +1165,9 @@ function compareDbState(
   const matches: RoomMatch[] = [];
   const proposedChanges: ProposedChange[] = [];
   const manualReview: ManualReviewItem[] = [];
+  const matchedRooms: MatchedRoomForApply[] = [];
+  const roomBuildingConflicts: string[] = [];
+  const roomConflicts: string[] = [];
 
   for (const room of csv.rooms) {
     const match = matchRoom(room, dbRooms, matchedDbIds, apartkostOrdinals);
@@ -1122,6 +1177,7 @@ function compareDbState(
       const dbRoom = match.dbRoom;
       if (!dbRoom) continue;
       matchedDbIds.add(dbRoom.id);
+      matchedRooms.push({ roomCode: room.roomCode, dbRoomId: dbRoom.id, dbRoomNumber: dbRoom.number });
       const dbBuilding = buildingByKey.get(buildingKey(room.category, room.buildingCode));
       const fields = changedFields(room, dbRoom, dbBuilding);
       if (fields.length > 0) {
@@ -1139,6 +1195,20 @@ function compareDbState(
   const unmatchedDbRooms = dbRooms.filter((room) => !matchedDbIds.has(room.id));
   for (const dbRoom of unmatchedDbRooms) {
     manualReview.push({ dbRoomNumber: dbRoom.number, reason: 'Extra DB room not matched by normalized CSV' });
+  }
+
+  const csvBuildingKeys = new Set(csv.buildings.map((building) => buildingKey(building.category, building.buildingCode)));
+  const csvRoomCodes = new Set(csv.rooms.map((room) => room.roomCode));
+  for (const dbBuilding of dbBuildings) {
+    const key = buildingKey(dbBuilding.category, dbBuilding.building_code);
+    if (!csvBuildingKeys.has(key)) {
+      roomBuildingConflicts.push('Existing room_buildings row is not present in normalized CSV: ' + key);
+    }
+  }
+  for (const dbRoom of dbRooms) {
+    if (dbRoom.room_code && !csvRoomCodes.has(dbRoom.room_code)) {
+      roomConflicts.push('Existing DB room_code is not present in normalized CSV: ' + dbRoom.room_code);
+    }
   }
 
   const proposedBuildingInsertRecords = csv.buildings.filter(
@@ -1171,6 +1241,9 @@ function compareDbState(
       .map((match) => match.csv.roomCode),
     unmatchedDbRooms: unmatchedDbRooms.map((room) => room.number),
     proposedBuildingInserts: proposedBuildingInsertRecords.map((building) => buildingKey(building.category, building.buildingCode)),
+    matchedRooms,
+    roomBuildingConflicts,
+    roomConflicts,
     proposedChanges,
     manualReview,
   };
@@ -1376,6 +1449,273 @@ function buildCsvSummary(
   };
 }
 
+function parseCliOptions(args: string[]): CliOptions {
+  return { apply: args.includes("--apply") };
+}
+
+function reportFileName(mode: RunMode, timestamp: string): string {
+  if (mode === "apply") return "ROOM_INVENTORY_APPLY_REPORT_" + timestamp + ".md";
+  if (mode === "apply-refused") return "ROOM_INVENTORY_APPLY_REFUSED_REPORT_" + timestamp + ".md";
+  return "ROOM_INVENTORY_DRY_RUN_REPORT_" + timestamp + ".md";
+}
+
+function emptyApplyResult(refusedReason?: string): ApplyResult {
+  return {
+    attempted: false,
+    executed: false,
+    refusedReason,
+    actual: { roomBuildingInserts: 0, roomBuildingUpdates: 0, roomUpdates: 0 },
+  };
+}
+
+async function maybeRunApply(
+  options: CliOptions,
+  csv: CsvValidationResult,
+  db: DbDryRunResult,
+  eligibility: ApplyEligibilityCheck[],
+): Promise<ApplyResult> {
+  if (!options.apply) return emptyApplyResult();
+
+  const failed = eligibility.filter((check) => !check.passed);
+  if (failed.length > 0) {
+    return emptyApplyResult("Apply refused: " + failed.map((check) => check.label).join(", "));
+  }
+
+  return runApplyImport(csv, db);
+}
+
+function buildApplyEligibility(csv: CsvValidationResult, db: DbDryRunResult): ApplyEligibilityCheck[] {
+  const csvBlocking = csv.issues.filter((issue) => issue.severity === "blocking").length;
+  const normalizedTotalsPass =
+    csv.summary.buildingRows === expectedTotals.buildingRows &&
+    csv.summary.roomRows === expectedTotals.roomRows &&
+    csv.summary.roomsByGender.putra === expectedTotals.putraRooms &&
+    csv.summary.roomsByGender.putri === expectedTotals.putriRooms &&
+    csv.summary.roomsByCategory.rukost === expectedTotals.rukostRooms &&
+    csv.summary.roomsByCategory.apartkost === expectedTotals.apartkostRooms;
+  const deterministicMatches = db.matchSummary.exactMatches + db.matchSummary.inferredLegacyMatches;
+  const safeBackfillState = db.backfillState === "pre_backfill" || db.backfillState === "partially_backfilled";
+
+  return [
+    applyCheck("--apply flag present", process.argv.slice(2).includes("--apply"), "required for write mode"),
+    applyCheck("CSV validation PASS", csvBlocking === 0, csvBlocking + " blocking issue(s)"),
+    applyCheck(
+      "DB dry-run matching PASS",
+      db.available &&
+        db.schemaReady &&
+        !db.error &&
+        deterministicMatches === expectedTotals.roomRows &&
+        db.matchSummary.ambiguousMatches === 0 &&
+        db.matchSummary.missingMatches === 0 &&
+        db.matchSummary.extraDbRows === 0 &&
+        db.matchedRooms.length === expectedTotals.roomRows,
+      deterministicMatches + " deterministic match(es), " + db.matchSummary.ambiguousMatches + " ambiguous, " + db.matchSummary.missingMatches + " missing, " + db.matchSummary.extraDbRows + " extra",
+    ),
+    applyCheck("No PII findings", csv.piiFindings.length === 0, csv.piiFindings.length + " finding(s)"),
+    applyCheck("No unmatched CSV rooms", db.unmatchedCsvRooms.length === 0, db.unmatchedCsvRooms.length + " unmatched CSV room(s)"),
+    applyCheck("No unmatched DB rooms", db.unmatchedDbRooms.length === 0, db.unmatchedDbRooms.length + " unmatched DB room(s)"),
+    applyCheck("No ambiguous matches", db.matchSummary.ambiguousMatches === 0, db.matchSummary.ambiguousMatches + " ambiguous match(es)"),
+    applyCheck("Safe backfill state", safeBackfillState, db.backfillState),
+    applyCheck("room_buildings conflict check", db.roomBuildingConflicts.length === 0, db.roomBuildingConflicts.length + " conflict(s)"),
+    applyCheck("rooms conflict check", db.roomConflicts.length === 0, db.roomConflicts.length + " conflict(s)"),
+    applyCheck("No duplicate room_code", csv.summary.roomCodeDuplicates === 0 && db.duplicateRoomCodes === 0, "csv=" + csv.summary.roomCodeDuplicates + ", db=" + db.duplicateRoomCodes),
+    applyCheck("Normalized totals match", normalizedTotalsPass, "buildings=" + csv.summary.buildingRows + ", rooms=" + csv.summary.roomRows + ", putra=" + csv.summary.roomsByGender.putra + ", putri=" + csv.summary.roomsByGender.putri),
+    applyCheck("Migration schema ready", db.schemaReady, db.schemaReady ? "schema ready" : "schema missing"),
+    applyCheck("Explicit import confirmation", process.env.ROOM_INVENTORY_IMPORT_CONFIRM === applyConfirmationValue, "ROOM_INVENTORY_IMPORT_CONFIRM must equal " + applyConfirmationValue),
+    applyCheck("Backup confirmation", process.env.ROOM_INVENTORY_BACKUP_CONFIRMED === "true", "ROOM_INVENTORY_BACKUP_CONFIRMED must equal true"),
+  ];
+}
+
+function applyCheck(label: string, passed: boolean, detail: string): ApplyEligibilityCheck {
+  return { label, passed, detail };
+}
+
+function applyVisibility(room: RoomCsvRecord): boolean {
+  return room.dbStatus === "vacant" ? room.publicVisible : false;
+}
+
+async function runApplyImport(csv: CsvValidationResult, db: DbDryRunResult): Promise<ApplyResult> {
+  if (!db.targetProperty) return emptyApplyResult("Apply refused: target property is unavailable");
+
+  const pool = new Pool(databaseConfigFromEnv());
+  let client: PoolClient | null = null;
+
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    const schemaReady = await hasRoomInventorySchema(client);
+    if (!schemaReady) throw new Error("M16 room inventory schema is not ready inside apply transaction");
+
+    const beforeCounts = await readCounts(client);
+    if (beforeCounts.roomCount !== expectedTotals.roomRows) {
+      throw new Error("Expected 163 rooms before apply, got " + beforeCounts.roomCount);
+    }
+
+    const propertyId = db.targetProperty.id;
+    const buildingResult = await upsertRoomBuildings(client, propertyId, csv.buildings);
+    const roomUpdates = await updateMatchedRooms(client, propertyId, csv.rooms, db.matchedRooms, buildingResult.buildingIds);
+    const postCounts = await readPostApplyCounts(client);
+
+    if (postCounts.roomCount !== expectedTotals.roomRows) throw new Error("rooms count changed during apply");
+    if (postCounts.roomBuildingCount !== expectedTotals.buildingRows) throw new Error("room_buildings count verification failed");
+    if (postCounts.roomsWithRoomCode !== expectedTotals.roomRows) throw new Error("rooms_with_room_code verification failed");
+    if (postCounts.distinctRoomCodes !== expectedTotals.roomRows) throw new Error("distinct room_code verification failed");
+
+    await client.query("COMMIT");
+    return {
+      attempted: true,
+      executed: true,
+      actual: {
+        roomBuildingInserts: buildingResult.inserts,
+        roomBuildingUpdates: buildingResult.updates,
+        roomUpdates,
+      },
+      postCounts,
+    };
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
+    return { ...emptyApplyResult("Apply failed and was rolled back: " + (error instanceof Error ? error.message : "unknown error")), attempted: true };
+  } finally {
+    client?.release();
+    await pool.end();
+  }
+}
+
+async function upsertRoomBuildings(
+  client: PoolClient,
+  propertyId: string,
+  buildings: BuildingCsvRecord[],
+): Promise<{ buildingIds: Map<string, string>; inserts: number; updates: number }> {
+  const buildingIds = new Map<string, string>();
+  let inserts = 0;
+  let updates = 0;
+
+  for (const building of buildings) {
+    const result = await client.query<{ id: string; category: Category; building_code: string; inserted: boolean }>(
+      `INSERT INTO room_buildings (
+        property_id, category, building_code, building_name, gender_policy, total_rooms,
+        floor_a_count, floor_b_count, monthly_price, yearly_price, public_visible, notes, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+      ON CONFLICT (property_id, category, building_code) DO UPDATE SET
+        building_name = EXCLUDED.building_name,
+        gender_policy = EXCLUDED.gender_policy,
+        total_rooms = EXCLUDED.total_rooms,
+        floor_a_count = EXCLUDED.floor_a_count,
+        floor_b_count = EXCLUDED.floor_b_count,
+        monthly_price = EXCLUDED.monthly_price,
+        yearly_price = EXCLUDED.yearly_price,
+        public_visible = EXCLUDED.public_visible,
+        notes = EXCLUDED.notes,
+        updated_at = now()
+      RETURNING id, category, building_code, (xmax = 0) AS inserted`,
+      [
+        propertyId,
+        building.category,
+        building.buildingCode,
+        building.buildingName,
+        building.dbGenderPolicy,
+        building.totalRooms,
+        building.floorACount,
+        building.floorBCount,
+        building.monthlyPrice,
+        building.yearlyPrice,
+        building.publicVisible,
+        building.notes || null,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("room_buildings upsert returned no row for " + buildingKey(building.category, building.buildingCode));
+    buildingIds.set(buildingKey(row.category, row.building_code), row.id);
+    if (row.inserted) inserts += 1;
+    else updates += 1;
+  }
+
+  return { buildingIds, inserts, updates };
+}
+
+async function updateMatchedRooms(
+  client: PoolClient,
+  propertyId: string,
+  rooms: RoomCsvRecord[],
+  matchedRooms: MatchedRoomForApply[],
+  buildingIds: Map<string, string>,
+): Promise<number> {
+  const matchedByRoomCode = new Map(matchedRooms.map((match) => [match.roomCode, match]));
+  let updates = 0;
+
+  for (const room of rooms) {
+    const match = matchedByRoomCode.get(room.roomCode);
+    if (!match) throw new Error("No deterministic DB match for " + room.roomCode);
+    const buildingId = buildingIds.get(buildingKey(room.category, room.buildingCode));
+    if (!buildingId) throw new Error("No room_buildings id for " + buildingKey(room.category, room.buildingCode));
+
+    const result = await client.query<{ id: string }>(
+      `UPDATE rooms
+       SET building_id = $3,
+           category = $4,
+           room_code = $5,
+           floor_code = $6,
+           floor_label = $7,
+           gender_policy = $8,
+           public_visible = $9,
+           yearly_price = $10,
+           monthly_price = $11,
+           room_status = $12,
+           import_source = $13,
+           import_source_row = $14,
+           import_notes = $15,
+           updated_at = now()
+       WHERE id = $1
+         AND property_id = $2
+       RETURNING id`,
+      [
+        match.dbRoomId,
+        propertyId,
+        buildingId,
+        room.category,
+        room.roomCode,
+        room.floorCode,
+        room.floorLabel,
+        room.dbGenderPolicy,
+        applyVisibility(room),
+        room.yearlyPrice,
+        room.monthlyPrice,
+        room.dbStatus,
+        importSource,
+        room.sourceRow,
+        room.notes || null,
+      ],
+    );
+    if (result.rowCount !== 1) throw new Error("Room update did not affect exactly one row for " + room.roomCode);
+    updates += 1;
+  }
+
+  return updates;
+}
+
+async function readPostApplyCounts(client: PoolClient): Promise<NonNullable<ApplyResult["postCounts"]>> {
+  const result = await client.query<{
+    room_count: string;
+    room_building_count: string;
+    rooms_with_room_code: string;
+    distinct_room_codes: string;
+  }>(
+    `SELECT
+       (SELECT count(*) FROM rooms) AS room_count,
+       (SELECT count(*) FROM room_buildings) AS room_building_count,
+       (SELECT count(*) FROM rooms WHERE room_code IS NOT NULL) AS rooms_with_room_code,
+       (SELECT count(DISTINCT room_code) FROM rooms WHERE room_code IS NOT NULL) AS distinct_room_codes`,
+  );
+  const row = result.rows[0];
+  return {
+    roomCount: Number(row?.room_count ?? 0),
+    roomBuildingCount: Number(row?.room_building_count ?? 0),
+    roomsWithRoomCode: Number(row?.rooms_with_room_code ?? 0),
+    distinctRoomCodes: Number(row?.distinct_room_codes ?? 0),
+  };
+}
+
 async function writeReport(context: ReportContext): Promise<void> {
   await mkdir(dirname(context.reportPath), { recursive: true });
   await writeFile(context.reportPath, renderReport(context), 'utf8');
@@ -1389,9 +1729,10 @@ function renderReport(context: ReportContext): string {
     ? `${db.targetProperty.name} (${db.targetProperty.id}) — ${db.targetProperty.reason}`
     : 'Not inferable';
 
-  return `# Room Inventory CSV Validator + Dry-run Report
+  return `# Room Inventory Import Apply Guard Report
 
 > **Run timestamp**: ${context.runTimestamp}
+> **Mode**: ${context.mode}
 > **Git branch**: ${context.gitBranch || 'unknown'}
 > **Git commit**: ${context.gitCommit || 'unknown'}
 > **Verdict**: ${context.verdict}
@@ -1444,7 +1785,7 @@ ${db.error ? `DB dry-run note: ${db.error}\n` : ''}
 
 ### Proposed Future Write Summary
 
-These are dry-run recommendations only. The validator executed no writes.
+These are proposed by the dry-run comparison. Actual writes are shown separately and only occur in confirmed apply mode.
 
 | Proposed future action | Count |
 |---|---:|
@@ -1470,6 +1811,20 @@ ${renderStringList(db.unmatchedCsvRooms)}
 ### Unmatched DB Rooms
 
 ${renderStringList(db.unmatchedDbRooms)}
+
+---
+
+## Apply Eligibility Checklist
+
+${renderApplyEligibility(context.applyEligibility)}
+
+Backup confirmation status: ${process.env.ROOM_INVENTORY_BACKUP_CONFIRMED === "true" ? "confirmed" : "not confirmed"}
+
+${context.applyResult.refusedReason ? "Apply refusal/failure note: " + context.applyResult.refusedReason + "\n" : ""}
+
+## Actual Writes Summary
+
+${renderActualWrites(context.applyResult)}
 
 ---
 
@@ -1501,18 +1856,7 @@ ${context.csv.piiFindings.length > 0 ? renderPiiFindings(context.csv.piiFindings
 
 ## Safety Confirmation
 
-- No INSERT statements executed.
-- No UPDATE statements executed.
-- No DELETE statements executed.
-- No room backfill executed.
-- No room_buildings rows inserted.
-- No rooms updated.
-- No room_code values backfilled.
-- No tenant PII printed.
-- No public listing opened.
-- No Payment Gateway behavior changed.
-- No Smart Lock behavior changed.
-- Public booking remains not production-ready.
+${renderSafetyConfirmation(context)}
 
 ---
 
@@ -1520,6 +1864,60 @@ ${context.csv.piiFindings.length > 0 ? renderPiiFindings(context.csv.piiFindings
 
 ### ${context.verdict}
 `;
+}
+
+function renderApplyEligibility(checks: ApplyEligibilityCheck[]): string {
+  return checks.map((check) => "- " + (check.passed ? "PASS" : "FAIL") + " - " + check.label + ": " + check.detail).join("\n");
+}
+
+function renderActualWrites(result: ApplyResult): string {
+  const lines = [
+    "| Write metric | Count |",
+    "|---|---:|",
+    "| room_buildings inserted | " + result.actual.roomBuildingInserts + " |",
+    "| room_buildings updated | " + result.actual.roomBuildingUpdates + " |",
+    "| rooms updated | " + result.actual.roomUpdates + " |",
+  ];
+  if (result.postCounts) {
+    lines.push("| post-apply room count | " + result.postCounts.roomCount + " |");
+    lines.push("| post-apply room_buildings count | " + result.postCounts.roomBuildingCount + " |");
+    lines.push("| post-apply rooms_with_room_code | " + result.postCounts.roomsWithRoomCode + " |");
+    lines.push("| post-apply distinct room_code | " + result.postCounts.distinctRoomCodes + " |");
+  }
+  if (!result.executed) lines.push("\nNo apply writes executed.");
+  return lines.join("\n");
+}
+
+function renderSafetyConfirmation(context: ReportContext): string {
+  if (context.mode === "apply" && context.applyResult.executed) {
+    return [
+      "- Apply mode executed only after --apply, import confirmation, and backup confirmation passed.",
+      "- No DELETE statements executed.",
+      "- No room rows inserted or recreated.",
+      "- Existing room IDs were preserved.",
+      "- No residents or occupancies created.",
+      "- No tenant PII printed.",
+      "- No public listing opened.",
+      "- No Payment Gateway behavior changed.",
+      "- No Smart Lock behavior changed.",
+      "- Public booking remains not production-ready.",
+    ].join("\n");
+  }
+
+  return [
+    "- No INSERT statements executed.",
+    "- No UPDATE statements executed.",
+    "- No DELETE statements executed.",
+    "- No room backfill executed.",
+    "- No room_buildings rows inserted.",
+    "- No rooms updated.",
+    "- No room_code values backfilled.",
+    "- No tenant PII printed.",
+    "- No public listing opened.",
+    "- No Payment Gateway behavior changed.",
+    "- No Smart Lock behavior changed.",
+    "- Public booking remains not production-ready.",
+  ].join("\n");
 }
 
 function renderIssues(issues: Issue[]): string {
@@ -1560,6 +1958,7 @@ function renderProposedChanges(changes: ProposedChange[]): string {
 
 function printSummary(context: ReportContext): void {
   console.log(`Room inventory validator verdict: ${context.verdict}`);
+  console.log(`Mode: ${context.mode}`);
   console.log(`Report: ${context.reportPath}`);
   console.log(`CSV blocking failures: ${context.csv.issues.filter((issue) => issue.severity === 'blocking').length}`);
   console.log(`CSV warnings: ${context.csv.issues.filter((issue) => issue.severity === 'warning').length}`);
@@ -1567,13 +1966,16 @@ function printSummary(context: ReportContext): void {
   console.log(
     `DB dry-run: ${context.db.available ? context.db.backfillState : 'unavailable'}; inferred matches ${context.db.matchSummary.inferredLegacyMatches}; proposed room updates ${context.db.proposed.roomUpdates}`,
   );
+  if (context.applyResult.refusedReason) console.log(`Apply note: ${context.applyResult.refusedReason}`);
 }
 
-function determineVerdict(csv: CsvValidationResult, db: DbDryRunResult): Verdict {
-  if (csv.issues.some((issue) => issue.severity === 'blocking')) return 'FAIL';
-  if (!db.available || !db.schemaReady || db.error) return 'PARTIAL';
-  if (!sameCounts(db.beforeCounts, db.afterCounts)) return 'FAIL';
-  return 'PASS';
+function determineVerdict(csv: CsvValidationResult, db: DbDryRunResult, mode: RunMode, applyResult: ApplyResult): Verdict {
+  if (csv.issues.some((issue) => issue.severity === "blocking")) return "FAIL";
+  if (mode === "apply-refused") return "APPLY_REFUSED";
+  if (!db.available || !db.schemaReady || db.error) return "PARTIAL";
+  if (mode === "apply" && !applyResult.executed) return "FAIL";
+  if (mode !== "apply" && !sameCounts(db.beforeCounts, db.afterCounts)) return "FAIL";
+  return "PASS";
 }
 
 function sameCounts(left: DbDryRunResult['beforeCounts'], right: DbDryRunResult['afterCounts']): boolean {

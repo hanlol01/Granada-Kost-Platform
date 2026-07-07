@@ -13,7 +13,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, AuthGuard } from "@/lib/auth";
 
-const PUBLIC_ROUTES = new Set<string>(["/login"]);
+const PUBLIC_ROUTES = new Set<string>(["/login", "/kamar"]);
 
 function NotFoundComponent() {
   return (

@@ -150,18 +150,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/kamar': {
-      id: '/kamar'
-      path: '/kamar'
-      fullPath: '/kamar'
-      preLoaderRoute: typeof KamarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kamar': {
+      id: '/kamar'
+      path: '/kamar'
+      fullPath: '/kamar'
+      preLoaderRoute: typeof KamarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {

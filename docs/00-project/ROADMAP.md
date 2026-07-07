@@ -217,9 +217,23 @@ Status: selesai sampai M16F (Final Docs / Release Handoff, 2026-07-07). Dokumen:
 
 Catatan mengikat M16: **public booking NOT production-ready**; booking leads/admin lead management deferred; pembayaran booking online deferred - **konfirmasi manual/WhatsApp adalah jalur MVP**; browser visual QA M16C/M16E dieksekusi saat tooling tersedia; lint global penghuni terblokir baseline formatting Payment/Billing yang tidak terkait (bukan akibat M16).
 
+## Milestone 17 - Booking Lead MVP
+
+Status: M17A selesai (2026-07-07). Dokumen: `docs/17-booking-leads/BOOKING_LEAD_MVP_ARCHITECTURE_FREEZE.md`.
+
+- M17A - Booking Lead MVP Architecture / UX / Safety Freeze: aturan produk (lead BUKAN booking terkonfirmasi; tanpa reservasi otomatis, tanpa pembayaran, tanpa invoice, tanpa occupancy otomatis, tanpa pemilihan kamar eksak oleh publik, tanpa pembuatan akun resident otomatis; konfirmasi admin wajib; WhatsApp tetap jalur konfirmasi utama), model data `booking_leads` (property-scoped, PII minimum, status new/contacted/visit_scheduled/converted/rejected/expired, source `public_kamar`; tanpa nomor kamar eksak/payment/invoice_id/occupancy_id/Smart Lock/dokumen identitas), alur publik form "Ajukan Minat Booking" di `/kamar` + CTA WhatsApp tidak berubah, alur admin lead inbox + transisi status + konversi manual-only, konsep API publik write-only rate-limited + API admin ber-auth/property-scoped/audited, serta aturan safety/PII yang mengikat (rate limit, validasi phone, sanitasi pesan, PII minimum, rekomendasi retensi). Selesai (frozen, mengikat; dokumentasi saja - tanpa kode/migrasi/seed/QA).
+- M17B - Migrasi additive `booking_leads` + backend foundation (status machine, audit, dokumentasi retensi). Status: direncanakan.
+- M17C - Public lead submission endpoint (write-only, rate-limited, validasi, duplicate protection). Status: direncanakan.
+- M17D - Admin lead management API + Admin UI (inbox, filter, detail, transisi status). Status: direncanakan.
+- M17E - Form "Ajukan Minat Booking" di `/kamar` (CTA WhatsApp tetap primer). Status: direncanakan.
+- M17F - QA/validation track eksternal (API smoke + rate-limit + PII safety scan; browser visual QA M16C/M16E digabung jika tooling tersedia). Status: direncanakan.
+- M17G - Final docs / release update / handoff. Status: direncanakan.
+
+Catatan mengikat M17: **booking lead bukan booking terkonfirmasi**; tidak ada mutasi status kamar dari lead; **public booking tetap NOT production-ready** (track staging/demo dulu); pembayaran booking online tetap deferred; **Payment Gateway dan Smart Lock tidak disentuh** (posture tidak berubah).
+
 ## Next Milestone
 
-- **Pasca M16 - sesuai keputusan produk.** Jalur kandidat: Booking Lead MVP / Admin Lead Management (deferred dari freeze M16A), production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA M16C/M16E dijalankan saat tooling browser tersedia.
+- **Pasca M17A - implementasi Booking Lead MVP (M17B-M17G)** sesuai freeze `docs/17-booking-leads/BOOKING_LEAD_MVP_ARCHITECTURE_FREEZE.md`. Jalur alternatif tetap valid sesuai keputusan produk: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA M16C/M16E dijalankan saat tooling browser tersedia.
 - **Payment Gateway Production Activation / Midtrans Production Readiness: pending/gated - BUKAN selesai.** Butuh Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder.
 - Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).
 - Production release: **tetap diblokir (NOT READY)** sampai deployment/env checklist production (M14A Section 8) dieksekusi, blocker M14F ditutup, dan approval stakeholder diterima.

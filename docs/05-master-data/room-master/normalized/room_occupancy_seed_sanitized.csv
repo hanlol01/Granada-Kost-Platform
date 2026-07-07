@@ -1,0 +1,3 @@
+category,building_code,room_code,room_number,floor_code,gender_policy,occupancy_status,tenant_name_masked,tenant_gender,rental_period_years,yearly_rate,down_payment,check_in,check_out,source_row,notes
+apartkost,18D,AK-18D-A-013,13,A,putra,occupied,<masked>,putra,1,21600000,10800000,,,30,"Original source: room_master_apartkost.csv row 30 (MD line 180); tenant name redacted for repo safety"
+apartkost,18D,AK-18D-A-015,15,A,putra,occupied,<masked>,putra,1,21600000,10800000,,,32,"Original source: room_master_apartkost.csv row 32 (MD line 182); tenant name redacted for repo safety"

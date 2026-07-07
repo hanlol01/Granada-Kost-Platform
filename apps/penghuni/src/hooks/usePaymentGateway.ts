@@ -11,12 +11,7 @@
 //   server key, or client key is ever received or rendered.
 // - Manual payment proof (M12C3) remains the fallback path.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { ApiError } from "@granada-kost/api-client";
 import { apiClient } from "@/lib/api";
 import { qk } from "@/lib/query-client";

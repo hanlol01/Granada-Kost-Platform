@@ -202,7 +202,10 @@ function BookingLeadsPage() {
             <SelectItem value="expired">Kedaluwarsa</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={category} onValueChange={(v) => setCategory(v as "all" | BookingLeadCategory)}>
+        <Select
+          value={category}
+          onValueChange={(v) => setCategory(v as "all" | BookingLeadCategory)}
+        >
           <SelectTrigger className="sm:w-44">
             <SelectValue />
           </SelectTrigger>
@@ -287,7 +290,9 @@ function BookingLeadsPage() {
                       >
                         <td className="px-5 py-3">
                           <p className="font-medium">{l.visitorName}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{l.visitorPhone}</p>
+                          <p className="text-xs text-muted-foreground font-mono">
+                            {l.visitorPhone}
+                          </p>
                           {l.visitorMessage ? (
                             <p
                               className="text-xs text-muted-foreground italic max-w-[260px] truncate"
@@ -427,9 +432,7 @@ function BookingLeadsPage() {
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
-        title={
-          pending ? `Ubah status ke ${BOOKING_LEAD_STATUS_LABEL[pending.next]}` : ""
-        }
+        title={pending ? `Ubah status ke ${BOOKING_LEAD_STATUS_LABEL[pending.next]}` : ""}
         description={pending ? confirmDescription(pending.lead, pending.next) : null}
         confirmLabel={pending ? BOOKING_LEAD_STATUS_LABEL[pending.next] : "Konfirmasi"}
         destructive={pending ? pending.next === "rejected" || pending.next === "expired" : false}

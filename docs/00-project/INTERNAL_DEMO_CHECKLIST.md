@@ -304,3 +304,27 @@ Booking Lead MVP (M17) dapat didemokan sebagai **MVP staging/demo dengan konfirm
 - Mengubah postur Smart Lock (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`) - live command **NO-GO until site trial/evidence/signoff**.
 
 Catatan: browser visual QA M17C/M17D belum dieksekusi (limitasi tooling); demo visual pertama sekaligus berfungsi sebagai sanity check visual.
+
+## 17. Hunian Gallery Demo Note (Added 2026-07-08 via M19E)
+
+Hunian Gallery (M19) dapat didemokan sebagai **MVP staging/demo dengan limitasi tercatat**. Evidensi/dokumen: `docs/19-hunian-gallery/M19_HUNIAN_GALLERY_FINAL_RELEASE_HANDOFF.md`, `HUNIAN_GALLERY_BACKEND_API.md`, `HUNIAN_GALLERY_ADMIN_UI.md` + `HUNIAN_GALLERY_ADMIN_UI_QA.md`, `HUNIAN_GALLERY_PUBLIC_UI.md` + `HUNIAN_GALLERY_PUBLIC_UI_QA.md`.
+
+**Pra-demo (wajib):**
+
+- Restart API agar route M18/M19 aktif (limitasi QA: proses port 3000 sebelumnya stale); pastikan migration `015_hunian_gallery.sql` sudah diterapkan; pastikan permission direktori upload storage; pastikan `VITE_API_BASE_URL` benar untuk URL media publik; redeploy app Admin dan Penghuni/public.
+
+**Cakupan demo aman:**
+
+- Admin membuka `/hunian-gallery` (nav "Galeri Hunian"), memilih item katalog, upload gambar (drag-and-drop atau click; JPEG/PNG/WebP maks 3 MB, maks 10/item), edit altText/caption, set cover, publish gambar.
+- Publik `/kamar` tanpa login menampilkan cover image pada kartu item yang punya gambar terpublikasi; item tanpa gambar publik tetap menampilkan placeholder aman "Galeri hunian sedang disiapkan..." (perilaku benar, bukan bug).
+- Publik `/kamar/$slug` menampilkan hero gallery + thumbnail selector + lightbox (prev/next, panah keyboard, Escape).
+- Foto Draft (`publicVisible=false`, default upload) TIDAK tampil publik - itu perilaku aman yang benar; setelah unpublish/delete, konten media publik mengembalikan 404.
+
+**JANGAN:**
+
+- Meng-upload/mendemokan foto yang memperlihatkan plat nomor kamar, wajah penghuni, dokumen, atau informasi internal (review foto adalah SOP manual admin; tanpa deteksi otomatis).
+- Menampilkan atau menjanjikan nomor kamar eksak / roomId / `room_code` di permukaan publik.
+- Mempresentasikan galeri atau public booking sebagai production-ready - **production NOT READY**; **public booking NOT production-ready**; **payment booking DEFERRED**.
+- Mengubah postur Smart Lock (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`) - live command **NO-GO**.
+
+Catatan: browser visual QA M19C/M19D belum dieksekusi (tooling tidak tersedia di VPS) dan live API smoke QA M19C/M19D terbatas (port stale); `thumbnailUrl` masih `null` sehingga thumbnail publik memuat gambar asli; demo visual pertama sekaligus berfungsi sebagai sanity check visual.

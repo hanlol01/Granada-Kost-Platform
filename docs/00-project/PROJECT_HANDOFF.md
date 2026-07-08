@@ -152,7 +152,7 @@ SMART_LOCK_LIVE_ENABLED=false
 - Receipt / nota.
 - Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp - booking lead M17 BUKAN booking/pembayaran online).
 - Otomasi lead: auto-expiry, notifikasi otomatis, retensi/anonimisasi PII otomatis, konversi otomatis ke resident/occupancy (konversi tetap manual admin).
-- Admin Gallery Upload UI (M19C) dan public gallery UI integration (M19D). Backend gallery API M19B sudah selesai.
+- Thumbnail/image optimization pipeline galeri publik (`thumbnailUrl` masih `null` - thumbnail publik memuat gambar asli), CDN/S3 offsite storage, cropping editor, deteksi otomatis wajah/plat nomor kamar (review foto tetap SOP manual admin). Track M19 Hunian Gallery sendiri selesai sampai M19E (`docs/19-hunian-gallery/M19_HUNIAN_GALLERY_FINAL_RELEASE_HANDOFF.md`).
 - SEO public listing dan enrichment katalog lanjutan di luar backend gallery M19B.
 - Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
 - Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).

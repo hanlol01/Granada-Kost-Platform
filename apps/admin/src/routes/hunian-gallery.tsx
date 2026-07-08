@@ -119,8 +119,7 @@ function HunianGalleryPage() {
   const images = useMemo(() => sortGalleryImages(galleryQuery.data ?? []), [galleryQuery.data]);
   const publishedCount = images.filter((i) => i.publicVisible).length;
 
-  const isForbidden =
-    ApiError.isApiError(galleryQuery.error) && galleryQuery.error.status === 403;
+  const isForbidden = ApiError.isApiError(galleryQuery.error) && galleryQuery.error.status === 403;
 
   // Upload queue --------------------------------------------------------------
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -301,8 +300,7 @@ function HunianGalleryPage() {
           <div>
             <p className="text-sm font-semibold">Pilih Hunian</p>
             <p className="text-xs text-muted-foreground">
-              Galeri melekat pada item katalog hunian/unit/grup publik - bukan nomor kamar
-              tertentu.
+              Galeri melekat pada item katalog hunian/unit/grup publik - bukan nomor kamar tertentu.
             </p>
           </div>
           {optionsQuery.error ? (
@@ -543,8 +541,8 @@ function HunianGalleryPage() {
                 </Alert>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                Cover tampil sebagai foto utama di katalog publik. Jika belum ada cover, foto
-                Publik pertama sesuai urutan yang dipakai.
+                Cover tampil sebagai foto utama di katalog publik. Jika belum ada cover, foto Publik
+                pertama sesuai urutan yang dipakai.
               </p>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {images.map((image, index) => (

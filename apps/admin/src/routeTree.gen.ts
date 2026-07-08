@@ -92,6 +92,11 @@ const BookingsRoute = BookingsRouteImport.update({
   path: '/bookings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BookingLeadsRoute = BookingLeadsRouteImport.update({
+  id: '/booking-leads',
+  path: '/booking-leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BookingRoute = BookingRouteImport.update({
   id: '/booking',
   path: '/booking',
@@ -112,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/access-history': typeof AccessHistoryRoute
   '/booking': typeof BookingRoute
+  '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
@@ -130,6 +136,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/access-history': typeof AccessHistoryRoute
   '/booking': typeof BookingRoute
+  '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
@@ -149,6 +156,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/access-history': typeof AccessHistoryRoute
   '/booking': typeof BookingRoute
+  '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
@@ -169,6 +177,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access-history'
     | '/booking'
+    | '/booking-leads'
     | '/bookings'
     | '/cctv'
     | '/complaints'
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access-history'
     | '/booking'
+    | '/booking-leads'
     | '/bookings'
     | '/cctv'
     | '/complaints'
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access-history'
     | '/booking'
+    | '/booking-leads'
     | '/bookings'
     | '/cctv'
     | '/complaints'
@@ -224,6 +235,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccessHistoryRoute: typeof AccessHistoryRoute
   BookingRoute: typeof BookingRoute
+  BookingLeadsRoute: typeof BookingLeadsRoute
   BookingsRoute: typeof BookingsRoute
   CctvRoute: typeof CctvRoute
   ComplaintsRoute: typeof ComplaintsRoute
@@ -332,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/booking-leads': {
+      id: '/booking-leads'
+      path: '/booking-leads'
+      fullPath: '/booking-leads'
+      preLoaderRoute: typeof BookingLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/booking': {
       id: '/booking'
       path: '/booking'
@@ -360,6 +379,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccessHistoryRoute: AccessHistoryRoute,
   BookingRoute: BookingRoute,
+  BookingLeadsRoute: BookingLeadsRoute,
   BookingsRoute: BookingsRoute,
   CctvRoute: CctvRoute,
   ComplaintsRoute: ComplaintsRoute,

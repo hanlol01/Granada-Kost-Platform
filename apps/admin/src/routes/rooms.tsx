@@ -5,12 +5,13 @@ import {
   BedDouble,
   Building2,
   CalendarCheck,
+  ChevronDown,
+  ChevronRight,
   DoorOpen,
   Eye,
   EyeOff,
   Home,
   Layers,
-  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -43,8 +44,14 @@ import {
 import { formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RoomFormDialog } from "@/components/forms/RoomFormDialog";
+import { RoomDetailDrawer } from "@/components/rooms/RoomDetailDrawer";
+import { RoomActionMenu } from "@/components/rooms/RoomActionMenu";
+import { StatusChangeDialog } from "@/components/rooms/StatusChangeDialog";
+import { ArchiveConfirmDialog } from "@/components/rooms/ArchiveConfirmDialog";
 import { useAuth } from "@/lib/auth";
+
 export const Route = createFileRoute("/rooms")({ component: RoomsPage });
+
 type RoomGender = RoomRecord["genderPolicy"];
 type TabKey = "summary" | "rukost" | "apartkost" | "availability";
 type VisibilityFilter = "all" | "visible" | "hidden";
@@ -56,6 +63,7 @@ type InventoryFilters = {
   status: "all" | RoomStatus;
   visibility: VisibilityFilter;
 };
+
 const STATUS_ORDER: RoomStatus[] = [
   "vacant",
   "reserved",
@@ -64,6 +72,7 @@ const STATUS_ORDER: RoomStatus[] = [
   "requires_review",
   "inactive",
 ];
+
 const STATUS_LABEL: Record<RoomStatus, { label: string; cls: string }> = {
   vacant: { label: "Kosong", cls: "bg-success/15 text-success" },
   reserved: { label: "Dipesan", cls: "bg-chart-4/15 text-chart-4" },
@@ -72,19 +81,23 @@ const STATUS_LABEL: Record<RoomStatus, { label: string; cls: string }> = {
   requires_review: { label: "Perlu Review", cls: "bg-destructive/10 text-destructive" },
   inactive: { label: "Tidak Aktif", cls: "bg-muted text-muted-foreground" },
 };
+
 const CATEGORY_LABEL: Record<RoomCategory, string> = {
   rukost: "Rumah Kost",
   apartkost: "Apart Kost",
 };
+
 const GENDER_LABEL: Record<RoomGender, string> = {
   male: "Putra",
   female: "Putri",
   mixed: "Campur",
 };
+
 const FLOOR_LABEL: Record<RoomFloorCode, string> = {
   B: "Lantai Bawah",
   A: "Lantai Atas",
 };
+
 const DEFAULT_FILTERS: InventoryFilters = {
   q: "",
   gender: "all",
@@ -93,7 +106,14 @@ const DEFAULT_FILTERS: InventoryFilters = {
   status: "all",
   visibility: "all",
 };
+
 const EMPTY_ROOMS: RoomRecord[] = [];
+
+/** Max building rows shown in Ringkasan before "Lihat semua" */
+const BUILDING_SUMMARY_INITIAL_COUNT = 6;
+
+/* ─── Badge Helpers ─── */
+
 function RoomStatusBadge({ status }: { status: RoomStatus }) {
   const item = STATUS_LABEL[status];
   return (
@@ -102,6 +122,7 @@ function RoomStatusBadge({ status }: { status: RoomStatus }) {
     </Badge>
   );
 }
+
 function PublicFlagBadge({ visible }: { visible: boolean }) {
   const Icon = visible ? Eye : EyeOff;
   return (
@@ -117,15 +138,36 @@ function PublicFlagBadge({ visible }: { visible: boolean }) {
     </Badge>
   );
 }
+
+/* ─── Main Page ─── */
+
 function RoomsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<RoomRecord | null>(null);
+  const [detailTarget, setDetailTarget] = useState<RoomRecord | null>(null);
+  const [statusTarget, setStatusTarget] = useState<RoomRecord | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<RoomRecord | null>(null);
   const { data, error, isFetching, isLoading, refetch } = useRooms();
   const rooms = data ?? EMPTY_ROOMS;
   const stats = useMemo(() => buildStats(rooms), [rooms]);
   const { hasPermission } = useAuth();
   const canManage = hasPermission("room.manage");
+
+  const roomActions = canManage
+    ? {
+        onView: setDetailTarget,
+        onEdit: setEditTarget,
+        onStatusChange: setStatusTarget,
+        onArchive: setArchiveTarget,
+      }
+    : {
+        onView: setDetailTarget,
+        onEdit: undefined,
+        onStatusChange: undefined,
+        onArchive: undefined,
+      };
+
   return (
     <AppShell
       title="Manajemen Kamar"
@@ -166,25 +208,53 @@ function RoomsPage() {
             <SummaryView isFetching={isFetching} rooms={rooms} stats={stats} />
           </TabsContent>
           <TabsContent value="rukost" className="mt-5">
-            <CategoryInventory category="rukost" rooms={rooms} onEdit={canManage ? setEditTarget : undefined} />
+            <CategoryInventory category="rukost" rooms={rooms} actions={roomActions} />
           </TabsContent>
           <TabsContent value="apartkost" className="mt-5">
-            <CategoryInventory category="apartkost" rooms={rooms} onEdit={canManage ? setEditTarget : undefined} />
+            <CategoryInventory category="apartkost" rooms={rooms} actions={roomActions} />
           </TabsContent>
           <TabsContent value="availability" className="mt-5">
             <AvailabilityView rooms={rooms} stats={stats} />
           </TabsContent>
         </Tabs>
       )}
+
+      {/* Dialogs — rendered once at page level */}
       <RoomFormDialog open={createOpen} onOpenChange={setCreateOpen} />
       <RoomFormDialog
         open={editTarget !== null}
         onOpenChange={(o) => !o && setEditTarget(null)}
         initial={editTarget}
       />
+      <RoomDetailDrawer
+        room={detailTarget}
+        open={detailTarget !== null}
+        onOpenChange={(o) => !o && setDetailTarget(null)}
+        onEdit={
+          canManage
+            ? (room) => {
+                setDetailTarget(null);
+                setEditTarget(room);
+              }
+            : undefined
+        }
+      />
+      <StatusChangeDialog
+        room={statusTarget}
+        open={statusTarget !== null}
+        onOpenChange={(o) => !o && setStatusTarget(null)}
+      />
+      <ArchiveConfirmDialog
+        room={archiveTarget}
+        open={archiveTarget !== null}
+        onOpenChange={(o) => !o && setArchiveTarget(null)}
+      />
     </AppShell>
   );
 }
+
+/* ─── Skeleton ─── */
+
 function InventorySkeleton() {
   return (
     <div className="space-y-4">
@@ -203,6 +273,9 @@ function InventorySkeleton() {
     </div>
   );
 }
+
+/* ─── Summary Tab ─── */
+
 function SummaryView({
   isFetching,
   rooms,
@@ -268,20 +341,21 @@ function SummaryView({
           value={stats.reserved}
         />
         <MetricCard
-          detail={stats.requiresReview + " requires_review"}
+          detail={stats.requiresReview + " perlu review"}
           icon={AlertTriangle}
           label="Maintenance/Review"
           value={stats.maintenance + stats.requiresReview}
         />
         <MetricCard
           detail={
-            stats.publicVacant + " kosong dan terlihat publik" +
+            stats.publicVacant +
+            " kosong dan terlihat publik" +
             (stats.publicVisibleUnknown > 0
               ? " · " + stats.publicVisibleUnknown + " belum ditandai"
               : "")
           }
           icon={Eye}
-          label="Public Visible"
+          label="Terlihat Publik"
           value={stats.publicVisible}
         />
         <MetricCard
@@ -293,11 +367,14 @@ function SummaryView({
       </div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <StatusBreakdown stats={stats} />
-        <BuildingSummaryTable summaries={buildingSummaries} />
+        <BuildingSummaryCompact summaries={buildingSummaries} />
       </div>
     </div>
   );
 }
+
+/* ─── Metric Card ─── */
+
 function MetricCard({
   detail,
   icon: Icon,
@@ -326,6 +403,9 @@ function MetricCard({
     </Card>
   );
 }
+
+/* ─── Status Breakdown ─── */
+
 function StatusBreakdown({ stats }: { stats: RoomStats }) {
   return (
     <Card className="rounded-lg">
@@ -359,7 +439,14 @@ function StatusBreakdown({ stats }: { stats: RoomStats }) {
     </Card>
   );
 }
-function BuildingSummaryTable({ summaries }: { summaries: BuildingSummary[] }) {
+
+/* ─── Building Summary (Compact with "Lihat semua") ─── */
+
+function BuildingSummaryCompact({ summaries }: { summaries: BuildingSummary[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? summaries : summaries.slice(0, BUILDING_SUMMARY_INITIAL_COUNT);
+  const hasMore = summaries.length > BUILDING_SUMMARY_INITIAL_COUNT;
+
   return (
     <Card className="rounded-lg">
       <CardContent className="p-5">
@@ -386,7 +473,7 @@ function BuildingSummaryTable({ summaries }: { summaries: BuildingSummary[] }) {
               </tr>
             </thead>
             <tbody>
-              {summaries.map((summary) => (
+              {visible.map((summary) => (
                 <tr key={summary.key} className="border-b last:border-0">
                   <td className="py-3 pr-3">{CATEGORY_LABEL[summary.category]}</td>
                   <td className="py-3 pr-3 font-medium">{summary.buildingCode}</td>
@@ -400,11 +487,39 @@ function BuildingSummaryTable({ summaries }: { summaries: BuildingSummary[] }) {
             </tbody>
           </table>
         </div>
+        {hasMore && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-3 w-full text-xs"
+            onClick={() => setShowAll(!showAll)}
+          >
+            {showAll ? "Tampilkan lebih sedikit" : `Lihat semua ${summaries.length} unit →`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
 }
-function CategoryInventory({ category, rooms, onEdit }: { category: RoomCategory; rooms: RoomRecord[]; onEdit?: (room: RoomRecord) => void }) {
+
+/* ─── Category Inventory (Rumah Kost / Apart Kost Tab) ─── */
+
+type RoomActions = {
+  onView: (room: RoomRecord) => void;
+  onEdit?: (room: RoomRecord) => void;
+  onStatusChange?: (room: RoomRecord) => void;
+  onArchive?: (room: RoomRecord) => void;
+};
+
+function CategoryInventory({
+  category,
+  rooms,
+  actions,
+}: {
+  category: RoomCategory;
+  rooms: RoomRecord[];
+  actions: RoomActions;
+}) {
   const [filters, setFilters] = useState<InventoryFilters>(DEFAULT_FILTERS);
   const categoryRooms = useMemo(
     () => rooms.filter((room) => effectiveCategory(room) === category).sort(roomSort),
@@ -421,6 +536,7 @@ function CategoryInventory({ category, rooms, onEdit }: { category: RoomCategory
   const grouped = useMemo(() => groupRoomsByBuilding(filteredRooms), [filteredRooms]);
   const updateFilters = (next: Partial<InventoryFilters>) =>
     setFilters((current) => ({ ...current, ...next }));
+
   return (
     <div className="space-y-4">
       <InventoryFiltersBar
@@ -452,14 +568,22 @@ function CategoryInventory({ category, rooms, onEdit }: { category: RoomCategory
         </Card>
       ) : (
         <div className="space-y-4">
-          {grouped.map((group) => (
-            <BuildingGroup group={group} key={group.key} onEdit={onEdit} />
+          {grouped.map((group, index) => (
+            <CollapsibleBuildingGroup
+              group={group}
+              key={group.key}
+              actions={actions}
+              defaultOpen={index === 0}
+            />
           ))}
         </div>
       )}
     </div>
   );
 }
+
+/* ─── Filter Bar ─── */
+
 function InventoryFiltersBar({
   buildingOptions,
   category,
@@ -483,7 +607,7 @@ function InventoryFiltersBar({
               className="pl-9"
               onChange={(event) => onChange({ q: event.target.value })}
               placeholder={
-                "Cari " + CATEGORY_LABEL[category].toLowerCase() + ", room code, nomor..."
+                "Cari " + CATEGORY_LABEL[category].toLowerCase() + ", kode kamar, nomor..."
               }
               value={filters.q}
             />
@@ -552,8 +676,8 @@ function InventoryFiltersBar({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Publik</SelectItem>
-              <SelectItem value="visible">Public Visible</SelectItem>
+              <SelectItem value="all">Semua Visibilitas</SelectItem>
+              <SelectItem value="visible">Publik</SelectItem>
               <SelectItem value="hidden">Internal</SelectItem>
             </SelectContent>
           </Select>
@@ -566,59 +690,99 @@ function InventoryFiltersBar({
     </Card>
   );
 }
-function BuildingGroup({ group, onEdit }: { group: BuildingRoomGroup; onEdit?: (room: RoomRecord) => void }) {
+
+/* ─── Collapsible Building Group ─── */
+
+function CollapsibleBuildingGroup({
+  group,
+  actions,
+  defaultOpen,
+}: {
+  group: BuildingRoomGroup;
+  actions: RoomActions;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen ?? false);
+  const vacantCount = group.rooms.filter((room) => room.roomStatus === "vacant").length;
+  const occupiedCount = group.rooms.filter((room) => room.roomStatus === "occupied").length;
+
   const floorGroups = ["B", "A", "unknown"].map((floor) => ({
     floor,
     rooms: group.rooms.filter((room) => (floorCodeOf(room) ?? "unknown") === floor),
   }));
+
   return (
     <Card className="rounded-lg">
-      <CardContent className="space-y-4 p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">
-              {CATEGORY_LABEL[group.category]}
-            </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">{group.buildingCode}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {group.buildingName ?? "Nama gedung/unit belum diisi"}
-            </p>
+      <CardContent className="p-5">
+        {/* Collapsible header */}
+        <button
+          type="button"
+          className="flex w-full items-start justify-between gap-3 text-left"
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                {CATEGORY_LABEL[group.category]}
+              </p>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight">{group.buildingCode}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {group.buildingName ?? "Nama gedung/unit belum diisi"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 md:ml-2">
+              <Badge
+                className="border-transparent bg-muted text-muted-foreground"
+                variant="outline"
+              >
+                {group.rooms.length} kamar
+              </Badge>
+              <Badge className="border-transparent bg-success/15 text-success" variant="outline">
+                {vacantCount} kosong
+              </Badge>
+              <Badge className="border-transparent bg-primary-soft text-primary" variant="outline">
+                {occupiedCount} terisi
+              </Badge>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge className="border-transparent bg-muted text-muted-foreground" variant="outline">
-              {group.rooms.length} kamar
-            </Badge>
-            <Badge className="border-transparent bg-success/15 text-success" variant="outline">
-              {group.rooms.filter((room) => room.roomStatus === "vacant").length} kosong
-            </Badge>
-            <Badge className="border-transparent bg-primary-soft text-primary" variant="outline">
-              {group.rooms.filter((room) => room.roomStatus === "occupied").length} terisi
-            </Badge>
+          <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted">
+            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </div>
-        </div>
-        {floorGroups.map((floorGroup) =>
-          floorGroup.rooms.length ? (
-            <FloorRoomTable
-              floor={floorGroup.floor as RoomFloorCode | "unknown"}
-              key={floorGroup.floor}
-              rooms={floorGroup.rooms}
-              onEdit={onEdit}
-            />
-          ) : null,
+        </button>
+
+        {/* Collapsible content */}
+        {isOpen && (
+          <div className="mt-4 space-y-4">
+            {floorGroups.map((floorGroup) =>
+              floorGroup.rooms.length ? (
+                <FloorRoomTable
+                  floor={floorGroup.floor as RoomFloorCode | "unknown"}
+                  key={floorGroup.floor}
+                  rooms={floorGroup.rooms}
+                  actions={actions}
+                />
+              ) : null,
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
   );
 }
+
+/* ─── Floor Room Table (Slim: 6 Columns) ─── */
+
 function FloorRoomTable({
   floor,
   rooms,
-  onEdit,
+  actions,
 }: {
   floor: RoomFloorCode | "unknown";
   rooms: RoomRecord[];
-  onEdit?: (room: RoomRecord) => void;
+  actions: RoomActions;
 }) {
+  const hasActions = Boolean(actions.onEdit);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -628,24 +792,31 @@ function FloorRoomTable({
         <span className="text-xs text-muted-foreground">{rooms.length} kamar</span>
       </div>
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[600px] text-sm">
           <thead className="bg-muted/50">
             <tr className="text-left text-xs font-medium uppercase text-muted-foreground">
-              <th className="px-3 py-2">Room Code</th>
-              <th className="px-3 py-2">Nomor Legacy</th>
+              <th className="px-3 py-2">Kamar</th>
               <th className="px-3 py-2">Gender</th>
               <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Public</th>
+              <th className="px-3 py-2">Visibilitas</th>
               <th className="px-3 py-2 text-right">Harga</th>
-              <th className="px-3 py-2">Fasilitas</th>
-              {onEdit && <th className="px-3 py-2 text-right">Aksi</th>}
+              {hasActions && <th className="px-3 py-2 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {rooms.sort(roomSort).map((room) => (
-              <tr key={room.id} className="border-t">
-                <td className="px-3 py-3 font-semibold">{room.roomCode ?? room.number}</td>
-                <td className="px-3 py-3 text-muted-foreground">{room.number}</td>
+              <tr
+                key={room.id}
+                className="border-t cursor-pointer hover:bg-muted/30 transition-colors"
+                onClick={() => actions.onView(room)}
+              >
+                {/* Kamar: kode primary + nomor secondary */}
+                <td className="px-3 py-3">
+                  <p className="font-semibold">{room.roomCode ?? room.number}</p>
+                  {room.roomCode && room.roomCode !== room.number && (
+                    <p className="text-xs text-muted-foreground">{room.number}</p>
+                  )}
+                </td>
                 <td className="px-3 py-3">{GENDER_LABEL[room.genderPolicy]}</td>
                 <td className="px-3 py-3">
                   <RoomStatusBadge status={room.roomStatus} />
@@ -653,25 +824,27 @@ function FloorRoomTable({
                 <td className="px-3 py-3">
                   <PublicFlagBadge visible={room.publicVisible} />
                 </td>
-                <td className="px-3 py-3 text-right font-medium">
-                  {formatIDR(room.yearlyPrice ?? room.monthlyPrice)}
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    {room.yearlyPrice ? "/tahun" : "/bulan"}
-                  </span>
+                {/* Harga: bulanan primary, tahunan secondary */}
+                <td className="px-3 py-3 text-right">
+                  <p className="font-medium">
+                    {formatIDR(room.monthlyPrice)}
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">/bulan</span>
+                  </p>
+                  {room.yearlyPrice != null && room.yearlyPrice > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {formatIDR(room.yearlyPrice)}/tahun
+                    </p>
+                  )}
                 </td>
-                <td className="px-3 py-3 text-muted-foreground">
-                  {room.facilities.length
-                    ? room.facilities
-                        .slice(0, 3)
-                        .map((facility) => facility.name)
-                        .join(", ")
-                    : "-"}
-                </td>
-                {onEdit && (
-                  <td className="px-3 py-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => onEdit(room)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                {hasActions && (
+                  <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <RoomActionMenu
+                      room={room}
+                      onView={actions.onView}
+                      onEdit={actions.onEdit!}
+                      onStatusChange={actions.onStatusChange!}
+                      onArchive={actions.onArchive!}
+                    />
                   </td>
                 )}
               </tr>
@@ -682,6 +855,9 @@ function FloorRoomTable({
     </div>
   );
 }
+
+/* ─── Availability Tab ─── */
+
 function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomStats }) {
   const rukostPublicVacant = countPublicVacantByCategory(rooms, "rukost");
   const apartkostPublicVacant = countPublicVacantByCategory(rooms, "apartkost");
@@ -690,7 +866,7 @@ function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomSt
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          detail="Vacant dan public_visible"
+          detail="Vacant dan publik"
           icon={Eye}
           label="Publik Kosong"
           value={stats.publicVacant}
@@ -710,7 +886,7 @@ function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomSt
         <MetricCard
           detail={hiddenRooms + " kamar tidak tampil publik"}
           icon={EyeOff}
-          label="Internal/Hidden"
+          label="Internal/Tersembunyi"
           value={hiddenRooms}
         />
       </div>
@@ -740,8 +916,8 @@ function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomSt
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Minat booking aktif</p>
                 <p className="text-sm text-muted-foreground">
-                  Pengajuan minat booking tetap dikonfirmasi manual oleh admin.
-                  Public booking belum menjadi booking resmi.
+                  Pengajuan minat booking tetap dikonfirmasi manual oleh admin. Public booking belum
+                  menjadi booking resmi.
                 </p>
               </div>
             </div>
@@ -751,6 +927,7 @@ function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomSt
     </div>
   );
 }
+
 function AvailabilityBar({ label, total, value }: { label: string; total: number; value: number }) {
   return (
     <div className="mb-4 last:mb-0">
@@ -769,6 +946,9 @@ function AvailabilityBar({ label, total, value }: { label: string; total: number
     </div>
   );
 }
+
+/* ─── Types ─── */
+
 type RoomStats = {
   total: number;
   rukost: number;
@@ -788,6 +968,7 @@ type RoomStats = {
   apartkostVacant: number;
   statusCounts: Record<RoomStatus, number>;
 };
+
 type BuildingSummary = {
   key: string;
   category: RoomCategory;
@@ -798,6 +979,7 @@ type BuildingSummary = {
   occupied: number;
   publicVacant: number;
 };
+
 type BuildingRoomGroup = {
   key: string;
   category: RoomCategory;
@@ -805,6 +987,9 @@ type BuildingRoomGroup = {
   buildingName: string | null;
   rooms: RoomRecord[];
 };
+
+/* ─── Data Helpers ─── */
+
 function createStatusCounts(): Record<RoomStatus, number> {
   return {
     vacant: 0,
@@ -815,6 +1000,7 @@ function createStatusCounts(): Record<RoomStatus, number> {
     requires_review: 0,
   };
 }
+
 function buildStats(rooms: RoomRecord[]): RoomStats {
   const statusCounts = createStatusCounts();
   const stats: RoomStats = {
@@ -863,6 +1049,7 @@ function buildStats(rooms: RoomRecord[]): RoomStats {
   stats.requiresReview = statusCounts.requires_review;
   return stats;
 }
+
 function buildBuildingSummaries(rooms: RoomRecord[]): BuildingSummary[] {
   const groups = groupRoomsByBuilding(rooms);
   return groups.map((group) => {
@@ -879,6 +1066,7 @@ function buildBuildingSummaries(rooms: RoomRecord[]): BuildingSummary[] {
     } satisfies BuildingSummary;
   });
 }
+
 function groupRoomsByBuilding(rooms: RoomRecord[]): BuildingRoomGroup[] {
   const map = new Map<string, BuildingRoomGroup>();
   for (const room of rooms) {
@@ -904,6 +1092,7 @@ function groupRoomsByBuilding(rooms: RoomRecord[]): BuildingRoomGroup[] {
     return naturalSort(left.buildingCode, right.buildingCode);
   });
 }
+
 function filterRooms(rooms: RoomRecord[], filters: InventoryFilters): RoomRecord[] {
   const needle = filters.q.trim().toLowerCase();
   return rooms.filter((room) => {
@@ -943,6 +1132,7 @@ function filterRooms(rooms: RoomRecord[], filters: InventoryFilters): RoomRecord
     return true;
   });
 }
+
 function effectiveCategory(room: RoomRecord): RoomCategory {
   if (room.category) {
     return room.category;
@@ -950,9 +1140,11 @@ function effectiveCategory(room: RoomRecord): RoomCategory {
   const code = (room.roomCode ?? room.number ?? "").toUpperCase();
   return code.startsWith("A") || code.startsWith("AK") ? "apartkost" : "rukost";
 }
+
 function buildingCodeOf(room: RoomRecord): string {
   return room.buildingCode ?? room.unitCode ?? "Tanpa Unit";
 }
+
 function floorCodeOf(room: RoomRecord): RoomFloorCode | null {
   if (room.floorCode === "A" || room.floorCode === "B") {
     return room.floorCode;
@@ -966,13 +1158,16 @@ function floorCodeOf(room: RoomRecord): RoomFloorCode | null {
   }
   return null;
 }
+
 function isPublicVacant(room: RoomRecord): boolean {
   return room.publicVisible === true && room.roomStatus === "vacant";
 }
+
 function countPublicVacantByCategory(rooms: RoomRecord[], category: RoomCategory): number {
   return rooms.filter((room) => effectiveCategory(room) === category && isPublicVacant(room))
     .length;
 }
+
 function roomSort(left: RoomRecord, right: RoomRecord): number {
   const building = naturalSort(buildingCodeOf(left), buildingCodeOf(right));
   if (building !== 0) {
@@ -984,6 +1179,7 @@ function roomSort(left: RoomRecord, right: RoomRecord): number {
   }
   return naturalSort(left.roomCode ?? left.number, right.roomCode ?? right.number);
 }
+
 function floorRank(room: RoomRecord): number {
   const floor = floorCodeOf(room);
   if (floor === "B") {
@@ -994,9 +1190,11 @@ function floorRank(room: RoomRecord): number {
   }
   return 2;
 }
+
 function naturalSort(left: string, right: string): number {
   return left.localeCompare(right, "id-ID", { numeric: true, sensitivity: "base" });
 }
+
 function progressWidth(value: number, total: number): string {
   if (total <= 0) {
     return "0%";

@@ -144,10 +144,10 @@ export function RoomFormDialog({ open, onOpenChange, initial }: RoomFormDialogPr
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Label Ukuran" error={form.formState.errors.sizeLabel?.message}>
+            <Field label="Ukuran Kamar" error={form.formState.errors.sizeLabel?.message}>
               <Input {...form.register("sizeLabel")} placeholder="3x4" disabled={pending} />
             </Field>
-            <Field label="Gender Policy" error={form.formState.errors.genderPolicy?.message}>
+            <Field label="Kebijakan Gender" error={form.formState.errors.genderPolicy?.message}>
               <Select
                 value={form.watch("genderPolicy")}
                 onValueChange={(v) =>
@@ -159,9 +159,9 @@ export function RoomFormDialog({ open, onOpenChange, initial }: RoomFormDialogPr
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="male">Putra</SelectItem>
+                  <SelectItem value="female">Putri</SelectItem>
                   <SelectItem value="mixed">Campur</SelectItem>
-                  <SelectItem value="male">Pria</SelectItem>
-                  <SelectItem value="female">Wanita</SelectItem>
                 </SelectContent>
               </Select>
             </Field>

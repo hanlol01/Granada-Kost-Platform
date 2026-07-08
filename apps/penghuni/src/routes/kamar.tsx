@@ -348,9 +348,7 @@ function HunianCatalogCard({
               ) : null}
             </div>
           ) : (
-            <p className="text-sm font-semibold text-muted-foreground">
-              Harga dikonfirmasi admin
-            </p>
+            <p className="text-sm font-semibold text-muted-foreground">Harga dikonfirmasi admin</p>
           )}
           <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-600">
             <DoorOpen className="h-3.5 w-3.5" />

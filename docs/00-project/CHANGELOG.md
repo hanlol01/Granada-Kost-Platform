@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-08
+
+### M17E - Final Booking Lead Release / Handoff
+- Dokumen penutup track M17: `docs/17-booking-leads/M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`. Governance docs (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`, `docs/README.md`) diperbarui.
+- Release verdict: **internal/demo/staging READY with known limitations**; **production public booking NOT READY**; **Booking Lead MVP READY untuk internal/demo/staging dengan konfirmasi admin/manual**; **payment booking DEFERRED**; **Smart Lock live command NO-GO until site trial/evidence/signoff**. Konfirmasi admin tetap source of truth.
+- Limitasi tercatat: browser visual/screenshot QA M17C/M17D belum tersedia (QA PASS tanpa visual); katalog publik tetap agregat per hunian/unit/grup tanpa detail/pemilihan kamar eksak; foto/galeri/fasilitas/kebijakan/detail katalog deferred; pembayaran booking online deferred; Payment Gateway production booking tidak aktif.
+- Rekomendasi milestone berikutnya: **M18 - Public Hunian Catalog Detail / Modern Listing** (detail level hunian/unit tanpa nomor kamar eksak, foto/galeri, fasilitas, kebijakan, penjelasan harga, FAQ, SEO/public copy, CTA WhatsApp/lead; tanpa payment gateway booking).
+- Dokumentasi saja: tidak ada perubahan kode/migrasi/Payment Gateway/Smart Lock; tidak ada validasi terminal oleh agen dokumentasi.
+
+### M17 (rekap A sampai D) - Booking Lead MVP
+- **M17A** architecture/UX/safety freeze: booking lead BUKAN booking terkonfirmasi; tanpa reservasi otomatis, tanpa pembayaran, tanpa invoice, tanpa occupancy/resident otomatis, tanpa pemilihan kamar eksak; konfirmasi WhatsApp/admin wajib; PII minimum dan admin-only.
+- **M17B** backend API: migrasi additive `booking_leads` (014), `POST /api/v1/public/booking-leads` (write-only, rate limit Redis, duplicate protection), `GET /api/v1/booking-leads` + `PATCH /api/v1/booking-leads/:id/status` (JWT + RBAC manager/admin, property-scoped), audit masked/PII-safe; validasi **PASS**.
+- **M17C** Admin Booking Lead Management UI: `/booking-leads` + nav "Minat Booking", list/filter/update status, WhatsApp follow-up; tanpa alur otomatis resident/occupancy/invoice/payment; **QA PASS dengan limitasi browser**.
+- **M17D** Public /kamar Lead Form: CTA "Ajukan Minat Booking" + dialog form, anonymous `POST /public/booking-leads` (tanpa auth header/refresh-token), success state menegaskan bukan booking resmi, WhatsApp follow-up tetap tersedia, payload tanpa roomId/roomCode/nomor kamar eksak/propertyId; **QA PASS dengan limitasi browser**.
+- Mengikat: **public booking NOT production-ready**; jalur MVP tetap konfirmasi manual/WhatsApp.
+
 ## 2026-07-07
 
 ### M16F - Final Docs / Release Update / Handoff (Room Inventory & Public Booking)

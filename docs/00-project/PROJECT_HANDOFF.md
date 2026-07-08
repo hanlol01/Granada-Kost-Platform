@@ -1,7 +1,7 @@
 # Project Handoff
 
-> Diperbarui: 2026-07-07 (M16F). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
-> Versi sebelumnya (M15C-G, 2026-07-05) belum memuat track M16 Room Inventory & Public Booking.
+> Diperbarui: 2026-07-08 (M17E). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
+> Versi sebelumnya (M16F, 2026-07-07) belum memuat track M17 Booking Lead MVP.
 
 ## Status Saat Ini
 
@@ -16,7 +16,7 @@
 - M15B-A selesai: VPS staging baseline smoke + environment hardening **PASS** - Admin `https://kelola.kostation.web.id`, Penghuni `https://app.kostation.web.id`, API `https://api.kostation.web.id`.
 - M15C (A-G) selesai: **Payment Gateway sandbox/staging ready** - Midtrans Sandbox validated (Snap session + signed webhook settlement, M15C-D), frontend Penghuni "Bayar Online" + Admin tab "Online" (M15C-E2A/E2B), Sandbox E2E QA **PASS** (M15C-F/F2), documentation/release update (M15C-G). **Production payment activation pending; Payment Gateway is not production-ready.**
 - M16 (A-0 sampai F) selesai (2026-07-07): Room Inventory & Public Booking MVP - normalisasi data kamar (163/123/40; Putra 99/Putri 64; PII masked), architecture/UX freeze, schema + staging backfill additif (26 `room_buildings`, 163 kamar in place, room ID dipertahankan), Admin Kamar bertab (M16C-QA **PARTIAL diterima**), Public Room Listing API (**PASS**), UI publik `/kamar` + WhatsApp CTA via `VITE_PUBLIC_WHATSAPP_NUMBER` (validasi **partial diterima**), final handoff `docs/16-room-inventory-booking/M16_FINAL_RELEASE_HANDOFF.md`. **Public booking NOT production-ready**; booking leads & pembayaran booking online deferred.
-- M17A selesai (2026-07-07): Booking Lead MVP Architecture / UX / Safety Freeze (`docs/17-booking-leads/BOOKING_LEAD_MVP_ARCHITECTURE_FREEZE.md`) - dokumentasi saja, frozen/mengikat untuk M17B+. Booking lead BUKAN booking terkonfirmasi; tanpa reservasi kamar otomatis, tanpa pembayaran, tanpa invoice/occupancy otomatis, tanpa nomor kamar eksak publik, tanpa dokumen identitas; konfirmasi admin via WhatsApp tetap jalur utama. Implementasi (M17B-M17G) belum dimulai; **public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
+- M17 (A-E) selesai (2026-07-08): Booking Lead MVP - architecture/UX/safety freeze (M17A), backend API booking lead tervalidasi **PASS** (M17B: migrasi additive `booking_leads`, public endpoint write-only rate-limited + duplicate protection, admin list/status RBAC/property-scoped, audit masked), Admin UI "Minat Booking" `/booking-leads` (M17C; **QA PASS dengan limitasi browser**), form publik "Ajukan Minat Booking" di `/kamar` dengan anonymous POST (M17D; **QA PASS dengan limitasi browser**), final handoff (M17E, `docs/17-booking-leads/M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`). Booking lead BUKAN booking terkonfirmasi; tanpa reservasi/pembayaran/invoice/occupancy/resident otomatis; tanpa nomor kamar eksak publik; konfirmasi admin via WhatsApp tetap source of truth. **Booking Lead MVP READY untuk internal/demo/staging dengan konfirmasi admin/manual; public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
 - **Internal demo: READY.** **Production: NOT READY** (belum disetujui rilis production).
 - Seluruh QA dijalankan eksternal (Codex) atau hybrid manual; agen dokumentasi tidak menjalankan validasi terminal.
 
@@ -110,8 +110,19 @@ SMART_LOCK_LIVE_ENABLED=false
 - API publik (M16D; unauthenticated, rate-limited Redis): `GET /api/v1/public/rooms/summary`, `GET /api/v1/public/rooms/availability`, `GET /api/v1/public/rooms/groups/:groupKey`. Hanya data agregat aman: **tanpa room ID, `room_code`, nomor kamar eksak, atau PII tenant/resident/occupancy**; hanya kamar `vacant` + `public_visible` (kamar + building) yang dihitung; filter gender/kategori ditegakkan backend.
 - UI publik (M16E): route `/kamar` di `apps/penghuni` (di luar AuthGuard, tanpa login), filter gender Putra/Putri + kategori, kartu ketersediaan agregat, CTA WhatsApp dengan template terisi.
 - Konfigurasi: **`VITE_PUBLIC_WHATSAPP_NUMBER`** (frontend env tervalidasi, default kosong). Jika kosong/tidak valid: CTA disabled dengan teks "Nomor WhatsApp admin belum dikonfigurasi." - tidak pernah menghasilkan URL `wa.me` invalid. Jangan pernah hardcode nomor. (Terpisah dari `VITE_ADMIN_WHATSAPP_PHONE` untuk fallback upload file.)
-- Alur booking MVP: konfirmasi manual admin via WhatsApp. **Tanpa booking leads tersimpan, tanpa pembayaran online booking, tanpa keterlibatan Payment Gateway.** Nomor kamar eksak dikonfirmasi admin, tidak pernah tampil publik.
+- Alur booking MVP: konfirmasi manual admin via WhatsApp. **Booking lead tersimpan tersedia sejak M17 (lihat posture M17 di bawah); tetap tanpa pembayaran online booking dan tanpa keterlibatan Payment Gateway.** Nomor kamar eksak dikonfirmasi admin, tidak pernah tampil publik.
 - Limitasi tercatat: browser visual QA M16C/M16E belum dieksekusi (tooling tidak tersedia di VPS); lint global penghuni terblokir baseline formatting Payment/Billing yang tidak terkait; `routeTree.gen.ts` diperbarui manual dan akan di-regenerate pada build berikutnya.
+
+## Booking Lead Posture (M17 - Mengikat)
+
+- Status: **Booking Lead MVP READY untuk internal/demo/staging dengan konfirmasi admin/manual; public booking NOT production-ready.** Dokumen penutup: `docs/17-booking-leads/M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`.
+- Lead adalah minat, BUKAN booking terkonfirmasi: tanpa reservasi kamar, tanpa mutasi status kamar, tanpa pembayaran/invoice, tanpa occupancy/resident otomatis; konversi ke penghuni tetap manual via alur admin existing (`converted` hanya penanda manual).
+- API publik: `POST /api/v1/public/booking-leads` - unauthenticated **write-only**, rate limit Redis (5/15 menit/IP), duplicate protection (respons sukses sama tanpa baris ganda), menolak field tak dikenal (`roomId`/`roomCode`/nomor kamar eksak/`propertyId`), respons hanya acknowledgment aman (tanpa echo PII/pesan/property ID/room data).
+- API admin: `GET /api/v1/booking-leads` + `PATCH /api/v1/booking-leads/:leadId/status` - JWT + RBAC (manager/admin; `room.read`/`room.manage`), property-scoped; transisi status backend-enforced (new -> contacted -> visit_scheduled -> converted; rejected/expired; terminal locked); audit masked (tanpa full phone/pesan).
+- UI: Admin `/booking-leads` ("Minat Booking"); publik `/kamar` CTA "Ajukan Minat Booking" + dialog form (nama + nomor WhatsApp wajib; tanggal/catatan opsional; honeypot; PII di-clear saat dialog ditutup); anonymous POST tanpa Authorization header dan tanpa refresh-token flow; CTA WhatsApp existing tetap tersedia dan tetap jalur konfirmasi utama.
+- Konfigurasi: migrasi `014_booking_leads.sql` wajib diterapkan; Redis wajib untuk rate limit; tanpa env var baru (`VITE_PUBLIC_WHATSAPP_NUMBER` dipakai ulang untuk follow-up; kosong = tombol follow-up disembunyikan dengan aman); tanpa perubahan `packages/api-client`.
+- PII minimum (nama, phone ternormalisasi, catatan/tanggal opsional), hanya terbaca via admin ber-auth; tanpa dokumen identitas/upload/payment field; rekomendasi retensi/anonimisasi lead terminal (M17A Section 9) belum diotomasi - konfirmasi sebelum pertimbangan production.
+- Limitasi tercatat: browser visual QA M17C/M17D belum dieksekusi (QA PASS dengan limitasi browser).
 
 ## Blocker Diketahui (Production)
 
@@ -134,8 +145,9 @@ SMART_LOCK_LIVE_ENABLED=false
 
 - Payment Gateway production activation / Midtrans production readiness (sandbox/staging selesai via M15C).
 - Receipt / nota.
-- Booking leads / admin lead management (deferred dari track M16).
-- Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp).
+- Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp - booking lead M17 BUKAN booking/pembayaran online).
+- Otomasi lead: auto-expiry, notifikasi otomatis, retensi/anonimisasi PII otomatis, konversi otomatis ke resident/occupancy (konversi tetap manual admin).
+- Katalog publik detail hunian/unit, foto/galeri, fasilitas, kebijakan, FAQ, SEO (rekomendasi track M18).
 - Foto/media kamar, katalog fasilitas, halaman SEO public listing (fase lanjut).
 - Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
 - Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).

@@ -328,3 +328,14 @@ Hunian Gallery (M19) dapat didemokan sebagai **MVP staging/demo dengan limitasi 
 - Mengubah postur Smart Lock (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`) - live command **NO-GO**.
 
 Catatan: browser visual QA M19C/M19D belum dieksekusi (tooling tidak tersedia di VPS) dan live API smoke QA M19C/M19D terbatas (port stale); `thumbnailUrl` masih `null` sehingga thumbnail publik memuat gambar asli; demo visual pertama sekaligus berfungsi sebagai sanity check visual.
+
+## 18. M20 Pre-Demo Staging Restart & Visual QA Pointer (Added 2026-07-08 via M20A)
+
+Sebelum demo berikutnya, jalankan checklist **`docs/20-staging-visual-qa/M20_STAGING_RESTART_VISUAL_QA_PLAN.md`** (M20A):
+
+- Restart/deploy staging: pull master terbaru, migration `015_hunian_gallery.sql`, restart API (menutup limitasi port 3000 stale; route M18/M19 aktif), redeploy Admin + Penghuni, cek env `VITE_API_BASE_URL`/`VITE_PUBLIC_WHATSAPP_NUMBER`, storage upload writable, media endpoint publik.
+- API smoke + admin gallery smoke + public catalog/gallery smoke sesuai checklist Sections 4-6.
+- Browser visual QA (opsional) dijalankan **lokal** terhadap URL staging - VPS tidak punya browser tooling; simpan screenshot sebagai evidensi.
+- Verdict wording: **"M20 PASS with browser visual limitation"** (tanpa visual QA lokal) atau **"M20 PASS with browser visual QA completed"**.
+
+M20 TANPA fitur baru dan **TIDAK mengklaim production readiness**; postur Smart Lock (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`) dan Payment Gateway (sandbox/staging) tidak berubah.

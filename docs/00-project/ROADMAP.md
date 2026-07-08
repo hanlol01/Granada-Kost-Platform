@@ -257,9 +257,19 @@ Status: selesai sampai M19E (Final Release / Handoff, 2026-07-08). Dokumen: `doc
 
 Catatan mengikat M19: galeri melekat pada item katalog hunian/unit/grup - **tanpa nomor kamar eksak, roomId, `room_code`, atau `storage_path` publik**; publik hanya melihat gambar `publicVisible`; tanpa public upload; tanpa video; backend tetap enforcement point; **public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
 
+## Milestone 20 - Staging Restart & Visual QA Pass
+
+Status: M20A plan/checklist selesai (2026-07-08); eksekusi pending. Dokumen: `docs/20-staging-visual-qa/M20_STAGING_RESTART_VISUAL_QA_PLAN.md`. M20 adalah **milestone penutup siklus revisi hari ini** - TANPA fitur baru; memvalidasi kesiapan deployment/staging/demo pasca M18/M19 (menutup limitasi port 3000 stale + browser visual QA yang belum pernah jalan).
+
+- M20A - Plan/checklist: deployment/restart checklist (pull master terbaru, migration 015, restart API + health, redeploy admin + penghuni, cek env `VITE_API_BASE_URL`/`VITE_PUBLIC_WHATSAPP_NUMBER`, storage upload writable, media endpoint), API smoke checklist (M18 catalog + M19 gallery + regresi kunci + leakage scan), admin gallery smoke, public catalog/gallery smoke, optional local browser visual QA (VPS tanpa browser tooling), safety/privacy checklist, acceptance criteria + wording verdict. Status: selesai (dokumentasi saja - tanpa validasi oleh agen dokumentasi).
+- M20 execution: dijalankan eksternal (operator/Codex); hasil dicatat di dokumen result pendamping. Verdict wording: **"M20 PASS with browser visual limitation"** (semua check non-browser PASS) atau **"M20 PASS with browser visual QA completed"** (visual QA lokal juga PASS). Status: pending.
+
+Catatan mengikat M20: tanpa fitur baru; tanpa payment booking; tanpa pemilihan kamar eksak; tanpa video gallery; tanpa thumbnail pipeline; tanpa public upload; tanpa Smart Lock live command; **M20 TIDAK mengklaim production readiness** - production tetap NOT READY per blocker M14A/M14F.
+
 ## Next Milestone
 
-- **Pasca M19E - M20**: rekomendasi utama **M20 - Staging Restart & Visual QA Pass** (restart API staging agar route M18/M19 aktif, fresh API smoke, browser visual QA lokal untuk `/kamar`, `/kamar/$slug`, `/hunian-gallery` - untuk keyakinan sebelum demo). Alternatif bila performa gambar diprioritaskan: **M20 - Image Optimization / Thumbnail Pipeline / Deployment Smoke** (`thumbnailUrl` saat ini masih `null`).
+- **Eksekusi M20** sesuai `docs/20-staging-visual-qa/M20_STAGING_RESTART_VISUAL_QA_PLAN.md` (restart/deploy staging + API smoke + admin/public smoke; browser visual QA lokal opsional), lalu catat verdict M20 di dokumen result pendamping.
+- Jalur setelah M20 (keputusan produk): **Image Optimization / Thumbnail Pipeline** (`thumbnailUrl` masih `null`), production hardening, payment production activation readiness, atau Smart Lock site trial (M13F-C5).
 - **Pasca M18A - implementasi Public Hunian Catalog (M18B-M18G)** sesuai freeze `docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_CONTENT_UX_FREEZE.md`. Jalur alternatif tetap valid sesuai keputusan produk: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA (M16C/M16E/M17C/M17D) dijalankan saat tooling browser tersedia.
 - **Payment Gateway Production Activation / Midtrans Production Readiness: pending/gated - BUKAN selesai.** Butuh Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder.
 - Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).

@@ -2,6 +2,21 @@
 
 ## 2026-07-08
 
+### M19E - Hunian Gallery Final Release / Handoff
+- Dokumen penutup track M19: `docs/19-hunian-gallery/M19_HUNIAN_GALLERY_FINAL_RELEASE_HANDOFF.md`. Governance docs (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`, `docs/README.md`) diperbarui.
+- Release verdict: **M19 Gallery MVP READY untuk internal/demo/staging dengan limitasi tercatat**; **production NOT READY** sampai browser visual QA, deployment smoke, kebijakan storage, dan SOP review gambar selesai; **public booking tetap NOT production-ready**; **payment booking DEFERRED**; **Smart Lock live command NO-GO until site trial/evidence/signoff**.
+- Limitasi tercatat: browser visual QA M19C/M19D belum tersedia di VPS; live API smoke QA M19C/M19D terbatas (port 3000 stale; startup API fresh terblokir limit reviewer/usage) - fresh smoke backend M19B sebelumnya PASS di port 3001; `thumbnailUrl` masih `null` (thumbnail publik memuat gambar asli sampai pipeline thumbnail ada); tanpa video/cropping editor/CDN-S3/optimasi lanjutan/deteksi otomatis wajah-plat - review foto tetap SOP manual admin.
+- Catatan deployment: restart API agar route M18/M19 aktif; pastikan migration `015_hunian_gallery.sql` diterapkan; permission storage upload; `VITE_API_BASE_URL` benar untuk URL media publik; redeploy app Admin dan Penghuni/public.
+- Rekomendasi milestone berikutnya: **M20 - Staging Restart & Visual QA Pass** (utama, untuk keyakinan sebelum demo) atau **M20 - Image Optimization / Thumbnail Pipeline / Deployment Smoke** (bila performa gambar diprioritaskan).
+- Dokumentasi saja: tanpa perubahan kode/migrasi/mutasi DB/CSV import/Payment Gateway/Smart Lock; tanpa validasi baru oleh agen dokumentasi.
+
+### M19 (rekap A sampai D) - Hunian Gallery
+- **M19A** architecture/UX/safety freeze: galeri melekat pada item katalog hunian/unit/grup - BUKAN kamar eksak; allowlist respons publik (id, contentUrl, thumbnailUrl, altText, caption, sortOrder, isCover); publik hanya `publicVisible`; tanpa public upload/video.
+- **M19B** backend gallery API + file attachment: migration `015_hunian_gallery.sql`, purpose `hunian_gallery` (JPEG/PNG/WebP maks 3 MB), admin scoped CRUD + set-cover + publish/unpublish + reorder + soft-delete, public media endpoint aman (published 200; after delete 404), wiring `galleryPreview/gallery` ke public catalog; validasi **PASS** (lint/build/migration apply+replay/API smoke fresh port 3001/regression M16-M17/safety scan).
+- **M19C** Admin Gallery Upload & Management UI `/hunian-gallery` + nav "Galeri Hunian": selector katalog public-safe, dropzone drag-and-drop + click-to-select + preview lokal + validasi client (type/size/maks 10), upload via `/files` purpose `hunian_gallery` lalu attach, aksi cover/publish/reorder/edit/delete, read-only UX untuk property_owner, safety notices; **M19C-QA PASS dengan limitasi browser visual dan live API smoke**.
+- **M19D** Public Gallery Integration: cover image kartu `/kamar` (placeholder aman saat kosong/gagal), hero gallery profesional + thumbnail selector + lightbox dengan keyboard navigation di `/kamar/$slug`, fallback placeholder, tanpa foto dummy, tanpa public upload, CTA booking lead + WhatsApp tidak berubah; **M19D-QA PASS dengan limitasi browser visual dan live API smoke**.
+- Mengikat: publik hanya melihat gambar `publicVisible`; tanpa `storage_path`/`fileId` internal/roomId/`room_code`/nomor kamar eksak/PII/payment/Smart Lock di respons publik; backend tetap enforcement point.
+
 ### M17E - Final Booking Lead Release / Handoff
 - Dokumen penutup track M17: `docs/17-booking-leads/M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`. Governance docs (`PROJECT_MASTER.md`, `ROADMAP.md`, `CHANGELOG.md`, `PROJECT_HANDOFF.md`, `INTERNAL_DEMO_CHECKLIST.md`, `docs/README.md`) diperbarui.
 - Release verdict: **internal/demo/staging READY with known limitations**; **production public booking NOT READY**; **Booking Lead MVP READY untuk internal/demo/staging dengan konfirmasi admin/manual**; **payment booking DEFERRED**; **Smart Lock live command NO-GO until site trial/evidence/signoff**. Konfirmasi admin tetap source of truth.

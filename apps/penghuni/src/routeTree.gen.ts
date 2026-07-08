@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as KamarRouteImport } from './routes/kamar'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as KamarSlugRouteImport } from './routes/kamar.$slug'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
@@ -32,6 +33,11 @@ const KamarRoute = KamarRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KamarSlugRoute = KamarSlugRouteImport.update({
+  id: '/kamar/$slug',
+  path: '/kamar/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -73,6 +79,7 @@ const AppBillingRoute = AppBillingRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/kamar': typeof KamarRoute
+  '/kamar/$slug': typeof KamarSlugRoute
   '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/kamar': typeof KamarRoute
+  '/kamar/$slug': typeof KamarSlugRoute
   '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/kamar': typeof KamarRoute
+  '/kamar/$slug': typeof KamarSlugRoute
   '/login': typeof LoginRoute
   '/_app/billing': typeof AppBillingRoute
   '/_app/chat': typeof AppChatRoute
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/kamar'
+    | '/kamar/$slug'
     | '/login'
     | '/billing'
     | '/chat'
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/kamar'
+    | '/kamar/$slug'
     | '/login'
     | '/billing'
     | '/chat'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/kamar'
+    | '/kamar/$slug'
     | '/login'
     | '/_app/billing'
     | '/_app/chat'
@@ -145,6 +157,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   KamarRoute: typeof KamarRoute
+  KamarSlugRoute: typeof KamarSlugRoute
   LoginRoute: typeof LoginRoute
 }
 
@@ -169,6 +182,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kamar/$slug': {
+      id: '/kamar/$slug'
+      path: '/kamar/$slug'
+      fullPath: '/kamar/$slug'
+      preLoaderRoute: typeof KamarSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -248,6 +268,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   KamarRoute: KamarRoute,
+  KamarSlugRoute: KamarSlugRoute,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport

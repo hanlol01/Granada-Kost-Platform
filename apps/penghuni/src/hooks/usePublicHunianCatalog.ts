@@ -1,7 +1,8 @@
-// Public hunian catalog hooks (M18C).
+// Public hunian catalog hooks (M18C list + M18D detail).
 //
 // Anonymous, read-only access to the M18B public hunian catalog API:
-//   GET /api/v1/public/hunian-catalog (list + gender/category filters)
+//   GET /api/v1/public/hunian-catalog        (list + gender/category filters)
+//   GET /api/v1/public/hunian-catalog/:slug  (public-safe detail)
 //
 // The API returns ONLY public-safe hunian/unit/group offerings (M18A frozen
 // allowlist): no room IDs, no room_code, no exact room numbers, no tenant/
@@ -9,10 +10,11 @@
 // This module must never be extended to request or render such data.
 //
 // `anonymous: true` makes the shared ApiClient skip the Authorization header
-// AND the 401 single-flight refresh, so the public /kamar page can never
+// AND the 401 single-flight refresh, so the public /kamar pages can never
 // trigger a login/refresh-token loop.
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { ApiError, ERROR_CODES } from "@granada-kost/api-client";
 import { apiClient } from "@/lib/api";
 import type { PublicCategory, PublicGender, PublicRoomGroup } from "@/hooks/usePublicRooms";
 
@@ -90,7 +92,12 @@ export function usePublicHunianCatalog(
   params: PublicHunianCatalogParams,
 ): UseQueryResult<PublicHunianCatalogItem[]> {
   return useQuery<PublicHunianCatalogItem[]>({
-    queryKey: ["public-hunian-catalog", "list", params.gender ?? "all", params.category ?? "all"],
+    queryKey: [
+      "public-hunian-catalog",
+      "list",
+      params.gender ?? "all",
+      params.category ?? "all",
+    ],
     queryFn: () => getPublicHunianCatalog(params),
     staleTime: STALE_TIME_MS,
   });
@@ -121,4 +128,60 @@ export function toPublicRoomGroup(item: PublicHunianCatalogItem): PublicRoomGrou
     publicTitle: item.title,
     ctaLabel: item.ctaLabel,
   };
+}
+
+// ---------------------------------------------------------------------------
+// M18D — public hunian detail (/kamar/$slug)
+// ---------------------------------------------------------------------------
+
+export type PublicHunianFaqItem = { question: string; answer: string };
+
+// M18B detail item: extends the list item with public-safe detail-only fields.
+// Still strictly allowlisted — never roomId/room_code/exact room numbers,
+// tenant/resident/occupancy PII, invoice/payment/bank data, or Smart Lock data.
+export type PublicHunianCatalogDetail = PublicHunianCatalogItem & {
+  longDescription: string;
+  facilitiesRoom: string[];
+  facilitiesBathroom: string[];
+  facilitiesShared: string[];
+  facilitiesSecurity: string[];
+  facilitiesService: string[];
+  policies: string[];
+  rules: string[];
+  faq: PublicHunianFaqItem[];
+  gallery: string[] | null;
+  // Backend marker that some master-data claims still await owner
+  // confirmation. Rendered ONLY as a gentle generic note — raw items are not
+  // displayed. Typed defensively (array or flag) against contract evolution.
+  needsConfirmation: string[] | boolean | null;
+};
+
+export function getPublicHunianCatalogDetail(slug: string): Promise<PublicHunianCatalogDetail> {
+  return apiClient.get<PublicHunianCatalogDetail>(
+    `/public/hunian-catalog/${encodeURIComponent(slug)}`,
+    { anonymous: true },
+  );
+}
+
+// Unknown slugs return HTTP 404 (NOT_FOUND) and malformed slugs HTTP 400
+// (VALIDATION_FAILED) per the M18B contract. Both are terminal for a public
+// visitor, so the page renders a safe not-found state (no ID-probing feedback,
+// no raw backend error) and the query does not retry them.
+export function isPublicHunianCatalogNotFound(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    (error.code === ERROR_CODES.NOT_FOUND || error.code === ERROR_CODES.VALIDATION_FAILED)
+  );
+}
+
+export function usePublicHunianCatalogDetail(
+  slug: string,
+): UseQueryResult<PublicHunianCatalogDetail> {
+  return useQuery<PublicHunianCatalogDetail>({
+    queryKey: ["public-hunian-catalog", "detail", slug],
+    queryFn: () => getPublicHunianCatalogDetail(slug),
+    staleTime: STALE_TIME_MS,
+    retry: (failureCount, error) =>
+      !isPublicHunianCatalogNotFound(error) && failureCount < 2,
+  });
 }

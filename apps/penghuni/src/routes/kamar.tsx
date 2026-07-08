@@ -366,14 +366,12 @@ function HunianCatalogCard({
             {item.ctaLabel || "Ajukan Minat Booking"}
           </Button>
           <div className="grid grid-cols-2 gap-1.5">
-            {/* M18D placeholder: the /kamar/$slug detail page is not part of
-                M18C, so no route/link is rendered yet (documented decision). */}
-            <Button
-              variant="outline"
-              disabled
-              title="Halaman detail hunian hadir dalam pembaruan berikutnya."
-            >
-              Lihat Detail
+            {/* M18D: links to the public detail page /kamar/$slug (safe slug
+                identifier only — never roomId/room_code). */}
+            <Button asChild variant="outline">
+              <Link to="/kamar/$slug" params={{ slug: item.slug }}>
+                Lihat Detail
+              </Link>
             </Button>
             {href ? (
               <Button asChild variant="outline">

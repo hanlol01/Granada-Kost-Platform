@@ -140,7 +140,11 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function GuardedOutlet() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  if (PUBLIC_ROUTES.has(pathname)) {
+  // Public hunian catalog detail (M18D): /kamar/$slug renders outside the
+  // AuthGuard with the same public-safe posture as /kamar (aggregated
+  // hunian/group data only — no room IDs, no room_code, no exact room
+  // numbers, no PII). Anonymous API calls never trigger the refresh flow.
+  if (PUBLIC_ROUTES.has(pathname) || pathname.startsWith("/kamar/")) {
     return <Outlet />;
   }
   return (

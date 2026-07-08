@@ -72,7 +72,9 @@ The component accepts real media without redesign once the safe media pipeline s
 
 ## 9. "Lihat Detail" Decision (M18D Preparation)
 
-Decision: the `/kamar/$slug` detail page is deferred to M18D and **no placeholder route was added** in M18C (adding a stub route was evaluated and rejected per the task guidance to avoid expanding scope and touching `routeTree.gen.ts` / `PUBLIC_ROUTES` prematurely). Each card renders a **disabled "Lihat Detail" button** with a tooltip ("Halaman detail hunian hadir dalam pembaruan berikutnya.") so the frozen M18A card CTA structure is visually in place. M18D will: add the public route `/kamar/$slug` (outside AuthGuard, registered in `PUBLIC_ROUTES`), consume `GET /public/hunian-catalog/:slug` (a detail hook can extend `usePublicHunianCatalog.ts`), and convert the disabled button into a `Link` using the already-available `item.slug`. Unknown slugs must render a safe not-found state linking back to `/kamar`.
+> Update (M18D, 2026-07-08): superseded. The `/kamar/$slug` detail page is implemented in M18D (see `PUBLIC_HUNIAN_CATALOG_DETAIL_UI.md`) and the listing card "Lihat Detail" button is now an enabled link to `/kamar/$slug`. The paragraph below documents the original M18C decision.
+
+Decision (as of M18C): the `/kamar/$slug` detail page is deferred to M18D and **no placeholder route was added** in M18C (adding a stub route was evaluated and rejected per the task guidance to avoid expanding scope and touching `routeTree.gen.ts` / `PUBLIC_ROUTES` prematurely). Each card renders a **disabled "Lihat Detail" button** with a tooltip ("Halaman detail hunian hadir dalam pembaruan berikutnya.") so the frozen M18A card CTA structure is visually in place. M18D will: add the public route `/kamar/$slug` (outside AuthGuard, registered in `PUBLIC_ROUTES`), consume `GET /public/hunian-catalog/:slug` (a detail hook can extend `usePublicHunianCatalog.ts`), and convert the disabled button into a `Link` using the already-available `item.slug`. Unknown slugs must render a safe not-found state linking back to `/kamar`.
 
 ## 10. Safety / Privacy Decisions
 

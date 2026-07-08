@@ -283,3 +283,24 @@ Public room listing (M16) dapat didemokan sebagai **MVP staging/demo**. Evidensi
 - Mengubah postur Smart Lock untuk demo dari `SMART_LOCK_PROVIDER=simulated` dan `SMART_LOCK_LIVE_ENABLED=false`.
 
 Catatan: browser visual QA M16C/M16E belum dieksekusi (browser tooling tidak tersedia di VPS); demo visual pertama sekaligus berfungsi sebagai sanity check visual.
+
+## 16. Booking Lead Demo Note (Added 2026-07-08 via M17E)
+
+Booking Lead MVP (M17) dapat didemokan sebagai **MVP staging/demo dengan konfirmasi admin/manual**. Evidensi/dokumen: `docs/17-booking-leads/M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`, `BOOKING_LEAD_BACKEND_API.md`, `BOOKING_LEAD_ADMIN_UI.md` + `BOOKING_LEAD_ADMIN_UI_QA.md`, `BOOKING_LEAD_PUBLIC_FORM_UI.md` + `BOOKING_LEAD_PUBLIC_FORM_UI_QA.md`.
+
+**Cakupan demo aman:**
+
+- Publik `/kamar` tanpa login: CTA "Ajukan Minat Booking" membuka dialog form (Nama Lengkap + Nomor WhatsApp wajib; Tanggal Rencana Masuk + Catatan opsional); submit anonim; success state "Minat booking berhasil dikirim." yang menegaskan **bukan booking resmi**.
+- WhatsApp follow-up pasca submit ("Hubungi Admin via WhatsApp", membutuhkan `VITE_PUBLIC_WHATSAPP_NUMBER`) + CTA "Tanya Ketersediaan via WhatsApp" tetap tersedia.
+- Admin `/booking-leads` ("Minat Booking", role manager/admin): list/filter lead, update status (Baru -> Sudah Dihubungi -> Jadwal Survey -> Dikonversi; Ditolak/Kedaluwarsa; "Dikonversi" hanya penanda manual), "Hubungi via WhatsApp".
+- Duplicate submission dalam window duplicate-protection menghasilkan respons sukses yang sama tanpa baris ganda (perilaku benar, bukan bug). Rate limit publik aktif (Redis).
+
+**JANGAN:**
+
+- Mempresentasikan lead sebagai booking terkonfirmasi / reservasi kamar - **admin confirmation remains source of truth**; lead tidak pernah memutasi status kamar.
+- Menampilkan atau menjanjikan nomor kamar eksak, room ID, atau `room_code` di permukaan publik.
+- Menghubungkan lead dengan pembayaran/invoice/occupancy/resident otomatis atau Payment Gateway - **payment booking DEFERRED; production payment activation pending**.
+- Mempresentasikan public booking sebagai production-ready - **public booking NOT production-ready**.
+- Mengubah postur Smart Lock (`SMART_LOCK_PROVIDER=simulated`, `SMART_LOCK_LIVE_ENABLED=false`) - live command **NO-GO until site trial/evidence/signoff**.
+
+Catatan: browser visual QA M17C/M17D belum dieksekusi (limitasi tooling); demo visual pertama sekaligus berfungsi sebagai sanity check visual.

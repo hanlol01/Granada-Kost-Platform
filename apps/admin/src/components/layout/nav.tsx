@@ -17,6 +17,7 @@ import {
   Bike,
   ParkingSquare,
   Inbox,
+  Images,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RoleCode } from "@granada-kost/domain";
@@ -42,6 +43,15 @@ export const navItems: readonly NavItem[] = [
   // Booking lead inbox (M17C). Roles follow the M17B backend authorization:
   // manager|admin only (property-owner is denied by the booking-leads API).
   { to: "/booking-leads", label: "Minat Booking", icon: Inbox, roles: ["manager", "admin"] },
+  // Hunian gallery manager (M19C). Roles follow the M19B backend authorization:
+  // owner|manager|admin manage; property_owner is view-only (list allowed,
+  // mutations return 403 backend-side). Frontend gating is UX-only.
+  {
+    to: "/hunian-gallery",
+    label: "Galeri Hunian",
+    icon: Images,
+    roles: ["owner", "manager", "admin", "property_owner"],
+  },
   { to: "/tenants", label: "Penghuni", icon: Users, roles: ["owner", "manager", "admin"] },
   { to: "/payments", label: "Pembayaran", icon: CreditCard, roles: ["owner", "manager", "admin"] },
   {

@@ -10,6 +10,8 @@ import {
   EyeOff,
   Home,
   Layers,
+  Pencil,
+  Plus,
   RotateCcw,
   Search,
   Users,
@@ -40,6 +42,8 @@ import {
 } from "@/hooks/useRooms";
 import { formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { RoomFormDialog } from "@/components/forms/RoomFormDialog";
+import { useAuth } from "@/lib/auth";
 export const Route = createFileRoute("/rooms")({ component: RoomsPage });
 type RoomGender = RoomRecord["genderPolicy"];
 type TabKey = "summary" | "rukost" | "apartkost" | "availability";
@@ -115,13 +119,24 @@ function PublicFlagBadge({ visible }: { visible: boolean }) {
 }
 function RoomsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<RoomRecord | null>(null);
   const { data, error, isFetching, isLoading, refetch } = useRooms();
   const rooms = data ?? EMPTY_ROOMS;
   const stats = useMemo(() => buildStats(rooms), [rooms]);
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("room.manage");
   return (
     <AppShell
       title="Manajemen Kamar"
       subtitle={data ? rooms.length + " kamar terhubung ke inventori" : "Memuat inventori kamar..."}
+      actions={
+        canManage ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
+          </Button>
+        ) : null
+      }
     >
       {error ? (
         <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat kamar" />
@@ -151,16 +166,22 @@ function RoomsPage() {
             <SummaryView isFetching={isFetching} rooms={rooms} stats={stats} />
           </TabsContent>
           <TabsContent value="rukost" className="mt-5">
-            <CategoryInventory category="rukost" rooms={rooms} />
+            <CategoryInventory category="rukost" rooms={rooms} onEdit={canManage ? setEditTarget : undefined} />
           </TabsContent>
           <TabsContent value="apartkost" className="mt-5">
-            <CategoryInventory category="apartkost" rooms={rooms} />
+            <CategoryInventory category="apartkost" rooms={rooms} onEdit={canManage ? setEditTarget : undefined} />
           </TabsContent>
           <TabsContent value="availability" className="mt-5">
             <AvailabilityView rooms={rooms} stats={stats} />
           </TabsContent>
         </Tabs>
       )}
+      <RoomFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <RoomFormDialog
+        open={editTarget !== null}
+        onOpenChange={(o) => !o && setEditTarget(null)}
+        initial={editTarget}
+      />
     </AppShell>
   );
 }
@@ -253,7 +274,12 @@ function SummaryView({
           value={stats.maintenance + stats.requiresReview}
         />
         <MetricCard
-          detail={stats.publicVacant + " kosong dan terlihat publik"}
+          detail={
+            stats.publicVacant + " kosong dan terlihat publik" +
+            (stats.publicVisibleUnknown > 0
+              ? " · " + stats.publicVisibleUnknown + " belum ditandai"
+              : "")
+          }
           icon={Eye}
           label="Public Visible"
           value={stats.publicVisible}
@@ -378,7 +404,7 @@ function BuildingSummaryTable({ summaries }: { summaries: BuildingSummary[] }) {
     </Card>
   );
 }
-function CategoryInventory({ category, rooms }: { category: RoomCategory; rooms: RoomRecord[] }) {
+function CategoryInventory({ category, rooms, onEdit }: { category: RoomCategory; rooms: RoomRecord[]; onEdit?: (room: RoomRecord) => void }) {
   const [filters, setFilters] = useState<InventoryFilters>(DEFAULT_FILTERS);
   const categoryRooms = useMemo(
     () => rooms.filter((room) => effectiveCategory(room) === category).sort(roomSort),
@@ -427,7 +453,7 @@ function CategoryInventory({ category, rooms }: { category: RoomCategory; rooms:
       ) : (
         <div className="space-y-4">
           {grouped.map((group) => (
-            <BuildingGroup group={group} key={group.key} />
+            <BuildingGroup group={group} key={group.key} onEdit={onEdit} />
           ))}
         </div>
       )}
@@ -540,7 +566,7 @@ function InventoryFiltersBar({
     </Card>
   );
 }
-function BuildingGroup({ group }: { group: BuildingRoomGroup }) {
+function BuildingGroup({ group, onEdit }: { group: BuildingRoomGroup; onEdit?: (room: RoomRecord) => void }) {
   const floorGroups = ["B", "A", "unknown"].map((floor) => ({
     floor,
     rooms: group.rooms.filter((room) => (floorCodeOf(room) ?? "unknown") === floor),
@@ -576,6 +602,7 @@ function BuildingGroup({ group }: { group: BuildingRoomGroup }) {
               floor={floorGroup.floor as RoomFloorCode | "unknown"}
               key={floorGroup.floor}
               rooms={floorGroup.rooms}
+              onEdit={onEdit}
             />
           ) : null,
         )}
@@ -586,9 +613,11 @@ function BuildingGroup({ group }: { group: BuildingRoomGroup }) {
 function FloorRoomTable({
   floor,
   rooms,
+  onEdit,
 }: {
   floor: RoomFloorCode | "unknown";
   rooms: RoomRecord[];
+  onEdit?: (room: RoomRecord) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -609,6 +638,7 @@ function FloorRoomTable({
               <th className="px-3 py-2">Public</th>
               <th className="px-3 py-2 text-right">Harga</th>
               <th className="px-3 py-2">Fasilitas</th>
+              {onEdit && <th className="px-3 py-2 text-right">Aksi</th>}
             </tr>
           </thead>
           <tbody>
@@ -637,6 +667,13 @@ function FloorRoomTable({
                         .join(", ")
                     : "-"}
                 </td>
+                {onEdit && (
+                  <td className="px-3 py-3 text-right">
+                    <Button variant="ghost" size="sm" onClick={() => onEdit(room)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -648,7 +685,7 @@ function FloorRoomTable({
 function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomStats }) {
   const rukostPublicVacant = countPublicVacantByCategory(rooms, "rukost");
   const apartkostPublicVacant = countPublicVacantByCategory(rooms, "apartkost");
-  const hiddenRooms = rooms.filter((room) => !room.publicVisible).length;
+  const hiddenRooms = rooms.filter((room) => room.publicVisible !== true).length;
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -696,22 +733,16 @@ function AvailabilityView({ rooms, stats }: { rooms: RoomRecord[]; stats: RoomSt
             <AvailabilityBar label="Semua Kamar" total={stats.total} value={stats.publicVacant} />
           </CardContent>
         </Card>
-        <Card className="rounded-lg border-warning/40 bg-warning/5">
+        <Card className="rounded-lg border-primary/30 bg-primary-soft">
           <CardContent className="p-5">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-warning-foreground" />
+              <CalendarCheck className="mt-0.5 h-5 w-5 text-primary" />
               <div className="space-y-2">
-                <p className="text-sm font-semibold">Booking Lead Deferred</p>
+                <p className="text-sm font-semibold">Minat booking aktif</p>
                 <p className="text-sm text-muted-foreground">
-                  Lead WhatsApp belum disimpan di sistem pada M16C. Public booking belum
-                  production-ready dan konfirmasi tetap manual oleh admin.
+                  Pengajuan minat booking tetap dikonfirmasi manual oleh admin.
+                  Public booking belum menjadi booking resmi.
                 </p>
-                <Badge
-                  className="border-transparent bg-background text-foreground"
-                  variant="outline"
-                >
-                  M16F diperlukan untuk lead management
-                </Badge>
               </div>
             </div>
           </CardContent>
@@ -751,6 +782,7 @@ type RoomStats = {
   maintenance: number;
   requiresReview: number;
   publicVisible: number;
+  publicVisibleUnknown: number;
   publicVacant: number;
   rukostVacant: number;
   apartkostVacant: number;
@@ -798,6 +830,7 @@ function buildStats(rooms: RoomRecord[]): RoomStats {
     maintenance: 0,
     requiresReview: 0,
     publicVisible: 0,
+    publicVisibleUnknown: 0,
     publicVacant: 0,
     rukostVacant: 0,
     apartkostVacant: 0,
@@ -808,8 +841,10 @@ function buildStats(rooms: RoomRecord[]): RoomStats {
     stats[category] += 1;
     stats[room.genderPolicy] += 1;
     statusCounts[room.roomStatus] += 1;
-    if (room.publicVisible) {
+    if (room.publicVisible === true) {
       stats.publicVisible += 1;
+    } else if (room.publicVisible == null) {
+      stats.publicVisibleUnknown += 1;
     }
     if (isPublicVacant(room)) {
       stats.publicVacant += 1;
@@ -899,10 +934,10 @@ function filterRooms(rooms: RoomRecord[], filters: InventoryFilters): RoomRecord
     if (filters.status !== "all" && room.roomStatus !== filters.status) {
       return false;
     }
-    if (filters.visibility === "visible" && !room.publicVisible) {
+    if (filters.visibility === "visible" && room.publicVisible !== true) {
       return false;
     }
-    if (filters.visibility === "hidden" && room.publicVisible) {
+    if (filters.visibility === "hidden" && room.publicVisible === true) {
       return false;
     }
     return true;
@@ -932,7 +967,7 @@ function floorCodeOf(room: RoomRecord): RoomFloorCode | null {
   return null;
 }
 function isPublicVacant(room: RoomRecord): boolean {
-  return room.publicVisible && room.roomStatus === "vacant";
+  return room.publicVisible === true && room.roomStatus === "vacant";
 }
 function countPublicVacantByCategory(rooms: RoomRecord[], category: RoomCategory): number {
   return rooms.filter((room) => effectiveCategory(room) === category && isPublicVacant(room))

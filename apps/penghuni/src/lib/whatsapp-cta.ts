@@ -35,3 +35,21 @@ export function buildRoomInquiryMessage(group: PublicRoomGroup): string {
     "Mohon info ketersediaan dan proses bookingnya.",
   ].join("\n");
 }
+
+// M17D post-lead follow-up template. Uses only public-safe aggregated fields
+// plus the visitor's own name/date (visitor-initiated share to the admin).
+export function buildLeadFollowUpMessage(params: {
+  visitorName: string;
+  group: PublicRoomGroup;
+  preferredMoveInDate?: string;
+}): string {
+  return [
+    "Halo Admin Kostation, saya sudah mengajukan minat booking melalui website.",
+    `Nama: ${params.visitorName}`,
+    `Kategori: ${params.group.categoryLabel}`,
+    `Untuk: ${params.group.genderLabel}`,
+    `Unit/Tipe: ${params.group.publicTitle}`,
+    `Tanggal masuk: ${params.preferredMoveInDate || "-"}`,
+    "Mohon dibantu konfirmasi ketersediaannya.",
+  ].join("\n");
+}

@@ -5,9 +5,14 @@
 // the M16D API: no room IDs, no room_code, no exact room numbers, no tenant/
 // resident/occupancy data. Booking is confirmed by the admin via WhatsApp;
 // there is no online booking or payment on this page.
+//
+// M17D adds the "Ajukan Minat Booking" lead form (anonymous write-only POST
+// to the M17B public endpoint). A lead is NOT a confirmed booking and never
+// reserves a room; the WhatsApp CTA remains available as follow-up channel.
 
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Building2, DoorOpen, MessageCircle, RefreshCw } from "lucide-react";
+import { Building2, DoorOpen, MessageCircle, RefreshCw, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +31,7 @@ import {
   buildWhatsAppUrl,
   getPublicWhatsAppNumber,
 } from "@/lib/whatsapp-cta";
+import { PublicBookingLeadDialog } from "@/components/booking-lead/PublicBookingLeadDialog";
 
 type KamarSearch = {
   gender?: PublicGender;
@@ -202,6 +208,7 @@ function RoomGroupCard({
   group: PublicRoomGroup;
   whatsAppNumber: string | null;
 }) {
+  const [leadFormOpen, setLeadFormOpen] = useState(false);
   const href = whatsAppNumber
     ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(group))
     : null;
@@ -240,8 +247,12 @@ function RoomGroupCard({
         </div>
 
         <div className="mt-auto space-y-1.5">
+          <Button className="w-full" onClick={() => setLeadFormOpen(true)}>
+            <Send className="h-4 w-4" />
+            Ajukan Minat Booking
+          </Button>
           {href ? (
-            <Button asChild className="w-full">
+            <Button asChild variant="outline" className="w-full">
               <a href={href} target="_blank" rel="noopener noreferrer">
                 <MessageCircle className="h-4 w-4" />
                 Tanya Ketersediaan via WhatsApp
@@ -249,7 +260,7 @@ function RoomGroupCard({
             </Button>
           ) : (
             <>
-              <Button className="w-full" disabled>
+              <Button className="w-full" variant="outline" disabled>
                 <MessageCircle className="h-4 w-4" />
                 Tanya Ketersediaan via WhatsApp
               </Button>
@@ -263,6 +274,12 @@ function RoomGroupCard({
           </p>
         </div>
       </CardContent>
+      <PublicBookingLeadDialog
+        group={group}
+        whatsAppNumber={whatsAppNumber}
+        open={leadFormOpen}
+        onOpenChange={setLeadFormOpen}
+      />
     </Card>
   );
 }

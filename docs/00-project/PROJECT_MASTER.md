@@ -67,7 +67,7 @@ Deferred (jangan dianggap selesai):
 - Audit viewer (`/audit/*`).
 - Pembayaran booking online (deferred; hanya setelah aktivasi payment production - track terpisah; jalur MVP tetap konfirmasi manual/WhatsApp). Booking lead MVP (M17) selesai untuk staging/demo, tetapi lead BUKAN booking/pembayaran online.
 - Otomasi lead: auto-expiry, notifikasi otomatis, retensi/anonimisasi PII otomatis, konversi otomatis ke resident/occupancy (konversi tetap manual admin).
-- Admin Gallery Upload UI (M19C) dan public gallery UI integration (M19D); backend gallery API M19B sudah selesai.
+- Thumbnail/image optimization pipeline galeri publik (`thumbnailUrl` masih `null` - thumbnail publik memuat gambar asli), CDN/S3 offsite storage, cropping editor, dan deteksi otomatis wajah/plat nomor kamar; review foto galeri tetap SOP manual admin. (Track M19 Hunian Gallery sendiri selesai sampai M19E.)
 
 Catatan: upload bukti pembayaran manual adalah jalur fallback/manual dan tetap tersedia berdampingan dengan pembayaran online gateway (sandbox); verifikasi admin tetap otoritas settlement manual; invoice gateway-paid terkonfirmasi otomatis via webhook tanpa verifikasi manual.
 

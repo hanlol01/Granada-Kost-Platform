@@ -230,9 +230,23 @@ Status: selesai sampai M17E (Final Booking Lead Release / Handoff, 2026-07-08). 
 
 Catatan mengikat M17: **booking lead bukan booking terkonfirmasi**; tidak ada mutasi status kamar dari lead; **public booking tetap NOT production-ready** (track staging/demo dulu); pembayaran booking online tetap deferred; **Payment Gateway dan Smart Lock tidak disentuh** (posture tidak berubah).
 
+## Milestone 18 - Public Hunian Catalog Detail / Modern Listing
+
+Status: M18A selesai (2026-07-08). Dokumen: `docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_CONTENT_UX_FREEZE.md`.
+
+- M18A - Public Hunian Catalog Content / UX Freeze: katalog publik menampilkan penawaran **level hunian/unit/grup - BUKAN kamar eksak** (contoh: "Rumah Kost Putra - Unit 01"); model produk public-safe "Hunian Catalog Item" (slug, title, kategori/gender + label, label building/floor aman, deskripsi, harga mulai, availability count, fasilitas kamar/bersama, kebijakan/aturan, galeri jika aman, FAQ, `bookingLeadDefaults` yang memetakan 1:1 ke payload lead M17; tanpa nomor kamar eksak/roomId/room_code/PII/payment/Smart Lock); arah UI modern ala landing hotel/apartemen (mobile-first, hero kuat, filter chips, kartu polished, facility badges, hierarki harga, state loading/empty/error; bukan tabel admin/dashboard); struktur listing `/kamar` (kartu: title, badges, short description, harga mulai, availability, 3-5 facility badges, CTA Lihat Detail + Ajukan Minat Booking + WhatsApp) dan detail `/kamar/$slug` (galeri, harga, availability, deskripsi, fasilitas, aturan/kebijakan, FAQ, CTA sticky, disclaimer konfirmasi admin); strategi konten placeholder-first (schema dibekukan; M18B boleh rilis dengan placeholder; enrichment master data menyusul; tanpa klaim fasilitas yang tidak didukung data); posture booking/payment tidak berubah (lead primer, WhatsApp konfirmasi, payment booking DEFERRED, tanpa auto-reservasi, tanpa pemilihan kamar eksak, konfirmasi admin source of truth). Selesai (frozen, mengikat; dokumentasi saja - tanpa kode/migrasi/QA).
+- M18B - Backend/public catalog API (kontrak catalog item + slug di atas data inventory M16 + konten placeholder; additive). Status: direncanakan.
+- M18C - Redesign modern halaman listing `/kamar`. Status: direncanakan.
+- M18D - Halaman detail `/kamar/$slug` (memakai ulang dialog lead M17 dengan `bookingLeadDefaults`). Status: direncanakan.
+- M18E - Enrichment konten master data (fasilitas/kebijakan/deskripsi/galeri) saat tersedia. Status: direncanakan.
+- M18F - QA/validation track eksternal (lint/typecheck/build, API smoke, privacy scan; browser visual QA digabung saat tooling tersedia). Status: direncanakan.
+- M18G - Final docs / release update / handoff. Status: direncanakan.
+
+Catatan mengikat M18: katalog publik tetap agregat level hunian/unit/grup - **tanpa nomor kamar eksak, roomId, atau `room_code` publik**; **payment gateway booking tetap DEFERRED**; **public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
+
 ## Next Milestone
 
-- **Rekomendasi berikutnya: M18 - Public Hunian Catalog Detail / Modern Listing** - desain katalog publik modern; halaman detail level hunian/unit (BUKAN nomor kamar eksak); foto/galeri; fasilitas; peraturan/kebijakan; penjelasan harga; FAQ; SEO/public copy; CTA WhatsApp/lead (memakai ulang pola lead M17); tanpa payment gateway booking. Jalur alternatif tetap valid sesuai keputusan produk: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA (M16C/M16E/M17C/M17D) dijalankan saat tooling browser tersedia.
+- **Pasca M18A - implementasi Public Hunian Catalog (M18B-M18G)** sesuai freeze `docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_CONTENT_UX_FREEZE.md`. Jalur alternatif tetap valid sesuai keputusan produk: production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness. Browser visual QA (M16C/M16E/M17C/M17D) dijalankan saat tooling browser tersedia.
 - **Payment Gateway Production Activation / Midtrans Production Readiness: pending/gated - BUKAN selesai.** Butuh Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder.
 - Smart Lock live site trial (M13F-C5): **pending/gated - BUKAN selesai.** Hanya setelah approvals, konfirmasi rotasi kredensial, mapping perangkat nyata, dan site-env dry-run lengkap dengan sign-off (M13F-C4 Sections 6-7).
 - Production release: **tetap diblokir (NOT READY)** sampai deployment/env checklist production (M14A Section 8) dieksekusi, blocker M14F ditutup, dan approval stakeholder diterima.

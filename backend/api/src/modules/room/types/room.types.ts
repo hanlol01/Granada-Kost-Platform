@@ -55,6 +55,7 @@ export type PublicRoomAvailabilityFilters = {
 };
 
 export type PublicRoomAvailabilityGroupRecord = {
+  propertyId: string;
   category: RoomCategory;
   gender: PublicRoomGenderPolicy;
   buildingCode: string;

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { HunianGalleryService } from '../hunian-gallery/hunian-gallery.service';
 import { PublicHunianCatalogQueryDto } from './dto/public-hunian-catalog-query.dto';
 import { PUBLIC_HUNIAN_CATALOG_CONTENT } from './public-hunian-catalog.content';
 import { RoomRepository } from './repositories/room.repository';
@@ -37,12 +38,20 @@ const FLOOR_LABEL: Record<RoomFloorCode, string> = {
 
 @Injectable()
 export class PublicHunianCatalogService {
-  constructor(private readonly rooms: RoomRepository) {}
+  constructor(
+    private readonly rooms: RoomRepository,
+    private readonly gallery: HunianGalleryService,
+  ) {}
 
   async list(query: PublicHunianCatalogQueryDto) {
     const groups = await this.rooms.listPublicAvailabilityGroups(this.normalizeFilters(query));
+    const galleryByCatalog = await this.gallery.publicGalleryForCatalogTargets(
+      groups.map((group) => ({ propertyId: group.propertyId, catalogSlug: this.slugFor(group) })),
+    );
     return {
-      data: groups.map((group) => this.mapListItem(group)),
+      data: groups.map((group) =>
+        this.mapListItem(group, galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ?? []),
+      ),
       summary: {
         totalItems: groups.length,
         totalAvailable: groups.reduce((sum, group) => sum + group.availableCount, 0),
@@ -68,8 +77,15 @@ export class PublicHunianCatalogService {
       });
     }
 
+    const galleryByCatalog = await this.gallery.publicGalleryForCatalogTargets([
+      { propertyId: group.propertyId, catalogSlug: this.slugFor(group) },
+    ]);
+
     return {
-      data: this.mapDetailItem(group),
+      data: this.mapDetailItem(
+        group,
+        galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ?? [],
+      ),
     };
   }
 
@@ -80,7 +96,10 @@ export class PublicHunianCatalogService {
     };
   }
 
-  private mapListItem(group: PublicRoomAvailabilityGroupRecord): PublicHunianCatalogListItem {
+  private mapListItem(
+    group: PublicRoomAvailabilityGroupRecord,
+    gallery: PublicHunianCatalogListItem['galleryPreview'],
+  ): PublicHunianCatalogListItem {
     const floorLabel = group.floorLabel || FLOOR_LABEL[group.floorCode];
     const publicGroupKey = this.publicGroupKey(group);
     const title = `${CATEGORY_LABEL[group.category]} ${GENDER_LABEL[group.gender]} - ${group.buildingName} (${floorLabel})`;
@@ -102,16 +121,19 @@ export class PublicHunianCatalogService {
       priceFromYearly: Number.isFinite(group.priceFromYearly) ? group.priceFromYearly : null,
       availabilityCount: group.availableCount,
       facilitiesPreview: [...PUBLIC_HUNIAN_CATALOG_CONTENT.facilitiesPreview],
-      galleryPreview: [],
+      galleryPreview: gallery.length ? [gallery[0]] : [],
       ctaLabel: PUBLIC_HUNIAN_CATALOG_CONTENT.ctaLabel,
       bookingLeadDefaults: this.bookingLeadDefaults(group, publicGroupKey),
       disclaimers: [...PUBLIC_HUNIAN_CATALOG_CONTENT.disclaimers],
     };
   }
 
-  private mapDetailItem(group: PublicRoomAvailabilityGroupRecord): PublicHunianCatalogDetailItem {
+  private mapDetailItem(
+    group: PublicRoomAvailabilityGroupRecord,
+    gallery: PublicHunianCatalogDetailItem['gallery'],
+  ): PublicHunianCatalogDetailItem {
     return {
-      ...this.mapListItem(group),
+      ...this.mapListItem(group, gallery),
       longDescription: PUBLIC_HUNIAN_CATALOG_CONTENT.longDescription,
       facilitiesRoom: [...PUBLIC_HUNIAN_CATALOG_CONTENT.facilitiesRoom],
       facilitiesBathroom: [...PUBLIC_HUNIAN_CATALOG_CONTENT.facilitiesBathroom],
@@ -121,7 +143,7 @@ export class PublicHunianCatalogService {
       policies: [...PUBLIC_HUNIAN_CATALOG_CONTENT.policies],
       rules: [...PUBLIC_HUNIAN_CATALOG_CONTENT.rules],
       faq: PUBLIC_HUNIAN_CATALOG_CONTENT.faq.map((item) => ({ ...item })),
-      gallery: [],
+      gallery,
       needsConfirmation: [...PUBLIC_HUNIAN_CATALOG_CONTENT.needsConfirmation],
     };
   }

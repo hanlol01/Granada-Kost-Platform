@@ -1,7 +1,7 @@
 # Project Handoff
 
-> Diperbarui: 2026-07-08 (M18A). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
-> Versi sebelumnya (M17E, 2026-07-08) belum memuat freeze M18 Public Hunian Catalog.
+> Diperbarui: 2026-07-08 (M19B). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
+> Versi sebelumnya belum memuat implementasi backend Hunian Gallery M19B.
 
 ## Status Saat Ini
 
@@ -20,6 +20,7 @@
 - M18A selesai (2026-07-08): Public Hunian Catalog Content / UX Freeze (`docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_CONTENT_UX_FREEZE.md`) - dokumentasi saja, frozen/mengikat untuk M18B+. Katalog publik menampilkan penawaran level hunian/unit/grup (BUKAN kamar eksak): model "Hunian Catalog Item" public-safe (tanpa nomor kamar eksak/roomId/room_code/PII/payment/Smart Lock), arah UI modern ala hotel/apartemen, struktur listing `/kamar` + detail `/kamar/$slug`, konten placeholder-first (master data menyusul), lead M17 + WhatsApp tetap jalur booking, payment booking tetap DEFERRED.
 - M18B selesai (2026-07-08): Backend/public hunian catalog API (`docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_API.md`) - `GET /api/v1/public/hunian-catalog` + detail slug, memakai M16 availability count dan M18 public-safe constants; `bookingLeadDefaults` tetap kompatibel M17. No migration, no frontend, no admin gallery upload, no payment booking, no Payment Gateway/Smart Lock changes; lint/build/API smoke/safety scan PASS. Berikutnya M18C listing refresh; **public booking tetap NOT production-ready**.
 - M19A selesai (2026-07-08): Hunian Gallery Architecture / UX / Safety Freeze (`docs/19-hunian-gallery/HUNIAN_GALLERY_ARCHITECTURE_UX_SAFETY_FREEZE.md`) - dokumentasi saja, frozen/mengikat untuk M19B+. Galeri melekat pada item katalog hunian/unit/grup (BUKAN kamar eksak); allowlist respons publik tanpa `storage_path`/`fileId`/roomId/`room_code`/PII; upload/manage hanya Admin/Super Admin dalam property scope (Owner view-only; publik hanya gambar `publicVisible`; tanpa public upload); reuse fondasi file M12 (purpose `hunian_gallery`) + gallery attach API + public content endpoint termediasi aman; image-only JPEG/PNG/WebP maks 3 MB, maks 10 gambar/item, MIME + magic bytes, tanpa video/SVG; UX admin modern (drag-and-drop, preview, progress, cover, reorder, publish toggle; Admin `/hunian-gallery` MVP) + galeri publik profesional di `/kamar` dan `/kamar/$slug`; implementasi M19B-M19E menyusul; tanpa validasi lint/build/API/browser pada pass ini.
+- M19B selesai (2026-07-08): Hunian Gallery Backend API / File Attachment (`docs/19-hunian-gallery/HUNIAN_GALLERY_BACKEND_API.md`) - migration additif `015_hunian_gallery.sql`, purpose `hunian_gallery` di M12 File API, admin scoped CRUD + set-cover + reorder + soft-delete, public media endpoint aman, dan wiring `galleryPreview/gallery` ke M18 public hunian catalog. Validasi lint/build/migration apply+replay/API smoke/regression/safety scan PASS. Tanpa frontend/admin UI, tanpa public upload, tanpa CSV/backfill, tanpa Payment Gateway/Smart Lock changes; public booking tetap NOT production-ready.
 - **Internal demo: READY.** **Production: NOT READY** (belum disetujui rilis production).
 - Seluruh QA dijalankan eksternal (Codex) atau hybrid manual; agen dokumentasi tidak menjalankan validasi terminal.
 
@@ -150,8 +151,8 @@ SMART_LOCK_LIVE_ENABLED=false
 - Receipt / nota.
 - Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp - booking lead M17 BUKAN booking/pembayaran online).
 - Otomasi lead: auto-expiry, notifikasi otomatis, retensi/anonimisasi PII otomatis, konversi otomatis ke resident/occupancy (konversi tetap manual admin).
-- Katalog publik detail hunian/unit, foto/galeri, fasilitas, kebijakan, FAQ, SEO (rekomendasi track M18).
-- Foto/media kamar, katalog fasilitas, halaman SEO public listing (fase lanjut).
+- Admin Gallery Upload UI (M19C) dan public gallery UI integration (M19D). Backend gallery API M19B sudah selesai.
+- SEO public listing dan enrichment katalog lanjutan di luar backend gallery M19B.
 - Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
 - Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).
 - CCTV live integration.

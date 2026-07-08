@@ -1,10 +1,7 @@
+import type { HunianGalleryPublicResponse } from '../../hunian-gallery/types/hunian-gallery.types';
 import { PublicRoomGenderPolicy, RoomCategory, RoomFloorCode } from './room.types';
 
-export type PublicHunianCatalogGalleryItem = {
-  url: string;
-  alt: string;
-  order: number;
-};
+export type PublicHunianCatalogGalleryItem = HunianGalleryPublicResponse;
 
 export type PublicHunianCatalogFaqItem = {
   question: string;

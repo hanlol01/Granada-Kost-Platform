@@ -10,6 +10,7 @@ export const FILE_PURPOSES = [
   'vehicle_document',
   'room_photo',
   'property_logo',
+  'hunian_gallery',
   'ktp',
 ] as const;
 
@@ -74,6 +75,15 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
       'image/png': 1 * 1024 * 1024,
     },
   },
+  hunian_gallery: {
+    purpose: 'hunian_gallery',
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytesByMimeType: {
+      'image/jpeg': 3 * 1024 * 1024,
+      'image/png': 3 * 1024 * 1024,
+      'image/webp': 3 * 1024 * 1024,
+    },
+  },
   ktp: {
     purpose: 'ktp',
     allowedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
@@ -106,6 +116,7 @@ export const DANGEROUS_FILE_EXTENSIONS = new Set([
 export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
   'image/png': ['png'],
+  'image/webp': ['webp'],
   'application/pdf': ['pdf'],
 };
 

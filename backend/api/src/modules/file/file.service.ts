@@ -43,6 +43,7 @@ type FileTypeModule = {
 };
 
 const PRIVILEGED_FILE_ROLES = new Set(['owner', 'manager', 'admin', 'property_owner']);
+const HUNIAN_GALLERY_UPLOAD_ROLES = new Set(['owner', 'manager', 'admin']);
 const RESIDENT_UPLOAD_PURPOSES = new Set<FilePurpose>(['payment_proof', 'complaint_attachment']);
 const TECHNICIAN_UPLOAD_PURPOSES = new Set<FilePurpose>(['maintenance_attachment']);
 
@@ -155,6 +156,23 @@ export class FileService {
       afterData: this.auditPayload(record),
     });
 
+    return { record, buffer };
+  }
+
+  async readStoredContent(record: FileRecord): Promise<FileContent> {
+    if (record.isDeleted) {
+      throw new NotFoundException({ code: 'FILE_NOT_FOUND', message: 'File not found' });
+    }
+
+    const exists = await this.storage.exists(record.storagePath);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'FILE_CONTENT_NOT_FOUND',
+        message: 'File content is missing from storage',
+      });
+    }
+
+    const buffer = await this.storage.read(record.storagePath);
     return { record, buffer };
   }
 
@@ -371,6 +389,17 @@ export class FileService {
     purpose: FilePurpose,
   ): Promise<void> {
     await this.properties.assertCanReadProperty(user, propertyId);
+
+    if (purpose === 'hunian_gallery') {
+      if (user.roles.some((role) => HUNIAN_GALLERY_UPLOAD_ROLES.has(role))) {
+        return;
+      }
+
+      throw new ForbiddenException({
+        code: 'FILE_PURPOSE_DENIED',
+        message: 'User is not allowed to upload hunian gallery files',
+      });
+    }
 
     if (this.hasPrivilegedFileRole(user)) {
       return;

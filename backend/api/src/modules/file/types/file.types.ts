@@ -2,7 +2,7 @@ import type { FILE_PURPOSES, FILE_STORAGE_DRIVERS } from '../constants/file.cons
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
 export type FileStorageDriver = (typeof FILE_STORAGE_DRIVERS)[number];
-export type SupportedMimeType = 'image/jpeg' | 'image/png' | 'application/pdf';
+export type SupportedMimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
 
 export type FilePurposePolicy = {
   purpose: FilePurpose;

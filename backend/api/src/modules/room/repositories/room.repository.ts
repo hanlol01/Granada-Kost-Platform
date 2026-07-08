@@ -61,6 +61,7 @@ type RoomRow = {
 };
 
 type PublicAvailabilityGroupRow = {
+  property_id: string;
   category: RoomCategory;
   gender_policy: PublicRoomGenderPolicy;
   building_code: string;
@@ -303,7 +304,8 @@ export class RoomRepository {
     filters: PublicRoomAvailabilityFilters,
   ): Promise<PublicRoomAvailabilityGroupRecord[]> {
     const result = await this.database.client.query<PublicAvailabilityGroupRow>(
-      `SELECT room_buildings.category,
+      `SELECT room_buildings.property_id,
+              room_buildings.category,
               room_buildings.gender_policy,
               room_buildings.building_code,
               room_buildings.building_name,
@@ -324,7 +326,7 @@ export class RoomRepository {
          AND ($2::text IS NULL OR room_buildings.category = $2)
          AND ($3::text IS NULL OR room_buildings.building_code = $3)
          AND ($4::text IS NULL OR rooms.floor_code = $4)
-       GROUP BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code,
+       GROUP BY room_buildings.property_id, room_buildings.category, room_buildings.gender_policy, room_buildings.building_code,
                 room_buildings.building_name, rooms.floor_code, COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code)
        ORDER BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code, rooms.floor_code`,
       [
@@ -336,6 +338,7 @@ export class RoomRepository {
     );
 
     return result.rows.map((row) => ({
+      propertyId: row.property_id,
       category: row.category,
       gender: row.gender_policy,
       buildingCode: row.building_code,

@@ -16,6 +16,7 @@ import {
   ClipboardList,
   Bike,
   ParkingSquare,
+  Inbox,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RoleCode } from "@granada-kost/domain";

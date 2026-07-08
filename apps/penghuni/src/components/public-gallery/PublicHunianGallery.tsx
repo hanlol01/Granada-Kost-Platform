@@ -177,8 +177,8 @@ export function PublicHunianGallery({
         >
           <DialogTitle className="sr-only">Galeri foto {title}</DialogTitle>
           <DialogDescription className="sr-only">
-            Pratinjau foto hunian. Gunakan tombol atau tombol panah kiri/kanan untuk berpindah
-            foto, dan Escape untuk menutup.
+            Pratinjau foto hunian. Gunakan tombol atau tombol panah kiri/kanan untuk berpindah foto,
+            dan Escape untuk menutup.
           </DialogDescription>
           <div className="relative flex max-h-[80vh] min-h-[40vh] items-center justify-center bg-black">
             <img

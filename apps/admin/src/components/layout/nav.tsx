@@ -39,6 +39,9 @@ type NavItem = {
 export const navItems: readonly NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "manager", "admin"] },
   { to: "/rooms", label: "Kamar", icon: BedDouble, roles: ["owner", "manager", "admin"] },
+  // Booking lead inbox (M17C). Roles follow the M17B backend authorization:
+  // manager|admin only (property-owner is denied by the booking-leads API).
+  { to: "/booking-leads", label: "Minat Booking", icon: Inbox, roles: ["manager", "admin"] },
   { to: "/tenants", label: "Penghuni", icon: Users, roles: ["owner", "manager", "admin"] },
   { to: "/payments", label: "Pembayaran", icon: CreditCard, roles: ["owner", "manager", "admin"] },
   {

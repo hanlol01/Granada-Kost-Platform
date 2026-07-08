@@ -18,6 +18,7 @@ export const FILE_PURPOSES = [
   "room_photo",
   "property_logo",
   "ktp",
+  "hunian_gallery",
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -26,7 +27,7 @@ export type FilePurpose = (typeof FILE_PURPOSES)[number];
 // MIME types
 // ---------------------------------------------------------------------------
 
-export type SupportedMimeType = "image/jpeg" | "image/png" | "application/pdf";
+export type SupportedMimeType = "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
 
 // ---------------------------------------------------------------------------
 // Purpose policies
@@ -132,6 +133,21 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     maxFilesPerEntity: 1,
     label: "KTP",
     compressImages: false,
+  },
+  // M19B/M19C hunian gallery. Backend policy (015_hunian_gallery.sql + file
+  // constants): JPEG/PNG/WebP only, max 3 MB, max 10 active images per public
+  // catalog item. publicVisible defaults to false backend-side.
+  hunian_gallery: {
+    purpose: "hunian_gallery",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    maxBytesByMimeType: {
+      "image/jpeg": 3 * 1024 * 1024,
+      "image/png": 3 * 1024 * 1024,
+      "image/webp": 3 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 10,
+    label: "Foto galeri hunian",
+    compressImages: true,
   },
 };
 

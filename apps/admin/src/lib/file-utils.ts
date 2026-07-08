@@ -29,7 +29,15 @@ export function validateFileForPurpose(file: File, purpose: FilePurpose): FileVa
   // 1. MIME type check
   if (!policy.allowedMimeTypes.includes(file.type as SupportedMimeType)) {
     const allowed = policy.allowedMimeTypes
-      .map((m) => (m === "image/jpeg" ? "JPEG" : m === "image/png" ? "PNG" : "PDF"))
+      .map((m) =>
+        m === "image/jpeg"
+          ? "JPEG"
+          : m === "image/png"
+            ? "PNG"
+            : m === "image/webp"
+              ? "WebP"
+              : "PDF",
+      )
       .join(", ");
     return {
       valid: false,
@@ -182,7 +190,7 @@ export function formatFileSize(bytes: number): string {
 
 /** Returns true if the MIME type represents an image. */
 export function isImageMime(mimeType: string): boolean {
-  return mimeType === "image/jpeg" || mimeType === "image/png";
+  return mimeType === "image/jpeg" || mimeType === "image/png" || mimeType === "image/webp";
 }
 
 /** Returns true if the MIME type represents a PDF. */

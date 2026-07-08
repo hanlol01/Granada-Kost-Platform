@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HunianGalleryModule } from '../hunian-gallery/hunian-gallery.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PropertyOwnerRoomController } from './property-owner-room.controller';
@@ -14,7 +15,7 @@ import { RoomRepository } from './repositories/room.repository';
 import { RoomService } from './room.service';
 
 @Module({
-  imports: [PropertyModule, RbacModule],
+  imports: [HunianGalleryModule, PropertyModule, RbacModule],
   controllers: [
     RoomController,
     RoomTypeController,

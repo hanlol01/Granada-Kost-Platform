@@ -43,10 +43,12 @@ import {
   type PublicGender,
 } from "@/hooks/usePublicRooms";
 import {
+  resolveGalleryImageUrl,
   toPublicRoomGroup,
   usePublicHunianCatalog,
   type PublicHunianCatalogItem,
 } from "@/hooks/usePublicHunianCatalog";
+import { GALLERY_PLACEHOLDER_COPY } from "@/components/public-gallery/PublicHunianGallery";
 import {
   buildRoomInquiryMessage,
   buildWhatsAppUrl,
@@ -82,9 +84,6 @@ const HERO_HIGHLIGHTS = [
   { icon: Wifi, label: "WiFi" },
   { icon: ShieldCheck, label: "Keamanan terjaga" },
 ] as const;
-
-const GALLERY_PLACEHOLDER_COPY =
-  "Galeri hunian sedang disiapkan. Hubungi admin untuk foto terbaru atau jadwal survei.";
 
 export const Route = createFileRoute("/kamar")({
   validateSearch: (raw: Record<string, unknown>): KamarSearch => ({
@@ -278,23 +277,40 @@ function HunianCatalogCard({
     ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
     : null;
 
-  const hasGallery = Boolean(item.galleryPreview && item.galleryPreview.length > 0);
+  // M19D: cover image from the M19B allowlisted galleryPreview (cover-first,
+  // publicVisible only). Only allowlisted fields are read; the resolved URL is
+  // the backend-mediated public media endpoint — never a storage path. A load
+  // error falls back to the safe placeholder (no broken image, no retry).
+  const [coverFailed, setCoverFailed] = useState(false);
+  const cover = (item.galleryPreview ?? [])[0] ?? null;
+  const coverUrl = cover ? resolveGalleryImageUrl(cover.contentUrl) : null;
+  const showCover = Boolean(coverUrl) && !coverFailed;
+
   const facilities = (item.facilitiesPreview ?? []).slice(0, 5);
 
   return (
     <Card className="group flex flex-col overflow-hidden border shadow-sm transition-shadow hover:shadow-md">
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted">
-        {hasGallery ? (
-          // Public-safe media reference from the M18B allowlisted API only.
-          <img
-            src={item.galleryPreview![0]}
-            alt={item.title}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-          />
+        {showCover ? (
+          <>
+            <img
+              src={coverUrl ?? undefined}
+              alt={cover?.altText || item.title}
+              loading="lazy"
+              decoding="async"
+              onError={() => setCoverFailed(true)}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+            />
+            {/* Decorative top gradient so category/gender badges stay legible
+                over bright photos. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/35 to-transparent"
+            />
+          </>
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-muted to-muted/50 px-6 text-center">
-            <ImageIcon className="h-7 w-7 text-muted-foreground/50" />
+            <ImageIcon className="h-7 w-7 text-muted-foreground/50" aria-hidden="true" />
             <p className="text-[11px] leading-snug text-muted-foreground">
               {GALLERY_PLACEHOLDER_COPY}
             </p>

@@ -25,7 +25,6 @@ import {
   Check,
   DoorOpen,
   HelpCircle,
-  Image as ImageIcon,
   MessageCircle,
   RefreshCw,
   ScrollText,
@@ -58,9 +57,7 @@ import {
   getPublicWhatsAppNumber,
 } from "@/lib/whatsapp-cta";
 import { PublicBookingLeadDialog } from "@/components/booking-lead/PublicBookingLeadDialog";
-
-const GALLERY_PLACEHOLDER_COPY =
-  "Galeri hunian sedang disiapkan. Hubungi admin untuk foto terbaru atau jadwal survei.";
+import { PublicHunianGallery } from "@/components/public-gallery/PublicHunianGallery";
 
 // Frozen M18A detail-page disclaimer copy.
 const FROZEN_DISCLAIMER =
@@ -259,43 +256,10 @@ function DetailContent({
     <div className="pb-28 pt-5 sm:pb-10">
       <BackToCatalogLink />
 
-      {/* Gallery / media area — public-safe references from the allowlisted
-          API only; graceful placeholder when empty (no dummy photos). */}
-      <div className="mt-4 overflow-hidden rounded-xl border bg-muted">
-        {gallery.length > 0 ? (
-          <div>
-            <div className="aspect-[16/9] w-full overflow-hidden">
-              <img
-                src={gallery[0]}
-                alt={detail.title}
-                loading="lazy"
-                className="h-full w-full object-cover"
-              />
-            </div>
-            {gallery.length > 1 ? (
-              <div className="grid grid-cols-4 gap-1 p-1">
-                {gallery.slice(1, 5).map((src, index) => (
-                  <div key={src} className="aspect-[4/3] overflow-hidden rounded-md">
-                    <img
-                      src={src}
-                      alt={`${detail.title} — foto ${index + 2}`}
-                      loading="lazy"
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="flex aspect-[16/9] w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-muted to-muted/50 px-6 text-center">
-            <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
-            <p className="max-w-sm text-xs leading-snug text-muted-foreground">
-              {GALLERY_PLACEHOLDER_COPY}
-            </p>
-          </div>
-        )}
-      </div>
+      {/* M19D gallery — professional hero + thumbnail selector + lightbox
+          built ONLY on the M19B public allowlist; safe placeholder when empty
+          (no dummy photos). */}
+      <PublicHunianGallery images={gallery} title={detail.title} className="mt-4" />
 
       {/* Detail header + price/CTA card */}
       <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

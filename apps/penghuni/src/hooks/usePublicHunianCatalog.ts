@@ -1,4 +1,4 @@
-// Public hunian catalog hooks (M18C list + M18D detail).
+// Public hunian catalog hooks (M18C list + M18D detail + M19D gallery).
 //
 // Anonymous, read-only access to the M18B public hunian catalog API:
 //   GET /api/v1/public/hunian-catalog        (list + gender/category filters)
@@ -9,6 +9,9 @@
 // resident/occupancy data, no payment/invoice data, no Smart Lock data.
 // This module must never be extended to request or render such data.
 //
+// M19D: `galleryPreview`/`gallery` carry the frozen M19B public gallery image
+// shape (objects, not URL strings) — see `PublicHunianGalleryImage` below.
+//
 // `anonymous: true` makes the shared ApiClient skip the Authorization header
 // AND the 401 single-flight refresh, so the public /kamar pages can never
 // trigger a login/refresh-token loop.
@@ -16,12 +19,50 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ApiError, ERROR_CODES } from "@granada-kost/api-client";
 import { apiClient } from "@/lib/api";
+import { env } from "@/lib/env";
 import type { PublicCategory, PublicGender, PublicRoomGroup } from "@/hooks/usePublicRooms";
 
 // API-level gender values (M18B contract). The /kamar URL keeps the M16E
 // `putra`/`putri` params for shareable-link backward compatibility and maps
 // them to the API values at this query layer.
 export type PublicHunianGender = "male" | "female";
+
+// M19B/M19D public gallery image — the frozen M19A Section 1 public response
+// allowlist. ONLY these fields exist publicly. The backend never sends (and
+// this type must never be extended with) storage_path/file paths, internal
+// fileId, roomId/room_code/exact room numbers, uploader identity, or any
+// private metadata. `contentUrl` is the backend-mediated public media path
+// (GET /api/v1/public/hunian-gallery/:id/content), never a storage URL.
+export type PublicHunianGalleryImage = {
+  id: string;
+  contentUrl: string;
+  thumbnailUrl: string | null;
+  altText: string;
+  caption: string | null;
+  sortOrder: number;
+  isCover: boolean;
+};
+
+// Resolve an M19B backend-mediated media path against the configured API base
+// URL (same origin convention as the ApiClient). Handles absolute URLs,
+// absolute `/api/...` paths, and paths relative to the API base. This helper
+// never constructs storage/file-system URLs — it only joins the allowlisted
+// `contentUrl`/`thumbnailUrl` values onto the API origin.
+export function resolveGalleryImageUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = env.VITE_API_BASE_URL.replace(/\/+$/, "");
+  if (path.startsWith("/api/")) {
+    // Absolute API path: join onto the API origin (falls back to the
+    // same-origin absolute path when the base itself is relative).
+    try {
+      return new URL(path, base).toString();
+    } catch {
+      return path;
+    }
+  }
+  return `${base}/${path.replace(/^\/+/, "")}`;
+}
 
 // Prefill context for the existing M17 lead form. Maps 1:1 onto the
 // `POST /api/v1/public/booking-leads` payload context (M18A rule) — no new
@@ -52,7 +93,8 @@ export type PublicHunianCatalogItem = {
   priceFromYearly: number | null;
   availabilityCount: number;
   facilitiesPreview: string[];
-  galleryPreview: string[] | null;
+  // M19B: cover image or first public-visible image only; [] when unpublished.
+  galleryPreview: PublicHunianGalleryImage[] | null;
   ctaLabel: string;
   bookingLeadDefaults: PublicHunianBookingLeadDefaults;
   disclaimers: string[];
@@ -144,7 +186,8 @@ export type PublicHunianCatalogDetail = PublicHunianCatalogItem & {
   policies: string[];
   rules: string[];
   faq: PublicHunianFaqItem[];
-  gallery: string[] | null;
+  // M19B: all public-visible images for the slug, cover first, then sortOrder.
+  gallery: PublicHunianGalleryImage[] | null;
   // Backend marker that some master-data claims still await owner
   // confirmation. Rendered ONLY as a gentle generic note — raw items are not
   // displayed. Typed defensively (array or flag) against contract evolution.

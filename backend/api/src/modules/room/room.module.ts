@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PropertyOwnerRoomController } from './property-owner-room.controller';
+import { PublicHunianCatalogController } from './public-hunian-catalog.controller';
+import { PublicHunianCatalogService } from './public-hunian-catalog.service';
 import { PublicRoomController } from './public-room.controller';
 import { PublicRoomRateLimiterService } from './public-room-rate-limiter.service';
 import { PublicRoomService } from './public-room.service';
@@ -19,8 +21,9 @@ import { RoomService } from './room.service';
     RoomFacilityController,
     PropertyOwnerRoomController,
     PublicRoomController,
+    PublicHunianCatalogController,
   ],
-  providers: [RoomRepository, RoomService, PublicRoomService, PublicRoomRateLimiterService],
+  providers: [RoomRepository, RoomService, PublicRoomService, PublicHunianCatalogService, PublicRoomRateLimiterService],
   exports: [RoomRepository, RoomService],
 })
 export class RoomModule {}

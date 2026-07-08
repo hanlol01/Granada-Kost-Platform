@@ -121,9 +121,7 @@ export function PublicBookingLeadDialog({
       category: group.category,
       gender: group.gender,
       ...(group.buildingCode ? { buildingCode: group.buildingCode } : {}),
-      ...(group.floorCode === "A" || group.floorCode === "B"
-        ? { floorCode: group.floorCode }
-        : {}),
+      ...(group.floorCode === "A" || group.floorCode === "B" ? { floorCode: group.floorCode } : {}),
       ...(group.groupKey ? { publicGroupKey: group.groupKey } : {}),
       visitorName: visitorName.trim(),
       visitorPhone: visitorPhone.trim(),
@@ -181,8 +179,8 @@ export function PublicBookingLeadDialog({
             <div>
               <p className="text-sm font-semibold">Minat booking berhasil dikirim.</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Admin akan menghubungi Anda melalui WhatsApp untuk konfirmasi. Pengajuan ini
-                belum menjadi booking resmi.
+                Admin akan menghubungi Anda melalui WhatsApp untuk konfirmasi. Pengajuan ini belum
+                menjadi booking resmi.
               </p>
             </div>
             <p className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">

@@ -8,19 +8,22 @@ Scope: Admin `/rooms` renovation Phase 1 validation only
 
 PARTIAL
 
-Static implementation validation for Admin Rooms Renovation Phase 1 passed, and admin/penghuni builds passed. However, release acceptance is not fully green because:
+Static implementation validation, lint/typecheck/build validation, API smoke, and public `/kamar` service smoke passed. The release verdict is PARTIAL because:
 
-- `npm.cmd --workspace @granada-kost/admin run lint` failed on repository-wide Prettier CRLF errors outside this rooms renovation scope, plus rooms formatting before targeted format.
-- API smoke found `500 INTERNAL_SERVER_ERROR` on public catalog endpoints:
-  - `GET /api/v1/public/hunian-catalog`
-  - `GET /api/v1/public/rooms/summary`
-- Source scope includes two additional untracked docs under `docs/plans/` beyond the reported Phase 1 result doc.
+- `git status --short` showed an unrelated untracked file outside the requested admin rooms UI/docs scope: `docs/hotfixes/HOTFIX_RM01C_QA_RESULT.md`.
+- Admin `/rooms` frontend service smoke on `127.0.0.1:3100` could not be completed in this pass. The sandbox blocked loopback access, and the escalation reviewer rejected the rerun due usage-limit policy.
+- Browser visual/functional QA was not executed per VPS browser tooling policy.
 
-Final recommendation: do not mark as full release PASS until the public API 500 responses and admin lint baseline are resolved or explicitly accepted as known environment/baseline blockers.
+No source files were modified by QA. This document was updated only to record validation results.
 
-## Files Changed
+## Files Changed / Scope Check
 
-Reported/expected implementation files present:
+| Command | Result | Notes |
+| --- | --- | --- |
+| `git status --short` | PARTIAL | Showed `?? docs/hotfixes/HOTFIX_RM01C_QA_RESULT.md`, outside the expected Phase 1 file list. |
+| `git diff --name-only` | PASS | Empty output before this QA document update; no tracked source diff present at validation start. |
+
+Reported implementation files were present in the working tree:
 
 - `apps/admin/src/routes/rooms.tsx`
 - `apps/admin/src/components/forms/RoomFormDialog.tsx`
@@ -30,100 +33,88 @@ Reported/expected implementation files present:
 - `apps/admin/src/components/rooms/ArchiveConfirmDialog.tsx`
 - `docs/plans/ADMIN_ROOMS_RENOVATION_PHASE_1_RESULT.md`
 
-Additional untracked docs observed:
+Safety scope result:
 
-- `docs/plans/ADMIN_ROOMS_OWNER_REQUIREMENTS.md`
-- `docs/plans/ADMIN_ROOMS_RENOVATION_PLAN.md`
-
-QA-created file:
-
-- `docs/plans/ADMIN_ROOMS_RENOVATION_PHASE_1_QA_RESULT.md`
-
-QA formatting-only changes applied:
-
-- Ran Prettier on the reported rooms renovation files and Phase 1 result doc only.
-- No feature logic, backend, database, public `/kamar`, payment, smart lock, booking lead, or gallery backend changes were made by QA.
-
-## Command Results
-
-| Command | Result | Notes |
-| --- | --- | --- |
-| `git status --short` | PASS with scope notes | Only admin rooms UI files and docs/plans untracked/modified. Extra plan docs noted. |
-| `git diff --name-only` | PASS with scope notes | Modified tracked files limited to `RoomFormDialog.tsx` and `rooms.tsx`. |
-| `npm.cmd --workspace @granada-kost/admin run lint` | FAIL | Failed on Prettier CRLF errors across unrelated admin files such as gallery/nav, plus rooms formatting before targeted format. |
-| `npx.cmd prettier --write ...rooms scope...` | PASS | Formatting-only, scoped to reported renovation files/result doc. |
-| `npm.cmd --workspace @granada-kost/admin exec eslint -- ...rooms scope...` | PASS | Targeted rooms renovation lint passed after formatting. |
-| `npm.cmd --workspace @granada-kost/admin run typecheck` | PASS | `tsc --noEmit` completed. |
-| `npm.cmd --workspace @granada-kost/admin run build` | PASS | Vite client/SSR build completed; standard plugin warnings only. |
-| `npm.cmd --workspace @granada-kost/api run build` | PASS | Nest build completed. |
-| `npm.cmd --workspace @granada-kost/penghuni run build` | PASS | Vite client/SSR build completed; standard plugin warnings only. |
-| `git diff --check` | PASS | No whitespace errors; Git emitted LF/CRLF warnings for rooms files. |
+- No backend source changes observed by `git diff --name-only`.
+- No database migration changes observed.
+- No public `/kamar`, Payment Gateway, Smart Lock, booking lead, or gallery backend changes observed.
+- Current QA-created/updated file: `docs/plans/ADMIN_ROOMS_RENOVATION_PHASE_1_QA_RESULT.md`.
 
 ## Static Validation Checklist
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Compact table columns: Kamar, Gender, Status, Visibilitas, Harga, Aksi | PASS | `FloorRoomTable` renders the expected six-column layout. |
-| Fasilitas removed from table | PASS | No table column for facilities; facilities remain only in detail drawer. |
-| View Detail drawer exists and is wired | PASS | `RoomDetailDrawer` is imported and rendered at page level. |
-| Row click opens detail drawer | PASS | Room row `onClick={() => actions.onView(room)}`. |
-| Action menu includes View, Edit, Ubah Status, Nonaktifkan/Aktifkan Kembali | PASS | `RoomActionMenu` exposes view/edit buttons and status/archive menu items. |
-| Ubah Status uses existing `useUpdateRoomStatus` hook | PASS | `StatusChangeDialog` uses `useUpdateRoomStatus`. |
-| Nonaktifkan uses `status=inactive` through existing status hook | PASS | `ArchiveConfirmDialog` maps active rooms to `inactive` and inactive rooms to `vacant`. |
-| No hard delete endpoint or delete mutation introduced | PASS | No delete mutation found in rooms renovation source. |
-| Building groups collapsible | PASS | `CollapsibleBuildingGroup` uses local `isOpen` state. |
-| Ringkasan Bangunan dan Unit compact/limited | PASS | `BuildingSummaryCompact` limits rows and supports show more/less. |
-| Monthly price primary, yearly secondary if present | PASS | Table shows monthly price first and yearly price as secondary text. |
-| Bahasa Indonesia labels | PASS | Main UI labels are Indonesian. |
-| `Label Ukuran` changed to `Ukuran Kamar` | PASS | `RoomFormDialog` label is `Ukuran Kamar`. |
-| `mixed/campur` renders safely | PASS | Gender label map includes `mixed: "Campur"`. |
-| All four tabs remain | PASS | Ringkasan, Rumah Kost, Apart Kost, Ketersediaan. |
-| Permission gating remains for management actions | PASS | `hasPermission("room.manage")` gates create/edit/status/archive actions; view remains available. |
+| Compact table columns: Kamar, Gender, Status, Visibilitas, Harga, Aksi | PASS | `FloorRoomTable` renders those columns; `Aksi` appears only when management actions are available. |
+| Fasilitas removed from table | PASS | No facilities table column; facilities remain in `RoomDetailDrawer`. |
+| View Detail drawer exists and is wired | PASS | `RoomDetailDrawer` imported and rendered at page level with `detailTarget`. |
+| Row click opens detail drawer | PASS | Room row calls `actions.onView(room)`. Action cell stops propagation. |
+| Action menu includes View, Edit, Ubah Status, Nonaktifkan/Aktifkan Kembali | PASS | `RoomActionMenu` includes view/edit icon buttons and status/archive menu items. |
+| Ubah Status uses existing `useUpdateRoomStatus` hook | PASS | `StatusChangeDialog` calls `useUpdateRoomStatus`. |
+| Nonaktifkan uses `status=inactive` through existing status hook | PASS | `ArchiveConfirmDialog` maps active rooms to `inactive`; inactive rooms reactivate to `vacant`. |
+| No hard delete endpoint or delete mutation introduced | PASS | No delete mutation or DELETE endpoint found in reviewed rooms renovation source. |
+| Building groups are collapsible | PASS | `CollapsibleBuildingGroup` uses local `isOpen` state with chevron toggle. |
+| Ringkasan Bangunan dan Unit compact/limited | PASS | `BuildingSummaryCompact` shows initial slice and toggles show all/less. |
+| Monthly price primary, yearly secondary if present | PASS | Table displays monthly price first; yearly price is secondary text only when present. |
+| Labels are Bahasa Indonesia | PASS | Main table, dialogs, tabs, and form labels are Indonesian. |
+| `Label Ukuran` changed to `Ukuran Kamar` | PASS | `RoomFormDialog` uses `Ukuran Kamar`. |
+| Gender `mixed/campur` renders safely | PASS | Gender maps include `mixed: "Campur"` in route and drawer; form enum includes `mixed`. |
+| All four tabs remain | PASS | `Ringkasan`, `Rumah Kost`, `Apart Kost`, `Ketersediaan`. |
+| Permission gating remains for management actions | PASS | `hasPermission("room.manage")` gates create/edit/status/archive; view remains available. |
+| No public visibility toggle added | PASS | Visibility is displayed/filterable only; no mutation or form field added. |
+| No yearly price input added to form | PASS | Form has monthly price and deposit only. |
+
+## Build / Type / Lint Validation
+
+| Command | Result | Notes |
+| --- | --- | --- |
+| `npm --workspace @granada-kost/admin run lint` | PASS | 0 errors, 15 warnings. Warnings are existing fast-refresh/hooks/unused-disable warnings outside this renovation scope. |
+| `npm --workspace @granada-kost/admin run typecheck` | PASS | `tsc --noEmit` succeeded. |
+| `npm --workspace @granada-kost/admin run build` | PASS | Vite client and SSR build succeeded. Standard plugin timing/deprecation messages only. |
+| `npm --workspace @granada-kost/api run build` | PASS | Nest build succeeded. |
+| `npm --workspace @granada-kost/penghuni run build` | PASS | Vite client and SSR build succeeded. Standard plugin timing/deprecation messages only. |
+| `git diff --check` | PASS | No whitespace errors. |
 
 ## API Smoke Results
 
-Backend health:
-
-- `GET /api/v1/health`: PASS `200`, database up, Redis up.
-
-Endpoint smoke:
+Target: existing local API on `http://127.0.0.1:3000/api/v1`.
 
 | Endpoint | Expected | Actual | Result |
 | --- | --- | --- | --- |
-| `GET /api/v1/public/hunian-catalog` | 200 | 500 | FAIL |
-| `GET /api/v1/public/rooms/summary` | 200 | 500 | FAIL |
+| `GET /api/v1/health` | 200 | 200 | PASS |
+| `GET /api/v1/public/hunian-catalog` | 200 | 200 | PASS |
+| `GET /api/v1/public/rooms/summary` | 200 | 200 | PASS |
 | `GET /api/v1/booking-leads` unauth | 401 | 401 | PASS |
 | `GET /api/v1/hunian-gallery` unauth | 401 | 401 | PASS |
 
-Observed public API 500 payload shape:
+Notes:
 
-- `{"success":false,"error":{"code":"INTERNAL_SERVER_ERROR","message":"Internal server error"},...}`
-
-Correlation IDs captured:
-
-- Hunian catalog: `12198d77-a9d3-406c-85b4-adbcc90ada25`
-- Rooms summary: `117d093f-dad3-40a9-8f86-e2092ff6d3ff`
+- Some localhost curls were blocked by sandbox loopback restrictions and were rerun with explicit escalation metadata.
+- No backend restart was performed during this QA pass.
 
 ## Frontend Service Smoke
 
-| Route | Result |
-| --- | --- |
-| `http://127.0.0.1:8080/rooms` | PASS `200` |
-| `http://127.0.0.1:8081/kamar` | PASS `200` |
+| Route | Expected | Actual | Result |
+| --- | --- | --- | --- |
+| `http://127.0.0.1:3100/rooms` | 200 | Not executed | PARTIAL: sandbox blocked loopback and escalation was rejected by reviewer usage-limit policy. |
+| `http://127.0.0.1:3101/kamar` | 200 | 200 | PASS |
 
-No service restart was performed by QA.
+No `granada-admin.service` restart was performed in this pass.
 
 ## Safety Scan
 
-PASS with notes.
+PASS with scope note.
 
-- No backend files modified.
-- No database migration files modified.
+- No backend files modified by QA.
+- No database files or migrations modified.
 - No public `/kamar` source modified.
-- No Payment Gateway, Smart Lock, booking lead, or gallery backend files modified.
-- No hard delete mutation introduced.
-- No public visibility toggle introduced; existing visibility display/filter remains read-only.
-- No yearly price input added to `RoomFormDialog`; yearly price is displayed as secondary information only when already present.
+- No Payment Gateway files modified.
+- No Smart Lock files modified.
+- No booking lead files modified.
+- No gallery backend files modified.
+- No hard delete was introduced.
+- No public visibility toggle was introduced.
+- No yearly price input was added to the room form.
+- Unrelated untracked file remains present: `docs/hotfixes/HOTFIX_RM01C_QA_RESULT.md`.
 
 ## Browser Limitation
 
@@ -133,11 +124,11 @@ No Playwright, Puppeteer, Chromium, or browser tooling was installed.
 
 ## Known Limitations
 
-- Full browser behavior such as row click, drawer animation, action-menu interaction, and dialog submit UX was verified statically, not visually.
-- Full admin lint remains blocked by existing/pre-existing CRLF Prettier failures outside the rooms renovation files.
-- Public API smoke failure on `/public/hunian-catalog` and `/public/rooms/summary` blocks a clean release verdict even though this renovation did not touch backend/public app source.
-- Extra untracked docs under `docs/plans/` should be reviewed for intended scope before merge.
+- Full browser behavior such as row click, drawer animation, action menu interaction, and dialog submit UX was validated statically, not visually.
+- Admin `/rooms` HTTP service smoke could not be completed because sandbox loopback was blocked and escalation was rejected by reviewer policy.
+- The expected Phase 1 implementation files are present, but `git diff --name-only` did not show them as current tracked diffs at validation start, suggesting the implementation was already committed or otherwise outside the current diff.
+- An unrelated untracked hotfix QA doc is present and should be resolved before a clean release handoff.
 
 ## Final Recommendation
 
-PARTIAL. The Admin Rooms Renovation Phase 1 UI implementation is structurally valid and build-safe, but the release should not be marked fully PASS until public API smoke and full admin lint are green or explicitly accepted as known blockers.
+PARTIAL. The Admin Rooms Renovation Phase 1 UI implementation is structurally valid and build/API-safe, but do not mark this as a clean release PASS until the unrelated untracked file is resolved and admin `/rooms` service smoke is completed or explicitly accepted as a known validation limitation.

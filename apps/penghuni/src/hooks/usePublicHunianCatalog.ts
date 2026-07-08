@@ -90,12 +90,7 @@ export function usePublicHunianCatalog(
   params: PublicHunianCatalogParams,
 ): UseQueryResult<PublicHunianCatalogItem[]> {
   return useQuery<PublicHunianCatalogItem[]>({
-    queryKey: [
-      "public-hunian-catalog",
-      "list",
-      params.gender ?? "all",
-      params.category ?? "all",
-    ],
+    queryKey: ["public-hunian-catalog", "list", params.gender ?? "all", params.category ?? "all"],
     queryFn: () => getPublicHunianCatalog(params),
     staleTime: STALE_TIME_MS,
   });

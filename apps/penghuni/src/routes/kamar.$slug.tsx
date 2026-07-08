@@ -467,9 +467,7 @@ function DetailContent({
           <Accordion type="single" collapsible className="mt-2">
             {faq.map((entry, index) => (
               <AccordionItem key={entry.question} value={`faq-${index}`}>
-                <AccordionTrigger className="text-left text-sm">
-                  {entry.question}
-                </AccordionTrigger>
+                <AccordionTrigger className="text-left text-sm">{entry.question}</AccordionTrigger>
                 <AccordionContent className="text-sm text-muted-foreground">
                   {entry.answer}
                 </AccordionContent>
@@ -503,12 +501,7 @@ function DetailContent({
           </Button>
           {href ? (
             <Button asChild variant="outline">
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="WhatsApp Admin"
-              >
+              <a href={href} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Admin">
                 <MessageCircle className="h-4 w-4" />
               </a>
             </Button>

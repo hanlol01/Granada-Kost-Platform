@@ -92,12 +92,7 @@ export function usePublicHunianCatalog(
   params: PublicHunianCatalogParams,
 ): UseQueryResult<PublicHunianCatalogItem[]> {
   return useQuery<PublicHunianCatalogItem[]>({
-    queryKey: [
-      "public-hunian-catalog",
-      "list",
-      params.gender ?? "all",
-      params.category ?? "all",
-    ],
+    queryKey: ["public-hunian-catalog", "list", params.gender ?? "all", params.category ?? "all"],
     queryFn: () => getPublicHunianCatalog(params),
     staleTime: STALE_TIME_MS,
   });
@@ -181,7 +176,6 @@ export function usePublicHunianCatalogDetail(
     queryKey: ["public-hunian-catalog", "detail", slug],
     queryFn: () => getPublicHunianCatalogDetail(slug),
     staleTime: STALE_TIME_MS,
-    retry: (failureCount, error) =>
-      !isPublicHunianCatalogNotFound(error) && failureCount < 2,
+    retry: (failureCount, error) => !isPublicHunianCatalogNotFound(error) && failureCount < 2,
   });
 }

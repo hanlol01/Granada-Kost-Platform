@@ -12,8 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as KamarRouteImport } from './routes/kamar'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as KamarSlugRouteImport } from './routes/kamar.$slug'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as KamarSlugRouteImport } from './routes/kamar.$slug'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
 import { Route as AppInfoRouteImport } from './routes/_app/info'
@@ -35,15 +35,15 @@ const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KamarSlugRoute = KamarSlugRouteImport.update({
-  id: '/kamar/$slug',
-  path: '/kamar/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const KamarSlugRoute = KamarSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => KamarRoute,
 } as any)
 const AppProfileRoute = AppProfileRouteImport.update({
   id: '/profile',
@@ -78,8 +78,7 @@ const AppBillingRoute = AppBillingRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
-  '/kamar': typeof KamarRoute
-  '/kamar/$slug': typeof KamarSlugRoute
+  '/kamar': typeof KamarRouteWithChildren
   '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
@@ -87,10 +86,10 @@ export interface FileRoutesByFullPath {
   '/info': typeof AppInfoRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
+  '/kamar/$slug': typeof KamarSlugRoute
 }
 export interface FileRoutesByTo {
-  '/kamar': typeof KamarRoute
-  '/kamar/$slug': typeof KamarSlugRoute
+  '/kamar': typeof KamarRouteWithChildren
   '/login': typeof LoginRoute
   '/billing': typeof AppBillingRoute
   '/chat': typeof AppChatRoute
@@ -98,13 +97,13 @@ export interface FileRoutesByTo {
   '/info': typeof AppInfoRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
+  '/kamar/$slug': typeof KamarSlugRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
-  '/kamar': typeof KamarRoute
-  '/kamar/$slug': typeof KamarSlugRoute
+  '/kamar': typeof KamarRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/billing': typeof AppBillingRoute
   '/_app/chat': typeof AppChatRoute
@@ -112,6 +111,7 @@ export interface FileRoutesById {
   '/_app/info': typeof AppInfoRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
+  '/kamar/$slug': typeof KamarSlugRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -119,7 +119,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/kamar'
-    | '/kamar/$slug'
     | '/login'
     | '/billing'
     | '/chat'
@@ -127,10 +126,10 @@ export interface FileRouteTypes {
     | '/info'
     | '/notifications'
     | '/profile'
+    | '/kamar/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/kamar'
-    | '/kamar/$slug'
     | '/login'
     | '/billing'
     | '/chat'
@@ -138,12 +137,12 @@ export interface FileRouteTypes {
     | '/info'
     | '/notifications'
     | '/profile'
+    | '/kamar/$slug'
     | '/'
   id:
     | '__root__'
     | '/_app'
     | '/kamar'
-    | '/kamar/$slug'
     | '/login'
     | '/_app/billing'
     | '/_app/chat'
@@ -151,13 +150,13 @@ export interface FileRouteTypes {
     | '/_app/info'
     | '/_app/notifications'
     | '/_app/profile'
+    | '/kamar/$slug'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
-  KamarRoute: typeof KamarRoute
-  KamarSlugRoute: typeof KamarSlugRoute
+  KamarRoute: typeof KamarRouteWithChildren
   LoginRoute: typeof LoginRoute
 }
 
@@ -184,19 +183,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/kamar/$slug': {
-      id: '/kamar/$slug'
-      path: '/kamar/$slug'
-      fullPath: '/kamar/$slug'
-      preLoaderRoute: typeof KamarSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_app/': {
       id: '/_app/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/kamar/$slug': {
+      id: '/kamar/$slug'
+      path: '/$slug'
+      fullPath: '/kamar/$slug'
+      preLoaderRoute: typeof KamarSlugRouteImport
+      parentRoute: typeof KamarRoute
     }
     '/_app/profile': {
       id: '/_app/profile'
@@ -265,10 +264,19 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface KamarRouteChildren {
+  KamarSlugRoute: typeof KamarSlugRoute
+}
+
+const KamarRouteChildren: KamarRouteChildren = {
+  KamarSlugRoute: KamarSlugRoute,
+}
+
+const KamarRouteWithChildren = KamarRoute._addFileChildren(KamarRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
-  KamarRoute: KamarRoute,
-  KamarSlugRoute: KamarSlugRoute,
+  KamarRoute: KamarRouteWithChildren,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport

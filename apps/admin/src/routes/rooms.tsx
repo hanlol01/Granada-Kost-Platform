@@ -151,6 +151,13 @@ function RoomsPage() {
   const { data, error, isFetching, isLoading, refetch } = useRooms();
   const rooms = data ?? EMPTY_ROOMS;
   const stats = useMemo(() => buildStats(rooms), [rooms]);
+  const allBuildingOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(rooms.map((r) => r.buildingCode ?? r.unitCode).filter(Boolean) as string[]),
+      ).sort((a, b) => a.localeCompare(b, "id-ID", { numeric: true, sensitivity: "base" })),
+    [rooms],
+  );
   const { hasPermission } = useAuth();
   const canManage = hasPermission("room.manage");
 
@@ -220,11 +227,16 @@ function RoomsPage() {
       )}
 
       {/* Dialogs — rendered once at page level */}
-      <RoomFormDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <RoomFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        buildingOptions={allBuildingOptions}
+      />
       <RoomFormDialog
         open={editTarget !== null}
         onOpenChange={(o) => !o && setEditTarget(null)}
         initial={editTarget}
+        buildingOptions={allBuildingOptions}
       />
       <RoomDetailDrawer
         room={detailTarget}

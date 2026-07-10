@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "run_id": "M0-REMEDIATION-YYYYMMDD-001",
+  "correlation_id": "admin-ux-m0-YYYYMMDD-001",
+  "target_environment": "staging",
+  "property_id": "<approved-property-uuid>",
+  "backup_id": "<backup-id-with-restore-evidence>",
+  "restore_verified": false,
+  "approvals": {
+    "business": {
+      "reference": "<business-approval-reference>",
+      "approved_by": "<approver>",
+      "approved_at": "<ISO-8601-timestamp>"
+    },
+    "release_db": {
+      "reference": "<release-db-approval-reference>",
+      "approved_by": "<approver>",
+      "approved_at": "<ISO-8601-timestamp>"
+    }
+  },
+  "facility_batch": {
+    "property_id": "<approved-property-uuid>",
+    "room_ids": ["<40-approved-apartkost-room-uuids>"],
+    "facility_ids": ["<approved-canonical-facility-uuids>"]
+  },
+  "occupancy_actions": [
+    {
+      "id": "OCC-ACTIVE-VACANT-001",
+      "kind": "sync_active_occupancy",
+      "property_id": "<approved-property-uuid>",
+      "room_id": "<room-uuid>",
+      "occupancy_id": "<occupancy-uuid>",
+      "actor_user_id": "<operator-user-uuid>",
+      "event_date": "YYYY-MM-DD",
+      "reason": "<approved-sanitized-reason>"
+    },
+    {
+      "id": "ROOM-OCCUPIED-NO-OCC-001",
+      "kind": "create_legacy_occupancy",
+      "property_id": "<approved-property-uuid>",
+      "room_id": "<room-uuid>",
+      "resident_id": "<resident-uuid>",
+      "actor_user_id": "<operator-user-uuid>",
+      "start_date": "YYYY-MM-DD",
+      "reason": "<approved-sanitized-reason>"
+    }
+  ]
+}

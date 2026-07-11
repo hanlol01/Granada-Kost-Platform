@@ -13,7 +13,7 @@
 // tenant/resident/occupancy PII, payment/bank data, or Smart Lock data.
 // publicVisible defaults to false backend-side: new photos start as Draft.
 
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@granada-kost/api-client";
 import { toast } from "sonner";
@@ -56,10 +56,25 @@ import {
   useUpdateHunianGalleryImage,
 } from "@/hooks/useHunianGalleryMutations";
 import { useAuth } from "@/lib/auth";
+import { normalizeLegacyGalleryRedirectSearch } from "@/lib/admin-route-redirects";
 import { useProperty } from "@/lib/property";
 import { formatFileSize, validateFileForPurpose } from "@/lib/file-utils";
 
-export const Route = createFileRoute("/hunian-gallery")({ component: HunianGalleryPage });
+export const Route = createFileRoute("/hunian-gallery")({
+  validateSearch: normalizeLegacyGalleryRedirectSearch,
+  beforeLoad: ({ search }) => {
+    throw redirect({
+      to: "/rooms/galeri" as never,
+      search: {
+        target: search.target,
+        offset: search.offset,
+        limit: search.limit,
+      } as never,
+      replace: true,
+    });
+  },
+  component: HunianGalleryPage,
+});
 
 const SAFETY_NOTICE =
   "Foto yang dipublikasikan akan terlihat oleh calon penghuni. Pastikan foto tidak menampilkan data pribadi, dokumen, nomor kamar spesifik, atau informasi internal.";

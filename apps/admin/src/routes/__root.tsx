@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { RouteAccessBoundary } from "@/components/layout/route-access-boundary";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, AuthGuard } from "@/lib/auth";
 import { PropertyProvider } from "@/lib/property";
@@ -143,7 +144,9 @@ function GuardedOutlet() {
   return (
     <AuthGuard>
       <PropertyProvider>
-        <Outlet />
+        <RouteAccessBoundary>
+          <Outlet />
+        </RouteAccessBoundary>
       </PropertyProvider>
     </AuthGuard>
   );

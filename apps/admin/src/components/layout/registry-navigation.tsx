@@ -1,0 +1,299 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { ChevronDown, ChevronRight, MoreHorizontal, Building2 } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  getVisibleRoutes,
+  isRouteActive,
+  navSectionLabels,
+  type AdminNavSection,
+  type AdminRouteMetadata,
+  type RouteAccessContext,
+} from "@/lib/admin-route-registry";
+import { useAuth } from "@/lib/auth";
+import { useProperty } from "@/lib/property";
+import { cn } from "@/lib/utils";
+
+const SECTION_ORDER: readonly AdminNavSection[] = [
+  "master-data",
+  "pengelolaan",
+  "operasional-terbatas",
+  "lainnya",
+];
+
+function useRouteAccess(): RouteAccessContext {
+  const { user } = useAuth();
+  return {
+    roles: user?.roles ?? [],
+    permissions: user?.permissions ?? [],
+  };
+}
+
+function RouteLink({
+  route,
+  pathname,
+  nested = false,
+  onNavigate,
+}: {
+  route: AdminRouteMetadata;
+  pathname: string;
+  nested?: boolean;
+  onNavigate?: () => void;
+}) {
+  const Icon = route.icon;
+  const active = isRouteActive(route, pathname);
+
+  return (
+    <Link
+      to={route.to as never}
+      onClick={onNavigate}
+      className={cn(
+        "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
+        nested && "ml-3 py-2 text-[13px]",
+        active
+          ? "bg-blue-500/10 font-medium text-blue-400"
+          : "text-slate-300 hover:bg-slate-800 hover:text-slate-100",
+      )}
+    >
+      {active ? (
+        <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-blue-400" />
+      ) : null}
+      <Icon className={cn("h-4 w-4 shrink-0", nested && "h-3.5 w-3.5")} />
+      <span className="truncate">{route.label}</span>
+    </Link>
+  );
+}
+
+function NavSection({
+  section,
+  routes,
+  pathname,
+}: {
+  section: AdminNavSection;
+  routes: readonly AdminRouteMetadata[];
+  pathname: string;
+}) {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  const rooms = routes.find((route) => route.id === "rooms");
+  const roomChildren = routes.filter(
+    (route) => route.parentId === "rooms" && route.navigation?.sidebar,
+  );
+  const roomActive = Boolean(rooms && isRouteActive(rooms, pathname));
+  const storageKey =
+    "granada.nav.rooms." + (user?.id ?? "anonymous") + "." + (currentPropertyId ?? "none");
+  const [roomsOpen, setRoomsOpen] = useState(roomActive);
+
+  useEffect(() => {
+    if (roomActive) {
+      setRoomsOpen(true);
+      return;
+    }
+    try {
+      setRoomsOpen(window.sessionStorage.getItem(storageKey) === "true");
+    } catch {
+      setRoomsOpen(false);
+    }
+  }, [roomActive, storageKey]);
+
+  const toggleRooms = () => {
+    const next = !roomsOpen;
+    setRoomsOpen(next);
+    try {
+      window.sessionStorage.setItem(storageKey, String(next));
+    } catch {
+      // Session state is a convenience, never a navigation dependency.
+    }
+  };
+
+  const roots = routes.filter((route) => route.navigation?.sidebar && !route.parentId);
+
+  if (roots.length === 0) return null;
+
+  return (
+    <section className="space-y-1">
+      <span className="mb-2 block px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        {navSectionLabels[section]}
+      </span>
+      {roots.map((route) => {
+        if (route.id !== "rooms") {
+          return <RouteLink key={route.id} route={route} pathname={pathname} />;
+        }
+
+        const Icon = route.icon;
+        return (
+          <div key={route.id}>
+            <div className="flex items-center">
+              <Link
+                to={route.to as never}
+                className={cn(
+                  "relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
+                  roomActive
+                    ? "bg-blue-500/10 font-medium text-blue-400"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-slate-100",
+                )}
+              >
+                {roomActive ? (
+                  <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-blue-400" />
+                ) : null}
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{route.label}</span>
+              </Link>
+              <button
+                type="button"
+                className="mr-1 rounded-md p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+                aria-label={roomsOpen ? "Tutup menu Kamar" : "Buka menu Kamar"}
+                aria-expanded={roomsOpen}
+                onClick={toggleRooms}
+              >
+                {roomsOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+            {roomsOpen ? (
+              <div className="mt-1 space-y-0.5 border-l border-slate-800">
+                {roomChildren.map((child) => (
+                  <RouteLink key={child.id} route={child} pathname={pathname} nested />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function MoreRoutes({
+  routes,
+  pathname,
+  onNavigate,
+}: {
+  routes: readonly AdminRouteMetadata[];
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {SECTION_ORDER.map((section) => {
+        const sectionRoutes = routes.filter(
+          (route) => route.section === section && route.navigation?.sidebar,
+        );
+        if (sectionRoutes.length === 0) return null;
+
+        return (
+          <section key={section} className="space-y-1">
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {navSectionLabels[section]}
+            </p>
+            {sectionRoutes.map((route) => (
+              <RouteLink
+                key={route.id}
+                route={route}
+                pathname={pathname}
+                nested={Boolean(route.parentId)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+export function RegistrySidebar() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const access = useRouteAccess();
+  const routes = getVisibleRoutes(access);
+
+  return (
+    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
+      <div className="flex items-center gap-3 border-b border-slate-800 px-6 py-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+          <Building2 className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-100">Kos Management</p>
+          <p className="text-xs text-slate-500">Sistem Pengelolaan</p>
+        </div>
+      </div>
+      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+        {SECTION_ORDER.map((section) => (
+          <NavSection
+            key={section}
+            section={section}
+            routes={routes.filter((route) => route.section === section)}
+            pathname={pathname}
+          />
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+export function RegistryBottomNav() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const access = useRouteAccess();
+  const routes = getVisibleRoutes(access);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const primaryRoutes = useMemo(
+    () =>
+      routes
+        .filter((route) => !route.parentId && route.navigation?.mobilePriority !== undefined)
+        .sort((left, right) => left.navigation!.mobilePriority! - right.navigation!.mobilePriority!)
+        .slice(0, 4),
+    [routes],
+  );
+
+  return (
+    <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-950/95 shadow-[0_-8px_30px_rgba(0,0,0,0.2)] backdrop-blur lg:hidden">
+        <div className="grid grid-cols-5">
+          {primaryRoutes.map((route) => {
+            const Icon = route.icon;
+            const active = isRouteActive(route, pathname);
+            return (
+              <Link
+                key={route.id}
+                to={route.to as never}
+                className={cn(
+                  "flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] transition-colors",
+                  active ? "text-blue-400" : "text-slate-400 hover:text-slate-100",
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="max-w-full truncate font-medium">{route.label}</span>
+              </Link>
+            );
+          })}
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] text-slate-400 transition-colors hover:text-slate-100"
+              aria-label="Buka menu lainnya"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+              <span className="font-medium">Lainnya</span>
+            </button>
+          </SheetTrigger>
+        </div>
+      </nav>
+      <SheetContent
+        side="bottom"
+        className="max-h-[80vh] overflow-y-auto border-slate-800 bg-slate-950 px-5 pb-8"
+      >
+        <SheetHeader>
+          <SheetTitle className="text-slate-100">Lainnya</SheetTitle>
+        </SheetHeader>
+        <div className="mt-5">
+          <MoreRoutes routes={routes} pathname={pathname} onNavigate={() => setMoreOpen(false)} />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}

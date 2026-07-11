@@ -1,7 +1,15 @@
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth/useAuth";
 import type { PropertyScopeRef } from "@granada-kost/domain";
+import { useAuth } from "@/lib/auth/useAuth";
 
 const STORAGE_KEY = "granada.currentPropertyId";
 
@@ -35,54 +43,63 @@ function writeStored(value: string | null) {
 export function PropertyProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const currentPropertyRef = useRef<string | null>(null);
+  const accountRef = useRef<string | null>(null);
+  const [currentPropertyId, setCurrentPropertyIdState] = useState<string | null>(null);
 
   const availableProperties = useMemo<PropertyScopeRef[]>(() => {
     if (user?.properties && user.properties.length > 0) return user.properties;
     return (user?.property_ids ?? user?.propertyIds ?? []).map((id) => ({ id }));
   }, [user]);
 
-  const [currentPropertyId, setCurrentPropertyIdState] = useState<string | null>(null);
+  const discardScopedCache = useCallback(() => {
+    // Cancel first so an in-flight request cannot repopulate the old scope.
+    void queryClient.cancelQueries();
+    queryClient.removeQueries();
+  }, [queryClient]);
 
-  // Resolve initial selection whenever auth changes.
+  const commitProperty = useCallback(
+    (nextPropertyId: string | null) => {
+      const previousPropertyId = currentPropertyRef.current;
+      if (previousPropertyId === nextPropertyId) return;
+
+      if (previousPropertyId !== null) discardScopedCache();
+      currentPropertyRef.current = nextPropertyId;
+      setCurrentPropertyIdState(nextPropertyId);
+      writeStored(nextPropertyId);
+    },
+    [discardScopedCache],
+  );
+
+  // An authenticated account transition must never reuse another account's cache,
+  // even if both accounts happen to share a property id.
+  useEffect(() => {
+    const nextAccountId = user?.id ?? null;
+    if (accountRef.current && accountRef.current !== nextAccountId) discardScopedCache();
+    accountRef.current = nextAccountId;
+  }, [discardScopedCache, user?.id]);
+
+  // Resolve initial selection whenever auth scope changes.
   useEffect(() => {
     if (availableProperties.length === 0) {
-      setCurrentPropertyIdState(null);
-      writeStored(null);
+      commitProperty(null);
       return;
     }
+
     const stored = readStored();
-    if (stored && availableProperties.some((p) => p.id === stored)) {
-      setCurrentPropertyIdState(stored);
-      return;
-    }
-    const first = availableProperties[0]!.id;
-    setCurrentPropertyIdState(first);
-    writeStored(first);
-  }, [availableProperties]);
+    const nextPropertyId =
+      stored && availableProperties.some((property) => property.id === stored)
+        ? stored
+        : availableProperties[0]!.id;
+    commitProperty(nextPropertyId);
+  }, [availableProperties, commitProperty]);
 
   const setCurrentPropertyId = useCallback(
     (id: string) => {
-      setCurrentPropertyIdState((prev) => {
-        if (prev === id) return prev;
-        // Drop queries scoped to the previous property to prevent cache bleed.
-        if (prev !== null) {
-          queryClient.removeQueries({
-            predicate: (q) =>
-              Array.isArray(q.queryKey) &&
-              q.queryKey.some(
-                (segment) =>
-                  typeof segment === "object" &&
-                  segment !== null &&
-                  "propertyId" in (segment as Record<string, unknown>) &&
-                  (segment as { propertyId?: string }).propertyId === prev,
-              ),
-          });
-        }
-        writeStored(id);
-        return id;
-      });
+      if (!availableProperties.some((property) => property.id === id)) return;
+      commitProperty(id);
     },
-    [queryClient],
+    [availableProperties, commitProperty],
   );
 
   const value = useMemo<PropertyContextValue>(

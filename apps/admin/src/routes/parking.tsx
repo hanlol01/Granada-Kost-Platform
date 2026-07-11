@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +19,19 @@ import { useReleaseParkingSlot } from "@/hooks/useParkingMutations";
 import { useAuth } from "@/lib/auth";
 import { ParkingSquare, Bike, Car, CircleDot, Link as LinkIcon, Unlink } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { parkingRedirectSearch } from "@/lib/admin-route-redirects";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/parking")({ component: ParkingPage });
+export const Route = createFileRoute("/parking")({
+  beforeLoad: () => {
+    throw redirect({
+      to: "/vehicles" as never,
+      search: parkingRedirectSearch as never,
+      replace: true,
+    });
+  },
+  component: ParkingPage,
+});
 
 const ZONE_TYPE_ICON: Record<ParkingZoneRecord["zoneType"], LucideIcon> = {
   motorcycle: Bike,

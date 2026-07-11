@@ -2,3 +2,4 @@ export { LoadingState } from "./LoadingState";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
 export { ForbiddenState } from "./ForbiddenState";
+export { FeatureDisabledState } from "./FeatureDisabledState";

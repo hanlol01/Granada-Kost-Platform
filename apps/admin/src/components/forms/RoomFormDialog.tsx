@@ -7,13 +7,7 @@ import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  BedDouble,
-  DollarSign,
-  Loader2,
-  Settings2,
-  Tags,
-} from "lucide-react";
+import { BedDouble, DollarSign, Loader2, Settings2, Tags } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -36,11 +30,7 @@ import {
 } from "@/components/ui/select";
 import { ApiError } from "@granada-kost/api-client";
 import type { RoomRecord } from "@/hooks/useRooms";
-import {
-  useCreateRoom,
-  useUpdateRoom,
-  type CreateRoomInput,
-} from "@/hooks/useRoomMutations";
+import { useCreateRoom, useUpdateRoom, type CreateRoomInput } from "@/hooks/useRoomMutations";
 import { useRoomTypes } from "@/hooks/useRoomTypes";
 import { useRoomFacilities } from "@/hooks/useRoomFacilities";
 
@@ -165,9 +155,7 @@ export function RoomFormDialog({
       depositAmount: values.depositAmount,
       roomTypeId: values.roomTypeId || null,
       facilityIds:
-        values.facilityIds && values.facilityIds.length > 0
-          ? values.facilityIds
-          : undefined,
+        values.facilityIds && values.facilityIds.length > 0 ? values.facilityIds : undefined,
     };
     try {
       if (initial) {
@@ -202,10 +190,7 @@ export function RoomFormDialog({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col overflow-y-auto sm:max-w-xl"
-      >
+      <SheetContent side="right" className="flex w-full flex-col overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <BedDouble className="h-5 w-5 text-primary" />
@@ -218,11 +203,7 @@ export function RoomFormDialog({
           </SheetDescription>
         </SheetHeader>
 
-        <form
-          className="flex flex-1 flex-col gap-5 py-4"
-          onSubmit={onSubmit}
-          noValidate
-        >
+        <form className="flex flex-1 flex-col gap-5 py-4" onSubmit={onSubmit} noValidate>
           {/* ─── Section: Identitas Kamar ─── */}
           <section className="space-y-3">
             <SectionHeader icon={BedDouble} title="Identitas Kamar" />
@@ -231,11 +212,7 @@ export function RoomFormDialog({
               error={form.formState.errors.number?.message}
               hint="Nomor unik kamar di dalam unit, misal: 101, 1B, 5A"
             >
-              <Input
-                {...form.register("number")}
-                placeholder="Mis. 101"
-                disabled={pending}
-              />
+              <Input {...form.register("number")} placeholder="Mis. 101" disabled={pending} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field
@@ -246,9 +223,7 @@ export function RoomFormDialog({
                 {buildingOptions.length > 0 ? (
                   <Select
                     value={form.watch("unitCode") || ""}
-                    onValueChange={(v) =>
-                      form.setValue("unitCode", v === "__none__" ? "" : v)
-                    }
+                    onValueChange={(v) => form.setValue("unitCode", v === "__none__" ? "" : v)}
                     disabled={pending}
                   >
                     <SelectTrigger>
@@ -264,22 +239,13 @@ export function RoomFormDialog({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Input
-                    {...form.register("unitCode")}
-                    placeholder="RKA-101"
-                    disabled={pending}
-                  />
+                  <Input {...form.register("unitCode")} placeholder="RKA-101" disabled={pending} />
                 )}
               </Field>
-              <Field
-                label="Lantai"
-                error={form.formState.errors.floor?.message}
-              >
+              <Field label="Lantai" error={form.formState.errors.floor?.message}>
                 <Select
                   value={form.watch("floor") || ""}
-                  onValueChange={(v) =>
-                    form.setValue("floor", v === "__none__" ? "" : v)
-                  }
+                  onValueChange={(v) => form.setValue("floor", v === "__none__" ? "" : v)}
                   disabled={pending}
                 >
                   <SelectTrigger>
@@ -301,11 +267,7 @@ export function RoomFormDialog({
               error={form.formState.errors.sizeLabel?.message}
               hint="Dimensi kamar, misal: 3x4"
             >
-              <Input
-                {...form.register("sizeLabel")}
-                placeholder="3x4"
-                disabled={pending}
-              />
+              <Input {...form.register("sizeLabel")} placeholder="3x4" disabled={pending} />
             </Field>
           </section>
 
@@ -315,17 +277,11 @@ export function RoomFormDialog({
           <section className="space-y-3">
             <SectionHeader icon={Settings2} title="Konfigurasi" />
             <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="Kebijakan Gender"
-                error={form.formState.errors.genderPolicy?.message}
-              >
+              <Field label="Kebijakan Gender" error={form.formState.errors.genderPolicy?.message}>
                 <Select
                   value={form.watch("genderPolicy")}
                   onValueChange={(v) =>
-                    form.setValue(
-                      "genderPolicy",
-                      v as FormValues["genderPolicy"],
-                    )
+                    form.setValue("genderPolicy", v as FormValues["genderPolicy"])
                   }
                   disabled={pending}
                 >
@@ -335,11 +291,7 @@ export function RoomFormDialog({
                   <SelectContent>
                     <SelectItem value="male">Putra</SelectItem>
                     <SelectItem value="female">Putri</SelectItem>
-                    {showCampur && (
-                      <SelectItem value="mixed">
-                        Campur (jarang digunakan)
-                      </SelectItem>
-                    )}
+                    {showCampur && <SelectItem value="mixed">Campur (jarang digunakan)</SelectItem>}
                   </SelectContent>
                 </Select>
               </Field>
@@ -350,9 +302,7 @@ export function RoomFormDialog({
               >
                 <Select
                   value={form.watch("roomTypeId") || ""}
-                  onValueChange={(v) =>
-                    form.setValue("roomTypeId", v === "__none__" ? "" : v)
-                  }
+                  onValueChange={(v) => form.setValue("roomTypeId", v === "__none__" ? "" : v)}
                   disabled={pending}
                 >
                   <SelectTrigger>
@@ -389,10 +339,7 @@ export function RoomFormDialog({
                   disabled={pending}
                 />
               </Field>
-              <Field
-                label="Deposit (IDR)"
-                error={form.formState.errors.depositAmount?.message}
-              >
+              <Field label="Deposit (IDR)" error={form.formState.errors.depositAmount?.message}>
                 <Input
                   type="number"
                   min={0}
@@ -427,8 +374,7 @@ export function RoomFormDialog({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Belum ada fasilitas terdaftar. Fasilitas dapat ditambahkan
-                melalui menu Master Data.
+                Belum ada fasilitas terdaftar. Fasilitas dapat ditambahkan melalui menu Master Data.
               </p>
             )}
           </section>
@@ -447,8 +393,7 @@ export function RoomFormDialog({
             <Button type="submit" disabled={pending}>
               {pending ? (
                 <span className="inline-flex items-center gap-1">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
-                  Menyimpan...
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Menyimpan...
                 </span>
               ) : initial ? (
                 "Simpan Perubahan"
@@ -465,13 +410,7 @@ export function RoomFormDialog({
 
 /* ─── Sub-components ─── */
 
-function SectionHeader({
-  icon: Icon,
-  title,
-}: {
-  icon: React.ElementType;
-  title: string;
-}) {
+function SectionHeader({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
     <div className="flex items-center gap-2">
       <Icon className="h-4 w-4 text-muted-foreground" />
@@ -495,12 +434,8 @@ function Field({
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
       {children}
-      {hint && !error ? (
-        <p className="text-[11px] text-muted-foreground">{hint}</p>
-      ) : null}
-      {error ? (
-        <p className="text-[11px] text-destructive">{error}</p>
-      ) : null}
+      {hint && !error ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+      {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
     </div>
   );
 }

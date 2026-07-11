@@ -54,7 +54,16 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/vehicles")({ component: VehiclesPage });
+type VehiclesSearch = {
+  tab: "vehicles" | "parking";
+};
+
+export const Route = createFileRoute("/vehicles")({
+  validateSearch: (raw: Record<string, unknown>): VehiclesSearch => ({
+    tab: raw.tab === "parking" ? "parking" : "vehicles",
+  }),
+  component: VehiclesPage,
+});
 
 const STATUS_LABEL: Record<VehicleStatus, { label: string; cls: string }> = {
   pending_approval: { label: "Menunggu Approval", cls: "bg-warning/20 text-warning-foreground" },

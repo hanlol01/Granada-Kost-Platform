@@ -35,3 +35,12 @@ export const apiClient = new ApiClient({
 export function getAccessToken(): string | null {
   return proxyTokenProvider.getAccessToken();
 }
+// Admin UX V2 preserves its own envelopes, so it cannot use ApiClient's legacy
+// success-envelope unwrapping. These helpers retain the same auth lifecycle.
+export async function refreshAccessToken(): Promise<boolean> {
+  return proxyTokenProvider.refresh();
+}
+
+export function notifyAuthFailure(): void {
+  proxyTokenProvider.onAuthFailure?.();
+}

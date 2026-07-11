@@ -50,7 +50,7 @@ import { StatusChangeDialog } from "@/components/rooms/StatusChangeDialog";
 import { ArchiveConfirmDialog } from "@/components/rooms/ArchiveConfirmDialog";
 import { useAuth } from "@/lib/auth";
 
-export const Route = createFileRoute("/rooms")({ component: RoomsPage });
+export const Route = createFileRoute("/rooms/")({ component: RoomsPage });
 
 type RoomGender = RoomRecord["genderPolicy"];
 type TabKey = "summary" | "rukost" | "apartkost" | "availability";
@@ -177,8 +177,8 @@ function RoomsPage() {
 
   return (
     <AppShell
-      title="Manajemen Kamar"
-      subtitle={data ? rooms.length + " kamar terhubung ke inventori" : "Memuat inventori kamar..."}
+      title="Ringkasan Kamar"
+      subtitle={data ? rooms.length + " kamar terhubung ke inventori" : "Memuat ringkasan kamar..."}
       actions={
         canManage ? (
           <Button onClick={() => setCreateOpen(true)}>

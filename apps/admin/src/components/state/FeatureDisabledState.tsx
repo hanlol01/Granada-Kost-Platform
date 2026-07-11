@@ -1,18 +1,18 @@
 import { Link } from "@tanstack/react-router";
-import { ShieldAlert } from "lucide-react";
+import { ToggleLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function ForbiddenState({
-  title = "Tidak berwenang",
-  description = "Akun Anda tidak memiliki izin untuk membuka halaman ini.",
+export function FeatureDisabledState({
+  title = "Fitur belum diaktifkan",
+  description = "Fitur ini belum tersedia untuk properti atau rilis saat ini.",
 }: {
   title?: string;
   description?: string;
 }) {
   return (
     <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 px-4 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warning/20 text-warning">
-        <ShieldAlert className="h-6 w-6" />
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+        <ToggleLeft className="h-7 w-7" />
       </div>
       <div className="max-w-md">
         <p className="text-base font-semibold text-foreground">{title}</p>

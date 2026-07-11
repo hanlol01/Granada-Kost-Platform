@@ -54,3 +54,11 @@ export const qk = {
     list: () => ["notifications", "list"] as const,
   },
 } as const;
+// M3 property-scoped query-key factory and invalidation rules.
+export {
+  adminUxQueryKeys,
+  invalidateAdminUxMutation,
+  invalidationKeysFor,
+  normalizePagination,
+  normalizeQueryFilters,
+} from "./admin-ux-query-keys";

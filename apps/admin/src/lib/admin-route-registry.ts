@@ -88,6 +88,11 @@ const ROOM_READ: RouteAccess = {
   readCapabilities: ["room.read"],
 };
 
+const ROOM_MASTER_READ: RouteAccess = {
+  ...ROOM_READ,
+  feature: "adminUxMaster",
+};
+
 const ROOM_MANAGE: RouteAccess = {
   ...ROOM_READ,
   mutationCapabilities: ["room.manage"],
@@ -118,7 +123,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "master-data",
     order: 20,
     icon: BedDouble,
-    access: ROOM_READ,
+    access: ROOM_MASTER_READ,
     group: true,
     navigation: { sidebar: true, mobilePriority: 20 },
   },
@@ -130,7 +135,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "master-data",
     order: 21,
     icon: BedDouble,
-    access: ROOM_READ,
+    access: ROOM_MASTER_READ,
     navigation: { sidebar: true },
   },
   {
@@ -379,7 +384,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "master-data",
     order: 999,
     icon: Images,
-    access: ROOM_READ,
+    access: ROOM_MASTER_READ,
     redirectOnly: true,
   },
 ] as const;

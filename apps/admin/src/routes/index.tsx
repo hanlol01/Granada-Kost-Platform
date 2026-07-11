@@ -76,7 +76,7 @@ function Dashboard() {
       subtitle="Ringkasan pengelolaan rumah kos Anda"
       actions={
         <Button asChild className="hidden sm:inline-flex">
-          <Link to="/rooms">
+          <Link to="/rooms" search={{ q: "", offset: 0, limit: 20 }}>
             <Plus className="h-4 w-4 mr-1" /> Tambah Kamar
           </Link>
         </Button>
@@ -225,7 +225,7 @@ function Dashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <Button asChild variant="outline" className="w-full justify-start">
-                  <Link to="/rooms">
+                  <Link to="/rooms" search={{ q: "", offset: 0, limit: 20 }}>
                     <BedDouble className="h-4 w-4 mr-2" />
                     Kelola Kamar
                   </Link>

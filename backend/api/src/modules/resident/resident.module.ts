@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FileModule } from '../file/file.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { PropertyOwnerResidentController } from './property-owner-resident.controller';
@@ -7,7 +8,7 @@ import { ResidentRepository } from './repositories/resident.repository';
 import { ResidentService } from './resident.service';
 
 @Module({
-  imports: [PropertyModule, RbacModule],
+  imports: [FileModule, PropertyModule, RbacModule],
   controllers: [ResidentController, PropertyOwnerResidentController],
   providers: [ResidentRepository, ResidentService],
   exports: [ResidentRepository, ResidentService],

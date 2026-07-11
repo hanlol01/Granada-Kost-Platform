@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AdminUxMasterModule } from '../admin-ux-master/admin-ux-master.module';
 import { HunianGalleryModule } from '../hunian-gallery/hunian-gallery.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
@@ -15,7 +16,7 @@ import { RoomRepository } from './repositories/room.repository';
 import { RoomService } from './room.service';
 
 @Module({
-  imports: [HunianGalleryModule, PropertyModule, RbacModule],
+  imports: [AdminUxMasterModule, HunianGalleryModule, PropertyModule, RbacModule],
   controllers: [
     RoomController,
     RoomTypeController,
@@ -24,7 +25,13 @@ import { RoomService } from './room.service';
     PublicRoomController,
     PublicHunianCatalogController,
   ],
-  providers: [RoomRepository, RoomService, PublicRoomService, PublicHunianCatalogService, PublicRoomRateLimiterService],
+  providers: [
+    RoomRepository,
+    RoomService,
+    PublicRoomService,
+    PublicHunianCatalogService,
+    PublicRoomRateLimiterService,
+  ],
   exports: [RoomRepository, RoomService],
 })
 export class RoomModule {}

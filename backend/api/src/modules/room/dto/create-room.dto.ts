@@ -1,4 +1,13 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 
 export class CreateRoomDto {
   @IsUUID()
@@ -27,13 +36,20 @@ export class CreateRoomDto {
   @IsString()
   size_label?: string;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  monthly_price!: number;
+  monthly_price?: number;
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  deposit_amount!: number;
+  yearly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  deposit_amount?: number;
 
   @IsOptional()
   @IsUUID()
@@ -43,4 +59,28 @@ export class CreateRoomDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   facility_ids?: string[];
+
+  @IsOptional()
+  @IsUUID()
+  kost_type_id?: string;
+
+  @IsOptional()
+  @IsString()
+  room_code?: string;
+
+  @IsOptional()
+  @IsUUID()
+  building_id?: string;
+
+  @IsOptional()
+  @IsIn(['A', 'B'])
+  floor_code?: 'A' | 'B';
+
+  @IsOptional()
+  @IsString()
+  floor_label?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  public_visible?: boolean;
 }

@@ -44,6 +44,7 @@ type FileTypeModule = {
 
 const PRIVILEGED_FILE_ROLES = new Set(['owner', 'manager', 'admin', 'property_owner']);
 const HUNIAN_GALLERY_UPLOAD_ROLES = new Set(['owner', 'manager', 'admin']);
+const KTP_FILE_ROLES = new Set(['owner', 'manager', 'admin']);
 const RESIDENT_UPLOAD_PURPOSES = new Set<FilePurpose>(['payment_proof', 'complaint_attachment']);
 const TECHNICIAN_UPLOAD_PURPOSES = new Set<FilePurpose>(['maintenance_attachment']);
 
@@ -223,7 +224,9 @@ export class FileService {
     };
   }
 
-  private assertFilePresent(file: UploadedFileBuffer | undefined): asserts file is UploadedFileBuffer {
+  private assertFilePresent(
+    file: UploadedFileBuffer | undefined,
+  ): asserts file is UploadedFileBuffer {
     if (!file?.buffer || file.size <= 0) {
       throw new BadRequestException({
         code: 'FILE_REQUIRED',
@@ -305,7 +308,9 @@ export class FileService {
   private async detectMagicBytes(buffer: Buffer): Promise<DetectedFileType | undefined> {
     // file-type is ESM-only; this preserves native import() under the API's CommonJS build.
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const importFileType = new Function('return import("file-type")') as () => Promise<FileTypeModule>;
+    const importFileType = new Function(
+      'return import("file-type")',
+    ) as () => Promise<FileTypeModule>;
     const fileType = await importFileType();
     return fileType.fileTypeFromBuffer(buffer);
   }
@@ -390,6 +395,16 @@ export class FileService {
   ): Promise<void> {
     await this.properties.assertCanReadProperty(user, propertyId);
 
+    if (purpose === 'ktp') {
+      if (user.roles.some((role) => KTP_FILE_ROLES.has(role))) {
+        return;
+      }
+      throw new ForbiddenException({
+        code: 'KTP_ACCESS_DENIED',
+        message: 'User is not allowed to upload KTP documents',
+      });
+    }
+
     if (purpose === 'hunian_gallery') {
       if (user.roles.some((role) => HUNIAN_GALLERY_UPLOAD_ROLES.has(role))) {
         return;
@@ -427,6 +442,13 @@ export class FileService {
   ): Promise<void> {
     try {
       await this.properties.assertCanReadProperty(user, record.propertyId);
+
+      if (record.filePurpose === 'ktp' && !user.roles.some((role) => KTP_FILE_ROLES.has(role))) {
+        throw new ForbiddenException({
+          code: 'KTP_ACCESS_DENIED',
+          message: 'KTP document access is restricted',
+        });
+      }
 
       if (this.hasPrivilegedFileRole(user) || record.uploaderUserId === user.id) {
         return;

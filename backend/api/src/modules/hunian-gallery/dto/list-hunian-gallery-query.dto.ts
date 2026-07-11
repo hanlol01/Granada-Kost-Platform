@@ -1,4 +1,14 @@
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import type { HunianGalleryCategory, HunianGalleryGender } from '../types/hunian-gallery.types';
 import { OptionalTrim, OptionalTrimLower } from './hunian-gallery-dto.util';
 
@@ -28,4 +38,27 @@ export class ListHunianGalleryQueryDto {
   @OptionalTrimLower
   @IsIn(['male', 'female'])
   gender?: HunianGalleryGender;
+
+  @IsOptional()
+  @IsIn(['kost_type', 'common_area'])
+  target_type?: 'kost_type' | 'common_area';
+
+  @IsOptional()
+  @IsUUID('4')
+  kost_type_id?: string;
+
+  @IsOptional()
+  @IsIn(['lobby', 'dapur', 'rooftop', 'koridor', 'parkir'])
+  common_area_key?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }

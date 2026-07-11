@@ -1,4 +1,13 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 
 export class UpdateRoomDto {
   @IsOptional()
@@ -33,6 +42,11 @@ export class UpdateRoomDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  yearly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   deposit_amount?: number;
 
   @IsOptional()
@@ -43,9 +57,37 @@ export class UpdateRoomDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   facility_ids?: string[];
+
+  @IsOptional()
+  @IsUUID()
+  kost_type_id?: string;
+
+  @IsOptional()
+  @IsString()
+  room_code?: string;
+
+  @IsOptional()
+  @IsUUID()
+  building_id?: string;
+
+  @IsOptional()
+  @IsIn(['A', 'B'])
+  floor_code?: 'A' | 'B';
+
+  @IsOptional()
+  @IsString()
+  floor_label?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  public_visible?: boolean;
 }
 
 export class UpdateRoomStatusDto {
   @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive', 'requires_review'])
   status!: 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

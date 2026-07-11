@@ -12,6 +12,7 @@ export const FILE_PURPOSES = [
   'property_logo',
   'hunian_gallery',
   'ktp',
+  'profile_photo',
 ] as const;
 
 export const FILE_STORAGE_DRIVERS = ['local', 's3'] as const;
@@ -82,6 +83,15 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
       'image/jpeg': 3 * 1024 * 1024,
       'image/png': 3 * 1024 * 1024,
       'image/webp': 3 * 1024 * 1024,
+    },
+  },
+  profile_photo: {
+    purpose: 'profile_photo',
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytesByMimeType: {
+      'image/jpeg': 2 * 1024 * 1024,
+      'image/png': 2 * 1024 * 1024,
+      'image/webp': 2 * 1024 * 1024,
     },
   },
   ktp: {

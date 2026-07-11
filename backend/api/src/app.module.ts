@@ -26,6 +26,7 @@ import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
 import { FileModule } from './modules/file/file.module';
 import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
 import { BookingLeadModule } from './modules/booking-lead/booking-lead.module';
+import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { BookingLeadModule } from './modules/booking-lead/booking-lead.module';
     FileModule,
     PaymentGatewayModule,
     BookingLeadModule,
+    AdminUxMasterModule,
     HealthModule,
   ],
 })

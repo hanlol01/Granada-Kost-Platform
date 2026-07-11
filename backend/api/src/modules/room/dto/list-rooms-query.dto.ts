@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class ListRoomsQueryDto {
   @IsOptional()
@@ -16,4 +16,35 @@ export class ListRoomsQueryDto {
   @IsOptional()
   @IsUUID()
   room_type_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  kost_type_id?: string;
+
+  @IsOptional()
+  @IsIn(['rukost', 'apartkost'])
+  category?: 'rukost' | 'apartkost';
+
+  @IsOptional()
+  @IsUUID()
+  building_id?: string;
+
+  @IsOptional()
+  @IsString()
+  q?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  include_active_lease?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }

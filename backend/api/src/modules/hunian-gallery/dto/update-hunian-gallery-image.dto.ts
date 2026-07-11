@@ -24,4 +24,19 @@ export class UpdateHunianGalleryImageDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(180)
+  alt_text?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  public_visible?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  sort_order?: number;
 }

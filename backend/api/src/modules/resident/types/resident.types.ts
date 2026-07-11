@@ -17,6 +17,12 @@ export type ResidentRecord = {
   phone: string | null;
   email: string | null;
   ktpNumber: string | null;
+  dateOfBirth: Date | null;
+  placeOfBirth: string | null;
+  address: string | null;
+  emergencyPhone: string | null;
+  ktpFileId: string | null;
+  profilePhotoFileId: string | null;
   gender: ResidentGender | null;
   residentStatus: ResidentStatus;
   emergencyContacts: EmergencyContactRecord[];

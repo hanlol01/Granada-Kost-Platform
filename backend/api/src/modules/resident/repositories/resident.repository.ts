@@ -14,6 +14,12 @@ type ResidentRow = {
   phone: string | null;
   email: string | null;
   ktp_number: string | null;
+  date_of_birth: Date | null;
+  place_of_birth: string | null;
+  address: string | null;
+  emergency_phone: string | null;
+  ktp_file_id: string | null;
+  profile_photo_file_id: string | null;
   gender: ResidentRecord['gender'];
   resident_status: ResidentRecord['residentStatus'];
   created_at: Date;
@@ -34,8 +40,8 @@ export class ResidentRepository {
 
   async list(query: ListResidentsQueryDto, propertyIds?: string[]): Promise<ResidentRecord[]> {
     const result = await this.database.client.query<ResidentRow>(
-      `SELECT id, property_id, user_id, full_name, phone, email, ktp_number, gender,
-              resident_status, created_at, updated_at
+      `SELECT id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+              emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at
        FROM residents
        WHERE ($1::uuid[] IS NULL OR property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR property_id = $2)
@@ -59,8 +65,8 @@ export class ResidentRepository {
 
   async findById(id: string): Promise<ResidentRecord | null> {
     const result = await this.database.client.query<ResidentRow>(
-      `SELECT id, property_id, user_id, full_name, phone, email, ktp_number, gender,
-              resident_status, created_at, updated_at
+      `SELECT id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+              emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at
        FROM residents
        WHERE id = $1`,
       [id],
@@ -72,12 +78,13 @@ export class ResidentRepository {
   async create(dto: CreateResidentDto, actorUserId: string): Promise<ResidentRecord> {
     const result = await this.database.client.query<ResidentRow>(
       `INSERT INTO residents (
-         property_id, user_id, full_name, phone, email, ktp_number, gender,
+         property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+         emergency_phone, ktp_file_id, profile_photo_file_id, gender,
          created_by_user_id, updated_by_user_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, gender,
-                 resident_status, created_at, updated_at`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+                 emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at`,
       [
         dto.property_id,
         dto.user_id ?? null,
@@ -85,6 +92,12 @@ export class ResidentRepository {
         dto.phone ?? null,
         dto.email ?? null,
         dto.ktp_number ?? null,
+        dto.date_of_birth ?? null,
+        dto.place_of_birth ?? null,
+        dto.address ?? null,
+        dto.emergency_phone ?? null,
+        dto.ktp_file_id ?? null,
+        dto.profile_photo_file_id ?? null,
         dto.gender ?? null,
         actorUserId,
       ],
@@ -94,7 +107,11 @@ export class ResidentRepository {
     return (await this.findById(result.rows[0].id)) as ResidentRecord;
   }
 
-  async update(id: string, dto: UpdateResidentDto, actorUserId: string): Promise<ResidentRecord | null> {
+  async update(
+    id: string,
+    dto: UpdateResidentDto,
+    actorUserId: string,
+  ): Promise<ResidentRecord | null> {
     const result = await this.database.client.query<ResidentRow>(
       `UPDATE residents
        SET user_id = COALESCE($2, user_id),
@@ -102,12 +119,18 @@ export class ResidentRepository {
            phone = COALESCE($4, phone),
            email = COALESCE($5, email),
            ktp_number = COALESCE($6, ktp_number),
-           gender = COALESCE($7, gender),
-           updated_by_user_id = $8,
+           date_of_birth = COALESCE($7, date_of_birth),
+           place_of_birth = COALESCE($8, place_of_birth),
+           address = COALESCE($9, address),
+           emergency_phone = COALESCE($10, emergency_phone),
+           ktp_file_id = COALESCE($11, ktp_file_id),
+           profile_photo_file_id = COALESCE($12, profile_photo_file_id),
+           gender = COALESCE($13, gender),
+           updated_by_user_id = $14,
            updated_at = now()
        WHERE id = $1
-       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, gender,
-                 resident_status, created_at, updated_at`,
+       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+                 emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at`,
       [
         id,
         dto.user_id ?? null,
@@ -115,6 +138,12 @@ export class ResidentRepository {
         dto.phone ?? null,
         dto.email ?? null,
         dto.ktp_number ?? null,
+        dto.date_of_birth ?? null,
+        dto.place_of_birth ?? null,
+        dto.address ?? null,
+        dto.emergency_phone ?? null,
+        dto.ktp_file_id ?? null,
+        dto.profile_photo_file_id ?? null,
         dto.gender ?? null,
         actorUserId,
       ],
@@ -140,8 +169,8 @@ export class ResidentRepository {
            updated_by_user_id = $3,
            updated_at = now()
        WHERE id = $1
-       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, gender,
-                 resident_status, created_at, updated_at`,
+       RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+                 emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at`,
       [id, status, actorUserId],
     );
     if (!result.rows[0]) {
@@ -150,10 +179,14 @@ export class ResidentRepository {
     return this.findById(id);
   }
 
-  private async replaceEmergencyContacts(residentId: string, contacts: EmergencyContactDto[]): Promise<void> {
-    await this.database.client.query('DELETE FROM resident_emergency_contacts WHERE resident_id = $1', [
-      residentId,
-    ]);
+  private async replaceEmergencyContacts(
+    residentId: string,
+    contacts: EmergencyContactDto[],
+  ): Promise<void> {
+    await this.database.client.query(
+      'DELETE FROM resident_emergency_contacts WHERE resident_id = $1',
+      [residentId],
+    );
     for (const contact of contacts) {
       await this.database.client.query(
         `INSERT INTO resident_emergency_contacts (resident_id, contact_name, relationship, phone)
@@ -195,6 +228,12 @@ export class ResidentRepository {
       phone: row.phone,
       email: row.email,
       ktpNumber: row.ktp_number,
+      dateOfBirth: row.date_of_birth,
+      placeOfBirth: row.place_of_birth,
+      address: row.address,
+      emergencyPhone: row.emergency_phone,
+      ktpFileId: row.ktp_file_id,
+      profilePhotoFileId: row.profile_photo_file_id,
       gender: row.gender,
       residentStatus: row.resident_status,
       emergencyContacts: contactsByResident.get(row.id) ?? [],

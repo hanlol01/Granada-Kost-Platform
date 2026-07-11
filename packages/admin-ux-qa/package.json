@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Disposable QA and release gates for the Admin UX milestones.",
   "scripts": {
-    "test": "tsx --test ../../backend/api/test/admin-ux-m1/*.spec.ts",
+    "test": "tsx --test ../../backend/api/test/admin-ux-m1/*.spec.ts ../../backend/api/test/admin-ux-m2/*.spec.ts",
     "test:contract:baseline": "tsx --test ../../backend/api/test/admin-ux-m1/contract-baseline.spec.ts",
     "fixture:validate": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/validate-admin-ux-fixture.ts",
     "db:qa:guard": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/validate-disposable-database.ts",

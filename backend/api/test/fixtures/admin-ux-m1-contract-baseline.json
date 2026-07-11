@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "baseline_id": "admin-ux-m0-legacy-public-read-contract",
+  "source_commit": "404f722",
+  "forbidden_response_key_fragments": [
+    "nik",
+    "ktp",
+    "storage_path",
+    "password",
+    "secret",
+    "access_token",
+    "refresh_token"
+  ],
+  "suites": {
+    "legacy": [
+      {
+        "id": "legacy-rooms-list",
+        "method": "GET",
+        "path": "/api/v1/rooms",
+        "query": {
+          "property_id": "{property_alpha_id}",
+          "limit": "20",
+          "offset": "0"
+        },
+        "requires_auth": true,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "legacy-room-detail",
+        "method": "GET",
+        "path": "/api/v1/rooms/{property_alpha_room_vacant_id}",
+        "query": {},
+        "requires_auth": true,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "legacy-invoices-list",
+        "method": "GET",
+        "path": "/api/v1/invoices",
+        "query": {
+          "property_id": "{property_alpha_id}",
+          "limit": "20",
+          "offset": "0"
+        },
+        "requires_auth": true,
+        "expected_status": 200,
+        "response_type": "object"
+      }
+    ],
+    "public": [
+      {
+        "id": "public-rooms-summary",
+        "method": "GET",
+        "path": "/api/v1/public/rooms/summary",
+        "query": {},
+        "requires_auth": false,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "public-rooms-availability",
+        "method": "GET",
+        "path": "/api/v1/public/rooms/availability",
+        "query": {},
+        "requires_auth": false,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "public-rooms-group",
+        "method": "GET",
+        "path": "/api/v1/public/rooms/groups/{public_group_key}",
+        "query": {},
+        "requires_auth": false,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "public-hunian-catalog-list",
+        "method": "GET",
+        "path": "/api/v1/public/hunian-catalog",
+        "query": {},
+        "requires_auth": false,
+        "expected_status": 200,
+        "response_type": "object"
+      },
+      {
+        "id": "public-hunian-catalog-detail",
+        "method": "GET",
+        "path": "/api/v1/public/hunian-catalog/{public_catalog_slug}",
+        "query": {},
+        "requires_auth": false,
+        "expected_status": 200,
+        "response_type": "object"
+      }
+    ]
+  }
+}

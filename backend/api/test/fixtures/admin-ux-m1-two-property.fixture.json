@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "fixture_id": "admin-ux-m1-two-property-synthetic",
+  "properties": [
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "code": "qa-property-alpha",
+      "rooms": [
+        {
+          "id": "11000000-0000-4000-8000-000000000001",
+          "code": "QA-A-VACANT",
+          "status": "vacant"
+        },
+        {
+          "id": "11000000-0000-4000-8000-000000000002",
+          "code": "QA-A-OCCUPIED",
+          "status": "occupied"
+        },
+        {
+          "id": "11000000-0000-4000-8000-000000000003",
+          "code": "QA-A-MAINTENANCE",
+          "status": "maintenance"
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "code": "qa-property-beta",
+      "rooms": [
+        {
+          "id": "12000000-0000-4000-8000-000000000001",
+          "code": "QA-B-VACANT",
+          "status": "vacant"
+        },
+        {
+          "id": "12000000-0000-4000-8000-000000000002",
+          "code": "QA-B-OCCUPIED",
+          "status": "occupied"
+        },
+        {
+          "id": "12000000-0000-4000-8000-000000000003",
+          "code": "QA-B-MAINTENANCE",
+          "status": "maintenance"
+        }
+      ]
+    }
+  ],
+  "actors": [
+    {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "role": "owner",
+      "actor_code": "qa-owner-alpha"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "role": "manager",
+      "actor_code": "qa-manager-alpha"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000003",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "role": "admin",
+      "actor_code": "qa-admin-alpha"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000004",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "role": "property_owner",
+      "actor_code": "qa-property-owner-alpha"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000005",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "role": "technician",
+      "actor_code": "qa-technician-alpha"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000006",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "role": "owner",
+      "actor_code": "qa-owner-beta"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000007",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "role": "manager",
+      "actor_code": "qa-manager-beta"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000008",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "role": "admin",
+      "actor_code": "qa-admin-beta"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000009",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "role": "property_owner",
+      "actor_code": "qa-property-owner-beta"
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000010",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "role": "technician",
+      "actor_code": "qa-technician-beta"
+    }
+  ],
+  "residents": [
+    {
+      "id": "30000000-0000-4000-8000-000000000001",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "resident_code": "qa-resident-alpha",
+      "status": "active"
+    },
+    {
+      "id": "30000000-0000-4000-8000-000000000002",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "resident_code": "qa-resident-beta",
+      "status": "active"
+    }
+  ],
+  "legacy_invoices": [
+    {
+      "id": "40000000-0000-4000-8000-000000000001",
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "room_id": "11000000-0000-4000-8000-000000000002",
+      "invoice_code": "qa-legacy-invoice-alpha",
+      "status": "issued"
+    },
+    {
+      "id": "40000000-0000-4000-8000-000000000002",
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "room_id": "12000000-0000-4000-8000-000000000002",
+      "invoice_code": "qa-legacy-invoice-beta",
+      "status": "issued"
+    }
+  ],
+  "public_catalog": [
+    {
+      "property_id": "10000000-0000-4000-8000-000000000001",
+      "group_key": "qa-group-alpha",
+      "slug": "qa-catalog-alpha"
+    },
+    {
+      "property_id": "10000000-0000-4000-8000-000000000002",
+      "group_key": "qa-group-beta",
+      "slug": "qa-catalog-beta"
+    }
+  ],
+  "cross_property_denial": {
+    "source_property_id": "10000000-0000-4000-8000-000000000001",
+    "target_property_id": "10000000-0000-4000-8000-000000000002",
+    "expected_status": 422
+  }
+}

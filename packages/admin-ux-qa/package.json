@@ -1,0 +1,16 @@
+{
+  "name": "@granada-kost/admin-ux-qa",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Disposable QA and release gates for the Admin UX milestones.",
+  "scripts": {
+    "test": "tsx --test ../../backend/api/test/admin-ux-m1/*.spec.ts",
+    "test:contract:baseline": "tsx --test ../../backend/api/test/admin-ux-m1/contract-baseline.spec.ts",
+    "fixture:validate": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/validate-admin-ux-fixture.ts",
+    "db:qa:guard": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/validate-disposable-database.ts",
+    "db:migrate:verify": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/verify-admin-ux-migrations.ts",
+    "test:contract:legacy": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/run-contract-baseline.ts --suite=legacy",
+    "test:contract:public": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/run-contract-baseline.ts --suite=public",
+    "verify:admin-ux": "tsx scripts/verify-admin-ux-release.ts"
+  }
+}

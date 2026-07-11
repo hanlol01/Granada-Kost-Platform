@@ -27,6 +27,7 @@ import { FileModule } from './modules/file/file.module';
 import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
 import { BookingLeadModule } from './modules/booking-lead/booking-lead.module';
 import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.module';
+import { LeaseModule } from './modules/lease/lease.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.m
     PaymentGatewayModule,
     BookingLeadModule,
     AdminUxMasterModule,
+    LeaseModule,
     HealthModule,
   ],
 })

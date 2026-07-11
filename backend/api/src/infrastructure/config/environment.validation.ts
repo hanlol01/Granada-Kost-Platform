@@ -40,6 +40,8 @@ export const environmentValidationSchema = Joi.object({
   UPLOAD_MAX_FILE_SIZE_MB: Joi.number().integer().min(1).max(5).default(5),
   UPLOAD_PROPERTY_QUOTA_MB: Joi.number().integer().min(1).optional(),
 
+  LEASE_BILLING_SCHEDULER_PROCESS_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+
   PAYMENT_GATEWAY_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   PAYMENT_GATEWAY_PROVIDER: Joi.string().valid('none', 'midtrans').default('none'),
   MIDTRANS_ENV: Joi.string().valid('sandbox', 'production').default('sandbox'),

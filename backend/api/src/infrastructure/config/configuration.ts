@@ -36,6 +36,9 @@ export default () => ({
     loginRateLimitMaxAttempts: Number(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS ?? 5),
     loginRateLimitWindowSeconds: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_SECONDS ?? 300),
   },
+  lease: {
+    billingSchedulerProcessEnabled: process.env.LEASE_BILLING_SCHEDULER_PROCESS_ENABLED === 'true',
+  },
   notification: {
     brevoApiKey: process.env.BREVO_API_KEY,
     brevoDailyLimit: Number(process.env.BREVO_DAILY_LIMIT ?? 300),

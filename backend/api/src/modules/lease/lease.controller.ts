@@ -27,10 +27,13 @@ import {
   CreateLeaseDto,
   ListLeasesQueryDto,
   SettleRefundDto,
+  TransferLeaseDto,
+  TransferLeasePreviewDto,
   UpdateLeaseDto,
   WaiveRefundDto,
 } from './lease.dto';
 import { LeaseService } from './lease.service';
+import { LeaseTransferService } from './lease-transfer.service';
 
 function auditContext(request: RequestWithCorrelationId) {
   return {
@@ -44,7 +47,10 @@ function auditContext(request: RequestWithCorrelationId) {
 @RequireRoles('owner', 'manager', 'admin')
 @Controller('leases')
 export class LeaseController {
-  constructor(private readonly leases: LeaseService) {}
+  constructor(
+    private readonly leases: LeaseService,
+    private readonly transfers: LeaseTransferService,
+  ) {}
 
   @Get()
   @RequirePermissions('lease.read')
@@ -120,6 +126,36 @@ export class LeaseController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.leases.collectDeposit(
+      user,
+      leaseId,
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+    return this.commandResponse(response, result);
+  }
+
+  @Post(':leaseId/transfer/preview')
+  @RequirePermissions('lease.manage')
+  previewTransfer(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: TransferLeasePreviewDto,
+  ) {
+    return this.transfers.preview(user, leaseId, dto);
+  }
+
+  @Post(':leaseId/transfer')
+  @RequirePermissions('lease.manage')
+  async transfer(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: TransferLeaseDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.transfers.transfer(
       user,
       leaseId,
       dto,

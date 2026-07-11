@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
+  IsDefined,
   IsEmail,
   IsIn,
   IsInt,
@@ -197,6 +198,37 @@ export class DepositPaymentDto {
   @IsString()
   @Length(1, 2000)
   notes?: string;
+}
+
+export class TransferLeasePreviewDto {
+  @IsUUID('4')
+  target_room_id!: string;
+
+  @IsDateString()
+  effective_date!: string;
+}
+
+export class TransferDepositTopUpDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => DepositPaymentDto)
+  payment!: DepositPaymentDto;
+}
+
+export class TransferLeaseDto extends TransferLeasePreviewDto {
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TransferDepositTopUpDto)
+  top_up?: TransferDepositTopUpDto;
 }
 
 export class CollectDepositDto {

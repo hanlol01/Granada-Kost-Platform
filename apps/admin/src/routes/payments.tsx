@@ -43,6 +43,7 @@ import {
   usePaymentTransactionDetail,
   type PaymentTransactionRecord,
 } from "@/hooks/usePaymentTransactions";
+import { canReadAdminPaymentTransactions } from "@/lib/admin-ux-payment-gateway";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import {
   Table,
@@ -115,17 +116,24 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
 
 function PaymentsPage() {
   const [tab, setTab] = useState<InvoiceTab>("all");
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canManageInvoice = hasPermission("billing.manage");
   const canVerifyPayment = hasPermission("payment.verify");
+  const canReadGatewayTransactions = canReadAdminPaymentTransactions({
+    roles: user?.roles ?? [],
+    permissions: user?.permissions ?? [],
+  });
 
   const statusParam: InvoiceStatus | undefined =
     tab === "unpaid" ? "unpaid" : tab === "paid" ? "paid" : undefined;
 
   const invoices = useInvoices({ status: statusParam, limit: 100 });
   const proofs = usePaymentProofs({ status: "pending_review" as PaymentProofStatus, limit: 100 });
-  // Gateway (online) transactions — fetched only when the tab is active.
-  const gatewayTx = usePaymentTransactions({ limit: 100 }, { enabled: tab === "online" });
+  // Gateway transactions are read-only and mount only for the B1 role/capability contract.
+  const gatewayTx = usePaymentTransactions(
+    { limit: 100 },
+    { enabled: tab === "online" && canReadGatewayTransactions },
+  );
 
   const items = invoices.data ?? [];
 
@@ -203,7 +211,7 @@ function PaymentsPage() {
               <TabsTrigger value="all">Semua</TabsTrigger>
               <TabsTrigger value="unpaid">Belum Lunas</TabsTrigger>
               <TabsTrigger value="paid">Riwayat</TabsTrigger>
-              <TabsTrigger value="online">Online</TabsTrigger>
+              {canReadGatewayTransactions ? <TabsTrigger value="online">Online</TabsTrigger> : null}
               {canVerifyPayment ? <TabsTrigger value="payments">Verifikasi</TabsTrigger> : null}
             </TabsList>
             <TabsContent value={tab} className="mt-4">
@@ -766,14 +774,15 @@ function GatewayTransactionTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Invoice</TableHead>
-            <TableHead>Penghuni</TableHead>
+            <TableHead>Invoice ID</TableHead>
             <TableHead>Jumlah</TableHead>
             <TableHead>Sumber</TableHead>
             <TableHead>Provider</TableHead>
+            <TableHead>Order ID</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Metode</TableHead>
             <TableHead>Dibuat</TableHead>
+            <TableHead>Diperbarui</TableHead>
             <TableHead>Lunas</TableHead>
             <TableHead className="text-right">Aksi</TableHead>
           </TableRow>
@@ -781,21 +790,24 @@ function GatewayTransactionTable({
         <TableBody>
           {items.map((t) => (
             <TableRow key={t.id}>
-              <TableCell className="font-medium">{t.invoiceCode ?? t.invoiceId ?? "-"}</TableCell>
-              <TableCell>{t.residentName ?? "-"}</TableCell>
-              <TableCell>{typeof t.amount === "number" ? formatIDR(t.amount) : "-"}</TableCell>
+              <TableCell className="font-mono text-xs">{t.invoiceId}</TableCell>
+              <TableCell>
+                {formatIDR(t.amount)} {t.currency}
+              </TableCell>
               <TableCell>
                 <GatewaySourceBadge />
               </TableCell>
-              <TableCell className="text-muted-foreground">{t.provider ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground">{t.provider}</TableCell>
+              <TableCell className="font-mono text-xs">{t.providerOrderId}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-1.5">
-                  <GatewayTxStatusBadge status={String(t.status)} />
-                  {String(t.status) === "paid" ? <AutoConfirmedChip /> : null}
+                  <GatewayTxStatusBadge status={t.status} />
+                  {t.status === "paid" ? <AutoConfirmedChip /> : null}
                 </div>
               </TableCell>
               <TableCell>{gatewayMethodLabel(t.paymentMethod)}</TableCell>
               <TableCell>{fmtDateSafe(t.createdAt)}</TableCell>
+              <TableCell>{fmtDateSafe(t.updatedAt)}</TableCell>
               <TableCell>{fmtDateSafe(t.paidAt)}</TableCell>
               <TableCell className="text-right">
                 <Button variant="outline" size="sm" onClick={() => onDetail(t)}>
@@ -814,7 +826,7 @@ function GatewayTransactionTable({
   );
 }
 
-/** Detail dialog for a gateway transaction — normalized, sanitized fields only. */
+/** Detail dialog for a gateway transaction — M7-B1 whitelist only. */
 function PaymentTransactionDetailDialog({
   transactionId,
   onClose,
@@ -835,51 +847,61 @@ function PaymentTransactionDetailDialog({
             Detail Transaksi Pembayaran Online
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Data ternormalisasi dan aman — tanpa payload mentah provider, signature, atau
-            kredensial.
+            Data provider-neutral sesuai kontrak Admin read-only.
           </DialogDescription>
         </DialogHeader>
         {detail.isLoading ? (
-          <Skeleton className="h-40 w-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
         ) : detail.error ? (
-          <ErrorState
-            error={detail.error}
-            onRetry={() => detail.refetch()}
-            title="Gagal memuat detail transaksi"
-          />
+          isForbiddenError(detail.error) ? (
+            <ForbiddenState />
+          ) : (
+            <ErrorState
+              error={detail.error}
+              onRetry={() => detail.refetch()}
+              title="Gagal memuat detail transaksi"
+            />
+          )
         ) : t ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <TxDetailField label="Sumber" value="Gateway" />
-              <TxDetailField label="Provider" value={t.provider ?? "-"} />
-              <TxDetailField label="Order ID" value={t.providerOrderId ?? "-"} mono />
-              <TxDetailField label="Transaction ID" value={t.providerTransactionId ?? "-"} mono />
+              <TxDetailField label="Provider" value={t.provider} />
+              <TxDetailField label="Provider Order ID" value={t.providerOrderId} mono />
+              <TxDetailField label="Invoice ID" value={t.invoiceId} mono />
               <div>
                 <p className="text-xs text-muted-foreground">Status</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                  <GatewayTxStatusBadge status={String(t.status)} />
-                  {String(t.status) === "paid" ? <AutoConfirmedChip /> : null}
+                  <GatewayTxStatusBadge status={t.status} />
+                  {t.status === "paid" ? <AutoConfirmedChip /> : null}
                 </div>
               </div>
               <TxDetailField label="Metode" value={gatewayMethodLabel(t.paymentMethod)} />
-              <TxDetailField
-                label="Jumlah"
-                value={typeof t.amount === "number" ? formatIDR(t.amount) : "-"}
-              />
-              <TxDetailField label="Mata Uang" value={t.currency ?? "IDR"} />
+              <TxDetailField label="Jumlah" value={formatIDR(t.amount)} />
+              <TxDetailField label="Mata Uang" value={t.currency} />
               <TxDetailField label="Dibuat" value={fmtDateSafe(t.createdAt)} />
-              <TxDetailField label="Kedaluwarsa" value={fmtDateSafe(t.expiresAt)} />
+              <TxDetailField label="Diperbarui" value={fmtDateSafe(t.updatedAt)} />
               <TxDetailField label="Lunas" value={fmtDateSafe(t.paidAt)} />
-              <TxDetailField label="Invoice" value={t.invoiceCode ?? t.invoiceId ?? "-"} />
+              <TxDetailField label="Gagal" value={fmtDateSafe(t.failedAt)} />
             </div>
-            {["requires_review", "challenge", "unknown"].includes(String(t.status)) ? (
+            {["requires_review", "challenge", "unknown"].includes(t.status) ? (
               <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs">
                 <span className="font-medium">Perlu Tinjauan:</span> transaksi ini membutuhkan
-                tindak lanjut manual admin. Tidak ada aksi settlement otomatis dari halaman ini.
+                tindak lanjut manual admin. Tidak ada aksi settlement dari halaman ini.
               </div>
             ) : null}
           </div>
-        ) : null}
+        ) : (
+          <EmptyState
+            icon={<CreditCard className="h-5 w-5" />}
+            title="Detail transaksi tidak tersedia"
+            description="Transaksi tidak ditemukan atau tidak lagi tersedia untuk properti aktif."
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

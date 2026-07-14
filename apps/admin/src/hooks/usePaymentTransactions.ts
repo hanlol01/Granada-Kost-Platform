@@ -1,88 +1,76 @@
-// Payment gateway (online) transaction hooks for the Admin console (M15C-E2A).
-//
-// Backend (M15C-C/M15C-D, payment-gateway module):
-//   GET /admin/payment-transactions
-//   GET /admin/payment-transactions/:id
-//
-// Responses are provider-neutral and sanitized by the backend: no raw
-// provider payload, no signatures, no server/client keys. RBAC and property
-// scope are enforced server-side (property owner receives 403).
-//
-// The record shape below is intentionally defensive (optional/nullable
-// fields) because M15C-E2B validation confirms the exact backend response.
+// M7-B2 payment gateway Admin read-only hooks.
+// Only the two endpoints frozen by M7-B0/B1 are allowed here.
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import {
+  adminUxQueryKeys,
+  normalizePagination,
+  type QueryFilters,
+} from "@/lib/admin-ux-query-keys";
+import {
+  canReadAdminPaymentTransactions,
+  parseAdminPaymentTransaction,
+  parseAdminPaymentTransactionList,
+  type AdminPaymentTransaction,
+} from "@/lib/admin-ux-payment-gateway";
+import { useProperty } from "@/lib/property";
 
-export type PaymentTransactionStatus =
-  | "created"
-  | "pending"
-  | "paid"
-  | "failed"
-  | "expired"
-  | "cancelled"
-  | "denied"
-  | "challenge"
-  | "requires_review"
-  | "unknown";
-
-export type PaymentTransactionRecord = {
-  id: string;
-  invoiceId?: string | null;
-  propertyId?: string | null;
-  residentId?: string | null;
-  provider?: string | null;
-  providerOrderId?: string | null;
-  providerTransactionId?: string | null;
-  amount?: number | null;
-  currency?: string | null;
-  status: PaymentTransactionStatus | string;
-  paymentMethod?: string | null;
-  expiresAt?: string | null;
-  paidAt?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  // Optional denormalized display fields, if the backend provides them.
-  invoiceCode?: string | null;
-  residentName?: string | null;
-};
-
-// The list endpoint may return a plain array or a wrapped { items, total }
-// shape; normalize both so the UI does not depend on the wrapper.
-function normalizeTransactionList(data: unknown): PaymentTransactionRecord[] {
-  if (Array.isArray(data)) return data as PaymentTransactionRecord[];
-  if (data && typeof data === "object") {
-    const items = (data as { items?: unknown }).items;
-    if (Array.isArray(items)) return items as PaymentTransactionRecord[];
-    const rows = (data as { data?: unknown }).data;
-    if (Array.isArray(rows)) return rows as PaymentTransactionRecord[];
-  }
-  return [];
-}
+export type PaymentTransactionRecord = AdminPaymentTransaction;
 
 export function usePaymentTransactions(
-  filters: { limit?: number; offset?: number } = {},
+  filters: QueryFilters = {},
   options: { enabled?: boolean } = {},
 ): UseQueryResult<PaymentTransactionRecord[]> {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  const pagination = normalizePagination(filters);
+  const hasAccess = canReadAdminPaymentTransactions({
+    roles: user?.roles ?? [],
+    permissions: user?.permissions ?? [],
+  });
+  const propertyId = currentPropertyId ?? "";
+
   return useQuery<PaymentTransactionRecord[]>({
-    queryKey: ["payment-gateway", "transactions", filters] as const,
+    queryKey: adminUxQueryKeys.payments.list(propertyId, filters),
     queryFn: async () =>
-      normalizeTransactionList(
+      parseAdminPaymentTransactionList(
         await apiClient.get<unknown>("/admin/payment-transactions", {
-          query: { limit: filters.limit ?? 100, offset: filters.offset },
+          query: {
+            property_id: propertyId,
+            limit: Number(pagination.limit),
+            offset: Number(pagination.offset),
+          },
         }),
       ),
-    enabled: options.enabled ?? true,
+    enabled: Boolean(currentPropertyId) && hasAccess && (options.enabled ?? true),
   });
 }
 
 export function usePaymentTransactionDetail(
   transactionId: string | null,
+  options: { enabled?: boolean } = {},
 ): UseQueryResult<PaymentTransactionRecord> {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  const hasAccess = canReadAdminPaymentTransactions({
+    roles: user?.roles ?? [],
+    permissions: user?.permissions ?? [],
+  });
+  const propertyId = currentPropertyId ?? "";
+  const id = transactionId ?? "";
+
   return useQuery<PaymentTransactionRecord>({
-    queryKey: ["payment-gateway", "transaction", transactionId] as const,
-    queryFn: () =>
-      apiClient.get<PaymentTransactionRecord>(`/admin/payment-transactions/${transactionId}`),
-    enabled: Boolean(transactionId),
+    queryKey: adminUxQueryKeys.payments.detail(propertyId, id),
+    queryFn: async () =>
+      parseAdminPaymentTransaction(
+        await apiClient.get<unknown>(`/admin/payment-transactions/${id}`),
+      ),
+    enabled:
+      Boolean(currentPropertyId) &&
+      Boolean(transactionId) &&
+      hasAccess &&
+      (options.enabled ?? true),
   });
 }

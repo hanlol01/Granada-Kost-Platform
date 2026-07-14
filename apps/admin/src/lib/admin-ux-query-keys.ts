@@ -121,6 +121,8 @@ export const adminUxQueryKeys = {
   payments: {
     list: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("paymentTransactions", propertyId, normalizePagination(filters)),
+    detail: (propertyId: string, transactionId: string) =>
+      scoped("paymentTransaction", propertyId, transactionId),
   },
   vehicles: {
     list: (propertyId: string, filters: QueryFilters = {}) =>

@@ -12,9 +12,14 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import type { AuthMe, LoginRequest, LoginResponse, RoleCode } from "@granada-kost/domain";
 import { ApiError } from "@granada-kost/api-client";
 import { apiClient, registerTokenProvider } from "@/lib/api";
+import { parseDashboardRollouts } from "@/lib/admin-ux-dashboard";
 import type { AuthContextValue, AuthStatus } from "./types";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
+
+function sanitizeAuthMe(me: AuthMe): AuthMe {
+  return { ...me, propertyRollouts: parseDashboardRollouts(me.propertyRollouts) };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthMe | null>(null);
@@ -68,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessTokenRef.current = refreshed.access_token;
         const me = await apiClient.get<AuthMe>("/auth/me");
         if (cancelled) return;
-        setUser(me);
+        setUser(sanitizeAuthMe(me));
         setStatus("authenticated");
       } catch {
         if (cancelled) return;
@@ -87,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await apiClient.post<LoginResponse>("/auth/login", body, { anonymous: true });
     accessTokenRef.current = res.access_token;
     const me = await apiClient.get<AuthMe>("/auth/me");
-    setUser(me);
+    setUser(sanitizeAuthMe(me));
     setStatus("authenticated");
   }, []);
 
@@ -107,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshMe = useCallback(async () => {
     const me = await apiClient.get<AuthMe>("/auth/me");
-    setUser(me);
+    setUser(sanitizeAuthMe(me));
   }, []);
 
   const value = useMemo<AuthContextValue>(() => {

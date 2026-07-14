@@ -113,7 +113,10 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "master-data",
     order: 10,
     icon: LayoutDashboard,
-    access: { roles: OWNER_MANAGER_ADMIN },
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      readCapabilities: ["room.read", "lease.read", "billing.read"],
+    },
     navigation: { sidebar: true, mobilePriority: 10 },
   },
   {

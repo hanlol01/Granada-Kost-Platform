@@ -8,6 +8,13 @@ export type PropertyScopeRef = {
   name?: string;
 };
 
+export type PropertyRollout = {
+  propertyId: string;
+  adminUxRead: {
+    enabled: boolean;
+  };
+};
+
 export type AuthMe = {
   id: string;
   email?: string;
@@ -19,6 +26,7 @@ export type AuthMe = {
   property_ids: string[];
   propertyIds?: string[];
   properties?: PropertyScopeRef[];
+  propertyRollouts?: PropertyRollout[];
   resident_id?: string | null;
   session_id?: string;
 };

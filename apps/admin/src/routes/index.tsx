@@ -6,8 +6,10 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/state/ErrorState";
 import { EmptyState } from "@/components/state/EmptyState";
+import { FeatureDisabledState } from "@/components/state/FeatureDisabledState";
+import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
-import { formatIDR } from "@/lib/format";
+import { formatDashboardIDR } from "@/lib/admin-ux-dashboard";
 import {
   BedDouble,
   Users,
@@ -68,7 +70,14 @@ function StatCardSkeleton() {
 }
 
 function Dashboard() {
-  const { summary, isLoading, error, refetch } = useDashboardSummary();
+  const { summary, isLoading, error, refetch, hasAccess, rolloutEnabled } = useDashboardSummary();
+  const occupancyPercent =
+    summary && summary.roomsTotal > 0
+      ? Math.round((summary.roomsOccupied / summary.roomsTotal) * 100)
+      : 0;
+
+  if (!hasAccess) return <ForbiddenState />;
+  if (!rolloutEnabled) return <FeatureDisabledState />;
 
   return (
     <AppShell
@@ -99,29 +108,29 @@ function Dashboard() {
                 <StatCard
                   icon={BedDouble}
                   label="Total Kamar"
-                  value={String(summary.totalRooms)}
-                  hint={`${summary.vacantRooms} kosong tersedia`}
+                  value={String(summary.roomsTotal)}
+                  hint={`${summary.roomsVacant} kosong tersedia`}
                   accent="bg-primary-soft text-primary"
                 />
                 <StatCard
                   icon={Users}
                   label="Total Penghuni"
-                  value={String(summary.totalResidents)}
-                  hint={`${summary.occupiedRooms} kamar terisi`}
+                  value={String(summary.activeResidents)}
+                  hint={`${summary.roomsOccupied} kamar terisi`}
                   accent="bg-success/15 text-success"
                 />
                 <StatCard
                   icon={DollarSign}
                   label="Total Piutang"
-                  value={formatIDR(summary.totalReceivable)}
-                  hint={`${summary.overdueInvoices} overdue`}
+                  value={formatDashboardIDR(summary.outstandingAmount)}
+                  hint={`${summary.overdueInvoiceCount} overdue`}
                   accent="bg-chart-4/15 text-chart-4"
                 />
                 <StatCard
                   icon={AlertCircle}
-                  label="Tagihan Belum Dibayar"
-                  value={String(summary.unpaidInvoices)}
-                  hint="Perlu tindak lanjut"
+                  label="Sewa Aktif"
+                  value={String(summary.activeLeases)}
+                  hint={`${summary.overdueInvoiceCount} tagihan overdue`}
                   accent="bg-destructive/15 text-destructive"
                 />
               </>
@@ -174,26 +183,26 @@ function Dashboard() {
                   <>
                     <div className="text-center py-4">
                       <p className="text-5xl font-bold tracking-tight text-primary">
-                        {summary.occupancyPercent}%
+                        {occupancyPercent}%
                       </p>
                       <p className="text-xs text-muted-foreground mt-2">
-                        {summary.occupiedRooms} dari {summary.totalRooms} kamar terisi
+                        {summary.roomsOccupied} dari {summary.roomsTotal} kamar terisi
                       </p>
                     </div>
-                    <Progress value={summary.occupancyPercent} className="h-2" />
+                    <Progress value={occupancyPercent} className="h-2" />
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="rounded-lg bg-primary-soft p-3">
                         <p className="text-lg font-semibold text-primary">
-                          {summary.occupiedRooms}
+                          {summary.roomsOccupied}
                         </p>
                         <p className="text-[10px] text-muted-foreground uppercase">Terisi</p>
                       </div>
                       <div className="rounded-lg bg-success/15 p-3">
-                        <p className="text-lg font-semibold text-success">{summary.vacantRooms}</p>
+                        <p className="text-lg font-semibold text-success">{summary.roomsVacant}</p>
                         <p className="text-[10px] text-muted-foreground uppercase">Kosong</p>
                       </div>
                       <div className="rounded-lg bg-warning/20 p-3">
-                        <p className="text-lg font-semibold">{summary.maintenanceRooms}</p>
+                        <p className="text-lg font-semibold">{summary.roomsMaintenance}</p>
                         <p className="text-[10px] text-muted-foreground uppercase">Maint.</p>
                       </div>
                     </div>
@@ -211,11 +220,55 @@ function Dashboard() {
                   <Activity className="h-3.5 w-3.5" />
                 </span>
               </CardHeader>
-              <CardContent>
-                <EmptyState
-                  title="Akan tersedia di M11D"
-                  description="Aktivitas lintas modul (pembayaran, komplain, check-in) muncul setelah integrasi Billing dan Complaint."
-                />
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Penyewaan
+                  </p>
+                  {summary && summary.recentLeases.length > 0 ? (
+                    <div className="space-y-2">
+                      {summary.recentLeases.map((lease) => (
+                        <Link
+                          key={lease.id}
+                          to="/penyewaan/$leaseId"
+                          params={{ leaseId: lease.id }}
+                          search={{ panel: "detail", tab: "ringkasan" }}
+                          className="block rounded-lg border p-3 hover:bg-muted/50"
+                        >
+                          <p className="text-sm font-medium">{lease.leaseCode}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Kamar {lease.room.number} · {lease.leaseStatus}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="Belum ada penyewaan terbaru" />
+                  )}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Pembayaran
+                  </p>
+                  {summary && summary.recentPayments.length > 0 ? (
+                    <div className="space-y-2">
+                      {summary.recentPayments.map((payment) => (
+                        <Link
+                          key={payment.id}
+                          to="/payments"
+                          className="block rounded-lg border p-3 hover:bg-muted/50"
+                        >
+                          <p className="text-sm font-medium">{payment.paymentCode}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDashboardIDR(payment.amount)} · {payment.paymentStatus}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="Belum ada pembayaran terbaru" />
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -240,12 +293,6 @@ function Dashboard() {
                   <Link to="/payments">
                     <CreditCard className="h-4 w-4 mr-2" />
                     Catat Pembayaran
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="w-full justify-start">
-                  <Link to="/reports">
-                    <TrendingUp className="h-4 w-4 mr-2" />
-                    Lihat Laporan
                   </Link>
                 </Button>
               </CardContent>

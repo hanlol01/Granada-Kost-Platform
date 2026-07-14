@@ -15,7 +15,12 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthRateLimiterService } from './auth-rate-limiter.service';
-import { AuthTokenResponse, AuthUserResponse, SessionResponse } from './types/auth-response.types';
+import {
+  AuthMeResponse,
+  AuthTokenResponse,
+  AuthUserResponse,
+  SessionResponse,
+} from './types/auth-response.types';
 
 type RequestContext = {
   ipAddress?: string;
@@ -179,8 +184,25 @@ export class AuthService {
     return { success: true };
   }
 
-  me(user: UserAccessContext): AuthUserResponse {
-    return this.serializeUser(user);
+  async me(user: UserAccessContext): Promise<AuthMeResponse> {
+    const authUser = this.serializeUser(user);
+
+    try {
+      const propertyRollouts = await this.iam.listAdminUxReadPropertyRollouts(user.id);
+
+      return {
+        ...authUser,
+        propertyRollouts: propertyRollouts.map((rollout) => ({
+          propertyId: rollout.propertyId,
+          adminUxRead: { enabled: rollout.enabled },
+        })),
+      };
+    } catch {
+      return {
+        ...authUser,
+        propertyRollouts: [],
+      };
+    }
   }
 
   listSessions(user: UserAccessContext): Promise<SessionResponse[]> {

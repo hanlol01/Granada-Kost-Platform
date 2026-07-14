@@ -36,6 +36,16 @@ type AccessRow = {
   property_ids: string[] | null;
 };
 
+type AdminUxReadPropertyRolloutRow = {
+  property_id: string;
+  admin_ux_read: boolean | null;
+};
+
+export type AdminUxReadPropertyRolloutRecord = {
+  propertyId: string;
+  enabled: boolean;
+};
+
 @Injectable()
 export class IamRepository {
   constructor(private readonly database: DatabaseService) {}
@@ -96,7 +106,11 @@ export class IamRepository {
     return result.rows[0] ? this.mapSession(result.rows[0]) : null;
   }
 
-  async rotateRefreshToken(sessionId: string, refreshTokenHash: string, expiresAt: Date): Promise<void> {
+  async rotateRefreshToken(
+    sessionId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+  ): Promise<void> {
     await this.database.client.query(
       `UPDATE user_sessions
        SET refresh_token_hash = $2,
@@ -134,7 +148,9 @@ export class IamRepository {
     );
   }
 
-  async listActiveSessions(userId: string): Promise<Array<Omit<UserSessionRecord, 'refreshTokenHash'>>> {
+  async listActiveSessions(
+    userId: string,
+  ): Promise<Array<Omit<UserSessionRecord, 'refreshTokenHash'>>> {
     const result = await this.database.client.query<SessionRow>(
       `SELECT id, user_id, refresh_token_hash, device_name, expires_at, revoked_at
        FROM user_sessions
@@ -212,6 +228,62 @@ export class IamRepository {
       propertyIds: row.property_ids ?? [],
       sessionId,
     };
+  }
+
+  async listAdminUxReadPropertyRollouts(
+    userId: string,
+  ): Promise<AdminUxReadPropertyRolloutRecord[]> {
+    const result = await this.database.client.query<AdminUxReadPropertyRolloutRow>(
+      `WITH actor_access AS (
+         SELECT
+           EXISTS (
+             SELECT 1
+             FROM user_property_roles AS owner_assignment
+             INNER JOIN roles AS owner_role
+               ON owner_role.id = owner_assignment.role_id
+             WHERE owner_assignment.user_id = $1::uuid
+               AND owner_assignment.revoked_at IS NULL
+               AND owner_role.code = 'owner'
+           ) AS has_global_property_read,
+           EXISTS (
+             SELECT 1
+             FROM user_property_roles AS scoped_role_assignment
+             INNER JOIN roles AS scoped_role
+               ON scoped_role.id = scoped_role_assignment.role_id
+             WHERE scoped_role_assignment.user_id = $1::uuid
+               AND scoped_role_assignment.revoked_at IS NULL
+               AND scoped_role.code IN ('manager', 'admin')
+           ) AS has_scoped_dashboard_role
+       )
+       SELECT
+         properties.id::text AS property_id,
+         COALESCE(property_feature_flags.admin_ux_read, FALSE) AS admin_ux_read
+       FROM properties
+       CROSS JOIN actor_access
+       LEFT JOIN property_feature_flags
+         ON property_feature_flags.property_id = properties.id
+       WHERE properties.status = 'active'
+         AND (
+           actor_access.has_global_property_read
+           OR (
+             actor_access.has_scoped_dashboard_role
+             AND EXISTS (
+               SELECT 1
+               FROM user_property_roles AS scoped_assignment
+               WHERE scoped_assignment.user_id = $1::uuid
+                 AND scoped_assignment.revoked_at IS NULL
+                 AND scoped_assignment.property_id = properties.id
+             )
+           )
+         )
+       ORDER BY properties.id ASC`,
+      [userId],
+    );
+
+    return result.rows.map((row) => ({
+      propertyId: row.property_id,
+      enabled: row.admin_ux_read === true,
+    }));
   }
 
   private mapUser(row: UserRow): AuthUserRecord {

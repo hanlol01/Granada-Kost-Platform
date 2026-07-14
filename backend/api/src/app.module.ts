@@ -28,6 +28,7 @@ import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.
 import { BookingLeadModule } from './modules/booking-lead/booking-lead.module';
 import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.module';
 import { LeaseModule } from './modules/lease/lease.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { LeaseModule } from './modules/lease/lease.module';
     BookingLeadModule,
     AdminUxMasterModule,
     LeaseModule,
+    DashboardModule,
     HealthModule,
   ],
 })

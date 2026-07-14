@@ -41,10 +41,17 @@ yang dihitung server-side; owner global boleh membaca seluruh property, sedangka
 manager/admin hanya property assignment aktifnya. Property owner, technician,
 dan resident ditolak walaupun mengetahui UUID property.
 
-`property_id` adalah query wajib UUID. Error precedence: property tidak ada
-adalah `404 PROPERTY_NOT_FOUND`; property ada di luar scope adalah
-`403 PROPERTY_SCOPE_DENIED`. Missing `property_id` adalah
+`property_id` adalah query wajib UUID. Missing `property_id` adalah
 `400 PROPERTY_ID_REQUIRED`; UUID/query invalid memakai validation error existing.
+Sesudah validasi query, M7-N1 wajib mengikuti convention backend existing:
+`PropertyService.assertCanReadProperty()` memeriksa scope lebih dahulu dan
+menghasilkan `403 PROPERTY_SCOPE_DENIED` tanpa lookup existence bagi actor di luar
+scope; lookup/read model hanya boleh menghasilkan `404 PROPERTY_NOT_FOUND` setelah
+scope lolos. Referensi implementasi: `backend/api/src/modules/property/property.service.ts`
+`assertCanReadProperty()` dan pemanggil list property-scoped existing, termasuk
+`RoomService.list()`, `ResidentService.list()`, dan `OccupancyService.list()`.
+Dengan demikian M7-N1 tidak menetapkan precedence 404-before-403 baru dan tidak
+mengungkap existence property kepada actor di luar scope.
 
 ## 3. CONTRACT DECISION — request, response, dan data boundary
 
@@ -65,7 +72,7 @@ selalu berbentuk:
   "data": [
     {
       "id": "uuid",
-      "notification_type": "safe_type",
+      "notification_type": "billing.invoice_issued",
       "notification_status": "unread",
       "priority": "normal",
       "created_at": "RFC3339",
@@ -80,8 +87,16 @@ selalu berbentuk:
 cache/UI: `property_id`, `recipient_user_id`, title, body, metadata,
 source_event_type, source_resource_id, correlation_id, read_at, alamat tujuan,
 provider, delivery status, file URL/path, KTP, atau PII lain. `notification_type`
-harus non-empty safe string; UI M7-N1 menampilkan fallback generik untuk type
-yang belum dikenal dan tidak menginterpretasi metadata.
+pada wire adalah enum tertutup yang mengikuti `NOTIFICATION_TYPES` existing:
+`billing.invoice_issued`, `billing.invoice_overdue`, `complaint.created`,
+`complaint.resolved`, `maintenance.work_order_assigned`, `vehicle.approved`,
+`occupancy.check_in_completed`, `occupancy.check_out_finalized`, atau `other`.
+Repository/mapper wajib menormalisasi nilai database yang tidak termasuk allowlist
+menjadi literal `other` sebelum response, cache, atau UI; raw string tidak dikenal
+tidak boleh diteruskan. Authority enum existing:
+`backend/api/src/modules/notification/constants/notification.constants.ts`
+`NOTIFICATION_TYPES`. UI menampilkan fallback generik untuk `other` dan tidak
+menginterpretasi metadata.
 
 ## 4. Read model dan state frontend
 
@@ -95,20 +110,30 @@ property berubah, snapshot property lama tidak boleh dirender sebagai property
 baru. UI wajib membedakan loading, empty, error, dan forbidden.
 
 M7-N1 tidak melakukan polling, mark-read, archive, retry provider, optimistic
-mutation, export, detail endpoint, atau delivery diagnostics. Route/menu/query
-harus fail-closed saat role atau `notification.manage` tidak tersedia.
+mutation, export, detail endpoint, atau delivery diagnostics. Route `/notifications`
+existing dan entry registry/menu existing tetap dipakai; M7-N1 mengganti isi surface
+tersebut dengan read model baru tanpa menambah, menghapus, atau mengubah file route.
+Route/menu/query harus fail-closed saat role atau `notification.manage` tidak
+tersedia. `routeTree.gen.ts` tidak diedit manual dan tidak diharapkan berubah karena
+path serta deklarasi route existing tetap sama; bila tooling tetap menghasilkan diff
+generated route, diff tersebut berada di luar scope M7-N1 dan tidak boleh di-stage.
 
 ## 5. Acceptance untuk M7-N1
 
 Patch implementasi berikutnya harus membuktikan:
 
-1. exact role, permission, property scope, dan precedence 404 sebelum 403;
+1. exact role, permission, dan convention property scope existing: actor di luar
+   scope menerima `403 PROPERTY_SCOPE_DENIED` tanpa existence lookup, sedangkan
+   `404 PROPERTY_NOT_FOUND` hanya mungkin setelah scope lolos;
 2. request property-scoped dan query count konstan tanpa N+1;
-3. exact response whitelist serta absence seluruh PII/forbidden field;
+3. exact response whitelist, normalisasi unknown `notification_type` menjadi
+   `other`, serta absence seluruh PII/forbidden field dan raw unknown type;
 4. pagination, ordering, status filter, empty, forbidden, dan error state;
 5. cache/query key property boundary dan tidak ada stale cross-property render;
-6. tidak ada mutation, polling, endpoint existing reuse, Dashboard, M6, M8,
-   CSV, Payment Gateway, migration, seed, atau route generated change.
+6. route/menu existing dipakai dengan guard fail-closed tanpa perubahan path atau
+   deklarasi route; tidak ada generated route change;
+7. tidak ada mutation, polling, endpoint existing reuse, Dashboard, M6, M8,
+   CSV, Payment Gateway, migration, atau seed.
 
 M7-N1 dapat mengubah backend/frontend/test yang diperlukan oleh kontrak ini,
 tetapi tidak boleh memperluas contract tanpa amendment baru.

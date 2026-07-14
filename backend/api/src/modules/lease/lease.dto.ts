@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+
 import {
   IsArray,
   IsDateString,
@@ -55,6 +56,12 @@ export class ListLeasesQueryDto extends LeasePaginationQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+}
+
+export class ListLeaseResidentOptionsQueryDto extends LeasePaginationQueryDto {
+  @IsOptional()
+  @IsUUID('4')
+  property_id?: string;
 }
 
 export class CreateLeaseResidentDto {

@@ -25,6 +25,9 @@ export const isAdminUxMasterEnabled = (): boolean =>
 export const isAdminUxLeaseEnabled = (): boolean =>
   isExplicitlyEnabled("VITE_FEATURE_ADMIN_UX_LEASE_ENABLED");
 
+export const isAdminUxLeaseTransferEnabled = (): boolean =>
+  isAdminUxLeaseEnabled() && isExplicitlyEnabled("VITE_FEATURE_ADMIN_UX_LEASE_TRANSFER_ENABLED");
+
 export type AdminFeatureFlag = "adminUxMaster" | "adminUxLease" | "booking" | "cctv" | "smartLock";
 
 /** The route registry is the consumer-facing evaluator for navigation flags. */

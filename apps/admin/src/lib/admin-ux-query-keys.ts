@@ -103,6 +103,8 @@ export const adminUxQueryKeys = {
       scoped("leaseBillingSummary", propertyId, leaseId),
     overdue: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("leaseOverdue", propertyId, normalizePagination(filters)),
+    residentOptions: (propertyId: string, filters: QueryFilters = {}) =>
+      scoped("leaseResidentOptions", propertyId, normalizePagination(filters)),
   },
   residents: {
     all: (propertyId: string) => scoped("residents", propertyId),
@@ -183,7 +185,10 @@ export function invalidationKeysFor(
     case "lease-create":
       return [
         adminUxQueryKeys.leases.all(propertyId),
+        ["lease", propertyId],
+        ["leaseBillingSummary", propertyId],
         adminUxQueryKeys.rooms.all(propertyId),
+        ["leaseResidentOptions", propertyId],
         ["roomAvailability", propertyId],
         adminUxQueryKeys.residents.all(propertyId),
         adminUxQueryKeys.invoices.all(propertyId),
@@ -194,6 +199,8 @@ export function invalidationKeysFor(
     case "lease-deposit":
       return [
         adminUxQueryKeys.leases.all(propertyId),
+        ["lease", propertyId],
+        ["leaseBillingSummary", propertyId],
         adminUxQueryKeys.invoices.all(propertyId),
         adminUxQueryKeys.payments.list(propertyId),
         adminUxQueryKeys.dashboard.summary(propertyId),
@@ -202,6 +209,8 @@ export function invalidationKeysFor(
     case "lease-transfer":
       return [
         adminUxQueryKeys.leases.all(propertyId),
+        ["lease", propertyId],
+        ["leaseBillingSummary", propertyId],
         adminUxQueryKeys.rooms.all(propertyId),
         ["roomAvailability", propertyId],
         adminUxQueryKeys.residents.all(propertyId),
@@ -211,7 +220,11 @@ export function invalidationKeysFor(
         ["notificationUnreadCount", propertyId],
       ];
     case "resident":
-      return [adminUxQueryKeys.residents.all(propertyId), adminUxQueryKeys.leases.all(propertyId)];
+      return [
+        adminUxQueryKeys.residents.all(propertyId),
+        adminUxQueryKeys.leases.all(propertyId),
+        ["leaseResidentOptions", propertyId],
+      ];
     case "invoice-payment":
       return [
         adminUxQueryKeys.invoices.all(propertyId),

@@ -18,6 +18,7 @@ import {
   SettleRefundDto,
   UpdateLeaseDto,
   WaiveRefundDto,
+  ListLeaseResidentOptionsQueryDto,
 } from './lease.dto';
 import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
 import { LeaseRepository } from './lease.repository';
@@ -159,6 +160,12 @@ type InvoiceReadRow = {
   outstanding_amount: string;
 };
 
+type LeaseResidentOptionRow = {
+  id: string;
+  full_name: string;
+  resident_status: 'active' | 'inactive';
+};
+
 type CommandOutput<T> = {
   data: T;
   resourceType: string;
@@ -255,41 +262,95 @@ export class LeaseService {
 
   async listOverdue(user: UserAccessContext, propertyId?: string, limit = 20, offset = 0) {
     if (propertyId) this.assertPropertyScope(user, propertyId);
-    const result = await this.leases.query<SummaryRow>(
-      `SELECT DISTINCT ON (leases.id)
-         leases.id, leases.property_id, leases.lease_code, leases.lease_status,
-         leases.start_date::text, leases.end_date::text, leases.billing_cycle,
-         leases.billing_anchor_day, leases.next_billing_date::text,
-         residents.id AS resident_id, residents.full_name AS resident_name,
-         rooms.id AS room_id, rooms.number AS room_number,
-         kost_types.id AS kost_type_id, kost_types.name AS kost_type_name,
-         invoices.id AS last_invoice_id, invoices.invoice_code AS last_invoice_code,
-         invoices.invoice_status AS last_invoice_status, invoices.due_date::text AS last_invoice_due_date,
-         invoices.total_amount AS last_invoice_total_amount,
-         GREATEST(invoices.total_amount - COALESCE(allocations.allocated_amount, 0), 0)::text AS outstanding_amount
-       FROM leases
-       JOIN residents ON residents.id = leases.resident_id
-       JOIN rooms ON rooms.id = leases.room_id
-       JOIN kost_types ON kost_types.id = leases.kost_type_id
-       JOIN invoices ON invoices.lease_id = leases.id
-       LEFT JOIN (
+    const values = [this.scopeIds(user), propertyId ?? null];
+    const overdueWhere = `($1::uuid[] IS NULL OR leases.property_id = ANY($1::uuid[]))
+         AND ($2::uuid IS NULL OR leases.property_id = $2)
+         AND invoices.invoice_status IN ('issued', 'unpaid', 'partially_paid', 'overdue')
+         AND invoices.due_date < (now() AT TIME ZONE 'Asia/Jakarta')::date
+         AND invoices.total_amount > COALESCE(allocations.allocated_amount, 0)`;
+    const allocationJoin = `LEFT JOIN (
          SELECT invoice_id, sum(allocated_amount) AS allocated_amount
          FROM payment_allocations
          WHERE allocation_status = 'active'
          GROUP BY invoice_id
-       ) allocations ON allocations.invoice_id = invoices.id
-       WHERE ($1::uuid[] IS NULL OR leases.property_id = ANY($1::uuid[]))
-         AND ($2::uuid IS NULL OR leases.property_id = $2)
-         AND invoices.invoice_status IN ('issued', 'unpaid', 'partially_paid', 'overdue')
-         AND invoices.due_date < (now() AT TIME ZONE 'Asia/Jakarta')::date
-         AND invoices.total_amount > COALESCE(allocations.allocated_amount, 0)
-       ORDER BY leases.id, invoices.due_date ASC, invoices.created_at ASC
-       LIMIT $3 OFFSET $4`,
-      [this.scopeIds(user), propertyId ?? null, limit, offset],
-    );
+       ) allocations ON allocations.invoice_id = invoices.id`;
+    const [countResult, rowsResult] = await Promise.all([
+      this.leases.query<{ total: string }>(
+        `SELECT count(DISTINCT leases.id) AS total
+         FROM leases
+         JOIN invoices ON invoices.lease_id = leases.id
+         ${allocationJoin}
+         WHERE ${overdueWhere}`,
+        values,
+      ),
+      this.leases.query<SummaryRow>(
+        `SELECT DISTINCT ON (leases.id)
+           leases.id, leases.property_id, leases.lease_code, leases.lease_status,
+           leases.start_date::text, leases.end_date::text, leases.billing_cycle,
+           leases.billing_anchor_day, leases.next_billing_date::text,
+           residents.id AS resident_id, residents.full_name AS resident_name,
+           rooms.id AS room_id, rooms.number AS room_number,
+           kost_types.id AS kost_type_id, kost_types.name AS kost_type_name,
+           invoices.id AS last_invoice_id, invoices.invoice_code AS last_invoice_code,
+           invoices.invoice_status AS last_invoice_status, invoices.due_date::text AS last_invoice_due_date,
+           invoices.total_amount AS last_invoice_total_amount,
+           GREATEST(invoices.total_amount - COALESCE(allocations.allocated_amount, 0), 0)::text AS outstanding_amount
+         FROM leases
+         JOIN residents ON residents.id = leases.resident_id
+         JOIN rooms ON rooms.id = leases.room_id
+         JOIN kost_types ON kost_types.id = leases.kost_type_id
+         JOIN invoices ON invoices.lease_id = leases.id
+         ${allocationJoin}
+         WHERE ${overdueWhere}
+         ORDER BY leases.id, invoices.due_date ASC, invoices.created_at ASC
+         LIMIT $3 OFFSET $4`,
+        [...values, limit, offset],
+      ),
+    ]);
     return {
-      data: result.rows.map((row) => this.toSummary(row)),
-      meta: { total: result.rows.length, limit, offset },
+      data: rowsResult.rows.map((row) => this.toSummary(row)),
+      meta: { total: Number(countResult.rows[0]?.total ?? 0), limit, offset },
+    };
+  }
+
+  async listResidentOptions(user: UserAccessContext, query: ListLeaseResidentOptionsQueryDto) {
+    if (query.property_id) this.assertPropertyScope(user, query.property_id);
+
+    const limit = query.limit ?? 100;
+    const offset = query.offset ?? 0;
+    const values = [this.scopeIds(user), query.property_id ?? null];
+    const where = [
+      '$1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[])',
+      '$2::uuid IS NULL OR residents.property_id = $2',
+      "residents.resident_status IN ('active', 'inactive')",
+    ].join('\n         AND ');
+
+    const [countResult, rowsResult] = await Promise.all([
+      this.leases.query<{ total: string }>(
+        `SELECT count(*) AS total FROM residents WHERE ${where}`,
+        values,
+      ),
+      this.leases.query<LeaseResidentOptionRow>(
+        `SELECT residents.id, residents.full_name, residents.resident_status
+         FROM residents
+         WHERE ${where}
+         ORDER BY residents.full_name ASC, residents.id ASC
+         LIMIT $3 OFFSET $4`,
+        [...values, limit, offset],
+      ),
+    ]);
+
+    return {
+      data: rowsResult.rows.map((row) => ({
+        id: row.id,
+        display_name_masked: this.maskName(row.full_name),
+        resident_status: row.resident_status,
+      })),
+      meta: {
+        total: Number(countResult.rows[0]?.total ?? 0),
+        limit,
+        offset,
+      },
     };
   }
 
@@ -298,7 +359,7 @@ export class LeaseService {
     this.assertPropertyScope(user, lease.property_id);
     const [ledger, invoices, history, facilities, transferLinks] = await Promise.all([
       this.leases.query<DepositLedgerRow>(
-        `SELECT id, transaction_type, direction, amount, reason_type, reason, settlement_status, created_at
+        `SELECT id, transaction_type, direction, amount, settlement_status, created_at
          FROM lease_deposit_transactions WHERE lease_id = $1 ORDER BY created_at, id`,
         [leaseId],
       ),
@@ -307,10 +368,9 @@ export class LeaseService {
         id: string;
         event_type: string;
         event_date: string;
-        metadata: Record<string, unknown>;
         created_at: Date;
       }>(
-        `SELECT id, event_type, event_date::text, metadata, created_at
+        `SELECT id, event_type, event_date::text, created_at
          FROM lease_history WHERE lease_id = $1 ORDER BY created_at, id`,
         [leaseId],
       ),
@@ -332,18 +392,24 @@ export class LeaseService {
       ),
     ]);
 
-    const deposit = ledger.rows.map((row) => this.toLedger(row));
+    const deposit = ledger.rows.map((row) => ({
+      id: row.id,
+      transaction_type: row.transaction_type,
+      direction: row.direction,
+      amount: Number(row.amount),
+      settlement_status: row.settlement_status,
+      created_at: row.created_at,
+    }));
     return {
       data: {
         lease: this.toDetail(lease),
-        deposit_summary: this.depositSummary(deposit, Number(lease.snapshot_deposit_amount)),
+        deposit_summary: this.depositSummary(ledger.rows, Number(lease.snapshot_deposit_amount)),
         deposit_ledger: deposit,
         invoices: invoices.rows.map((row) => this.toInvoiceRead(row)),
         history: history.rows.map((row) => ({
           id: row.id,
           event_type: row.event_type,
           event_date: row.event_date,
-          metadata: row.metadata ?? {},
           created_at: row.created_at,
         })),
         kost_type_facilities: facilities.rows.map((row) => ({ id: row.id, name: row.name })),

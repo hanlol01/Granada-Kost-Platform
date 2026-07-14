@@ -25,6 +25,7 @@ import {
   CloseLeaseDto,
   CollectDepositDto,
   CreateLeaseDto,
+  ListLeaseResidentOptionsQueryDto,
   ListLeasesQueryDto,
   SettleRefundDto,
   TransferLeaseDto,
@@ -67,6 +68,15 @@ export class LeaseController {
     @Query('offset') offset?: number,
   ) {
     return this.leases.listOverdue(user, propertyId, limit, offset);
+  }
+
+  @Get('resident-options')
+  @RequirePermissions('lease.read')
+  residentOptions(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListLeaseResidentOptionsQueryDto,
+  ) {
+    return this.leases.listResidentOptions(user, query);
   }
 
   @Get(':leaseId')

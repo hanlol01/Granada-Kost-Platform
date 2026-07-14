@@ -20,6 +20,8 @@ export type AdminUxPage<T> = {
 
 const SENSITIVE_RESPONSE_KEYS = new Set([
   "ktp_number",
+  "ktp_number_masked",
+  "nik_masked",
   "nik",
   "storage_path",
   "file_url",

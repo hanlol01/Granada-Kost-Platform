@@ -1,16 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { RouteFoundationPage } from "@/components/layout/route-foundation-page";
+import { LeaseCreatePage } from "@/components/leases/LeaseCreatePage";
 
 export const Route = createFileRoute("/penyewaan/tambah")({
   component: TambahPenyewaanRoute,
 });
 
 function TambahPenyewaanRoute() {
+  const navigate = Route.useNavigate();
   return (
-    <RouteFoundationPage
-      title="Tambah Penyewaan"
-      subtitle="Buat penyewaan baru"
-      milestone="M6 — UX penyewaan"
+    <LeaseCreatePage
+      onCreated={(leaseId) =>
+        navigate({
+          to: "/penyewaan/$leaseId",
+          params: { leaseId },
+          search: { panel: "detail", tab: "ringkasan" },
+          replace: true,
+        })
+      }
     />
   );
 }

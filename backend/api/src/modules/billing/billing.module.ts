@@ -18,10 +18,14 @@ import { PropertyOwnerBillingController } from './controllers/property-owner-bil
 import { InvoiceService } from './services/invoice.service';
 import { PaymentProofService } from './services/payment-proof.service';
 import { PaymentService } from './services/payment.service';
+import { AdminBillingController } from './controllers/admin-billing.controller';
+import { AdminBillingRepository } from './repositories/admin-billing.repository';
+import { AdminBillingService } from './services/admin-billing.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
   controllers: [
+    AdminBillingController,
     InvoiceController,
     PaymentController,
     PaymentProofController,
@@ -30,6 +34,8 @@ import { PaymentService } from './services/payment.service';
     PropertyOwnerBillingController,
   ],
   providers: [
+    AdminBillingRepository,
+    AdminBillingService,
     BillingPeriodRepository,
     InvoiceRepository,
     PaymentRepository,

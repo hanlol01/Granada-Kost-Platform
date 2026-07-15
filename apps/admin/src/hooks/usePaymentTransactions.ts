@@ -11,18 +11,30 @@ import {
 } from "@/lib/admin-ux-query-keys";
 import {
   canReadAdminPaymentTransactions,
-  parseAdminPaymentTransaction,
+  parseAdminPaymentTransactionDetail,
   parseAdminPaymentTransactionList,
   type AdminPaymentTransaction,
+  type AdminPaymentTransactionPage,
+  type AdminPaymentTransactionStatus,
 } from "@/lib/admin-ux-payment-gateway";
 import { useProperty } from "@/lib/property";
 
 export type PaymentTransactionRecord = AdminPaymentTransaction;
+export type PaymentTransactionFilters = {
+  status?: AdminPaymentTransactionStatus;
+  limit?: number;
+  offset?: number;
+};
+
+function retry(failureCount: number, error: unknown): boolean {
+  const status = (error as { status?: unknown }).status;
+  return status !== 403 && status !== 404 && failureCount < 1;
+}
 
 export function usePaymentTransactions(
-  filters: QueryFilters = {},
+  filters: PaymentTransactionFilters = {},
   options: { enabled?: boolean } = {},
-): UseQueryResult<PaymentTransactionRecord[]> {
+): UseQueryResult<AdminPaymentTransactionPage> {
   const { user } = useAuth();
   const { currentPropertyId } = useProperty();
   const pagination = normalizePagination(filters);
@@ -31,20 +43,27 @@ export function usePaymentTransactions(
     permissions: user?.permissions ?? [],
   });
   const propertyId = currentPropertyId ?? "";
+  const keyFilters: QueryFilters = {
+    status: filters.status ?? null,
+    limit: Number(pagination.limit),
+    offset: Number(pagination.offset),
+  };
 
-  return useQuery<PaymentTransactionRecord[]>({
-    queryKey: adminUxQueryKeys.payments.list(propertyId, filters),
+  return useQuery<AdminPaymentTransactionPage>({
+    queryKey: adminUxQueryKeys.payments.list(propertyId, keyFilters),
     queryFn: async () =>
       parseAdminPaymentTransactionList(
         await apiClient.get<unknown>("/admin/payment-transactions", {
           query: {
             property_id: propertyId,
+            ...(filters.status ? { status: filters.status } : {}),
             limit: Number(pagination.limit),
             offset: Number(pagination.offset),
           },
         }),
       ),
     enabled: Boolean(currentPropertyId) && hasAccess && (options.enabled ?? true),
+    retry,
   });
 }
 
@@ -64,7 +83,7 @@ export function usePaymentTransactionDetail(
   return useQuery<PaymentTransactionRecord>({
     queryKey: adminUxQueryKeys.payments.detail(propertyId, id),
     queryFn: async () =>
-      parseAdminPaymentTransaction(
+      parseAdminPaymentTransactionDetail(
         await apiClient.get<unknown>(`/admin/payment-transactions/${id}`),
       ),
     enabled:
@@ -72,5 +91,6 @@ export function usePaymentTransactionDetail(
       Boolean(transactionId) &&
       hasAccess &&
       (options.enabled ?? true),
+    retry,
   });
 }

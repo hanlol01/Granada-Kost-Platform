@@ -58,9 +58,27 @@ type BillingPeriodSeed = {
   dueDate: string;
 };
 
+const SEED_KOST_TYPES = [
+  {
+    roomTypeName: 'RuKost Standard',
+    category: 'rukost',
+    name: 'Rumah Kost',
+    slug: 'rukost',
+  },
+  {
+    roomTypeName: 'ApartKost Standard',
+    category: 'apartkost',
+    name: 'Apart Kost',
+    slug: 'apartkost',
+  },
+] as const;
+
 function resolveSeedEnvironment(): SeedEnvironment {
   const envArg = process.argv.find((arg) => arg.startsWith('--env='))?.split('=')[1];
-  const value = envArg ?? process.env.SEED_ENV ?? (process.env.NODE_ENV === 'production' ? 'production' : 'development');
+  const value =
+    envArg ??
+    process.env.SEED_ENV ??
+    (process.env.NODE_ENV === 'production' ? 'production' : 'development');
 
   if (value !== 'development' && value !== 'production') {
     throw new Error(`Unsupported seed environment "${value}". Use development or production.`);
@@ -83,7 +101,8 @@ function ownerPasswordFor(environment: SeedEnvironment): string {
 }
 
 function shouldSeedDevelopmentData(environment: SeedEnvironment): boolean {
-  const requested = process.argv.includes('--with-dev-data') || process.env.SEED_WITH_DEV_DATA === 'true';
+  const requested =
+    process.argv.includes('--with-dev-data') || process.env.SEED_WITH_DEV_DATA === 'true';
   if (!requested) {
     return false;
   }
@@ -199,7 +218,7 @@ async function seedLayer1(client: PoolClient): Promise<void> {
 
 async function seedLayer2(client: PoolClient): Promise<void> {
   await client.query(
-      `INSERT INTO property_settings (
+    `INSERT INTO property_settings (
         property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
         quiet_hour_start, guest_report_deadline, parking_management_mode,
         max_vehicles_per_resident, parking_capacity_motorcycle, parking_capacity_car,
@@ -272,22 +291,70 @@ async function seedLayer4(client: PoolClient): Promise<void> {
   }
 }
 
+async function seedKostTypes(client: PoolClient): Promise<void> {
+  for (const kostType of SEED_KOST_TYPES) {
+    await client.query(
+      `INSERT INTO kost_types (
+         property_id, category, name, slug, monthly_price, yearly_price,
+         deposit_amount, status, public_visible, created_by_user_id, updated_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, 1800000, 0, 0, 'active', true, $5, $5)
+       ON CONFLICT (property_id, slug) DO UPDATE
+       SET category = EXCLUDED.category,
+           name = EXCLUDED.name,
+           monthly_price = EXCLUDED.monthly_price,
+           yearly_price = EXCLUDED.yearly_price,
+           deposit_amount = EXCLUDED.deposit_amount,
+           status = EXCLUDED.status,
+           public_visible = EXCLUDED.public_visible,
+           deleted_at = NULL,
+           deleted_by_user_id = NULL,
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_at = now()`,
+      [
+        CORE_SEED_IDS.granadaProperty,
+        kostType.category,
+        kostType.name,
+        kostType.slug,
+        CORE_SEED_IDS.ownerUser,
+      ],
+    );
+  }
+}
+
 async function seedLayer5(client: PoolClient): Promise<void> {
   for (const room of ROOM_SEEDS) {
+    const kostType = SEED_KOST_TYPES.find(({ roomTypeName }) => roomTypeName === room.roomTypeName);
+    if (!kostType) {
+      throw new Error(`Seed kost type mapping not found for room type "${room.roomTypeName}".`);
+    }
+
     await client.query(
       `INSERT INTO rooms (
-         property_id, room_type_id, number, unit_code, gender_policy, monthly_price,
-         deposit_amount, room_status, created_by_user_id, updated_by_user_id
+         property_id, room_type_id, category, kost_type_id, number, unit_code,
+         gender_policy, monthly_price, yearly_price, deposit_amount, room_status,
+         created_by_user_id, updated_by_user_id
        )
-       SELECT $1::uuid, room_types.id, $2, $3, $4, 1800000, 0, 'vacant', $5::uuid, $5::uuid
+       SELECT $1::uuid, room_types.id, kost_types.category, kost_types.id, $2, $3, $4,
+              kost_types.monthly_price::integer, kost_types.yearly_price::integer,
+              kost_types.deposit_amount::integer, 'vacant', $5::uuid, $5::uuid
        FROM room_types
+       JOIN kost_types
+         ON kost_types.property_id = room_types.property_id
+        AND kost_types.category = $7
+        AND kost_types.slug = $7
+        AND kost_types.status = 'active'
+        AND kost_types.deleted_at IS NULL
        WHERE room_types.property_id = $1::uuid
          AND room_types.name = $6
        ON CONFLICT (property_id, number) DO UPDATE
        SET room_type_id = EXCLUDED.room_type_id,
+           category = EXCLUDED.category,
+           kost_type_id = EXCLUDED.kost_type_id,
            unit_code = EXCLUDED.unit_code,
            gender_policy = EXCLUDED.gender_policy,
            monthly_price = EXCLUDED.monthly_price,
+           yearly_price = EXCLUDED.yearly_price,
            deposit_amount = EXCLUDED.deposit_amount,
            room_status = EXCLUDED.room_status,
            updated_by_user_id = EXCLUDED.updated_by_user_id,
@@ -299,6 +366,7 @@ async function seedLayer5(client: PoolClient): Promise<void> {
         room.genderPolicy,
         CORE_SEED_IDS.ownerUser,
         room.roomTypeName,
+        kostType.category,
       ],
     );
   }
@@ -388,7 +456,9 @@ async function seedDevelopmentData(client: PoolClient): Promise<void> {
       ],
     );
 
-    await client.query('DELETE FROM resident_emergency_contacts WHERE resident_id = $1', [resident.id]);
+    await client.query('DELETE FROM resident_emergency_contacts WHERE resident_id = $1', [
+      resident.id,
+    ]);
     await client.query(
       `INSERT INTO resident_emergency_contacts (resident_id, contact_name, relationship, phone)
        VALUES ($1, $2, 'Dummy emergency contact', $3)`,
@@ -764,21 +834,29 @@ async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promi
   await client.query('DELETE FROM maintenance_materials WHERE work_order_id = ANY($1::uuid[])', [
     DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
   ]);
-  await client.query('DELETE FROM maintenance_work_order_files WHERE work_order_id = ANY($1::uuid[])', [
-    DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
-  ]);
-  await client.query('DELETE FROM maintenance_work_order_histories WHERE work_order_id = ANY($1::uuid[])', [
-    DEV_WORK_ORDER_SEEDS.map(({ id }) => id),
-  ]);
+  await client.query(
+    'DELETE FROM maintenance_work_order_files WHERE work_order_id = ANY($1::uuid[])',
+    [DEV_WORK_ORDER_SEEDS.map(({ id }) => id)],
+  );
+  await client.query(
+    'DELETE FROM maintenance_work_order_histories WHERE work_order_id = ANY($1::uuid[])',
+    [DEV_WORK_ORDER_SEEDS.map(({ id }) => id)],
+  );
   await client.query('DELETE FROM complaint_files WHERE complaint_id = ANY($1::uuid[])', [
     DEV_COMPLAINT_SEEDS.map(({ id }) => id),
   ]);
-  await client.query('DELETE FROM complaint_status_histories WHERE complaint_id = ANY($1::uuid[])', [
-    DEV_COMPLAINT_SEEDS.map(({ id }) => id),
-  ]);
+  await client.query(
+    'DELETE FROM complaint_status_histories WHERE complaint_id = ANY($1::uuid[])',
+    [DEV_COMPLAINT_SEEDS.map(({ id }) => id)],
+  );
 
   for (const complaint of DEV_COMPLAINT_SEEDS) {
-    const context = await complaintSeedContext(client, complaint.residentId, complaint.roomNumber, complaint.categoryCode);
+    const context = await complaintSeedContext(
+      client,
+      complaint.residentId,
+      complaint.roomNumber,
+      complaint.categoryCode,
+    );
     const assignedToUserId = complaint.assignedTechnicianKey
       ? CORE_SEED_IDS.devUsers.technicians[complaint.assignedTechnicianKey]
       : null;
@@ -960,7 +1038,9 @@ async function seedDevelopmentVehicleAndParking(client: PoolClient): Promise<voi
   await client.query('DELETE FROM parking_zones WHERE id = ANY($1::uuid[])', [
     DEV_PARKING_ZONE_SEEDS.map(({ id }) => id),
   ]);
-  await client.query('DELETE FROM vehicles WHERE id = ANY($1::uuid[])', [DEV_VEHICLE_SEEDS.map(({ id }) => id)]);
+  await client.query('DELETE FROM vehicles WHERE id = ANY($1::uuid[])', [
+    DEV_VEHICLE_SEEDS.map(({ id }) => id),
+  ]);
 
   for (const vehicle of DEV_VEHICLE_SEEDS) {
     const context = await vehicleSeedContext(client, vehicle.residentId, vehicle.roomNumber);
@@ -1087,7 +1167,9 @@ async function vehicleSeedContext(
   );
   const context = result.rows[0];
   if (!context) {
-    throw new Error(`Development vehicle seed context not found for resident ${residentId} room ${roomNumber}.`);
+    throw new Error(
+      `Development vehicle seed context not found for resident ${residentId} room ${roomNumber}.`,
+    );
   }
   return { residentName: context.resident_name, roomNumber: context.room_number };
 }
@@ -1101,7 +1183,13 @@ async function complaintSeedContext(
   residentId: string,
   roomNumber: string | undefined,
   categoryCode: string,
-): Promise<{ residentName: string; residentUserId: string; roomId: string | null; roomNumber: string | null; categoryId: string }> {
+): Promise<{
+  residentName: string;
+  residentUserId: string;
+  roomId: string | null;
+  roomNumber: string | null;
+  categoryId: string;
+}> {
   const residentResult = await client.query<{ full_name: string; user_id: string }>(
     'SELECT full_name, user_id FROM residents WHERE id = $1',
     [residentId],
@@ -1148,15 +1236,18 @@ async function complaintSeedContext(
   };
 }
 
-async function workOrderSeedContext(client: PoolClient, roomNumber?: string): Promise<{ roomId: string | null }> {
+async function workOrderSeedContext(
+  client: PoolClient,
+  roomNumber?: string,
+): Promise<{ roomId: string | null }> {
   if (!roomNumber) {
     return { roomId: null };
   }
 
-  const roomResult = await client.query<{ id: string }>('SELECT id FROM rooms WHERE property_id = $1 AND number = $2', [
-    CORE_SEED_IDS.granadaProperty,
-    roomNumber,
-  ]);
+  const roomResult = await client.query<{ id: string }>(
+    'SELECT id FROM rooms WHERE property_id = $1 AND number = $2',
+    [CORE_SEED_IDS.granadaProperty, roomNumber],
+  );
   const room = roomResult.rows[0];
   if (!room) {
     throw new Error(`Development work order seed room not found: ${roomNumber}.`);
@@ -1195,7 +1286,11 @@ async function seedDevelopmentBilling(client: PoolClient): Promise<void> {
          is_primary = EXCLUDED.is_primary,
          status = EXCLUDED.status,
          updated_at = now()`,
-    [CORE_SEED_IDS.devBilling.bsiPaymentAccount, CORE_SEED_IDS.granadaProperty, CORE_SEED_IDS.ownerUser],
+    [
+      CORE_SEED_IDS.devBilling.bsiPaymentAccount,
+      CORE_SEED_IDS.granadaProperty,
+      CORE_SEED_IDS.ownerUser,
+    ],
   );
 
   const billingPeriodResult = await client.query<{ id: string }>(
@@ -1321,23 +1416,41 @@ async function seedDevelopmentBilling(client: PoolClient): Promise<void> {
          invoice_id, line_type, description, quantity, unit_amount, total_amount, sort_order, metadata
        )
        VALUES ($1, 'rent', $2, 1, $3, $3, 1, $4::jsonb)`,
-      [invoiceId, `Sewa kamar ${occupancy.room_number} periode ${period.periodKey}`, amount, JSON.stringify({ seed: 'development-billing', source: 'Milestone 6E' })],
+      [
+        invoiceId,
+        `Sewa kamar ${occupancy.room_number} periode ${period.periodKey}`,
+        amount,
+        JSON.stringify({ seed: 'development-billing', source: 'Milestone 6E' }),
+      ],
     );
   }
 }
 
-async function countQuery(client: PoolClient, table: string, sql: string, params: unknown[] = []): Promise<SeedCount> {
+async function countQuery(
+  client: PoolClient,
+  table: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<SeedCount> {
   const result = await client.query<{ count: string }>(sql, params);
   return { table, count: Number(result.rows[0]?.count ?? 0) };
 }
 
-async function validateSeed(client: PoolClient, environment: SeedEnvironment): Promise<SeedCount[]> {
+async function validateSeed(
+  client: PoolClient,
+  environment: SeedEnvironment,
+): Promise<SeedCount[]> {
   const owner = ownerIdentityFor(environment);
   const counts = await Promise.all([
-    countQuery(client, 'roles', 'SELECT count(*) FROM roles WHERE code = ANY($1::text[])', [ROLES.map(([code]) => code)]),
-    countQuery(client, 'permissions', 'SELECT count(*) FROM permissions WHERE code = ANY($1::text[])', [
-      PERMISSIONS.map(([code]) => code),
+    countQuery(client, 'roles', 'SELECT count(*) FROM roles WHERE code = ANY($1::text[])', [
+      ROLES.map(([code]) => code),
     ]),
+    countQuery(
+      client,
+      'permissions',
+      'SELECT count(*) FROM permissions WHERE code = ANY($1::text[])',
+      [PERMISSIONS.map(([code]) => code)],
+    ),
     countQuery(
       client,
       'role_permissions',
@@ -1348,9 +1461,17 @@ async function validateSeed(client: PoolClient, environment: SeedEnvironment): P
        WHERE (roles.code, permissions.code) IN (
          SELECT * FROM unnest($1::text[], $2::text[])
        )`,
-      [ROLE_PERMISSION_GRANTS.map(([roleCode]) => roleCode), ROLE_PERMISSION_GRANTS.map(([, permissionCode]) => permissionCode)],
+      [
+        ROLE_PERMISSION_GRANTS.map(([roleCode]) => roleCode),
+        ROLE_PERMISSION_GRANTS.map(([, permissionCode]) => permissionCode),
+      ],
     ),
-    countQuery(client, 'users', 'SELECT count(*) FROM users WHERE email = $1 AND user_status = $2', [owner.email, 'active']),
+    countQuery(
+      client,
+      'users',
+      'SELECT count(*) FROM users WHERE email = $1 AND user_status = $2',
+      [owner.email, 'active'],
+    ),
     countQuery(
       client,
       'user_property_roles',
@@ -1363,13 +1484,18 @@ async function validateSeed(client: PoolClient, environment: SeedEnvironment): P
          AND roles.code = 'owner'`,
       [CORE_SEED_IDS.ownerUser],
     ),
-    countQuery(client, 'properties', 'SELECT count(*) FROM properties WHERE id = $1 AND status = $2', [
-      CORE_SEED_IDS.granadaProperty,
-      'active',
-    ]),
-    countQuery(client, 'property_settings', 'SELECT count(*) FROM property_settings WHERE property_id = $1', [
-      CORE_SEED_IDS.granadaProperty,
-    ]),
+    countQuery(
+      client,
+      'properties',
+      'SELECT count(*) FROM properties WHERE id = $1 AND status = $2',
+      [CORE_SEED_IDS.granadaProperty, 'active'],
+    ),
+    countQuery(
+      client,
+      'property_settings',
+      'SELECT count(*) FROM property_settings WHERE property_id = $1',
+      [CORE_SEED_IDS.granadaProperty],
+    ),
     countQuery(
       client,
       'room_types',
@@ -1406,7 +1532,9 @@ async function validateSeed(client: PoolClient, environment: SeedEnvironment): P
   for (const count of counts) {
     const expectedCount = expected.get(count.table);
     if (expectedCount !== count.count) {
-      throw new Error(`Seed validation failed for ${count.table}: expected ${expectedCount}, got ${count.count}.`);
+      throw new Error(
+        `Seed validation failed for ${count.table}: expected ${expectedCount}, got ${count.count}.`,
+      );
     }
   }
 
@@ -1423,10 +1551,18 @@ async function validationCheck(
   return { check, count: Number(result.rows[0]?.count ?? 0) };
 }
 
-async function validateLayer5(client: PoolClient, requireNoDevelopmentData: boolean): Promise<ValidationCheck[]> {
+async function validateLayer5(
+  client: PoolClient,
+  requireNoDevelopmentData: boolean,
+): Promise<ValidationCheck[]> {
   const propertyId = CORE_SEED_IDS.granadaProperty;
   const checksToRun: Array<Promise<ValidationCheck>> = [
-    validationCheck(client, 'POST-L5-01 total rooms', 'SELECT count(*) FROM rooms WHERE property_id = $1', [propertyId]),
+    validationCheck(
+      client,
+      'POST-L5-01 total rooms',
+      'SELECT count(*) FROM rooms WHERE property_id = $1',
+      [propertyId],
+    ),
     validationCheck(
       client,
       'POST-L5-02 RuKost rooms',
@@ -1445,21 +1581,30 @@ async function validateLayer5(client: PoolClient, requireNoDevelopmentData: bool
        WHERE rooms.property_id = $1 AND room_types.name = 'ApartKost Standard'`,
       [propertyId],
     ),
-    validationCheck(client, 'POST-L5-04 gender male count', "SELECT count(*) FROM rooms WHERE property_id = $1 AND gender_policy = 'male'", [
-      propertyId,
-    ]),
+    validationCheck(
+      client,
+      'POST-L5-04 gender male count',
+      "SELECT count(*) FROM rooms WHERE property_id = $1 AND gender_policy = 'male'",
+      [propertyId],
+    ),
     validationCheck(
       client,
       'POST-L5-05 gender female count',
       "SELECT count(*) FROM rooms WHERE property_id = $1 AND gender_policy = 'female'",
       [propertyId],
     ),
-    validationCheck(client, 'POST-L5-06 gender mixed count', "SELECT count(*) FROM rooms WHERE property_id = $1 AND gender_policy = 'mixed'", [
-      propertyId,
-    ]),
-    validationCheck(client, 'POST-L5-07 all rooms vacant', "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'vacant'", [
-      propertyId,
-    ]),
+    validationCheck(
+      client,
+      'POST-L5-06 gender mixed count',
+      "SELECT count(*) FROM rooms WHERE property_id = $1 AND gender_policy = 'mixed'",
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'POST-L5-07 all rooms vacant',
+      "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'vacant'",
+      [propertyId],
+    ),
     validationCheck(
       client,
       'POST-L5-08 all monthly_price = 1800000',
@@ -1485,12 +1630,18 @@ async function validateLayer5(client: PoolClient, requireNoDevelopmentData: bool
        ) duplicates`,
       [propertyId],
     ),
-    validationCheck(client, 'POST-L5-11 all rooms have unit_code', 'SELECT count(*) FROM rooms WHERE property_id = $1 AND unit_code IS NOT NULL', [
-      propertyId,
-    ]),
-    validationCheck(client, 'POST-L5-12 unique unit codes', 'SELECT count(DISTINCT unit_code) FROM rooms WHERE property_id = $1', [
-      propertyId,
-    ]),
+    validationCheck(
+      client,
+      'POST-L5-11 all rooms have unit_code',
+      'SELECT count(*) FROM rooms WHERE property_id = $1 AND unit_code IS NOT NULL',
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'POST-L5-12 unique unit codes',
+      'SELECT count(DISTINCT unit_code) FROM rooms WHERE property_id = $1',
+      [propertyId],
+    ),
     validationCheck(
       client,
       'POST-L5-13 gender consistency per unit violations',
@@ -1504,15 +1655,66 @@ async function validateLayer5(client: PoolClient, requireNoDevelopmentData: bool
        ) violations`,
       [propertyId],
     ),
-    validationCheck(client, 'POST-L5-14 all rooms have room_type_id', 'SELECT count(*) FROM rooms WHERE property_id = $1 AND room_type_id IS NOT NULL', [
-      propertyId,
-    ]),
+    validationCheck(
+      client,
+      'POST-L5-14 all rooms have room_type_id',
+      'SELECT count(*) FROM rooms WHERE property_id = $1 AND room_type_id IS NOT NULL',
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'POST-L5-15 active seed kost types',
+      `SELECT count(*)
+       FROM kost_types
+       WHERE property_id = $1
+         AND status = 'active'
+         AND deleted_at IS NULL
+         AND monthly_price = 1800000
+         AND yearly_price = 0
+         AND deposit_amount = 0
+         AND (
+           (category = 'rukost' AND slug = 'rukost' AND name = 'Rumah Kost')
+           OR (category = 'apartkost' AND slug = 'apartkost' AND name = 'Apart Kost')
+         )`,
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'POST-L5-16 non-inactive rooms without kost type',
+      `SELECT count(*)
+       FROM rooms
+       WHERE property_id = $1
+         AND room_status <> 'inactive'
+         AND kost_type_id IS NULL`,
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'POST-L5-17 room kost type property/category mismatches',
+      `SELECT count(*)
+       FROM rooms room
+       LEFT JOIN kost_types kost_type ON kost_type.id = room.kost_type_id
+       WHERE room.property_id = $1
+         AND room.room_status <> 'inactive'
+         AND (
+           kost_type.id IS NULL
+           OR kost_type.property_id IS DISTINCT FROM room.property_id
+           OR kost_type.category IS DISTINCT FROM room.category
+           OR kost_type.status <> 'active'
+           OR kost_type.deleted_at IS NOT NULL
+         )`,
+      [propertyId],
+    ),
   ];
 
   if (requireNoDevelopmentData) {
     checksToRun.push(
-      validationCheck(client, 'POST-L5-15 no occupancies exist', 'SELECT count(*) FROM occupancies'),
-      validationCheck(client, 'POST-L5-16 no residents exist', 'SELECT count(*) FROM residents'),
+      validationCheck(
+        client,
+        'POST-L5-18 no occupancies exist',
+        'SELECT count(*) FROM occupancies',
+      ),
+      validationCheck(client, 'POST-L5-19 no residents exist', 'SELECT count(*) FROM residents'),
     );
   }
 
@@ -1533,10 +1735,13 @@ async function validateLayer5(client: PoolClient, requireNoDevelopmentData: bool
     ['POST-L5-12 unique unit codes', 26],
     ['POST-L5-13 gender consistency per unit violations', 0],
     ['POST-L5-14 all rooms have room_type_id', 163],
+    ['POST-L5-15 active seed kost types', 2],
+    ['POST-L5-16 non-inactive rooms without kost type', 0],
+    ['POST-L5-17 room kost type property/category mismatches', 0],
   ]);
   if (requireNoDevelopmentData) {
-    expected.set('POST-L5-15 no occupancies exist', 0);
-    expected.set('POST-L5-16 no residents exist', 0);
+    expected.set('POST-L5-18 no occupancies exist', 0);
+    expected.set('POST-L5-19 no residents exist', 0);
   }
 
   for (const check of checks) {
@@ -1553,7 +1758,12 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
   const propertyId = CORE_SEED_IDS.granadaProperty;
   const period = currentBillingPeriodSeed();
   const checks = await Promise.all([
-    validationCheck(client, 'DEV-01 resident count', 'SELECT count(*) FROM residents WHERE property_id = $1', [propertyId]),
+    validationCheck(
+      client,
+      'DEV-01 resident count',
+      'SELECT count(*) FROM residents WHERE property_id = $1',
+      [propertyId],
+    ),
     validationCheck(
       client,
       'DEV-02 emergency contact count',
@@ -1569,10 +1779,30 @@ async function validateDevelopmentSeed(client: PoolClient): Promise<ValidationCh
       "SELECT count(*) FROM occupancies WHERE property_id = $1 AND occupancy_status = 'active'",
       [propertyId],
     ),
-    validationCheck(client, 'DEV-04 check-in record count', 'SELECT count(*) FROM check_in_records WHERE property_id = $1', [propertyId]),
-    validationCheck(client, 'DEV-05 occupancy history count', 'SELECT count(*) FROM occupancy_history WHERE property_id = $1', [propertyId]),
-    validationCheck(client, 'DEV-06 occupied rooms', "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'occupied'", [propertyId]),
-    validationCheck(client, 'DEV-07 vacant rooms', "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'vacant'", [propertyId]),
+    validationCheck(
+      client,
+      'DEV-04 check-in record count',
+      'SELECT count(*) FROM check_in_records WHERE property_id = $1',
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-05 occupancy history count',
+      'SELECT count(*) FROM occupancy_history WHERE property_id = $1',
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-06 occupied rooms',
+      "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'occupied'",
+      [propertyId],
+    ),
+    validationCheck(
+      client,
+      'DEV-07 vacant rooms',
+      "SELECT count(*) FROM rooms WHERE property_id = $1 AND room_status = 'vacant'",
+      [propertyId],
+    ),
     validationCheck(
       client,
       'DEV-08 room status sync violations',
@@ -1945,6 +2175,7 @@ async function main(): Promise<void> {
     await seedLayer2(client);
     await seedLayer3(client);
     await seedLayer4(client);
+    await seedKostTypes(client);
     await seedLayer5(client);
     await seedComplaintCategories(client);
     const counts = await validateSeed(client, environment);

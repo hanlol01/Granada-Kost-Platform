@@ -29,7 +29,7 @@ export class PaymentGatewayAdminController {
   async get(@CurrentUser() user: UserAccessContext, @Param('transactionId') transactionId: string) {
     const transaction = await this.paymentGateway.getAdminTransaction(transactionId);
     await this.properties.assertCanReadProperty(user, transaction.propertyId);
-    return transaction;
+    return { data: transaction };
   }
 
   private async scopedPropertyIds(user: UserAccessContext, propertyId?: string): Promise<string[]> {

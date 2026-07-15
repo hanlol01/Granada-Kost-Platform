@@ -168,20 +168,33 @@ export class PaymentGatewayRepository {
     status?: PaymentTransactionStatus,
     limit = 20,
     offset = 0,
-  ): Promise<PaymentTransactionRecord[]> {
+  ): Promise<{ records: PaymentTransactionRecord[]; total: number }> {
     if (propertyIds.length === 0) {
-      return [];
+      return { records: [], total: 0 };
     }
-    const result = await this.database.client.query<PaymentTransactionRow>(
-      `SELECT ${this.columns()}
-       FROM payment_transactions
-       WHERE property_id = ANY($1::uuid[])
-         AND ($2::text IS NULL OR status = $2)
-       ORDER BY created_at DESC
-       LIMIT $3 OFFSET $4`,
-      [propertyIds, status ?? null, limit, offset],
-    );
-    return result.rows.map((row) => this.map(row));
+    const filterValues = [propertyIds, status ?? null];
+    const [page, count] = await Promise.all([
+      this.database.client.query<PaymentTransactionRow>(
+        `SELECT ${this.columns()}
+         FROM payment_transactions
+         WHERE property_id = ANY($1::uuid[])
+           AND ($2::text IS NULL OR status = $2)
+         ORDER BY created_at DESC
+         LIMIT $3 OFFSET $4`,
+        [...filterValues, limit, offset],
+      ),
+      this.database.client.query<{ total: string }>(
+        `SELECT count(*) AS total
+         FROM payment_transactions
+         WHERE property_id = ANY($1::uuid[])
+           AND ($2::text IS NULL OR status = $2)`,
+        filterValues,
+      ),
+    ]);
+    return {
+      records: page.rows.map((row) => this.map(row)),
+      total: Number(count.rows[0]?.total ?? 0),
+    };
   }
 
   async findById(id: string): Promise<PaymentTransactionRecord | null> {

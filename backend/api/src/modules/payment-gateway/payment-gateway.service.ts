@@ -71,6 +71,15 @@ export type PaymentTransactionAdminResponse = {
   failedAt: string | null;
 };
 
+export type PaymentTransactionAdminListResponse = {
+  data: PaymentTransactionAdminResponse[];
+  meta: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+};
+
 @Injectable()
 export class PaymentGatewayService {
   constructor(
@@ -326,14 +335,19 @@ export class PaymentGatewayService {
   async listAdminTransactions(
     propertyIds: string[],
     status?: PaymentTransactionStatus,
-    limit?: number,
-    offset?: number,
-  ): Promise<PaymentTransactionAdminResponse[]> {
+    limit = 20,
+    offset = 0,
+  ): Promise<PaymentTransactionAdminListResponse> {
     this.ensureEnabled();
     this.ensureProviderConfigured();
-    return (await this.transactions.listForProperties(propertyIds, status, limit, offset)).map((transaction) =>
-      this.toAdminResponse(transaction),
-    );
+    if (propertyIds.length === 0) {
+      return { data: [], meta: { limit, offset, total: 0 } };
+    }
+    const result = await this.transactions.listForProperties(propertyIds, status, limit, offset);
+    return {
+      data: result.records.map((transaction) => this.toAdminResponse(transaction)),
+      meta: { limit, offset, total: result.total },
+    };
   }
 
   async getAdminTransaction(id: string): Promise<PaymentTransactionAdminResponse> {

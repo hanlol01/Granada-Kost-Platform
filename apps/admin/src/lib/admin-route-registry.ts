@@ -347,7 +347,10 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "lainnya",
     order: 140,
     icon: Bell,
-    access: { roles: ["owner", "manager", "admin", "technician"] },
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      readCapabilities: ["notification.manage"],
+    },
     navigation: { sidebar: true, mobilePriority: 100 },
   },
   {

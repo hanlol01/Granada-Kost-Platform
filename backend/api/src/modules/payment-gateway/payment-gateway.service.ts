@@ -338,8 +338,6 @@ export class PaymentGatewayService {
     limit = 20,
     offset = 0,
   ): Promise<PaymentTransactionAdminListResponse> {
-    this.ensureEnabled();
-    this.ensureProviderConfigured();
     if (propertyIds.length === 0) {
       return { data: [], meta: { limit, offset, total: 0 } };
     }
@@ -351,8 +349,6 @@ export class PaymentGatewayService {
   }
 
   async getAdminTransaction(id: string): Promise<PaymentTransactionAdminResponse> {
-    this.ensureEnabled();
-    this.ensureProviderConfigured();
     const transaction = await this.transactions.findById(id);
     if (!transaction) {
       throw new NotFoundException({ code: 'PAYMENT_TRANSACTION_NOT_FOUND', message: 'Payment transaction not found' });

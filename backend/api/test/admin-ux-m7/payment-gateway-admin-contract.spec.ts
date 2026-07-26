@@ -359,9 +359,10 @@ test('M7-B1 detail authorizes against the persisted transaction property', async
   assert.deepEqual(lookups, [TRANSACTION_ID, TRANSACTION_ID]);
 });
 
-test('M7-B1 list and detail expose only the approved whitelist and retain opaque IDs without logging', async () => {
+test('M7-B1 Admin list and detail stay repository-only when the gateway and provider are disabled', async () => {
   const record = internalTransaction();
   const auditCalls: unknown[] = [];
+  const providerCalls: string[] = [];
   const listCalls: Array<{
     propertyIds: string[];
     status?: string;
@@ -370,10 +371,16 @@ test('M7-B1 list and detail expose only the approved whitelist and retain opaque
   }> = [];
   const service = new PaymentGatewayService(
     {
-      enabled: true,
-      provider: 'midtrans',
+      enabled: false,
+      provider: 'none',
       midtransEnv: 'sandbox',
-      missingMidtransConfig: () => [],
+      missingMidtransConfig: () => [
+        'MIDTRANS_SERVER_KEY',
+        'MIDTRANS_CLIENT_KEY',
+        'PAYMENT_RETURN_URL',
+        'PAYMENT_CANCEL_URL',
+        'PAYMENT_WEBHOOK_BASE_URL',
+      ],
     } as never,
     {
       listForProperties: async (
@@ -388,7 +395,15 @@ test('M7-B1 list and detail expose only the approved whitelist and retain opaque
       findById: async () => record,
     } as never,
     {} as never,
-    {} as never,
+    new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          providerCalls.push(String(property));
+          throw new Error('Admin read attempted provider access');
+        },
+      },
+    ) as never,
     { write: async (entry: unknown) => auditCalls.push(entry) } as never,
   );
 
@@ -437,4 +452,46 @@ test('M7-B1 list and detail expose only the approved whitelist and retain opaque
   }
 
   assert.deepEqual(auditCalls, []);
+  assert.deepEqual(providerCalls, []);
+});
+
+test('resident session, resident status, and webhook remain fail-closed when the gateway is disabled', async () => {
+  const dependencyCalls: string[] = [];
+  const blockedDependency = new Proxy(
+    {},
+    {
+      get: (_target, property) => {
+        dependencyCalls.push(String(property));
+        throw new Error('Disabled path accessed a dependency');
+      },
+    },
+  );
+  const service = new PaymentGatewayService(
+    {
+      enabled: false,
+      provider: 'none',
+      midtransEnv: 'sandbox',
+      missingMidtransConfig: () => ['MIDTRANS_SERVER_KEY', 'MIDTRANS_CLIENT_KEY'],
+    } as never,
+    blockedDependency as never,
+    blockedDependency as never,
+    blockedDependency as never,
+    blockedDependency as never,
+  );
+
+  for (const operation of [
+    () => service.createResidentPaymentSession('invoice-id', user()),
+    () => service.getResidentPaymentStatus('invoice-id', user()),
+    () => service.handleMidtransWebhook({} as never),
+  ]) {
+    await assert.rejects(operation(), (error: unknown) => {
+      assert.ok(error instanceof ForbiddenException);
+      const response = error.getResponse();
+      assert.equal(typeof response, 'object');
+      assert.equal((response as { code?: string }).code, 'PAYMENT_GATEWAY_DISABLED');
+      return true;
+    });
+  }
+
+  assert.deepEqual(dependencyCalls, []);
 });

@@ -2,7 +2,7 @@
 // Only the two endpoints frozen by M7-B0/B1 are allowed here.
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api";
+import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { useAuth } from "@/lib/auth";
 import {
   adminUxQueryKeys,
@@ -53,7 +53,7 @@ export function usePaymentTransactions(
     queryKey: adminUxQueryKeys.payments.list(propertyId, keyFilters),
     queryFn: async () =>
       parseAdminPaymentTransactionList(
-        await apiClient.get<unknown>("/admin/payment-transactions", {
+        await adminUxV2Requester.get<unknown>("/admin/payment-transactions", {
           query: {
             property_id: propertyId,
             ...(filters.status ? { status: filters.status } : {}),
@@ -84,7 +84,7 @@ export function usePaymentTransactionDetail(
     queryKey: adminUxQueryKeys.payments.detail(propertyId, id),
     queryFn: async () =>
       parseAdminPaymentTransactionDetail(
-        await apiClient.get<unknown>(`/admin/payment-transactions/${id}`),
+        await adminUxV2Requester.get<unknown>(`/admin/payment-transactions/${id}`),
       ),
     enabled:
       Boolean(currentPropertyId) &&

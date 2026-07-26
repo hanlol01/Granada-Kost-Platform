@@ -91,6 +91,14 @@ test("M7-B2 parser retains only the B1 whitelist before cache insertion", () => 
 });
 
 test("PG3 parser accepts only exact list and detail envelopes", () => {
+  assert.deepEqual(
+    parseAdminPaymentTransactionList({
+      data: [],
+      meta: { limit: 20, offset: 0, total: 0 },
+    }),
+    { data: [], meta: { limit: 20, offset: 0, total: 0 } },
+  );
+
   for (const invalid of [
     [rawTransaction()],
     { items: [rawTransaction()], meta: { limit: 20, offset: 0, total: 1 } },
@@ -171,9 +179,14 @@ test("M7-B2 hooks use only approved GET paths and enforce property/access cache 
     "utf8",
   );
 
-  assert.match(source, /apiClient\.get<unknown>\("\/admin\/payment-transactions"/);
-  assert.match(source, /apiClient\.get<unknown>\(`\/admin\/payment-transactions\/\$\{id\}`\)/);
-  assert.equal((source.match(/apiClient\.get<unknown>/g) ?? []).length, 2);
+  assert.match(source, /import \{ adminUxV2Requester \} from "@\/lib\/admin-ux-api"/);
+  assert.match(source, /adminUxV2Requester\.get<unknown>\("\/admin\/payment-transactions"/);
+  assert.match(
+    source,
+    /adminUxV2Requester\.get<unknown>\(`\/admin\/payment-transactions\/\$\{id\}`\)/,
+  );
+  assert.equal((source.match(/adminUxV2Requester\.get<unknown>/g) ?? []).length, 2);
+  assert.doesNotMatch(source, /\bapiClient\b/);
   assert.match(source, /property_id: propertyId/);
   assert.match(source, /status: filters\.status \?\? null/);
   assert.match(source, /\.\.\.\(filters\.status \? \{ status: filters\.status \} : \{\}\)/);
@@ -184,7 +197,7 @@ test("M7-B2 hooks use only approved GET paths and enforce property/access cache 
   assert.match(source, /Boolean\(currentPropertyId\).*hasAccess/s);
   assert.match(source, /parseAdminPaymentTransactionList/);
   assert.match(source, /parseAdminPaymentTransactionDetail/);
-  assert.doesNotMatch(source, /apiClient\.(post|patch|put|delete)/);
+  assert.doesNotMatch(source, /adminUxV2Requester\.(post|patch|put|delete)/);
   assert.doesNotMatch(source, /refetchInterval|setInterval|polling|invalidateQueries/);
   assert.doesNotMatch(source, /https?:\/\/|midtrans|webhook|settlement|refund/);
   assert.doesNotMatch(source, /paymentUrl|snapToken|providerTransactionId|metadata|rawProvider/);

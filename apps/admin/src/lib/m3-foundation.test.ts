@@ -58,6 +58,58 @@ test("M3 requester sends V2 Accept only through its isolated requester", async (
   assert.equal(result.data.room_code, "A-01");
 });
 
+test("M3 requester preserves the API base pathname for relative endpoints", async () => {
+  async function requestUrl(
+    baseUrl: string,
+    path: string,
+    query?: Record<string, string | number | boolean>,
+  ): Promise<string> {
+    let requestedUrl = "";
+    const requester = createAdminUxV2Requester({
+      baseUrl,
+      getAccessToken: () => null,
+      refreshAccessToken: async () => false,
+      onAuthFailure: () => undefined,
+      fetchImpl: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await requester.get(path, { query });
+    return requestedUrl;
+  }
+
+  assert.equal(
+    await requestUrl("http://localhost:3000/api/v1", "/admin/invoices"),
+    "http://localhost:3000/api/v1/admin/invoices",
+  );
+  assert.equal(
+    await requestUrl("http://localhost:3000/api/v1", "admin/invoices"),
+    "http://localhost:3000/api/v1/admin/invoices",
+  );
+  assert.equal(
+    await requestUrl("http://localhost:3000/api/v1/", "/admin/invoices"),
+    "http://localhost:3000/api/v1/admin/invoices",
+  );
+  assert.equal(
+    await requestUrl("http://localhost:3000/api/v1", "/admin/invoices?status=paid", {
+      property_id: "property a/1",
+      limit: 20,
+    }),
+    "http://localhost:3000/api/v1/admin/invoices?status=paid&property_id=property+a%2F1&limit=20",
+  );
+  assert.equal(
+    await requestUrl("http://localhost:3000/api/v1", "https://reports.example.test/invoices", {
+      limit: 10,
+    }),
+    "https://reports.example.test/invoices?limit=10",
+  );
+});
+
 test("M3 query keys are canonical, property-scoped, and do not retain NIK", () => {
   assert.deepEqual(
     normalizePagination({ q: "  kamar  ", offset: -2, limit: 999, tags: ["b", "a"] }),

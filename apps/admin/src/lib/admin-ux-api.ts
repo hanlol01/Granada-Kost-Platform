@@ -48,9 +48,9 @@ function buildUrl(
   path: string,
   query: Record<string, AdminUxQueryValue> | undefined,
 ): string {
-  const url = path.startsWith("http")
+  const url = /^https?:\/\//i.test(path)
     ? new URL(path)
-    : new URL(path.startsWith("/") ? path : "/" + path, baseUrl.replace(/\/$/, "") + "/");
+    : new URL(path.replace(/^\/+/, ""), baseUrl.replace(/\/+$/, "") + "/");
 
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined && value !== null) url.searchParams.set(key, String(value));

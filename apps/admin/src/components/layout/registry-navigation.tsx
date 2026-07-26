@@ -51,7 +51,7 @@ function RouteLink({
         "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
         nested && "ml-3 py-2 text-[13px]",
         active
-          ? "bg-primary-soft font-medium text-primary"
+          ? "bg-primary-soft font-medium text-sidebar-accent-foreground"
           : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
       )}
     >
@@ -127,7 +127,7 @@ function NavSection({
                 className={cn(
                   "relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
                   roomActive
-                    ? "bg-primary-soft font-medium text-primary"
+                    ? "bg-primary-soft font-medium text-sidebar-accent-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 )}
               >

@@ -192,7 +192,7 @@ function Dashboard() {
                     <Progress value={occupancyPercent} className="h-2" />
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="rounded-lg bg-primary-soft p-3">
-                        <p className="text-lg font-semibold text-primary">
+                        <p className="text-lg font-semibold text-accent-foreground">
                           {summary.roomsOccupied}
                         </p>
                         <p className="text-[10px] text-muted-foreground uppercase">Terisi</p>

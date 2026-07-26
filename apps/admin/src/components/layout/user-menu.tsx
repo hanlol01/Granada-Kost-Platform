@@ -48,7 +48,7 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-9 gap-2 px-2" aria-label="Akun pengguna">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-accent-foreground">
             {initials}
           </span>
           <span className="hidden text-left lg:block">

@@ -95,7 +95,7 @@ function RoomsPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <Badge
-                        className="border-primary/30 bg-primary-soft text-primary"
+                        className="border-primary/30 bg-primary-soft text-accent-foreground"
                         variant="outline"
                       >
                         {KOST_TYPE_LABEL[category]}

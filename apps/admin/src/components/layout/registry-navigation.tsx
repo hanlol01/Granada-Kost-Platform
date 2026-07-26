@@ -51,13 +51,11 @@ function RouteLink({
         "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
         nested && "ml-3 py-2 text-[13px]",
         active
-          ? "bg-blue-500/10 font-medium text-blue-400"
-          : "text-slate-300 hover:bg-slate-800 hover:text-slate-100",
+          ? "bg-primary-soft font-medium text-primary"
+          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
       )}
     >
-      {active ? (
-        <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-blue-400" />
-      ) : null}
+      {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" /> : null}
       <Icon className={cn("h-4 w-4 shrink-0", nested && "h-3.5 w-3.5")} />
       <span className="truncate">{route.label}</span>
     </Link>
@@ -112,7 +110,7 @@ function NavSection({
 
   return (
     <section className="space-y-1">
-      <span className="mb-2 block px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+      <span className="mb-2 block px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {navSectionLabels[section]}
       </span>
       {roots.map((route) => {
@@ -129,19 +127,19 @@ function NavSection({
                 className={cn(
                   "relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
                   roomActive
-                    ? "bg-blue-500/10 font-medium text-blue-400"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-slate-100",
+                    ? "bg-primary-soft font-medium text-primary"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 )}
               >
                 {roomActive ? (
-                  <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-blue-400" />
+                  <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" />
                 ) : null}
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="truncate">{route.label}</span>
               </Link>
               <button
                 type="button"
-                className="mr-1 rounded-md p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+                className="mr-1 rounded-md p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 aria-label={roomsOpen ? "Tutup menu Kamar" : "Buka menu Kamar"}
                 aria-expanded={roomsOpen}
                 onClick={toggleRooms}
@@ -154,7 +152,7 @@ function NavSection({
               </button>
             </div>
             {roomsOpen ? (
-              <div className="mt-1 space-y-0.5 border-l border-slate-800">
+              <div className="mt-1 space-y-0.5 border-l border-sidebar-border">
                 {roomChildren.map((child) => (
                   <RouteLink key={child.id} route={child} pathname={pathname} nested />
                 ))}
@@ -186,7 +184,7 @@ function MoreRoutes({
 
         return (
           <section key={section} className="space-y-1">
-            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {navSectionLabels[section]}
             </p>
             {sectionRoutes.map((route) => (
@@ -211,14 +209,14 @@ export function RegistrySidebar() {
   const routes = getVisibleRoutes(access);
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
-      <div className="flex items-center gap-3 border-b border-slate-800 px-6 py-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+      <div className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
           <Building2 className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-100">Kos Management</p>
-          <p className="text-xs text-slate-500">Sistem Pengelolaan</p>
+          <p className="text-sm font-semibold text-sidebar-foreground">Kos Management</p>
+          <p className="text-xs text-muted-foreground">Sistem Pengelolaan</p>
         </div>
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
@@ -252,7 +250,7 @@ export function RegistryBottomNav() {
 
   return (
     <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-950/95 shadow-[0_-8px_30px_rgba(0,0,0,0.2)] backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 shadow-[0_-8px_30px_rgba(0,0,0,0.2)] backdrop-blur lg:hidden">
         <div className="grid grid-cols-5">
           {primaryRoutes.map((route) => {
             const Icon = route.icon;
@@ -263,7 +261,7 @@ export function RegistryBottomNav() {
                 to={route.to as never}
                 className={cn(
                   "flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] transition-colors",
-                  active ? "text-blue-400" : "text-slate-400 hover:text-slate-100",
+                  active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Icon className="h-5 w-5" />
@@ -274,7 +272,7 @@ export function RegistryBottomNav() {
           <SheetTrigger asChild>
             <button
               type="button"
-              className="flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] text-slate-400 transition-colors hover:text-slate-100"
+              className="flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Buka menu lainnya"
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -285,10 +283,10 @@ export function RegistryBottomNav() {
       </nav>
       <SheetContent
         side="bottom"
-        className="max-h-[80vh] overflow-y-auto border-slate-800 bg-slate-950 px-5 pb-8"
+        className="max-h-[80vh] overflow-y-auto border-border bg-background px-5 pb-8"
       >
         <SheetHeader>
-          <SheetTitle className="text-slate-100">Lainnya</SheetTitle>
+          <SheetTitle className="text-foreground">Lainnya</SheetTitle>
         </SheetHeader>
         <div className="mt-5">
           <MoreRoutes routes={routes} pathname={pathname} onNavigate={() => setMoreOpen(false)} />

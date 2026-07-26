@@ -35,17 +35,17 @@ export function AppBreadcrumb() {
                 <BreadcrumbLink asChild>
                   <Link
                     to={crumb.to as never}
-                    className="text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
+                    className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
                     {label}
                   </Link>
                 </BreadcrumbLink>
               ) : (
-                <BreadcrumbPage className={isCurrent ? "text-slate-100" : "text-slate-400"}>
+                <BreadcrumbPage className={isCurrent ? "text-foreground" : "text-muted-foreground"}>
                   {label}
                 </BreadcrumbPage>
               )}
-              {!isCurrent ? <BreadcrumbSeparator className="text-slate-600" /> : null}
+              {!isCurrent ? <BreadcrumbSeparator className="text-muted-foreground" /> : null}
             </BreadcrumbItem>
           );
         })}

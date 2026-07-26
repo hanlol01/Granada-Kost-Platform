@@ -29,17 +29,17 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-slate-950 text-slate-100">
+    <div className="flex min-h-screen w-full bg-background text-foreground">
       <RegistrySidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
           <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-8">
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold tracking-tight text-slate-100 md:text-2xl">
+              <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">
                 {title}
               </h1>
               {subtitle ? (
-                <p className="mt-0.5 truncate text-sm text-slate-400">{subtitle}</p>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p>
               ) : null}
               <AppBreadcrumb />
             </div>
@@ -50,14 +50,14 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
                 size="icon"
                 onClick={toggleDark}
                 aria-label="Ubah tema"
-                className="text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+                className="text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="relative text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+                className="relative text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 aria-label="Notifikasi"
               >
                 <Bell className="h-4 w-4" />

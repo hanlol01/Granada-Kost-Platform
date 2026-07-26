@@ -90,20 +90,20 @@ function RoomsPage() {
           {(["rukost", "apartkost"] as const).map((category) => {
             const type = roomByCategory(category);
             return (
-              <Card key={category} className="border-slate-800 bg-slate-900/85">
+              <Card key={category} className="border-border bg-card">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <Badge
-                        className="border-blue-500/30 bg-blue-500/10 text-blue-300"
+                        className="border-primary/30 bg-primary-soft text-primary"
                         variant="outline"
                       >
                         {KOST_TYPE_LABEL[category]}
                       </Badge>
-                      <h2 className="mt-3 text-lg font-semibold text-slate-100">
+                      <h2 className="mt-3 text-lg font-semibold text-foreground">
                         {type?.name ?? `Belum ada tipe ${KOST_TYPE_LABEL[category]}`}
                       </h2>
-                      <p className="mt-1 text-sm text-slate-400">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {type
                           ? `${type.roomCount ?? 0} kamar · ${type.facilityCount ?? 0} fasilitas · harga dikelola pada tipe.`
                           : "Buat tipe kost untuk memulai konfigurasi harga dan inventori."}
@@ -124,24 +124,23 @@ function RoomsPage() {
           })}
         </div>
 
-        <Card className="border-slate-800 bg-slate-900/85">
+        <Card className="border-border bg-card">
           <CardContent className="p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-100">Status inventori</h2>
-                <p className="text-sm text-slate-400">Distribusi pada halaman data yang dimuat.</p>
+                <h2 className="text-base font-semibold text-foreground">Status inventori</h2>
+                <p className="text-sm text-muted-foreground">
+                  Distribusi pada halaman data yang dimuat.
+                </p>
               </div>
-              <Wrench className="h-5 w-5 text-slate-500" />
+              <Wrench className="h-5 w-5 text-muted-foreground" />
             </div>
             {rooms.length ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
                 {Object.entries(ROOM_STATUS_LABEL).map(([status, label]) => (
-                  <div
-                    key={status}
-                    className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"
-                  >
-                    <p className="text-xs text-slate-500">{label}</p>
-                    <p className="mt-1 text-xl font-semibold text-slate-100">
+                  <div key={status} className="rounded-lg border border-border bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="mt-1 text-xl font-semibold text-foreground">
                       {counts[status] ?? 0}
                     </p>
                   </div>
@@ -173,16 +172,16 @@ function SummaryMetric({
   icon: typeof BedDouble;
 }) {
   return (
-    <Card className="border-slate-800 bg-slate-900/85">
+    <Card className="border-border bg-card">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-100">{value}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
           </div>
-          <Icon className="h-5 w-5 text-blue-300" />
+          <Icon className="h-5 w-5 text-primary" />
         </div>
-        <p className="mt-3 truncate text-xs text-slate-500">{note}</p>
+        <p className="mt-3 truncate text-xs text-muted-foreground">{note}</p>
       </CardContent>
     </Card>
   );

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Breadcrumb,
@@ -30,23 +31,27 @@ export function AppBreadcrumb() {
           const canLink = !isCurrent && Boolean(crumb.to) && crumb.to !== pathname;
 
           return (
-            <BreadcrumbItem key={crumb.id}>
-              {canLink ? (
-                <BreadcrumbLink asChild>
-                  <Link
-                    to={crumb.to as never}
-                    className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            <Fragment key={crumb.id}>
+              <BreadcrumbItem>
+                {canLink ? (
+                  <BreadcrumbLink asChild>
+                    <Link
+                      to={crumb.to as never}
+                      className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                    >
+                      {label}
+                    </Link>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage
+                    className={isCurrent ? "text-foreground" : "text-muted-foreground"}
                   >
                     {label}
-                  </Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage className={isCurrent ? "text-foreground" : "text-muted-foreground"}>
-                  {label}
-                </BreadcrumbPage>
-              )}
+                  </BreadcrumbPage>
+                )}
+              </BreadcrumbItem>
               {!isCurrent ? <BreadcrumbSeparator className="text-muted-foreground" /> : null}
-            </BreadcrumbItem>
+            </Fragment>
           );
         })}
       </BreadcrumbList>

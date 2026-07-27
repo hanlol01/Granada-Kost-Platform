@@ -77,7 +77,12 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useM4KostTypes, useM4Mutation, useM4RoomInventory } from "@/hooks/useAdminUxMaster";
+import {
+  useM4KostTypes,
+  useM4Mutation,
+  useM4RoomBuildings,
+  useM4RoomInventory,
+} from "@/hooks/useAdminUxMaster";
 
 type Props = {
   category: KostTypeCategory;
@@ -106,21 +111,6 @@ function roomLabel(room: RoomInventory): string {
   return room.roomCode?.trim() || room.number;
 }
 
-function buildingOptions(rooms: RoomInventory[]): BuildingOption[] {
-  const options = new Map<string, BuildingOption>();
-  for (const room of rooms) {
-    if (!room.buildingId) continue;
-    options.set(room.buildingId, {
-      id: room.buildingId,
-      label: room.buildingName || room.buildingCode || room.unitCode || "Bangunan tersedia",
-      category: room.kostType.category,
-    });
-  }
-  return [...options.values()].sort((left, right) =>
-    left.label.localeCompare(right.label, "id-ID"),
-  );
-}
-
 function RoomStatusBadge({ status }: { status: RoomInventory["status"] }) {
   return (
     <Badge className={cn("whitespace-nowrap border", STATUS_TONE[status])} variant="outline">
@@ -133,6 +123,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   const { hasPermission } = useAuth();
   const canManage = hasPermission("room.manage");
   const typeQuery = useM4KostTypes({ category, limit: 100 });
+  const buildingQuery = useM4RoomBuildings(category);
   const roomQuery = useM4RoomInventory({
     category,
     q: search.q,
@@ -150,9 +141,19 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   const rooms = roomQuery.data?.items ?? EMPTY_ROOM_ITEMS;
   const types = typeQuery.data?.items ?? [];
   const activeType = types.find((item) => item.status === "active") ?? null;
-  const buildings = useMemo(() => buildingOptions(rooms), [rooms]);
+  const buildings = useMemo(
+    () =>
+      (buildingQuery.data ?? [])
+        .map((building) => ({
+          id: building.id,
+          label: building.buildingName || building.buildingCode,
+          category: building.category,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label, "id-ID")),
+    [buildingQuery.data],
+  );
 
-  if (typeQuery.isLoading || roomQuery.isLoading) {
+  if (typeQuery.isLoading || buildingQuery.isLoading || roomQuery.isLoading) {
     return (
       <AppShell title={KOST_TYPE_LABEL[category]} subtitle="Menyiapkan inventori dan tipe kost">
         <LoadingState label="Memuat data kamar..." />
@@ -160,13 +161,14 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     );
   }
 
-  if (typeQuery.error || roomQuery.error) {
+  if (typeQuery.error || buildingQuery.error || roomQuery.error) {
     return (
       <AppShell title={KOST_TYPE_LABEL[category]} subtitle="Inventori dan konfigurasi tipe kost">
         <ErrorState
-          error={typeQuery.error ?? roomQuery.error}
+          error={typeQuery.error ?? buildingQuery.error ?? roomQuery.error}
           onRetry={() => {
             void typeQuery.refetch();
+            void buildingQuery.refetch();
             void roomQuery.refetch();
           }}
           title="Gagal memuat inventori"
@@ -188,7 +190,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
             </Button>
             <Button
               onClick={() => setRoomEditor("create")}
-              disabled={!activeType || buildings.length === 0}
+              disabled={!canManage || !activeType || buildings.length === 0}
             >
               <Plus className="mr-2 h-4 w-4" /> Tambah Kamar
             </Button>
@@ -243,6 +245,12 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
           <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
             Inventori baru membutuhkan tipe kost aktif. Tambah kamar tersedia setelah tipe dan
             bangunan yang sesuai ditemukan.
+          </p>
+        ) : null}
+        {activeType && canManage && buildings.length === 0 ? (
+          <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
+            Belum ada bangunan untuk kategori {KOST_TYPE_LABEL[category]}. Tambah kamar
+            dinonaktifkan sampai referensi bangunan tersedia.
           </p>
         ) : null}
       </div>
@@ -967,7 +975,7 @@ function RoomInventoryEditor({
             <Field
               label="Bangunan"
               required
-              hint="Hanya bangunan yang sudah tersedia dari inventori saat ini."
+              hint="Hanya bangunan property yang sesuai dengan kategori tipe kost."
             >
               <Select
                 value={draft.buildingId || "none"}

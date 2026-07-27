@@ -14,6 +14,7 @@ import { PropertyService } from '../property/property.service';
 import type { RequestAuditContext } from '../property/types/property.types';
 import {
   CreateRoomV2Dto,
+  ListRoomBuildingsV2QueryDto,
   ListRoomsV2QueryDto,
   UpdateRoomV2Dto,
   UpdateRoomV2StatusDto,
@@ -77,6 +78,28 @@ export class AdminUxRoomV2Service {
     );
     const records = await this.hydrate(result.rows, query.include_active_lease ?? false);
     return v2List(records, limit, offset, total);
+  }
+
+  async buildings(user: UserAccessContext, query: ListRoomBuildingsV2QueryDto) {
+    await this.properties.assertCanReadProperty(user, query.property_id);
+    const result = await this.database.client.query<Row>(
+      `SELECT id, property_id, category, building_code, building_name, gender_policy
+       FROM room_buildings
+       WHERE property_id = $1
+         AND ($2::text IS NULL OR category = $2)
+       ORDER BY category, building_code, id`,
+      [query.property_id, query.category ?? null],
+    );
+    return v2Data(
+      result.rows.map((row) => ({
+        id: row.id,
+        property_id: row.property_id,
+        category: row.category,
+        building_code: row.building_code,
+        building_name: row.building_name,
+        gender_policy: row.gender_policy,
+      })),
+    );
   }
 
   async get(user: UserAccessContext, roomId: string, includeActiveLease = false) {

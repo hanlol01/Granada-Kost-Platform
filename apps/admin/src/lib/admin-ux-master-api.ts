@@ -123,6 +123,15 @@ export type RoomAvailabilityItem = {
   total: number;
 };
 
+export type RoomBuildingReference = {
+  id: string;
+  propertyId: string;
+  category: KostTypeCategory;
+  buildingCode: string;
+  buildingName: string;
+  genderPolicy: Exclude<RoomGenderPolicy, "mixed">;
+};
+
 export type GalleryTarget =
   | { targetType: "kost_type"; kostTypeId: string }
   | { targetType: "common_area"; commonAreaKey: CommonAreaKey };
@@ -282,6 +291,20 @@ function isRoomStatus(value: unknown): value is RoomStatus {
   );
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isKostTypeCategory(value: unknown): value is KostTypeCategory {
+  return value === "rukost" || value === "apartkost";
+}
+
+function isRoomBuildingGenderPolicy(
+  value: unknown,
+): value is RoomBuildingReference["genderPolicy"] {
+  return value === "male" || value === "female";
+}
+
 export function parseRoomInventoryListEnvelope(value: unknown): AdminUxPage<RoomInventory> {
   if (
     !isPlainRecord(value) ||
@@ -326,6 +349,41 @@ export function parseRoomAvailabilityEnvelope(value: unknown): RoomAvailabilityI
       propertyId: item.property_id,
       status: item.status,
       total: item.total,
+    };
+  });
+}
+
+export function parseRoomBuildingReferenceEnvelope(value: unknown): RoomBuildingReference[] {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"]) || !Array.isArray(value.data)) {
+    throw new Error("Invalid room building reference envelope.");
+  }
+  return value.data.map((item) => {
+    if (
+      !isPlainRecord(item) ||
+      !hasExactKeys(item, [
+        "id",
+        "property_id",
+        "category",
+        "building_code",
+        "building_name",
+        "gender_policy",
+      ]) ||
+      !isNonEmptyString(item.id) ||
+      !isNonEmptyString(item.property_id) ||
+      !isKostTypeCategory(item.category) ||
+      !isNonEmptyString(item.building_code) ||
+      !isNonEmptyString(item.building_name) ||
+      !isRoomBuildingGenderPolicy(item.gender_policy)
+    ) {
+      throw new Error("Invalid room building reference record.");
+    }
+    return {
+      id: item.id,
+      propertyId: item.property_id,
+      category: item.category,
+      buildingCode: item.building_code,
+      buildingName: item.building_name,
+      genderPolicy: item.gender_policy,
     };
   });
 }
@@ -638,6 +696,12 @@ export const adminUxMasterApi = {
       adminUxV2Requester
         .get<unknown>("/rooms/availability", { query: { property_id: propertyId } })
         .then(parseRoomAvailabilityEnvelope),
+    buildings: (propertyId: string, category: KostTypeCategory) =>
+      adminUxV2Requester
+        .get<unknown>("/rooms/buildings", {
+          query: { property_id: propertyId, category },
+        })
+        .then(parseRoomBuildingReferenceEnvelope),
     detail: (id: string, includeActiveLease = false) =>
       data<RoomInventory>(
         adminUxV2Requester.get<V2DataEnvelope<unknown>>("/rooms/" + encodeURIComponent(id), {

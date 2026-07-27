@@ -23,6 +23,7 @@ import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
 import { RoomService } from './room.service';
 import { AdminUxRoomV2Service } from '../admin-ux-master/admin-ux-room-v2.service';
+import { ListRoomBuildingsV2QueryDto } from '../admin-ux-master/admin-ux-room-v2.dto';
 import type {
   CreateRoomV2Dto,
   UpdateRoomV2StatusDto,
@@ -66,6 +67,12 @@ export class RoomController {
         total: Math.max(0, Math.trunc(item.total)),
       })),
     );
+  }
+
+  @Get('buildings')
+  @RequirePermissions('room.read')
+  buildings(@CurrentUser() user: UserAccessContext, @Query() query: ListRoomBuildingsV2QueryDto) {
+    return this.roomsV2.buildings(user, query);
   }
 
   @Post()

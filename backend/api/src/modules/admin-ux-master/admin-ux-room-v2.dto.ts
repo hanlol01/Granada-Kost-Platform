@@ -36,6 +36,15 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   include_active_lease?: boolean;
 }
 
+export class ListRoomBuildingsV2QueryDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsOptional()
+  @IsIn(['rukost', 'apartkost'])
+  category?: 'rukost' | 'apartkost';
+}
+
 export class CreateRoomV2Dto {
   @IsUUID('4')
   property_id!: string;

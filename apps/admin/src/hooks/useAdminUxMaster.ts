@@ -153,6 +153,15 @@ export function useM4RoomAvailability() {
   });
 }
 
+export function useM4RoomBuildings(category: KostTypeCategory | null | undefined) {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.rooms.buildings(currentPropertyId ?? "", category ?? ""),
+    queryFn: () => adminUxMasterApi.rooms.buildings(currentPropertyId!, category!),
+    enabled: Boolean(currentPropertyId && category),
+  });
+}
+
 export function useM4Gallery(target: GalleryTarget | null, options: PageOptions = {}) {
   const { currentPropertyId } = useProperty();
   const targetId =

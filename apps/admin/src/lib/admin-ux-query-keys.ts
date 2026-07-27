@@ -74,6 +74,8 @@ export const adminUxQueryKeys = {
     detail: (propertyId: string, id: string) => scoped("room", propertyId, id),
     availability: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("roomAvailability", propertyId, normalizePagination(filters)),
+    buildings: (propertyId: string, category: "rukost" | "apartkost" | "") =>
+      scoped("roomBuildings", propertyId, category),
   },
   facilities: {
     categories: (propertyId: string) => scoped("facilityCategories", propertyId),

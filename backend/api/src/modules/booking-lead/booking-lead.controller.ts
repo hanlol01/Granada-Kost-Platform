@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { PropertyService } from '../property/property.service';
@@ -8,6 +8,7 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import { BookingLeadService } from './booking-lead.service';
+import { CreateAdminBookingLeadDto } from './dto/create-admin-booking-lead.dto';
 import { ListBookingLeadsQueryDto } from './dto/list-booking-leads-query.dto';
 import { UpdateBookingLeadStatusDto } from './dto/update-booking-lead-status.dto';
 
@@ -19,6 +20,22 @@ export class BookingLeadController {
     private readonly bookingLeads: BookingLeadService,
     private readonly properties: PropertyService,
   ) {}
+
+  @Post()
+  @RequirePermissions('room.manage')
+  async createAdmin(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: CreateAdminBookingLeadDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    await this.properties.assertCanReadProperty(user, dto.property_id);
+    return this.bookingLeads.createAdminLead(dto, {
+      actorUserId: user.id,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+      correlationId: request.correlationId,
+    });
+  }
 
   @Get()
   @RequirePermissions('room.read')

@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import {
+  AdminBookingLeadRoom,
   BookingLeadCategory,
   BookingLeadFloorCode,
   BookingLeadGender,
   BookingLeadRecord,
   BookingLeadSource,
   BookingLeadStatus,
+  CreateAdminBookingLeadInput,
   CreateBookingLeadInput,
   ListBookingLeadsFilters,
   PublicPropertyResolutionInput,
@@ -15,6 +18,8 @@ import {
 type BookingLeadRow = {
   id: string;
   property_id: string;
+  room_id: string | null;
+  room_number?: string | null;
   category: BookingLeadCategory;
   gender: BookingLeadGender;
   building_code: string | null;
@@ -22,18 +27,73 @@ type BookingLeadRow = {
   public_group_key: string | null;
   visitor_name: string;
   visitor_phone: string;
+  visitor_address: string | null;
+  visitor_university: string | null;
   visitor_message: string | null;
   preferred_move_in_date: string | Date | null;
   status: BookingLeadStatus;
   source: BookingLeadSource;
   metadata: Record<string, unknown> | null;
+  created_by_user_id: string | null;
   created_at: Date;
   updated_at: Date;
+};
+
+type AdminBookingLeadRoomRow = {
+  id: string;
+  property_id: string;
+  room_number: string;
+  category: BookingLeadCategory | null;
+  floor_code: BookingLeadFloorCode | null;
+  room_status: string;
+  gender_policy: string;
+  building_id: string | null;
+  building_code: string | null;
+  building_category: BookingLeadCategory | null;
+  building_gender_policy: string | null;
 };
 
 @Injectable()
 export class BookingLeadRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async findAdminRoom(propertyId: string, roomId: string): Promise<AdminBookingLeadRoom | null> {
+    const result = await this.database.client.query<AdminBookingLeadRoomRow>(
+      `SELECT rooms.id,
+              rooms.property_id,
+              rooms.number AS room_number,
+              rooms.category,
+              rooms.floor_code,
+              rooms.room_status,
+              rooms.gender_policy,
+              rooms.building_id,
+              room_buildings.building_code,
+              room_buildings.category AS building_category,
+              room_buildings.gender_policy AS building_gender_policy
+       FROM rooms
+       LEFT JOIN room_buildings
+         ON room_buildings.id = rooms.building_id
+        AND room_buildings.property_id = rooms.property_id
+       WHERE rooms.id = $1
+         AND rooms.property_id = $2`,
+      [roomId, propertyId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      propertyId: row.property_id,
+      roomNumber: row.room_number,
+      category: row.category,
+      floorCode: row.floor_code,
+      roomStatus: row.room_status,
+      genderPolicy: row.gender_policy,
+      buildingId: row.building_id,
+      buildingCode: row.building_code,
+      buildingCategory: row.building_category,
+      buildingGenderPolicy: row.building_gender_policy,
+    };
+  }
 
   async resolvePublicPropertyId(input: PublicPropertyResolutionInput): Promise<string | null> {
     const matched = await this.database.client.query<{ property_id: string }>(
@@ -69,7 +129,10 @@ export class BookingLeadRepository {
   }
 
   async findRecentDuplicate(
-    input: Pick<CreateBookingLeadInput, 'propertyId' | 'category' | 'gender' | 'visitorPhone' | 'publicGroupKey'>,
+    input: Pick<
+      CreateBookingLeadInput,
+      'propertyId' | 'category' | 'gender' | 'visitorPhone' | 'publicGroupKey'
+    >,
     windowMinutes: number,
   ): Promise<BookingLeadRecord | null> {
     const result = await this.database.client.query<BookingLeadRow>(
@@ -80,6 +143,7 @@ export class BookingLeadRepository {
          AND category = $3
          AND gender = $4
          AND COALESCE(public_group_key, '') = COALESCE($5::text, '')
+         AND source = 'public_kamar'
          AND created_at >= now() - ($6::int * interval '1 minute')
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -121,7 +185,70 @@ export class BookingLeadRepository {
     return this.map(result.rows[0]);
   }
 
-  async listForProperties(propertyIds: string[], filters: ListBookingLeadsFilters): Promise<BookingLeadRecord[]> {
+  async findOrCreateAdminLead(
+    input: CreateAdminBookingLeadInput,
+    windowMinutes: number,
+  ): Promise<{ lead: BookingLeadRecord; created: boolean }> {
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `${input.propertyId}:${input.roomId}:${input.visitorPhone}`,
+      ]);
+
+      const duplicate = await client.query<BookingLeadRow>(
+        `SELECT ${this.columns()}
+         FROM booking_leads
+         WHERE property_id = $1
+           AND room_id = $2
+           AND visitor_phone = $3
+           AND source = 'admin_quick_entry'
+           AND created_at >= now() - ($4::int * interval '1 minute')
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [input.propertyId, input.roomId, input.visitorPhone, windowMinutes],
+      );
+      if (duplicate.rows[0]) {
+        await client.query('COMMIT');
+        return { lead: this.map(duplicate.rows[0]), created: false };
+      }
+
+      const inserted = await client.query<BookingLeadRow>(
+        `INSERT INTO booking_leads (
+           property_id, room_id, category, gender, building_code, floor_code,
+           visitor_name, visitor_phone, visitor_address, visitor_university,
+           status, source, created_by_user_id
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'new', 'admin_quick_entry', $11)
+         RETURNING ${this.columns()}`,
+        [
+          input.propertyId,
+          input.roomId,
+          input.category,
+          input.gender,
+          input.buildingCode,
+          input.floorCode,
+          input.visitorName,
+          input.visitorPhone,
+          input.visitorAddress,
+          input.visitorUniversity ?? null,
+          input.createdByUserId,
+        ],
+      );
+      await client.query('COMMIT');
+      return { lead: this.map(inserted.rows[0]), created: true };
+    } catch (error) {
+      await this.rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listForProperties(
+    propertyIds: string[],
+    filters: ListBookingLeadsFilters,
+  ): Promise<BookingLeadRecord[]> {
     if (!propertyIds.length) {
       return [];
     }
@@ -129,20 +256,22 @@ export class BookingLeadRepository {
     const search = filters.search?.trim() || null;
     const phoneSearch = search?.replace(/\D/g, '') || null;
     const result = await this.database.client.query<BookingLeadRow>(
-      `SELECT ${this.columns()}
+      `SELECT ${this.columns('booking_leads')},
+              rooms.number AS room_number
        FROM booking_leads
-       WHERE property_id = ANY($1::uuid[])
-         AND ($2::text IS NULL OR status = $2)
-         AND ($3::text IS NULL OR category = $3)
-         AND ($4::text IS NULL OR gender = $4)
-         AND ($5::date IS NULL OR created_at::date >= $5::date)
-         AND ($6::date IS NULL OR created_at::date <= $6::date)
+       LEFT JOIN rooms ON rooms.id = booking_leads.room_id
+       WHERE booking_leads.property_id = ANY($1::uuid[])
+         AND ($2::text IS NULL OR booking_leads.status = $2)
+         AND ($3::text IS NULL OR booking_leads.category = $3)
+         AND ($4::text IS NULL OR booking_leads.gender = $4)
+         AND ($5::date IS NULL OR booking_leads.created_at::date >= $5::date)
+         AND ($6::date IS NULL OR booking_leads.created_at::date <= $6::date)
          AND (
            $7::text IS NULL
-           OR visitor_name ILIKE '%' || $7 || '%'
-           OR ($8::text IS NOT NULL AND visitor_phone ILIKE '%' || $8 || '%')
+           OR booking_leads.visitor_name ILIKE '%' || $7 || '%'
+           OR ($8::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $8 || '%')
          )
-       ORDER BY created_at DESC
+       ORDER BY booking_leads.created_at DESC
        LIMIT $9 OFFSET $10`,
       [
         propertyIds,
@@ -162,9 +291,11 @@ export class BookingLeadRepository {
 
   async findById(id: string): Promise<BookingLeadRecord | null> {
     const result = await this.database.client.query<BookingLeadRow>(
-      `SELECT ${this.columns()}
+      `SELECT ${this.columns('booking_leads')},
+              rooms.number AS room_number
        FROM booking_leads
-       WHERE id = $1`,
+       LEFT JOIN rooms ON rooms.id = booking_leads.room_id
+       WHERE booking_leads.id = $1`,
       [id],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
@@ -172,26 +303,38 @@ export class BookingLeadRepository {
 
   async updateStatus(id: string, status: BookingLeadStatus): Promise<BookingLeadRecord | null> {
     const result = await this.database.client.query<BookingLeadRow>(
-      `UPDATE booking_leads
-       SET status = $2,
-           updated_at = now()
-       WHERE id = $1
-       RETURNING ${this.columns()}`,
+      `WITH updated AS (
+         UPDATE booking_leads
+         SET status = $2,
+             updated_at = now()
+         WHERE id = $1
+         RETURNING ${this.columns()}
+       )
+       SELECT ${this.columns('updated')},
+              rooms.number AS room_number
+       FROM updated
+       LEFT JOIN rooms ON rooms.id = updated.room_id`,
       [id, status],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  private columns(): string {
-    return `id, property_id, category, gender, building_code, floor_code, public_group_key,
-            visitor_name, visitor_phone, visitor_message, preferred_move_in_date, status,
-            source, metadata, created_at, updated_at`;
+  private columns(tableAlias?: string): string {
+    const prefix = tableAlias ? `${tableAlias}.` : '';
+    return `${prefix}id, ${prefix}property_id, ${prefix}room_id, ${prefix}category, ${prefix}gender,
+            ${prefix}building_code, ${prefix}floor_code, ${prefix}public_group_key,
+            ${prefix}visitor_name, ${prefix}visitor_phone, ${prefix}visitor_address,
+            ${prefix}visitor_university, ${prefix}visitor_message, ${prefix}preferred_move_in_date,
+            ${prefix}status, ${prefix}source, ${prefix}metadata, ${prefix}created_by_user_id,
+            ${prefix}created_at, ${prefix}updated_at`;
   }
 
   private map(row: BookingLeadRow): BookingLeadRecord {
     return {
       id: row.id,
       propertyId: row.property_id,
+      roomId: row.room_id,
+      roomNumber: row.room_number ?? null,
       category: row.category,
       gender: row.gender,
       buildingCode: row.building_code,
@@ -199,11 +342,14 @@ export class BookingLeadRepository {
       publicGroupKey: row.public_group_key,
       visitorName: row.visitor_name,
       visitorPhone: row.visitor_phone,
+      visitorAddress: row.visitor_address,
+      visitorUniversity: row.visitor_university,
       visitorMessage: row.visitor_message,
       preferredMoveInDate: this.dateOnly(row.preferred_move_in_date),
       status: row.status,
       source: row.source,
       metadata: row.metadata,
+      createdByUserId: row.created_by_user_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -213,10 +359,18 @@ export class BookingLeadRepository {
     if (!value) return null;
     if (value instanceof Date) {
       const year = value.getFullYear();
-      const month = String(value.getMonth() + 1).padStart(2, "0");
-      const day = String(value.getDate()).padStart(2, "0");
-      return year + "-" + month + "-" + day;
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return year + '-' + month + '-' + day;
     }
     return value.slice(0, 10);
+  }
+
+  private async rollback(client: PoolClient): Promise<void> {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Preserve the original transaction error.
+    }
   }
 }

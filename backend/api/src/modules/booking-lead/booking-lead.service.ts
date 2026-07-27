@@ -1,5 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
+import { CreateAdminBookingLeadDto } from './dto/create-admin-booking-lead.dto';
 import { CreatePublicBookingLeadDto } from './dto/create-public-booking-lead.dto';
 import { ListBookingLeadsQueryDto } from './dto/list-booking-leads-query.dto';
 import { BookingLeadRepository } from './repositories/booking-lead.repository';
@@ -28,6 +35,87 @@ export class BookingLeadService {
     private readonly leads: BookingLeadRepository,
     private readonly audit: AuditRepository,
   ) {}
+
+  async createAdminLead(
+    dto: CreateAdminBookingLeadDto,
+    context: BookingLeadRequestContext & { actorUserId: string },
+  ) {
+    const room = await this.leads.findAdminRoom(dto.property_id, dto.room_id);
+    if (!room) {
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_ROOM_NOT_FOUND',
+        message: 'Room is not available within the authorized property.',
+      });
+    }
+
+    if (
+      !room.buildingId ||
+      !room.buildingCode ||
+      !room.category ||
+      room.buildingCategory !== room.category ||
+      room.buildingGenderPolicy !== room.genderPolicy
+    ) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_ROOM_BUILDING_REQUIRED',
+        message: 'Room must have an authoritative building reference.',
+      });
+    }
+
+    if (room.roomStatus !== 'vacant') {
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_ROOM_NOT_VACANT',
+        message: 'Booking interest can only be recorded for a vacant room.',
+      });
+    }
+
+    if (dto.gender !== room.genderPolicy) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_GENDER_MISMATCH',
+        message: 'Visitor gender does not match the room gender policy.',
+      });
+    }
+
+    const result = await this.leads.findOrCreateAdminLead(
+      {
+        propertyId: room.propertyId,
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        category: room.category,
+        gender: dto.gender,
+        buildingCode: room.buildingCode,
+        floorCode: room.floorCode,
+        visitorName: this.sanitizeText(dto.visitor_name, 120),
+        visitorPhone: this.normalizeIndonesianPhone(dto.visitor_phone),
+        visitorAddress: this.sanitizeText(dto.visitor_address, 500),
+        visitorUniversity: dto.visitor_university
+          ? this.sanitizeText(dto.visitor_university, 160)
+          : undefined,
+        createdByUserId: context.actorUserId,
+      },
+      DUPLICATE_WINDOW_MINUTES,
+    );
+
+    if (result.created) {
+      await this.audit.write({
+        actorUserId: context.actorUserId,
+        propertyId: result.lead.propertyId,
+        action: 'booking_lead.create_admin',
+        resourceType: 'booking_lead',
+        resourceId: result.lead.id,
+        afterData: {
+          id: result.lead.id,
+          status: result.lead.status,
+          source: result.lead.source,
+        },
+        resultStatus: 'success',
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+        correlationId: context.correlationId,
+      });
+    }
+
+    return this.adminResponse(result.lead, room.roomNumber);
+  }
 
   async createPublicLead(dto: CreatePublicBookingLeadDto, context: BookingLeadRequestContext) {
     const input = this.normalizePublicLeadInput(dto);
@@ -104,7 +192,10 @@ export class BookingLeadService {
   async get(leadId: string): Promise<BookingLeadRecord> {
     const lead = await this.leads.findById(leadId);
     if (!lead) {
-      throw new NotFoundException({ code: 'BOOKING_LEAD_NOT_FOUND', message: 'Booking lead not found' });
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_NOT_FOUND',
+        message: 'Booking lead not found',
+      });
     }
     return lead;
   }
@@ -122,7 +213,10 @@ export class BookingLeadService {
     const updated = await this.leads.updateStatus(current.id, status);
 
     if (!updated) {
-      throw new NotFoundException({ code: 'BOOKING_LEAD_NOT_FOUND', message: 'Booking lead not found' });
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_NOT_FOUND',
+        message: 'Booking lead not found',
+      });
     }
 
     await this.audit.write({
@@ -252,10 +346,12 @@ export class BookingLeadService {
     };
   }
 
-  private adminResponse(lead: BookingLeadRecord) {
+  private adminResponse(lead: BookingLeadRecord, roomNumber = lead.roomNumber) {
     return {
       id: lead.id,
       propertyId: lead.propertyId,
+      roomId: lead.roomId,
+      roomNumber,
       category: lead.category,
       gender: lead.gender,
       buildingCode: lead.buildingCode,
@@ -263,6 +359,8 @@ export class BookingLeadService {
       publicGroupKey: lead.publicGroupKey,
       visitorName: lead.visitorName,
       visitorPhone: lead.visitorPhone,
+      visitorAddress: lead.visitorAddress,
+      visitorUniversity: lead.visitorUniversity,
       visitorMessage: lead.visitorMessage,
       preferredMoveInDate: lead.preferredMoveInDate,
       status: lead.status,

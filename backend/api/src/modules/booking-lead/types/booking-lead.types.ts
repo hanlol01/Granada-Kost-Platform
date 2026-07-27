@@ -9,11 +9,13 @@ export type BookingLeadStatus =
   | 'converted'
   | 'rejected'
   | 'expired';
-export type BookingLeadSource = 'public_kamar';
+export type BookingLeadSource = 'public_kamar' | 'admin_quick_entry';
 
 export type BookingLeadRecord = {
   id: string;
   propertyId: string;
+  roomId: string | null;
+  roomNumber: string | null;
   category: BookingLeadCategory;
   gender: BookingLeadGender;
   buildingCode: string | null;
@@ -21,13 +23,45 @@ export type BookingLeadRecord = {
   publicGroupKey: string | null;
   visitorName: string;
   visitorPhone: string;
+  visitorAddress: string | null;
+  visitorUniversity: string | null;
   visitorMessage: string | null;
   preferredMoveInDate: string | null;
   status: BookingLeadStatus;
   source: BookingLeadSource;
   metadata: Record<string, unknown> | null;
+  createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type AdminBookingLeadRoom = {
+  id: string;
+  propertyId: string;
+  roomNumber: string;
+  category: BookingLeadCategory | null;
+  floorCode: BookingLeadFloorCode | null;
+  roomStatus: string;
+  genderPolicy: string;
+  buildingId: string | null;
+  buildingCode: string | null;
+  buildingCategory: BookingLeadCategory | null;
+  buildingGenderPolicy: string | null;
+};
+
+export type CreateAdminBookingLeadInput = {
+  propertyId: string;
+  roomId: string;
+  roomNumber: string;
+  category: BookingLeadCategory;
+  gender: BookingLeadGender;
+  buildingCode: string;
+  floorCode: BookingLeadFloorCode | null;
+  visitorName: string;
+  visitorPhone: string;
+  visitorAddress: string;
+  visitorUniversity?: string;
+  createdByUserId: string;
 };
 
 export type CreateBookingLeadInput = {

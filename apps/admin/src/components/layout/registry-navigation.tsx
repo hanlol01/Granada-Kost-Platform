@@ -219,7 +219,7 @@ export function RegistrySidebar() {
           <p className="text-xs text-muted-foreground">Sistem Pengelolaan</p>
         </div>
       </div>
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+      <nav className="app-scrollbar flex-1 space-y-6 overflow-y-auto px-3 py-5">
         {SECTION_ORDER.map((section) => (
           <NavSection
             key={section}
@@ -283,7 +283,7 @@ export function RegistryBottomNav() {
       </nav>
       <SheetContent
         side="bottom"
-        className="max-h-[80vh] overflow-y-auto border-border bg-background px-5 pb-8"
+        className="app-scrollbar max-h-[80vh] overflow-y-auto border-border bg-background px-5 pb-8"
       >
         <SheetHeader>
           <SheetTitle className="text-foreground">Lainnya</SheetTitle>

@@ -117,6 +117,12 @@ export type RoomInventory = {
   } | null;
 };
 
+export type RoomAvailabilityItem = {
+  propertyId: string;
+  status: RoomStatus;
+  total: number;
+};
+
 export type GalleryTarget =
   | { targetType: "kost_type"; kostTypeId: string }
   | { targetType: "common_area"; commonAreaKey: CommonAreaKey };
@@ -244,6 +250,84 @@ async function list<T>(
 
 async function data<T>(request: Promise<V2DataEnvelope<unknown>>): Promise<T> {
   return mapV2Data<T>(await request);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return (
+    actual.length === keys.length &&
+    keys
+      .slice()
+      .sort()
+      .every((key, index) => key === actual[index])
+  );
+}
+
+function isIntegerAtLeast(value: unknown, minimum: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= minimum;
+}
+
+function isRoomStatus(value: unknown): value is RoomStatus {
+  return (
+    value === "vacant" ||
+    value === "reserved" ||
+    value === "occupied" ||
+    value === "maintenance" ||
+    value === "inactive" ||
+    value === "requires_review"
+  );
+}
+
+export function parseRoomInventoryListEnvelope(value: unknown): AdminUxPage<RoomInventory> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data", "meta"]) ||
+    !Array.isArray(value.data)
+  ) {
+    throw new Error("Invalid rooms list envelope.");
+  }
+  const meta = value.meta;
+  if (
+    !isPlainRecord(meta) ||
+    !hasExactKeys(meta, ["limit", "offset", "total"]) ||
+    !isIntegerAtLeast(meta.total, 0) ||
+    !isIntegerAtLeast(meta.limit, 1) ||
+    meta.limit > 100 ||
+    !isIntegerAtLeast(meta.offset, 0)
+  ) {
+    throw new Error("Invalid rooms list metadata.");
+  }
+  return mapV2Page<RoomInventory>({
+    data: value.data,
+    meta: { total: meta.total, limit: meta.limit, offset: meta.offset },
+  });
+}
+
+export function parseRoomAvailabilityEnvelope(value: unknown): RoomAvailabilityItem[] {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"]) || !Array.isArray(value.data)) {
+    throw new Error("Invalid room availability envelope.");
+  }
+  return value.data.map((item) => {
+    if (
+      !isPlainRecord(item) ||
+      !hasExactKeys(item, ["property_id", "status", "total"]) ||
+      typeof item.property_id !== "string" ||
+      item.property_id.length === 0 ||
+      !isRoomStatus(item.status) ||
+      !isIntegerAtLeast(item.total, 0)
+    ) {
+      throw new Error("Invalid room availability record.");
+    }
+    return {
+      propertyId: item.property_id,
+      status: item.status,
+      total: item.total,
+    };
+  });
 }
 
 function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record<string, unknown> {
@@ -536,16 +620,24 @@ export const adminUxMasterApi = {
         includeActiveLease?: boolean;
       },
     ) =>
-      list<RoomInventory>("/rooms", {
-        ...pageQuery(input),
-        kost_type_id: input.kostTypeId,
-        category: input.category,
-        building_id: input.buildingId,
-        floor: input.floor,
-        status: input.status,
-        q: input.q?.trim() || undefined,
-        include_active_lease: input.includeActiveLease,
-      }),
+      adminUxV2Requester
+        .get<unknown>("/rooms", {
+          query: {
+            ...pageQuery(input),
+            kost_type_id: input.kostTypeId,
+            category: input.category,
+            building_id: input.buildingId,
+            floor: input.floor,
+            status: input.status,
+            q: input.q?.trim() || undefined,
+            include_active_lease: input.includeActiveLease,
+          },
+        })
+        .then(parseRoomInventoryListEnvelope),
+    availability: (propertyId: string) =>
+      adminUxV2Requester
+        .get<unknown>("/rooms/availability", { query: { property_id: propertyId } })
+        .then(parseRoomAvailabilityEnvelope),
     detail: (id: string, includeActiveLease = false) =>
       data<RoomInventory>(
         adminUxV2Requester.get<V2DataEnvelope<unknown>>("/rooms/" + encodeURIComponent(id), {

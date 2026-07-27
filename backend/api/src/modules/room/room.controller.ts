@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
-import { acceptsAdminUxV2 } from '../../shared/admin-ux-v2';
+import { acceptsAdminUxV2, v2Data } from '../../shared/admin-ux-v2';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
 import { RequirePermissions } from '../rbac/decorators/permissions.decorator';
@@ -52,8 +52,20 @@ export class RoomController {
 
   @Get('availability')
   @RequirePermissions('room.read')
-  availability(@CurrentUser() user: UserAccessContext, @Query('property_id') propertyId?: string) {
-    return this.rooms.availability(user, propertyId);
+  async availability(
+    @CurrentUser() user: UserAccessContext,
+    @Query('property_id') propertyId?: string,
+    @Headers('accept') accept?: string,
+  ) {
+    const result = await this.rooms.availability(user, propertyId);
+    if (!acceptsAdminUxV2(accept)) return result;
+    return v2Data(
+      result.map((item) => ({
+        property_id: item.propertyId,
+        status: item.status,
+        total: Math.max(0, Math.trunc(item.total)),
+      })),
+    );
   }
 
   @Post()

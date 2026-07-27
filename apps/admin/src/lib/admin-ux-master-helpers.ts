@@ -1,7 +1,13 @@
-import type { KostTypeCategory, RoomStatus } from "@/lib/admin-ux-master-api";
+import type {
+  KostType,
+  KostTypeCategory,
+  RoomAvailabilityItem,
+  RoomStatus,
+} from "@/lib/admin-ux-master-api";
 
 export type RoomRouteSearch = {
   q: string;
+  category?: KostTypeCategory;
   buildingId?: string;
   floor?: string;
   status?: RoomStatus;
@@ -25,6 +31,86 @@ export const KOST_TYPE_LABEL: Record<KostTypeCategory, string> = {
   apartkost: "Apart Kost",
 };
 
+export type RoomInventorySummary = {
+  statusCounts: Record<RoomStatus, number>;
+  totalInventory: number;
+  categoryCounts: Record<KostTypeCategory, number>;
+};
+
+export type RoomPaginationDisplay = {
+  isEmptyPage: boolean;
+  start: number | null;
+  end: number | null;
+  label: string;
+};
+
+function nonNegativeInteger(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
+export function summarizeRoomInventory(
+  propertyId: string,
+  availability: readonly Pick<RoomAvailabilityItem, "propertyId" | "status" | "total">[],
+  kostTypes: readonly Pick<KostType, "propertyId" | "category" | "roomCount" | "status">[],
+): RoomInventorySummary {
+  const statusCounts: Record<RoomStatus, number> = {
+    vacant: 0,
+    reserved: 0,
+    occupied: 0,
+    maintenance: 0,
+    inactive: 0,
+    requires_review: 0,
+  };
+  for (const item of availability) {
+    if (item.propertyId === propertyId) {
+      statusCounts[item.status] += nonNegativeInteger(item.total);
+    }
+  }
+
+  const categoryCounts: Record<KostTypeCategory, number> = {
+    rukost: 0,
+    apartkost: 0,
+  };
+  for (const kostType of kostTypes) {
+    if (kostType.propertyId === propertyId) {
+      categoryCounts[kostType.category] += nonNegativeInteger(kostType.roomCount ?? 0);
+    }
+  }
+
+  return {
+    statusCounts,
+    totalInventory: Object.values(statusCounts).reduce((total, count) => total + count, 0),
+    categoryCounts,
+  };
+}
+
+export function getRoomPaginationDisplay(
+  offset: number,
+  limit: number,
+  total: number,
+): RoomPaginationDisplay {
+  const safeOffset = nonNegativeInteger(offset);
+  const safeLimit = Math.max(1, nonNegativeInteger(limit));
+  const safeTotal = nonNegativeInteger(total);
+  if (safeTotal === 0 || safeOffset >= safeTotal) {
+    return {
+      isEmptyPage: true,
+      start: null,
+      end: null,
+      label: `Tidak ada kamar di halaman ini · ${safeTotal} kamar total`,
+    };
+  }
+
+  const start = safeOffset + 1;
+  const end = Math.min(safeTotal, safeOffset + safeLimit);
+  return {
+    isEmptyPage: false,
+    start,
+    end,
+    label: `${start}–${end} dari ${safeTotal} kamar`,
+  };
+}
+
 function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -38,6 +124,8 @@ function optionalText(value: unknown, max = 120): string | undefined {
 }
 
 export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSearch {
+  const category =
+    raw.category === "rukost" || raw.category === "apartkost" ? raw.category : undefined;
   const status =
     raw.status === "vacant" ||
     raw.status === "reserved" ||
@@ -49,6 +137,7 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
       : undefined;
   return {
     q: optionalText(raw.q) ?? "",
+    ...(category ? { category } : {}),
     buildingId: optionalText(raw.building_id, 80),
     floor: optionalText(raw.floor, 80),
     status,
@@ -56,7 +145,7 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
       raw.visibility === "visible" || raw.visibility === "hidden" ? raw.visibility : undefined,
     offset: boundedInteger(raw.offset, 0, 0, Number.MAX_SAFE_INTEGER),
     limit: boundedInteger(raw.limit, 20, 1, 100),
-    roomId: optionalText(raw.room_id, 80),
+    roomId: optionalText(raw.room_id ?? raw.roomId, 80),
   };
 }
 

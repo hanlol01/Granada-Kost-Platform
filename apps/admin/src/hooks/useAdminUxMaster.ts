@@ -144,6 +144,15 @@ export function useM4RoomInventory(filters: RoomInventoryFilters = {}) {
   });
 }
 
+export function useM4RoomAvailability() {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.rooms.availability(currentPropertyId ?? ""),
+    queryFn: () => adminUxMasterApi.rooms.availability(currentPropertyId!),
+    enabled: Boolean(currentPropertyId),
+  });
+}
+
 export function useM4Gallery(target: GalleryTarget | null, options: PageOptions = {}) {
   const { currentPropertyId } = useProperty();
   const targetId =

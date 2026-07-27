@@ -71,6 +71,7 @@ import {
   ROOM_STATUS_LABEL,
   allowedRoomStatusTargets,
   createKostTypeSlug,
+  getRoomPaginationDisplay,
   type RoomRouteSearch,
 } from "@/lib/admin-ux-master-helpers";
 import { useAuth } from "@/lib/auth";
@@ -448,7 +449,7 @@ function RoomFilters({
   );
 }
 
-function Pagination({
+export function Pagination({
   offset,
   limit,
   total,
@@ -459,14 +460,11 @@ function Pagination({
   total: number;
   onChange: (offset: number) => void;
 }) {
-  if (total <= limit) return null;
-  const currentStart = offset + 1;
-  const currentEnd = Math.min(total, offset + limit);
+  if (total <= limit && offset <= 0) return null;
+  const display = getRoomPaginationDisplay(offset, limit, total);
   return (
     <div className="flex items-center justify-between gap-3 text-sm text-slate-400">
-      <span>
-        {currentStart}–{currentEnd} dari {total} kamar
-      </span>
+      <span>{display.label}</span>
       <div className="flex gap-2">
         <Button
           variant="outline"
@@ -487,7 +485,7 @@ function Pagination({
   );
 }
 
-function RoomInventoryTable({
+export function RoomInventoryTable({
   rooms,
   canManage,
   onDetail,
@@ -1152,7 +1150,7 @@ function RoomInventoryEditor({
   );
 }
 
-function RoomDetailSheet({
+export function RoomDetailSheet({
   room,
   open,
   onOpenChange,

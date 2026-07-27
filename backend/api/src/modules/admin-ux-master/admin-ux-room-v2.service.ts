@@ -32,16 +32,17 @@ export class AdminUxRoomV2Service {
   async list(user: UserAccessContext, query: ListRoomsV2QueryDto) {
     const scope = await this.scope(user, query.property_id);
     const { limit, offset } = normalizePagination(query);
-    const result = await this.database.client.query<Row>(
-      `SELECT
-         room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
-         room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
-         room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
-         kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
-         kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
-         building.building_code, building.building_name,
-         COUNT(*) OVER()::int AS total
-       FROM rooms room
+    const filters = [
+      scope,
+      query.property_id ?? null,
+      query.kost_type_id ?? null,
+      query.category ?? null,
+      query.building_id ?? null,
+      query.floor ?? null,
+      query.status ?? null,
+      query.q ?? null,
+    ];
+    const fromAndWhere = `FROM rooms room
        JOIN kost_types kost_type ON kost_type.id = room.kost_type_id
        LEFT JOIN room_buildings building ON building.id = room.building_id
        WHERE ($1::uuid[] IS NULL OR room.property_id = ANY($1::uuid[]))
@@ -51,24 +52,31 @@ export class AdminUxRoomV2Service {
          AND ($5::uuid IS NULL OR room.building_id = $5)
          AND ($6::text IS NULL OR room.floor = $6)
          AND ($7::text IS NULL OR room.room_status = $7)
-         AND ($8::text IS NULL OR room.number ILIKE '%' || $8 || '%' OR room.room_code ILIKE '%' || $8 || '%')
+         AND ($8::text IS NULL OR room.number ILIKE '%' || $8 || '%' OR room.room_code ILIKE '%' || $8 || '%')`;
+    const countResult = await this.database.client.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+       ${fromAndWhere}`,
+      filters,
+    );
+    const total = Number(countResult.rows[0]?.total ?? 0);
+    if (total === 0 || offset >= total) {
+      return v2List([], limit, offset, total);
+    }
+    const result = await this.database.client.query<Row>(
+      `SELECT
+         room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
+         room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
+         room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
+         kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
+         kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
+         building.building_code, building.building_name
+       ${fromAndWhere}
        ORDER BY room.property_id, building.building_code NULLS LAST, room.floor_code NULLS LAST, room.room_code NULLS LAST, room.number
        LIMIT $9 OFFSET $10`,
-      [
-        scope,
-        query.property_id ?? null,
-        query.kost_type_id ?? null,
-        query.category ?? null,
-        query.building_id ?? null,
-        query.floor ?? null,
-        query.status ?? null,
-        query.q ?? null,
-        limit,
-        offset,
-      ],
+      [...filters, limit, offset],
     );
     const records = await this.hydrate(result.rows, query.include_active_lease ?? false);
-    return v2List(records, limit, offset, Number(result.rows[0]?.total ?? 0));
+    return v2List(records, limit, offset, total);
   }
 
   async get(user: UserAccessContext, roomId: string, includeActiveLease = false) {

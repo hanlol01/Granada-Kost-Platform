@@ -11,6 +11,9 @@
     "db:migrate:verify": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/verify-admin-ux-migrations.ts",
     "test:contract:legacy": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/run-contract-baseline.ts --suite=legacy",
     "test:contract:public": "tsx ../../backend/api/src/infrastructure/database/scripts/admin-ux-m1/run-contract-baseline.ts --suite=public",
-    "verify:admin-ux": "tsx scripts/verify-admin-ux-release.ts"
+    "verify:admin-ux": "tsx scripts/verify-admin-ux-release.ts",
+    "test:read-only-contracts": "tsx --tsconfig ../../backend/api/tsconfig.json --test ../../backend/api/test/admin-ux-m1/*.spec.ts ../../backend/api/test/admin-ux-m2/*.spec.ts ../../backend/api/test/admin-ux-m5/*.spec.ts ../../backend/api/test/admin-ux-m6/*.spec.ts ../../backend/api/test/admin-ux-m7/*.spec.ts ../../backend/api/test/database/*.spec.ts",
+    "test:read-only-gate": "tsx --test scripts/verify-read-only-recovery.spec.ts",
+    "verify:read-only": "tsx scripts/verify-read-only-recovery.ts"
   }
 }

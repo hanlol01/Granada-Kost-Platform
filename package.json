@@ -24,6 +24,7 @@
     "lint:admin": "npm --workspace @granada-kost/admin run lint",
     "lint:penghuni": "npm --workspace @granada-kost/penghuni run lint",
     "lint:api": "npm --workspace @granada-kost/api run lint",
+    "qa:read-only": "npm --workspace @granada-kost/admin-ux-qa run verify:read-only",
     "format:admin": "npm --workspace @granada-kost/admin run format",
     "format:penghuni": "npm --workspace @granada-kost/penghuni run format",
     "format:api": "npm --workspace @granada-kost/api run format"

@@ -7,35 +7,22 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
+import {
+  requestAdminBookingLeads,
+  type BookingLeadCategory,
+  type BookingLeadGender,
+  type BookingLeadListFilters,
+  type BookingLeadRecord,
+  type BookingLeadStatus,
+} from "@/lib/admin-booking-lead";
 import { useProperty } from "@/lib/property";
 
-export type BookingLeadStatus =
-  | "new"
-  | "contacted"
-  | "visit_scheduled"
-  | "converted"
-  | "rejected"
-  | "expired";
-export type BookingLeadCategory = "rukost" | "apartkost";
-export type BookingLeadGender = "male" | "female";
-
-export type BookingLeadRecord = {
-  id: string;
-  propertyId: string;
-  category: BookingLeadCategory;
-  gender: BookingLeadGender;
-  buildingCode: string | null;
-  floorCode: string | null;
-  publicGroupKey: string | null;
-  visitorName: string;
-  visitorPhone: string;
-  visitorMessage: string | null;
-  preferredMoveInDate: string | null;
-  status: BookingLeadStatus;
-  source: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type {
+  BookingLeadCategory,
+  BookingLeadGender,
+  BookingLeadRecord,
+  BookingLeadStatus,
+} from "@/lib/admin-booking-lead";
 
 export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   new: "Baru",
@@ -58,6 +45,7 @@ export const BOOKING_LEAD_GENDER_LABEL: Record<BookingLeadGender, string> = {
 
 export const BOOKING_LEAD_SOURCE_LABEL: Record<string, string> = {
   public_kamar: "Publik /kamar",
+  admin_quick_entry: "Input cepat Admin",
 };
 
 // Mirrors the M17B backend transition rules (UX-only convenience; the backend
@@ -79,16 +67,7 @@ export function allowedBookingLeadTransitions(status: BookingLeadStatus): Bookin
   }
 }
 
-export type UseBookingLeadsFilters = {
-  status?: BookingLeadStatus;
-  category?: BookingLeadCategory;
-  gender?: BookingLeadGender;
-  dateFrom?: string;
-  dateTo?: string;
-  search?: string;
-  limit?: number;
-  offset?: number;
-};
+export type UseBookingLeadsFilters = BookingLeadListFilters;
 
 export function useBookingLeads(
   filters: UseBookingLeadsFilters = {},
@@ -96,20 +75,14 @@ export function useBookingLeads(
   const { currentPropertyId } = useProperty();
   return useQuery<BookingLeadRecord[]>({
     queryKey: ["booking-leads", "list", { propertyId: currentPropertyId }, filters] as const,
-    queryFn: () =>
-      apiClient.get<BookingLeadRecord[]>("/booking-leads", {
-        query: {
-          property_id: currentPropertyId ?? undefined,
-          status: filters.status,
-          category: filters.category,
-          gender: filters.gender,
-          dateFrom: filters.dateFrom,
-          dateTo: filters.dateTo,
-          search: filters.search,
-          limit: filters.limit ?? 100,
-          offset: filters.offset,
-        },
-      }),
+    queryFn: () => {
+      if (!currentPropertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
+      return requestAdminBookingLeads(
+        (path, options) => apiClient.get<unknown>(path, options),
+        currentPropertyId,
+        filters,
+      );
+    },
     enabled: Boolean(currentPropertyId),
   });
 }

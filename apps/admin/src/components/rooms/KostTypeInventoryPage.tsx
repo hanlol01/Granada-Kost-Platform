@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import {
   BedDouble,
   Building2,
+  CalendarPlus,
   CircleDollarSign,
   Eye,
   EyeOff,
@@ -18,6 +19,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
+import { QuickBookingDialog } from "@/components/booking-leads/QuickBookingDialog";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,7 +77,9 @@ import {
   type RoomRouteSearch,
 } from "@/lib/admin-ux-master-helpers";
 import { useAuth } from "@/lib/auth";
+import { canCreateAdminBookingLead } from "@/lib/admin-booking-lead";
 import { formatIDR } from "@/lib/format";
+import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 import {
   useM4KostTypes,
@@ -506,6 +510,10 @@ export function RoomInventoryTable({
   onEdit: (room: RoomInventory) => void;
   onStatus: (room: RoomInventory) => void;
 }) {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  const [quickBookingRoom, setQuickBookingRoom] = useState<RoomInventory | null>(null);
+
   if (!rooms.length) {
     return (
       <Card className="border-slate-800 bg-slate-900/80">
@@ -520,97 +528,121 @@ export function RoomInventoryTable({
     );
   }
   return (
-    <Card className="overflow-hidden border-slate-800 bg-slate-900/80">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-slate-950/70 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Kamar</th>
-              <th className="px-4 py-3">Bangunan</th>
-              <th className="px-4 py-3">Tipe Kost</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Penghuni Aktif</th>
-              <th className="px-4 py-3 text-right">Harga dari Tipe</th>
-              <th className="px-4 py-3 text-right">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {rooms.map((room) => {
-              const managedStatus = allowedRoomStatusTargets(room.status).length > 0;
-              const residentName =
-                room.activeLease?.residentName ?? room.activeOccupancy?.residentName;
-              return (
-                <tr
-                  key={room.id}
-                  className="cursor-pointer transition-colors hover:bg-slate-800/60"
-                  onClick={() => onDetail(room)}
-                >
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-100">{roomLabel(room)}</p>
-                    {room.roomCode && room.roomCode !== room.number ? (
-                      <p className="text-xs text-slate-500">{room.number}</p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">
-                    {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-slate-200">{room.kostType.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {KOST_TYPE_LABEL[room.kostType.category]}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <RoomStatusBadge status={room.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">
-                    {residentName ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Users className="h-3.5 w-3.5 text-slate-500" /> {residentName}
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="font-medium text-slate-100">
-                      {formatIDR(room.kostType.monthlyPrice)}/bln
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatIDR(room.kostType.depositAmount)} deposit
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-right" onClick={(event) => event.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label={`Aksi ${roomLabel(room)} `}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onDetail(room)}>
-                          Lihat detail
-                        </DropdownMenuItem>
-                        {canManage ? (
-                          <DropdownMenuItem onClick={() => onEdit(room)}>
-                            <Pencil className="mr-2 h-3.5 w-3.5" /> Edit inventori
+    <>
+      <Card className="overflow-hidden border-slate-800 bg-slate-900/80">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-slate-950/70 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Kamar</th>
+                <th className="px-4 py-3">Bangunan</th>
+                <th className="px-4 py-3">Tipe Kost</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Penghuni Aktif</th>
+                <th className="px-4 py-3 text-right">Harga dari Tipe</th>
+                <th className="px-4 py-3 text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {rooms.map((room) => {
+                const managedStatus = allowedRoomStatusTargets(room.status).length > 0;
+                const residentName =
+                  room.activeLease?.residentName ?? room.activeOccupancy?.residentName;
+                return (
+                  <tr
+                    key={room.id}
+                    className="cursor-pointer transition-colors hover:bg-slate-800/60"
+                    onClick={() => onDetail(room)}
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-100">{roomLabel(room)}</p>
+                      {room.roomCode && room.roomCode !== room.number ? (
+                        <p className="text-xs text-slate-500">{room.number}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-slate-200">{room.kostType.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {KOST_TYPE_LABEL[room.kostType.category]}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <RoomStatusBadge status={room.status} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {residentName ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-slate-500" /> {residentName}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <p className="font-medium text-slate-100">
+                        {formatIDR(room.kostType.monthlyPrice)}/bln
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatIDR(room.kostType.depositAmount)} deposit
+                      </p>
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Aksi ${roomLabel(room)} `}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => onDetail(room)}>
+                            Lihat detail
                           </DropdownMenuItem>
-                        ) : null}
-                        {canManage && managedStatus ? (
-                          <DropdownMenuItem onClick={() => onStatus(room)}>
-                            <Wrench className="mr-2 h-3.5 w-3.5" /> Ubah status operasional
-                          </DropdownMenuItem>
-                        ) : null}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+                          {canCreateAdminBookingLead({
+                            roles: user?.roles ?? [],
+                            permissions: user?.permissions ?? [],
+                            propertyId: currentPropertyId,
+                            room,
+                          }) && room.status === "vacant" ? (
+                            <DropdownMenuItem onClick={() => setQuickBookingRoom(room)}>
+                              <CalendarPlus className="mr-2 h-3.5 w-3.5" /> Catat minat booking
+                            </DropdownMenuItem>
+                          ) : null}
+                          {canManage ? (
+                            <DropdownMenuItem onClick={() => onEdit(room)}>
+                              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit inventori
+                            </DropdownMenuItem>
+                          ) : null}
+                          {canManage && managedStatus ? (
+                            <DropdownMenuItem onClick={() => onStatus(room)}>
+                              <Wrench className="mr-2 h-3.5 w-3.5" /> Ubah status operasional
+                            </DropdownMenuItem>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <QuickBookingDialog
+        room={quickBookingRoom}
+        open={quickBookingRoom !== null}
+        onOpenChange={(open) => !open && setQuickBookingRoom(null)}
+      />
+    </>
   );
 }
 

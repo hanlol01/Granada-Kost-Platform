@@ -2,7 +2,7 @@
 //   GET   /booking-leads                 (list + filters; manager|admin, room.read)
 //   PATCH /booking-leads/:leadId/status  (manual status marker; room.manage)
 // A lead is booking INTEREST only (M17A freeze): no room reservation, no invoice,
-// no occupancy/resident creation, no payment, no exact room number exposure.
+// no occupancy/resident creation or payment. Exact room number stays Admin-only.
 // WhatsApp remains the primary follow-up/confirmation channel.
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -87,8 +87,16 @@ function interestLabel(lead: BookingLeadRecord): string {
 
 function interestDetail(lead: BookingLeadRecord): string | null {
   const parts: string[] = [];
+  if (lead.roomNumber) parts.push(`Kamar ${lead.roomNumber}`);
   if (lead.buildingCode) parts.push(`Unit ${lead.buildingCode}`);
   if (lead.floorCode) parts.push(`Lantai ${lead.floorCode}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function visitorDetail(lead: BookingLeadRecord): string | null {
+  const parts = [lead.visitorAddress, lead.visitorUniversity].filter((value): value is string =>
+    Boolean(value),
+  );
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -259,7 +267,7 @@ function BookingLeadsPage() {
               description={
                 hasFilter
                   ? "Ubah pencarian atau filter status/kategori/gender."
-                  : "Lead akan tampil setelah pengunjung mengajukan minat dari halaman publik /kamar."
+                  : "Lead akan tampil dari halaman publik /kamar atau input cepat Admin."
               }
             />
           </CardContent>
@@ -299,6 +307,11 @@ function BookingLeadsPage() {
                               title={l.visitorMessage}
                             >
                               {l.visitorMessage}
+                            </p>
+                          ) : null}
+                          {visitorDetail(l) ? (
+                            <p className="max-w-[300px] truncate text-xs text-muted-foreground">
+                              {visitorDetail(l)}
                             </p>
                           ) : null}
                         </td>
@@ -386,6 +399,9 @@ function BookingLeadsPage() {
                         {interestLabel(l)}
                         {interestDetail(l) ? ` · ${interestDetail(l)}` : ""}
                       </p>
+                      {visitorDetail(l) ? (
+                        <p className="truncate text-xs text-muted-foreground">{visitorDetail(l)}</p>
+                      ) : null}
                       <div className="mt-1.5 flex items-center gap-2">
                         <LeadStatusBadge status={l.status} />
                         {waUrl ? (

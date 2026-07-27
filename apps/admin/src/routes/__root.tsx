@@ -143,11 +143,9 @@ function GuardedOutlet() {
   }
   return (
     <AuthGuard>
-      <PropertyProvider>
-        <RouteAccessBoundary>
-          <Outlet />
-        </RouteAccessBoundary>
-      </PropertyProvider>
+      <RouteAccessBoundary>
+        <Outlet />
+      </RouteAccessBoundary>
     </AuthGuard>
   );
 }
@@ -158,7 +156,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <GuardedOutlet />
+        <PropertyProvider>
+          <GuardedOutlet />
+        </PropertyProvider>
         <Toaster richColors position="top-right" />
       </AuthProvider>
     </QueryClientProvider>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
 import {
   bookingLeadListScopeKey,
   canCreateAdminBookingLead,
@@ -11,9 +12,243 @@ import {
   toAdminBookingLeadPayload,
   validateQuickBookingDraft,
 } from "./admin-booking-lead";
+import { normalizeWhatsAppPhone } from "./whatsapp-lead";
 
 const source = (relativePath: string) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+
+type ParsedSourceFile = ts.SourceFile & {
+  parseDiagnostics?: readonly ts.DiagnosticWithLocation[];
+};
+
+type JsxNode = ts.JsxElement | ts.JsxSelfClosingElement;
+
+function parseTsx(text: string, fileName: string): ts.SourceFile {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TSX,
+  ) as ParsedSourceFile;
+  assert.equal(sourceFile.parseDiagnostics?.length ?? 0, 0, `${fileName} must be valid TSX`);
+  return sourceFile;
+}
+
+function visit(node: ts.Node, callback: (node: ts.Node) => void): void {
+  callback(node);
+  ts.forEachChild(node, (child) => visit(child, callback));
+}
+
+function findFunction(sourceFile: ts.SourceFile, name: string): ts.FunctionDeclaration {
+  const matches: ts.FunctionDeclaration[] = [];
+  visit(sourceFile, (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) matches.push(node);
+  });
+  assert.equal(matches.length, 1, `expected exactly one ${name} function`);
+  return matches[0]!;
+}
+
+function jsxName(node: JsxNode): string | undefined {
+  const tagName = ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName;
+  return ts.isIdentifier(tagName) ? tagName.text : undefined;
+}
+
+function jsxNodes(scope: ts.Node, name: string): JsxNode[] {
+  const matches: JsxNode[] = [];
+  visit(scope, (node) => {
+    if ((ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) && jsxName(node) === name) {
+      matches.push(node);
+    }
+  });
+  return matches;
+}
+
+function directJsxChildren(element: ts.JsxElement): JsxNode[] {
+  return element.children.filter(
+    (child): child is JsxNode => ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child),
+  );
+}
+
+function exactDirectChild(element: ts.JsxElement, name: string): JsxNode {
+  const matches = directJsxChildren(element).filter((child) => jsxName(child) === name);
+  assert.equal(matches.length, 1, `<${jsxName(element)}> must directly contain one <${name}>`);
+  return matches[0]!;
+}
+
+function jsxFromExpression(expression: ts.Expression, label: string): JsxNode {
+  let current = expression;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  assert.ok(
+    ts.isJsxElement(current) || ts.isJsxSelfClosingElement(current),
+    `${label} must return JSX directly`,
+  );
+  return current;
+}
+
+function directReturnJsx(block: ts.Block, label: string): JsxNode {
+  const returns = block.statements.filter(ts.isReturnStatement);
+  assert.equal(returns.length, 1, `${label} must have exactly one direct return`);
+  assert.ok(returns[0]!.expression, `${label} return must have an expression`);
+  return jsxFromExpression(returns[0]!.expression, label);
+}
+
+function statementReturnJsx(statement: ts.Statement, label: string): JsxNode {
+  if (ts.isBlock(statement)) return directReturnJsx(statement, label);
+  assert.ok(ts.isReturnStatement(statement), `${label} must return directly`);
+  assert.ok(statement.expression, `${label} return must have an expression`);
+  return jsxFromExpression(statement.expression, label);
+}
+
+function assertPersistentPropertyProviderTopology(text: string): void {
+  const sourceFile = parseTsx(text, "__root.tsx");
+  const root = findFunction(sourceFile, "RootComponent");
+  const guarded = findFunction(sourceFile, "GuardedOutlet");
+
+  assert.equal(jsxNodes(sourceFile, "PropertyProvider").length, 1, "exactly one provider allowed");
+  assert.equal(jsxNodes(root, "PropertyProvider").length, 1, "provider must live in RootComponent");
+  assert.equal(
+    jsxNodes(guarded, "PropertyProvider").length,
+    0,
+    "GuardedOutlet must not own provider",
+  );
+
+  assert.ok(root.body);
+  const queryProvider = directReturnJsx(root.body, "RootComponent");
+  assert.equal(jsxName(queryProvider), "QueryClientProvider");
+  assert.ok(ts.isJsxElement(queryProvider));
+  const authProvider = exactDirectChild(queryProvider, "AuthProvider");
+  assert.ok(ts.isJsxElement(authProvider));
+  const propertyProvider = exactDirectChild(authProvider, "PropertyProvider");
+  assert.ok(ts.isJsxElement(propertyProvider));
+  assert.equal(jsxName(exactDirectChild(propertyProvider, "GuardedOutlet")), "GuardedOutlet");
+  assert.equal(jsxNodes(authProvider, "Toaster").length, 1, "Toaster must remain mounted");
+
+  assert.ok(guarded.body);
+  const publicBranches = guarded.body.statements.filter(
+    (statement): statement is ts.IfStatement =>
+      ts.isIfStatement(statement) &&
+      statement.expression.getText(sourceFile) === "PUBLIC_ROUTES.has(pathname)",
+  );
+  assert.equal(publicBranches.length, 1, "public route branch must remain explicit");
+  const publicOutlet = statementReturnJsx(publicBranches[0]!.thenStatement, "public route branch");
+  assert.equal(jsxName(publicOutlet), "Outlet");
+  assert.ok(ts.isJsxSelfClosingElement(publicOutlet));
+  assert.equal(publicOutlet.attributes.properties.length, 0, "public Outlet must remain direct");
+
+  const protectedReturns = guarded.body.statements.filter(ts.isReturnStatement);
+  assert.equal(protectedReturns.length, 1, "GuardedOutlet must have one protected direct return");
+  assert.ok(protectedReturns[0]!.expression);
+  const authGuard = jsxFromExpression(protectedReturns[0]!.expression, "protected route branch");
+  assert.ok(ts.isJsxElement(authGuard) && jsxName(authGuard) === "AuthGuard");
+  const boundary = exactDirectChild(authGuard, "RouteAccessBoundary");
+  assert.ok(ts.isJsxElement(boundary));
+  assert.equal(jsxName(exactDirectChild(boundary, "Outlet")), "Outlet");
+}
+
+function classTokens(node: JsxNode): Set<string> {
+  const element = ts.isJsxElement(node) ? node.openingElement : node;
+  const attribute = element.attributes.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) &&
+      ts.isIdentifier(property.name) &&
+      property.name.text === "className",
+  );
+  return attribute?.initializer && ts.isStringLiteral(attribute.initializer)
+    ? new Set(attribute.initializer.text.split(/\s+/u))
+    : new Set();
+}
+
+function hasLeadSourceExpression(node: JsxNode): boolean {
+  const element = ts.isJsxElement(node) ? node.openingElement : node;
+  const attribute = element.attributes.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) &&
+      ts.isIdentifier(property.name) &&
+      property.name.text === "source",
+  );
+  const expression =
+    attribute?.initializer && ts.isJsxExpression(attribute.initializer)
+      ? attribute.initializer.expression
+      : undefined;
+  return (
+    expression !== undefined &&
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === "l" &&
+    expression.name.text === "source"
+  );
+}
+
+function filteredMapItemRoot(collection: ts.JsxElement, label: string): JsxNode {
+  const maps: ts.CallExpression[] = [];
+  visit(collection, (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "filtered" &&
+      node.expression.name.text === "map"
+    ) {
+      maps.push(node);
+    }
+  });
+  assert.equal(maps.length, 1, `${label} collection must have one filtered.map`);
+  const callback = maps[0]!.arguments[0];
+  assert.ok(
+    callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)),
+    `${label} filtered.map must use a function callback`,
+  );
+  return ts.isBlock(callback.body)
+    ? directReturnJsx(callback.body, `${label} item callback`)
+    : jsxFromExpression(callback.body, `${label} item callback`);
+}
+
+function assertLeadSourceBadgeCoverage(text: string): void {
+  const sourceFile = parseTsx(text, "booking-leads.tsx");
+  const page = findFunction(sourceFile, "BookingLeadsPage");
+  const badge = findFunction(sourceFile, "LeadSourceBadge");
+  assert.match(badge.getText(sourceFile), /BOOKING_LEAD_SOURCE_LABEL\[source\]\s*\?\?\s*source/u);
+
+  const divs = jsxNodes(page, "div").filter(ts.isJsxElement);
+  const desktop = divs.filter((node) => classTokens(node).has("md:block"));
+  const mobile = divs.filter((node) => classTokens(node).has("md:hidden"));
+  assert.equal(desktop.length, 1, "expected one desktop lead collection");
+  assert.equal(mobile.length, 1, "expected one mobile lead collection");
+
+  for (const [label, collection, itemName] of [
+    ["desktop", desktop[0]!, "tr"],
+    ["mobile", mobile[0]!, "div"],
+  ] as const) {
+    const item = filteredMapItemRoot(collection, label);
+    assert.equal(jsxName(item), itemName, `${label} filtered item root changed`);
+    const badges = jsxNodes(item, "LeadSourceBadge").filter(hasLeadSourceExpression);
+    assert.equal(badges.length, 1, `${label} lead item must render LeadSourceBadge`);
+  }
+}
+
+function moveBadgeOutsideItem(text: string, viewportToken: "md:block" | "md:hidden"): string {
+  const sourceFile = parseTsx(text, "booking-leads-mutation.tsx");
+  const page = findFunction(sourceFile, "BookingLeadsPage");
+  const collection = jsxNodes(page, "div")
+    .filter(ts.isJsxElement)
+    .find((node) => classTokens(node).has(viewportToken));
+  assert.ok(collection);
+  const item = filteredMapItemRoot(collection, viewportToken);
+  const badges = jsxNodes(item, "LeadSourceBadge").filter(hasLeadSourceExpression);
+  assert.equal(badges.length, 1);
+  const badge = badges[0]!;
+  const badgeText = badge.getText(sourceFile);
+  const start = badge.getStart(sourceFile);
+  const end = badge.getEnd();
+  const withoutBadge = text.slice(0, start) + text.slice(end);
+  const closingStart = collection.closingElement.getStart(sourceFile) - (end - start);
+  return (
+    withoutBadge.slice(0, closingStart) +
+    `<div>${badgeText}</div>` +
+    withoutBadge.slice(closingStart)
+  );
+}
 
 const PROPERTY_ID = "11111111-1111-4111-8111-111111111111";
 const ROOM_ID = "22222222-2222-4222-8222-222222222222";
@@ -367,6 +602,103 @@ test("lead UI renders quick source and nullable admin fields without leaking roo
     `${hook}\n${source("hooks/useBookingLeadMutations.ts")}`,
     /localStorage|sessionStorage|console\.|telemetry/i,
   );
+});
+
+test("root keeps one persistent PropertyProvider around public and protected route transitions", () => {
+  const root = source("routes/__root.tsx");
+  assertPersistentPropertyProviderTopology(root);
+
+  const oldProtectedTopology = `
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) return <Outlet />;
+      return <AuthGuard><PropertyProvider><RouteAccessBoundary><Outlet /></RouteAccessBoundary></PropertyProvider></AuthGuard>;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider><GuardedOutlet /><Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  const unrelatedDecoy = `
+    function Decoy() { return <PropertyProvider><GuardedOutlet /></PropertyProvider>; }
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) return <Outlet />;
+      return <AuthGuard><RouteAccessBoundary><Outlet /></RouteAccessBoundary></AuthGuard>;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider><GuardedOutlet /><Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  const duplicateProvider = `
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) return <Outlet />;
+      return <AuthGuard><RouteAccessBoundary><Outlet /></RouteAccessBoundary></AuthGuard>;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider><PropertyProvider><GuardedOutlet /></PropertyProvider><PropertyProvider><span /></PropertyProvider><Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  const conditionalProvider = `
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) return <Outlet />;
+      return <AuthGuard><RouteAccessBoundary><Outlet /></RouteAccessBoundary></AuthGuard>;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider>{enabled ? <PropertyProvider><GuardedOutlet /></PropertyProvider> : <GuardedOutlet />}<Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  const publicBranchDecoy = `
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) {
+        function PublicOutletDecoy() { return <Outlet />; }
+      }
+      return <AuthGuard><RouteAccessBoundary><Outlet /></RouteAccessBoundary></AuthGuard>;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider><PropertyProvider><GuardedOutlet /></PropertyProvider><Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  const protectedBranchDecoy = `
+    function GuardedOutlet() {
+      if (PUBLIC_ROUTES.has(pathname)) return <Outlet />;
+      function ProtectedDecoy() {
+        return <AuthGuard><RouteAccessBoundary><Outlet /></RouteAccessBoundary></AuthGuard>;
+      }
+      return <Outlet />;
+    }
+    function RootComponent() {
+      return <QueryClientProvider><AuthProvider><PropertyProvider><GuardedOutlet /></PropertyProvider><Toaster /></AuthProvider></QueryClientProvider>;
+    }
+  `;
+  assert.throws(() => assertPersistentPropertyProviderTopology(oldProtectedTopology));
+  assert.throws(() => assertPersistentPropertyProviderTopology(unrelatedDecoy));
+  assert.throws(() => assertPersistentPropertyProviderTopology(duplicateProvider));
+  assert.throws(() => assertPersistentPropertyProviderTopology(conditionalProvider));
+  assert.throws(() => assertPersistentPropertyProviderTopology(publicBranchDecoy));
+  assert.throws(() => assertPersistentPropertyProviderTopology(protectedBranchDecoy));
+});
+
+test("lead source is visible on desktop and mobile while QA phone normalization stays exact", () => {
+  const route = source("routes/booking-leads.tsx");
+  assertLeadSourceBadgeCoverage(route);
+  assert.equal("081111111111".replace(/\D+/gu, "").length, 12);
+  assert.equal(normalizeWhatsAppPhone("081111111111"), "6281111111111");
+
+  const sourceFile = parseTsx(route, "booking-leads.tsx");
+  const page = findFunction(sourceFile, "BookingLeadsPage");
+  const mobile = jsxNodes(page, "div")
+    .filter(ts.isJsxElement)
+    .find((node) => classTokens(node).has("md:hidden"));
+  assert.ok(mobile);
+  const mobileBadge = jsxNodes(mobile, "LeadSourceBadge").find(hasLeadSourceExpression);
+  assert.ok(mobileBadge);
+  const desktopOnlyMutation =
+    route.slice(0, mobileBadge.getStart(sourceFile)) + route.slice(mobileBadge.getEnd());
+  assert.throws(() => assertLeadSourceBadgeCoverage(desktopOnlyMutation));
+  assert.throws(() => assertLeadSourceBadgeCoverage(moveBadgeOutsideItem(route, "md:block")));
+  assert.throws(() => assertLeadSourceBadgeCoverage(moveBadgeOutsideItem(route, "md:hidden")));
+
+  const labels = source("hooks/useBookingLeads.ts");
+  assert.match(labels, /public_kamar:\s*"Publik \/kamar"/u);
+  assert.match(labels, /admin_quick_entry:\s*"Input cepat Admin"/u);
 });
 
 test("quick entry contains no room lifecycle mutation and leaves routeTree untouched", () => {

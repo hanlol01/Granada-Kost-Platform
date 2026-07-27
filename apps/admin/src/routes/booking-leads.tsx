@@ -78,6 +78,14 @@ function LeadStatusBadge({ status }: { status: BookingLeadStatus }) {
   );
 }
 
+function LeadSourceBadge({ source }: { source: BookingLeadRecord["source"] }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      {BOOKING_LEAD_SOURCE_LABEL[source] ?? source}
+    </span>
+  );
+}
+
 function interestLabel(lead: BookingLeadRecord): string {
   return [
     BOOKING_LEAD_CATEGORY_LABEL[lead.category] ?? lead.category,
@@ -329,10 +337,12 @@ function BookingLeadsPage() {
                         </td>
                         <td className="px-5 py-3">
                           <p>{formatDate(l.createdAt)}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {BOOKING_LEAD_SOURCE_LABEL[l.source] ?? l.source} · Update{" "}
-                            {formatDate(l.updatedAt)}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <LeadSourceBadge source={l.source} />
+                            <span className="text-xs text-muted-foreground">
+                              Update {formatDate(l.updatedAt)}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-5 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -402,6 +412,9 @@ function BookingLeadsPage() {
                       {visitorDetail(l) ? (
                         <p className="truncate text-xs text-muted-foreground">{visitorDetail(l)}</p>
                       ) : null}
+                      <div className="mt-1.5">
+                        <LeadSourceBadge source={l.source} />
+                      </div>
                       <div className="mt-1.5 flex items-center gap-2">
                         <LeadStatusBadge status={l.status} />
                         {waUrl ? (

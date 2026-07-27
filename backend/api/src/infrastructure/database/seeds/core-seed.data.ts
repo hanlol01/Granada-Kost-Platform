@@ -6,6 +6,19 @@ export type RoomSeedRecord = {
   genderPolicy: RoomGenderPolicy;
   roomTypeName: 'RuKost Standard' | 'ApartKost Standard';
 };
+export type RoomBuildingSeedRecord = {
+  category: 'rukost' | 'apartkost';
+  buildingCode: string;
+  buildingName: string;
+  genderPolicy: RoomGenderPolicy;
+  totalRooms: number;
+  floorACount: number;
+  floorBCount: number;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  publicVisible: boolean;
+  notes: string;
+};
 export type DevResidentSeedRecord = {
   id: string;
   userId: string;
@@ -58,7 +71,14 @@ export type DevComplaintSeedRecord = {
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'submitted' | 'acknowledged' | 'in_progress' | 'on_hold' | 'resolved' | 'closed' | 'cancelled';
+  status:
+    | 'submitted'
+    | 'acknowledged'
+    | 'in_progress'
+    | 'on_hold'
+    | 'resolved'
+    | 'closed'
+    | 'cancelled';
   assignedTechnicianKey?: keyof typeof CORE_SEED_IDS.devUsers.technicians;
   locationNote?: string;
 };
@@ -132,7 +152,12 @@ export type DevNotificationDeliverySeedRecord = {
   lastErrorCode?: string;
   lastErrorMessage?: string;
   providerMessageId?: string;
-  skipReason?: 'quota_exhausted' | 'preference_disabled' | 'invalid_recipient' | 'channel_disabled' | 'deferred_to_digest';
+  skipReason?:
+    | 'quota_exhausted'
+    | 'preference_disabled'
+    | 'invalid_recipient'
+    | 'channel_disabled'
+    | 'deferred_to_digest';
 };
 export type DevSmartLockGatewaySeedRecord = {
   id: string;
@@ -327,7 +352,11 @@ export const ROLES = [
   ['admin', 'Admin', 'Daily administrative staff.'],
   ['technician', 'Technician', 'Maintenance staff assigned to work orders.'],
   ['resident', 'Penghuni', 'Penghuni using the resident PWA.'],
-  ['property_owner', 'Pemilik Rumah Kost', 'Read-only property owner/investor scoped to owned properties.'],
+  [
+    'property_owner',
+    'Pemilik Rumah Kost',
+    'Read-only property owner/investor scoped to owned properties.',
+  ],
 ] as const;
 
 export const PERMISSIONS = [
@@ -350,17 +379,45 @@ export const PERMISSIONS = [
   ['payment.verify', 'Verify Payment', 'Verify or reject manual payment proof.'],
   ['complaint.manage', 'Manage Complaint', 'Manage complaints and work order status.'],
   ['maintenance.manage', 'Manage Maintenance', 'Manage maintenance work orders.'],
-  ['vehicle.manage', 'Manage Vehicles', 'Register, approve, update, suspend, and deactivate vehicles.'],
+  [
+    'vehicle.manage',
+    'Manage Vehicles',
+    'Register, approve, update, suspend, and deactivate vehicles.',
+  ],
   ['parking.manage', 'Manage Parking', 'Manage parking zones and slots.'],
   ['smart_lock.read', 'Read Smart Lock', 'Read smart lock metadata, alerts, and access logs.'],
-  ['smart_lock.manage', 'Manage Smart Lock', 'Manage smart lock devices, credentials, and restrictions.'],
+  [
+    'smart_lock.manage',
+    'Manage Smart Lock',
+    'Manage smart lock devices, credentials, and restrictions.',
+  ],
   ['smart_lock.view', 'View Smart Lock', 'View smart lock metadata and security reports.'],
   ['smart_lock.command', 'Command Smart Lock', 'Execute lock or unlock commands.'],
-  ['smart_lock.gateway.read', 'Read Smart Lock Gateway', 'View Smart Lock gateway registry and health.'],
-  ['smart_lock.gateway.manage', 'Manage Smart Lock Gateway', 'Manage Smart Lock gateway status, capacity, and onboarding metadata.'],
-  ['smart_lock.gateway.credentials.rotate', 'Rotate Smart Lock Gateway Credentials', 'Rotate Smart Lock gateway credential references.'],
-  ['smart_lock.device.onboard', 'Onboard Smart Lock Device', 'Bind Smart Lock devices to gateways during onboarding.'],
-  ['smart_lock.device.migrate', 'Migrate Smart Lock Device', 'Move Smart Lock device mapping through controlled migration.'],
+  [
+    'smart_lock.gateway.read',
+    'Read Smart Lock Gateway',
+    'View Smart Lock gateway registry and health.',
+  ],
+  [
+    'smart_lock.gateway.manage',
+    'Manage Smart Lock Gateway',
+    'Manage Smart Lock gateway status, capacity, and onboarding metadata.',
+  ],
+  [
+    'smart_lock.gateway.credentials.rotate',
+    'Rotate Smart Lock Gateway Credentials',
+    'Rotate Smart Lock gateway credential references.',
+  ],
+  [
+    'smart_lock.device.onboard',
+    'Onboard Smart Lock Device',
+    'Bind Smart Lock devices to gateways during onboarding.',
+  ],
+  [
+    'smart_lock.device.migrate',
+    'Migrate Smart Lock Device',
+    'Move Smart Lock device mapping through controlled migration.',
+  ],
   ['cctv.view', 'View CCTV', 'View CCTV metadata and preview sessions.'],
   ['notification.manage', 'Manage Notification', 'Manage announcements and notification content.'],
   ['report.view', 'View Report', 'View operational reports.'],
@@ -487,61 +544,237 @@ export const ROOM_FACILITIES = [
   [CORE_SEED_IDS.facilities.waterHeater, 'Water Heater'],
 ] as const;
 
-const RUKOST_UNITS: Array<readonly [string, RoomGenderPolicy, number]> = [
-  ['01', 'female', 11],
-  ['02', 'male', 8],
-  ['03', 'female', 8],
-  ['04', 'male', 7],
-  ['06', 'male', 7],
-  ['07', 'male', 7],
-  ['08', 'female', 7],
-  ['09', 'female', 6],
-  ['10', 'male', 8],
-  ['11', 'male', 7],
-  ['12', 'male', 7],
-  ['13', 'female', 11],
-  ['14', 'male', 6],
-  ['15', 'female', 6],
-  ['16', 'female', 7],
-  ['17', 'female', 10],
-];
-
-const APARTKOST_UNITS: Array<readonly [string, RoomGenderPolicy]> = [
-  ['05A', 'female'],
-  ['05B', 'female'],
-  ['05C', 'female'],
-  ['05D', 'female'],
-  ['18A', 'male'],
-  ['18B', 'male'],
-  ['18C', 'male'],
-  ['18D', 'male'],
-  ['18E', 'male'],
-  ['18F', 'male'],
-];
-
 const APARTKOST_ROOM_CODES = ['1B', '2B', '3A', '4A'] as const;
 
-export const ROOM_SEEDS: RoomSeedRecord[] = [
-  ...RUKOST_UNITS.flatMap(([unitCode, genderPolicy, roomCount]) =>
-    Array.from({ length: roomCount }, (_, index) => {
-      const roomCode = String(index + 1).padStart(2, '0');
-      return {
-        number: `RK-${unitCode}-${roomCode}`,
-        unitCode,
-        genderPolicy,
-        roomTypeName: 'RuKost Standard' as const,
-      };
-    }),
+function roomBuilding(
+  category: RoomBuildingSeedRecord['category'],
+  buildingCode: string,
+  buildingName: string,
+  genderPolicy: RoomGenderPolicy,
+  totalRooms: number,
+  floorACount: number,
+  floorBCount: number,
+  notes: string,
+): RoomBuildingSeedRecord {
+  return {
+    category,
+    buildingCode,
+    buildingName,
+    genderPolicy,
+    totalRooms,
+    floorACount,
+    floorBCount,
+    monthlyPrice: 1_800_000,
+    yearlyPrice: 21_600_000,
+    publicVisible: true,
+    notes,
+  };
+}
+
+export const ROOM_BUILDING_SEEDS: RoomBuildingSeedRecord[] = [
+  roomBuilding(
+    'rukost',
+    '01',
+    'RuKost Unit 01',
+    'male',
+    11,
+    6,
+    5,
+    "Parsed from '01 B:5 A:6 Putra'",
   ),
-  ...APARTKOST_UNITS.flatMap(([unitCode, genderPolicy]) =>
-    APARTKOST_ROOM_CODES.map((roomCode) => ({
-      number: `AK-${unitCode}-${roomCode}`,
-      unitCode,
-      genderPolicy,
-      roomTypeName: 'ApartKost Standard' as const,
-    })),
+  roomBuilding('rukost', '02', 'RuKost Unit 02', 'male', 8, 4, 4, "Parsed from '02 B:4 A:4 Putra'"),
+  roomBuilding(
+    'rukost',
+    '03',
+    'RuKost Unit 03',
+    'female',
+    8,
+    4,
+    4,
+    "Parsed from '03 B:4 B:4 Putri'; raw header has B:4 B:4 but actual rooms show 4xB + 4xA; corrected to floor_a=4 floor_b=4",
+  ),
+  roomBuilding('rukost', '04', 'RuKost Unit 04', 'male', 7, 4, 3, "Parsed from '04 B:3 A:4 Putra'"),
+  roomBuilding('rukost', '06', 'RuKost Unit 06', 'male', 7, 4, 3, "Parsed from '06 B-3 A-4 Putra'"),
+  roomBuilding('rukost', '07', 'RuKost Unit 07', 'male', 7, 4, 3, "Parsed from '07 B-3 A-4 Putra'"),
+  roomBuilding(
+    'rukost',
+    '08',
+    'RuKost Unit 08',
+    'female',
+    7,
+    4,
+    3,
+    "Parsed from '08 B-3 A-4 Putri'",
+  ),
+  roomBuilding(
+    'rukost',
+    '09',
+    'RuKost Unit 09',
+    'female',
+    6,
+    3,
+    3,
+    "Parsed from '09 B-3 A-3 Putri'",
+  ),
+  roomBuilding('rukost', '10', 'RuKost Unit 10', 'male', 8, 4, 4, "Parsed from '10 B-4 A-4 Putra'"),
+  roomBuilding('rukost', '11', 'RuKost Unit 11', 'male', 7, 4, 3, "Parsed from '11 B-3 A-4 Putra'"),
+  roomBuilding('rukost', '12', 'RuKost Unit 12', 'male', 7, 4, 3, "Parsed from '12 B-3 A-4 Putra'"),
+  roomBuilding(
+    'rukost',
+    '13',
+    'RuKost Unit 13',
+    'female',
+    11,
+    6,
+    5,
+    "Parsed from '13 B-5 A-6 Putri'",
+  ),
+  roomBuilding('rukost', '14', 'RuKost Unit 14', 'male', 6, 3, 3, "Parsed from '14 B-3 A-3 Putra'"),
+  roomBuilding(
+    'rukost',
+    '15',
+    'RuKost Unit 15',
+    'female',
+    6,
+    3,
+    3,
+    "Parsed from '15 B-3 A-3 Putri'",
+  ),
+  roomBuilding('rukost', '16', 'RuKost Unit 16', 'male', 7, 4, 3, "Parsed from '16 B-3 A-4 Putra'"),
+  roomBuilding(
+    'rukost',
+    '17',
+    'RuKost Unit 17',
+    'female',
+    10,
+    5,
+    5,
+    "Parsed from '17 B-5 A-5 Putri'",
+  ),
+  roomBuilding(
+    'apartkost',
+    '05A',
+    'ApartKost Unit 05A',
+    'female',
+    4,
+    0,
+    4,
+    "Parsed from '05A PUTRI'; rooms 1B-4B all floor B",
+  ),
+  roomBuilding(
+    'apartkost',
+    '05B',
+    'ApartKost Unit 05B',
+    'female',
+    4,
+    0,
+    4,
+    "Parsed from '05B PUTRI'; rooms 5B-8B all floor B",
+  ),
+  roomBuilding(
+    'apartkost',
+    '05C',
+    'ApartKost Unit 05C',
+    'female',
+    4,
+    4,
+    0,
+    "Parsed from '05C PUTRI'; rooms 9A-12A all floor A",
+  ),
+  roomBuilding(
+    'apartkost',
+    '05D',
+    'ApartKost Unit 05D',
+    'female',
+    4,
+    4,
+    0,
+    "Parsed from '05D PUTRI'; rooms 13A-16A all floor A",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18A',
+    'ApartKost Unit 18A',
+    'male',
+    4,
+    0,
+    4,
+    "Parsed from '18A PUTRA'; rooms 1B-4B all floor B",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18B',
+    'ApartKost Unit 18B',
+    'male',
+    4,
+    0,
+    4,
+    "Parsed from '18B PUTRA'; rooms 5B-8B all floor B",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18C',
+    'ApartKost Unit 18C',
+    'male',
+    4,
+    0,
+    4,
+    "Parsed from '18C PUTRA'; rooms 9B-12B all floor B",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18D',
+    'ApartKost Unit 18D',
+    'male',
+    4,
+    4,
+    0,
+    "Parsed from '18D PUTRA'; rooms 13A-16A all floor A",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18E',
+    'ApartKost Unit 18E',
+    'male',
+    4,
+    4,
+    0,
+    "Parsed from '18E PUTRA'; rooms 17A-20A all floor A",
+  ),
+  roomBuilding(
+    'apartkost',
+    '18F',
+    'ApartKost Unit 18F',
+    'male',
+    4,
+    4,
+    0,
+    "Parsed from '18F PUTRA'; rooms 21A-24A all floor A",
   ),
 ];
+
+export const ROOM_SEEDS: RoomSeedRecord[] = ROOM_BUILDING_SEEDS.flatMap<RoomSeedRecord>(
+  (building) => {
+    if (building.category === 'rukost') {
+      return Array.from({ length: building.totalRooms }, (_, index) => {
+        const roomCode = String(index + 1).padStart(2, '0');
+        return {
+          number: `RK-${building.buildingCode}-${roomCode}`,
+          unitCode: building.buildingCode,
+          genderPolicy: building.genderPolicy,
+          roomTypeName: 'RuKost Standard' as const,
+        };
+      });
+    }
+
+    return APARTKOST_ROOM_CODES.map((roomCode) => ({
+      number: `AK-${building.buildingCode}-${roomCode}`,
+      unitCode: building.buildingCode,
+      genderPolicy: building.genderPolicy,
+      roomTypeName: 'ApartKost Standard' as const,
+    }));
+  },
+);
 
 export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
   {
@@ -667,23 +900,61 @@ export const DEV_RESIDENT_SEEDS: DevResidentSeedRecord[] = [
 ];
 
 export const DEV_OCCUPANCY_SEEDS: DevOccupancySeedRecord[] = [
-  { id: CORE_SEED_IDS.devOccupancies.alpha, residentId: CORE_SEED_IDS.devResidents.alpha, roomNumber: 'RK-02-01' },
-  { id: CORE_SEED_IDS.devOccupancies.bravo, residentId: CORE_SEED_IDS.devResidents.bravo, roomNumber: 'AK-18A-1B' },
-  { id: CORE_SEED_IDS.devOccupancies.charlie, residentId: CORE_SEED_IDS.devResidents.charlie, roomNumber: 'RK-01-01' },
-  { id: CORE_SEED_IDS.devOccupancies.delta, residentId: CORE_SEED_IDS.devResidents.delta, roomNumber: 'AK-05A-1B' },
-  { id: CORE_SEED_IDS.devOccupancies.echo, residentId: CORE_SEED_IDS.devResidents.echo, roomNumber: 'RK-04-02' },
-  { id: CORE_SEED_IDS.devOccupancies.foxtrot, residentId: CORE_SEED_IDS.devResidents.foxtrot, roomNumber: 'RK-03-01' },
-  { id: CORE_SEED_IDS.devOccupancies.golf, residentId: CORE_SEED_IDS.devResidents.golf, roomNumber: 'RK-06-01' },
-  { id: CORE_SEED_IDS.devOccupancies.hotel, residentId: CORE_SEED_IDS.devResidents.hotel, roomNumber: 'RK-08-01' },
+  {
+    id: CORE_SEED_IDS.devOccupancies.alpha,
+    residentId: CORE_SEED_IDS.devResidents.alpha,
+    roomNumber: 'RK-02-01',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.bravo,
+    residentId: CORE_SEED_IDS.devResidents.bravo,
+    roomNumber: 'AK-18A-1B',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.charlie,
+    residentId: CORE_SEED_IDS.devResidents.charlie,
+    roomNumber: 'RK-03-02',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.delta,
+    residentId: CORE_SEED_IDS.devResidents.delta,
+    roomNumber: 'AK-05A-1B',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.echo,
+    residentId: CORE_SEED_IDS.devResidents.echo,
+    roomNumber: 'RK-04-02',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.foxtrot,
+    residentId: CORE_SEED_IDS.devResidents.foxtrot,
+    roomNumber: 'RK-03-01',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.golf,
+    residentId: CORE_SEED_IDS.devResidents.golf,
+    roomNumber: 'RK-06-01',
+  },
+  {
+    id: CORE_SEED_IDS.devOccupancies.hotel,
+    residentId: CORE_SEED_IDS.devResidents.hotel,
+    roomNumber: 'RK-08-01',
+  },
 ];
 
 export const DEV_BILLING_INVOICE_SEEDS: DevBillingInvoiceSeedRecord[] = [
   { id: CORE_SEED_IDS.devBilling.invoices.alpha, occupancyId: CORE_SEED_IDS.devOccupancies.alpha },
   { id: CORE_SEED_IDS.devBilling.invoices.bravo, occupancyId: CORE_SEED_IDS.devOccupancies.bravo },
-  { id: CORE_SEED_IDS.devBilling.invoices.charlie, occupancyId: CORE_SEED_IDS.devOccupancies.charlie },
+  {
+    id: CORE_SEED_IDS.devBilling.invoices.charlie,
+    occupancyId: CORE_SEED_IDS.devOccupancies.charlie,
+  },
   { id: CORE_SEED_IDS.devBilling.invoices.delta, occupancyId: CORE_SEED_IDS.devOccupancies.delta },
   { id: CORE_SEED_IDS.devBilling.invoices.echo, occupancyId: CORE_SEED_IDS.devOccupancies.echo },
-  { id: CORE_SEED_IDS.devBilling.invoices.foxtrot, occupancyId: CORE_SEED_IDS.devOccupancies.foxtrot },
+  {
+    id: CORE_SEED_IDS.devBilling.invoices.foxtrot,
+    occupancyId: CORE_SEED_IDS.devOccupancies.foxtrot,
+  },
   { id: CORE_SEED_IDS.devBilling.invoices.golf, occupancyId: CORE_SEED_IDS.devOccupancies.golf },
   { id: CORE_SEED_IDS.devBilling.invoices.hotel, occupancyId: CORE_SEED_IDS.devOccupancies.hotel },
 ];
@@ -860,7 +1131,7 @@ export const DEV_COMPLAINT_SEEDS: DevComplaintSeedRecord[] = [
     id: CORE_SEED_IDS.devComplaints.internetSubmitted,
     code: 'TKT-GSH-2026-0003',
     residentId: CORE_SEED_IDS.devResidents.charlie,
-    roomNumber: 'RK-01-01',
+    roomNumber: 'RK-03-02',
     categoryCode: 'internet',
     title: 'WiFi kamar lambat',
     description: 'Dummy complaint: Koneksi WiFi lambat untuk testing.',
@@ -940,7 +1211,7 @@ export const DEV_COMPLAINT_SEEDS: DevComplaintSeedRecord[] = [
     id: CORE_SEED_IDS.devComplaints.electricityResolved,
     code: 'TKT-GSH-2026-0010',
     residentId: CORE_SEED_IDS.devResidents.charlie,
-    roomNumber: 'RK-01-01',
+    roomNumber: 'RK-03-02',
     categoryCode: 'electricity',
     title: 'Stop kontak tidak menyala',
     description: 'Dummy complaint: Stop kontak sudah selesai dicek teknisi.',
@@ -998,7 +1269,7 @@ export const DEV_WORK_ORDER_SEEDS: DevWorkOrderSeedRecord[] = [
     id: CORE_SEED_IDS.devWorkOrders.electricityCheck,
     code: 'WO-GSH-2026-0005',
     complaintId: CORE_SEED_IDS.devComplaints.electricityResolved,
-    roomNumber: 'RK-01-01',
+    roomNumber: 'RK-03-02',
     title: 'Cek stop kontak kamar',
     description: 'Dummy work order listrik.',
     priority: 'urgent',
@@ -1065,7 +1336,7 @@ export const DEV_VEHICLE_SEEDS: DevVehicleSeedRecord[] = [
     id: CORE_SEED_IDS.devVehicles.charlieMotor,
     code: 'VEH-GSH-2026-0004',
     residentId: CORE_SEED_IDS.devResidents.charlie,
-    roomNumber: 'RK-01-01',
+    roomNumber: 'RK-03-02',
     plateNumber: 'D 1004 DEV',
     vehicleType: 'motorcycle',
     brand: 'Honda Beat',
@@ -1217,7 +1488,11 @@ export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
     priority: 'normal',
     title: 'Tagihan Juni 2026 sudah terbit',
     body: 'Tagihan Juni 2026 sebesar Rp 1.800.000 untuk kamar RK-02-01 sudah terbit.',
-    metadata: { invoice_id: CORE_SEED_IDS.devBilling.invoices.alpha, room_number: 'RK-02-01', amount: 1800000 },
+    metadata: {
+      invoice_id: CORE_SEED_IDS.devBilling.invoices.alpha,
+      room_number: 'RK-02-01',
+      amount: 1800000,
+    },
     sourceEventType: 'billing.invoice.issued',
     sourceResourceId: CORE_SEED_IDS.devBilling.invoices.alpha,
   },
@@ -1229,7 +1504,11 @@ export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
     priority: 'high',
     title: 'Tagihan Juni 2026 melewati jatuh tempo',
     body: 'Tagihan Juni 2026 untuk kamar AK-18A-1B sudah overdue.',
-    metadata: { invoice_id: CORE_SEED_IDS.devBilling.invoices.bravo, room_number: 'AK-18A-1B', outstanding_amount: 1800000 },
+    metadata: {
+      invoice_id: CORE_SEED_IDS.devBilling.invoices.bravo,
+      room_number: 'AK-18A-1B',
+      outstanding_amount: 1800000,
+    },
     sourceEventType: 'billing.overdue',
     sourceResourceId: CORE_SEED_IDS.devBilling.invoices.bravo,
   },
@@ -1241,7 +1520,10 @@ export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
     priority: 'normal',
     title: 'Complaint baru: AC kurang dingin',
     body: 'Complaint TKT-GSH-2026-0001 dibuat oleh penghuni dummy.',
-    metadata: { complaint_id: CORE_SEED_IDS.devComplaints.acInProgress, complaint_code: 'TKT-GSH-2026-0001' },
+    metadata: {
+      complaint_id: CORE_SEED_IDS.devComplaints.acInProgress,
+      complaint_code: 'TKT-GSH-2026-0001',
+    },
     sourceEventType: 'complaint.created',
     sourceResourceId: CORE_SEED_IDS.devComplaints.acInProgress,
   },
@@ -1253,7 +1535,10 @@ export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
     priority: 'high',
     title: 'Complaint AC sudah diselesaikan',
     body: 'Complaint AC kurang dingin telah diselesaikan. Silakan cek detail di aplikasi.',
-    metadata: { complaint_id: CORE_SEED_IDS.devComplaints.waterResolved, complaint_code: 'TKT-GSH-2026-0002' },
+    metadata: {
+      complaint_id: CORE_SEED_IDS.devComplaints.waterResolved,
+      complaint_code: 'TKT-GSH-2026-0002',
+    },
     sourceEventType: 'complaint.resolved',
     sourceResourceId: CORE_SEED_IDS.devComplaints.waterResolved,
   },
@@ -1265,7 +1550,10 @@ export const DEV_NOTIFICATION_SEEDS: DevNotificationSeedRecord[] = [
     priority: 'high',
     title: 'Work order baru: Service AC kamar RK-02-01',
     body: 'Work order WO-GSH-2026-0001 telah ditugaskan kepada Anda.',
-    metadata: { work_order_id: CORE_SEED_IDS.devWorkOrders.acService, work_order_code: 'WO-GSH-2026-0001' },
+    metadata: {
+      work_order_id: CORE_SEED_IDS.devWorkOrders.acService,
+      work_order_code: 'WO-GSH-2026-0001',
+    },
     sourceEventType: 'work_order.assigned',
     sourceResourceId: CORE_SEED_IDS.devWorkOrders.acService,
   },
@@ -1415,10 +1703,19 @@ export const DEV_SMART_LOCK_GATEWAY_SEEDS: DevSmartLockGatewaySeedRecord[] = [
   },
 ];
 
-export function ownerIdentityFor(environment: SeedEnvironment): { email: string; displayName: string } {
+export function ownerIdentityFor(environment: SeedEnvironment): {
+  email: string;
+  displayName: string;
+} {
   if (environment === 'production') {
-    return { email: process.env.SEED_OWNER_EMAIL ?? 'owner@granada.id', displayName: 'System Owner' };
+    return {
+      email: process.env.SEED_OWNER_EMAIL ?? 'owner@granada.id',
+      displayName: 'System Owner',
+    };
   }
 
-  return { email: process.env.SEED_OWNER_EMAIL ?? 'owner@kostation.test', displayName: 'Dev Owner' };
+  return {
+    email: process.env.SEED_OWNER_EMAIL ?? 'owner@kostation.test',
+    displayName: 'Dev Owner',
+  };
 }

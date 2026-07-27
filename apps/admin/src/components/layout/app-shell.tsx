@@ -33,7 +33,7 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
       <RegistrySidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-          <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-8">
+          <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-8">
             <div className="min-w-0">
               <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">
                 {title}
@@ -43,7 +43,7 @@ export function AppShell({ title, subtitle, actions, children }: Props) {
               ) : null}
               <AppBreadcrumb />
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
               {actions}
               <Button
                 variant="ghost"

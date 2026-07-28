@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-28T00:00:00+07:00",
+  "title": "Design System: KOSTATION",
+  "extensions": {
+    "colorMeta": {
+      "admin-primary-light": {
+        "role": "primary",
+        "displayName": "Operational Blue",
+        "canonical": "oklch(0.55 0.18 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.08 250)",
+          "oklch(0.25 0.12 250)",
+          "oklch(0.35 0.15 250)",
+          "oklch(0.45 0.17 250)",
+          "oklch(0.55 0.18 250)",
+          "oklch(0.68 0.15 250)",
+          "oklch(0.82 0.09 250)",
+          "oklch(0.95 0.04 250)"
+        ]
+      },
+      "penghuni-primary-light": {
+        "role": "primary",
+        "displayName": "Penghuni Blue",
+        "canonical": "oklch(0.58 0.18 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.08 255)",
+          "oklch(0.25 0.12 255)",
+          "oklch(0.35 0.15 255)",
+          "oklch(0.46 0.17 255)",
+          "oklch(0.58 0.18 255)",
+          "oklch(0.7 0.15 255)",
+          "oklch(0.84 0.09 255)",
+          "oklch(0.95 0.04 255)"
+        ]
+      },
+      "admin-background-light": {
+        "role": "neutral",
+        "displayName": "Cool Canvas",
+        "canonical": "oklch(0.99 0.003 240)",
+        "tonalRamp": [
+          "oklch(0.15 0.01 240)",
+          "oklch(0.27 0.01 240)",
+          "oklch(0.4 0.008 240)",
+          "oklch(0.54 0.007 240)",
+          "oklch(0.68 0.006 240)",
+          "oklch(0.81 0.005 240)",
+          "oklch(0.92 0.004 240)",
+          "oklch(0.99 0.003 240)"
+        ]
+      },
+      "admin-foreground-light": {
+        "role": "neutral",
+        "displayName": "Operational Ink",
+        "canonical": "oklch(0.2 0.03 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.03 250)",
+          "oklch(0.2 0.03 250)",
+          "oklch(0.32 0.025 250)",
+          "oklch(0.45 0.02 250)",
+          "oklch(0.58 0.018 250)",
+          "oklch(0.7 0.014 250)",
+          "oklch(0.84 0.01 250)",
+          "oklch(0.95 0.006 250)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Operational Title",
+        "purpose": "Page, section, dialog, and card titles with compact hierarchy."
+      },
+      "body": {
+        "displayName": "Interface Body",
+        "purpose": "Tables, forms, descriptions, and daily operational copy."
+      },
+      "label": {
+        "displayName": "Compact Label",
+        "purpose": "Navigation groups, statuses, filters, and metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "admin-control",
+        "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Incumbent Tailwind control and card separation in Admin."
+      },
+      {
+        "name": "admin-floating",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Incumbent Tailwind dialog, sheet, and floating-surface separation in Admin."
+      },
+      {
+        "name": "penghuni-soft",
+        "value": "0 2px 8px -2px oklch(0.58 0.18 255 / 0.08)",
+        "purpose": "Low ambient separation on compact Penghuni controls."
+      },
+      {
+        "name": "penghuni-card",
+        "value": "0 4px 20px -6px oklch(0.4 0.1 255 / 0.1)",
+        "purpose": "Card separation on Penghuni light surfaces."
+      },
+      {
+        "name": "penghuni-glow",
+        "value": "0 8px 32px -8px oklch(0.58 0.18 255 / 0.35)",
+        "purpose": "Restricted active-navigation emphasis in Penghuni."
+      }
+    ],
+    "motion": [
+      {
+        "name": "admin-fade-in",
+        "value": "fade-in 0.4s ease-out",
+        "purpose": "Admin main-content entrance."
+      },
+      {
+        "name": "penghuni-scale-in",
+        "value": "scale-in 0.25s ease-out",
+        "purpose": "Compact Penghuni surface entrance."
+      },
+      {
+        "name": "sheet-open",
+        "value": "all 0.5s ease-in-out",
+        "purpose": "Incumbent sheet open-state transition."
+      },
+      {
+        "name": "sheet-closed",
+        "value": "all 0.3s ease-in-out",
+        "purpose": "Incumbent sheet closed-state transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary operational action with compact height and restrained feedback.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Simpan</button>",
+      "css": ".ds-btn-primary { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; gap: 0.5rem; border: 0; border-radius: 0.625rem; padding: 0.5rem 1rem; background: var(--primary); color: var(--primary-foreground); font: 500 0.875rem/1.25rem ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); cursor: pointer; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, black); } .ds-btn-primary:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; } .ds-btn-primary:disabled { cursor: not-allowed; opacity: 0.5; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action that preserves the calm surface hierarchy.",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">Batal</button>",
+      "css": ".ds-btn-outline { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; gap: 0.5rem; border: 1px solid var(--input); border-radius: 0.625rem; padding: 0.5rem 1rem; background: var(--background); color: var(--foreground); font: 500 0.875rem/1.25rem ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); cursor: pointer; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-outline:hover { background: var(--accent); color: var(--accent-foreground); } .ds-btn-outline:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled compact field with semantic border and explicit focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Nomor kamar</span><input class=\"ds-field-input\" value=\"RK-01\" aria-describedby=\"ds-field-help\"><span class=\"ds-field-help\" id=\"ds-field-help\">Gunakan nomor operasional yang mudah dikenali.</span></label>",
+      "css": ".ds-field { display: grid; gap: 0.5rem; color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; } .ds-field-label { font-size: 0.875rem; font-weight: 500; line-height: 1; } .ds-field-input { min-height: 2.25rem; width: 100%; border: 1px solid var(--input); border-radius: 0.625rem; padding: 0.25rem 0.75rem; background: transparent; color: var(--foreground); font-size: 0.875rem; line-height: 1.25rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-field-input:focus-visible { outline: 1px solid var(--ring); outline-offset: 1px; } .ds-field-help { color: var(--muted-foreground); font-size: 0.75rem; line-height: 1rem; }"
+    },
+    {
+      "name": "Operational Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Bordered tonal container for metrics, summaries, and grouped operations.",
+      "html": "<section class=\"ds-card\"><p class=\"ds-card-label\">Kamar tersedia</p><strong class=\"ds-card-value\">24</strong><p class=\"ds-card-note\">Seluruh properti aktif</p></section>",
+      "css": ".ds-card { border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; background: var(--card); color: var(--card-foreground); box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); font-family: ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; } .ds-card-label, .ds-card-note { margin: 0; color: var(--muted-foreground); font-size: 0.75rem; line-height: 1rem; } .ds-card-value { display: block; margin: 0.5rem 0; font-size: 1.5rem; line-height: 1; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Compact status cue that always carries explicit text.",
+      "html": "<span class=\"ds-status\">Aktif</span>",
+      "css": ".ds-status { display: inline-flex; align-items: center; border: 1px solid transparent; border-radius: 0.625rem; padding: 0.125rem 0.625rem; background: var(--primary); color: var(--primary-foreground); font: 600 0.75rem/1rem ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-status:hover { background: color-mix(in oklch, var(--primary) 80%, transparent); }"
+    },
+    {
+      "name": "Sidebar Navigation Item",
+      "kind": "nav",
+      "description": "Active Admin navigation with tonal surface, explicit marker, and readable label.",
+      "html": "<a class=\"ds-nav-item\" href=\"#\"><span class=\"ds-nav-marker\" aria-hidden=\"true\"></span><span>Ringkasan Kamar</span></a>",
+      "css": ".ds-nav-item { position: relative; display: flex; min-height: 2.5rem; align-items: center; gap: 0.75rem; border-radius: 0.75rem; padding: 0.625rem 0.75rem; background: var(--primary-soft); color: var(--sidebar-accent-foreground); font: 500 0.875rem/1.25rem ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; text-decoration: none; transition: all 200ms ease-in-out; } .ds-nav-item:hover { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); } .ds-nav-item:focus-visible { outline: 1px solid var(--sidebar-ring); outline-offset: 2px; } .ds-nav-marker { width: 0.125rem; height: 1.5rem; border-radius: 9999px; background: var(--primary); }"
+    },
+    {
+      "name": "Dialog Panel",
+      "kind": "custom",
+      "description": "Contained operational decision surface with title, consequence copy, and ordered actions.",
+      "html": "<section class=\"ds-dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ds-dialog-title\" tabindex=\"-1\"><h2 class=\"ds-dialog-title\" id=\"ds-dialog-title\">Konfirmasi tindakan</h2><p class=\"ds-dialog-copy\">Periksa kembali dampak tindakan sebelum melanjutkan.</p><div class=\"ds-dialog-actions\"><button class=\"ds-dialog-secondary\" type=\"button\">Batal</button><button class=\"ds-dialog-primary\" type=\"button\">Lanjutkan</button></div></section>",
+      "css": ".ds-dialog { width: min(32rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.5rem; background: var(--background); color: var(--foreground); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); font-family: ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif; } .ds-dialog:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } .ds-dialog-title { margin: 0; font-size: 1.125rem; font-weight: 600; } .ds-dialog-copy { margin: 0.75rem 0 1.5rem; color: var(--muted-foreground); font-size: 0.875rem; line-height: 1.5; } .ds-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; } .ds-dialog-primary, .ds-dialog-secondary { min-height: 2.25rem; border-radius: 0.625rem; padding: 0.5rem 1rem; font-weight: 500; cursor: pointer; } .ds-dialog-primary { border: 0; background: var(--primary); color: var(--primary-foreground); } .ds-dialog-secondary { border: 1px solid var(--input); background: var(--background); color: var(--foreground); } .ds-dialog-primary:hover { background: color-mix(in oklch, var(--primary) 90%, black); } .ds-dialog-secondary:hover { background: var(--accent); } .ds-dialog-primary:focus-visible, .ds-dialog-secondary:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Pusat Kendali Hunian",
+    "overview": "“Pusat Kendali Hunian” memperlakukan setiap layar operasional sebagai permukaan kendali yang tenang: informasi cukup padat untuk kerja harian, tetapi hierarki, jarak, dan penekanan yang restrained membuatnya mudah dipindai. Permukaan tonal dan border terukur membawa struktur; shadow bersifat sekunder dan tidak dekoratif.\n\nShared core memakai role warna semantic light/dark, kontrol ringkas, focus state yang jelas, dan layout responsif yang wrap sebelum overflow. Admin mengutamakan tabel property-wide dan kepadatan navigasi, sedangkan Penghuni memakai shell mobile sempit dengan radius, gradient, dan elevation yang sedikit lebih lunak.",
+    "keyCharacteristics": [
+      "Tenang, tegas, informatif, dan profesional.",
+      "Kepadatan operasional yang nyaman dengan hierarki eksplisit.",
+      "Tonal layering, border terukur, dan shadow minimal.",
+      "Komponen refined dan restrained yang mempertahankan implementasi incumbent."
+    ],
+    "rules": [
+      {
+        "name": "The Semantic Surface Rule",
+        "body": "Gunakan role background, foreground, card, muted, border, dan state semantic agar light dan dark mode tetap ekuivalen.",
+        "section": "colors"
+      },
+      {
+        "name": "The Wrap Before Overflow Rule",
+        "body": "Pada layar sempit, stack atau wrap kontrol dan pertahankan content di dalam viewport; jangan sembunyikan operasi penting hanya agar layout muat.",
+        "section": "layout"
+      },
+      {
+        "name": "The Restrained Depth Rule",
+        "body": "Gunakan border dan kontras tonal lebih dahulu; simpan shadow untuk kontrol, floating surface, dan feedback interaksi terbatas.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do pertahankan role semantic light/dark dan focus-visible state yang terbaca.",
+      "Do jaga informasi operasional padat tetapi terkelompok, berlabel, dan mudah dipindai.",
+      "Do dampingi setiap warna status dengan teks, ikon, atau cue eksplisit lain.",
+      "Do jauhkan opaque identifier, rahasia autentikasi, dan metadata privat dari UI yang dirender.",
+      "Do beri setiap form control label terlihat, validasi inline, dan focus management yang disengaja."
+    ],
+    "donts": [
+      "Don't redesign sistem incumbent atau memperkenalkan palette, font, radius, atau bahasa komponen yang tidak terkait.",
+      "Don't bergantung pada warna saja untuk menyampaikan status, sukses, peringatan, atau kegagalan.",
+      "Don't biarkan tabel, header, dialog, atau action row membuat horizontal page overflow.",
+      "Don't promosikan keputusan layout khusus satu halaman menjadi aturan desain global.",
+      "Don't gunakan shadow berat atau efek dekoratif sebagai pengganti hierarki."
+    ]
+  }
+}

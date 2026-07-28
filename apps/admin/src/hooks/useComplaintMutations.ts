@@ -5,18 +5,35 @@
 //   POST /complaints/:id/close
 //   POST /complaints/:id/reopen
 //   POST /complaints/:id/cancel           — body: { reason }
-// All require complaint.manage and owner|manager|admin role.
-//
-// Assign is NOT wired: there is no Admin endpoint that lists technicians/users
-// yet, so the UI cannot offer a picker. The route keeps the disabled button.
-
+// Lifecycle transitions require complaint.manage; dispatch additionally requires maintenance.manage.
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { apiClient } from "@/lib/api";
+import {
+  invalidateMaintenanceDispatch,
+  requestComplaintDispatch,
+  type MaintenanceDispatchInput,
+  type MaintenanceDispatchResult,
+} from "@/lib/admin-maintenance";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import type { ComplaintRecord } from "./useComplaints";
 
 type IdInput = { complaintId: string };
+
+export function useDispatchComplaint() {
+  const queryClient = useQueryClient();
+  return useMutation<MaintenanceDispatchResult, unknown, MaintenanceDispatchInput>({
+    mutationFn: (input) =>
+      requestComplaintDispatch(
+        (path, body, options) => adminUxV2Requester.post<unknown>(path, body, options),
+        input,
+      ),
+    onSuccess: async (_result, input) => {
+      await invalidateMaintenanceDispatch(queryClient, input.propertyId);
+    },
+  });
+}
 
 function useSimpleTransition(
   qc: QueryClient,

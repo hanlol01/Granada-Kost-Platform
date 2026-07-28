@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
+import { ComplaintWorkOrderPanel } from "@/components/maintenance/ComplaintWorkOrderPanel";
+import { MaintenanceDispatchDialog } from "@/components/maintenance/MaintenanceDispatchDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
@@ -27,8 +28,16 @@ import {
   useReopenComplaint,
   useResolveComplaint,
 } from "@/hooks/useComplaintMutations";
+import { useMaintenanceTechnicians, useWorkOrders } from "@/hooks/useWorkOrders";
+import {
+  canDispatchComplaint,
+  MAINTENANCE_PRIORITY_LABELS,
+  resolveComplaintWorkOrderAuthority,
+  type MaintenanceDispatchResult,
+} from "@/lib/admin-maintenance";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
+import { useProperty } from "@/lib/property";
 import {
   Search,
   MessageSquareWarning,
@@ -155,24 +164,49 @@ function ComplaintsPage() {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<ComplaintTab>("all");
   const [selected, setSelected] = useState<ComplaintRecord | null>(null);
+  const [dispatchTarget, setDispatchTarget] = useState<ComplaintRecord | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ComplaintRecord | null>(null);
   const [confirmTransition, setConfirmTransition] = useState<{
     complaint: ComplaintRecord;
     kind: "acknowledge" | "resolve" | "close" | "reopen";
   } | null>(null);
 
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const { currentPropertyId } = useProperty();
   const canManage = hasPermission("complaint.manage");
+  const canReadMaintenance = Boolean(
+    currentPropertyId &&
+    (user?.roles.includes("owner") ||
+      user?.roles.includes("manager") ||
+      user?.roles.includes("admin")) &&
+    user?.permissions.includes("complaint.manage") &&
+    user.permissions.includes("maintenance.manage"),
+  );
 
   const status = tabToStatusFilter(tab);
   const { data, isLoading, error, refetch, isFetching } = useComplaints({ status, limit: 100 });
   const categoriesQuery = useComplaintCategories();
+  const maintenanceDetailNeeded = Boolean(
+    canReadMaintenance &&
+    currentPropertyId &&
+    (selected?.propertyId === currentPropertyId ||
+      dispatchTarget?.propertyId === currentPropertyId),
+  );
+  const workOrdersQuery = useWorkOrders({}, maintenanceDetailNeeded);
+  const techniciansQuery = useMaintenanceTechnicians(maintenanceDetailNeeded);
 
   const ackMut = useAcknowledgeComplaint();
   const resolveMut = useResolveComplaint();
   const closeMut = useCloseComplaint();
   const reopenMut = useReopenComplaint();
   const cancelMut = useCancelComplaint();
+
+  useEffect(() => {
+    setSelected(null);
+    setDispatchTarget(null);
+    setCancelTarget(null);
+    setConfirmTransition(null);
+  }, [currentPropertyId]);
 
   const categoryById = useMemo(() => {
     const map = new Map<string, string>();
@@ -215,6 +249,47 @@ function ComplaintsPage() {
 
   const pendingTransition =
     ackMut.isPending || resolveMut.isPending || closeMut.isPending || reopenMut.isPending;
+
+  const selectedWorkOrderAuthority = selected
+    ? resolveComplaintWorkOrderAuthority(workOrdersQuery.data, currentPropertyId, selected.id)
+    : { workOrder: null, actionableWorkOrder: null, anomaly: false };
+  const dispatchWorkOrderAuthority = dispatchTarget
+    ? resolveComplaintWorkOrderAuthority(workOrdersQuery.data, currentPropertyId, dispatchTarget.id)
+    : { workOrder: null, actionableWorkOrder: null, anomaly: false };
+  const selectedActionableWorkOrder = selectedWorkOrderAuthority.actionableWorkOrder;
+  const dispatchActionableWorkOrder = dispatchWorkOrderAuthority.actionableWorkOrder;
+  const dispatchAllowed = selected
+    ? canDispatchComplaint({
+        roles: user?.roles ?? [],
+        permissions: user?.permissions ?? [],
+        propertyId: currentPropertyId,
+        complaint: selected,
+        actionableWorkOrder: selectedActionableWorkOrder,
+        authorityAnomaly: selectedWorkOrderAuthority.anomaly,
+        coverageComplete: workOrdersQuery.data?.complete === true,
+      })
+    : false;
+  const complaintCanShowDispatch = Boolean(
+    selected &&
+    canReadMaintenance &&
+    ["submitted", "acknowledged", "in_progress", "on_hold", "escalated", "reopened"].includes(
+      selected.complaintStatus,
+    ),
+  );
+
+  const applyDispatchSuccess = (result: MaintenanceDispatchResult) => {
+    setSelected((current) =>
+      current?.id === result.complaint.id && current.propertyId === result.complaint.propertyId
+        ? {
+            ...current,
+            complaintStatus: result.complaint.status,
+            assignedToUserId: result.complaint.assignedToUserId,
+            updatedAt: result.complaint.updatedAt,
+          }
+        : current,
+    );
+    setDispatchTarget(null);
+  };
 
   const runTransition = async (
     complaintId: string,
@@ -407,7 +482,7 @@ function ComplaintsPage() {
                           <span
                             className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[c.priority]}`}
                           >
-                            {c.priority}
+                            {MAINTENANCE_PRIORITY_LABELS[c.priority]}
                           </span>
                         </div>
                         <p className="text-sm font-medium mt-1 truncate">{c.title}</p>
@@ -434,7 +509,15 @@ function ComplaintsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <Dialog
+        open={!!selected}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDispatchTarget(null);
+            setSelected(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {selected && (
             <>
@@ -444,7 +527,7 @@ function ComplaintsPage() {
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${PRIO_META[selected.priority]}`}
                   >
-                    {selected.priority}
+                    {MAINTENANCE_PRIORITY_LABELS[selected.priority]}
                   </span>
                 </DialogTitle>
               </DialogHeader>
@@ -475,6 +558,16 @@ function ComplaintsPage() {
                   </div>
                 ) : null}
                 <ComplaintAttachments complaintId={selected.id} />
+                {canReadMaintenance && currentPropertyId ? (
+                  <ComplaintWorkOrderPanel
+                    authority={selectedWorkOrderAuthority}
+                    coverageComplete={workOrdersQuery.data?.complete === true}
+                    technicians={techniciansQuery.data}
+                    isLoading={workOrdersQuery.isLoading}
+                    error={workOrdersQuery.error}
+                    onRetry={() => void workOrdersQuery.refetch()}
+                  />
+                ) : null}
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                   {canManage ? (
                     <>
@@ -535,18 +628,23 @@ function ComplaintsPage() {
                           <Ban className="h-3.5 w-3.5 mr-1 text-destructive" /> Batalkan
                         </Button>
                       ) : null}
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span>
-                              <Button variant="outline" size="sm" disabled>
-                                <UserCog className="h-3.5 w-3.5 mr-1" /> Assign Teknisi
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>Picker teknisi belum tersedia di Phase 1.</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      {complaintCanShowDispatch ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            !dispatchAllowed ||
+                            workOrdersQuery.isLoading ||
+                            Boolean(workOrdersQuery.error)
+                          }
+                          onClick={() => setDispatchTarget(selected)}
+                        >
+                          <UserCog className="h-3.5 w-3.5 mr-1" />
+                          {selectedActionableWorkOrder?.assignedToUserId
+                            ? "Ganti Teknisi"
+                            : "Assign Teknisi"}
+                        </Button>
+                      ) : null}
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">
@@ -559,6 +657,20 @@ function ComplaintsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <MaintenanceDispatchDialog
+        open={dispatchTarget !== null}
+        complaint={dispatchTarget}
+        actionableWorkOrder={dispatchActionableWorkOrder}
+        authorityAnomaly={dispatchWorkOrderAuthority.anomaly}
+        coverageComplete={workOrdersQuery.data?.complete === true}
+        technicians={techniciansQuery.data}
+        techniciansLoading={techniciansQuery.isLoading}
+        techniciansError={techniciansQuery.error}
+        onRetryTechnicians={() => void techniciansQuery.refetch()}
+        onOpenChange={(open) => !open && setDispatchTarget(null)}
+        onSuccess={applyDispatchSuccess}
+      />
 
       <ConfirmDialog
         open={confirmTransition !== null}

@@ -357,23 +357,24 @@ export type MaintenanceSummary = {
 };
 
 const OPEN_WORK_ORDER_STATUSES = new Set<WorkOrderStatus>([
-  "created",
+  "open",
   "assigned",
+  "in_progress",
   "on_hold",
-  "reworking",
+  "rework_required",
 ]);
 
 export function selectMaintenanceSummary(
   workOrders: readonly WorkOrderRecord[],
 ): MaintenanceSummary {
   const byStatus = {
-    created: 0,
+    open: 0,
     assigned: 0,
     in_progress: 0,
     on_hold: 0,
     completed: 0,
+    rework_required: 0,
     verified: 0,
-    reworking: 0,
     cancelled: 0,
   } satisfies Record<WorkOrderStatus, number>;
   for (const w of workOrders) {

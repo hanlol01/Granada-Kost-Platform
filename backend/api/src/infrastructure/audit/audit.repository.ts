@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 
 export type WriteAuditInput = {
@@ -19,8 +20,8 @@ export type WriteAuditInput = {
 export class AuditRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async write(input: WriteAuditInput): Promise<void> {
-    await this.database.client.query(
+  async write(input: WriteAuditInput, client?: PoolClient): Promise<void> {
+    await (client ?? this.database.client).query(
       `INSERT INTO audit_logs (
          actor_user_id, property_id, action, resource_type, resource_id,
          before_data, after_data, result_status, ip_address, user_agent, correlation_id

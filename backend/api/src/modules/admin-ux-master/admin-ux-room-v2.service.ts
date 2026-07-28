@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -5,7 +6,10 @@ import {
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
+  ValidationPipe,
 } from '@nestjs/common';
+import type { ValidationError } from 'class-validator';
+import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { normalizePagination, v2Data, v2List } from '../../shared/admin-ux-v2';
@@ -22,8 +26,46 @@ import {
 
 type Row = Record<string, unknown>;
 
+type IdempotencyRow = {
+  request_fingerprint: string;
+  command_status: string;
+  response_status: number | null;
+  response_body: unknown;
+};
+
+type FloorCode = 'A' | 'B';
+
+const CANONICAL_FLOOR: Record<FloorCode, { floor: string; floorLabel: string }> = {
+  A: { floor: '2', floorLabel: 'Lantai Atas / LT.2' },
+  B: { floor: '1', floorLabel: 'Lantai Bawah / LT.1' },
+};
+
+function flattenValidationErrors(errors: ValidationError[], parent = ''): Record<string, string[]> {
+  return errors.reduce<Record<string, string[]>>((details, error) => {
+    const property = parent ? `${parent}.${error.property}` : error.property;
+    if (error.constraints) details[property] = Object.values(error.constraints);
+    if (error.children?.length) {
+      Object.assign(details, flattenValidationErrors(error.children, property));
+    }
+    return details;
+  }, {});
+}
+
 @Injectable()
 export class AdminUxRoomV2Service {
+  private readonly writeValidation = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+    exceptionFactory: (errors) =>
+      new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        details: flattenValidationErrors(errors),
+      }),
+  });
+
   constructor(
     private readonly database: DatabaseService,
     private readonly properties: PropertyService,
@@ -109,143 +151,233 @@ export class AdminUxRoomV2Service {
     return v2Data(full);
   }
 
-  async create(user: UserAccessContext, dto: CreateRoomV2Dto, context: RequestAuditContext) {
+  async create(
+    user: UserAccessContext,
+    dto: unknown,
+    context: RequestAuditContext,
+    idempotencyKey?: string,
+  ) {
     this.assertNoCommercialFields(dto);
-    await this.assertCanMutate(user, dto.property_id);
-    const kostType = await this.requireActiveKostType(dto.kost_type_id, dto.property_id);
-    const building = await this.requireBuilding(dto.building_id, dto.property_id);
-    this.assertBuildingMatchesType(building, kostType);
-    if (dto.primary_photo_file_id)
-      await this.assertPhotoFile(dto.primary_photo_file_id, dto.property_id);
+    const input = await this.validateWriteBody(CreateRoomV2Dto, dto);
+    await this.assertCanMutate(user, input.property_id);
 
-    try {
-      const result = await this.database.client.query<Row>(
-        `INSERT INTO rooms (
-           property_id, kost_type_id, number, room_code, building_id, category, unit_code, gender_policy,
-           floor, floor_code, floor_label, size_label, monthly_price, yearly_price, deposit_amount,
-           primary_photo_file_id, public_visible, created_by_user_id, updated_by_user_id
-         ) VALUES (
-           $1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'mixed'), $9, $10, $11, $12, $13::integer, $14::integer,
-           $15::integer, $16, COALESCE($17, true), $18, $18
-         ) RETURNING id`,
-        [
-          dto.property_id,
-          dto.kost_type_id,
-          dto.number.trim(),
-          dto.room_code?.trim() ?? null,
-          dto.building_id,
-          kostType.category,
-          dto.unit_code ?? null,
-          dto.gender_policy ?? null,
-          dto.floor ?? null,
-          dto.floor_code ?? null,
-          dto.floor_label ?? null,
-          dto.size_label ?? null,
-          Number(kostType.monthly_price),
-          Number(kostType.yearly_price),
-          Number(kostType.deposit_amount),
-          dto.primary_photo_file_id ?? null,
-          dto.public_visible ?? null,
-          user.id,
-        ],
-      );
-      const room = await this.roomById(String(result.rows[0].id), false);
-      await this.audit.write({
-        actorUserId: user.id,
-        propertyId: dto.property_id,
-        action: 'room.create.v2',
-        resourceType: 'room',
-        resourceId: String(result.rows[0].id),
-        afterData: room,
-        resultStatus: 'success',
-        ...context,
-      });
-      return v2Data(room);
-    } catch (error) {
-      this.rethrowRoomConflict(error);
-    }
+    return this.executeCommand(
+      user,
+      input.property_id,
+      '/rooms',
+      idempotencyKey,
+      input,
+      context,
+      201,
+      async (client) => {
+        const buildings = await this.lockBuildings(client, input.property_id, [input.building_id]);
+        const building = buildings.get(input.building_id);
+        if (!building) this.throwBuildingScopeMismatch();
+        const kostType = await this.requireActiveKostType(
+          input.kost_type_id,
+          input.property_id,
+          client,
+          true,
+        );
+        this.assertBuildingMatchesType(building, kostType);
+        this.assertBuildingGender(building, input.gender_policy);
+        const canonicalFloor = this.canonicalFloor(input.floor_code);
+        this.assertFloorInputs(input, canonicalFloor);
+        if (input.primary_photo_file_id) {
+          await this.assertPhotoFile(input.primary_photo_file_id, input.property_id, client);
+        }
+
+        const result = await client.query<Row>(
+          `INSERT INTO rooms (
+             property_id, kost_type_id, number, room_code, building_id, category, unit_code, gender_policy,
+             floor, floor_code, floor_label, size_label, monthly_price, yearly_price, deposit_amount,
+             room_status, primary_photo_file_id, public_visible, created_by_user_id, updated_by_user_id
+           ) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::integer, $14::integer,
+             $15::integer, 'vacant', $16, $17, $18, $18
+           ) RETURNING id`,
+          [
+            input.property_id,
+            input.kost_type_id,
+            input.number,
+            input.room_code ?? null,
+            input.building_id,
+            kostType.category,
+            input.unit_code ?? null,
+            building.gender_policy,
+            canonicalFloor.floor,
+            input.floor_code,
+            canonicalFloor.floorLabel,
+            input.size_label ?? null,
+            Number(kostType.monthly_price),
+            Number(kostType.yearly_price),
+            Number(kostType.deposit_amount),
+            input.primary_photo_file_id ?? null,
+            input.public_visible ?? true,
+            user.id,
+          ],
+        );
+        const roomId = String(result.rows[0].id);
+        await this.applyCounterDeltas(client, [
+          {
+            buildingId: input.building_id,
+            total: 1,
+            floorA: input.floor_code === 'A' ? 1 : 0,
+            floorB: input.floor_code === 'B' ? 1 : 0,
+          },
+        ]);
+        const room = await this.roomById(roomId, false, client, input.property_id);
+        await this.audit.write(
+          {
+            actorUserId: user.id,
+            propertyId: input.property_id,
+            action: 'room.create.v2',
+            resourceType: 'room',
+            resourceId: roomId,
+            afterData: this.auditRoom(room),
+            resultStatus: 'success',
+            ...context,
+          },
+          client,
+        );
+        return { resourceType: 'room', resourceId: roomId, data: room };
+      },
+    );
   }
 
   async update(
     user: UserAccessContext,
     roomId: string,
-    dto: UpdateRoomV2Dto,
+    dto: unknown,
     context: RequestAuditContext,
+    idempotencyKey?: string,
   ) {
     this.assertNoCommercialFields(dto);
-    const before = await this.requireRoom(roomId);
-    await this.assertCanMutate(user, String(before.property_id));
-    const proposedKostTypeId = dto.kost_type_id ?? String(before.kost_type_id);
-    const proposedBuildingId = dto.building_id ?? String(before.building_id);
-    const kostType = await this.requireActiveKostType(
-      proposedKostTypeId,
-      String(before.property_id),
-    );
-    const building = await this.requireBuilding(proposedBuildingId, String(before.property_id));
-    this.assertBuildingMatchesType(building, kostType);
-    if (
-      dto.kost_type_id &&
-      dto.kost_type_id !== before.kost_type_id &&
-      before.room_status === 'occupied'
-    ) {
-      throw new ConflictException({
-        code: 'ROOM_KOST_TYPE_CHANGE_REQUIRES_TRANSFER',
-        message: 'An occupied room cannot change kost type; use transfer after lease cutover.',
-      });
-    }
-    if (dto.primary_photo_file_id)
-      await this.assertPhotoFile(dto.primary_photo_file_id, String(before.property_id));
-    try {
-      const result = await this.database.client.query<Row>(
-        `UPDATE rooms
-         SET kost_type_id = $2, number = COALESCE($3, number), room_code = COALESCE($4, room_code),
-             building_id = $5, category = $6, unit_code = COALESCE($7, unit_code),
-             gender_policy = COALESCE($8, gender_policy), floor = COALESCE($9, floor),
-             floor_code = COALESCE($10, floor_code), floor_label = COALESCE($11, floor_label),
-             size_label = COALESCE($12, size_label), primary_photo_file_id = COALESCE($13, primary_photo_file_id),
-             public_visible = COALESCE($14, public_visible),
-             monthly_price = $15::integer, yearly_price = $16::integer, deposit_amount = $17::integer,
-             updated_by_user_id = $18, updated_at = now()
-         WHERE id = $1 RETURNING id`,
-        [
-          roomId,
+    const input = await this.validateWriteBody(UpdateRoomV2Dto, dto);
+    const scope = await this.lookupScopedRoom(user, roomId);
+    const propertyId = String(scope.property_id);
+    await this.assertCanMutate(user, propertyId);
+
+    return this.executeCommand(
+      user,
+      propertyId,
+      `/rooms/${roomId}`,
+      idempotencyKey,
+      input,
+      context,
+      200,
+      async (client) => {
+        const before = await this.lockScopedRoom(client, roomId, propertyId);
+        const beforeBuildingId = this.stringOrEmpty(before.building_id);
+        const proposedBuildingId = input.building_id ?? beforeBuildingId;
+        const buildingIds = [beforeBuildingId, proposedBuildingId].filter(Boolean);
+        const buildings = await this.lockBuildings(client, propertyId, buildingIds);
+        const building = buildings.get(proposedBuildingId);
+        if (!building) this.throwBuildingScopeMismatch();
+        const proposedKostTypeId = String(input.kost_type_id ?? before.kost_type_id);
+        const kostType = await this.requireActiveKostType(
           proposedKostTypeId,
-          dto.number?.trim() ?? null,
-          dto.room_code?.trim() ?? null,
-          proposedBuildingId,
-          kostType.category,
-          dto.unit_code ?? null,
-          dto.gender_policy ?? null,
-          dto.floor ?? null,
-          dto.floor_code ?? null,
-          dto.floor_label ?? null,
-          dto.size_label ?? null,
-          dto.primary_photo_file_id ?? null,
-          dto.public_visible ?? null,
-          Number(kostType.monthly_price),
-          Number(kostType.yearly_price),
-          Number(kostType.deposit_amount),
-          user.id,
-        ],
-      );
-      if (!result.rows[0])
-        throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found.' });
-      const room = await this.roomById(roomId, false);
-      await this.audit.write({
-        actorUserId: user.id,
-        propertyId: String(before.property_id),
-        action: 'room.update.v2',
-        resourceType: 'room',
-        resourceId: roomId,
-        beforeData: this.auditRoom(before),
-        afterData: room,
-        resultStatus: 'success',
-        ...context,
-      });
-      return v2Data(room);
-    } catch (error) {
-      this.rethrowRoomConflict(error);
-    }
+          propertyId,
+          client,
+          true,
+        );
+        this.assertBuildingMatchesType(building, kostType);
+        this.assertBuildingGender(building, input.gender_policy);
+        const buildingChanged =
+          input.building_id !== undefined && input.building_id !== beforeBuildingId;
+
+        const proposedFloorCode = (input.floor_code ?? before.floor_code) as FloorCode | undefined;
+        const canonicalFloor = proposedFloorCode
+          ? this.canonicalFloor(proposedFloorCode)
+          : { floor: before.floor ?? null, floorLabel: before.floor_label ?? null };
+        this.assertFloorInputs(input, canonicalFloor);
+        const proposed = {
+          kostTypeId: proposedKostTypeId,
+          buildingId: proposedBuildingId,
+          category: String(building.category),
+          number: input.number ?? String(before.number),
+          roomCode: input.room_code !== undefined ? input.room_code : (before.room_code ?? null),
+          unitCode: input.unit_code !== undefined ? input.unit_code : (before.unit_code ?? null),
+          genderPolicy:
+            buildingChanged || input.gender_policy !== undefined
+              ? String(building.gender_policy)
+              : String(before.gender_policy),
+          floor: canonicalFloor.floor,
+          floorCode: proposedFloorCode ?? null,
+          floorLabel: canonicalFloor.floorLabel,
+          sizeLabel:
+            input.size_label !== undefined ? input.size_label : (before.size_label ?? null),
+          primaryPhotoFileId:
+            input.primary_photo_file_id !== undefined
+              ? input.primary_photo_file_id
+              : (before.primary_photo_file_id ?? null),
+          publicVisible: input.public_visible ?? Boolean(before.public_visible),
+        };
+        const structuralChanged = this.structuralRoomChanged(before, proposed);
+        if (structuralChanged) {
+          await this.assertStructuralEditAllowed(client, before);
+        }
+        if (typeof proposed.primaryPhotoFileId === 'string') {
+          await this.assertPhotoFile(proposed.primaryPhotoFileId, propertyId, client);
+        }
+
+        const result = await client.query<Row>(
+          `UPDATE rooms
+           SET kost_type_id = $3, number = $4, room_code = $5, building_id = $6, category = $7,
+               unit_code = $8, gender_policy = $9, floor = $10, floor_code = $11, floor_label = $12,
+               size_label = $13, primary_photo_file_id = $14, public_visible = $15,
+               monthly_price = $16::integer, yearly_price = $17::integer, deposit_amount = $18::integer,
+               updated_by_user_id = $19, updated_at = now()
+           WHERE id = $1 AND property_id = $2
+           RETURNING id`,
+          [
+            roomId,
+            propertyId,
+            proposed.kostTypeId,
+            proposed.number,
+            proposed.roomCode,
+            proposed.buildingId,
+            proposed.category,
+            proposed.unitCode,
+            proposed.genderPolicy,
+            proposed.floor,
+            proposed.floorCode,
+            proposed.floorLabel,
+            proposed.sizeLabel,
+            proposed.primaryPhotoFileId,
+            proposed.publicVisible,
+            Number(kostType.monthly_price),
+            Number(kostType.yearly_price),
+            Number(kostType.deposit_amount),
+            user.id,
+          ],
+        );
+        if (!result.rows[0]) this.throwRoomNotFound();
+        if (
+          structuralChanged &&
+          (beforeBuildingId !== proposed.buildingId ||
+            this.stringOrEmpty(before.floor_code) !== this.stringOrEmpty(proposed.floorCode))
+        ) {
+          await this.applyRoomMoveCounters(client, before, proposed);
+        }
+        const room = await this.roomById(roomId, false, client, propertyId);
+        await this.audit.write(
+          {
+            actorUserId: user.id,
+            propertyId,
+            action: 'room.update.v2',
+            resourceType: 'room',
+            resourceId: roomId,
+            beforeData: this.auditRoom(before),
+            afterData: this.auditRoom(room),
+            resultStatus: 'success',
+            ...context,
+          },
+          client,
+        );
+        return { resourceType: 'room', resourceId: roomId, data: room };
+      },
+    );
   }
 
   async updateStatus(
@@ -304,8 +436,14 @@ export class AdminUxRoomV2Service {
     return v2Data(room);
   }
 
-  private async roomById(roomId: string, includeActiveLease: boolean) {
-    const result = await this.database.client.query<Row>(
+  private async roomById(
+    roomId: string,
+    includeActiveLease: boolean,
+    client?: PoolClient,
+    propertyId?: string,
+  ) {
+    const queryable = client ?? this.database.client;
+    const result = await queryable.query<Row>(
       `SELECT
          room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
          room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
@@ -316,21 +454,23 @@ export class AdminUxRoomV2Service {
        FROM rooms room
        JOIN kost_types kost_type ON kost_type.id = room.kost_type_id
        LEFT JOIN room_buildings building ON building.id = room.building_id
-       WHERE room.id = $1`,
-      [roomId],
+       WHERE room.id = $1
+         AND ($2::uuid IS NULL OR room.property_id = $2)`,
+      [roomId, propertyId ?? null],
     );
     if (!result.rows[0])
       throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found.' });
-    return (await this.hydrate(result.rows, includeActiveLease))[0];
+    return (await this.hydrate(result.rows, includeActiveLease, client))[0];
   }
 
-  private async hydrate(rows: Row[], includeActiveLease: boolean) {
+  private async hydrate(rows: Row[], includeActiveLease: boolean, client?: PoolClient) {
     if (!rows.length) return [];
+    const queryable = client ?? this.database.client;
     const typeIds = [...new Set(rows.map((row) => String(row.kost_type_id)))];
     const roomIds = rows.map((row) => String(row.id));
     const propertyIds = rows.map((row) => String(row.property_id));
     const [facilities, occupancies] = await Promise.all([
-      this.database.client.query<Row>(
+      queryable.query<Row>(
         `SELECT assignment.kost_type_id, facility.id, facility.name, facility.icon, facility.description,
                 facility.category_id, facility.sort_order
          FROM kost_type_facility_assignments assignment
@@ -340,7 +480,7 @@ export class AdminUxRoomV2Service {
         [typeIds],
       ),
       includeActiveLease
-        ? this.database.client.query<Row>(
+        ? queryable.query<Row>(
             `SELECT occupancy.room_id, occupancy.id, occupancy.resident_id, occupancy.start_date,
                     resident.full_name AS resident_name,
                     NOT EXISTS (
@@ -439,9 +579,16 @@ export class AdminUxRoomV2Service {
     return result.rows[0];
   }
 
-  private async requireActiveKostType(id: string, propertyId: string): Promise<Row> {
-    const result = await this.database.client.query<Row>(
-      `SELECT * FROM kost_types WHERE id = $1 AND property_id = $2 AND status = 'active' AND deleted_at IS NULL`,
+  private async requireActiveKostType(
+    id: string,
+    propertyId: string,
+    client?: PoolClient,
+    lock = false,
+  ): Promise<Row> {
+    const result = await (client ?? this.database.client).query<Row>(
+      `SELECT * FROM kost_types
+       WHERE id = $1 AND property_id = $2 AND status = 'active' AND deleted_at IS NULL
+       ${lock ? 'FOR KEY SHARE' : ''}`,
       [id, propertyId],
     );
     if (!result.rows[0]) {
@@ -475,8 +622,12 @@ export class AdminUxRoomV2Service {
     }
   }
 
-  private async assertPhotoFile(fileId: string, propertyId: string): Promise<void> {
-    const result = await this.database.client.query<Row>(
+  private async assertPhotoFile(
+    fileId: string,
+    propertyId: string,
+    client?: PoolClient,
+  ): Promise<void> {
+    const result = await (client ?? this.database.client).query<Row>(
       `SELECT id FROM files
        WHERE id = $1 AND property_id = $2 AND is_deleted = false AND file_purpose = 'room_photo'
          AND mime_type IN ('image/jpeg', 'image/png', 'image/webp')`,
@@ -489,18 +640,408 @@ export class AdminUxRoomV2Service {
       });
   }
 
-  private assertNoCommercialFields(dto: CreateRoomV2Dto | UpdateRoomV2Dto): void {
+  private assertNoCommercialFields(dto: unknown): void {
+    const input = dto && typeof dto === 'object' ? (dto as Record<string, unknown>) : {};
     if (
-      dto.monthly_price !== undefined ||
-      dto.yearly_price !== undefined ||
-      dto.deposit_amount !== undefined ||
-      dto.facility_ids !== undefined
+      input.monthly_price !== undefined ||
+      input.yearly_price !== undefined ||
+      input.deposit_amount !== undefined ||
+      input.facility_ids !== undefined
     ) {
       throw new BadRequestException({
         code: 'IMMUTABLE_ROOM_COMMERCIAL_FIELD',
         message: 'Room pricing, deposit, and facilities are controlled by kost type.',
       });
     }
+  }
+
+  private async validateWriteBody<T extends object>(
+    metatype: new () => T,
+    value: unknown,
+  ): Promise<T> {
+    return this.writeValidation.transform(value, { type: 'body', metatype }) as Promise<T>;
+  }
+
+  private async executeCommand<T>(
+    user: UserAccessContext,
+    propertyId: string,
+    route: string,
+    idempotencyKey: string | undefined,
+    payload: unknown,
+    context: RequestAuditContext,
+    status: number,
+    operation: (
+      client: PoolClient,
+    ) => Promise<{ resourceType: string; resourceId: string; data: T }>,
+  ): Promise<{ data: T }> {
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.requestFingerprint({
+      route,
+      actor_id: user.id,
+      property_id: propertyId,
+      payload,
+    });
+    try {
+      const result = await this.database.transaction(async (client) => {
+        await this.lockProperty(client, propertyId);
+        const command = await this.claimCommand(
+          client,
+          propertyId,
+          user.id,
+          route,
+          key,
+          fingerprint,
+          context.correlationId,
+        );
+        if (command) return command.body as { data: T };
+        const output = await operation(client);
+        const body = JSON.parse(JSON.stringify(v2Data(output.data))) as { data: T };
+        await client.query(
+          `UPDATE idempotency_commands
+           SET command_status = 'succeeded', response_status = $2, response_body = $3::jsonb,
+               resource_type = $4, resource_id = $5, completed_at = now()
+           WHERE actor_user_id = $1 AND route = $6 AND idempotency_key = $7`,
+          [
+            user.id,
+            status,
+            JSON.stringify(body),
+            output.resourceType,
+            output.resourceId,
+            route,
+            key,
+          ],
+        );
+        return body;
+      });
+      return result;
+    } catch (error) {
+      this.rethrowRoomConflict(error);
+    }
+  }
+
+  private async claimCommand(
+    client: PoolClient,
+    propertyId: string,
+    actorUserId: string,
+    route: string,
+    key: string,
+    fingerprint: string,
+    correlationId?: string,
+  ): Promise<{ status: number; body: { data: unknown } } | null> {
+    const inserted = await client.query<IdempotencyRow>(
+      `INSERT INTO idempotency_commands (
+         property_id, actor_user_id, route, idempotency_key, request_fingerprint, correlation_id
+       ) VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (actor_user_id, route, idempotency_key) DO NOTHING
+       RETURNING request_fingerprint, command_status, response_status, response_body`,
+      [propertyId, actorUserId, route, key, fingerprint, correlationId ?? null],
+    );
+    if (inserted.rows[0]) return null;
+    const existing = await client.query<IdempotencyRow>(
+      `SELECT request_fingerprint, command_status, response_status, response_body
+       FROM idempotency_commands
+       WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3
+       FOR UPDATE`,
+      [actorUserId, route, key],
+    );
+    const row = existing.rows[0];
+    if (!row) {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: 'Command claim is unavailable; retry with the same key',
+      });
+    }
+    if (row.request_fingerprint !== fingerprint) {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message: 'Idempotency key was already used with a different payload',
+      });
+    }
+    if (row.command_status === 'pending') {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: 'Idempotency command is still in progress',
+      });
+    }
+    if (!row.response_status || !row.response_body || typeof row.response_body !== 'object') {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: 'Idempotency command has no replayable result',
+      });
+    }
+    return { status: row.response_status, body: row.response_body as { data: unknown } };
+  }
+
+  private async lockProperty(client: PoolClient, propertyId: string): Promise<void> {
+    const result = await client.query<{ id: string }>(
+      'SELECT id FROM properties WHERE id = $1 FOR KEY SHARE',
+      [propertyId],
+    );
+    if (!result.rows[0]) {
+      throw new NotFoundException({ code: 'PROPERTY_NOT_FOUND', message: 'Property not found' });
+    }
+  }
+
+  private async lookupScopedRoom(user: UserAccessContext, roomId: string): Promise<Row> {
+    const scope = user.roles.includes('owner') ? null : user.propertyIds;
+    if (scope !== null && scope.length === 0) {
+      throw new ForbiddenException({
+        code: 'PROPERTY_SCOPE_DENIED',
+        message: 'User is not allowed to access this property',
+      });
+    }
+    const result = await this.database.client.query<Row>(
+      `SELECT property_id
+       FROM rooms
+       WHERE id = $1
+         AND ($2::uuid[] IS NULL OR property_id = ANY($2::uuid[]))`,
+      [roomId, scope],
+    );
+    if (!result.rows[0]) this.throwRoomNotFound();
+    return result.rows[0];
+  }
+
+  private async lockScopedRoom(
+    client: PoolClient,
+    roomId: string,
+    propertyId: string,
+  ): Promise<Row> {
+    const result = await client.query<Row>(
+      'SELECT * FROM rooms WHERE id = $1 AND property_id = $2 FOR UPDATE',
+      [roomId, propertyId],
+    );
+    if (!result.rows[0]) this.throwRoomNotFound();
+    return result.rows[0];
+  }
+
+  private async lockBuildings(
+    client: PoolClient,
+    propertyId: string,
+    buildingIds: string[],
+  ): Promise<Map<string, Row>> {
+    const ids = [...new Set(buildingIds)].sort();
+    if (!ids.length) return new Map();
+    const result = await client.query<Row>(
+      `SELECT * FROM room_buildings
+       WHERE property_id = $1 AND id = ANY($2::uuid[])
+       ORDER BY id
+       FOR UPDATE`,
+      [propertyId, ids],
+    );
+    if (result.rows.length !== ids.length) this.throwBuildingScopeMismatch();
+    return new Map(result.rows.map((row) => [String(row.id), row]));
+  }
+
+  private assertBuildingGender(building: Row, supplied?: 'male' | 'female'): void {
+    const gender = String(building.gender_policy);
+    if (gender !== 'male' && gender !== 'female') {
+      throw new UnprocessableEntityException({
+        code: 'ROOM_BUILDING_GENDER_INVALID',
+        message: 'Building must have a canonical male or female gender policy.',
+      });
+    }
+    if (supplied !== undefined && supplied !== gender) {
+      throw new UnprocessableEntityException({
+        code: 'ROOM_GENDER_POLICY_MISMATCH',
+        message: 'Room gender policy must match the authoritative building.',
+      });
+    }
+  }
+
+  private canonicalFloor(code: FloorCode): { floor: string; floorLabel: string } {
+    return CANONICAL_FLOOR[code];
+  }
+
+  private assertFloorInputs(
+    input: Pick<CreateRoomV2Dto | UpdateRoomV2Dto, 'floor' | 'floor_label'>,
+    canonical: { floor: unknown; floorLabel: unknown },
+  ): void {
+    if (
+      (input.floor !== undefined && input.floor !== canonical.floor) ||
+      (input.floor_label !== undefined && input.floor_label !== canonical.floorLabel)
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'ROOM_FLOOR_MISMATCH',
+        message: 'Floor values must match the canonical floor code.',
+      });
+    }
+  }
+
+  private structuralRoomChanged(
+    before: Row,
+    proposed: {
+      kostTypeId: string;
+      buildingId: string;
+      category: string;
+      number: string;
+      roomCode: unknown;
+      unitCode: unknown;
+      genderPolicy: string;
+      floor: unknown;
+      floorCode: unknown;
+      floorLabel: unknown;
+    },
+  ): boolean {
+    const normalized = (value: unknown) => (value === undefined ? null : value);
+    return (
+      String(before.kost_type_id) !== proposed.kostTypeId ||
+      this.stringOrEmpty(before.building_id) !== proposed.buildingId ||
+      this.stringOrEmpty(before.category) !== proposed.category ||
+      String(before.number) !== proposed.number ||
+      normalized(before.room_code) !== normalized(proposed.roomCode) ||
+      normalized(before.unit_code) !== normalized(proposed.unitCode) ||
+      this.stringOrEmpty(before.gender_policy) !== proposed.genderPolicy ||
+      normalized(before.floor) !== normalized(proposed.floor) ||
+      normalized(before.floor_code) !== normalized(proposed.floorCode) ||
+      normalized(before.floor_label) !== normalized(proposed.floorLabel)
+    );
+  }
+
+  private async assertStructuralEditAllowed(client: PoolClient, room: Row): Promise<void> {
+    const roomId = String(room.id);
+    const propertyId = String(room.property_id);
+    const hold = await client.query<{ id: string }>(
+      `SELECT id FROM booking_lead_holds
+       WHERE property_id = $1 AND room_id = $2 AND hold_status = 'active'
+       ORDER BY id FOR UPDATE`,
+      [propertyId, roomId],
+    );
+    const occupancy = await client.query<{ id: string }>(
+      `SELECT id FROM occupancies
+       WHERE property_id = $1 AND room_id = $2 AND occupancy_status = 'active'
+       ORDER BY id FOR UPDATE`,
+      [propertyId, roomId],
+    );
+    const lease = await client.query<{ id: string }>(
+      `SELECT id FROM leases
+       WHERE property_id = $1 AND room_id = $2 AND lease_status = 'active'
+       ORDER BY id FOR UPDATE`,
+      [propertyId, roomId],
+    );
+    if (
+      room.room_status === 'reserved' ||
+      room.room_status === 'occupied' ||
+      hold.rows.length > 0 ||
+      occupancy.rows.length > 0 ||
+      lease.rows.length > 0
+    ) {
+      throw new ConflictException({
+        code: 'ROOM_STRUCTURAL_EDIT_BLOCKED',
+        message: 'Room structural identity cannot change while an active lifecycle exists.',
+      });
+    }
+  }
+
+  private async applyRoomMoveCounters(
+    client: PoolClient,
+    before: Row,
+    proposed: { buildingId: string; floorCode: unknown },
+  ): Promise<void> {
+    const oldBuildingId = this.stringOrEmpty(before.building_id);
+    const oldFloor = before.floor_code;
+    const newFloor = proposed.floorCode;
+    if (
+      !oldBuildingId ||
+      (oldFloor !== 'A' && oldFloor !== 'B') ||
+      (newFloor !== 'A' && newFloor !== 'B')
+    ) {
+      throw new ConflictException({
+        code: 'ROOM_BUILDING_COUNTER_INVALID',
+        message: 'Room structural move requires canonical building and floor references.',
+      });
+    }
+    const deltas = new Map<string, { total: number; floorA: number; floorB: number }>();
+    const add = (buildingId: string, total: number, floor: FloorCode, amount: number) => {
+      const current = deltas.get(buildingId) ?? { total: 0, floorA: 0, floorB: 0 };
+      current.total += total;
+      current.floorA += floor === 'A' ? amount : 0;
+      current.floorB += floor === 'B' ? amount : 0;
+      deltas.set(buildingId, current);
+    };
+    add(oldBuildingId, oldBuildingId === proposed.buildingId ? 0 : -1, oldFloor, -1);
+    add(proposed.buildingId, oldBuildingId === proposed.buildingId ? 0 : 1, newFloor, 1);
+    await this.applyCounterDeltas(
+      client,
+      [...deltas.entries()].map(([buildingId, delta]) => ({ buildingId, ...delta })),
+    );
+  }
+
+  private async applyCounterDeltas(
+    client: PoolClient,
+    deltas: Array<{ buildingId: string; total: number; floorA: number; floorB: number }>,
+  ): Promise<void> {
+    for (const delta of [...deltas].sort((left, right) =>
+      left.buildingId.localeCompare(right.buildingId),
+    )) {
+      if (delta.total === 0 && delta.floorA === 0 && delta.floorB === 0) continue;
+      const result = await client.query<{ id: string }>(
+        `UPDATE room_buildings
+         SET total_rooms = total_rooms + $2,
+             floor_a_count = floor_a_count + $3,
+             floor_b_count = floor_b_count + $4,
+             updated_at = now()
+         WHERE id = $1
+           AND total_rooms + $2 >= 0
+           AND floor_a_count + $3 >= 0
+           AND floor_b_count + $4 >= 0
+         RETURNING id`,
+        [delta.buildingId, delta.total, delta.floorA, delta.floorB],
+      );
+      if (!result.rows[0]) {
+        throw new ConflictException({
+          code: 'ROOM_BUILDING_COUNTER_INVALID',
+          message: 'Room building counters cannot become negative.',
+        });
+      }
+    }
+  }
+
+  private requireIdempotencyKey(value: string | undefined): string {
+    const key = value?.trim();
+    if (!key) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Idempotency-Key header is required',
+      });
+    }
+    if (key.length < 16 || key.length > 128) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_INVALID',
+        message: 'Idempotency-Key must be 16 to 128 characters',
+      });
+    }
+    return key;
+  }
+
+  private stringOrEmpty(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+  }
+
+  private requestFingerprint(value: unknown): string {
+    return createHash('sha256').update(this.canonicalJson(value)).digest('hex');
+  }
+
+  private canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map((item) => this.canonicalJson(item)).join(',')}]`;
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${this.canonicalJson(record[key])}`)
+        .join(',')}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  private throwRoomNotFound(): never {
+    throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found.' });
+  }
+
+  private throwBuildingScopeMismatch(): never {
+    throw new UnprocessableEntityException({
+      code: 'PROPERTY_SCOPE_MISMATCH',
+      message: 'Building belongs to another property.',
+    });
   }
 
   private async scope(user: UserAccessContext, propertyId?: string): Promise<string[] | null> {
@@ -526,8 +1067,19 @@ export class AdminUxRoomV2Service {
       id: row.id,
       property_id: row.property_id,
       kost_type_id: row.kost_type_id,
+      number: row.number,
+      room_code: row.room_code,
       building_id: row.building_id,
-      room_status: row.room_status,
+      category: row.category ?? (row.kost_type as Row | undefined)?.category,
+      unit_code: row.unit_code,
+      gender_policy: row.gender_policy,
+      floor: row.floor,
+      floor_code: row.floor_code,
+      floor_label: row.floor_label,
+      size_label: row.size_label,
+      status: row.status ?? row.room_status,
+      primary_photo_file_id: row.primary_photo_file_id,
+      public_visible: row.public_visible,
     };
   }
 

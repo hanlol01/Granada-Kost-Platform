@@ -1,13 +1,41 @@
 import { Transform, Type, type TransformFnParams } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { V2PaginationQueryDto } from './admin-ux-master.dto';
 
-function exactBooleanQueryValue({ obj, key }: TransformFnParams): unknown {
+function exactBooleanValue({ obj, key }: TransformFnParams): unknown {
   const raw = (obj as Record<string, unknown>)[key];
   if (raw === true || raw === false) return raw;
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   return raw;
+}
+
+function trimmedString({ value }: TransformFnParams): unknown {
+  return typeof value === 'string' ? value.trim() : value;
+}
+
+function optionalTrimmedString({ value }: TransformFnParams): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
+}
+
+function clearableTrimmedString({ value }: TransformFnParams): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
 }
 
 export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
@@ -40,7 +68,7 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   q?: string;
 
   @IsOptional()
-  @Transform(exactBooleanQueryValue)
+  @Transform(exactBooleanValue)
   @IsBoolean()
   include_active_lease?: boolean;
 }
@@ -55,51 +83,73 @@ export class ListRoomBuildingsV2QueryDto {
 }
 
 export class CreateRoomV2Dto {
+  @Transform(trimmedString)
   @IsUUID('4')
   property_id!: string;
 
+  @Transform(trimmedString)
   @IsUUID('4')
   kost_type_id!: string;
 
+  @Transform(trimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   number!: string;
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   room_code?: string;
 
+  @Transform(trimmedString)
   @IsUUID('4')
   building_id!: string;
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(20)
   floor?: string;
 
-  @IsOptional()
+  @Transform(trimmedString)
   @IsIn(['A', 'B'])
-  floor_code?: 'A' | 'B';
+  floor_code!: 'A' | 'B';
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   floor_label?: string;
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsString()
-  unit_code?: string;
+  @MaxLength(80)
+  unit_code?: string | null;
 
   @IsOptional()
-  @IsIn(['male', 'female', 'mixed'])
-  gender_policy?: 'male' | 'female' | 'mixed';
+  @Transform(optionalTrimmedString)
+  @IsIn(['male', 'female'])
+  gender_policy?: 'male' | 'female';
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsString()
-  size_label?: string;
+  @MaxLength(80)
+  size_label?: string | null;
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsUUID('4')
-  primary_photo_file_id?: string;
+  primary_photo_file_id?: string | null;
 
   @IsOptional()
+  @Transform(exactBooleanValue)
   @IsBoolean()
   public_visible?: boolean;
 
@@ -127,56 +177,78 @@ export class CreateRoomV2Dto {
   deposit_amount?: number;
 
   @IsOptional()
+  @IsArray()
   @IsUUID('4', { each: true })
   facility_ids?: string[];
 }
 
 export class UpdateRoomV2Dto {
   @IsOptional()
+  @Transform(trimmedString)
   @IsUUID('4')
   kost_type_id?: string;
 
   @IsOptional()
+  @Transform(trimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   number?: string;
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsString()
-  room_code?: string;
+  @MaxLength(80)
+  room_code?: string | null;
 
   @IsOptional()
+  @Transform(trimmedString)
   @IsUUID('4')
   building_id?: string;
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(20)
   floor?: string;
 
   @IsOptional()
+  @Transform(trimmedString)
   @IsIn(['A', 'B'])
   floor_code?: 'A' | 'B';
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   floor_label?: string;
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsString()
-  unit_code?: string;
+  @MaxLength(80)
+  unit_code?: string | null;
 
   @IsOptional()
-  @IsIn(['male', 'female', 'mixed'])
-  gender_policy?: 'male' | 'female' | 'mixed';
+  @Transform(optionalTrimmedString)
+  @IsIn(['male', 'female'])
+  gender_policy?: 'male' | 'female';
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsString()
-  size_label?: string;
+  @MaxLength(80)
+  size_label?: string | null;
 
   @IsOptional()
+  @Transform(clearableTrimmedString)
   @IsUUID('4')
-  primary_photo_file_id?: string;
+  primary_photo_file_id?: string | null;
 
   @IsOptional()
+  @Transform(exactBooleanValue)
   @IsBoolean()
   public_visible?: boolean;
 
@@ -199,6 +271,7 @@ export class UpdateRoomV2Dto {
   deposit_amount?: number;
 
   @IsOptional()
+  @IsArray()
   @IsUUID('4', { each: true })
   facility_ids?: string[];
 }

@@ -1,6 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool, PoolConfig } from 'pg';
+import { Pool, PoolClient, PoolConfig } from 'pg';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -16,6 +16,30 @@ export class DatabaseService implements OnModuleDestroy {
 
   async ping(): Promise<void> {
     await this.pool.query('SELECT 1');
+  }
+
+  async transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN');
+      transactionStarted = true;
+      const result = await operation(client);
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return result;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // Preserve the operation or commit error; the client is always released below.
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

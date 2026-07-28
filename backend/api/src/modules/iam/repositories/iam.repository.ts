@@ -39,11 +39,13 @@ type AccessRow = {
 type AdminUxReadPropertyRolloutRow = {
   property_id: string;
   admin_ux_read: boolean | null;
+  booking_hold_write: boolean | null;
 };
 
 export type AdminUxReadPropertyRolloutRecord = {
   propertyId: string;
   enabled: boolean;
+  bookingHoldWriteEnabled: boolean;
 };
 
 @Injectable()
@@ -257,7 +259,8 @@ export class IamRepository {
        )
        SELECT
          properties.id::text AS property_id,
-         COALESCE(property_feature_flags.admin_ux_read, FALSE) AS admin_ux_read
+         COALESCE(property_feature_flags.admin_ux_read, FALSE) AS admin_ux_read,
+         COALESCE(property_feature_flags.booking_hold_write, FALSE) AS booking_hold_write
        FROM properties
        CROSS JOIN actor_access
        LEFT JOIN property_feature_flags
@@ -283,6 +286,7 @@ export class IamRepository {
     return result.rows.map((row) => ({
       propertyId: row.property_id,
       enabled: row.admin_ux_read === true,
+      bookingHoldWriteEnabled: row.booking_hold_write === true,
     }));
   }
 

@@ -9,6 +9,9 @@ export type AuthPropertyRolloutResponse = {
   adminUxRead: {
     enabled: boolean;
   };
+  bookingHoldWrite: {
+    enabled: boolean;
+  };
 };
 
 export type AuthMeResponse = AuthUserResponse & {

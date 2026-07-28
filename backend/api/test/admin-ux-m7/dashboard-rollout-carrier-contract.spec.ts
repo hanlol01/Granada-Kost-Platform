@@ -36,6 +36,17 @@ function section(source: string, start: string, end: string): string {
   return source.slice(startIndex, endIndex);
 }
 
+function assertExactRollout(value: unknown): void {
+  assert.equal(typeof value, 'object');
+  assert.notEqual(value, null);
+  const rollout = value as Record<string, unknown>;
+  assert.deepEqual(Object.keys(rollout), ['propertyId', 'adminUxRead', 'bookingHoldWrite']);
+  assert.deepEqual(Object.keys(rollout.adminUxRead as object), ['enabled']);
+  assert.deepEqual(Object.keys(rollout.bookingHoldWrite as object), ['enabled']);
+  assert.equal(typeof (rollout.adminUxRead as { enabled?: unknown }).enabled, 'boolean');
+  assert.equal(typeof (rollout.bookingHoldWrite as { enabled?: unknown }).enabled, 'boolean');
+}
+
 void test('M7-D2B1B repository resolves active rollouts in one deterministic query', async () => {
   const queries: Array<{ text: string; values: unknown[] }> = [];
   const repository = new IamRepository({
@@ -44,8 +55,8 @@ void test('M7-D2B1B repository resolves active rollouts in one deterministic que
         queries.push({ text, values });
         return Promise.resolve({
           rows: [
-            { property_id: PROPERTY_A, admin_ux_read: null },
-            { property_id: PROPERTY_B, admin_ux_read: true },
+            { property_id: PROPERTY_A, admin_ux_read: null, booking_hold_write: null },
+            { property_id: PROPERTY_B, admin_ux_read: true, booking_hold_write: true },
           ],
         });
       },
@@ -58,8 +69,8 @@ void test('M7-D2B1B repository resolves active rollouts in one deterministic que
   assert.deepEqual(queries[0].values, [ACTOR_ID]);
   assert.doesNotMatch(queries[0].text, /\$2/);
   assert.deepEqual(result, [
-    { propertyId: PROPERTY_A, enabled: false },
-    { propertyId: PROPERTY_B, enabled: true },
+    { propertyId: PROPERTY_A, enabled: false, bookingHoldWriteEnabled: false },
+    { propertyId: PROPERTY_B, enabled: true, bookingHoldWriteEnabled: true },
   ]);
 
   const sql = queries[0].text;
@@ -68,6 +79,7 @@ void test('M7-D2B1B repository resolves active rollouts in one deterministic que
   assert.match(sql, /LEFT JOIN property_feature_flags/);
   assert.match(sql, /properties\.status = 'active'/);
   assert.match(sql, /COALESCE\(property_feature_flags\.admin_ux_read, FALSE\)/);
+  assert.match(sql, /COALESCE\(property_feature_flags\.booking_hold_write, FALSE\)/);
   assert.match(sql, /ORDER BY properties\.id ASC/);
   assert.doesNotMatch(sql, /\bDISTINCT\b/);
   assert.doesNotMatch(sql, /lease_write|lease_transfer|lease_billing_scheduler/);
@@ -136,8 +148,8 @@ void test('M7-D2B1B adds only the exact rollout carrier to auth me', async () =>
     listAdminUxReadPropertyRollouts: (userId: string) => {
       calls.push(userId);
       return Promise.resolve([
-        { propertyId: PROPERTY_A, enabled: false },
-        { propertyId: PROPERTY_B, enabled: true },
+        { propertyId: PROPERTY_A, enabled: false, bookingHoldWriteEnabled: null },
+        { propertyId: PROPERTY_B, enabled: true, bookingHoldWriteEnabled: true },
       ]);
     },
   });
@@ -157,13 +169,18 @@ void test('M7-D2B1B adds only the exact rollout carrier to auth me', async () =>
     'propertyRollouts',
   ]);
   assert.deepEqual(response.propertyRollouts, [
-    { propertyId: PROPERTY_A, adminUxRead: { enabled: false } },
-    { propertyId: PROPERTY_B, adminUxRead: { enabled: true } },
+    {
+      propertyId: PROPERTY_A,
+      adminUxRead: { enabled: false },
+      bookingHoldWrite: { enabled: false },
+    },
+    {
+      propertyId: PROPERTY_B,
+      adminUxRead: { enabled: true },
+      bookingHoldWrite: { enabled: true },
+    },
   ]);
-  for (const rollout of response.propertyRollouts) {
-    assert.deepEqual(Object.keys(rollout), ['propertyId', 'adminUxRead']);
-    assert.deepEqual(Object.keys(rollout.adminUxRead), ['enabled']);
-  }
+  for (const rollout of response.propertyRollouts) assertExactRollout(rollout);
   assert.doesNotMatch(
     JSON.stringify(response),
     /property_rollouts|admin_ux_read|leaseWrite|leaseTransfer|leaseBillingScheduler/,
@@ -173,6 +190,35 @@ void test('M7-D2B1B adds only the exact rollout carrier to auth me', async () =>
     listAdminUxReadPropertyRollouts: () => Promise.resolve([]),
   }).me(user([]));
   assert.deepEqual(emptyResponse.propertyRollouts, []);
+});
+
+void test('M14 rollout addition remains exact and fails closed without truthy coercion', async () => {
+  const response = await serviceWithIam({
+    listAdminUxReadPropertyRollouts: () =>
+      Promise.resolve([
+        { propertyId: PROPERTY_A, enabled: true },
+        { propertyId: PROPERTY_B, enabled: true, bookingHoldWriteEnabled: 'true' },
+      ]),
+  }).me(user([PROPERTY_A, PROPERTY_B]));
+
+  assert.deepEqual(
+    response.propertyRollouts.map((rollout) => rollout.bookingHoldWrite.enabled),
+    [false, false],
+  );
+  for (const rollout of response.propertyRollouts) assertExactRollout(rollout);
+
+  const canonical = response.propertyRollouts[0];
+  assert.throws(() => {
+    const { bookingHoldWrite: _missing, ...mutation } = canonical;
+    assertExactRollout(mutation);
+  });
+  assert.throws(() =>
+    assertExactRollout({
+      ...canonical,
+      bookingHoldWrite: { enabled: 'true' },
+    }),
+  );
+  assert.throws(() => assertExactRollout({ ...canonical, unexpected: true }));
 });
 
 void test('M7-D2B1B fails closed to an empty carrier when the rollout query rejects', async () => {

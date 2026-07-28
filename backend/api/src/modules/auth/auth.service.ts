@@ -195,6 +195,7 @@ export class AuthService {
         propertyRollouts: propertyRollouts.map((rollout) => ({
           propertyId: rollout.propertyId,
           adminUxRead: { enabled: rollout.enabled },
+          bookingHoldWrite: { enabled: rollout.bookingHoldWriteEnabled === true },
         })),
       };
     } catch {

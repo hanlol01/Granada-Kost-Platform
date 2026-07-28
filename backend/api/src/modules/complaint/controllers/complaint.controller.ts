@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { acceptsAdminUxV2 } from '../../../shared/admin-ux-v2';
 import { FileService } from '../../file/file.service';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
@@ -43,7 +54,10 @@ export class ComplaintController {
 
   /** Returns safe file metadata for a complaint's attachments (no storage_path). */
   @Get(':complaintId/files')
-  async listFiles(@CurrentUser() user: UserAccessContext, @Param('complaintId') complaintId: string) {
+  async listFiles(
+    @CurrentUser() user: UserAccessContext,
+    @Param('complaintId') complaintId: string,
+  ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
     const records = await this.complaints.listFileRecords(complaintId);
@@ -62,15 +76,27 @@ export class ComplaintController {
   }
 
   @Post(':complaintId/assign')
+  @RequirePermissions('complaint.manage', 'maintenance.manage')
   async assign(
     @CurrentUser() user: UserAccessContext,
-    @Param('complaintId') complaintId: string,
+    @Param('complaintId', new ParseUUIDPipe({ version: '4' })) complaintId: string,
     @Body() dto: AssignComplaintDto,
     @Req() request: RequestWithCorrelationId,
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.assign(complaintId, dto.assigned_to_user_id, auditContext(user, request));
+    const v2 = acceptsAdminUxV2(request.headers.accept);
+    const idempotencyHeader = request.headers['idempotency-key'];
+    return this.complaints.assign(
+      complaintId,
+      dto.assigned_to_user_id,
+      auditContext(user, request),
+      {
+        authorizedPropertyId: complaint.propertyId,
+        v2,
+        idempotencyKey: Array.isArray(idempotencyHeader) ? idempotencyHeader[0] : idempotencyHeader,
+      },
+    );
   }
 
   @Post(':complaintId/resolve')

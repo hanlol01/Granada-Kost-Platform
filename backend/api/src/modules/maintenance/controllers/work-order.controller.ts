@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
+import { acceptsAdminUxV2 } from '../../../shared/admin-ux-v2';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
@@ -7,7 +8,10 @@ import { RequirePermissions } from '../../rbac/decorators/permissions.decorator'
 import { RequireRoles } from '../../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../../rbac/guards/rbac.guard';
-import { auditContext, scopedPropertyIds } from '../../complaint/controllers/complaint-controller.util';
+import {
+  auditContext,
+  scopedPropertyIds,
+} from '../../complaint/controllers/complaint-controller.util';
 import { AssignWorkOrderDto } from '../dto/assign-work-order.dto';
 import { CancelWorkOrderDto } from '../dto/cancel-work-order.dto';
 import { CreateWorkOrderDto } from '../dto/create-work-order.dto';
@@ -26,23 +30,47 @@ export class WorkOrderController {
   ) {}
 
   @Get()
-  async list(@CurrentUser() user: UserAccessContext, @Query() query: ListWorkOrdersQueryDto) {
+  async list(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListWorkOrdersQueryDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     const propertyIds = await scopedPropertyIds(this.properties, user, query.property_id);
+    if (acceptsAdminUxV2(request.headers.accept)) {
+      return this.workOrders.listAdmin(
+        propertyIds,
+        query.status,
+        query.limit ?? 20,
+        query.offset ?? 0,
+      );
+    }
     const result = await Promise.all(
-      propertyIds.map((propertyId) => this.workOrders.list(propertyId, query.status, query.limit, query.offset)),
+      propertyIds.map((propertyId) =>
+        this.workOrders.list(propertyId, query.status, query.limit, query.offset),
+      ),
     );
     return result.flat();
   }
 
   @Get(':workOrderId')
-  async get(@CurrentUser() user: UserAccessContext, @Param('workOrderId') workOrderId: string) {
+  async get(
+    @CurrentUser() user: UserAccessContext,
+    @Param('workOrderId') workOrderId: string,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     const workOrder = await this.workOrders.get(workOrderId);
     await this.properties.assertCanReadProperty(user, workOrder.propertyId);
-    return workOrder;
+    return acceptsAdminUxV2(request.headers.accept)
+      ? this.workOrders.adminDetail(workOrder)
+      : workOrder;
   }
 
   @Post()
-  async create(@CurrentUser() user: UserAccessContext, @Body() dto: CreateWorkOrderDto, @Req() request: RequestWithCorrelationId) {
+  async create(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: CreateWorkOrderDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     await this.properties.assertCanReadProperty(user, dto.property_id);
     return this.workOrders.createWorkOrder(
       {
@@ -68,7 +96,11 @@ export class WorkOrderController {
   ) {
     const workOrder = await this.workOrders.get(workOrderId);
     await this.properties.assertCanReadProperty(user, workOrder.propertyId);
-    return this.workOrders.assign(workOrderId, dto.assigned_to_user_id, auditContext(user, request));
+    return this.workOrders.assign(
+      workOrderId,
+      dto.assigned_to_user_id,
+      auditContext(user, request),
+    );
   }
 
   @Post(':workOrderId/verify')

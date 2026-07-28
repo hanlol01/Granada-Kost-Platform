@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { FileModule } from '../file/file.module';
+import { MaintenanceModule } from '../maintenance/maintenance.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ComplaintCategoryController } from './controllers/complaint-category.controller';
@@ -14,8 +15,13 @@ import { ComplaintCategoryService } from './services/complaint-category.service'
 import { ComplaintService } from './services/complaint.service';
 
 @Module({
-  imports: [FileModule, PropertyModule, RbacModule],
-  controllers: [ComplaintController, ComplaintCategoryController, MyComplaintController, PropertyOwnerComplaintController],
+  imports: [FileModule, MaintenanceModule, PropertyModule, RbacModule],
+  controllers: [
+    ComplaintController,
+    ComplaintCategoryController,
+    MyComplaintController,
+    PropertyOwnerComplaintController,
+  ],
   providers: [
     ComplaintCategoryRepository,
     ComplaintRepository,

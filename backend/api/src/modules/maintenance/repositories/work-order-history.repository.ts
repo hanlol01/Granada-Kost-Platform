@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { StoredWorkOrderStatus, WorkOrderHistoryRecord, WorkOrderStatusTransitionInput } from '../types/maintenance.types';
+import {
+  StoredWorkOrderStatus,
+  WorkOrderHistoryRecord,
+  WorkOrderStatusTransitionInput,
+} from '../types/maintenance.types';
+
+type QueryClient = Pool | PoolClient;
 
 type WorkOrderHistoryRow = {
   id: string;
@@ -27,14 +34,23 @@ export class WorkOrderHistoryRepository {
     return result.rows.map((row) => this.map(row));
   }
 
-  async record(input: WorkOrderStatusTransitionInput): Promise<WorkOrderHistoryRecord> {
-    const result = await this.database.client.query<WorkOrderHistoryRow>(
+  async record(
+    input: WorkOrderStatusTransitionInput,
+    client: QueryClient = this.database.client,
+  ): Promise<WorkOrderHistoryRecord> {
+    const result = await client.query<WorkOrderHistoryRow>(
       `INSERT INTO maintenance_work_order_histories (
          work_order_id, from_status, to_status, changed_by_user_id, notes
        )
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, work_order_id, from_status, to_status, changed_by_user_id, changed_at, notes`,
-      [input.workOrderId, input.fromStatus, input.toStatus, input.actorUserId ?? null, input.notes ?? null],
+      [
+        input.workOrderId,
+        input.fromStatus,
+        input.toStatus,
+        input.actorUserId ?? null,
+        input.notes ?? null,
+      ],
     );
     return this.map(result.rows[0]);
   }

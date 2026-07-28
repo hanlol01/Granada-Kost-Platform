@@ -1,6 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { CreateWorkOrderInput, StoredWorkOrderStatus, WorkOrderPriority, WorkOrderRecord } from '../types/maintenance.types';
+import {
+  CreateWorkOrderInput,
+  StoredWorkOrderStatus,
+  WorkOrderPriority,
+  WorkOrderRecord,
+} from '../types/maintenance.types';
+
+type QueryClient = Pool | PoolClient;
+
+type DispatchCodeAllocation = {
+  propertyName: string;
+  sequence: number;
+};
 
 type WorkOrderRow = {
   id: string;
@@ -29,7 +42,12 @@ type WorkOrderRow = {
 export class WorkOrderRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(propertyId: string, status?: StoredWorkOrderStatus, limit = 20, offset = 0): Promise<WorkOrderRecord[]> {
+  async list(
+    propertyId: string,
+    status?: StoredWorkOrderStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<WorkOrderRecord[]> {
     const result = await this.database.client.query<WorkOrderRow>(
       `SELECT ${this.columns()}
        FROM maintenance_work_orders
@@ -42,7 +60,44 @@ export class WorkOrderRepository {
     return result.rows.map((row) => this.map(row));
   }
 
-  async listAssigned(userId: string, status?: StoredWorkOrderStatus, limit = 20, offset = 0): Promise<WorkOrderRecord[]> {
+  async listPage(
+    propertyIds: string[],
+    status: StoredWorkOrderStatus | undefined,
+    limit: number,
+    offset: number,
+  ): Promise<{ records: WorkOrderRecord[]; total: number }> {
+    if (propertyIds.length === 0) {
+      return { records: [], total: 0 };
+    }
+    const count = await this.database.client.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+       FROM maintenance_work_orders
+       WHERE property_id = ANY($1::uuid[])
+         AND ($2::text IS NULL OR work_order_status = $2)`,
+      [propertyIds, status ?? null],
+    );
+    const total = Number(count.rows[0]?.total ?? 0);
+    if (total === 0 || offset >= total) {
+      return { records: [], total };
+    }
+    const result = await this.database.client.query<WorkOrderRow>(
+      `SELECT ${this.columns()}
+       FROM maintenance_work_orders
+       WHERE property_id = ANY($1::uuid[])
+         AND ($2::text IS NULL OR work_order_status = $2)
+       ORDER BY created_at DESC, id DESC
+       LIMIT $3 OFFSET $4`,
+      [propertyIds, status ?? null, limit, offset],
+    );
+    return { records: result.rows.map((row) => this.map(row)), total };
+  }
+
+  async listAssigned(
+    userId: string,
+    status?: StoredWorkOrderStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<WorkOrderRecord[]> {
     const result = await this.database.client.query<WorkOrderRow>(
       `SELECT ${this.columns()}
        FROM maintenance_work_orders
@@ -75,8 +130,11 @@ export class WorkOrderRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async create(input: CreateWorkOrderInput): Promise<WorkOrderRecord> {
-    const result = await this.database.client.query<WorkOrderRow>(
+  async create(
+    input: CreateWorkOrderInput,
+    client: QueryClient = this.database.client,
+  ): Promise<WorkOrderRecord> {
+    const result = await client.query<WorkOrderRow>(
       `INSERT INTO maintenance_work_orders (
          property_id, room_id, complaint_id, work_order_code, title, description,
          priority, work_order_status, scheduled_at, created_by_user_id
@@ -98,12 +156,110 @@ export class WorkOrderRepository {
     return this.map(result.rows[0]);
   }
 
+  async lockByComplaint(complaintId: string, client: PoolClient): Promise<WorkOrderRecord[]> {
+    const result = await client.query<WorkOrderRow>(
+      `SELECT ${this.columns()}
+       FROM maintenance_work_orders
+       WHERE complaint_id = $1
+       ORDER BY created_at ASC, id ASC
+       FOR UPDATE`,
+      [complaintId],
+    );
+    return result.rows.map((row) => this.map(row));
+  }
+
+  async createDispatch(
+    input: CreateWorkOrderInput & { assignedToUserId: string },
+    client: PoolClient,
+  ): Promise<WorkOrderRecord> {
+    const result = await client.query<WorkOrderRow>(
+      `INSERT INTO maintenance_work_orders (
+         property_id, room_id, complaint_id, work_order_code, title, description,
+         priority, work_order_status, assigned_to_user_id, created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'assigned', $8, $9)
+       RETURNING ${this.columns()}`,
+      [
+        input.propertyId,
+        input.roomId ?? null,
+        input.complaintId ?? null,
+        input.workOrderCode,
+        input.title,
+        input.description ?? null,
+        input.priority,
+        input.assignedToUserId,
+        input.createdByUserId,
+      ],
+    );
+    return this.map(result.rows[0]);
+  }
+
+  async reassignForDispatch(
+    id: string,
+    assignedToUserId: string,
+    client: PoolClient,
+  ): Promise<WorkOrderRecord | null> {
+    const result = await client.query<WorkOrderRow>(
+      `UPDATE maintenance_work_orders
+       SET assigned_to_user_id = $2,
+           work_order_status = CASE WHEN work_order_status = 'open' THEN 'assigned' ELSE work_order_status END,
+           updated_at = now()
+       WHERE id = $1
+         AND work_order_status IN ('open', 'assigned', 'in_progress', 'on_hold', 'rework_required')
+       RETURNING ${this.columns()}`,
+      [id, assignedToUserId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async allocateDispatchCode(
+    propertyId: string,
+    year: number,
+    client: PoolClient,
+  ): Promise<DispatchCodeAllocation> {
+    await client.query(
+      `SELECT pg_advisory_xact_lock(
+         hashtextextended(
+           'maintenance_work_order_code:' || $1::text || ':' || $2::text,
+           0
+         )
+       )`,
+      [propertyId, year],
+    );
+    const result = await client.query<{ property_name: string; next_sequence: string }>(
+      `SELECT properties.name AS property_name,
+              (
+                SELECT count(*) + 1
+                FROM maintenance_work_orders
+                WHERE property_id = properties.id
+                  AND extract(year from created_at) = $2
+              ) AS next_sequence
+       FROM properties
+       WHERE properties.id = $1`,
+      [propertyId, year],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('Dispatch property disappeared during work-order allocation');
+    }
+    return {
+      propertyName: row.property_name,
+      sequence: Number(row.next_sequence),
+    };
+  }
+
   async transitionStatus(
     id: string,
     status: StoredWorkOrderStatus,
-    options: { assignedToUserId?: string; verifiedByUserId?: string; reworkReason?: string; cancelReason?: string } = {},
+    options: {
+      assignedToUserId?: string;
+      verifiedByUserId?: string;
+      reworkReason?: string;
+      cancelReason?: string;
+    } = {},
+    client: QueryClient = this.database.client,
   ): Promise<WorkOrderRecord | null> {
-    const result = await this.database.client.query<WorkOrderRow>(
+    const result = await client.query<WorkOrderRow>(
       `UPDATE maintenance_work_orders
        SET work_order_status = $2,
            assigned_to_user_id = COALESCE($3, assigned_to_user_id),

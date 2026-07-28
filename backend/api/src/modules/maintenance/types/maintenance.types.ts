@@ -1,4 +1,4 @@
-import { ComplaintPriority } from '../../complaint/types/complaint.types';
+import { ComplaintPriority, StoredComplaintStatus } from '../../complaint/types/complaint.types';
 
 export type WorkOrderPriority = ComplaintPriority;
 
@@ -26,6 +26,12 @@ export type TechnicianProfileRecord = {
   updatedAt: Date;
 };
 
+export type TechnicianReferenceRecord = {
+  user_id: string;
+  display_name: string;
+  skill_tags: string | null;
+};
+
 export type WorkOrderRecord = {
   id: string;
   propertyId: string;
@@ -47,6 +53,40 @@ export type WorkOrderRecord = {
   createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type AdminWorkOrderResponse = {
+  id: string;
+  propertyId: string;
+  roomId: string | null;
+  complaintId: string | null;
+  workOrderCode: string;
+  priority: WorkOrderPriority;
+  status: StoredWorkOrderStatus;
+  assignedToUserId: string | null;
+  scheduledAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  verifiedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type AdminComplaintDispatchResponse = {
+  id: string;
+  propertyId: string;
+  roomId: string | null;
+  complaintCode: string;
+  priority: WorkOrderPriority;
+  status: StoredComplaintStatus;
+  assignedToUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type AdminMaintenanceDispatchResponse = {
+  complaint: AdminComplaintDispatchResponse;
+  work_order: AdminWorkOrderResponse;
 };
 
 export type WorkOrderHistoryRecord = {

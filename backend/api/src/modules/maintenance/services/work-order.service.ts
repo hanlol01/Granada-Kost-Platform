@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
+import { v2Data, v2List } from '../../../shared/admin-ux-v2';
 import { MAINTENANCE_AUDIT_ACTIONS } from '../constants/maintenance.constants';
 import { WorkOrderCodeGenerator } from '../helpers/work-order-code-generator';
 import { WorkOrderStatusTransitionHelper } from '../helpers/work-order-status-transition.helper';
@@ -9,6 +10,7 @@ import { WorkOrderHistoryRepository } from '../repositories/work-order-history.r
 import { WorkOrderRepository } from '../repositories/work-order.repository';
 import {
   AuditActorContext,
+  AdminWorkOrderResponse,
   CreateMaintenanceMaterialInput,
   CreateWorkOrderFileInput,
   CreateWorkOrderInput,
@@ -30,18 +32,46 @@ export class WorkOrderService {
     private readonly audit: AuditRepository,
   ) {}
 
-  list(propertyId: string, status?: StoredWorkOrderStatus, limit?: number, offset?: number): Promise<WorkOrderRecord[]> {
+  list(
+    propertyId: string,
+    status?: StoredWorkOrderStatus,
+    limit?: number,
+    offset?: number,
+  ): Promise<WorkOrderRecord[]> {
     return this.workOrders.list(propertyId, status, limit, offset);
   }
 
-  listAssigned(userId: string, status?: StoredWorkOrderStatus, limit?: number, offset?: number): Promise<WorkOrderRecord[]> {
+  async listAdmin(
+    propertyIds: string[],
+    status: StoredWorkOrderStatus | undefined,
+    limit: number,
+    offset: number,
+  ) {
+    const page = await this.workOrders.listPage(propertyIds, status, limit, offset);
+    return v2List(
+      page.records.map((record) => this.toAdminResponse(record)),
+      limit,
+      offset,
+      page.total,
+    );
+  }
+
+  listAssigned(
+    userId: string,
+    status?: StoredWorkOrderStatus,
+    limit?: number,
+    offset?: number,
+  ): Promise<WorkOrderRecord[]> {
     return this.workOrders.listAssigned(userId, status, limit, offset);
   }
 
   async get(workOrderId: string): Promise<WorkOrderRecord> {
     const workOrder = await this.workOrders.findById(workOrderId);
     if (!workOrder) {
-      throw new NotFoundException({ code: 'WORK_ORDER_NOT_FOUND', message: 'Work order not found' });
+      throw new NotFoundException({
+        code: 'WORK_ORDER_NOT_FOUND',
+        message: 'Work order not found',
+      });
     }
     return workOrder;
   }
@@ -49,12 +79,24 @@ export class WorkOrderService {
   async getAssigned(workOrderId: string, userId: string): Promise<WorkOrderRecord> {
     const workOrder = await this.workOrders.findByIdAssigned(workOrderId, userId);
     if (!workOrder) {
-      throw new NotFoundException({ code: 'WORK_ORDER_NOT_FOUND', message: 'Work order not found' });
+      throw new NotFoundException({
+        code: 'WORK_ORDER_NOT_FOUND',
+        message: 'Work order not found',
+      });
     }
     return workOrder;
   }
 
-  async createWorkOrder(input: CreateWorkOrderInput, context: AuditActorContext = {}): Promise<WorkOrderRecord> {
+  async createWorkOrder(
+    input: CreateWorkOrderInput,
+    context: AuditActorContext = {},
+  ): Promise<WorkOrderRecord> {
+    if (input.complaintId) {
+      throw new BadRequestException({
+        code: 'COMPLAINT_WORK_ORDER_REQUIRES_DISPATCH',
+        message: 'Complaint-linked work orders must be created through complaint assignment',
+      });
+    }
     const workOrder = await this.workOrders.create(input);
     await this.histories.record({
       workOrderId: workOrder.id,
@@ -67,12 +109,20 @@ export class WorkOrderService {
     return workOrder;
   }
 
+  adminDetail(workOrder: WorkOrderRecord) {
+    return v2Data(this.toAdminResponse(workOrder));
+  }
+
   async generateCode(propertyCode: string, propertyId: string, date = new Date()): Promise<string> {
     const sequence = await this.workOrders.nextSequence(propertyId, date.getFullYear());
     return WorkOrderCodeGenerator.format(propertyCode, date.getFullYear(), sequence);
   }
 
-  async assign(workOrderId: string, technicianUserId: string, context: AuditActorContext = {}): Promise<WorkOrderRecord> {
+  async assign(
+    workOrderId: string,
+    technicianUserId: string,
+    context: AuditActorContext = {},
+  ): Promise<WorkOrderRecord> {
     const current = await this.get(workOrderId);
     await this.technicians.ensureActive(current.propertyId, technicianUserId);
     return this.transition(workOrderId, 'assigned', MAINTENANCE_AUDIT_ACTIONS.assign, context, {
@@ -100,14 +150,28 @@ export class WorkOrderService {
     });
   }
 
-  rework(workOrderId: string, reason: string, context: AuditActorContext = {}): Promise<WorkOrderRecord> {
-    return this.transition(workOrderId, 'rework_required', MAINTENANCE_AUDIT_ACTIONS.rework, context, {
-      reworkReason: reason,
-      notes: reason,
-    });
+  rework(
+    workOrderId: string,
+    reason: string,
+    context: AuditActorContext = {},
+  ): Promise<WorkOrderRecord> {
+    return this.transition(
+      workOrderId,
+      'rework_required',
+      MAINTENANCE_AUDIT_ACTIONS.rework,
+      context,
+      {
+        reworkReason: reason,
+        notes: reason,
+      },
+    );
   }
 
-  cancel(workOrderId: string, reason: string, context: AuditActorContext = {}): Promise<WorkOrderRecord> {
+  cancel(
+    workOrderId: string,
+    reason: string,
+    context: AuditActorContext = {},
+  ): Promise<WorkOrderRecord> {
     return this.transition(workOrderId, 'cancelled', MAINTENANCE_AUDIT_ACTIONS.cancel, context, {
       cancelReason: reason,
       notes: reason,
@@ -148,7 +212,10 @@ export class WorkOrderService {
 
     const updated = await this.workOrders.transitionStatus(current.id, toStatus, options);
     if (!updated) {
-      throw new BadRequestException({ code: 'WORK_ORDER_TRANSITION_FAILED', message: 'Work order transition failed' });
+      throw new BadRequestException({
+        code: 'WORK_ORDER_TRANSITION_FAILED',
+        message: 'Work order transition failed',
+      });
     }
 
     await this.histories.record({
@@ -192,6 +259,25 @@ export class WorkOrderService {
       roomId: workOrder.roomId,
       complaintId: workOrder.complaintId,
       assignedToUserId: workOrder.assignedToUserId,
+    };
+  }
+
+  toAdminResponse(workOrder: WorkOrderRecord): AdminWorkOrderResponse {
+    return {
+      id: workOrder.id,
+      propertyId: workOrder.propertyId,
+      roomId: workOrder.roomId,
+      complaintId: workOrder.complaintId,
+      workOrderCode: workOrder.workOrderCode,
+      priority: workOrder.priority,
+      status: workOrder.workOrderStatus,
+      assignedToUserId: workOrder.assignedToUserId,
+      scheduledAt: workOrder.scheduledAt,
+      startedAt: workOrder.startedAt,
+      completedAt: workOrder.completedAt,
+      verifiedAt: workOrder.verifiedAt,
+      createdAt: workOrder.createdAt,
+      updatedAt: workOrder.updatedAt,
     };
   }
 }

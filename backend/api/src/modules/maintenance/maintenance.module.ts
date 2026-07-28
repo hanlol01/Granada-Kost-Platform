@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { MyWorkOrderController } from './controllers/my-work-order.controller';
+import { TechnicianController } from './controllers/technician.controller';
 import { WorkOrderController } from './controllers/work-order.controller';
 import { MaintenanceMaterialRepository } from './repositories/maintenance-material.repository';
 import { TechnicianProfileRepository } from './repositories/technician-profile.repository';
@@ -14,7 +15,7 @@ import { WorkOrderService } from './services/work-order.service';
 
 @Module({
   imports: [PropertyModule, RbacModule],
-  controllers: [WorkOrderController, MyWorkOrderController],
+  controllers: [WorkOrderController, MyWorkOrderController, TechnicianController],
   providers: [
     TechnicianProfileRepository,
     WorkOrderRepository,
@@ -25,6 +26,13 @@ import { WorkOrderService } from './services/work-order.service';
     WorkOrderService,
     MaintenanceService,
   ],
-  exports: [TechnicianService, WorkOrderService, MaintenanceService],
+  exports: [
+    TechnicianProfileRepository,
+    WorkOrderRepository,
+    WorkOrderHistoryRepository,
+    TechnicianService,
+    WorkOrderService,
+    MaintenanceService,
+  ],
 })
 export class MaintenanceModule {}

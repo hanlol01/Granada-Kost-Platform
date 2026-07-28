@@ -45,7 +45,12 @@ type ComplaintRow = {
 export class ComplaintRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(propertyId: string, status?: StoredComplaintStatus, limit = 20, offset = 0): Promise<ComplaintRecord[]> {
+  async list(
+    propertyId: string,
+    status?: StoredComplaintStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<ComplaintRecord[]> {
     const result = await this.database.client.query<ComplaintRow>(
       `SELECT ${this.columns()}
        FROM complaints
@@ -111,6 +116,17 @@ export class ComplaintRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  async findByIdForUpdate(id: string, client: PoolClient): Promise<ComplaintRecord | null> {
+    const result = await client.query<ComplaintRow>(
+      `SELECT ${this.columns()}
+       FROM complaints
+       WHERE id = $1
+       FOR UPDATE`,
+      [id],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
   async findByIdForUser(complaintId: string, userId: string): Promise<ComplaintRecord | null> {
     const result = await this.database.client.query<ComplaintRow>(
       `SELECT ${this.columns('complaints')}
@@ -157,7 +173,10 @@ export class ComplaintRepository {
     };
   }
 
-  async create(input: CreateComplaintInput, client: QueryClient = this.database.client): Promise<ComplaintRecord> {
+  async create(
+    input: CreateComplaintInput,
+    client: QueryClient = this.database.client,
+  ): Promise<ComplaintRecord> {
     const result = await client.query<ComplaintRow>(
       `INSERT INTO complaints (
          property_id, resident_id, room_id, category_id, complaint_code, title, description,
@@ -188,8 +207,9 @@ export class ComplaintRepository {
     id: string,
     status: StoredComplaintStatus,
     options: { actorUserId?: string; assignedToUserId?: string; cancelReason?: string } = {},
+    client: QueryClient = this.database.client,
   ): Promise<ComplaintRecord | null> {
-    const result = await this.database.client.query<ComplaintRow>(
+    const result = await client.query<ComplaintRow>(
       `UPDATE complaints
        SET complaint_status = $2,
            assigned_to_user_id = COALESCE($3, assigned_to_user_id),
@@ -207,7 +227,35 @@ export class ComplaintRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async updateSlaFlags(id: string, responseBreached: boolean, resolutionBreached: boolean): Promise<ComplaintRecord | null> {
+  async assignForDispatch(
+    id: string,
+    assignedToUserId: string,
+    client: PoolClient,
+  ): Promise<ComplaintRecord | null> {
+    const result = await client.query<ComplaintRow>(
+      `UPDATE complaints
+       SET complaint_status = CASE
+             WHEN complaint_status IN ('submitted', 'acknowledged', 'reopened')
+               THEN 'in_progress'
+             ELSE complaint_status
+           END,
+           assigned_to_user_id = $2,
+           updated_at = now()
+       WHERE id = $1
+         AND complaint_status IN (
+           'submitted', 'acknowledged', 'in_progress', 'on_hold', 'escalated', 'reopened'
+         )
+       RETURNING ${this.columns()}`,
+      [id, assignedToUserId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async updateSlaFlags(
+    id: string,
+    responseBreached: boolean,
+    resolutionBreached: boolean,
+  ): Promise<ComplaintRecord | null> {
     const result = await this.database.client.query<ComplaintRow>(
       `UPDATE complaints
        SET response_sla_breached = $2,
@@ -258,7 +306,8 @@ export class ComplaintRepository {
       cancelledCount: Number(row.cancelled_count),
       slaBreachedCount: Number(row.sla_breached_count),
       totalCount: Number(row.total_count),
-      avgResolutionHours: row.avg_resolution_hours === null ? null : Number(row.avg_resolution_hours),
+      avgResolutionHours:
+        row.avg_resolution_hours === null ? null : Number(row.avg_resolution_hours),
     };
   }
 

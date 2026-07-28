@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { CreateTechnicianProfileInput, TechnicianProfileRecord } from '../types/maintenance.types';
+import {
+  CreateTechnicianProfileInput,
+  TechnicianProfileRecord,
+  TechnicianReferenceRecord,
+} from '../types/maintenance.types';
 
 type TechnicianProfileRow = {
   id: string;
@@ -30,11 +35,46 @@ export class TechnicianProfileRepository {
     return result.rows.map((row) => this.map(row));
   }
 
+  async listReferences(propertyId: string): Promise<TechnicianReferenceRecord[]> {
+    const result = await this.database.client.query<TechnicianReferenceRecord>(
+      `SELECT profile.user_id, profile.display_name, profile.skill_tags
+       FROM technician_profiles profile
+       JOIN users ON users.id = profile.user_id
+       WHERE profile.property_id = $1
+         AND profile.is_active = true
+         AND users.user_status = 'active'
+       ORDER BY profile.display_name ASC, profile.user_id ASC`,
+      [propertyId],
+    );
+    return result.rows;
+  }
+
   async findByUser(propertyId: string, userId: string): Promise<TechnicianProfileRecord | null> {
     const result = await this.database.client.query<TechnicianProfileRow>(
       `SELECT id, property_id, user_id, display_name, phone, skill_tags, is_active, created_at, updated_at
        FROM technician_profiles
        WHERE property_id = $1 AND user_id = $2`,
+      [propertyId, userId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async lockActive(
+    propertyId: string,
+    userId: string,
+    client: PoolClient,
+  ): Promise<TechnicianProfileRecord | null> {
+    const result = await client.query<TechnicianProfileRow>(
+      `SELECT profile.id, profile.property_id, profile.user_id, profile.display_name,
+              profile.phone, profile.skill_tags, profile.is_active,
+              profile.created_at, profile.updated_at
+       FROM technician_profiles profile
+       JOIN users ON users.id = profile.user_id
+       WHERE profile.property_id = $1
+         AND profile.user_id = $2
+         AND profile.is_active = true
+         AND users.user_status = 'active'
+       FOR UPDATE OF profile`,
       [propertyId, userId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
@@ -51,7 +91,13 @@ export class TechnicianProfileRepository {
            is_active = true,
            updated_at = now()
        RETURNING id, property_id, user_id, display_name, phone, skill_tags, is_active, created_at, updated_at`,
-      [input.propertyId, input.userId, input.displayName, input.phone ?? null, input.skillTags ?? null],
+      [
+        input.propertyId,
+        input.userId,
+        input.displayName,
+        input.phone ?? null,
+        input.skillTags ?? null,
+      ],
     );
     return this.map(result.rows[0]);
   }

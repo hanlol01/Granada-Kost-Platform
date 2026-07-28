@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,16 +16,17 @@ import {
   Mail,
   UserCheck,
   UserX,
-  LogIn,
+  CalendarPlus,
   Plus,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
-import { CheckInDialog } from "@/components/forms/CheckInDialog";
 import { useResidents, type ResidentRecord } from "@/hooks/useResidents";
 import { useUpdateResidentStatus } from "@/hooks/useResidentMutations";
 import { useAuth } from "@/lib/auth";
+import { isAdminUxLeaseEnabled } from "@/lib/features";
+import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tenants")({ component: TenantsPage });
@@ -52,11 +53,16 @@ function TenantsPage() {
     resident: ResidentRecord;
     next: ResidentRecord["residentStatus"];
   } | null>(null);
-  const [checkInTarget, setCheckInTarget] = useState<ResidentRecord | null>(null);
 
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const { currentPropertyId } = useProperty();
   const canManage = hasPermission("resident.manage");
-  const canCheckIn = hasPermission("lease.manage");
+  const hasLeaseAuthority =
+    (user?.roles ?? []).some((role) => ["owner", "manager", "admin"].includes(role)) &&
+    hasPermission("lease.read") &&
+    hasPermission("lease.manage") &&
+    Boolean(currentPropertyId);
+  const leaseCreateEnabled = hasLeaseAuthority && isAdminUxLeaseEnabled();
 
   const { data, isLoading, error, refetch } = useResidents({ q });
   const statusMut = useUpdateResidentStatus();
@@ -261,18 +267,21 @@ function TenantsPage() {
                     <Pencil className="h-4 w-4 mr-1" /> Edit
                   </Button>
                 ) : null}
-                {canCheckIn ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="sm:flex-1"
-                    onClick={() => {
-                      setCheckInTarget(view);
-                      setView(null);
-                    }}
-                  >
-                    <LogIn className="h-4 w-4 mr-1" /> Check-in
+                {leaseCreateEnabled ? (
+                  <Button asChild variant="outline" size="sm" className="sm:flex-1">
+                    <Link to="/penyewaan/tambah">
+                      <CalendarPlus className="h-4 w-4 mr-1" /> Tambah Penyewaan
+                    </Link>
                   </Button>
+                ) : hasLeaseAuthority ? (
+                  <div className="sm:flex-1">
+                    <Button variant="outline" size="sm" className="w-full" disabled>
+                      <CalendarPlus className="h-4 w-4 mr-1" /> Tambah Penyewaan
+                    </Button>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Fitur Penyewaan belum diaktifkan untuk rollout ini.
+                    </p>
+                  </div>
                 ) : null}
                 {canManage ? (
                   view.residentStatus === "active" ? (
@@ -334,13 +343,6 @@ function TenantsPage() {
             // Already toasted by hook.
           }
         }}
-      />
-
-      <CheckInDialog
-        open={checkInTarget !== null}
-        onOpenChange={(o) => !o && setCheckInTarget(null)}
-        residentId={checkInTarget?.id ?? null}
-        residentName={checkInTarget?.fullName}
       />
     </AppShell>
   );

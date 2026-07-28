@@ -328,6 +328,7 @@ export class AdminUxRoomV2Service {
     if (!rows.length) return [];
     const typeIds = [...new Set(rows.map((row) => String(row.kost_type_id)))];
     const roomIds = rows.map((row) => String(row.id));
+    const propertyIds = rows.map((row) => String(row.property_id));
     const [facilities, occupancies] = await Promise.all([
       this.database.client.query<Row>(
         `SELECT assignment.kost_type_id, facility.id, facility.name, facility.icon, facility.description,
@@ -341,11 +342,23 @@ export class AdminUxRoomV2Service {
       includeActiveLease
         ? this.database.client.query<Row>(
             `SELECT occupancy.room_id, occupancy.id, occupancy.resident_id, occupancy.start_date,
-                    resident.full_name AS resident_name
-             FROM occupancies occupancy
+                    resident.full_name AS resident_name,
+                    NOT EXISTS (
+                      SELECT 1
+                      FROM leases lease
+                      WHERE lease.occupancy_id = occupancy.id
+                        AND lease.property_id = occupancy.property_id
+                        AND lease.room_id = occupancy.room_id
+                        AND lease.resident_id = occupancy.resident_id
+                        AND lease.lease_status = 'active'
+                    ) AS lease_reconciliation_required
+             FROM UNNEST($1::uuid[], $2::uuid[]) AS scoped(room_id, property_id)
+             JOIN occupancies occupancy
+               ON occupancy.room_id = scoped.room_id
+              AND occupancy.property_id = scoped.property_id
              JOIN residents resident ON resident.id = occupancy.resident_id
-             WHERE occupancy.room_id = ANY($1::uuid[]) AND occupancy.occupancy_status = 'active'`,
-            [roomIds],
+             WHERE occupancy.occupancy_status = 'active'`,
+            [roomIds, propertyIds],
           )
         : Promise.resolve({ rows: [] as Row[] }),
     ]);
@@ -356,6 +369,7 @@ export class AdminUxRoomV2Service {
       facilitiesByType.set(String(facility.kost_type_id), list);
     }
     const occupancyByRoom = new Map<string, Record<string, unknown>>();
+    const reconciliationByRoom = new Map<string, boolean>();
     for (const occupancy of occupancies.rows) {
       occupancyByRoom.set(String(occupancy.room_id), {
         id: occupancy.id,
@@ -363,6 +377,10 @@ export class AdminUxRoomV2Service {
         resident_name: occupancy.resident_name,
         start_date: occupancy.start_date,
       });
+      reconciliationByRoom.set(
+        String(occupancy.room_id),
+        occupancy.lease_reconciliation_required === true,
+      );
     }
     return rows.map((row) => ({
       id: row.id,
@@ -396,6 +414,9 @@ export class AdminUxRoomV2Service {
       active_lease: null,
       active_occupancy: includeActiveLease
         ? (occupancyByRoom.get(String(row.id)) ?? null)
+        : undefined,
+      lease_reconciliation_required: includeActiveLease
+        ? (reconciliationByRoom.get(String(row.id)) ?? false)
         : undefined,
     }));
   }

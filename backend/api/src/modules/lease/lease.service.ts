@@ -21,6 +21,7 @@ import {
   ListLeaseResidentOptionsQueryDto,
 } from './lease.dto';
 import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
+import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type {
   BillingCycle,
@@ -176,7 +177,10 @@ type PaymentRow = { id: string; payment_code: string };
 
 @Injectable()
 export class LeaseService {
-  constructor(private readonly leases: LeaseRepository) {}
+  constructor(
+    private readonly leases: LeaseRepository,
+    private readonly features: LeaseFeatureService = new LeaseFeatureService(leases),
+  ) {}
 
   async list(user: UserAccessContext, query: ListLeasesQueryDto) {
     if (query.property_id) this.assertPropertyScope(user, query.property_id);
@@ -440,6 +444,7 @@ export class LeaseService {
     context: LeaseAuditContext,
   ): Promise<IdempotentResult<Record<string, unknown>>> {
     this.assertPropertyScope(user, dto.property_id);
+    await this.features.assertWriteEnabled(dto.property_id);
     this.assertExactlyOneResident(dto);
     return this.executeCommand(
       user,

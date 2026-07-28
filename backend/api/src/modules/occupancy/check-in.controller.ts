@@ -1,5 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
-import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
 import { RequirePermissions } from '../rbac/decorators/permissions.decorator';
@@ -17,19 +16,7 @@ export class CheckInController {
   constructor(private readonly occupancies: OccupancyService) {}
 
   @Post()
-  complete(
-    @CurrentUser() user: UserAccessContext,
-    @Body() dto: CreateCheckInDto,
-    @Req() request: RequestWithCorrelationId,
-  ) {
-    return this.occupancies.completeCheckIn(user, dto, this.contextFromRequest(request));
-  }
-
-  private contextFromRequest(request: RequestWithCorrelationId) {
-    return {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
-      correlationId: request.correlationId,
-    };
+  complete(@CurrentUser() user: UserAccessContext, @Body() dto: CreateCheckInDto) {
+    return this.occupancies.completeCheckIn(user, dto);
   }
 }

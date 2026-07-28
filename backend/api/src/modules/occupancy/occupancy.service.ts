@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { PropertyService } from '../property/property.service';
@@ -46,20 +51,12 @@ export class OccupancyService {
     return occupancy;
   }
 
-  async completeCheckIn(user: UserAccessContext, dto: CreateCheckInDto, context: RequestAuditContext) {
+  async completeCheckIn(user: UserAccessContext, dto: CreateCheckInDto) {
     await this.assertCanMutateProperty(user, dto.property_id);
-    const occupancy = await this.occupancies.completeCheckIn(dto, user.id);
-    await this.audit.write({
-      actorUserId: user.id,
-      propertyId: occupancy.propertyId,
-      action: 'check_in.complete',
-      resourceType: 'occupancy',
-      resourceId: occupancy.id,
-      afterData: occupancy,
-      resultStatus: 'success',
-      ...context,
+    throw new ConflictException({
+      code: 'LEASE_REQUIRED',
+      message: 'Move-in must use lease creation',
     });
-    return occupancy;
   }
 
   async listCheckOutRequests(user: UserAccessContext) {
@@ -71,16 +68,17 @@ export class OccupancyService {
     dto: CreateCheckOutRequestDto,
     context: RequestAuditContext,
   ) {
-    const occupancy = await this.requireOccupancy(dto.occupancy_id);
+    const occupancy = await this.requireOccupancy(dto.occupancy_id, this.scopeIds(user));
     await this.assertCanMutateProperty(user, occupancy.propertyId);
-    const checkOut = await this.occupancies.createCheckOutRequest(dto, user.id);
+    await this.occupancies.assertLegacyCheckoutEligible(occupancy);
+    const checkOut = await this.occupancies.createCheckOutRequest(dto, user.id, occupancy);
     await this.audit.write({
       actorUserId: user.id,
       propertyId: checkOut.propertyId,
       action: 'check_out.request',
       resourceType: 'check_out_request',
       resourceId: checkOut.id,
-      afterData: checkOut,
+      afterData: this.checkoutAuditSnapshot(checkOut),
       resultStatus: 'success',
       ...context,
     });
@@ -88,9 +86,10 @@ export class OccupancyService {
   }
 
   async approveCheckOut(user: UserAccessContext, checkOutId: string, context: RequestAuditContext) {
-    const checkOut = await this.requireCheckOut(checkOutId);
+    const checkOut = await this.requireCheckOut(checkOutId, this.scopeIds(user));
     await this.assertCanMutateProperty(user, checkOut.propertyId);
-    const updated = await this.occupancies.updateCheckOutStatus(checkOutId, 'approved', user.id);
+    await this.assertLegacyCheckoutEligible(checkOut);
+    const updated = await this.occupancies.updateCheckOutStatus(checkOut, 'approved', user.id);
     if (!updated) {
       throw new NotFoundException({
         code: 'CHECK_OUT_NOT_FOUND',
@@ -103,7 +102,7 @@ export class OccupancyService {
       action: 'check_out.approve',
       resourceType: 'check_out_request',
       resourceId: updated.id,
-      afterData: updated,
+      afterData: this.checkoutAuditSnapshot(updated),
       resultStatus: 'success',
       ...context,
     });
@@ -111,9 +110,10 @@ export class OccupancyService {
   }
 
   async rejectCheckOut(user: UserAccessContext, checkOutId: string, context: RequestAuditContext) {
-    const checkOut = await this.requireCheckOut(checkOutId);
+    const checkOut = await this.requireCheckOut(checkOutId, this.scopeIds(user));
     await this.assertCanMutateProperty(user, checkOut.propertyId);
-    const updated = await this.occupancies.updateCheckOutStatus(checkOutId, 'rejected', user.id);
+    await this.assertLegacyCheckoutEligible(checkOut);
+    const updated = await this.occupancies.updateCheckOutStatus(checkOut, 'rejected', user.id);
     if (!updated) {
       throw new NotFoundException({
         code: 'CHECK_OUT_NOT_FOUND',
@@ -126,7 +126,7 @@ export class OccupancyService {
       action: 'check_out.reject',
       resourceType: 'check_out_request',
       resourceId: updated.id,
-      afterData: updated,
+      afterData: this.checkoutAuditSnapshot(updated),
       resultStatus: 'success',
       ...context,
     });
@@ -139,19 +139,27 @@ export class OccupancyService {
     dto: FinalizeCheckOutDto,
     context: RequestAuditContext,
   ) {
-    const checkOut = await this.requireCheckOut(checkOutId);
+    const checkOut = await this.requireCheckOut(checkOutId, this.scopeIds(user));
     await this.assertCanMutateProperty(user, checkOut.propertyId);
-    const finalized = await this.occupancies.finalizeCheckOut(checkOutId, dto, user.id);
+    await this.assertLegacyCheckoutEligible(checkOut);
+    const finalized = await this.occupancies.finalizeCheckOut(checkOut, dto, user.id);
     if (!finalized) {
-      throw new NotFoundException({ code: 'CHECK_OUT_NOT_FOUND', message: 'Check-out request not found' });
+      throw new NotFoundException({
+        code: 'CHECK_OUT_NOT_FOUND',
+        message: 'Check-out request not found',
+      });
     }
     await this.audit.write({
       actorUserId: user.id,
       propertyId: finalized.propertyId,
-      action: 'check_out.finalize',
-      resourceType: 'check_out_request',
-      resourceId: finalized.id,
-      afterData: finalized,
+      action: 'occupancy.legacy_checkout',
+      resourceType: 'occupancy',
+      resourceId: finalized.occupancyId,
+      afterData: {
+        check_out_status: finalized.checkOutStatus,
+        end_date: dto.end_date,
+        room_status_after: dto.room_status_after,
+      },
       resultStatus: 'success',
       ...context,
     });
@@ -162,7 +170,10 @@ export class OccupancyService {
     return user.roles.includes('owner') ? undefined : user.propertyIds;
   }
 
-  private async assertCanMutateProperty(user: UserAccessContext, propertyId: string): Promise<void> {
+  private async assertCanMutateProperty(
+    user: UserAccessContext,
+    propertyId: string,
+  ): Promise<void> {
     if (user.roles.includes('property_owner')) {
       throw new ForbiddenException({
         code: 'PROPERTY_OWNER_READ_ONLY',
@@ -172,19 +183,54 @@ export class OccupancyService {
     await this.properties.assertCanReadProperty(user, propertyId);
   }
 
-  private async requireOccupancy(occupancyId: string) {
-    const occupancy = await this.occupancies.findById(occupancyId);
+  private async requireOccupancy(occupancyId: string, propertyIds?: string[]) {
+    const occupancy = await this.occupancies.findById(occupancyId, propertyIds);
     if (!occupancy) {
       throw new NotFoundException({ code: 'OCCUPANCY_NOT_FOUND', message: 'Occupancy not found' });
     }
     return occupancy;
   }
 
-  private async requireCheckOut(checkOutId: string) {
-    const checkOut = await this.occupancies.findCheckOutById(checkOutId);
+  private async requireCheckOut(checkOutId: string, propertyIds?: string[]) {
+    const checkOut = await this.occupancies.findCheckOutById(checkOutId, propertyIds);
     if (!checkOut) {
-      throw new NotFoundException({ code: 'CHECK_OUT_NOT_FOUND', message: 'Check-out request not found' });
+      throw new NotFoundException({
+        code: 'CHECK_OUT_NOT_FOUND',
+        message: 'Check-out request not found',
+      });
     }
     return checkOut;
+  }
+
+  private async assertLegacyCheckoutEligible(checkOut: {
+    occupancyId: string;
+    propertyId: string;
+    roomId: string;
+    residentId: string;
+  }): Promise<void> {
+    const occupancy = await this.requireOccupancy(checkOut.occupancyId, [checkOut.propertyId]);
+    if (
+      occupancy.propertyId !== checkOut.propertyId ||
+      occupancy.roomId !== checkOut.roomId ||
+      occupancy.residentId !== checkOut.residentId
+    ) {
+      throw new ConflictException({
+        code: 'CHECK_OUT_OCCUPANCY_MISMATCH',
+        message: 'Check-out request does not match its occupancy',
+      });
+    }
+    await this.occupancies.assertLegacyCheckoutEligible(occupancy);
+  }
+
+  private checkoutAuditSnapshot(checkOut: {
+    checkOutStatus: string;
+    requestedCheckOutDate: string;
+    finalizedAt: Date | null;
+  }) {
+    return {
+      check_out_status: checkOut.checkOutStatus,
+      requested_check_out_date: checkOut.requestedCheckOutDate,
+      finalized_at: checkOut.finalizedAt,
+    };
   }
 }

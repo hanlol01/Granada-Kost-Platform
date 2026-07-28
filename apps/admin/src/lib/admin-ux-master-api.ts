@@ -105,16 +105,21 @@ export type RoomInventory = {
     KostType,
     "id" | "name" | "slug" | "category" | "monthlyPrice" | "yearlyPrice" | "depositAmount"
   > & {
-    facilities?: RoomFacility[];
+    facilities?: Array<
+      Pick<RoomFacility, "id" | "name" | "icon" | "description" | "categoryId" | "sortOrder">
+    >;
   };
   activeLease?: {
     leaseCode?: string;
     residentName?: string;
   } | null;
   activeOccupancy?: {
+    id: string;
+    residentId: string;
     residentName?: string;
     startDate?: string;
   } | null;
+  leaseReconciliationRequired?: boolean;
 };
 
 export type RoomAvailabilityItem = {
@@ -305,7 +310,195 @@ function isRoomBuildingGenderPolicy(
   return value === "male" || value === "female";
 }
 
-export function parseRoomInventoryListEnvelope(value: unknown): AdminUxPage<RoomInventory> {
+const ROOM_BASE_KEYS = [
+  "id",
+  "property_id",
+  "number",
+  "room_code",
+  "building_id",
+  "building_code",
+  "building_name",
+  "unit_code",
+  "gender_policy",
+  "floor",
+  "floor_code",
+  "floor_label",
+  "size_label",
+  "status",
+  "primary_photo_file_id",
+  "public_visible",
+  "created_at",
+  "updated_at",
+  "kost_type",
+  "active_lease",
+] as const;
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function parseRoomFacility(
+  value: unknown,
+): NonNullable<RoomInventory["kostType"]["facilities"]>[number] {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["id", "name", "icon", "description", "category_id", "sort_order"]) ||
+    !isNonEmptyString(value.id) ||
+    !isNonEmptyString(value.name) ||
+    !isNullableString(value.icon) ||
+    !isNullableString(value.description) ||
+    !isNullableString(value.category_id) ||
+    !isIntegerAtLeast(value.sort_order, 0)
+  ) {
+    throw new Error("Invalid room facility record.");
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    icon: value.icon,
+    description: value.description,
+    categoryId: value.category_id,
+    sortOrder: value.sort_order,
+  };
+}
+
+function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): RoomInventory {
+  const expectedKeys = includeActiveLease
+    ? [...ROOM_BASE_KEYS, "active_occupancy", "lease_reconciliation_required"]
+    : [...ROOM_BASE_KEYS];
+  if (!isPlainRecord(value) || !hasExactKeys(value, expectedKeys)) {
+    throw new Error("Invalid room inventory record.");
+  }
+  const kostType = value.kost_type;
+  if (
+    !isPlainRecord(kostType) ||
+    !hasExactKeys(kostType, [
+      "id",
+      "name",
+      "slug",
+      "category",
+      "monthly_price",
+      "yearly_price",
+      "deposit_amount",
+      "facilities",
+    ]) ||
+    !isNonEmptyString(kostType.id) ||
+    !isNonEmptyString(kostType.name) ||
+    !isNonEmptyString(kostType.slug) ||
+    !isKostTypeCategory(kostType.category) ||
+    typeof kostType.monthly_price !== "number" ||
+    typeof kostType.yearly_price !== "number" ||
+    typeof kostType.deposit_amount !== "number" ||
+    !Array.isArray(kostType.facilities)
+  ) {
+    throw new Error("Invalid room kost type record.");
+  }
+  const activeLease = value.active_lease;
+  if (
+    activeLease !== null &&
+    (!isPlainRecord(activeLease) ||
+      !hasExactKeys(activeLease, ["lease_code", "resident_name"]) ||
+      !isNullableString(activeLease.lease_code) ||
+      !isNullableString(activeLease.resident_name))
+  ) {
+    throw new Error("Invalid active lease record.");
+  }
+  const activeOccupancy = includeActiveLease ? value.active_occupancy : undefined;
+  if (
+    includeActiveLease &&
+    activeOccupancy !== null &&
+    (!isPlainRecord(activeOccupancy) ||
+      !hasExactKeys(activeOccupancy, ["id", "resident_id", "resident_name", "start_date"]) ||
+      !isNonEmptyString(activeOccupancy.id) ||
+      !isNonEmptyString(activeOccupancy.resident_id) ||
+      !isNullableString(activeOccupancy.resident_name) ||
+      !isNullableString(activeOccupancy.start_date))
+  ) {
+    throw new Error("Invalid active occupancy record.");
+  }
+  if (
+    !isNonEmptyString(value.id) ||
+    !isNonEmptyString(value.property_id) ||
+    !isNonEmptyString(value.number) ||
+    !isNullableString(value.room_code) ||
+    !isNonEmptyString(value.building_id) ||
+    !isNullableString(value.building_code) ||
+    !isNullableString(value.building_name) ||
+    !isNullableString(value.unit_code) ||
+    (value.gender_policy !== null &&
+      value.gender_policy !== "male" &&
+      value.gender_policy !== "female" &&
+      value.gender_policy !== "mixed") ||
+    !isNullableString(value.floor) ||
+    (value.floor_code !== null && value.floor_code !== "A" && value.floor_code !== "B") ||
+    !isNullableString(value.floor_label) ||
+    !isNullableString(value.size_label) ||
+    !isRoomStatus(value.status) ||
+    !isNullableString(value.primary_photo_file_id) ||
+    typeof value.public_visible !== "boolean" ||
+    typeof value.created_at !== "string" ||
+    typeof value.updated_at !== "string" ||
+    (includeActiveLease && typeof value.lease_reconciliation_required !== "boolean")
+  ) {
+    throw new Error("Invalid room inventory record.");
+  }
+  const activeLeaseRecord = activeLease as Record<string, unknown> | null;
+  const activeOccupancyRecord = activeOccupancy as Record<string, unknown> | null | undefined;
+  return {
+    id: value.id,
+    propertyId: value.property_id,
+    number: value.number,
+    roomCode: value.room_code,
+    buildingId: value.building_id,
+    buildingCode: value.building_code,
+    buildingName: value.building_name,
+    unitCode: value.unit_code,
+    genderPolicy: value.gender_policy,
+    floor: value.floor,
+    floorCode: value.floor_code,
+    floorLabel: value.floor_label,
+    sizeLabel: value.size_label,
+    status: value.status,
+    primaryPhotoFileId: value.primary_photo_file_id,
+    publicVisible: value.public_visible,
+    kostType: {
+      id: kostType.id,
+      name: kostType.name,
+      slug: kostType.slug,
+      category: kostType.category,
+      monthlyPrice: kostType.monthly_price,
+      yearlyPrice: kostType.yearly_price,
+      depositAmount: kostType.deposit_amount,
+      facilities: kostType.facilities.map(parseRoomFacility),
+    },
+    activeLease:
+      activeLeaseRecord === null
+        ? null
+        : {
+            leaseCode: (activeLeaseRecord.lease_code as string | null) ?? undefined,
+            residentName: (activeLeaseRecord.resident_name as string | null) ?? undefined,
+          },
+    activeOccupancy:
+      !includeActiveLease || activeOccupancyRecord === null
+        ? includeActiveLease
+          ? null
+          : undefined
+        : {
+            id: activeOccupancyRecord!.id as string,
+            residentId: activeOccupancyRecord!.resident_id as string,
+            residentName: (activeOccupancyRecord!.resident_name as string | null) ?? undefined,
+            startDate: (activeOccupancyRecord!.start_date as string | null) ?? undefined,
+          },
+    leaseReconciliationRequired: includeActiveLease
+      ? (value.lease_reconciliation_required as boolean)
+      : undefined,
+  };
+}
+
+export function parseRoomInventoryListEnvelope(
+  value: unknown,
+  includeActiveLease = false,
+): AdminUxPage<RoomInventory> {
   if (
     !isPlainRecord(value) ||
     !hasExactKeys(value, ["data", "meta"]) ||
@@ -324,10 +517,22 @@ export function parseRoomInventoryListEnvelope(value: unknown): AdminUxPage<Room
   ) {
     throw new Error("Invalid rooms list metadata.");
   }
-  return mapV2Page<RoomInventory>({
-    data: value.data,
-    meta: { total: meta.total, limit: meta.limit, offset: meta.offset },
-  });
+  return {
+    items: value.data.map((item) => parseRoomInventoryRecord(item, includeActiveLease)),
+    total: meta.total,
+    limit: meta.limit,
+    offset: meta.offset,
+  };
+}
+
+export function parseRoomInventoryDetailEnvelope(
+  value: unknown,
+  includeActiveLease = false,
+): RoomInventory {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"])) {
+    throw new Error("Invalid room detail envelope.");
+  }
+  return parseRoomInventoryRecord(value.data, includeActiveLease);
 }
 
 export function parseRoomAvailabilityEnvelope(value: unknown): RoomAvailabilityItem[] {
@@ -691,7 +896,7 @@ export const adminUxMasterApi = {
             include_active_lease: input.includeActiveLease,
           },
         })
-        .then(parseRoomInventoryListEnvelope),
+        .then((value) => parseRoomInventoryListEnvelope(value, input.includeActiveLease ?? false)),
     availability: (propertyId: string) =>
       adminUxV2Requester
         .get<unknown>("/rooms/availability", { query: { property_id: propertyId } })
@@ -703,11 +908,11 @@ export const adminUxMasterApi = {
         })
         .then(parseRoomBuildingReferenceEnvelope),
     detail: (id: string, includeActiveLease = false) =>
-      data<RoomInventory>(
-        adminUxV2Requester.get<V2DataEnvelope<unknown>>("/rooms/" + encodeURIComponent(id), {
+      adminUxV2Requester
+        .get<unknown>("/rooms/" + encodeURIComponent(id), {
           query: { include_active_lease: includeActiveLease || undefined },
-        }),
-      ),
+        })
+        .then((value) => parseRoomInventoryDetailEnvelope(value, includeActiveLease)),
     create: (input: RoomInventoryInput, idempotencyKey?: string) =>
       data<RoomInventory>(
         adminUxV2Requester.post<V2DataEnvelope<unknown>>("/rooms", toRoomInventoryBody(input), {

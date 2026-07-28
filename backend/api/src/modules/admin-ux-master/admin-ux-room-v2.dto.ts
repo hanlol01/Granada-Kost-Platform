@@ -1,6 +1,14 @@
-import { Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { V2PaginationQueryDto } from './admin-ux-master.dto';
+
+function exactBooleanQueryValue({ obj, key }: TransformFnParams): unknown {
+  const raw = (obj as Record<string, unknown>)[key];
+  if (raw === true || raw === false) return raw;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return raw;
+}
 
 export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   @IsOptional()
@@ -32,6 +40,7 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   q?: string;
 
   @IsOptional()
+  @Transform(exactBooleanQueryValue)
   @IsBoolean()
   include_active_lease?: boolean;
 }

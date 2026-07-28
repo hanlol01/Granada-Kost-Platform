@@ -24,6 +24,16 @@ type FeatureFlagRow = {
 export class LeaseFeatureService {
   constructor(private readonly leases: LeaseRepository) {}
 
+  async assertWriteEnabled(propertyId: string, client?: QueryClient): Promise<void> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    if (!flags.admin_ux_read || !flags.lease_write) {
+      throw new ForbiddenException({
+        code: 'LEASE_WRITE_DISABLED',
+        message: 'Lease creation is not enabled for this property',
+      });
+    }
+  }
+
   async assertTransferEnabled(propertyId: string, client?: QueryClient): Promise<void> {
     const flags = await this.readFlags(propertyId, client, Boolean(client));
     if (!flags.admin_ux_read || !flags.lease_write || !flags.lease_transfer) {

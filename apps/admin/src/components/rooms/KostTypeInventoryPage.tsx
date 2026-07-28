@@ -1,5 +1,5 @@
 // Shared M4 inventory surface for Rumah Kost and Apart Kost.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   BedDouble,
@@ -75,6 +75,9 @@ import {
   allowedRoomStatusTargets,
   createKostTypeSlug,
   getRoomPaginationDisplay,
+  hasAuthoritativeRoomReferences,
+  hasRoomWriteAuthority,
+  roomStructuralEditLocked,
   type RoomRouteSearch,
 } from "@/lib/admin-ux-master-helpers";
 import { useAuth } from "@/lib/auth";
@@ -87,18 +90,22 @@ import {
   useM4Mutation,
   useM4RoomBuildings,
   useM4RoomInventory,
+  useRoomPersistenceMutation,
 } from "@/hooks/useAdminUxMaster";
 
 type Props = {
   category: KostTypeCategory;
   search: RoomRouteSearch;
   onSearchChange: (next: Partial<RoomRouteSearch>) => void;
+  createRequested?: boolean;
+  onCreateConsumed?: () => void;
 };
 
 type BuildingOption = {
   id: string;
   label: string;
   category: KostTypeCategory;
+  genderPolicy: "male" | "female";
 };
 
 const EMPTY_ROOM_ITEMS: RoomInventory[] = [];
@@ -124,10 +131,20 @@ function RoomStatusBadge({ status }: { status: RoomInventory["status"] }) {
   );
 }
 
-export function KostTypeInventoryPage({ category, search, onSearchChange }: Props) {
-  const { hasPermission } = useAuth();
+export function KostTypeInventoryPage({
+  category,
+  search,
+  onSearchChange,
+  createRequested = false,
+  onCreateConsumed,
+}: Props) {
+  const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
-  const canManage = hasPermission("room.manage");
+  const canManage = hasRoomWriteAuthority(
+    user?.roles ?? [],
+    hasPermission("room.manage"),
+    currentPropertyId,
+  );
   const typeQuery = useM4KostTypes({ category, limit: 100 });
   const buildingQuery = useM4RoomBuildings(category);
   const roomQuery = useM4RoomInventory({
@@ -144,25 +161,54 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   const [roomEditor, setRoomEditor] = useState<RoomInventory | null | "create">(null);
   const [detailRoom, setDetailRoom] = useState<RoomInventory | null>(null);
   const [statusRoom, setStatusRoom] = useState<RoomInventory | null>(null);
+  const createRequestConsumed = useRef(false);
+  const currentRoomScope = `${currentPropertyId ?? ""}:${category}`;
+  const previousRoomScope = useRef(currentRoomScope);
+  const roomScopeChanged = previousRoomScope.current !== currentRoomScope;
   const rooms = roomQuery.data?.items ?? EMPTY_ROOM_ITEMS;
-  const types = typeQuery.data?.items ?? [];
+  const types = (typeQuery.data?.items ?? []).filter(
+    (item) => item.propertyId === currentPropertyId && item.category === category,
+  );
   const activeType = types.find((item) => item.status === "active") ?? null;
   const buildings = useMemo(
     () =>
       (buildingQuery.data ?? [])
+        .filter(
+          (building) => building.propertyId === currentPropertyId && building.category === category,
+        )
         .map((building) => ({
           id: building.id,
           label: building.buildingName || building.buildingCode,
           category: building.category,
+          genderPolicy: building.genderPolicy,
         }))
         .sort((left, right) => left.label.localeCompare(right.label, "id-ID")),
-    [buildingQuery.data],
+    [buildingQuery.data, category, currentPropertyId],
   );
+  const canPersistRoom = Boolean(canManage && activeType && buildings.length > 0);
+  const referencesLoading = typeQuery.isLoading || buildingQuery.isLoading;
 
   useEffect(() => {
     setDetailRoom(null);
     setStatusRoom(null);
-  }, [category, currentPropertyId]);
+    setRoomEditor(null);
+    previousRoomScope.current = currentRoomScope;
+  }, [currentRoomScope]);
+
+  useEffect(() => {
+    if (!canPersistRoom) setRoomEditor(null);
+  }, [canPersistRoom]);
+
+  useEffect(() => {
+    if (!createRequested) {
+      createRequestConsumed.current = false;
+      return;
+    }
+    if (referencesLoading || createRequestConsumed.current) return;
+    createRequestConsumed.current = true;
+    if (canPersistRoom) setRoomEditor("create");
+    onCreateConsumed?.();
+  }, [canPersistRoom, createRequested, onCreateConsumed, referencesLoading]);
 
   if (typeQuery.isLoading || buildingQuery.isLoading || roomQuery.isLoading) {
     return (
@@ -195,11 +241,16 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
       actions={
         canManage ? (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setTypeEditor(activeType ?? "create")}>
+            <Button
+              variant="outline"
+              className="min-h-11"
+              onClick={() => setTypeEditor(activeType ?? "create")}
+            >
               <FilePenLine className="mr-2 h-4 w-4" />
               {activeType ? "Edit Tipe Kost" : "Buat Tipe Kost"}
             </Button>
             <Button
+              className="min-h-11"
               onClick={() => setRoomEditor("create")}
               disabled={!canManage || !activeType || buildings.length === 0}
             >
@@ -242,6 +293,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
         <RoomInventoryTable
           rooms={rooms}
           canManage={canManage}
+          canEdit={canPersistRoom}
           onDetail={setDetailRoom}
           onEdit={setRoomEditor}
           onStatus={setStatusRoom}
@@ -272,17 +324,21 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
         onOpenChange={(open) => !open && setTypeEditor(null)}
       />
       <RoomInventoryEditor
-        room={roomEditor === "create" ? null : roomEditor}
+        key={currentRoomScope}
+        room={roomScopeChanged || roomEditor === "create" ? null : roomEditor}
+        propertyId={currentPropertyId}
+        category={category}
         types={types.filter((item) => item.status === "active")}
         buildings={buildings}
-        open={roomEditor !== null}
+        canPersist={canPersistRoom}
+        open={!roomScopeChanged && canPersistRoom && roomEditor !== null}
         onOpenChange={(open) => !open && setRoomEditor(null)}
       />
       <RoomDetailSheet
         room={detailRoom}
         open={detailRoom !== null}
         onOpenChange={(open) => !open && setDetailRoom(null)}
-        onEdit={canManage ? setRoomEditor : undefined}
+        onEdit={canPersistRoom ? setRoomEditor : undefined}
       />
       <RoomStatusDialog
         room={statusRoom}
@@ -507,12 +563,14 @@ export function Pagination({
 export function RoomInventoryTable({
   rooms,
   canManage,
+  canEdit = canManage,
   onDetail,
   onEdit,
   onStatus,
 }: {
   rooms: RoomInventory[];
   canManage: boolean;
+  canEdit?: boolean;
   onDetail: (room: RoomInventory) => void;
   onEdit: (room: RoomInventory) => void;
   onStatus: (room: RoomInventory) => void;
@@ -639,7 +697,7 @@ export function RoomInventoryTable({
                               <CalendarPlus className="mr-2 h-3.5 w-3.5" /> Catat minat booking
                             </DropdownMenuItem>
                           ) : null}
-                          {canManage ? (
+                          {canEdit ? (
                             <DropdownMenuItem onClick={() => onEdit(room)}>
                               <Pencil className="mr-2 h-3.5 w-3.5" /> Edit inventori
                             </DropdownMenuItem>
@@ -922,7 +980,27 @@ function Field({
   );
 }
 
-type RoomDraft = Omit<RoomInventoryInput, "propertyId">;
+type RoomDraft = {
+  kostTypeId: string;
+  number: string;
+  roomCode: string;
+  buildingId: string;
+  floorCode: "" | "A" | "B";
+  unitCode: string;
+  sizeLabel: string;
+  primaryPhotoFileId: string | null;
+  publicVisible: boolean;
+};
+
+type RoomDraftField = "number" | "buildingId" | "kostTypeId" | "floorCode";
+type RoomDraftErrors = Partial<Record<RoomDraftField, string>>;
+
+const ROOM_FIELD_ID: Record<RoomDraftField, string> = {
+  number: "room-number",
+  buildingId: "room-building",
+  kostTypeId: "room-kost-type",
+  floorCode: "room-floor-code",
+};
 
 function draftForRoom(room: RoomInventory | null): RoomDraft {
   return {
@@ -930,69 +1008,218 @@ function draftForRoom(room: RoomInventory | null): RoomDraft {
     number: room?.number ?? "",
     roomCode: room?.roomCode ?? "",
     buildingId: room?.buildingId ?? "",
-    floor: room?.floor ?? "",
-    floorCode: room?.floorCode ?? null,
-    floorLabel: room?.floorLabel ?? "",
+    floorCode: room?.floorCode ?? "",
     unitCode: room?.unitCode ?? "",
-    genderPolicy: room?.genderPolicy ?? "mixed",
     sizeLabel: room?.sizeLabel ?? "",
     primaryPhotoFileId: room?.primaryPhotoFileId ?? null,
     publicVisible: room?.publicVisible ?? true,
   };
 }
 
+function optionalRoomText(value: string): string | null {
+  return value.trim() || null;
+}
+
+function validateRoomDraft(
+  draft: RoomDraft,
+  buildings: readonly BuildingOption[],
+  types: readonly KostType[],
+): RoomDraftErrors {
+  const errors: RoomDraftErrors = {};
+  const number = draft.number.trim();
+  if (!number) errors.number = "Nomor kamar wajib diisi.";
+  else if (number.length > 80) errors.number = "Nomor kamar maksimal 80 karakter.";
+  const references = hasAuthoritativeRoomReferences(
+    draft.buildingId,
+    draft.kostTypeId,
+    buildings.map((building) => building.id),
+    types.map((type) => type.id),
+  );
+  if (!references.building) errors.buildingId = "Pilih bangunan aktif dari referensi properti.";
+  if (!references.kostType) errors.kostTypeId = "Pilih tipe kost aktif dari referensi properti.";
+  if (!draft.floorCode) errors.floorCode = "Lantai wajib dipilih.";
+  return errors;
+}
+
+function roomInputFromDraft(draft: RoomDraft, propertyId: string): RoomInventoryInput {
+  if (!draft.floorCode) throw new Error("ROOM_FLOOR_REQUIRED");
+  return {
+    propertyId,
+    kostTypeId: draft.kostTypeId,
+    number: draft.number.trim(),
+    roomCode: optionalRoomText(draft.roomCode),
+    buildingId: draft.buildingId,
+    floorCode: draft.floorCode,
+    unitCode: optionalRoomText(draft.unitCode),
+    sizeLabel: optionalRoomText(draft.sizeLabel),
+    primaryPhotoFileId: draft.primaryPhotoFileId,
+    publicVisible: draft.publicVisible,
+  };
+}
+
+function RoomFormField({
+  id,
+  label,
+  hint,
+  required = false,
+  error,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  required?: boolean;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-foreground">
+        {label}
+        {required ? <span className="ml-1 text-destructive">*</span> : null}
+      </Label>
+      {children}
+      {hint ? (
+        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RoomInventoryEditor({
   room,
+  propertyId,
+  category,
   types,
   buildings,
+  canPersist,
   open,
   onOpenChange,
 }: {
   room: RoomInventory | null;
+  propertyId: string | null | undefined;
+  category: KostTypeCategory;
   types: KostType[];
   buildings: BuildingOption[];
+  canPersist: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [draft, setDraft] = useState<RoomDraft>(() => draftForRoom(room));
-  const create = useM4Mutation<RoomInventory, RoomDraft>(
-    "room",
-    "Kamar berhasil disimpan",
-    (propertyId, input, key) => adminUxMasterApi.rooms.create({ ...input, propertyId }, key),
-  );
-  const update = useM4Mutation<RoomInventory, { id: string; input: RoomInventoryUpdateInput }>(
-    "room",
-    "Inventori kamar berhasil diperbarui",
-    (propertyId, variables, key) => {
-      void propertyId;
-      return adminUxMasterApi.rooms.update(variables.id, variables.input, key);
-    },
-  );
-  const pending = create.isPending || update.isPending;
+  const [errors, setErrors] = useState<RoomDraftErrors>({});
+  const {
+    discardIntent,
+    isPending,
+    submit: submitRoomMutation,
+  } = useRoomPersistenceMutation({ propertyId, category, enabled: canPersist });
+  const roomForDraft = useRef(room);
+  if (roomForDraft.current?.id !== room?.id) roomForDraft.current = room;
+  const editorGeneration = useRef(0);
+  const editorScope = useRef({
+    open,
+    propertyId,
+    category,
+    roomId: room?.id ?? null,
+    canPersist,
+  });
+  editorScope.current = { open, propertyId, category, roomId: room?.id ?? null, canPersist };
 
   useEffect(() => {
-    if (open) setDraft(draftForRoom(room));
-  }, [open, room]);
+    if (open) {
+      editorGeneration.current += 1;
+      setDraft(draftForRoom(roomForDraft.current));
+      setErrors({});
+    } else {
+      discardIntent();
+    }
+  }, [canPersist, category, discardIntent, open, propertyId, room?.id]);
 
-  const selectedBuilding = buildings.find((item) => item.id === draft.buildingId);
-  const availableTypes = types.filter(
-    (type) => !selectedBuilding || type.category === selectedBuilding.category,
-  );
-  const selectedType = types.find((item) => item.id === draft.kostTypeId) ?? null;
-  const valid = Boolean(draft.number.trim() && draft.buildingId && draft.kostTypeId);
+  const selectedBuilding = buildings.find((item) => item.id === draft.buildingId) ?? null;
+  const availableTypes = types.filter((type) => type.category === category);
+  const selectedType = availableTypes.find((item) => item.id === draft.kostTypeId) ?? null;
+  const structuralLocked = roomStructuralEditLocked(room);
+  const pending = isPending;
+
+  const clearError = (field: RoomDraftField) => {
+    setErrors((current) => ({ ...current, [field]: undefined }));
+  };
+  const describedBy = (field: RoomDraftField, hasHint = false) =>
+    [
+      hasHint ? `${ROOM_FIELD_ID[field]}-hint` : null,
+      errors[field] ? `${ROOM_FIELD_ID[field]}-error` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!valid) return;
+    const nextErrors = validateRoomDraft(draft, buildings, availableTypes);
+    const firstInvalid = (Object.keys(nextErrors) as RoomDraftField[])[0];
+    if (!propertyId || !canPersist || firstInvalid) {
+      const scopeError = !propertyId
+        ? "Pilih properti aktif terlebih dahulu."
+        : !canPersist
+          ? "Akses atau referensi kamar berubah. Buka kembali editor dari data terbaru."
+          : null;
+      setErrors(
+        scopeError ? { ...nextErrors, number: nextErrors.number ?? scopeError } : nextErrors,
+      );
+      const targetId = firstInvalid ? ROOM_FIELD_ID[firstInvalid] : ROOM_FIELD_ID.number;
+      requestAnimationFrame(() => document.getElementById(targetId)?.focus());
+      return;
+    }
+
+    const beforeRequest = editorScope.current;
+    if (
+      !beforeRequest.open ||
+      !beforeRequest.canPersist ||
+      beforeRequest.propertyId !== propertyId ||
+      beforeRequest.category !== category ||
+      beforeRequest.roomId !== (room?.id ?? null)
+    ) {
+      return;
+    }
+
+    const generation = editorGeneration.current;
+    const roomId = room?.id ?? null;
+    const input = roomInputFromDraft(draft, propertyId);
+    const updateInput: RoomInventoryUpdateInput = {
+      kostTypeId: input.kostTypeId,
+      number: input.number,
+      roomCode: input.roomCode,
+      buildingId: input.buildingId,
+      floorCode: input.floorCode,
+      unitCode: input.unitCode,
+      sizeLabel: input.sizeLabel,
+      primaryPhotoFileId: input.primaryPhotoFileId,
+      publicVisible: input.publicVisible,
+    };
     try {
-      if (room) {
-        await update.mutateAsync({ id: room.id, input: draft });
-      } else {
-        await create.mutateAsync(draft);
+      await submitRoomMutation(
+        roomId
+          ? { kind: "update", propertyId, category, roomId, input: updateInput }
+          : { kind: "create", propertyId, category, input },
+      );
+      const current = editorScope.current;
+      if (
+        editorGeneration.current === generation &&
+        current.open &&
+        current.propertyId === propertyId &&
+        current.category === category &&
+        current.roomId === roomId &&
+        current.canPersist
+      ) {
+        onOpenChange(false);
       }
-      onOpenChange(false);
     } catch {
-      // Safe toast is emitted by the mutation boundary.
+      // The room-specific mutation boundary emits only an allowlisted error.
     }
   };
 
@@ -1000,7 +1227,7 @@ function RoomInventoryEditor({
     <Sheet open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-slate-800 bg-slate-900 sm:max-w-xl"
+        className="w-full max-w-full overflow-x-hidden overflow-y-auto border-border bg-background text-foreground sm:max-w-2xl lg:max-w-3xl"
       >
         <SheetHeader>
           <SheetTitle>{room ? "Edit Inventori Kamar" : "Tambah Kamar"}</SheetTitle>
@@ -1009,59 +1236,88 @@ function RoomInventoryEditor({
             kost.
           </SheetDescription>
         </SheetHeader>
-        <form className="space-y-5 py-5" onSubmit={submit}>
+        <form className="space-y-5 py-5" onSubmit={submit} noValidate>
+          {Object.values(errors).some(Boolean) ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm"
+            >
+              Periksa kembali field yang ditandai sebelum menyimpan kamar.
+            </div>
+          ) : null}
+          {structuralLocked ? (
+            <div
+              role="note"
+              className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground"
+            >
+              Identitas dan lokasi kamar dikunci selama booking, hunian, atau penyewaan masih aktif.
+              Anda tetap dapat mengubah ukuran, foto utama, dan visibilitas katalog.
+            </div>
+          ) : null}
           <section className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-100">Identitas dan lokasi</h3>
+            <h3 className="text-sm font-semibold text-foreground">Identitas dan lokasi</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Nomor kamar" required>
+              <RoomFormField
+                id={ROOM_FIELD_ID.number}
+                label="Nomor kamar"
+                required
+                error={errors.number}
+              >
                 <Input
+                  id={ROOM_FIELD_ID.number}
+                  className="min-h-11"
                   value={draft.number}
                   maxLength={80}
-                  disabled={pending}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, number: event.target.value }))
-                  }
+                  required
+                  aria-invalid={Boolean(errors.number)}
+                  aria-describedby={describedBy("number")}
+                  disabled={pending || structuralLocked}
+                  onChange={(event) => {
+                    setDraft((current) => ({ ...current, number: event.target.value }));
+                    clearError("number");
+                  }}
                   placeholder="Mis. 101"
                 />
-              </Field>
-              <Field label="Kode kamar">
+              </RoomFormField>
+              <RoomFormField id="room-code" label="Kode kamar">
                 <Input
-                  value={draft.roomCode ?? ""}
+                  id="room-code"
+                  className="min-h-11"
+                  value={draft.roomCode}
                   maxLength={80}
-                  disabled={pending}
+                  disabled={pending || structuralLocked}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, roomCode: event.target.value }))
                   }
                   placeholder="Mis. RK-101"
                 />
-              </Field>
+              </RoomFormField>
             </div>
-            <Field
+            <RoomFormField
+              id={ROOM_FIELD_ID.buildingId}
               label="Bangunan"
               required
-              hint="Hanya bangunan property yang sesuai dengan kategori tipe kost."
+              error={errors.buildingId}
+              hint="Hanya bangunan properti aktif yang sesuai dengan kategori ini."
             >
               <Select
-                value={draft.buildingId || "none"}
-                disabled={pending || buildings.length === 0}
+                value={draft.buildingId || undefined}
+                disabled={pending || structuralLocked || buildings.length === 0}
                 onValueChange={(buildingId) => {
-                  const nextBuildingId = buildingId === "none" ? "" : buildingId;
-                  const nextBuilding = buildings.find((item) => item.id === nextBuildingId);
-                  setDraft((current) => ({
-                    ...current,
-                    buildingId: nextBuildingId,
-                    kostTypeId:
-                      nextBuilding && selectedType?.category !== nextBuilding.category
-                        ? ""
-                        : current.kostTypeId,
-                  }));
+                  setDraft((current) => ({ ...current, buildingId }));
+                  clearError("buildingId");
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger
+                  id={ROOM_FIELD_ID.buildingId}
+                  className="min-h-11"
+                  aria-required="true"
+                  aria-invalid={Boolean(errors.buildingId)}
+                  aria-describedby={describedBy("buildingId", true)}
+                >
                   <SelectValue placeholder="Pilih bangunan" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Pilih bangunan</SelectItem>
                   {buildings.map((building) => (
                     <SelectItem key={building.id} value={building.id}>
                       {building.label} · {KOST_TYPE_LABEL[building.category]}
@@ -1069,70 +1325,79 @@ function RoomInventoryEditor({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Lantai">
-                <Input
-                  value={draft.floor ?? ""}
-                  disabled={pending}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, floor: event.target.value }))
-                  }
-                  placeholder="1"
-                />
-              </Field>
-              <Field label="Kode lantai">
+            </RoomFormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <RoomFormField
+                id={ROOM_FIELD_ID.floorCode}
+                label="Lantai"
+                required
+                error={errors.floorCode}
+              >
                 <Select
-                  value={draft.floorCode ?? "none"}
-                  disabled={pending}
-                  onValueChange={(floorCode) =>
-                    setDraft((current) => ({
-                      ...current,
-                      floorCode: floorCode === "none" ? null : (floorCode as "A" | "B"),
-                    }))
-                  }
+                  value={draft.floorCode || undefined}
+                  disabled={pending || structuralLocked}
+                  onValueChange={(floorCode) => {
+                    setDraft((current) => ({ ...current, floorCode: floorCode as "A" | "B" }));
+                    clearError("floorCode");
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
+                  <SelectTrigger
+                    id={ROOM_FIELD_ID.floorCode}
+                    className="min-h-11"
+                    aria-required="true"
+                    aria-invalid={Boolean(errors.floorCode)}
+                    aria-describedby={describedBy("floorCode")}
+                  >
+                    <SelectValue placeholder="Pilih lantai" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Tidak ditetapkan</SelectItem>
-                    <SelectItem value="A">Atas</SelectItem>
-                    <SelectItem value="B">Bawah</SelectItem>
+                    <SelectItem value="B">Lantai Bawah / Lantai 1</SelectItem>
+                    <SelectItem value="A">Lantai Atas / Lantai 2</SelectItem>
                   </SelectContent>
                 </Select>
-              </Field>
-              <Field label="Unit / label lantai">
+              </RoomFormField>
+              <RoomFormField id="room-unit-code" label="Unit / label lokasi">
                 <Input
-                  value={draft.unitCode ?? ""}
-                  disabled={pending}
+                  id="room-unit-code"
+                  className="min-h-11"
+                  value={draft.unitCode}
+                  maxLength={80}
+                  disabled={pending || structuralLocked}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, unitCode: event.target.value }))
                   }
-                  placeholder="Unit A"
+                  placeholder="Mis. Unit A"
                 />
-              </Field>
+              </RoomFormField>
             </div>
           </section>
-          <section className="space-y-4 border-t border-slate-800 pt-5">
-            <h3 className="text-sm font-semibold text-slate-100">Atribut inventori</h3>
+          <section className="space-y-4 border-t border-border pt-5">
+            <h3 className="text-sm font-semibold text-foreground">Atribut inventori</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Tipe kost" required>
+              <RoomFormField
+                id={ROOM_FIELD_ID.kostTypeId}
+                label="Tipe kost"
+                required
+                error={errors.kostTypeId}
+              >
                 <Select
-                  value={draft.kostTypeId || "none"}
-                  disabled={pending || !draft.buildingId}
-                  onValueChange={(kostTypeId) =>
-                    setDraft((current) => ({
-                      ...current,
-                      kostTypeId: kostTypeId === "none" ? "" : kostTypeId,
-                    }))
-                  }
+                  value={draft.kostTypeId || undefined}
+                  disabled={pending || structuralLocked || !draft.buildingId}
+                  onValueChange={(kostTypeId) => {
+                    setDraft((current) => ({ ...current, kostTypeId }));
+                    clearError("kostTypeId");
+                  }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    id={ROOM_FIELD_ID.kostTypeId}
+                    className="min-h-11"
+                    aria-required="true"
+                    aria-invalid={Boolean(errors.kostTypeId)}
+                    aria-describedby={describedBy("kostTypeId")}
+                  >
                     <SelectValue placeholder="Pilih tipe kost" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Pilih tipe kost</SelectItem>
                     {availableTypes.map((type) => (
                       <SelectItem key={type.id} value={type.id}>
                         {type.name}
@@ -1140,32 +1405,29 @@ function RoomInventoryEditor({
                     ))}
                   </SelectContent>
                 </Select>
-              </Field>
-              <Field label="Kebijakan gender">
-                <Select
-                  value={draft.genderPolicy ?? "mixed"}
-                  disabled={pending}
-                  onValueChange={(genderPolicy) =>
-                    setDraft((current) => ({
-                      ...current,
-                      genderPolicy: genderPolicy as NonNullable<RoomInventory["genderPolicy"]>,
-                    }))
-                  }
+              </RoomFormField>
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium text-foreground">Kebijakan gender bangunan</p>
+                <div
+                  id="room-building-gender"
+                  className="rounded-md border border-border bg-muted/50 px-3 py-2 text-sm"
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Putra</SelectItem>
-                    <SelectItem value="female">Putri</SelectItem>
-                    <SelectItem value="mixed">Campur</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
+                  {selectedBuilding
+                    ? selectedBuilding.genderPolicy === "male"
+                      ? "Putra"
+                      : "Putri"
+                    : "Pilih bangunan terlebih dahulu"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Nilai ini berasal dari referensi bangunan dan tidak dikirim sebagai pilihan form.
+                </p>
+              </div>
             </div>
-            <Field label="Ukuran kamar">
+            <RoomFormField id="room-size-label" label="Ukuran kamar">
               <Input
-                value={draft.sizeLabel ?? ""}
+                id="room-size-label"
+                className="min-h-11"
+                value={draft.sizeLabel}
                 maxLength={80}
                 disabled={pending}
                 onChange={(event) =>
@@ -1173,45 +1435,49 @@ function RoomInventoryEditor({
                 }
                 placeholder="Mis. 3 × 4 m"
               />
-            </Field>
-            <label className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm text-slate-200">
+            </RoomFormField>
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 p-3">
               <Switch
-                checked={draft.publicVisible ?? true}
+                id="room-public-visible"
+                checked={draft.publicVisible}
                 disabled={pending}
                 onCheckedChange={(publicVisible) =>
                   setDraft((current) => ({ ...current, publicVisible }))
                 }
               />
-              Tampilkan kamar ini pada katalog publik
-            </label>
+              <Label htmlFor="room-public-visible" className="text-sm text-foreground">
+                Tampilkan kamar ini pada katalog publik
+              </Label>
+            </div>
           </section>
-          <section className="rounded-lg border border-blue-500/25 bg-blue-500/10 p-4 text-sm text-blue-100">
+          <section className="rounded-lg border border-primary/25 bg-primary-soft p-4 text-sm text-foreground">
             <p className="font-semibold">Komersial dari tipe kost</p>
             {selectedType ? (
-              <p className="mt-1">
-                {formatIDR(selectedType.monthlyPrice)}/bulan · deposit{" "}
-                {formatIDR(selectedType.depositAmount)} ·
+              <p className="mt-1 text-muted-foreground">
+                {formatIDR(selectedType.monthlyPrice)}/bulan · {formatIDR(selectedType.yearlyPrice)}
+                /tahun · deposit {formatIDR(selectedType.depositAmount)} ·
                 {` ${selectedType.facilityCount ?? selectedType.facilities?.length ?? 0} fasilitas`}
               </p>
             ) : (
-              <p className="mt-1 text-blue-200">
+              <p className="mt-1 text-muted-foreground">
                 Pilih bangunan dan tipe kost untuk melihat nilai yang diwariskan.
               </p>
             )}
-            <p className="mt-2 text-xs text-blue-200">
-              Harga, deposit, dan assignment fasilitas tidak dapat diedit di form kamar.
+            <p className="mt-2 text-xs text-muted-foreground">
+              Harga, deposit, dan assignment fasilitas tidak dikirim melalui mutation kamar.
             </p>
           </section>
-          <SheetFooter className="border-t border-slate-800 pt-4">
+          <SheetFooter className="border-t border-border pt-4">
             <Button
               type="button"
               variant="outline"
+              className="min-h-11"
               disabled={pending}
               onClick={() => onOpenChange(false)}
             >
               Batal
             </Button>
-            <Button type="submit" disabled={!valid || pending}>
+            <Button type="submit" className="min-h-11" disabled={pending || !canPersist}>
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {room ? "Simpan Inventori" : "Tambah Kamar"}
             </Button>

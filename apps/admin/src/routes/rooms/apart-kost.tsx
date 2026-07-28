@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { KostTypeInventoryPage } from "@/components/rooms/KostTypeInventoryPage";
-import { normalizeRoomSearch } from "@/lib/admin-ux-master-helpers";
+import { normalizeRoomCreateRequest, normalizeRoomSearch } from "@/lib/admin-ux-master-helpers";
 
 type RoomCategoryRouteSearch = {
   q: string;
@@ -11,6 +11,7 @@ type RoomCategoryRouteSearch = {
   offset: number;
   limit: number;
   room_id?: string;
+  create?: boolean;
 };
 
 function validateSearch(raw: Record<string, unknown>): RoomCategoryRouteSearch {
@@ -24,6 +25,7 @@ function validateSearch(raw: Record<string, unknown>): RoomCategoryRouteSearch {
     offset: search.offset,
     limit: search.limit,
     room_id: search.roomId,
+    create: normalizeRoomCreateRequest(raw.create) || undefined,
   };
 }
 
@@ -48,6 +50,13 @@ function ApartKostRoute() {
         limit: search.limit,
         roomId: search.room_id,
       }}
+      createRequested={search.create === true}
+      onCreateConsumed={() =>
+        navigate({
+          replace: true,
+          search: (current) => ({ ...current, create: undefined }),
+        })
+      }
       onSearchChange={(next) =>
         navigate({
           search: (current) => ({
@@ -69,6 +78,7 @@ function ApartKostRoute() {
             room_id: Object.prototype.hasOwnProperty.call(next, "roomId")
               ? next.roomId
               : current.room_id,
+            create: current.create,
           }),
         })
       }

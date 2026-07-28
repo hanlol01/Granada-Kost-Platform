@@ -2,6 +2,7 @@ import type {
   KostType,
   KostTypeCategory,
   RoomAvailabilityItem,
+  RoomInventory,
   RoomStatus,
 } from "@/lib/admin-ux-master-api";
 
@@ -16,6 +17,44 @@ export type RoomRouteSearch = {
   limit: number;
   roomId?: string;
 };
+
+const ROOM_WRITE_ROLES = new Set(["owner", "manager", "admin"]);
+
+export function normalizeRoomCreateRequest(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
+export function hasRoomWriteAuthority(
+  roles: readonly string[],
+  hasRoomManage: boolean,
+  propertyId: string | null | undefined,
+): boolean {
+  return Boolean(propertyId && hasRoomManage && roles.some((role) => ROOM_WRITE_ROLES.has(role)));
+}
+
+export function hasAuthoritativeRoomReferences(
+  buildingId: string,
+  kostTypeId: string,
+  buildingIds: readonly string[],
+  activeKostTypeIds: readonly string[],
+): { building: boolean; kostType: boolean } {
+  return {
+    building: Boolean(buildingId && buildingIds.includes(buildingId)),
+    kostType: Boolean(kostTypeId && activeKostTypeIds.includes(kostTypeId)),
+  };
+}
+
+export function roomStructuralEditLocked(
+  room: Pick<RoomInventory, "status" | "activeLease" | "activeOccupancy"> | null | undefined,
+): boolean {
+  return Boolean(
+    room &&
+    (room.status === "reserved" ||
+      room.status === "occupied" ||
+      room.activeLease ||
+      room.activeOccupancy),
+  );
+}
 
 export const ROOM_STATUS_LABEL: Record<RoomStatus, string> = {
   vacant: "Kosong",

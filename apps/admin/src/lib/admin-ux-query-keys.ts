@@ -72,6 +72,7 @@ export const adminUxQueryKeys = {
     list: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("rooms", propertyId, normalizePagination(filters)),
     detail: (propertyId: string, id: string) => scoped("room", propertyId, id),
+    availabilityAll: (propertyId: string) => scoped("roomAvailability", propertyId),
     availability: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("roomAvailability", propertyId, normalizePagination(filters)),
     buildings: (propertyId: string, category: "rukost" | "apartkost" | "") =>
@@ -141,6 +142,19 @@ export const adminUxQueryKeys = {
       scoped("notificationUnreadCount", propertyId, normalizeQueryFilters(filters)),
   },
 } as const;
+
+export function roomPersistenceInvalidationKeys(
+  propertyId: string,
+  roomId: string,
+): readonly QueryKey[] {
+  return [
+    adminUxQueryKeys.rooms.all(propertyId),
+    adminUxQueryKeys.rooms.detail(propertyId, roomId),
+    adminUxQueryKeys.rooms.availabilityAll(propertyId),
+    adminUxQueryKeys.kostTypes.all(propertyId),
+    adminUxQueryKeys.dashboard.summary(propertyId),
+  ];
+}
 
 export type AdminUxMutation =
   | "kost-type"

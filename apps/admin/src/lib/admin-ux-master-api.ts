@@ -216,14 +216,11 @@ export type RoomInventoryInput = {
   number: string;
   roomCode?: string | null;
   buildingId: string;
-  floor?: string | null;
-  floorCode?: "A" | "B" | null;
-  floorLabel?: string | null;
+  floorCode: "A" | "B";
   unitCode?: string | null;
-  genderPolicy?: RoomGenderPolicy | null;
   sizeLabel?: string | null;
   primaryPhotoFileId?: string | null;
-  publicVisible?: boolean;
+  publicVisible: boolean;
 };
 
 export type RoomInventoryUpdateInput = Partial<Omit<RoomInventoryInput, "propertyId">>;
@@ -298,6 +295,12 @@ function isRoomStatus(value: unknown): value is RoomStatus {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidV4(value: unknown): value is string {
+  return typeof value === "string" && UUID_V4.test(value);
 }
 
 function isKostTypeCategory(value: unknown): value is KostTypeCategory {
@@ -535,6 +538,48 @@ export function parseRoomInventoryDetailEnvelope(
   return parseRoomInventoryRecord(value.data, includeActiveLease);
 }
 
+export function parseRoomInventoryMutationEnvelope(value: unknown): RoomInventory {
+  const room = parseRoomInventoryDetailEnvelope(value);
+  const identifiers = [room.id, room.propertyId, room.buildingId, room.kostType.id];
+  if (room.primaryPhotoFileId !== null && room.primaryPhotoFileId !== undefined) {
+    identifiers.push(room.primaryPhotoFileId);
+  }
+  for (const facility of room.kostType.facilities ?? []) {
+    identifiers.push(facility.id);
+    if (facility.categoryId !== null && facility.categoryId !== undefined) {
+      identifiers.push(facility.categoryId);
+    }
+  }
+  if (!identifiers.every(isUuidV4)) {
+    throw new Error("Invalid room mutation identifiers.");
+  }
+  if (
+    ![room.kostType.monthlyPrice, room.kostType.yearlyPrice, room.kostType.depositAmount].every(
+      (amount) => Number.isInteger(amount) && amount >= 0,
+    )
+  ) {
+    throw new Error("Invalid room mutation commercial snapshot.");
+  }
+  const canonicalFloor =
+    room.floorCode === "A"
+      ? { floor: "2", label: "Lantai Atas / LT.2" }
+      : room.floorCode === "B"
+        ? { floor: "1", label: "Lantai Bawah / LT.1" }
+        : null;
+  if (
+    (room.genderPolicy !== "male" && room.genderPolicy !== "female") ||
+    !canonicalFloor ||
+    room.floor !== canonicalFloor.floor ||
+    room.floorLabel !== canonicalFloor.label ||
+    !isNonEmptyString(room.buildingCode) ||
+    !isNonEmptyString(room.buildingName) ||
+    room.activeLease !== null
+  ) {
+    throw new Error("Invalid room mutation authority snapshot.");
+  }
+  return room;
+}
+
 export function parseRoomAvailabilityEnvelope(value: unknown): RoomAvailabilityItem[] {
   if (!isPlainRecord(value) || !hasExactKeys(value, ["data"]) || !Array.isArray(value.data)) {
     throw new Error("Invalid room availability envelope.");
@@ -613,11 +658,26 @@ function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record<string
 }
 
 /** The only room serializer used by M4. It has no price, deposit, or facilities. */
-export function toRoomInventoryBody(
-  input: RoomInventoryInput | RoomInventoryUpdateInput,
-): Record<string, unknown> {
+export type LegacyRoomInventoryBodyInput = {
+  propertyId?: string;
+  kostTypeId?: string;
+  number?: string;
+  roomCode?: string | null;
+  buildingId?: string;
+  floor?: string | null;
+  floorCode?: "A" | "B" | null;
+  floorLabel?: string | null;
+  unitCode?: string | null;
+  genderPolicy?: RoomGenderPolicy | null;
+  sizeLabel?: string | null;
+  primaryPhotoFileId?: string | null;
+  publicVisible?: boolean;
+};
+
+/** Compatibility helper for existing non-persistence contract tests; M15 writes do not call it. */
+export function toRoomInventoryBody(input: LegacyRoomInventoryBodyInput): Record<string, unknown> {
   return {
-    property_id: "propertyId" in input ? input.propertyId : undefined,
+    property_id: input.propertyId,
     kost_type_id: input.kostTypeId,
     number: input.number,
     room_code: input.roomCode ?? undefined,
@@ -631,6 +691,26 @@ export function toRoomInventoryBody(
     primary_photo_file_id: input.primaryPhotoFileId ?? undefined,
     public_visible: input.publicVisible,
   };
+}
+
+export function toRoomPersistenceBody(
+  input: RoomInventoryInput | RoomInventoryUpdateInput,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  const assign = (key: string, value: unknown) => {
+    if (value !== undefined) body[key] = value;
+  };
+  if ("propertyId" in input) assign("property_id", input.propertyId);
+  assign("kost_type_id", input.kostTypeId);
+  assign("number", input.number);
+  assign("room_code", input.roomCode);
+  assign("building_id", input.buildingId);
+  assign("floor_code", input.floorCode);
+  assign("unit_code", input.unitCode);
+  assign("size_label", input.sizeLabel);
+  assign("primary_photo_file_id", input.primaryPhotoFileId);
+  assign("public_visible", input.publicVisible);
+  return body;
 }
 
 function reorderItems(items: ReorderItem[]) {
@@ -914,19 +994,15 @@ export const adminUxMasterApi = {
         })
         .then((value) => parseRoomInventoryDetailEnvelope(value, includeActiveLease)),
     create: (input: RoomInventoryInput, idempotencyKey?: string) =>
-      data<RoomInventory>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>("/rooms", toRoomInventoryBody(input), {
-          idempotencyKey,
-        }),
-      ),
+      adminUxV2Requester
+        .post<unknown>("/rooms", toRoomPersistenceBody(input), { idempotencyKey })
+        .then(parseRoomInventoryMutationEnvelope),
     update: (id: string, input: RoomInventoryUpdateInput, idempotencyKey?: string) =>
-      data<RoomInventory>(
-        adminUxV2Requester.patch<V2DataEnvelope<unknown>>(
-          "/rooms/" + encodeURIComponent(id),
-          toRoomInventoryBody(input),
-          { idempotencyKey },
-        ),
-      ),
+      adminUxV2Requester
+        .patch<unknown>("/rooms/" + encodeURIComponent(id), toRoomPersistenceBody(input), {
+          idempotencyKey,
+        })
+        .then(parseRoomInventoryMutationEnvelope),
     updateStatus: (
       id: string,
       input: {

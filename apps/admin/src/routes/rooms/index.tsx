@@ -7,6 +7,7 @@ import {
   RoomDetailSheet,
   RoomInventoryTable,
 } from "@/components/rooms/KostTypeInventoryPage";
+import { RoomCreateCategoryMenu } from "@/components/rooms/RoomCreateCategoryMenu";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -18,10 +19,12 @@ import {
   KOST_TYPE_LABEL,
   ROOM_STATUS_LABEL,
   type RoomRouteSearch,
+  hasRoomWriteAuthority,
   normalizeRoomSearch,
   summarizeRoomInventory,
 } from "@/lib/admin-ux-master-helpers";
 import type { KostTypeCategory, RoomStatus } from "@/lib/admin-ux-master-api";
+import { useAuth } from "@/lib/auth";
 import { useProperty } from "@/lib/property";
 
 export const Route = createFileRoute("/rooms/")({
@@ -33,6 +36,12 @@ function RoomsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const { currentPropertyId } = useProperty();
+  const { user, hasPermission } = useAuth();
+  const canCreateRoom = hasRoomWriteAuthority(
+    user?.roles ?? [],
+    hasPermission("room.manage"),
+    currentPropertyId,
+  );
   const previousPropertyId = useRef(currentPropertyId);
   const typesQuery = useM4KostTypes({ limit: 100 });
   const availabilityQuery = useM4RoomAvailability();
@@ -108,6 +117,7 @@ function RoomsPage() {
     <AppShell
       title="Ringkasan Kamar"
       subtitle="Master tipe kost mengendalikan harga, deposit, dan fasilitas; kamar adalah inventori fisik."
+      actions={canCreateRoom ? <RoomCreateCategoryMenu /> : null}
     >
       <div className="space-y-5 pb-24 lg:pb-8">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

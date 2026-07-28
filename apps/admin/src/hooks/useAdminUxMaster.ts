@@ -5,21 +5,26 @@ import {
   useQueryClient,
   type UseMutationResult,
 } from "@tanstack/react-query";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   adminUxMasterApi,
   type GalleryTarget,
   type KostTypeCategory,
   type MasterStatus,
+  type RoomInventory,
+  type RoomInventoryInput,
+  type RoomInventoryUpdateInput,
   type RoomStatus,
 } from "@/lib/admin-ux-master-api";
 import {
   adminUxQueryKeys,
   invalidateAdminUxMutation,
   normalizePagination,
+  roomPersistenceInvalidationKeys,
   type AdminUxMutation,
 } from "@/lib/admin-ux-query-keys";
-import { safeErrorMessage } from "@/lib/error-normalizer";
+import { normalizeAdminError, safeErrorMessage } from "@/lib/error-normalizer";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
 
@@ -160,6 +165,193 @@ export function useM4RoomBuildings(category: KostTypeCategory | null | undefined
     queryFn: () => adminUxMasterApi.rooms.buildings(currentPropertyId!, category!),
     enabled: Boolean(currentPropertyId && category),
   });
+}
+
+export type RoomPersistenceRequest =
+  | {
+      kind: "create";
+      propertyId: string;
+      category: KostTypeCategory;
+      input: RoomInventoryInput;
+    }
+  | {
+      kind: "update";
+      propertyId: string;
+      category: KostTypeCategory;
+      roomId: string;
+      input: RoomInventoryUpdateInput;
+    };
+
+export type RoomMutationIntentState = {
+  fingerprint: string;
+  idempotencyKey: string;
+};
+
+type RoomPersistenceResult = {
+  room: RoomInventory;
+  propertyId: string;
+  fingerprint: string;
+  idempotencyKey: string;
+};
+
+export type RoomPersistenceScope = {
+  propertyId: string | null | undefined;
+  category: KostTypeCategory;
+  enabled: boolean;
+};
+
+export type ActiveRoomSubmission<T> = {
+  fingerprint: string;
+  promise: Promise<T>;
+};
+
+export function roomPersistenceScopeMatches(
+  scope: RoomPersistenceScope,
+  request: RoomPersistenceRequest,
+): boolean {
+  return Boolean(
+    scope.enabled &&
+    scope.propertyId &&
+    scope.propertyId === request.propertyId &&
+    scope.category === request.category,
+  );
+}
+
+export function roomPersistenceErrorMessage(error: unknown): string {
+  const normalized = normalizeAdminError(error);
+  if (normalized.code === "ROOM_STRUCTURAL_EDIT_BLOCKED") {
+    return "Identitas dan lokasi kamar tidak dapat diubah selama booking, hunian, atau penyewaan masih aktif.";
+  }
+  if (normalized.code === "ROOM_CONFLICT") {
+    return "Nomor kamar sudah digunakan pada properti ini. Periksa nomor lalu coba kembali.";
+  }
+  if (normalized.code === "ROOM_BUILDING_COUNTER_INVALID") {
+    return "Inventori bangunan berubah saat diproses. Muat ulang data kamar lalu coba kembali.";
+  }
+  return normalized.message;
+}
+
+export function roomMutationFingerprint(request: RoomPersistenceRequest): string {
+  const payload = Object.fromEntries(
+    Object.entries(request.input).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return JSON.stringify({
+    kind: request.kind,
+    propertyId: request.propertyId,
+    category: request.category,
+    roomId: request.kind === "update" ? request.roomId : null,
+    payload,
+  });
+}
+
+export function resolveRoomMutationIntent(
+  current: RoomMutationIntentState | null,
+  fingerprint: string,
+  createKey: () => string = newIdempotencyKey,
+): RoomMutationIntentState {
+  if (current?.fingerprint === fingerprint) return current;
+  return { fingerprint, idempotencyKey: createKey() };
+}
+
+export function runRoomSubmissionOnce<T>(
+  active: { current: ActiveRoomSubmission<T> | null },
+  fingerprint: string,
+  request: () => Promise<T>,
+): Promise<T> {
+  if (active.current) {
+    if (active.current.fingerprint === fingerprint) return active.current.promise;
+    return Promise.reject(new Error("ROOM_SUBMISSION_IN_PROGRESS"));
+  }
+  const entry: ActiveRoomSubmission<T> = {
+    fingerprint,
+    promise: request().finally(() => {
+      if (active.current === entry) active.current = null;
+    }),
+  };
+  active.current = entry;
+  return entry.promise;
+}
+
+export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
+  const queryClient = useQueryClient();
+  const scopeRef = useRef(scope);
+  const intentRef = useRef<RoomMutationIntentState | null>(null);
+  const activeRef = useRef<ActiveRoomSubmission<RoomPersistenceResult> | null>(null);
+  scopeRef.current = scope;
+
+  const mutation = useMutation<RoomPersistenceResult, unknown, RoomPersistenceRequest>({
+    mutationFn: async (request) => {
+      if (!roomPersistenceScopeMatches(scopeRef.current, request)) {
+        throw new Error("PROPERTY_SCOPE_CHANGED");
+      }
+      if (request.kind === "create" && request.input.propertyId !== request.propertyId) {
+        throw new Error("PROPERTY_SCOPE_MISMATCH");
+      }
+
+      const fingerprint = roomMutationFingerprint(request);
+      const intent = resolveRoomMutationIntent(intentRef.current, fingerprint);
+      intentRef.current = intent;
+      const room =
+        request.kind === "create"
+          ? await adminUxMasterApi.rooms.create(request.input, intent.idempotencyKey)
+          : await adminUxMasterApi.rooms.update(
+              request.roomId,
+              request.input,
+              intent.idempotencyKey,
+            );
+
+      if (
+        room.propertyId !== request.propertyId ||
+        room.kostType.category !== request.category ||
+        (request.kind === "update" && room.id !== request.roomId)
+      ) {
+        throw new Error("ROOM_MUTATION_SCOPE_MISMATCH");
+      }
+      return {
+        room,
+        propertyId: request.propertyId,
+        fingerprint,
+        idempotencyKey: intent.idempotencyKey,
+      };
+    },
+    onSuccess: async (result, request) => {
+      await Promise.all(
+        roomPersistenceInvalidationKeys(result.propertyId, result.room.id).map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      );
+      if (
+        intentRef.current?.fingerprint === result.fingerprint &&
+        intentRef.current.idempotencyKey === result.idempotencyKey
+      ) {
+        intentRef.current = null;
+      }
+      if (roomPersistenceScopeMatches(scopeRef.current, request)) {
+        toast.success(
+          request.kind === "create" ? "Kamar berhasil disimpan" : "Inventori kamar diperbarui",
+        );
+      }
+    },
+    onError: (error, request) => {
+      if (roomPersistenceScopeMatches(scopeRef.current, request)) {
+        toast.error(roomPersistenceErrorMessage(error));
+      }
+    },
+  });
+
+  const submit = useCallback(
+    (request: RoomPersistenceRequest) => {
+      const fingerprint = roomMutationFingerprint(request);
+      return runRoomSubmissionOnce(activeRef, fingerprint, () => mutation.mutateAsync(request));
+    },
+    [mutation],
+  );
+  const discardIntent = useCallback(() => {
+    intentRef.current = null;
+    activeRef.current = null;
+  }, []);
+
+  return { submit, discardIntent, isPending: mutation.isPending };
 }
 
 export function useM4Gallery(target: GalleryTarget | null, options: PageOptions = {}) {

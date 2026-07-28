@@ -13,6 +13,9 @@ export type PropertyRollout = {
   adminUxRead: {
     enabled: boolean;
   };
+  bookingHoldWrite: {
+    enabled: boolean;
+  };
 };
 
 export type AuthMe = {

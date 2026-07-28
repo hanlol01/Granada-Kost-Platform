@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canReadDashboard,
+  isBookingHoldWriteEnabledForProperty,
   isDashboardEnabledForProperty,
   parseDashboardRollouts,
   parseDashboardSummary,
@@ -75,8 +76,15 @@ test("M7-D2B Dashboard access uses the existing three-permission capability", ()
 });
 
 test("M7-D2B rollout parser fails closed for missing, malformed, mismatched, and duplicate flags", () => {
-  const enabled = [{ propertyId: PROPERTY_ID, adminUxRead: { enabled: true } }];
+  const enabled = [
+    {
+      propertyId: PROPERTY_ID,
+      adminUxRead: { enabled: true },
+      bookingHoldWrite: { enabled: true },
+    },
+  ];
   assert.equal(isDashboardEnabledForProperty(enabled, PROPERTY_ID), true);
+  assert.equal(isBookingHoldWriteEnabledForProperty(enabled, PROPERTY_ID), true);
   assert.equal(isDashboardEnabledForProperty(undefined, PROPERTY_ID), false);
   assert.equal(isDashboardEnabledForProperty({}, PROPERTY_ID), false);
   assert.equal(
@@ -94,7 +102,21 @@ test("M7-D2B rollout parser fails closed for missing, malformed, mismatched, and
     false,
   );
   assert.equal(isDashboardEnabledForProperty([...enabled, ...enabled], PROPERTY_ID), false);
+  assert.equal(isBookingHoldWriteEnabledForProperty([...enabled, ...enabled], PROPERTY_ID), false);
   assert.deepEqual(parseDashboardRollouts([...enabled, ...enabled]), []);
+  for (const bookingHoldWrite of [undefined, null, {}, { enabled: "true" }, { enabled: 1 }]) {
+    const parsed = parseDashboardRollouts([
+      { propertyId: PROPERTY_ID, adminUxRead: { enabled: true }, bookingHoldWrite },
+    ]);
+    assert.deepEqual(parsed, [
+      {
+        propertyId: PROPERTY_ID,
+        adminUxRead: { enabled: true },
+        bookingHoldWrite: { enabled: false },
+      },
+    ]);
+    assert.equal(isBookingHoldWriteEnabledForProperty(parsed, PROPERTY_ID), false);
+  }
 });
 
 test("M7-D2B parser keeps the canonical whitelist and decimal money as strings", () => {

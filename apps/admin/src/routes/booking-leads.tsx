@@ -6,7 +6,7 @@
 // WhatsApp remains the primary follow-up/confirmation channel.
 
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import {
+  BookingLeadHoldDialog,
+  BookingLeadHoldStatus,
+} from "@/components/booking-leads/BookingLeadHoldDialog";
+import {
   allowedBookingLeadTransitions,
   BOOKING_LEAD_CATEGORY_LABEL,
   BOOKING_LEAD_GENDER_LABEL,
@@ -42,11 +46,20 @@ import {
   type BookingLeadStatus,
 } from "@/hooks/useBookingLeads";
 import { useUpdateBookingLeadStatus } from "@/hooks/useBookingLeadMutations";
+import { useBookingLeadHolds } from "@/hooks/useBookingLeadHolds";
+import {
+  activeBookingLeadHold,
+  canCreateBookingLeadHold,
+  canReleaseBookingLeadHold,
+  type BookingLeadHoldRecord,
+} from "@/lib/admin-booking-lead-hold";
+import { isBookingHoldWriteEnabledForProperty } from "@/lib/admin-ux-dashboard";
 import { buildLeadWhatsAppUrl } from "@/lib/whatsapp-lead";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { Inbox, MessageCircle, MoreHorizontal, Search, ShieldCheck } from "lucide-react";
+import { Inbox, Loader2, MessageCircle, MoreHorizontal, Search, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useProperty } from "@/lib/property";
 
 export const Route = createFileRoute("/booking-leads")({ component: BookingLeadsPage });
 
@@ -127,9 +140,17 @@ function BookingLeadsPage() {
     lead: BookingLeadRecord;
     next: BookingLeadStatus;
   } | null>(null);
+  const [holdIntent, setHoldIntent] = useState<{
+    mode: "create" | "release";
+    lead: BookingLeadRecord;
+    hold: BookingLeadHoldRecord | null;
+  } | null>(null);
 
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const { currentPropertyId } = useProperty();
   const canManage = hasPermission("room.manage");
+  const canManageHolds =
+    canManage && Boolean(user?.roles.some((role) => role === "manager" || role === "admin"));
 
   const { data, isLoading, error, refetch, isFetching } = useBookingLeads({
     status: status === "all" ? undefined : status,
@@ -139,6 +160,47 @@ function BookingLeadsPage() {
   });
 
   const statusMut = useUpdateBookingLeadStatus();
+  const holdsQuery = useBookingLeadHolds();
+  const holdCoverage = holdsQuery.data ?? null;
+  const [holdNow, setHoldNow] = useState(() => Date.now());
+  const bookingHoldWriteEnabled = isBookingHoldWriteEnabledForProperty(
+    user?.propertyRollouts,
+    currentPropertyId,
+  );
+
+  useEffect(() => {
+    setHoldIntent(null);
+  }, [currentPropertyId]);
+
+  useEffect(() => {
+    setHoldNow(Date.now());
+    const interval = setInterval(() => setHoldNow(Date.now()), 60_000);
+    return () => clearInterval(interval);
+  }, [currentPropertyId]);
+
+  const holdAccess = {
+    roles: user?.roles ?? [],
+    permissions: user?.permissions ?? [],
+    propertyId: currentPropertyId,
+  };
+
+  const openHoldDialog = (lead: BookingLeadRecord) => {
+    const hold = activeBookingLeadHold(holdCoverage, lead);
+    if (canReleaseBookingLeadHold({ ...holdAccess, lead, hold })) {
+      setHoldIntent({ mode: "release", lead, hold });
+      return;
+    }
+    if (
+      canCreateBookingLeadHold({
+        ...holdAccess,
+        propertyRollouts: user?.propertyRollouts,
+        lead,
+        coverage: holdCoverage,
+      })
+    ) {
+      setHoldIntent({ mode: "create", lead, hold: null });
+    }
+  };
 
   const filtered = useMemo(() => {
     const leads = data ?? [];
@@ -193,6 +255,34 @@ function BookingLeadsPage() {
           Status Dikonversi hanya penanda manual pada MVP ini.
         </span>
       </div>
+
+      {holdsQuery.accessEnabled && holdsQuery.isPending ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+        >
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          Memuat status tahanan kamar...
+        </div>
+      ) : null}
+
+      {canManageHolds && !bookingHoldWriteEnabled ? (
+        <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          Penahanan kamar belum diaktifkan untuk property ini. Tahanan aktif tetap dapat dilepaskan
+          dengan aman.
+        </div>
+      ) : null}
+
+      {holdsQuery.accessEnabled && holdsQuery.isError ? (
+        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+          <ErrorState
+            error={holdsQuery.error}
+            onRetry={() => void holdsQuery.refetch()}
+            title="Status tahanan kamar belum dapat dimuat."
+          />
+        </div>
+      ) : null}
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
@@ -299,6 +389,18 @@ function BookingLeadsPage() {
                   {filtered.map((l) => {
                     const transitions = allowedBookingLeadTransitions(l.status);
                     const waUrl = whatsAppUrlFor(l);
+                    const activeHold = activeBookingLeadHold(holdCoverage, l);
+                    const canCreateHold = canCreateBookingLeadHold({
+                      ...holdAccess,
+                      propertyRollouts: user?.propertyRollouts,
+                      lead: l,
+                      coverage: holdCoverage,
+                    });
+                    const canReleaseHold = canReleaseBookingLeadHold({
+                      ...holdAccess,
+                      lead: l,
+                      hold: activeHold,
+                    });
                     return (
                       <tr
                         key={l.id}
@@ -333,7 +435,12 @@ function BookingLeadsPage() {
                           {l.preferredMoveInDate ? formatDate(l.preferredMoveInDate) : "–"}
                         </td>
                         <td className="px-5 py-3">
-                          <LeadStatusBadge status={l.status} />
+                          <div className="flex min-w-0 flex-col items-start gap-1.5">
+                            <LeadStatusBadge status={l.status} />
+                            {activeHold ? (
+                              <BookingLeadHoldStatus hold={activeHold} now={holdNow} compact />
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-5 py-3">
                           <p>{formatDate(l.createdAt)}</p>
@@ -345,7 +452,18 @@ function BookingLeadsPage() {
                           </div>
                         </td>
                         <td className="px-5 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {!holdsQuery.isPending &&
+                            !holdsQuery.isError &&
+                            (canCreateHold || canReleaseHold) ? (
+                              <Button
+                                variant={canReleaseHold ? "outline" : "default"}
+                                size="sm"
+                                onClick={() => openHoldDialog(l)}
+                              >
+                                {canReleaseHold ? "Lepaskan" : "Tahan Kamar"}
+                              </Button>
+                            ) : null}
                             {waUrl ? (
                               <Button asChild variant="outline" size="sm">
                                 <a href={waUrl} target="_blank" rel="noopener noreferrer">
@@ -397,6 +515,18 @@ function BookingLeadsPage() {
               {filtered.map((l) => {
                 const transitions = allowedBookingLeadTransitions(l.status);
                 const waUrl = whatsAppUrlFor(l);
+                const activeHold = activeBookingLeadHold(holdCoverage, l);
+                const canCreateHold = canCreateBookingLeadHold({
+                  ...holdAccess,
+                  propertyRollouts: user?.propertyRollouts,
+                  lead: l,
+                  coverage: holdCoverage,
+                });
+                const canReleaseHold = canReleaseBookingLeadHold({
+                  ...holdAccess,
+                  lead: l,
+                  hold: activeHold,
+                });
                 return (
                   <div key={l.id} className="p-4 flex items-start gap-3">
                     <div className="h-10 w-10 rounded-xl bg-primary-soft text-primary flex items-center justify-center shrink-0">
@@ -415,8 +545,11 @@ function BookingLeadsPage() {
                       <div className="mt-1.5">
                         <LeadSourceBadge source={l.source} />
                       </div>
-                      <div className="mt-1.5 flex items-center gap-2">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <LeadStatusBadge status={l.status} />
+                        {activeHold ? (
+                          <BookingLeadHoldStatus hold={activeHold} now={holdNow} compact />
+                        ) : null}
                         {waUrl ? (
                           <Button asChild variant="outline" size="sm">
                             <a href={waUrl} target="_blank" rel="noopener noreferrer">
@@ -426,30 +559,44 @@ function BookingLeadsPage() {
                         ) : null}
                       </div>
                     </div>
-                    {canManage && transitions.length > 0 ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" aria-label="Ubah status lead">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {transitions.map((next) => (
-                            <DropdownMenuItem
-                              key={next}
-                              className={
-                                next === "rejected" || next === "expired"
-                                  ? "text-destructive"
-                                  : undefined
-                              }
-                              onClick={() => setPending({ lead: l, next })}
-                            >
-                              {BOOKING_LEAD_STATUS_LABEL[next]}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      {!holdsQuery.isPending &&
+                      !holdsQuery.isError &&
+                      (canCreateHold || canReleaseHold) ? (
+                        <Button
+                          className="max-w-28 whitespace-normal text-center"
+                          variant={canReleaseHold ? "outline" : "default"}
+                          size="sm"
+                          onClick={() => openHoldDialog(l)}
+                        >
+                          {canReleaseHold ? "Lepaskan" : "Tahan Kamar"}
+                        </Button>
+                      ) : null}
+                      {canManage && transitions.length > 0 ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" aria-label="Ubah status lead">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {transitions.map((next) => (
+                              <DropdownMenuItem
+                                key={next}
+                                className={
+                                  next === "rejected" || next === "expired"
+                                    ? "text-destructive"
+                                    : undefined
+                                }
+                                onClick={() => setPending({ lead: l, next })}
+                              >
+                                {BOOKING_LEAD_STATUS_LABEL[next]}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -457,6 +604,15 @@ function BookingLeadsPage() {
           </CardContent>
         </Card>
       )}
+
+      <BookingLeadHoldDialog
+        open={holdIntent !== null}
+        mode={holdIntent?.mode ?? "create"}
+        lead={holdIntent?.lead ?? null}
+        hold={holdIntent?.hold ?? null}
+        coverage={holdCoverage}
+        onOpenChange={(next) => !next && setHoldIntent(null)}
+      />
 
       <ConfirmDialog
         open={pending !== null}

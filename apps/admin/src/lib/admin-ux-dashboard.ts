@@ -3,6 +3,9 @@ export type DashboardRollout = {
   adminUxRead: {
     enabled: boolean;
   };
+  bookingHoldWrite: {
+    enabled: boolean;
+  };
 };
 
 export type DashboardRecentLease = {
@@ -119,6 +122,7 @@ export function parseDashboardRollouts(value: unknown): DashboardRollout[] {
   for (const item of value) {
     const source = record(item);
     const adminUxRead = source ? record(source.adminUxRead) : null;
+    const bookingHoldWrite = source ? record(source.bookingHoldWrite) : null;
     const propertyId = source?.propertyId;
     const enabled = adminUxRead?.enabled;
     if (typeof propertyId !== "string" || !UUID_PATTERN.test(propertyId)) continue;
@@ -130,10 +134,25 @@ export function parseDashboardRollouts(value: unknown): DashboardRollout[] {
       parsed.set(propertyId, null);
       continue;
     }
-    parsed.set(propertyId, { propertyId, adminUxRead: { enabled } });
+    parsed.set(propertyId, {
+      propertyId,
+      adminUxRead: { enabled },
+      bookingHoldWrite: { enabled: bookingHoldWrite?.enabled === true },
+    });
   }
 
   return [...parsed.values()].filter((item): item is DashboardRollout => item !== null);
+}
+
+export function isBookingHoldWriteEnabledForProperty(
+  propertyRollouts: unknown,
+  propertyId: string | null,
+): boolean {
+  if (!propertyId) return false;
+  const matches = parseDashboardRollouts(propertyRollouts).filter(
+    (rollout) => rollout.propertyId === propertyId,
+  );
+  return matches.length === 1 && matches[0]!.bookingHoldWrite.enabled;
 }
 
 export function isDashboardEnabledForProperty(

@@ -20,7 +20,6 @@ export const apiClient = new ApiClient({
   tokenProvider: proxyTokenProvider,
   onError: (err) => {
     if (typeof window !== "undefined") {
-      // eslint-disable-next-line no-console
       console.error(
         `[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`,
       );
@@ -32,4 +31,12 @@ export const apiClient = new ApiClient({
 // Uses the same proxyTokenProvider — no second auth source (ADR-FE-003).
 export function getAccessToken(): string | null {
   return proxyTokenProvider.getAccessToken();
+}
+
+export function refreshAccessToken(): Promise<boolean> {
+  return proxyTokenProvider.refresh();
+}
+
+export function notifyAuthFailure(): void {
+  proxyTokenProvider.onAuthFailure?.();
 }

@@ -31,6 +31,8 @@ export const qk = {
     sessions: () => ["auth", "sessions"] as const,
   },
   penghuni: {
+    residentContext: (accountId: string) =>
+      ["penghuni", "resident-context", "account", accountId] as const,
     me: () => ["penghuni", "me"] as const,
     room: () => ["penghuni", "room"] as const,
     billingCurrent: () => ["penghuni", "billing", "current"] as const,

@@ -2,13 +2,13 @@
 //
 // Composes existing domain hooks instead of calling a dedicated /home endpoint
 // (one does not exist in Phase 1). The home page is a read-only roll-up of:
-//   - auth/me            via usePenghuniProfile()
+//   - /my/resident-context + auth/me via usePenghuniProfile()
 //   - /my/invoices       via useMyInvoices() -> first relevant invoice
 //   - /my/payments       via useMyPayments() -> most recent few
 //   - /my/notifications/unread-count for the bell badge
 //
-// Field nullability is preserved end-to-end: missing data is never replaced
-// with dummy values; the route renders explicit empty/placeholder states.
+// Resident-context state remains independent from billing state so a missing
+// or invalid context never fabricates or suppresses authoritative billing.
 
 import {
   selectCurrentInvoice,

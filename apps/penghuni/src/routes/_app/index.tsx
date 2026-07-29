@@ -9,19 +9,21 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Home,
+  RefreshCw,
 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState } from "@/components/state";
-import { usePenghuniHome } from "@/hooks/usePenghuniHome";
+import { usePenghuniHome, type PenghuniHomeView } from "@/hooks/usePenghuniHome";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
+import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
 
 export const Route = createFileRoute("/_app/")({
   component: HomePage,
 });
 
 function HomePage() {
-  // M11F: home is composed from /auth/me + /my/invoices + /my/payments +
-  // /my/notifications/unread-count. Announcements remain a placeholder until
-  // a resident-scoped endpoint ships.
+  // Resident identity/hunian comes only from /my/resident-context. Billing and
+  // notification summaries keep their existing independent authorities.
   const home = usePenghuniHome();
 
   if (home.isLoading) {
@@ -42,32 +44,7 @@ function HomePage() {
     <div className="flex flex-col gap-5 animate-[fade-in_0.4s_ease-out]">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-b-3xl bg-[image:var(--gradient-primary)] px-5 pt-6 pb-10 text-primary-foreground">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs opacity-80">Selamat datang,</p>
-            <h1 className="text-xl font-semibold">{profile.displayName} 👋</h1>
-            <p className="mt-1 text-xs opacity-80">
-              {currentInvoice ? (
-                <>
-                  Kamar{" "}
-                  <span className="font-medium opacity-100">
-                    {currentInvoice.snapshotRoomNumber}
-                  </span>{" "}
-                  · Aktif
-                </>
-              ) : profile.roomLabel ? (
-                <>
-                  Properti <span className="font-medium opacity-100">{profile.roomLabel}</span>
-                </>
-              ) : (
-                <>Status hunian akan tampil di sini</>
-              )}
-            </p>
-          </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur">
-            {profile.initials}
-          </div>
-        </div>
+        <ResidentContextHero profile={profile} />
 
         {/* Bill card overlay */}
         {currentInvoice ? (
@@ -208,6 +185,66 @@ function HomePage() {
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ResidentContextHero({ profile }: { profile: PenghuniHomeView["profile"] }) {
+  if (profile.contextState === "loading") {
+    return (
+      <div role="status" aria-live="polite" className="flex min-h-16 items-center gap-3">
+        <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-white/20" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-4 w-32 max-w-full animate-pulse rounded bg-white/20" />
+          <div className="h-3 w-48 max-w-full animate-pulse rounded bg-white/15" />
+        </div>
+        <span className="sr-only">Memuat data hunian</span>
+      </div>
+    );
+  }
+
+  if (profile.contextState === "ready" && profile.displayName) {
+    return (
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs opacity-80">Selamat datang,</p>
+          <h1 className="break-words text-xl font-semibold">{profile.displayName} 👋</h1>
+          <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 text-xs opacity-90">
+            <Home className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="break-words font-medium">{profile.propertyName}</span>
+            <span aria-hidden="true">·</span>
+            <span className="break-words">Kamar {profile.roomNumber}</span>
+          </p>
+        </div>
+        <div
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur"
+          aria-hidden="true"
+        >
+          {profile.initials}
+        </div>
+      </div>
+    );
+  }
+
+  const copy = residentContextStateCopy(profile.contextState);
+  return (
+    <div
+      role={residentContextAnnouncementRole(profile.contextState)}
+      className="rounded-2xl bg-white/15 p-4 ring-1 ring-white/20 backdrop-blur"
+    >
+      <p className="text-sm font-semibold">{copy.title}</p>
+      <p className="mt-1 text-xs leading-relaxed opacity-90">{copy.description}</p>
+      {copy.canRetry ? (
+        <button
+          type="button"
+          onClick={() => void profile.refetchContext()}
+          className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white/20 px-4 text-xs font-semibold transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+          aria-label="Coba lagi memuat data hunian"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          Coba lagi
+        </button>
+      ) : null}
     </div>
   );
 }

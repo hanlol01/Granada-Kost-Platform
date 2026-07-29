@@ -1,9 +1,8 @@
 // Penghuni profile domain hook.
 //
-// Source of truth: GET /auth/me (already fetched by AuthProvider). For active
+// Source of truth: GET /my/resident-context for resident/hunian facts and
+// GET /auth/me (already fetched by AuthProvider) for account email. For active
 // session list + revoke we go to /auth/sessions and DELETE /auth/sessions/:id.
-// Change password uses PATCH /auth/password. Backend remains final authority
-// for every write; this hook only orchestrates queries/mutations.
 //
 // Note: there is no PATCH /penghuni/me or PATCH /residents/me endpoint in
 // Phase 1. Edit profile is therefore intentionally NOT exposed here.
@@ -15,17 +14,23 @@ import { useAuth } from "@/lib/auth";
 import { qk } from "@/lib/query-client";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
+import {
+  residentContextState,
+  useResidentContext,
+  type ResidentContextState,
+} from "@/lib/resident-context";
 
 export type PenghuniProfileView = {
-  id: string | null;
-  displayName: string;
+  displayName: string | null;
   email: string | null;
   initials: string;
-  // Fields below are not provided by /auth/me in Phase 1; UI must show
-  // "Belum tersedia" instead of guessing.
-  phone: null;
-  joinDate: null;
-  roomLabel: string | null;
+  phone: string | null;
+  propertyName: string | null;
+  roomNumber: string | null;
+  occupancyStart: string | null;
+  contextState: ResidentContextState;
+  contextError: unknown;
+  refetchContext: () => Promise<void>;
 };
 
 function deriveInitials(name: string | null | undefined): string {
@@ -38,25 +43,24 @@ function deriveInitials(name: string | null | undefined): string {
 
 export function usePenghuniProfile(): PenghuniProfileView {
   const { user } = useAuth();
-  // /auth/me returns { id, email, displayName, roles, permissions, propertyIds, ... }.
-  // The shared AuthMe type declares optional `name` and `properties` for
-  // backwards compatibility, so we read both keys without inventing data.
-  const u = (user ?? null) as
-    | (typeof user & {
-        displayName?: string;
-        propertyIds?: string[];
-      })
-    | null;
-  const displayName = u?.displayName ?? u?.name ?? "Penghuni";
-  const propertyName = u?.properties?.[0]?.name ?? null;
+  const context = useResidentContext();
+  const state = residentContextState(context);
+  const resident = state === "ready" ? (context.data ?? null) : null;
+  const displayName = resident?.displayName ?? null;
+
   return {
-    id: u?.id ?? null,
     displayName,
-    email: u?.email ?? null,
+    email: user?.email ?? null,
     initials: deriveInitials(displayName),
-    phone: null,
-    joinDate: null,
-    roomLabel: propertyName,
+    phone: resident?.phone ?? null,
+    propertyName: resident?.propertyName ?? null,
+    roomNumber: resident?.roomNumber ?? null,
+    occupancyStart: resident?.occupancyStart ?? null,
+    contextState: state,
+    contextError: context.error,
+    refetchContext: async () => {
+      await context.refetch();
+    },
   };
 }
 

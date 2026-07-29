@@ -148,7 +148,7 @@ function GuardedOutlet() {
     return <Outlet />;
   }
   return (
-    <AuthGuard>
+    <AuthGuard roles={["resident"]}>
       <Outlet />
     </AuthGuard>
   );

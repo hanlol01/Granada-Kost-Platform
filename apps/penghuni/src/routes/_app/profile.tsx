@@ -6,7 +6,9 @@ import {
   Bell,
   CalendarDays,
   ChevronRight,
+  DoorOpen,
   HelpCircle,
+  Home,
   KeyRound,
   LogOut,
   Mail,
@@ -15,6 +17,7 @@ import {
   Moon,
   Pencil,
   Phone,
+  RefreshCw,
   ShieldCheck,
   Sun,
   Trash2,
@@ -28,17 +31,18 @@ import {
   useLogoutAll,
   usePenghuniProfile,
   useRevokeSession,
+  type PenghuniProfileView,
 } from "@/hooks/usePenghuniProfile";
-import { formatRelative } from "@/lib/format";
+import { formatDate, formatRelative } from "@/lib/format";
+import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
 
 export const Route = createFileRoute("/_app/profile")({
   component: ProfilePage,
 });
 
 function ProfilePage() {
-  // M11F: profile data from /auth/me; sessions from /auth/sessions; logout +
-  // logout-all + change password supported via /auth/* endpoints. Edit
-  // profile is intentionally disabled because no PATCH /penghuni/me exists.
+  // Resident/hunian facts come only from /my/resident-context; account email
+  // and session management retain their existing auth authority.
   const { logout } = useAuth();
   const profile = usePenghuniProfile();
   const sessions = useActiveSessions();
@@ -77,41 +81,36 @@ function ProfilePage() {
     <>
       <AppHeader title="Profil Saya" />
       <div className="flex flex-col gap-5 px-5 py-5 animate-[fade-in_0.4s_ease-out]">
-        {/* Profile card */}
-        <div className="overflow-hidden rounded-3xl bg-[image:var(--gradient-primary)] p-5 text-primary-foreground shadow-[var(--shadow-glow)]">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-xl font-semibold backdrop-blur">
-              {profile.initials}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-lg font-semibold">{profile.displayName}</p>
-              <p className="truncate text-xs opacity-90">{profile.email ?? "-"}</p>
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold backdrop-blur">
-                <BadgeCheck className="h-3 w-3" /> Aktif
-              </span>
-            </div>
-            <button
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 backdrop-blur disabled:opacity-60"
-              aria-label="Edit profil belum tersedia"
-              disabled
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
-          </div>
-          <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[11px] opacity-90">
-            Edit profil belum tersedia sampai endpoint update profil Penghuni dirilis.
-          </p>
-        </div>
+        <ResidentProfileCard profile={profile} />
 
         {/* Info */}
         <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
-          <InfoRow icon={BadgeCheck} label="Properti" value={profile.roomLabel ?? "-"} />
-          <Divider />
+          {profile.contextState === "ready" ? (
+            <>
+              <InfoRow icon={Home} label="Properti" value={profile.propertyName ?? "-"} />
+              <Divider />
+              <InfoRow icon={DoorOpen} label="Kamar" value={profile.roomNumber ?? "-"} />
+              <Divider />
+            </>
+          ) : null}
           <InfoRow icon={Mail} label="Email" value={profile.email ?? "-"} />
-          <Divider />
-          <InfoRow icon={Phone} label="Nomor HP" value="Belum tersedia" muted />
-          <Divider />
-          <InfoRow icon={CalendarDays} label="Tanggal Masuk" value="Belum tersedia" muted />
+          {profile.contextState === "ready" ? (
+            <>
+              <Divider />
+              <InfoRow
+                icon={Phone}
+                label="Nomor HP"
+                value={profile.phone ?? "Belum tersedia"}
+                muted={profile.phone === null}
+              />
+              <Divider />
+              <InfoRow
+                icon={CalendarDays}
+                label="Tanggal Masuk"
+                value={formatDate(profile.occupancyStart)}
+              />
+            </>
+          ) : null}
         </div>
 
         {/* Active sessions */}
@@ -241,6 +240,79 @@ function ProfilePage() {
   );
 }
 
+function ResidentProfileCard({ profile }: { profile: PenghuniProfileView }) {
+  if (profile.contextState === "loading") {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-36 items-center gap-4 overflow-hidden rounded-3xl bg-[image:var(--gradient-primary)] p-5 text-primary-foreground shadow-[var(--shadow-glow)]"
+      >
+        <div className="h-16 w-16 shrink-0 animate-pulse rounded-2xl bg-white/20" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-5 w-36 max-w-full animate-pulse rounded bg-white/20" />
+          <div className="h-3 w-52 max-w-full animate-pulse rounded bg-white/15" />
+        </div>
+        <span className="sr-only">Memuat profil hunian</span>
+      </div>
+    );
+  }
+
+  if (profile.contextState === "ready" && profile.displayName) {
+    return (
+      <div className="overflow-hidden rounded-3xl bg-[image:var(--gradient-primary)] p-5 text-primary-foreground shadow-[var(--shadow-glow)]">
+        <div className="flex min-w-0 items-start gap-4">
+          <div
+            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-xl font-semibold backdrop-blur"
+            aria-hidden="true"
+          >
+            {profile.initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-lg font-semibold">{profile.displayName}</p>
+            <p className="break-all text-xs opacity-90">{profile.email ?? "-"}</p>
+            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold backdrop-blur">
+              <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Hunian aktif
+            </span>
+          </div>
+          <button
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur disabled:opacity-60"
+            aria-label="Edit profil belum tersedia"
+            disabled
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[11px] opacity-90">
+          Edit profil belum tersedia sampai endpoint update profil Penghuni dirilis.
+        </p>
+      </div>
+    );
+  }
+
+  const copy = residentContextStateCopy(profile.contextState);
+  return (
+    <section
+      role={residentContextAnnouncementRole(profile.contextState)}
+      className="rounded-3xl bg-card p-5 shadow-[var(--shadow-soft)]"
+    >
+      <p className="text-sm font-semibold">{copy.title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{copy.description}</p>
+      {copy.canRetry ? (
+        <button
+          type="button"
+          onClick={() => void profile.refetchContext()}
+          className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label="Coba lagi memuat profil hunian"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          Coba lagi
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 function InfoRow({
   icon: Icon,
   label,
@@ -257,9 +329,11 @@ function InfoRow({
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-primary">
         <Icon className="h-4 w-4" />
       </div>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className={"text-sm font-medium " + (muted ? "text-muted-foreground" : "")}>{value}</p>
+        <p className={"break-words text-sm font-medium " + (muted ? "text-muted-foreground" : "")}>
+          {value}
+        </p>
       </div>
     </div>
   );

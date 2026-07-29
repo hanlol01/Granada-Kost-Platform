@@ -360,7 +360,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "lainnya",
     order: 150,
     icon: Settings,
-    access: { roles: ["owner", "manager"] },
+    access: { roles: ["owner", "manager"], readCapabilities: ["property.manage"] },
     navigation: { sidebar: true, mobilePriority: 110 },
   },
   {

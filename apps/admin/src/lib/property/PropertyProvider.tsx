@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -9,6 +10,10 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { PropertyScopeRef } from "@granada-kost/domain";
+import {
+  queryKeyContainsPropertyScope,
+  shouldDiscardAccountCache,
+} from "@/lib/admin-ux-query-keys";
 import { useAuth } from "@/lib/auth/useAuth";
 
 const STORAGE_KEY = "granada.currentPropertyId";
@@ -52,8 +57,20 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
     return (user?.property_ids ?? user?.propertyIds ?? []).map((id) => ({ id }));
   }, [user]);
 
-  const discardScopedCache = useCallback(() => {
-    // Cancel first so an in-flight request cannot repopulate the old scope.
+  const discardPropertyScopedCache = useCallback(
+    (propertyId: string) => {
+      // Cancel first so an in-flight request cannot repopulate the old scope.
+      const filters = {
+        predicate: (query: { queryKey: readonly unknown[] }) =>
+          queryKeyContainsPropertyScope(query.queryKey, propertyId),
+      };
+      void queryClient.cancelQueries(filters);
+      queryClient.removeQueries(filters);
+    },
+    [queryClient],
+  );
+
+  const discardAllCache = useCallback(() => {
     void queryClient.cancelQueries();
     queryClient.removeQueries();
   }, [queryClient]);
@@ -63,21 +80,21 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
       const previousPropertyId = currentPropertyRef.current;
       if (previousPropertyId === nextPropertyId) return;
 
-      if (previousPropertyId !== null) discardScopedCache();
+      if (previousPropertyId !== null) discardPropertyScopedCache(previousPropertyId);
       currentPropertyRef.current = nextPropertyId;
       setCurrentPropertyIdState(nextPropertyId);
       writeStored(nextPropertyId);
     },
-    [discardScopedCache],
+    [discardPropertyScopedCache],
   );
 
   // An authenticated account transition must never reuse another account's cache,
   // even if both accounts happen to share a property id.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const nextAccountId = user?.id ?? null;
-    if (accountRef.current && accountRef.current !== nextAccountId) discardScopedCache();
+    if (shouldDiscardAccountCache(accountRef.current, nextAccountId)) discardAllCache();
     accountRef.current = nextAccountId;
-  }, [discardScopedCache, user?.id]);
+  }, [discardAllCache, user?.id]);
 
   // Resolve initial selection whenever auth scope changes.
   useEffect(() => {

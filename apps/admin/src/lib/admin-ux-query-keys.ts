@@ -57,6 +57,29 @@ export function normalizePagination(filters: QueryFilters = {}): Readonly<Record
 const scoped = (domain: string, propertyId: string, ...rest: readonly unknown[]) =>
   [domain, propertyId, ...rest] as const;
 
+function containsPropertyScope(value: unknown, propertyId: string): boolean {
+  if (value === propertyId) return true;
+  if (Array.isArray(value)) return value.some((item) => containsPropertyScope(item, propertyId));
+  if (value && typeof value === "object") {
+    return Object.values(value).some((item) => containsPropertyScope(item, propertyId));
+  }
+  return false;
+}
+
+export function queryKeyContainsPropertyScope(
+  queryKey: readonly unknown[],
+  propertyId: string,
+): boolean {
+  return containsPropertyScope(queryKey, propertyId);
+}
+
+export function shouldDiscardAccountCache(
+  previousAccountId: string | null,
+  nextAccountId: string | null,
+): boolean {
+  return previousAccountId !== null && previousAccountId !== nextAccountId;
+}
+
 export const adminUxQueryKeys = {
   dashboard: {
     summary: (propertyId: string) => ["dashboard", "summary", propertyId] as const,
@@ -140,6 +163,10 @@ export const adminUxQueryKeys = {
       scoped("notifications", propertyId, normalizePagination(filters)),
     unreadCount: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("notificationUnreadCount", propertyId, normalizeQueryFilters(filters)),
+  },
+  settings: {
+    profile: (propertyId: string) => ["settings", "property", propertyId] as const,
+    preference: (userId: string) => ["settings", "preference", userId] as const,
   },
 } as const;
 

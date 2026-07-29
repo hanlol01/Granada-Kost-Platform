@@ -21,7 +21,37 @@ Granada Kost Platform adalah monorepo untuk operasional kost dengan dua aplikasi
 - Payment gateway provider-agnostic (`PaymentGatewayProvider` interface + adapter); **Midtrans Sandbox adalah adapter pertama** (M15C). **Webhook is the source of truth** untuk status lunas otomatis; **redirect is UX only**; **manual payment proof remains fallback**. Status: **Payment Gateway sandbox/staging ready** - **production payment activation pending**; **Payment Gateway is not production-ready**.
 - Istilah UI resmi untuk resident adalah "Penghuni". Jangan gunakan istilah "tenant" pada UI.
 
-## Status Proyek (per 2026-07-08)
+## Status Recovery / Revision (per 2026-07-29)
+
+**recovery/revision milestone M9–M19 selesai** pada recovery implementation
+HEAD `5e1a96a` sebelum checkpoint dokumentasi final. Closure ini tidak
+menyatakan seluruh produk selesai, semua fitur lengkap, atau production ready.
+Detail evidence berada di `.claude/LOCAL_CHECKPOINT.md`.
+
+| Milestone | Repository status                                  | Runtime boundary                                    |
+| --------- | -------------------------------------------------- | --------------------------------------------------- |
+| M9        | Shipped; automated verified                        | Runtime verified                                    |
+| M10       | Shipped; automated verified                        | Operator-reported runtime evidence                  |
+| M11       | Shipped; automated verified                        | Operator-reported runtime evidence                  |
+| M12       | Aggregate read-only gate shipped                   | Stable browser automation deferred; rollback bersih |
+| M13       | Shipped; automated verified                        | Lifecycle mutation runtime deferred                 |
+| M14       | Shipped; automated verified                        | Operator-reported runtime evidence                  |
+| M15       | Shipped; automated verified                        | Room create/edit mutation runtime deferred          |
+| M16       | Shipped; automated verified                        | Authenticated runtime deferred - credential         |
+| M17       | Shipped; automated verified                        | Authenticated runtime deferred - credential         |
+| M18       | Shipped; automated verified                        | Authenticated runtime deferred - credential         |
+| M19       | Aggregate 12/12 PASS; public/negative runtime PASS | Authenticated evidence mengikuti M16–M18            |
+
+Current verified capability additions dari recovery meliputi authoritative room
+inventory/building references, Admin quick Booking Lead, canonical move-in/out,
+room hold, persistent room editor, atomic maintenance dispatch, persistent
+property Settings, dan canonical resident self-context. Backend tetap authority
+untuk lifecycle, RBAC, property scope, dan resident identity.
+
+## Riwayat Status Produk (per 2026-07-08)
+
+Bagian ini mempertahankan evidence delivery historis. Label milestone lama tidak
+boleh dipakai sendiri untuk menyimpulkan status recovery/revision terbaru.
 
 Ringkasan readiness:
 
@@ -72,7 +102,22 @@ Deferred (jangan dianggap selesai):
 
 Catatan: upload bukti pembayaran manual adalah jalur fallback/manual dan tetap tersedia berdampingan dengan pembayaran online gateway (sandbox); verifikasi admin tetap otoritas settlement manual; invoice gateway-paid terkonfirmasi otomatis via webhook tanpa verifikasi manual.
 
-## Next Milestone
+## Next Work
+
+1. Tutup evidence deferred: credential-backed authenticated smoke M16–M18,
+   mutation runtime M13/M15, dan stable browser automation setelah rollback M12.
+2. Tutup resident lifecycle debt: invitation/provisioning, lifecycle-safe
+   deactivation, transactional/idempotent writes dengan clear-to-null, serta
+   server pagination/detail/lease history.
+3. Lanjutkan Penghuni profile/password/preferences/property info; external
+   provider, Smart Lock, CCTV, dan payment readiness tetap conditional.
+4. Jalankan full post-recovery product audit sebelum redesign atau feature
+   expansion.
+
+### Historical Pointers (2026-07-08)
+
+Butir berikut dipertahankan sebagai pointer ke track delivery lama, bukan
+pekerjaan berikutnya setelah recovery closure.
 
 - **M17 selesai sampai M17E (2026-07-08): Booking Lead MVP** (`docs/17-booking-leads/`; penutup `M17_BOOKING_LEAD_FINAL_RELEASE_HANDOFF.md`) - freeze (M17A), backend API tervalidasi **PASS** (M17B), Admin UI "Minat Booking" (M17C; QA PASS dengan limitasi browser), form publik "Ajukan Minat Booking" di `/kamar` (M17D; QA PASS dengan limitasi browser), final handoff (M17E). Booking lead BUKAN booking terkonfirmasi; konfirmasi admin via WhatsApp tetap source of truth; **public booking tetap NOT production-ready**; Payment Gateway dan Smart Lock tidak disentuh.
 - **M18A selesai (2026-07-08): Public Hunian Catalog Content / UX Freeze** (`docs/18-public-hunian-catalog/PUBLIC_HUNIAN_CATALOG_CONTENT_UX_FREEZE.md`; dokumentasi saja, frozen/mengikat untuk M18B+). Katalog publik menampilkan penawaran level hunian/unit/grup - BUKAN kamar eksak; model "Hunian Catalog Item" public-safe; arah UI modern ala hotel/apartemen; listing `/kamar` + detail `/kamar/$slug`; konten placeholder-first (master data menyusul); lead + WhatsApp tetap jalur booking; **payment booking tetap DEFERRED**; **public booking tetap NOT production-ready**.

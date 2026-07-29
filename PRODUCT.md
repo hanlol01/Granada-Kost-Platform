@@ -44,7 +44,9 @@ Mutation lifecycle harus fail-closed. Feature atau rollout yang absent, null, in
 
 Integrasi Smart Lock/CCTV/provider eksternal bersifat conditional dan tidak boleh dianggap live hanya karena route atau adapter tersedia. Aktivasi production, readiness integrasi, credential, pricing, customer proof, dan compliance certification belum menjadi fakta produk yang dikonfirmasi.
 
-M15C adalah runtime evidence yang deferred karena kendala orchestration launcher, bukan defect produk. M16–M19 tetap diperlakukan sebagai roadmap kecuali masing-masing mempunyai bukti implementasi dan runtime yang selesai; nama milestone, komentar source, atau dokumen rencana saja bukan bukti shipped.
+M13 canonical move-in/out, M14 room hold, dan M15 room persistence telah shipped dan automated verified. Runtime mutation evidence untuk lifecycle M13 serta create/edit kamar M15 masih deferred karena keterbatasan environment launcher, bukan defect produk yang telah dibuktikan.
+
+M16 maintenance dispatch, M17 persistent property Settings, dan M18 resident identity/self-context telah shipped dan automated verified. Authenticated runtime evidence untuk ketiganya masih deferred sampai credential proses-only tersedia. M19 adalah milestone closure/evidence untuk recovery ini, bukan kapabilitas produk baru. Nama milestone, komentar source, atau dokumen rencana saja tetap bukan bukti shipped maupun production readiness.
 
 ## Brand Commitments
 
@@ -57,8 +59,10 @@ Privasi dan isolasi properti adalah bagian dari janji produk, bukan detail imple
 - Struktur aplikasi dapat ditelusuri di `apps/admin/src/`, `apps/penghuni/src/`, `backend/api/src/`, dan `packages/domain/src/`.
 - Authority metadata route Admin berada di `apps/admin/src/lib/admin-route-registry.ts`; backend policy tetap berada di `backend/api/src/`.
 - Istilah “Penghuni”, role, dan status inti dibakukan di `packages/domain/src/enums.ts` dan bentuk auth bersama berada di `packages/domain/src/auth.ts`.
-- Evidence recovery M9–M12 berada di `packages/admin-ux-qa/scripts/m9-runtime-topology.spec.ts`, `packages/admin-ux-qa/scripts/verify-read-only-recovery.ts`, dan `apps/admin/src/lib/m11-booking-quick-entry.test.ts`.
+- Evidence recovery M9–M12 berada di `packages/admin-ux-qa/scripts/m9-runtime-topology.spec.ts`, `packages/admin-ux-qa/scripts/verify-read-only-recovery.ts`, `apps/admin/src/lib/m10-rooms-inventory.test.ts`, dan `apps/admin/src/lib/m11-booking-quick-entry.test.ts`.
 - Kontrak canonical move-in, room hold, dan persistence kamar berada di `apps/admin/src/lib/m13-canonical-move-in-out.test.ts`, `apps/admin/src/lib/m14-booking-lead-room-hold.test.ts`, `apps/admin/src/lib/m15-room-persistence.test.ts`, serta pasangan backend di `backend/api/test/admin-ux-m13/`, `backend/api/test/admin-ux-m14/`, dan `backend/api/test/admin-ux-m15/`.
+- Evidence M16–M18 berada di `apps/admin/src/lib/m16-maintenance-dispatch.test.ts`, `apps/admin/src/lib/m17-settings.test.ts`, `apps/penghuni/src/lib/m18-resident-self-context.test.ts`, serta pasangan backend di `backend/api/test/admin-ux-m16/`, `backend/api/test/admin-ux-m17/`, dan `backend/api/test/admin-ux-m18/`.
+- Truth matrix recovery/revision M9–M19, batas runtime, dan deferred evidence dicatat di `.claude/LOCAL_CHECKPOINT.md`.
 - Batas readiness dan absence of production claims dicatat di `docs/00-project/PROJECT_HANDOFF.md`, `docs/00-project/PROJECT_MASTER.md`, dan indeks `docs/README.md`; dokumen ini tidak menambahkan klaim customer, testimonial, pricing, deployment production, integration readiness production, atau compliance certification.
 
 ## Product Principles

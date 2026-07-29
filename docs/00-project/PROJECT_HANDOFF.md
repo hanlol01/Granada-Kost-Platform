@@ -1,9 +1,31 @@
 # Project Handoff
 
-> Diperbarui: 2026-07-08 (M20B). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
-> Versi sebelumnya belum memuat hasil VPS deployment smoke validation M20B.
+> Diperbarui: 2026-07-29 (M19 recovery/revision closure). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
+> Truth matrix lengkap dan batas evidence berada di `.claude/LOCAL_CHECKPOINT.md`.
 
 ## Status Saat Ini
+
+- **recovery/revision milestone M9–M19 selesai** pada recovery implementation
+  HEAD `5e1a96a` sebelum checkpoint dokumentasi final. Ini bukan deklarasi
+  bahwa seluruh produk selesai, semua fitur lengkap, atau production ready.
+- M9, M10, M11, M13, M14, M15, M16, M17, dan M18 telah shipped serta
+  automated verified. M12 aggregate read-only gate telah shipped; draft
+  Playwright di-rollback bersih dan stable browser automation tetap deferred.
+- Runtime verified: M9. Operator-reported runtime evidence diterima: M10, M11,
+  dan M14.
+  Runtime mutation masih deferred untuk M13 dan M15. Authenticated runtime
+  masih deferred karena credential untuk M16–M18.
+- M19 menutup evidence: aggregate **12/12 PASS** dan public/negative runtime
+  **PASS**. Authenticated evidence tidak dinaikkan melampaui deferred
+  classification M16–M18.
+- **Production tetap NOT READY.** Provider eksternal, Smart Lock, CCTV, dan
+  payment production tetap conditional terhadap evidence dan approval khusus.
+
+### Riwayat Delivery Sebelum Recovery
+
+Butir berikut mempertahankan keputusan dan evidence historis sampai 2026-07-08.
+Label M12-M20 pada riwayat ini adalah track delivery lama dan tidak boleh
+dicampur dengan penomoran recovery/revision M9–M19 di atas.
 
 - Monorepo npm workspaces: `apps/admin`, `apps/penghuni`, `backend/api` (NestJS live), `packages/api-client` (frozen M11B per ADR-FE-001), `packages/domain`.
 - Backend Phase 1 selesai (M2-M10E): IAM/RBAC, Property, Room, Resident, Occupancy, Billing, Complaint + Maintenance, Vehicle + Parking, Notification, Smart Lock foundation (simulated gateway).
@@ -142,27 +164,37 @@ SMART_LOCK_LIVE_ENABLED=false
 
 ## Langkah Operator Berikutnya
 
-1. Demo internal/stakeholder: gunakan `docs/14-production-readiness/INTERNAL_DEMO_SCRIPT_REFRESH.md` (M14D) + `docs/15a-stakeholder-demo/INTERNAL_DEMO_DELIVERY_PACKAGE.md` (M15A). Payment Gateway boleh didemokan **staging/sandbox only** (lihat `INTERNAL_DEMO_CHECKLIST.md` Section 14) - jangan presentasikan sebagai aktivasi payment production.
-2. Putuskan jalur **M15D/M16** (keputusan produk): production hardening, Smart Lock real site trial (M13F-C5), CCTV planning, atau payment production activation readiness.
-3. Jika memilih payment production activation readiness: siapkan Midtrans production keys/aktivasi (backend-only, tidak pernah di repo), notification URL production, QA payment production, checklist deployment production, dan approval stakeholder. Sampai seluruhnya selesai: **production payment activation pending** dan **Payment Gateway is not production-ready**.
-4. Jika lanjut site trial Smart Lock: lengkapi M13F-C4 Sections 6-7 (evidence + sign-off) sebelum M13F-C5. Jangan set `SMART_LOCK_LIVE_ENABLED=true` di luar window yang disetujui.
-5. Untuk production umum: eksekusi deployment/env checklist M14A Section 8 dan tutup blocker P0-P2 (M14A Section 5, M14F Section 4).
+1. Jalankan credential-backed authenticated smoke M16–M18 dengan credential
+   proses-only dan evidence yang disanitasi.
+2. Ambil runtime mutation evidence untuk create/edit kamar M15 dan lifecycle
+   M13 pada environment disposable yang aman.
+3. Desain ulang stable browser automation M12 di atas build/preview, bukan Vite
+   dev/HMR.
+4. Lakukan full post-recovery product audit sebelum redesign atau feature
+   expansion.
+5. Urutkan backlog resident dan Penghuni berdasarkan risiko authority,
+   lifecycle, privacy, lalu usability.
 
 ## Deferred (Jangan Dianggap Selesai)
 
-- Payment Gateway production activation / Midtrans production readiness (sandbox/staging selesai via M15C).
-- Receipt / nota.
-- Pembayaran booking online (deferred; jalur MVP tetap konfirmasi manual/WhatsApp - booking lead M17 BUKAN booking/pembayaran online).
-- Otomasi lead: auto-expiry, notifikasi otomatis, retensi/anonimisasi PII otomatis, konversi otomatis ke resident/occupancy (konversi tetap manual admin).
-- Thumbnail/image optimization pipeline galeri publik (`thumbnailUrl` masih `null` - thumbnail publik memuat gambar asli), CDN/S3 offsite storage, cropping editor, deteksi otomatis wajah/plat nomor kamar (review foto tetap SOP manual admin). Track M19 Hunian Gallery sendiri selesai sampai M19E (`docs/19-hunian-gallery/M19_HUNIAN_GALLERY_FINAL_RELEASE_HANDOFF.md`).
-- SEO public listing dan enrichment katalog lanjutan di luar backend gallery M19B.
-- Smart Lock live site trial + integrasi live complete (M13F-C5+; execution pending).
-- Smart Lock frontend live command UI (dilarang sebelum live trial backend sukses).
-- CCTV live integration.
-- Chat attachment (tidak didukung fase ini).
-- Video upload (tidak didukung fase ini).
-- Reports export (`/reports/exports`).
-- Audit viewer (`/audit/*`).
+1. Credential-backed authenticated smoke M16–M18.
+2. M15 room create/edit mutation runtime evidence.
+3. M13 lifecycle mutation runtime evidence.
+4. Stable browser automation/tooling setelah rollback bersih M12.
+5. Resident account invitation/provisioning contract.
+6. Lifecycle-safe resident deactivation.
+7. Transactional/idempotent resident writes dan clear-to-null edit semantics.
+8. Resident server pagination, detail, dan lease history.
+9. Penghuni profile, password, preferences, dan property-info improvements.
+10. External provider, Smart Lock, CCTV, serta payment readiness tetap
+    conditional; payment production activation dan live site trial belum dapat
+    dianggap selesai.
+11. Full post-recovery product audit sebelum redesign atau feature expansion.
+
+Backlog tambahan lama seperti receipt, payment booking, lead automation,
+gallery optimization, reports export, dan audit viewer tetap deferred sesuai
+authority historis masing-masing. Unavailable credential adalah batas evidence,
+bukan product bug.
 
 ## Prinsip Arsitektur (Mengikat)
 

@@ -1,9 +1,12 @@
 # Granada Kost Platform Documentation
 
-Indeks dokumentasi proyek. Untuk status milestone terbaru (M12 File Upload Foundation dan seterusnya), sumber kebenaran adalah dokumen implementasi di `12-product-readiness/` dan ADR di `01-architecture/` — bukan ringkasan high-level.
+Indeks dokumentasi proyek. Authority produk dan desain berada di [`../PRODUCT.md`](../PRODUCT.md) dan [`../DESIGN.md`](../DESIGN.md). Status recovery/revision terbaru berada di [`../.claude/LOCAL_CHECKPOINT.md`](../.claude/LOCAL_CHECKPOINT.md), dengan ringkasan operasional di [`00-project/PROJECT_HANDOFF.md`](00-project/PROJECT_HANDOFF.md) dan [`00-project/PROJECT_MASTER.md`](00-project/PROJECT_MASTER.md).
+
+Direktori milestone di bawah tetap menjadi evidence dan riwayat keputusan pada waktunya. Penomoran historisnya dapat sama dengan penomoran recovery M9–M19; karena itu nama direktori atau milestone lama tidak boleh dipakai sendiri untuk menyimpulkan status recovery, runtime, atau production readiness saat ini.
 
 ## Struktur Direktori
 
+<!-- prettier-ignore -->
 | Direktori | Isi |
 | --- | --- |
 | `00-project/` | Project governance: `ROADMAP.md`, `CHANGELOG.md`, `BACKLOG.md`, `PROJECT_MASTER.md`, `PROJECT_HEALTH_REVIEW_V1.md`, `INTERNAL_DEMO_CHECKLIST.md`, `PROJECT_HANDOFF.md`, `DEVELOPMENT_WORKFLOW.md`, `AGENTS.md` |
@@ -124,6 +127,7 @@ M15C-G payment gateway release/documentation update: `15c-payment-gateway/PAYMEN
 
 Seluruh dokumen milestone M12 berada di `12-product-readiness/`:
 
+<!-- prettier-ignore -->
 | Topik | Dokumen |
 | --- | --- |
 | ADR akses file backend-mediated (binding) | `01-architecture/ADR-BE-FILE-001_BACKEND_MEDIATED_FILE_ACCESS.md` |

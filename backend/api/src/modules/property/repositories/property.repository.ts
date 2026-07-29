@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { PropertyRecord, PropertySettingsRecord } from '../types/property.types';
 import { CreatePropertyDto } from '../dto/create-property.dto';
@@ -29,6 +30,10 @@ type SettingsRow = {
 @Injectable()
 export class PropertyRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.database.transaction(operation);
+  }
 
   async listAll(): Promise<PropertyRecord[]> {
     const result = await this.database.client.query<PropertyRow>(
@@ -70,12 +75,17 @@ export class PropertyRepository {
     return result.rows.map((row) => this.mapProperty(row));
   }
 
-  async findById(propertyId: string): Promise<PropertyRecord | null> {
-    const result = await this.database.client.query<PropertyRow>(
+  async findById(
+    propertyId: string,
+    client?: PoolClient,
+    lockForUpdate = false,
+  ): Promise<PropertyRecord | null> {
+    const lockClause = lockForUpdate ? '\n       FOR UPDATE' : '';
+    const result = await (client ?? this.database.client).query<PropertyRow>(
       `SELECT id, name, address, phone, email, timezone, status, created_at, updated_at
        FROM properties
        WHERE id = $1
-       LIMIT 1`,
+       LIMIT 1${lockClause}`,
       [propertyId],
     );
     return result.rows[0] ? this.mapProperty(result.rows[0]) : null;
@@ -86,7 +96,14 @@ export class PropertyRepository {
       `INSERT INTO properties (name, address, phone, email, timezone, created_by_user_id, updated_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $6)
        RETURNING id, name, address, phone, email, timezone, status, created_at, updated_at`,
-      [dto.name, dto.address, dto.phone ?? null, dto.email ?? null, dto.timezone ?? 'Asia/Jakarta', actorUserId],
+      [
+        dto.name,
+        dto.address,
+        dto.phone ?? null,
+        dto.email ?? null,
+        dto.timezone ?? 'Asia/Jakarta',
+        actorUserId,
+      ],
     );
 
     await this.database.client.query(
@@ -99,13 +116,18 @@ export class PropertyRepository {
     return this.mapProperty(result.rows[0]);
   }
 
-  async update(propertyId: string, dto: UpdatePropertyDto, actorUserId: string): Promise<PropertyRecord | null> {
-    const current = await this.findById(propertyId);
+  async update(
+    propertyId: string,
+    dto: UpdatePropertyDto,
+    actorUserId: string,
+    client?: PoolClient,
+  ): Promise<PropertyRecord | null> {
+    const current = await this.findById(propertyId, client);
     if (!current) {
       return null;
     }
 
-    const result = await this.database.client.query<PropertyRow>(
+    const result = await (client ?? this.database.client).query<PropertyRow>(
       `UPDATE properties
        SET name = COALESCE($2, name),
            address = COALESCE($3, address),
@@ -146,8 +168,11 @@ export class PropertyRepository {
     return result.rows[0] ? this.mapProperty(result.rows[0]) : null;
   }
 
-  async getSettings(propertyId: string): Promise<PropertySettingsRecord | null> {
-    const result = await this.database.client.query<SettingsRow>(
+  async getSettings(
+    propertyId: string,
+    client?: PoolClient,
+  ): Promise<PropertySettingsRecord | null> {
+    const result = await (client ?? this.database.client).query<SettingsRow>(
       `SELECT property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
               quiet_hour_start::text, guest_report_deadline::text
        FROM property_settings
@@ -161,8 +186,9 @@ export class PropertyRepository {
   async updateSettings(
     propertyId: string,
     dto: UpdatePropertySettingsDto,
+    client?: PoolClient,
   ): Promise<PropertySettingsRecord> {
-    const result = await this.database.client.query<SettingsRow>(
+    const result = await (client ?? this.database.client).query<SettingsRow>(
       `INSERT INTO property_settings (
          property_id, default_due_day, late_fee_percent_per_day, booking_fee_amount,
          quiet_hour_start, guest_report_deadline
@@ -189,8 +215,14 @@ export class PropertyRepository {
     return this.mapSettings(result.rows[0]);
   }
 
-  async assignPropertyOwner(propertyId: string, userId: string, label: string | null, actorUserId: string): Promise<void> {
-    await this.database.client.query(
+  async assignPropertyOwner(
+    propertyId: string,
+    userId: string,
+    label: string | null,
+    actorUserId: string,
+    client?: PoolClient,
+  ): Promise<void> {
+    await (client ?? this.database.client).query(
       `INSERT INTO property_owner_assignments (
          property_id, user_id, ownership_label, ownership_status, assigned_by_user_id
        )
@@ -202,8 +234,12 @@ export class PropertyRepository {
     );
   }
 
-  async revokePropertyOwner(propertyId: string, userId: string): Promise<void> {
-    await this.database.client.query(
+  async revokePropertyOwner(
+    propertyId: string,
+    userId: string,
+    client?: PoolClient,
+  ): Promise<void> {
+    await (client ?? this.database.client).query(
       `UPDATE property_owner_assignments
        SET ownership_status = 'inactive'
        WHERE property_id = $1 AND user_id = $2 AND ownership_status = 'active'`,

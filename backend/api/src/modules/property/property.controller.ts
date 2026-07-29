@@ -42,6 +42,7 @@ export class PropertyController {
   }
 
   @Patch(':propertyId')
+  @RequireRoles('owner', 'manager')
   @RequirePermissions('property.manage')
   update(
     @CurrentUser() user: UserAccessContext,
@@ -71,6 +72,7 @@ export class PropertyController {
   }
 
   @Patch(':propertyId/settings')
+  @RequireRoles('owner', 'manager')
   @RequirePermissions('property.manage')
   updateSettings(
     @CurrentUser() user: UserAccessContext,

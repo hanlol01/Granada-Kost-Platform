@@ -17,10 +17,6 @@ export class CreateResidentDto {
   @IsUUID()
   property_id!: string;
 
-  @IsOptional()
-  @IsUUID()
-  user_id?: string;
-
   @IsString()
   full_name!: string;
 

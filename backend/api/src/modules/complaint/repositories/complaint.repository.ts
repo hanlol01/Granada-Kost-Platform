@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
+import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
 import {
   ActiveResidentComplaintContext,
   ComplaintPriority,
@@ -99,6 +100,8 @@ export class ComplaintRepository {
        FROM complaints
        JOIN residents ON residents.id = complaints.resident_id
        WHERE residents.user_id = $1
+         AND complaints.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
        ORDER BY complaints.submitted_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -132,13 +135,16 @@ export class ComplaintRepository {
       `SELECT ${this.columns('complaints')}
        FROM complaints
        JOIN residents ON residents.id = complaints.resident_id
-       WHERE complaints.id = $1 AND residents.user_id = $2`,
+       WHERE complaints.id = $1
+         AND residents.user_id = $2
+         AND complaints.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$2')}`,
       [complaintId, userId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async activeContextForUser(userId: string): Promise<ActiveResidentComplaintContext | null> {
+  async activeContextsForUser(userId: string): Promise<ActiveResidentComplaintContext[]> {
     const result = await this.database.client.query<{
       property_id: string;
       resident_id: string;
@@ -155,22 +161,23 @@ export class ComplaintRepository {
        JOIN residents ON residents.id = occupancies.resident_id
        JOIN rooms ON rooms.id = occupancies.room_id
        WHERE residents.user_id = $1
+         AND residents.resident_status = 'active'
          AND occupancies.occupancy_status = 'active'
          AND occupancies.end_date IS NULL
-       LIMIT 1`,
+         AND occupancies.property_id = residents.property_id
+         AND rooms.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
+       ORDER BY occupancies.start_date DESC, occupancies.id ASC
+       LIMIT 2`,
       [userId],
     );
-    const row = result.rows[0];
-    if (!row) {
-      return null;
-    }
-    return {
+    return result.rows.map((row) => ({
       propertyId: row.property_id,
       residentId: row.resident_id,
       roomId: row.room_id,
       roomNumber: row.room_number,
       residentName: row.resident_name,
-    };
+    }));
   }
 
   async create(

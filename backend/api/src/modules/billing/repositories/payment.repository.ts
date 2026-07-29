@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { PaymentAllocationRecord, PaymentRecord, PaymentStatus, RecordPaymentInput } from '../types/billing.types';
+import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
+import {
+  PaymentAllocationRecord,
+  PaymentRecord,
+  PaymentStatus,
+  RecordPaymentInput,
+} from '../types/billing.types';
 
 type PaymentRow = {
   id: string;
@@ -34,7 +40,12 @@ type AllocationRow = {
 export class PaymentRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(propertyId: string, status?: PaymentStatus, limit = 20, offset = 0): Promise<PaymentRecord[]> {
+  async list(
+    propertyId: string,
+    status?: PaymentStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<PaymentRecord[]> {
     const result = await this.database.client.query<PaymentRow>(
       `SELECT ${this.paymentColumns()}
        FROM payments
@@ -53,6 +64,8 @@ export class PaymentRepository {
        FROM payments
        JOIN residents ON residents.id = payments.resident_id
        WHERE residents.user_id = $1
+         AND payments.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
        ORDER BY payments.paid_at DESC NULLS LAST, payments.created_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -121,7 +134,11 @@ export class PaymentRepository {
     return result.rows[0] ? this.mapPayment(result.rows[0]) : null;
   }
 
-  async allocateToInvoice(paymentId: string, invoiceId: string, amount: number): Promise<PaymentAllocationRecord> {
+  async allocateToInvoice(
+    paymentId: string,
+    invoiceId: string,
+    amount: number,
+  ): Promise<PaymentAllocationRecord> {
     const result = await this.database.client.query<AllocationRow>(
       `INSERT INTO payment_allocations (
          payment_id, target_type, target_id, invoice_id, allocated_amount

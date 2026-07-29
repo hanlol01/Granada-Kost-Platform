@@ -34,6 +34,32 @@ type ContactRow = {
   phone: string;
 };
 
+export type ResidentSelfContext = {
+  displayName: string;
+  phone: string | null;
+  propertyName: string;
+  roomNumber: string;
+  occupancyStart: string;
+};
+
+export type PropertyOwnerResidentSummary = {
+  displayName: string;
+  roomNumber: string | null;
+  status: ResidentRecord['residentStatus'];
+};
+
+export function residentPropertyMembershipSql(userParameter: '$1' | '$2'): string {
+  return `EXISTS (
+    SELECT 1
+    FROM user_property_roles AS resident_membership
+    JOIN roles AS resident_role ON resident_role.id = resident_membership.role_id
+    WHERE resident_membership.user_id = ${userParameter}
+      AND resident_membership.property_id = residents.property_id
+      AND resident_membership.revoked_at IS NULL
+      AND resident_role.name = 'resident'
+  )`;
+}
+
 @Injectable()
 export class ResidentRepository {
   constructor(private readonly database: DatabaseService) {}
@@ -78,16 +104,15 @@ export class ResidentRepository {
   async create(dto: CreateResidentDto, actorUserId: string): Promise<ResidentRecord> {
     const result = await this.database.client.query<ResidentRow>(
       `INSERT INTO residents (
-         property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
+         property_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
          emergency_phone, ktp_file_id, profile_photo_file_id, gender,
          created_by_user_id, updated_by_user_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
        RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
                  emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at`,
       [
         dto.property_id,
-        dto.user_id ?? null,
         dto.full_name,
         dto.phone ?? null,
         dto.email ?? null,
@@ -114,26 +139,24 @@ export class ResidentRepository {
   ): Promise<ResidentRecord | null> {
     const result = await this.database.client.query<ResidentRow>(
       `UPDATE residents
-       SET user_id = COALESCE($2, user_id),
-           full_name = COALESCE($3, full_name),
-           phone = COALESCE($4, phone),
-           email = COALESCE($5, email),
-           ktp_number = COALESCE($6, ktp_number),
-           date_of_birth = COALESCE($7, date_of_birth),
-           place_of_birth = COALESCE($8, place_of_birth),
-           address = COALESCE($9, address),
-           emergency_phone = COALESCE($10, emergency_phone),
-           ktp_file_id = COALESCE($11, ktp_file_id),
-           profile_photo_file_id = COALESCE($12, profile_photo_file_id),
-           gender = COALESCE($13, gender),
-           updated_by_user_id = $14,
+       SET full_name = COALESCE($2, full_name),
+           phone = COALESCE($3, phone),
+           email = COALESCE($4, email),
+           ktp_number = COALESCE($5, ktp_number),
+           date_of_birth = COALESCE($6, date_of_birth),
+           place_of_birth = COALESCE($7, place_of_birth),
+           address = COALESCE($8, address),
+           emergency_phone = COALESCE($9, emergency_phone),
+           ktp_file_id = COALESCE($10, ktp_file_id),
+           profile_photo_file_id = COALESCE($11, profile_photo_file_id),
+           gender = COALESCE($12, gender),
+           updated_by_user_id = $13,
            updated_at = now()
        WHERE id = $1
        RETURNING id, property_id, user_id, full_name, phone, email, ktp_number, date_of_birth, place_of_birth, address,
                  emergency_phone, ktp_file_id, profile_photo_file_id, gender, resident_status, created_at, updated_at`,
       [
         id,
-        dto.user_id ?? null,
         dto.full_name ?? null,
         dto.phone ?? null,
         dto.email ?? null,
@@ -156,6 +179,77 @@ export class ResidentRepository {
       await this.replaceEmergencyContacts(id, dto.emergency_contacts);
     }
     return this.findById(id);
+  }
+
+  async findActiveContextsForUser(userId: string): Promise<ResidentSelfContext[]> {
+    const result = await this.database.client.query<{
+      display_name: string;
+      phone: string | null;
+      property_name: string;
+      room_number: string;
+      occupancy_start: string;
+    }>(
+      `SELECT residents.full_name AS display_name,
+              residents.phone,
+              properties.name AS property_name,
+              rooms.number AS room_number,
+              occupancies.start_date::text AS occupancy_start
+       FROM residents
+       JOIN occupancies ON occupancies.resident_id = residents.id
+       JOIN rooms ON rooms.id = occupancies.room_id
+       JOIN properties ON properties.id = residents.property_id
+       WHERE residents.user_id = $1
+         AND residents.resident_status = 'active'
+         AND occupancies.occupancy_status = 'active'
+         AND occupancies.end_date IS NULL
+         AND occupancies.property_id = residents.property_id
+         AND rooms.property_id = residents.property_id
+         AND properties.id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
+       ORDER BY occupancies.start_date DESC, occupancies.id ASC
+       LIMIT 2`,
+      [userId],
+    );
+    return result.rows.map((row) => ({
+      displayName: row.display_name,
+      phone: row.phone,
+      propertyName: row.property_name,
+      roomNumber: row.room_number,
+      occupancyStart: row.occupancy_start,
+    }));
+  }
+
+  async listPropertyOwnerSummary(propertyId: string): Promise<PropertyOwnerResidentSummary[]> {
+    const result = await this.database.client.query<{
+      display_name: string;
+      room_number: string | null;
+      status: ResidentRecord['residentStatus'];
+    }>(
+      `SELECT residents.full_name AS display_name,
+              CASE
+                WHEN count(occupancies.id) = 1 THEN min(rooms.number)
+                ELSE NULL
+              END AS room_number,
+              residents.resident_status AS status
+       FROM residents
+       LEFT JOIN occupancies
+         ON occupancies.resident_id = residents.id
+        AND occupancies.property_id = residents.property_id
+        AND occupancies.occupancy_status = 'active'
+        AND occupancies.end_date IS NULL
+       LEFT JOIN rooms
+         ON rooms.id = occupancies.room_id
+        AND rooms.property_id = residents.property_id
+       WHERE residents.property_id = $1
+       GROUP BY residents.id, residents.full_name, residents.resident_status
+       ORDER BY residents.full_name ASC, residents.id ASC`,
+      [propertyId],
+    );
+    return result.rows.map((row) => ({
+      displayName: row.display_name,
+      roomNumber: row.room_number,
+      status: row.status,
+    }));
   }
 
   async updateStatus(

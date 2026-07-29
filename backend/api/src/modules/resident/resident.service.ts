@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -16,6 +17,16 @@ import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentRepository } from './repositories/resident.repository';
 import { sanitizeResidentForAudit } from './resident-audit.util';
 import { ResidentRecord } from './types/resident.types';
+
+export function selectSingleResidentContext<T>(contexts: readonly T[]): T | null {
+  if (contexts.length > 1) {
+    throw new ConflictException({
+      code: 'RESIDENT_CONTEXT_AMBIGUOUS',
+      message: 'Multiple active resident contexts are available',
+    });
+  }
+  return contexts[0] ?? null;
+}
 
 @Injectable()
 export class ResidentService {
@@ -38,6 +49,15 @@ export class ResidentService {
     const resident = await this.requireResident(residentId);
     await this.properties.assertCanReadProperty(user, resident.propertyId);
     return resident;
+  }
+
+  async myContext(userId: string) {
+    return selectSingleResidentContext(await this.residents.findActiveContextsForUser(userId));
+  }
+
+  async listPropertyOwnerSummary(user: UserAccessContext, propertyId: string) {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    return this.residents.listPropertyOwnerSummary(propertyId);
   }
 
   async create(user: UserAccessContext, dto: CreateResidentDto, context: RequestAuditContext) {

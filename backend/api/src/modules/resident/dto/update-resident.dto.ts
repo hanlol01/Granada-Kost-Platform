@@ -15,10 +15,6 @@ import { EmergencyContactDto } from './emergency-contact.dto';
 
 export class UpdateResidentDto {
   @IsOptional()
-  @IsUUID()
-  user_id?: string;
-
-  @IsOptional()
   @IsString()
   full_name?: string;
 

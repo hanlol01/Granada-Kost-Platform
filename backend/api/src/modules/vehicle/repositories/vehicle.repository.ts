@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
+import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
 import {
   ActiveResidentVehicleContext,
   CreateVehicleInput,
@@ -40,7 +41,13 @@ type VehicleRow = {
 export class VehicleRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(propertyId: string, status?: VehicleStatus, vehicleType?: VehicleType, limit = 20, offset = 0): Promise<VehicleRecord[]> {
+  async list(
+    propertyId: string,
+    status?: VehicleStatus,
+    vehicleType?: VehicleType,
+    limit = 20,
+    offset = 0,
+  ): Promise<VehicleRecord[]> {
     const result = await this.database.client.query<VehicleRow>(
       `SELECT ${this.columns()}
        FROM vehicles
@@ -92,6 +99,8 @@ export class VehicleRepository {
        FROM vehicles
        JOIN residents ON residents.id = vehicles.resident_id
        WHERE residents.user_id = $1
+         AND vehicles.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
        ORDER BY vehicles.created_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -114,13 +123,16 @@ export class VehicleRepository {
       `SELECT ${this.columns('vehicles')}
        FROM vehicles
        JOIN residents ON residents.id = vehicles.resident_id
-       WHERE vehicles.id = $1 AND residents.user_id = $2`,
+       WHERE vehicles.id = $1
+         AND residents.user_id = $2
+         AND vehicles.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$2')}`,
       [vehicleId, userId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async activeContextForUser(userId: string): Promise<ActiveResidentVehicleContext | null> {
+  async activeContextsForUser(userId: string): Promise<ActiveResidentVehicleContext[]> {
     const result = await this.database.client.query<{
       property_id: string;
       resident_id: string;
@@ -137,22 +149,23 @@ export class VehicleRepository {
        JOIN residents ON residents.id = occupancies.resident_id
        JOIN rooms ON rooms.id = occupancies.room_id
        WHERE residents.user_id = $1
+         AND residents.resident_status = 'active'
          AND occupancies.occupancy_status = 'active'
          AND occupancies.end_date IS NULL
-       LIMIT 1`,
+         AND occupancies.property_id = residents.property_id
+         AND rooms.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
+       ORDER BY occupancies.start_date DESC, occupancies.id ASC
+       LIMIT 2`,
       [userId],
     );
-    const row = result.rows[0];
-    if (!row) {
-      return null;
-    }
-    return {
+    return result.rows.map((row) => ({
       propertyId: row.property_id,
       residentId: row.resident_id,
       roomId: row.room_id,
       roomNumber: row.room_number,
       residentName: row.resident_name,
-    };
+    }));
   }
 
   async settings(propertyId: string): Promise<VehicleSettingsRecord | null> {
@@ -187,7 +200,11 @@ export class VehicleRepository {
       : null;
   }
 
-  async activePlateExists(propertyId: string, plateNumber: string, excludedVehicleId?: string): Promise<boolean> {
+  async activePlateExists(
+    propertyId: string,
+    plateNumber: string,
+    excludedVehicleId?: string,
+  ): Promise<boolean> {
     const result = await this.database.client.query<{ exists: boolean }>(
       `SELECT EXISTS (
          SELECT 1

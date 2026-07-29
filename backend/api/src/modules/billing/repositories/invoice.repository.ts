@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
+import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
 import {
   CreateInvoiceInput,
   InvoiceLineItemRecord,
@@ -62,7 +63,12 @@ type AllocationRow = {
 export class InvoiceRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(propertyId: string, status?: InvoiceStatus, limit = 20, offset = 0): Promise<InvoiceRecord[]> {
+  async list(
+    propertyId: string,
+    status?: InvoiceStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<InvoiceRecord[]> {
     const result = await this.database.client.query<InvoiceRow>(
       `SELECT ${this.invoiceColumns()}
        FROM invoices
@@ -75,7 +81,12 @@ export class InvoiceRepository {
     return result.rows.map((row) => this.mapInvoice(row));
   }
 
-  async listForProperties(propertyIds: string[], status?: InvoiceStatus, limit = 20, offset = 0): Promise<InvoiceRecord[]> {
+  async listForProperties(
+    propertyIds: string[],
+    status?: InvoiceStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<InvoiceRecord[]> {
     const result = await this.database.client.query<InvoiceRow>(
       `SELECT ${this.invoiceColumns()}
        FROM invoices
@@ -94,6 +105,8 @@ export class InvoiceRepository {
        FROM invoices
        JOIN residents ON residents.id = invoices.resident_id
        WHERE residents.user_id = $1
+         AND invoices.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$1')}
        ORDER BY invoices.due_date DESC, invoices.created_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -106,7 +119,10 @@ export class InvoiceRepository {
       `SELECT ${this.invoiceColumns('invoices')}
        FROM invoices
        JOIN residents ON residents.id = invoices.resident_id
-       WHERE invoices.id = $1 AND residents.user_id = $2`,
+       WHERE invoices.id = $1
+         AND residents.user_id = $2
+         AND invoices.property_id = residents.property_id
+         AND ${residentPropertyMembershipSql('$2')}`,
       [invoiceId, userId],
     );
     return result.rows[0] ? this.mapInvoice(result.rows[0]) : null;

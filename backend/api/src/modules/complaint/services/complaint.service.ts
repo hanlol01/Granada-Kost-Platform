@@ -11,6 +11,7 @@ import { AuditRepository } from '../../../infrastructure/audit/audit.repository'
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { FileRepository } from '../../file/file.repository';
 import type { FileRecord } from '../../file/types/file.types';
+import { selectSingleResidentContext } from '../../resident/resident.service';
 import { TechnicianProfileRepository } from '../../maintenance/repositories/technician-profile.repository';
 import { WorkOrderHistoryRepository } from '../../maintenance/repositories/work-order-history.repository';
 import { WorkOrderRepository } from '../../maintenance/repositories/work-order.repository';
@@ -130,7 +131,9 @@ export class ComplaintService {
   }
 
   async activeResidentContextForUser(userId: string) {
-    const context = await this.complaints.activeContextForUser(userId);
+    const context = selectSingleResidentContext(
+      await this.complaints.activeContextsForUser(userId),
+    );
     if (!context) {
       throw new BadRequestException({
         code: 'ACTIVE_OCCUPANCY_NOT_FOUND',
@@ -754,7 +757,9 @@ export class ComplaintService {
   }
 
   private async assertResidentCreateContext(input: CreateComplaintInput): Promise<void> {
-    const active = await this.complaints.activeContextForUser(input.createdByUserId);
+    const active = selectSingleResidentContext(
+      await this.complaints.activeContextsForUser(input.createdByUserId),
+    );
     if (!active) {
       throw new BadRequestException({
         code: 'ACTIVE_OCCUPANCY_NOT_FOUND',

@@ -1,5 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
+import { selectSingleResidentContext } from '../../resident/resident.service';
 import { VEHICLE_AUDIT_ACTIONS } from '../constants/vehicle.constants';
 import { VehicleCodeGenerator } from '../helpers/vehicle-code-generator';
 import { VehiclePlateNormalizer } from '../helpers/vehicle-plate-normalizer';
@@ -19,7 +25,10 @@ import {
   VehicleType,
 } from '../types/vehicle.types';
 
-type RegisterVehicleInput = Omit<CreateVehicleInput, 'plateNumber' | 'vehicleStatus' | 'approvedByUserId'> & {
+type RegisterVehicleInput = Omit<
+  CreateVehicleInput,
+  'plateNumber' | 'vehicleStatus' | 'approvedByUserId'
+> & {
   plateNumber: string;
   adminCreated?: boolean;
 };
@@ -33,7 +42,13 @@ export class VehicleService {
     private readonly audit: AuditRepository,
   ) {}
 
-  list(propertyId: string, status?: VehicleStatus, vehicleType?: VehicleType, limit?: number, offset?: number): Promise<VehicleRecord[]> {
+  list(
+    propertyId: string,
+    status?: VehicleStatus,
+    vehicleType?: VehicleType,
+    limit?: number,
+    offset?: number,
+  ): Promise<VehicleRecord[]> {
     return this.vehicles.list(propertyId, status, vehicleType, limit, offset);
   }
 
@@ -72,25 +87,40 @@ export class VehicleService {
   }
 
   async activeResidentContextForUser(userId: string) {
-    const context = await this.vehicles.activeContextForUser(userId);
+    const context = selectSingleResidentContext(await this.vehicles.activeContextsForUser(userId));
     if (!context) {
-      throw new BadRequestException({ code: 'ACTIVE_OCCUPANCY_NOT_FOUND', message: 'Active occupancy not found for resident' });
+      throw new BadRequestException({
+        code: 'ACTIVE_OCCUPANCY_NOT_FOUND',
+        message: 'Active occupancy not found for resident',
+      });
     }
     return context;
   }
 
-  async registerVehicle(input: RegisterVehicleInput, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  async registerVehicle(
+    input: RegisterVehicleInput,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     const settings = await this.vehicles.settings(input.propertyId);
     const maxVehicles = settings?.maxVehiclesPerResident ?? 3;
-    const activeVehicleCount = await this.vehicles.nonTerminalCountForResident(input.propertyId, input.residentId);
+    const activeVehicleCount = await this.vehicles.nonTerminalCountForResident(
+      input.propertyId,
+      input.residentId,
+    );
     if (activeVehicleCount >= maxVehicles) {
-      throw new BadRequestException({ code: 'VEHICLE_LIMIT_REACHED', message: 'Resident has reached vehicle limit' });
+      throw new BadRequestException({
+        code: 'VEHICLE_LIMIT_REACHED',
+        message: 'Resident has reached vehicle limit',
+      });
     }
 
     const plateNumber = VehiclePlateNormalizer.normalize(input.plateNumber);
     await this.assertPlateAvailable(input.propertyId, plateNumber);
 
-    const vehicleStatus: VehicleStatus = input.adminCreated || settings?.parkingRequiresApproval === false ? 'active' : 'pending_approval';
+    const vehicleStatus: VehicleStatus =
+      input.adminCreated || settings?.parkingRequiresApproval === false
+        ? 'active'
+        : 'pending_approval';
     const vehicle = await this.vehicles.create({
       ...input,
       plateNumber,
@@ -103,7 +133,10 @@ export class VehicleService {
       fromStatus: null,
       toStatus: vehicle.vehicleStatus,
       actorUserId: context.actorUserId,
-      notes: vehicle.vehicleStatus === 'active' ? 'Vehicle registered as active' : 'Vehicle registration submitted',
+      notes:
+        vehicle.vehicleStatus === 'active'
+          ? 'Vehicle registered as active'
+          : 'Vehicle registration submitted',
     });
     await this.writeVehicleAudit(VEHICLE_AUDIT_ACTIONS.create, vehicle, context);
     return vehicle;
@@ -115,7 +148,11 @@ export class VehicleService {
     return VehicleCodeGenerator.format(propertyCode, date.getFullYear(), sequence);
   }
 
-  async updateVehicle(vehicleId: string, input: UpdateVehicleInput, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  async updateVehicle(
+    vehicleId: string,
+    input: UpdateVehicleInput,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     const current = await this.get(vehicleId);
     const patch = { ...input };
     if (patch.plateNumber) {
@@ -131,10 +168,15 @@ export class VehicleService {
     return updated;
   }
 
-  async updateVehicleForUser(vehicleId: string, userId: string, input: UpdateVehicleInput, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  async updateVehicleForUser(
+    vehicleId: string,
+    userId: string,
+    input: UpdateVehicleInput,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     const current = await this.getForUser(vehicleId, userId);
-    const hasSensitiveChange = ['plateNumber', 'vehicleType', 'brand', 'color', 'year'].some((field) =>
-      Object.prototype.hasOwnProperty.call(input, field),
+    const hasSensitiveChange = ['plateNumber', 'vehicleType', 'brand', 'color', 'year'].some(
+      (field) => Object.prototype.hasOwnProperty.call(input, field),
     );
     if (hasSensitiveChange && current.vehicleStatus !== 'pending_approval') {
       throw new BadRequestException({
@@ -151,14 +193,22 @@ export class VehicleService {
     });
   }
 
-  reject(vehicleId: string, reason: string, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  reject(
+    vehicleId: string,
+    reason: string,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     return this.transition(vehicleId, 'rejected', VEHICLE_AUDIT_ACTIONS.reject, context, {
       rejectReason: reason,
       notes: reason,
     });
   }
 
-  suspend(vehicleId: string, reason: string, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  suspend(
+    vehicleId: string,
+    reason: string,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     return this.transition(vehicleId, 'suspended', VEHICLE_AUDIT_ACTIONS.suspend, context, {
       suspendReason: reason,
       notes: reason,
@@ -171,7 +221,11 @@ export class VehicleService {
     });
   }
 
-  deactivate(vehicleId: string, reason: string, context: AuditActorContext = {}): Promise<VehicleRecord> {
+  deactivate(
+    vehicleId: string,
+    reason: string,
+    context: AuditActorContext = {},
+  ): Promise<VehicleRecord> {
     return this.transition(vehicleId, 'inactive', VEHICLE_AUDIT_ACTIONS.deactivate, context, {
       deactivationReason: reason,
       notes: reason,
@@ -212,7 +266,10 @@ export class VehicleService {
       deactivationReason: options.deactivationReason,
     });
     if (!updated) {
-      throw new BadRequestException({ code: 'VEHICLE_TRANSITION_FAILED', message: 'Vehicle transition failed' });
+      throw new BadRequestException({
+        code: 'VEHICLE_TRANSITION_FAILED',
+        message: 'Vehicle transition failed',
+      });
     }
 
     await this.histories.record({
@@ -226,10 +283,21 @@ export class VehicleService {
     return updated;
   }
 
-  private async assertPlateAvailable(propertyId: string, plateNumber: string, excludedVehicleId?: string): Promise<void> {
-    const exists = await this.vehicles.activePlateExists(propertyId, plateNumber, excludedVehicleId);
+  private async assertPlateAvailable(
+    propertyId: string,
+    plateNumber: string,
+    excludedVehicleId?: string,
+  ): Promise<void> {
+    const exists = await this.vehicles.activePlateExists(
+      propertyId,
+      plateNumber,
+      excludedVehicleId,
+    );
     if (exists) {
-      throw new ConflictException({ code: 'VEHICLE_PLATE_ALREADY_REGISTERED', message: 'Plate number is already registered' });
+      throw new ConflictException({
+        code: 'VEHICLE_PLATE_ALREADY_REGISTERED',
+        message: 'Plate number is already registered',
+      });
     }
   }
 

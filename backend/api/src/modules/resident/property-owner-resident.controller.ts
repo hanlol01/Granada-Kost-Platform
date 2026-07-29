@@ -15,7 +15,12 @@ export class PropertyOwnerResidentController {
   constructor(private readonly residents: ResidentService) {}
 
   @Get()
-  list(@CurrentUser() user: UserAccessContext, @Param('propertyId') propertyId: string) {
-    return this.residents.list(user, { property_id: propertyId });
+  async list(@CurrentUser() user: UserAccessContext, @Param('propertyId') propertyId: string) {
+    const summaries = await this.residents.listPropertyOwnerSummary(user, propertyId);
+    return summaries.map((summary) => ({
+      display_name: summary.displayName,
+      room_number: summary.roomNumber,
+      status: summary.status,
+    }));
   }
 }

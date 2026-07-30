@@ -208,3 +208,13 @@ The program is complete only when:
 - all deferred provider integrations remain visibly disabled or are promoted
   through a separate approved contract;
 - documentation status is updated without overstating production readiness.
+
+## 10. Delivery Evidence
+
+| Work package | Delivered boundary                                                                                                                                               | Evidence                                                                                                                      | Status             |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `KMO-W00`    | Route registration/navigation inventory; canonical Vehicles tabs; safe Complaints terminal states; honest Reports unavailable state; canonical Facilities search | [KMO-W00_ROUTE_MATRIX.md](evidence/KMO-W00_ROUTE_MATRIX.md), focused route/access contracts, and the aggregate read-only gate | AUTOMATED_VERIFIED |
+
+This delivery row does not advance any `KMO-W01..KMO-W12` work package or the
+program-level outcomes in section 2. Authenticated desktop/mobile runtime evidence
+for W00 is explicitly deferred when no process-only QA credential is available.

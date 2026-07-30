@@ -13,6 +13,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
+import { withoutPrimaryRoutes } from "@/lib/kmo-w00-route-integrity";
 
 const SECTION_ORDER: readonly AdminNavSection[] = [
   "master-data",
@@ -46,6 +47,7 @@ function RouteLink({
   return (
     <Link
       to={route.to as never}
+      search={route.search as never}
       onClick={onNavigate}
       className={cn(
         "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
@@ -124,6 +126,7 @@ function NavSection({
             <div className="flex items-center">
               <Link
                 to={route.to as never}
+                search={route.search as never}
                 className={cn(
                   "relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
                   roomActive
@@ -247,6 +250,10 @@ export function RegistryBottomNav() {
         .slice(0, 4),
     [routes],
   );
+  const moreRoutes = useMemo(
+    () => withoutPrimaryRoutes(routes, primaryRoutes),
+    [primaryRoutes, routes],
+  );
 
   return (
     <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
@@ -259,6 +266,7 @@ export function RegistryBottomNav() {
               <Link
                 key={route.id}
                 to={route.to as never}
+                search={route.search as never}
                 className={cn(
                   "flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] transition-colors",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
@@ -289,7 +297,11 @@ export function RegistryBottomNav() {
           <SheetTitle className="text-foreground">Lainnya</SheetTitle>
         </SheetHeader>
         <div className="mt-5">
-          <MoreRoutes routes={routes} pathname={pathname} onNavigate={() => setMoreOpen(false)} />
+          <MoreRoutes
+            routes={moreRoutes}
+            pathname={pathname}
+            onNavigate={() => setMoreOpen(false)}
+          />
         </div>
       </SheetContent>
     </Sheet>

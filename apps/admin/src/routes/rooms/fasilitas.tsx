@@ -51,13 +51,15 @@ import {
   useM4Mutation,
   useM4RoomFacilities,
 } from "@/hooks/useAdminUxMaster";
+import {
+  canonicalSearchReplacement,
+  facilitiesNavigationSearch,
+  facilitiesSearchString,
+  normalizeFacilitiesSearch,
+} from "@/lib/kmo-w00-route-integrity";
 
 export const Route = createFileRoute("/rooms/fasilitas")({
-  validateSearch: (raw: Record<string, unknown>) => ({
-    q: typeof raw.q === "string" ? raw.q.trim().slice(0, 120) : "",
-    category_id: typeof raw.category_id === "string" ? raw.category_id : undefined,
-    kost_type_id: typeof raw.kost_type_id === "string" ? raw.kost_type_id : undefined,
-  }),
+  validateSearch: normalizeFacilitiesSearch,
   component: FasilitasRoute,
 });
 
@@ -77,6 +79,7 @@ function FasilitasRoute() {
   const canManage = hasPermission("room.manage");
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const canonicalSearch = facilitiesSearchString(search);
   const categoriesQuery = useM4FacilityCategories();
   const facilitiesQuery = useM4RoomFacilities({ limit: 100 });
   const typesQuery = useM4KostTypes({ status: "active", limit: 100 });
@@ -88,6 +91,12 @@ function FasilitasRoute() {
   const types = typesQuery.data?.items ?? [];
   const selectedKostTypeId = search.kost_type_id ?? types[0]?.id ?? null;
   const selectedKostTypeQuery = useM4KostType(selectedKostTypeId);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (canonicalSearchReplacement(window.location.search, canonicalSearch) === null) return;
+    void navigate({ search: facilitiesNavigationSearch(search) as never, replace: true });
+  }, [canonicalSearch, navigate, search]);
 
   useEffect(() => {
     setAssignmentIds(selectedKostTypeQuery.data?.facilities?.map((facility) => facility.id) ?? []);

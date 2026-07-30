@@ -56,6 +56,8 @@ export type RouteAccess = {
   roles?: readonly RoleCode[];
   /** Every read capability is required; backend remains the authority. */
   readCapabilities?: readonly string[];
+  /** At least one capability is required when supplied. */
+  anyReadCapabilities?: readonly string[];
   /** Metadata for controls; it never grants route access by itself. */
   mutationCapabilities?: readonly string[];
   feature?: AdminFeatureFlag;
@@ -65,6 +67,8 @@ export type AdminRouteMetadata = {
   id: AdminRouteId;
   /** Undefined marks a virtual group used by navigation and breadcrumbs. */
   to?: string;
+  /** Canonical search state shared by desktop and mobile navigation. */
+  search?: Readonly<Record<string, string>>;
   label: string;
   parentId?: AdminRouteId;
   section: AdminNavSection;
@@ -262,11 +266,15 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
   {
     id: "vehicles",
     to: "/vehicles",
+    search: { tab: "vehicles" },
     label: "Kendaraan & Parkir",
     section: "pengelolaan",
     order: 70,
     icon: Bike,
-    access: { roles: OWNER_MANAGER_ADMIN, readCapabilities: ["vehicle.manage"] },
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      anyReadCapabilities: ["vehicle.manage", "parking.manage"],
+    },
     navigation: { sidebar: true, mobilePriority: 60 },
   },
   {
@@ -327,7 +335,10 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     section: "lainnya",
     order: 120,
     icon: MessageSquareWarning,
-    access: { roles: ["owner", "manager", "admin", "technician"] },
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      readCapabilities: ["complaint.manage"],
+    },
     navigation: { sidebar: true, mobilePriority: 80 },
   },
   {
@@ -424,6 +435,12 @@ export function getRouteAccessDecision(
   }
   if (
     route.access.readCapabilities?.some((capability) => !context.permissions.includes(capability))
+  ) {
+    return "forbidden";
+  }
+  if (
+    route.access.anyReadCapabilities?.length &&
+    !route.access.anyReadCapabilities.some((capability) => context.permissions.includes(capability))
   ) {
     return "forbidden";
   }

@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ const SLOT_STATUS_LABEL: Record<ParkingSlotStatus, { label: string; cls: string 
   maintenance: { label: "Maintenance", cls: "bg-warning/20 text-warning-foreground" },
 };
 
-function ParkingPage() {
+export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: ReactNode }) {
   const zonesQuery = useParkingZones(true);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [assignTarget, setAssignTarget] = useState<ParkingSlotRecord | null>(null);
@@ -72,6 +73,7 @@ function ParkingPage() {
 
   return (
     <AppShell title="Parkir" subtitle="Kelola zona dan slot parkir">
+      {workspaceNavigation}
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
         <Card>
           <CardHeader>

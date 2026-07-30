@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/state/EmptyState";
-import { ErrorState } from "@/components/state/ErrorState";
+import { EmptyState, ErrorState, ForbiddenState, LoadingState } from "@/components/state";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
@@ -17,6 +16,7 @@ import {
   useComplaints,
   useComplaintCategories,
   useComplaintFiles,
+  type ComplaintCategoryRecord,
   type ComplaintPriority,
   type ComplaintRecord,
   type StoredComplaintStatus,
@@ -62,6 +62,11 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { AttachedFilesPreview } from "@/components/file/AttachedFilesPreview";
+import {
+  isComplaintCategoryList,
+  isComplaintRecordList,
+  resolveComplaintRouteState,
+} from "@/lib/kmo-w00-route-integrity";
 
 export const Route = createFileRoute("/complaints")({ component: ComplaintsPage });
 
@@ -186,6 +191,14 @@ function ComplaintsPage() {
   const status = tabToStatusFilter(tab);
   const { data, isLoading, error, refetch, isFetching } = useComplaints({ status, limit: 100 });
   const categoriesQuery = useComplaintCategories();
+  const routeState = resolveComplaintRouteState({
+    complaints: data,
+    categories: categoriesQuery.data,
+    complaintError: error,
+    categoryError: categoriesQuery.error,
+    complaintLoading: isLoading,
+    categoryLoading: categoriesQuery.isLoading,
+  });
   const maintenanceDetailNeeded = Boolean(
     canReadMaintenance &&
     currentPropertyId &&
@@ -208,13 +221,18 @@ function ComplaintsPage() {
     setConfirmTransition(null);
   }, [currentPropertyId]);
 
+  const complaintRecords = isComplaintRecordList(data) ? (data as ComplaintRecord[]) : [];
+
   const categoryById = useMemo(() => {
     const map = new Map<string, string>();
-    (categoriesQuery.data ?? []).forEach((c) => map.set(c.id, c.name));
+    const categoryRecords = isComplaintCategoryList(categoriesQuery.data)
+      ? (categoriesQuery.data as ComplaintCategoryRecord[])
+      : [];
+    categoryRecords.forEach((c) => map.set(c.id, c.name));
     return map;
   }, [categoriesQuery.data]);
 
-  const items = data ?? [];
+  const items = complaintRecords;
 
   const filtered = useMemo(() => {
     if (!q) return items;
@@ -276,6 +294,48 @@ function ComplaintsPage() {
       selected.complaintStatus,
     ),
   );
+
+  const retryPrimaryQueries = () => {
+    void refetch();
+    void categoriesQuery.refetch();
+  };
+
+  switch (routeState) {
+    case "loading":
+      return (
+        <AppShell title="Komplain Penghuni" subtitle="Kelola tiket keluhan & maintenance">
+          <LoadingState label="Memuat komplain..." />
+        </AppShell>
+      );
+    case "forbidden":
+      return (
+        <AppShell title="Komplain Penghuni" subtitle="Akses dibatasi">
+          <ForbiddenState description="Akun Anda tidak memiliki izin membaca komplain properti ini." />
+        </AppShell>
+      );
+    case "error":
+      return (
+        <AppShell title="Komplain Penghuni" subtitle="Kelola tiket keluhan & maintenance">
+          <ErrorState
+            error={error ?? categoriesQuery.error}
+            onRetry={retryPrimaryQueries}
+            title="Gagal memuat komplain"
+          />
+        </AppShell>
+      );
+    case "invalid":
+      return (
+        <AppShell title="Komplain Penghuni" subtitle="Kelola tiket keluhan & maintenance">
+          <ErrorState
+            error={new Error("Respons server tidak sesuai kontrak.")}
+            onRetry={retryPrimaryQueries}
+            title="Respons komplain tidak valid"
+          />
+        </AppShell>
+      );
+    case "ready":
+      break;
+  }
 
   const applyDispatchSuccess = (result: MaintenanceDispatchResult) => {
     setSelected((current) =>

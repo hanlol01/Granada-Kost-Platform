@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -53,17 +54,99 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type VehiclesSearch = {
-  tab: "vehicles" | "parking";
-};
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ParkingPage } from "./parking";
+import {
+  canonicalSearchReplacement,
+  normalizeVehiclesSearch,
+  resolveVehicleWorkspaceTab,
+  vehiclesSearchString,
+  type VehiclesRouteSearch,
+} from "@/lib/kmo-w00-route-integrity";
+import { ForbiddenState, LoadingState } from "@/components/state";
 
 export const Route = createFileRoute("/vehicles")({
-  validateSearch: (raw: Record<string, unknown>): VehiclesSearch => ({
-    tab: raw.tab === "parking" ? "parking" : "vehicles",
-  }),
-  component: VehiclesPage,
+  validateSearch: normalizeVehiclesSearch,
+  component: VehiclesRoute,
 });
+
+function VehicleWorkspaceTabs({
+  value,
+  onChange,
+  canReadVehicles,
+  canReadParking,
+}: {
+  value: VehiclesRouteSearch["tab"];
+  onChange: (tab: VehiclesRouteSearch["tab"]) => void;
+  canReadVehicles: boolean;
+  canReadParking: boolean;
+}) {
+  return (
+    <Tabs
+      value={value}
+      onValueChange={(next) => onChange(next === "parking" ? "parking" : "vehicles")}
+      className="mb-4"
+    >
+      <TabsList aria-label="Bagian kendaraan dan parkir">
+        {canReadVehicles ? <TabsTrigger value="vehicles">Kendaraan</TabsTrigger> : null}
+        {canReadParking ? <TabsTrigger value="parking">Parkir</TabsTrigger> : null}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function VehiclesRoute() {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const { hasPermission } = useAuth();
+  const canReadVehicles = hasPermission("vehicle.manage");
+  const canReadParking = hasPermission("parking.manage");
+  const activeTab = resolveVehicleWorkspaceTab(search.tab, {
+    canReadVehicles,
+    canReadParking,
+  });
+  const canonicalSearch = activeTab ? vehiclesSearchString({ tab: activeTab }) : null;
+  const needsCanonicalSearch =
+    typeof window !== "undefined" &&
+    canonicalSearch !== null &&
+    canonicalSearchReplacement(window.location.search, canonicalSearch) !== null;
+
+  useEffect(() => {
+    if (activeTab === null || canonicalSearch === null || !needsCanonicalSearch) return;
+    void navigate({ search: { tab: activeTab }, replace: true });
+  }, [activeTab, canonicalSearch, navigate, needsCanonicalSearch]);
+
+  if (activeTab === null) {
+    return (
+      <AppShell title="Kendaraan & Parkir" subtitle="Akses dibatasi">
+        <ForbiddenState description="Akun Anda tidak memiliki izin kendaraan atau parkir." />
+      </AppShell>
+    );
+  }
+
+  if (needsCanonicalSearch) {
+    return (
+      <AppShell title="Kendaraan & Parkir" subtitle="Menyiapkan tampilan">
+        <LoadingState label="Menyiapkan tab..." />
+      </AppShell>
+    );
+  }
+
+  const workspaceNavigation = (
+    <VehicleWorkspaceTabs
+      value={activeTab}
+      onChange={(tab) => void navigate({ search: { tab }, replace: true })}
+      canReadVehicles={canReadVehicles}
+      canReadParking={canReadParking}
+    />
+  );
+
+  return activeTab === "parking" ? (
+    <ParkingPage workspaceNavigation={workspaceNavigation} />
+  ) : (
+    <VehiclesPage workspaceNavigation={workspaceNavigation} />
+  );
+}
 
 const STATUS_LABEL: Record<VehicleStatus, { label: string; cls: string }> = {
   pending_approval: { label: "Menunggu Approval", cls: "bg-warning/20 text-warning-foreground" },
@@ -113,7 +196,7 @@ function availableActions(status: VehicleStatus): TransitionKind[] {
   }
 }
 
-function VehiclesPage() {
+function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | VehicleStatus>("all");
   const [type, setType] = useState<"all" | VehicleType>("all");
@@ -232,6 +315,7 @@ function VehiclesPage() {
         </TooltipProvider>
       }
     >
+      {workspaceNavigation}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

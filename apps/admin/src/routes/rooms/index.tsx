@@ -4,14 +4,16 @@ import { BedDouble, Building2, DoorOpen, Layers, Wrench } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   Pagination,
+  RoomDiscoveryFilters,
   RoomDetailSheet,
   RoomInventoryTable,
+  type BuildingOption,
 } from "@/components/rooms/KostTypeInventoryPage";
-import { RoomCreateCategoryMenu } from "@/components/rooms/RoomCreateCategoryMenu";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   useM4KostTypes,
+  useM4AllRoomBuildings,
   useM4RoomAvailability,
   useM4RoomInventory,
 } from "@/hooks/useAdminUxMaster";
@@ -19,16 +21,18 @@ import {
   KOST_TYPE_LABEL,
   ROOM_STATUS_LABEL,
   type RoomRouteSearch,
-  hasRoomWriteAuthority,
+  normalizeRoomCreateRequest,
   normalizeRoomSearch,
   summarizeRoomInventory,
 } from "@/lib/admin-ux-master-helpers";
 import type { KostTypeCategory, RoomStatus } from "@/lib/admin-ux-master-api";
-import { useAuth } from "@/lib/auth";
 import { useProperty } from "@/lib/property";
 
 export const Route = createFileRoute("/rooms/")({
-  validateSearch: (raw: Record<string, unknown>) => normalizeRoomSearch(raw),
+  validateSearch: (raw: Record<string, unknown>): RoomRouteSearch & { create?: boolean } => {
+    const create = normalizeRoomCreateRequest(raw.create);
+    return { ...normalizeRoomSearch(raw), ...(create ? { create } : {}) };
+  },
   component: RoomsPage,
 });
 
@@ -36,22 +40,35 @@ function RoomsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const { currentPropertyId } = useProperty();
-  const { user, hasPermission } = useAuth();
-  const canCreateRoom = hasRoomWriteAuthority(
-    user?.roles ?? [],
-    hasPermission("room.manage"),
-    currentPropertyId,
-  );
   const previousPropertyId = useRef(currentPropertyId);
   const typesQuery = useM4KostTypes({ limit: 100 });
   const availabilityQuery = useM4RoomAvailability();
+  const buildingsQuery = useM4AllRoomBuildings();
   const roomsQuery = useM4RoomInventory({
     category: search.category,
+    q: search.q,
+    buildingId: search.buildingId,
+    floorCode: search.floorCode,
+    status: search.status,
+    genderPolicy: search.genderPolicy,
+    activeOccupancy: search.activeOccupancy,
+    reconciliationState: search.reconciliationState,
+    sort: search.sort,
+    order: search.order,
     limit: search.limit,
     offset: search.offset,
     includeActiveLease: true,
   });
   const propertyChanged = previousPropertyId.current !== currentPropertyId;
+
+  useEffect(() => {
+    if (search.create) {
+      void navigate({
+        replace: true,
+        search: (current) => ({ ...current, create: undefined }),
+      });
+    }
+  }, [navigate, search.create]);
 
   useEffect(() => {
     if (previousPropertyId.current !== currentPropertyId) {
@@ -64,13 +81,23 @@ function RoomsPage() {
   }, [currentPropertyId, navigate]);
 
   const onSearchChange = (next: Partial<RoomRouteSearch>) => {
-    void navigate({ search: (current) => ({ ...current, ...next }) });
+    const categoryChanged =
+      Object.prototype.hasOwnProperty.call(next, "category") && next.category !== search.category;
+    void navigate({
+      search: (current) => ({
+        ...current,
+        ...next,
+        ...(categoryChanged ? { buildingId: undefined } : {}),
+        create: undefined,
+      }),
+    });
   };
 
   if (
     propertyChanged ||
     typesQuery.isLoading ||
     availabilityQuery.isLoading ||
+    buildingsQuery.isLoading ||
     roomsQuery.isLoading
   ) {
     return (
@@ -79,15 +106,18 @@ function RoomsPage() {
       </AppShell>
     );
   }
-  if (typesQuery.error || availabilityQuery.error || roomsQuery.error) {
+  if (typesQuery.error || availabilityQuery.error || buildingsQuery.error || roomsQuery.error) {
     return (
       <AppShell title="Ringkasan Kamar" subtitle="Inventori fisik dan tipe kost">
         <ErrorState
-          error={typesQuery.error ?? availabilityQuery.error ?? roomsQuery.error}
+          error={
+            typesQuery.error ?? availabilityQuery.error ?? buildingsQuery.error ?? roomsQuery.error
+          }
           title="Gagal memuat ringkasan kamar"
           onRetry={() => {
             void typesQuery.refetch();
             void availabilityQuery.refetch();
+            void buildingsQuery.refetch();
             void roomsQuery.refetch();
           }}
         />
@@ -97,6 +127,14 @@ function RoomsPage() {
 
   const types = typesQuery.data?.items ?? [];
   const rooms = roomsQuery.data?.items ?? [];
+  const buildings: BuildingOption[] = (buildingsQuery.data ?? [])
+    .filter((building) => !search.category || building.category === search.category)
+    .map((building) => ({
+      id: building.id,
+      label: building.buildingName || building.buildingCode,
+      category: building.category,
+      genderPolicy: building.genderPolicy,
+    }));
   const {
     statusCounts: counts,
     totalInventory: totalRooms,
@@ -117,7 +155,6 @@ function RoomsPage() {
     <AppShell
       title="Ringkasan Kamar"
       subtitle="Master tipe kost mengendalikan harga, deposit, dan fasilitas; kamar adalah inventori fisik."
-      actions={canCreateRoom ? <RoomCreateCategoryMenu /> : null}
     >
       <div className="space-y-5 pb-24 lg:pb-8">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -188,7 +225,13 @@ function RoomsPage() {
                   key={category ?? "all"}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => onSearchChange({ category, offset: 0, roomId: undefined })}
+                  onClick={() =>
+                    onSearchChange({
+                      category,
+                      offset: 0,
+                      roomId: undefined,
+                    })
+                  }
                   className="rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <Card
@@ -212,12 +255,18 @@ function RoomsPage() {
           </div>
         </section>
 
+        <RoomDiscoveryFilters
+          buildings={buildings}
+          search={search}
+          onSearchChange={onSearchChange}
+        />
         <RoomInventoryTable
           rooms={rooms}
           canManage={false}
           onDetail={(room) => onSearchChange({ roomId: room.id })}
           onEdit={() => undefined}
           onStatus={() => undefined}
+          showCategory
         />
         <Pagination
           offset={roomsQuery.data?.offset ?? search.offset}

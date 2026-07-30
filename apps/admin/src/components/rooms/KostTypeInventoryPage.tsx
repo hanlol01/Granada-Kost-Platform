@@ -12,7 +12,6 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
-  Plus,
   Search,
   ShieldAlert,
   Users,
@@ -66,7 +65,6 @@ import {
   type KostTypeCategory,
   type KostTypeInput,
   type RoomInventory,
-  type RoomInventoryInput,
   type RoomInventoryUpdateInput,
 } from "@/lib/admin-ux-master-api";
 import {
@@ -97,11 +95,9 @@ type Props = {
   category: KostTypeCategory;
   search: RoomRouteSearch;
   onSearchChange: (next: Partial<RoomRouteSearch>) => void;
-  createRequested?: boolean;
-  onCreateConsumed?: () => void;
 };
 
-type BuildingOption = {
+export type BuildingOption = {
   id: string;
   label: string;
   category: KostTypeCategory;
@@ -131,13 +127,7 @@ function RoomStatusBadge({ status }: { status: RoomInventory["status"] }) {
   );
 }
 
-export function KostTypeInventoryPage({
-  category,
-  search,
-  onSearchChange,
-  createRequested = false,
-  onCreateConsumed,
-}: Props) {
+export function KostTypeInventoryPage({ category, search, onSearchChange }: Props) {
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
   const canManage = hasRoomWriteAuthority(
@@ -151,17 +141,21 @@ export function KostTypeInventoryPage({
     category,
     q: search.q,
     buildingId: search.buildingId,
-    floor: search.floor,
+    floorCode: search.floorCode,
     status: search.status,
+    genderPolicy: search.genderPolicy,
+    activeOccupancy: search.activeOccupancy,
+    reconciliationState: search.reconciliationState,
+    sort: search.sort,
+    order: search.order,
     includeActiveLease: true,
     limit: search.limit,
     offset: search.offset,
   });
   const [typeEditor, setTypeEditor] = useState<KostType | null | "create">(null);
-  const [roomEditor, setRoomEditor] = useState<RoomInventory | null | "create">(null);
+  const [roomEditor, setRoomEditor] = useState<RoomInventory | null>(null);
   const [detailRoom, setDetailRoom] = useState<RoomInventory | null>(null);
   const [statusRoom, setStatusRoom] = useState<RoomInventory | null>(null);
-  const createRequestConsumed = useRef(false);
   const currentRoomScope = `${currentPropertyId ?? ""}:${category}`;
   const previousRoomScope = useRef(currentRoomScope);
   const roomScopeChanged = previousRoomScope.current !== currentRoomScope;
@@ -186,7 +180,6 @@ export function KostTypeInventoryPage({
     [buildingQuery.data, category, currentPropertyId],
   );
   const canPersistRoom = Boolean(canManage && activeType && buildings.length > 0);
-  const referencesLoading = typeQuery.isLoading || buildingQuery.isLoading;
 
   useEffect(() => {
     setDetailRoom(null);
@@ -198,17 +191,6 @@ export function KostTypeInventoryPage({
   useEffect(() => {
     if (!canPersistRoom) setRoomEditor(null);
   }, [canPersistRoom]);
-
-  useEffect(() => {
-    if (!createRequested) {
-      createRequestConsumed.current = false;
-      return;
-    }
-    if (referencesLoading || createRequestConsumed.current) return;
-    createRequestConsumed.current = true;
-    if (canPersistRoom) setRoomEditor("create");
-    onCreateConsumed?.();
-  }, [canPersistRoom, createRequested, onCreateConsumed, referencesLoading]);
 
   if (typeQuery.isLoading || buildingQuery.isLoading || roomQuery.isLoading) {
     return (
@@ -249,13 +231,6 @@ export function KostTypeInventoryPage({
               <FilePenLine className="mr-2 h-4 w-4" />
               {activeType ? "Edit Tipe Kost" : "Buat Tipe Kost"}
             </Button>
-            <Button
-              className="min-h-11"
-              onClick={() => setRoomEditor("create")}
-              disabled={!canManage || !activeType || buildings.length === 0}
-            >
-              <Plus className="mr-2 h-4 w-4" /> Tambah Kamar
-            </Button>
           </div>
         ) : null
       }
@@ -284,7 +259,7 @@ export function KostTypeInventoryPage({
           </Card>
         )}
 
-        <RoomFilters
+        <RoomDiscoveryFilters
           category={category}
           buildings={buildings}
           search={search}
@@ -297,6 +272,7 @@ export function KostTypeInventoryPage({
           onDetail={setDetailRoom}
           onEdit={setRoomEditor}
           onStatus={setStatusRoom}
+          showCategory={false}
         />
         <Pagination
           offset={search.offset}
@@ -304,18 +280,6 @@ export function KostTypeInventoryPage({
           total={roomQuery.data?.total ?? 0}
           onChange={(offset) => onSearchChange({ offset })}
         />
-        {!activeType && canManage ? (
-          <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
-            Inventori baru membutuhkan tipe kost aktif. Tambah kamar tersedia setelah tipe dan
-            bangunan yang sesuai ditemukan.
-          </p>
-        ) : null}
-        {activeType && canManage && buildings.length === 0 ? (
-          <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
-            Belum ada bangunan untuk kategori {KOST_TYPE_LABEL[category]}. Tambah kamar
-            dinonaktifkan sampai referensi bangunan tersedia.
-          </p>
-        ) : null}
       </div>
       <KostTypeEditor
         category={category}
@@ -323,17 +287,19 @@ export function KostTypeInventoryPage({
         open={typeEditor !== null}
         onOpenChange={(open) => !open && setTypeEditor(null)}
       />
-      <RoomInventoryEditor
-        key={currentRoomScope}
-        room={roomScopeChanged || roomEditor === "create" ? null : roomEditor}
-        propertyId={currentPropertyId}
-        category={category}
-        types={types.filter((item) => item.status === "active")}
-        buildings={buildings}
-        canPersist={canPersistRoom}
-        open={!roomScopeChanged && canPersistRoom && roomEditor !== null}
-        onOpenChange={(open) => !open && setRoomEditor(null)}
-      />
+      {roomEditor ? (
+        <RoomInventoryEditor
+          key={`${currentRoomScope}:${roomEditor.id}`}
+          room={roomEditor}
+          propertyId={currentPropertyId}
+          category={category}
+          types={types.filter((item) => item.status === "active")}
+          buildings={buildings}
+          canPersist={canPersistRoom}
+          open={!roomScopeChanged && canPersistRoom}
+          onOpenChange={(open) => !open && setRoomEditor(null)}
+        />
+      ) : null}
       <RoomDetailSheet
         room={detailRoom}
         open={detailRoom !== null}
@@ -428,33 +394,47 @@ function Metric({
   );
 }
 
-function RoomFilters({
+export function RoomDiscoveryFilters({
   category,
   buildings,
   search,
   onSearchChange,
 }: {
-  category: KostTypeCategory;
+  category?: KostTypeCategory;
   buildings: BuildingOption[];
   search: RoomRouteSearch;
   onSearchChange: (next: Partial<RoomRouteSearch>) => void;
 }) {
+  const [searchText, setSearchText] = useState(search.q);
+  useEffect(() => setSearchText(search.q), [search.q]);
+  const applySearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSearchChange({ q: searchText.trim(), offset: 0, roomId: undefined });
+  };
   return (
     <Card className="border-slate-800 bg-slate-900/80">
-      <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,0.8fr))_auto]">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <Input
-            className="border-slate-700 bg-slate-950 pl-9 text-slate-100"
-            placeholder={`Cari ${KOST_TYPE_LABEL[category].toLowerCase()}...`}
-            value={search.q}
-            onChange={(event) => onSearchChange({ q: event.target.value, offset: 0 })}
-          />
-        </div>
+      <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+        <form className="flex gap-2 md:col-span-2" onSubmit={applySearch}>
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Input
+              className="border-slate-700 bg-slate-950 pl-9 text-slate-100"
+              aria-label="Cari kamar"
+              placeholder={`Cari ${category ? KOST_TYPE_LABEL[category].toLowerCase() : "kamar, bangunan, tipe, atau penghuni"}...`}
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+            />
+          </div>
+          <Button type="submit">Cari</Button>
+        </form>
         <Select
           value={search.buildingId ?? "all"}
           onValueChange={(buildingId) =>
-            onSearchChange({ buildingId: buildingId === "all" ? undefined : buildingId, offset: 0 })
+            onSearchChange({
+              buildingId: buildingId === "all" ? undefined : buildingId,
+              offset: 0,
+              roomId: undefined,
+            })
           }
         >
           <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
@@ -475,6 +455,7 @@ function RoomFilters({
             onSearchChange({
               status: status === "all" ? undefined : (status as RoomInventory["status"]),
               offset: 0,
+              roomId: undefined,
             })
           }
         >
@@ -491,9 +472,13 @@ function RoomFilters({
           </SelectContent>
         </Select>
         <Select
-          value={search.floor ?? "all"}
-          onValueChange={(floor) =>
-            onSearchChange({ floor: floor === "all" ? undefined : floor, offset: 0 })
+          value={search.floorCode ?? "all"}
+          onValueChange={(floorCode) =>
+            onSearchChange({
+              floorCode: floorCode === "all" ? undefined : (floorCode as "A" | "B"),
+              offset: 0,
+              roomId: undefined,
+            })
           }
         >
           <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
@@ -505,14 +490,121 @@ function RoomFilters({
             <SelectItem value="B">Lantai bawah</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={search.genderPolicy ?? "all"}
+          onValueChange={(genderPolicy) =>
+            onSearchChange({
+              genderPolicy:
+                genderPolicy === "all" ? undefined : (genderPolicy as "male" | "female"),
+              offset: 0,
+              roomId: undefined,
+            })
+          }
+        >
+          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+            <SelectValue placeholder="Semua gender" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua gender</SelectItem>
+            <SelectItem value="male">Putra</SelectItem>
+            <SelectItem value="female">Putri</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={
+            search.activeOccupancy === undefined
+              ? "all"
+              : search.activeOccupancy
+                ? "active"
+                : "none"
+          }
+          onValueChange={(value) =>
+            onSearchChange({
+              activeOccupancy: value === "all" ? undefined : value === "active",
+              offset: 0,
+              roomId: undefined,
+            })
+          }
+        >
+          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+            <SelectValue placeholder="Semua hunian" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua hunian</SelectItem>
+            <SelectItem value="active">Ada penghuni aktif</SelectItem>
+            <SelectItem value="none">Tanpa penghuni aktif</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={search.reconciliationState ?? "all"}
+          onValueChange={(reconciliationState) =>
+            onSearchChange({
+              reconciliationState:
+                reconciliationState === "all"
+                  ? undefined
+                  : (reconciliationState as "normal" | "requires_review"),
+              offset: 0,
+              roomId: undefined,
+            })
+          }
+        >
+          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+            <SelectValue placeholder="Semua rekonsiliasi" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua rekonsiliasi</SelectItem>
+            <SelectItem value="normal">Normal</SelectItem>
+            <SelectItem value="requires_review">Perlu rekonsiliasi</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={search.sort ?? "room_number"}
+          onValueChange={(sort) =>
+            onSearchChange({ sort: sort as RoomRouteSearch["sort"], offset: 0, roomId: undefined })
+          }
+        >
+          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+            <SelectValue placeholder="Urutkan" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="room_number">Nomor kamar</SelectItem>
+            <SelectItem value="building">Bangunan</SelectItem>
+            <SelectItem value="category">Kategori</SelectItem>
+            <SelectItem value="gender_policy">Jenis kelamin</SelectItem>
+            <SelectItem value="status">Status</SelectItem>
+            <SelectItem value="active_resident">Penghuni aktif</SelectItem>
+            <SelectItem value="updated_at">Terakhir diperbarui</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={search.order ?? "asc"}
+          onValueChange={(order) =>
+            onSearchChange({ order: order as "asc" | "desc", offset: 0, roomId: undefined })
+          }
+        >
+          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+            <SelectValue placeholder="Arah urutan" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asc">Naik</SelectItem>
+            <SelectItem value="desc">Turun</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           onClick={() =>
             onSearchChange({
               q: "",
+              category: category,
               buildingId: undefined,
-              floor: undefined,
+              floorCode: undefined,
               status: undefined,
+              genderPolicy: undefined,
+              activeOccupancy: undefined,
+              reconciliationState: undefined,
+              sort: undefined,
+              order: undefined,
+              roomId: undefined,
               offset: 0,
             })
           }
@@ -567,6 +659,7 @@ export function RoomInventoryTable({
   onDetail,
   onEdit,
   onStatus,
+  showCategory = true,
 }: {
   rooms: RoomInventory[];
   canManage: boolean;
@@ -574,6 +667,7 @@ export function RoomInventoryTable({
   onDetail: (room: RoomInventory) => void;
   onEdit: (room: RoomInventory) => void;
   onStatus: (room: RoomInventory) => void;
+  showCategory?: boolean;
 }) {
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
@@ -591,7 +685,7 @@ export function RoomInventoryTable({
           <EmptyState
             icon={<BedDouble className="h-5 w-5" />}
             title="Tidak ada kamar pada hasil ini"
-            description="Ubah filter atau tambahkan inventori yang sesuai dengan tipe kost aktif."
+            description="Ubah atau reset filter untuk melihat inventori kamar yang tersedia."
           />
         </CardContent>
       </Card>
@@ -606,10 +700,10 @@ export function RoomInventoryTable({
               <tr>
                 <th className="px-4 py-3">Kamar</th>
                 <th className="px-4 py-3">Bangunan</th>
-                <th className="px-4 py-3">Tipe Kost</th>
+                {showCategory ? <th className="px-4 py-3">Kategori</th> : null}
+                <th className="px-4 py-3">Jenis Kelamin</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Penghuni Aktif</th>
-                <th className="px-4 py-3 text-right">Harga dari Tipe</th>
                 <th className="px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
@@ -633,11 +727,13 @@ export function RoomInventoryTable({
                     <td className="px-4 py-3 text-slate-300">
                       {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-slate-200">{room.kostType.name}</p>
-                      <p className="text-xs text-slate-500">
+                    {showCategory ? (
+                      <td className="px-4 py-3 text-slate-300">
                         {KOST_TYPE_LABEL[room.kostType.category]}
-                      </p>
+                      </td>
+                    ) : null}
+                    <td className="px-4 py-3 text-slate-300">
+                      {room.genderPolicy === "male" ? "Putra" : "Putri"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-start gap-1.5">
@@ -660,14 +756,6 @@ export function RoomInventoryTable({
                       ) : (
                         <span className="text-slate-500">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="font-medium text-slate-100">
-                        {formatIDR(room.kostType.monthlyPrice)}/bln
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {formatIDR(room.kostType.depositAmount)} deposit
-                      </p>
                     </td>
                     <td
                       className="px-4 py-3 text-right"
@@ -1002,17 +1090,17 @@ const ROOM_FIELD_ID: Record<RoomDraftField, string> = {
   floorCode: "room-floor-code",
 };
 
-function draftForRoom(room: RoomInventory | null): RoomDraft {
+function draftForRoom(room: RoomInventory): RoomDraft {
   return {
-    kostTypeId: room?.kostType.id ?? "",
-    number: room?.number ?? "",
-    roomCode: room?.roomCode ?? "",
-    buildingId: room?.buildingId ?? "",
-    floorCode: room?.floorCode ?? "",
-    unitCode: room?.unitCode ?? "",
-    sizeLabel: room?.sizeLabel ?? "",
-    primaryPhotoFileId: room?.primaryPhotoFileId ?? null,
-    publicVisible: room?.publicVisible ?? true,
+    kostTypeId: room.kostType.id,
+    number: room.number,
+    roomCode: room.roomCode ?? "",
+    buildingId: room.buildingId ?? "",
+    floorCode: room.floorCode ?? "",
+    unitCode: room.unitCode ?? "",
+    sizeLabel: room.sizeLabel ?? "",
+    primaryPhotoFileId: room.primaryPhotoFileId ?? null,
+    publicVisible: room.publicVisible,
   };
 }
 
@@ -1041,10 +1129,9 @@ function validateRoomDraft(
   return errors;
 }
 
-function roomInputFromDraft(draft: RoomDraft, propertyId: string): RoomInventoryInput {
+function roomInputFromDraft(draft: RoomDraft): RoomInventoryUpdateInput {
   if (!draft.floorCode) throw new Error("ROOM_FLOOR_REQUIRED");
   return {
-    propertyId,
     kostTypeId: draft.kostTypeId,
     number: draft.number.trim(),
     roomCode: optionalRoomText(draft.roomCode),
@@ -1103,7 +1190,7 @@ function RoomInventoryEditor({
   open,
   onOpenChange,
 }: {
-  room: RoomInventory | null;
+  room: RoomInventory;
   propertyId: string | null | undefined;
   category: KostTypeCategory;
   types: KostType[];
@@ -1188,25 +1275,16 @@ function RoomInventoryEditor({
     }
 
     const generation = editorGeneration.current;
-    const roomId = room?.id ?? null;
-    const input = roomInputFromDraft(draft, propertyId);
-    const updateInput: RoomInventoryUpdateInput = {
-      kostTypeId: input.kostTypeId,
-      number: input.number,
-      roomCode: input.roomCode,
-      buildingId: input.buildingId,
-      floorCode: input.floorCode,
-      unitCode: input.unitCode,
-      sizeLabel: input.sizeLabel,
-      primaryPhotoFileId: input.primaryPhotoFileId,
-      publicVisible: input.publicVisible,
-    };
+    const roomId = room.id;
+    const updateInput = roomInputFromDraft(draft);
     try {
-      await submitRoomMutation(
-        roomId
-          ? { kind: "update", propertyId, category, roomId, input: updateInput }
-          : { kind: "create", propertyId, category, input },
-      );
+      await submitRoomMutation({
+        kind: "update",
+        propertyId,
+        category,
+        roomId,
+        input: updateInput,
+      });
       const current = editorScope.current;
       if (
         editorGeneration.current === generation &&
@@ -1230,7 +1308,7 @@ function RoomInventoryEditor({
         className="w-full max-w-full overflow-x-hidden overflow-y-auto border-border bg-background text-foreground sm:max-w-2xl lg:max-w-3xl"
       >
         <SheetHeader>
-          <SheetTitle>{room ? "Edit Inventori Kamar" : "Tambah Kamar"}</SheetTitle>
+          <SheetTitle>Edit Inventori Kamar</SheetTitle>
           <SheetDescription>
             Form ini hanya mengubah inventori fisik. Harga, deposit, dan fasilitas berasal dari tipe
             kost.
@@ -1479,7 +1557,7 @@ function RoomInventoryEditor({
             </Button>
             <Button type="submit" className="min-h-11" disabled={pending || !canPersist}>
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {room ? "Simpan Inventori" : "Tambah Kamar"}
+              Simpan Inventori
             </Button>
           </SheetFooter>
         </form>

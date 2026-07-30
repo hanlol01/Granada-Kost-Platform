@@ -443,6 +443,8 @@ test('registered RoomController forwards V2 idempotency keys and preserves legac
     {
       create: async (...args: unknown[]) =>
         v2Calls.push({ operation: 'create', body: args[1], key: args[3] }),
+      rejectRoutineCreate: async (_user: unknown, propertyId: string) =>
+        legacyCalls.push({ operation: 'create', body: { property_id: propertyId } }),
       update: async (...args: unknown[]) =>
         v2Calls.push({ operation: 'update', body: args[2], key: args[4] }),
     } as never,
@@ -499,21 +501,7 @@ test('live route remains singular and dormant V2 controller stays unregistered',
   assert.equal(registered.includes(AdminUxRoomV2Controller), false);
 });
 
-test('V2 runtime DTO validation trims input and rejects legacy-only invalid bodies', async () => {
-  const first = fixture();
-  const created = await first.service.create(
-    user(),
-    { ...createBody, number: ' 101 ', room_code: ' ', gender_policy: 'male' },
-    context,
-    IDEMPOTENCY_KEY,
-  );
-  assert.equal(created.data.number, '101');
-  assert.equal(created.data.room_code, null);
-  assert.equal(created.data.gender_policy, 'male');
-  assert.equal(created.data.floor, '2');
-  assert.equal(created.data.floor_label, 'Lantai Atas / LT.2');
-  assert.equal(created.data.status, 'vacant');
-
+test('V2 runtime DTO validation rejects malformed bodies before fixed-inventory authority', async () => {
   for (const invalid of [
     { ...createBody, floor_code: undefined },
     { ...createBody, property_id: 'not-v4' },
@@ -538,15 +526,6 @@ test('V2 runtime DTO validation trims input and rejects legacy-only invalid bodi
     ['true', true],
     ['false', false],
   ] as const) {
-    const createFixture = fixture();
-    const createResponse = await createFixture.service.create(
-      user(),
-      { ...createBody, public_visible: raw },
-      context,
-      `${IDEMPOTENCY_KEY}-create-boolean-${String(raw)}`,
-    );
-    assert.equal(createResponse.data.public_visible, expected);
-
     const updateFixture = fixture();
     const updateResponse = await updateFixture.service.update(
       user(),
@@ -559,19 +538,6 @@ test('V2 runtime DTO validation trims input and rejects legacy-only invalid bodi
   }
 
   for (const raw of ['1', '0', '', 'yes', 1, 0, {}, []]) {
-    const createFixture = fixture();
-    await rejectsCode(
-      () =>
-        createFixture.service.create(
-          user(),
-          { ...createBody, public_visible: raw },
-          context,
-          `${IDEMPOTENCY_KEY}-invalid-create`,
-        ),
-      'VALIDATION_ERROR',
-    );
-    assert.equal(createFixture.database.transactionCount, 0);
-
     const updateFixture = fixture();
     await rejectsCode(
       () =>
@@ -586,6 +552,20 @@ test('V2 runtime DTO validation trims input and rejects legacy-only invalid bodi
     );
     assert.equal(updateFixture.database.transactionCount, 0);
   }
+
+  const fixed = fixture();
+  await rejectsCode(
+    () =>
+      fixed.service.create(
+        user(),
+        { ...createBody, number: ' 101 ', room_code: ' ', public_visible: 'false' },
+        context,
+        IDEMPOTENCY_KEY,
+      ),
+    'ROOM_INVENTORY_FIXED',
+  );
+  assert.equal(fixed.database.transactionCount, 0);
+  assert.equal(fixed.audits.length, 0);
 });
 
 function databaseServiceWithClient(client: {
@@ -694,7 +674,7 @@ test('property denial, missing key, and scoped missing/foreign update perform ze
   const missingKey = fixture();
   await rejectsCode(
     () => missingKey.service.create(user(), createBody, context),
-    'IDEMPOTENCY_KEY_REQUIRED',
+    'ROOM_INVENTORY_FIXED',
   );
   assert.equal(missingKey.database.transactionCount, 0);
   const missingUpdateKey = fixture();
@@ -719,32 +699,24 @@ test('property denial, missing key, and scoped missing/foreign update perform ze
   }
 });
 
-test('commercial and authoritative gender/floor mismatches are deterministic', async () => {
-  for (const [body, code] of [
-    [{ ...createBody, monthly_price: 1 }, 'IMMUTABLE_ROOM_COMMERCIAL_FIELD'],
-    [{ ...createBody, monthly_price: 'invalid' }, 'IMMUTABLE_ROOM_COMMERCIAL_FIELD'],
-    [{ ...createBody, gender_policy: 'female' }, 'ROOM_GENDER_POLICY_MISMATCH'],
-    [{ ...createBody, floor_label: 'Lantai Bawah / LT.1' }, 'ROOM_FLOOR_MISMATCH'],
-  ] as const) {
+test('valid routine create variants consistently use fixed-inventory authority', async () => {
+  for (const body of [
+    { ...createBody, monthly_price: 1 },
+    { ...createBody, gender_policy: 'female' },
+    { ...createBody, floor_label: 'Lantai Bawah / LT.1' },
+  ]) {
     const current = fixture();
-    await rejectsCode(() => current.service.create(user(), body, context, IDEMPOTENCY_KEY), code);
+    await rejectsCode(
+      () => current.service.create(user(), body, context, IDEMPOTENCY_KEY),
+      'ROOM_INVENTORY_FIXED',
+    );
     assert.equal(current.database.rooms.size, 1);
+    assert.equal(current.database.transactionCount, 0);
     assert.equal(current.audits.length, 0);
   }
 });
 
-test('create, floor move, cross-building move, and harmless edit maintain exact counters', async () => {
-  const createFixture = fixture();
-  await createFixture.service.create(user(), createBody, context, IDEMPOTENCY_KEY);
-  assert.deepEqual(
-    (({ total_rooms, floor_a_count, floor_b_count }) => ({
-      total_rooms,
-      floor_a_count,
-      floor_b_count,
-    }))(createFixture.database.buildings.get(BUILDING_A)!),
-    { total_rooms: 11, floor_a_count: 6, floor_b_count: 5 },
-  );
-
+test('floor move, cross-building move, and harmless edit maintain exact counters', async () => {
   const floorFixture = fixture();
   await floorFixture.service.update(
     user(),
@@ -967,52 +939,6 @@ test('reserved/occupied/hold/occupancy/lease block structural edits but harmless
   }
 });
 
-test('same-key replay/concurrency writes one room, one counter delta, and one audit', async () => {
-  const current = fixture();
-  const [first, second] = await Promise.all([
-    current.service.create(user(), createBody, context, IDEMPOTENCY_KEY),
-    current.service.create(user(), createBody, context, IDEMPOTENCY_KEY),
-  ]);
-  assert.deepEqual(first, second);
-  assert.equal(current.database.rooms.size, 2);
-  assert.equal(current.database.buildings.get(BUILDING_A)!.total_rooms, 11);
-  assert.equal(current.audits.length, 1);
-
-  await rejectsCode(
-    () =>
-      current.service.create(
-        user(),
-        { ...createBody, number: 'different' },
-        context,
-        IDEMPOTENCY_KEY,
-      ),
-    'IDEMPOTENCY_KEY_REUSED',
-  );
-  assert.equal(current.database.rooms.size, 2);
-  assert.equal(current.audits.length, 1);
-});
-
-test('different idempotency keys still enforce room uniqueness without double counters', async () => {
-  const current = fixture();
-  const results = await Promise.allSettled([
-    current.service.create(user(), createBody, context, `${IDEMPOTENCY_KEY}-unique-a`),
-    current.service.create(user(), createBody, context, `${IDEMPOTENCY_KEY}-unique-b`),
-  ]);
-  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-  const rejected = results.find((result) => result.status === 'rejected');
-  assert.ok(rejected?.status === 'rejected');
-  assert.equal(errorCode(rejected.reason), 'ROOM_CONFLICT');
-  assert.equal(current.database.rooms.size, 2);
-  assert.equal(current.database.buildings.get(BUILDING_A)!.total_rooms, 11);
-  assert.equal(current.audits.length, 1);
-  assert.equal(
-    [...current.database.commands.values()].filter(
-      (command) => command.command_status === 'succeeded',
-    ).length,
-    1,
-  );
-});
-
 test('lock order is deterministic and audit/idempotency success share the transaction', async () => {
   const current = fixture();
   await current.service.update(
@@ -1054,17 +980,26 @@ test('lock order is deterministic and audit/idempotency success share the transa
   );
 });
 
-test('audit failure rolls back room, counters, and successful command result', async () => {
+test('audit failure rolls back room update, counters, and successful command result', async () => {
   const current = fixture({ auditFailure: true });
-  await assert.rejects(() => current.service.create(user(), createBody, context, IDEMPOTENCY_KEY));
+  await assert.rejects(() =>
+    current.service.update(user(), ROOM_A, { size_label: 'rollback-me' }, context, IDEMPOTENCY_KEY),
+  );
   assert.equal(current.database.rooms.size, 1);
+  assert.equal(current.database.rooms.get(ROOM_A)!.size_label, '3 x 4 m');
   assert.equal(current.database.buildings.get(BUILDING_A)!.total_rooms, 10);
   assert.equal(current.database.commands.size, 0);
 });
 
 test('response and audit expose only their exact safe whitelists', async () => {
   const current = fixture();
-  const response = await current.service.create(user(), createBody, context, IDEMPOTENCY_KEY);
+  const response = await current.service.update(
+    user(),
+    ROOM_A,
+    { size_label: 'safe' },
+    context,
+    IDEMPOTENCY_KEY,
+  );
   const serialized = JSON.parse(JSON.stringify(response)) as { data: Record<string, unknown> };
   assert.deepEqual(Object.keys(serialized), ['data']);
   assert.deepEqual(Object.keys(serialized.data).sort(), [
@@ -1140,7 +1075,7 @@ function assertMutationSensitiveSource(source: string) {
   assert.match(source, /total_rooms = total_rooms \+ \$2/);
   assert.match(source, /floor_a_count = floor_a_count \+ \$3/);
   assert.match(source, /floor_b_count = floor_b_count \+ \$4/);
-  assert.equal([...source.matchAll(/this\.audit\.write\([\s\S]*?\},\s*client,\s*\);/g)].length, 2);
+  assert.equal([...source.matchAll(/this\.audit\.write\([\s\S]*?\},\s*client,\s*\);/g)].length, 1);
   assert.match(source, /if \(command\) return command\.body/);
 }
 

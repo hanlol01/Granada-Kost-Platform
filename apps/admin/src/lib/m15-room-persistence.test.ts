@@ -8,7 +8,6 @@ import {
   parseRoomInventoryMutationEnvelope,
   toRoomPersistenceBody,
   type RoomInventory,
-  type RoomInventoryInput,
   type RoomInventoryUpdateInput,
 } from "./admin-ux-master-api";
 import {
@@ -140,18 +139,6 @@ function roomWire(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const createInput: RoomInventoryInput = {
-  propertyId: PROPERTY_ID,
-  kostTypeId: KOST_TYPE_ID,
-  number: "RK-01-99",
-  roomCode: null,
-  buildingId: BUILDING_ID,
-  floorCode: "B",
-  unitCode: null,
-  sizeLabel: "3 × 4 m",
-  primaryPhotoFileId: null,
-  publicVisible: true,
-};
 const updateInput = {
   kostTypeId: KOST_TYPE_ID,
   number: "RK-01-99",
@@ -180,48 +167,25 @@ test("create query accepts only exact true and write authority is fail-closed", 
   assert.equal(hasRoomWriteAuthority(["admin"], true, null), false);
 });
 
-test("dashboard and rooms summary use one chooser with exact category targets", () => {
+test("dashboard and room summaries expose no routine create affordance", () => {
   const dashboard = source("routes/index.tsx");
   const rooms = source("routes/rooms/index.tsx");
-  const chooser = source("components/rooms/RoomCreateCategoryMenu.tsx");
-  assert.equal(jsxElements(dashboard, "routes/index.tsx", "RoomCreateCategoryMenu").length, 1);
-  assert.equal(jsxElements(rooms, "routes/rooms/index.tsx", "RoomCreateCategoryMenu").length, 1);
-  const links = jsxElements(chooser, "RoomCreateCategoryMenu.tsx", "Link");
-  assert.deepEqual(links.map((link) => stringJsxAttribute(link, "to")).sort(), [
-    "/rooms/apart-kost",
-    "/rooms/rumah-kost",
-  ]);
-  assert.equal(
-    links.every((link) => link.getText().includes("search={CREATE_SEARCH}")),
-    true,
-  );
-  assert.match(chooser, /const CREATE_SEARCH = \{ q: "", offset: 0, limit: 20, create: true \}/);
+  assert.doesNotMatch(dashboard, /RoomCreateCategoryMenu|Tambah Kamar/);
+  assert.doesNotMatch(rooms, /RoomCreateCategoryMenu|Tambah Kamar/);
 });
 
-test("category routes parse create exactly and consume it using replace", () => {
+test("category routes canonicalize legacy create query without opening an editor", () => {
   for (const file of ["routes/rooms/rumah-kost.tsx", "routes/rooms/apart-kost.tsx"]) {
     const route = source(file);
     assert.match(route, /create:\s*normalizeRoomCreateRequest\(raw\.create\) \|\| undefined/);
-    assert.match(route, /createRequested=\{search\.create === true\}/);
-    assert.match(route, /onCreateConsumed=/);
+    assert.match(route, /if \(search\.create\)/);
     assert.match(route, /replace:\s*true/);
     assert.match(route, /create:\s*undefined/);
+    assert.doesNotMatch(route, /createRequested|onCreateConsumed/);
   }
 });
 
-test("create and update bodies contain only canonical physical fields", () => {
-  assert.deepEqual(toRoomPersistenceBody(createInput), {
-    property_id: PROPERTY_ID,
-    kost_type_id: KOST_TYPE_ID,
-    number: "RK-01-99",
-    room_code: null,
-    building_id: BUILDING_ID,
-    floor_code: "B",
-    unit_code: null,
-    size_label: "3 × 4 m",
-    primary_photo_file_id: null,
-    public_visible: true,
-  });
+test("update body contains only canonical physical fields", () => {
   const updateBody = toRoomPersistenceBody(updateInput);
   assert.equal("property_id" in updateBody, false);
   for (const forbidden of [
@@ -324,10 +288,11 @@ test("logical retries reuse one key while payload and scope changes rotate it", 
   let sequence = 0;
   const createKey = () => `key-${++sequence}`;
   const base: RoomPersistenceRequest = {
-    kind: "create",
+    kind: "update",
     propertyId: PROPERTY_ID,
     category: "rukost",
-    input: createInput,
+    roomId: ROOM_ID,
+    input: updateInput,
   };
   const firstFingerprint = roomMutationFingerprint(base);
   const first = resolveRoomMutationIntent(null, firstFingerprint, createKey);
@@ -337,7 +302,7 @@ test("logical retries reuse one key while payload and scope changes rotate it", 
 
   const changed = resolveRoomMutationIntent(
     retry,
-    roomMutationFingerprint({ ...base, input: { ...createInput, number: "RK-01-100" } }),
+    roomMutationFingerprint({ ...base, input: { ...updateInput, number: "RK-01-100" } }),
     createKey,
   );
   assert.notEqual(changed.idempotencyKey, first.idempotencyKey);
@@ -346,7 +311,6 @@ test("logical retries reuse one key while payload and scope changes rotate it", 
     roomMutationFingerprint({
       ...base,
       propertyId: OTHER_PROPERTY_ID,
-      input: { ...createInput, propertyId: OTHER_PROPERTY_ID },
     }),
     createKey,
   );
@@ -412,10 +376,11 @@ test("synchronous submission guard deduplicates one intent and isolates scope re
 
 test("scope, authoritative references, lifecycle, and safe recovery are behavioral", () => {
   const request: RoomPersistenceRequest = {
-    kind: "create",
+    kind: "update",
     propertyId: PROPERTY_ID,
     category: "rukost",
-    input: createInput,
+    roomId: ROOM_ID,
+    input: updateInput,
   };
   assert.equal(
     roomPersistenceScopeMatches(
@@ -508,11 +473,11 @@ test("room persistence invalidation is exact and property-scoped", () => {
 test("room requester uses strict mutation parsing and preserves generic mutation semantics", () => {
   const api = source("lib/admin-ux-master-api.ts");
   const roomsApi = api.slice(api.indexOf("rooms: {"), api.indexOf("updateStatus:"));
-  assert.match(roomsApi, /\.post<unknown>/);
+  assert.doesNotMatch(roomsApi, /\.post<unknown>/);
   assert.match(roomsApi, /\.patch<unknown>/);
-  assert.equal((roomsApi.match(/toRoomPersistenceBody/g) ?? []).length, 2);
+  assert.equal((roomsApi.match(/toRoomPersistenceBody/g) ?? []).length, 1);
   assert.doesNotMatch(roomsApi, /toRoomInventoryBody/);
-  assert.equal((roomsApi.match(/\.then\(parseRoomInventoryMutationEnvelope\)/g) ?? []).length, 2);
+  assert.equal((roomsApi.match(/\.then\(parseRoomInventoryMutationEnvelope\)/g) ?? []).length, 1);
   assert.doesNotMatch(roomsApi, /data<RoomInventory>/);
 
   const hooks = source("hooks/useAdminUxMaster.ts");
@@ -528,10 +493,13 @@ test("editor authority, scope reset, and stale-success close are explicit", () =
   const validator = functionText(page, "KostTypeInventoryPage.tsx", "validateRoomDraft");
   assert.match(inventoryPage, /hasRoomWriteAuthority/);
   assert.match(inventoryPage, /canPersistRoom/);
-  assert.match(inventoryPage, /if \(canPersistRoom\) setRoomEditor\("create"\)/);
+  assert.doesNotMatch(inventoryPage, /setRoomEditor\("create"\)|Tambah Kamar/);
   assert.match(inventoryPage, /if \(!canPersistRoom\) setRoomEditor\(null\)/);
   assert.match(inventoryPage, /setRoomEditor\(null\)/);
-  assert.match(inventoryPage, /<RoomInventoryEditor[\s\S]*?key=\{currentRoomScope\}/);
+  assert.match(
+    inventoryPage,
+    /<RoomInventoryEditor[\s\S]*?key=\{`\$\{currentRoomScope\}:\$\{roomEditor\.id\}`\}/,
+  );
   assert.match(validator, /hasAuthoritativeRoomReferences/);
   assert.match(editor, /beforeRequest\.canPersist/);
   assert.match(editor, /current\.propertyId === propertyId/);

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { KostTypeInventoryPage } from "@/components/rooms/KostTypeInventoryPage";
 import { normalizeRoomCreateRequest, normalizeRoomSearch } from "@/lib/admin-ux-master-helpers";
@@ -5,9 +6,20 @@ import { normalizeRoomCreateRequest, normalizeRoomSearch } from "@/lib/admin-ux-
 type RoomCategoryRouteSearch = {
   q: string;
   building_id?: string;
-  floor?: string;
+  floor_code?: "A" | "B";
   status?: "vacant" | "reserved" | "occupied" | "maintenance" | "inactive" | "requires_review";
-  visibility?: "visible" | "hidden";
+  gender_policy?: "male" | "female";
+  active_occupancy?: boolean;
+  reconciliation_state?: "normal" | "requires_review";
+  sort?:
+    | "room_number"
+    | "building"
+    | "category"
+    | "gender_policy"
+    | "status"
+    | "active_resident"
+    | "updated_at";
+  order?: "asc" | "desc";
   offset: number;
   limit: number;
   room_id?: string;
@@ -19,9 +31,13 @@ function validateSearch(raw: Record<string, unknown>): RoomCategoryRouteSearch {
   return {
     q: search.q,
     building_id: search.buildingId,
-    floor: search.floor,
+    floor_code: search.floorCode,
     status: search.status,
-    visibility: search.visibility,
+    gender_policy: search.genderPolicy,
+    active_occupancy: search.activeOccupancy,
+    reconciliation_state: search.reconciliationState,
+    sort: search.sort,
+    order: search.order,
     offset: search.offset,
     limit: search.limit,
     room_id: search.roomId,
@@ -37,26 +53,31 @@ export const Route = createFileRoute("/rooms/apart-kost")({
 function ApartKostRoute() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  useEffect(() => {
+    if (search.create) {
+      void navigate({
+        replace: true,
+        search: (current) => ({ ...current, create: undefined }),
+      });
+    }
+  }, [navigate, search.create]);
   return (
     <KostTypeInventoryPage
       category="apartkost"
       search={{
         q: search.q,
         buildingId: search.building_id,
-        floor: search.floor,
+        floorCode: search.floor_code,
         status: search.status,
-        visibility: search.visibility,
+        genderPolicy: search.gender_policy,
+        activeOccupancy: search.active_occupancy,
+        reconciliationState: search.reconciliation_state,
+        sort: search.sort,
+        order: search.order,
         offset: search.offset,
         limit: search.limit,
         roomId: search.room_id,
       }}
-      createRequested={search.create === true}
-      onCreateConsumed={() =>
-        navigate({
-          replace: true,
-          search: (current) => ({ ...current, create: undefined }),
-        })
-      }
       onSearchChange={(next) =>
         navigate({
           search: (current) => ({
@@ -64,13 +85,23 @@ function ApartKostRoute() {
             building_id: Object.prototype.hasOwnProperty.call(next, "buildingId")
               ? next.buildingId
               : current.building_id,
-            floor: Object.prototype.hasOwnProperty.call(next, "floor") ? next.floor : current.floor,
+            floor_code: Object.prototype.hasOwnProperty.call(next, "floorCode")
+              ? next.floorCode
+              : current.floor_code,
             status: Object.prototype.hasOwnProperty.call(next, "status")
               ? next.status
               : current.status,
-            visibility: Object.prototype.hasOwnProperty.call(next, "visibility")
-              ? next.visibility
-              : current.visibility,
+            gender_policy: Object.prototype.hasOwnProperty.call(next, "genderPolicy")
+              ? next.genderPolicy
+              : current.gender_policy,
+            active_occupancy: Object.prototype.hasOwnProperty.call(next, "activeOccupancy")
+              ? next.activeOccupancy
+              : current.active_occupancy,
+            reconciliation_state: Object.prototype.hasOwnProperty.call(next, "reconciliationState")
+              ? next.reconciliationState
+              : current.reconciliation_state,
+            sort: Object.prototype.hasOwnProperty.call(next, "sort") ? next.sort : current.sort,
+            order: Object.prototype.hasOwnProperty.call(next, "order") ? next.order : current.order,
             offset: Object.prototype.hasOwnProperty.call(next, "offset")
               ? (next.offset ?? 0)
               : current.offset,
@@ -78,7 +109,7 @@ function ApartKostRoute() {
             room_id: Object.prototype.hasOwnProperty.call(next, "roomId")
               ? next.roomId
               : current.room_id,
-            create: current.create,
+            create: undefined,
           }),
         })
       }

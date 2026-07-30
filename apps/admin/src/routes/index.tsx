@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/app-shell";
-import { RoomCreateCategoryMenu } from "@/components/rooms/RoomCreateCategoryMenu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -11,9 +10,6 @@ import { FeatureDisabledState } from "@/components/state/FeatureDisabledState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
 import { formatDashboardIDR } from "@/lib/admin-ux-dashboard";
-import { hasRoomWriteAuthority } from "@/lib/admin-ux-master-helpers";
-import { useAuth } from "@/lib/auth";
-import { useProperty } from "@/lib/property";
 import {
   BedDouble,
   Users,
@@ -74,13 +70,6 @@ function StatCardSkeleton() {
 
 function Dashboard() {
   const { summary, isLoading, error, refetch, hasAccess, rolloutEnabled } = useDashboardSummary();
-  const { user, hasPermission } = useAuth();
-  const { currentPropertyId } = useProperty();
-  const canCreateRoom = hasRoomWriteAuthority(
-    user?.roles ?? [],
-    hasPermission("room.manage"),
-    currentPropertyId,
-  );
   const occupancyPercent =
     summary && summary.roomsTotal > 0
       ? Math.round((summary.roomsOccupied / summary.roomsTotal) * 100)
@@ -90,11 +79,7 @@ function Dashboard() {
   if (!rolloutEnabled) return <FeatureDisabledState />;
 
   return (
-    <AppShell
-      title="Dashboard"
-      subtitle="Ringkasan pengelolaan rumah kos Anda"
-      actions={canCreateRoom ? <RoomCreateCategoryMenu /> : null}
-    >
+    <AppShell title="Dashboard" subtitle="Ringkasan pengelolaan rumah kos Anda">
       {error ? (
         <ErrorState error={error} onRetry={refetch} title="Gagal memuat ringkasan" />
       ) : (

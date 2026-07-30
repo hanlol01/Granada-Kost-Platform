@@ -56,16 +56,54 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   building_id?: string;
 
   @IsOptional()
-  @IsString()
-  floor?: string;
+  @IsIn(['A', 'B'])
+  floor_code?: 'A' | 'B';
 
   @IsOptional()
   @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive', 'requires_review'])
   status?: string;
 
   @IsOptional()
+  @Transform(optionalTrimmedString)
   @IsString()
+  @MaxLength(120)
   q?: string;
+
+  @IsOptional()
+  @IsIn(['male', 'female'])
+  gender_policy?: 'male' | 'female';
+
+  @IsOptional()
+  @Transform(exactBooleanValue)
+  @IsBoolean()
+  active_occupancy?: boolean;
+
+  @IsOptional()
+  @IsIn(['normal', 'requires_review'])
+  reconciliation_state?: 'normal' | 'requires_review';
+
+  @IsOptional()
+  @IsIn([
+    'room_number',
+    'building',
+    'category',
+    'gender_policy',
+    'status',
+    'active_resident',
+    'updated_at',
+  ])
+  sort?:
+    | 'room_number'
+    | 'building'
+    | 'category'
+    | 'gender_policy'
+    | 'status'
+    | 'active_resident'
+    | 'updated_at';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 
   @IsOptional()
   @Transform(exactBooleanValue)

@@ -13,8 +13,8 @@ import {
   type KostTypeCategory,
   type MasterStatus,
   type RoomInventory,
-  type RoomInventoryInput,
   type RoomInventoryUpdateInput,
+  type RoomInventorySort,
   type RoomStatus,
 } from "@/lib/admin-ux-master-api";
 import {
@@ -39,8 +39,13 @@ export type RoomInventoryFilters = PageOptions & {
   category?: KostTypeCategory;
   kostTypeId?: string;
   buildingId?: string;
-  floor?: string;
+  floorCode?: "A" | "B";
   status?: RoomStatus;
+  genderPolicy?: "male" | "female";
+  activeOccupancy?: boolean;
+  reconciliationState?: "normal" | "requires_review";
+  sort?: RoomInventorySort;
+  order?: "asc" | "desc";
   q?: string;
   includeActiveLease?: boolean;
 };
@@ -138,8 +143,13 @@ export function useM4RoomInventory(filters: RoomInventoryFilters = {}) {
         category: filters.category,
         kostTypeId: filters.kostTypeId,
         buildingId: filters.buildingId,
-        floor: filters.floor,
+        floorCode: filters.floorCode,
         status: filters.status,
+        genderPolicy: filters.genderPolicy,
+        activeOccupancy: filters.activeOccupancy,
+        reconciliationState: filters.reconciliationState,
+        sort: filters.sort,
+        order: filters.order,
         q: filters.q,
         includeActiveLease: filters.includeActiveLease,
         limit: Number(normalized.limit),
@@ -167,20 +177,22 @@ export function useM4RoomBuildings(category: KostTypeCategory | null | undefined
   });
 }
 
-export type RoomPersistenceRequest =
-  | {
-      kind: "create";
-      propertyId: string;
-      category: KostTypeCategory;
-      input: RoomInventoryInput;
-    }
-  | {
-      kind: "update";
-      propertyId: string;
-      category: KostTypeCategory;
-      roomId: string;
-      input: RoomInventoryUpdateInput;
-    };
+export function useM4AllRoomBuildings() {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.rooms.buildings(currentPropertyId ?? "", ""),
+    queryFn: () => adminUxMasterApi.rooms.buildings(currentPropertyId!),
+    enabled: Boolean(currentPropertyId),
+  });
+}
+
+export type RoomPersistenceRequest = {
+  kind: "update";
+  propertyId: string;
+  category: KostTypeCategory;
+  roomId: string;
+  input: RoomInventoryUpdateInput;
+};
 
 export type RoomMutationIntentState = {
   fingerprint: string;
@@ -239,7 +251,7 @@ export function roomMutationFingerprint(request: RoomPersistenceRequest): string
     kind: request.kind,
     propertyId: request.propertyId,
     category: request.category,
-    roomId: request.kind === "update" ? request.roomId : null,
+    roomId: request.roomId,
     payload,
   });
 }
@@ -284,26 +296,19 @@ export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
       if (!roomPersistenceScopeMatches(scopeRef.current, request)) {
         throw new Error("PROPERTY_SCOPE_CHANGED");
       }
-      if (request.kind === "create" && request.input.propertyId !== request.propertyId) {
-        throw new Error("PROPERTY_SCOPE_MISMATCH");
-      }
-
       const fingerprint = roomMutationFingerprint(request);
       const intent = resolveRoomMutationIntent(intentRef.current, fingerprint);
       intentRef.current = intent;
-      const room =
-        request.kind === "create"
-          ? await adminUxMasterApi.rooms.create(request.input, intent.idempotencyKey)
-          : await adminUxMasterApi.rooms.update(
-              request.roomId,
-              request.input,
-              intent.idempotencyKey,
-            );
+      const room = await adminUxMasterApi.rooms.update(
+        request.roomId,
+        request.input,
+        intent.idempotencyKey,
+      );
 
       if (
         room.propertyId !== request.propertyId ||
         room.kostType.category !== request.category ||
-        (request.kind === "update" && room.id !== request.roomId)
+        room.id !== request.roomId
       ) {
         throw new Error("ROOM_MUTATION_SCOPE_MISMATCH");
       }
@@ -327,9 +332,7 @@ export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
         intentRef.current = null;
       }
       if (roomPersistenceScopeMatches(scopeRef.current, request)) {
-        toast.success(
-          request.kind === "create" ? "Kamar berhasil disimpan" : "Inventori kamar diperbarui",
-        );
+        toast.success("Inventori kamar diperbarui");
       }
     },
     onError: (error, request) => {

@@ -66,13 +66,15 @@ export class RoomController {
   @RequirePermissions('room.read')
   list(
     @CurrentUser() user: UserAccessContext,
-    @Query() query: ListRoomsQueryDto,
+    @Query() query: unknown,
     @Headers('accept') accept?: string,
   ) {
     if (acceptsAdminUxV2(accept)) {
       return this.roomsV2.list(user, query);
     }
-    return this.rooms.listRooms(user, query);
+    return this.validateLegacyQuery(query).then((legacyQuery) =>
+      this.rooms.listRooms(user, legacyQuery),
+    );
   }
 
   @Get('availability')
@@ -115,7 +117,7 @@ export class RoomController {
       );
     }
     const legacyDto = await this.validateLegacyBody(CreateRoomDto, dto);
-    return this.rooms.createRoom(user, legacyDto, this.contextFromRequest(request));
+    return this.roomsV2.rejectRoutineCreate(user, legacyDto.property_id);
   }
 
   @Get(':roomId')
@@ -190,5 +192,12 @@ export class RoomController {
       type: 'body',
       metatype,
     }) as Promise<T>;
+  }
+
+  private validateLegacyQuery(value: unknown): Promise<ListRoomsQueryDto> {
+    return this.legacyWriteValidation.transform(value, {
+      type: 'query',
+      metatype: ListRoomsQueryDto,
+    }) as Promise<ListRoomsQueryDto>;
   }
 }

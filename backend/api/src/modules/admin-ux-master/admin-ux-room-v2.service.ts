@@ -72,30 +72,115 @@ export class AdminUxRoomV2Service {
     private readonly audit: AuditRepository,
   ) {}
 
-  async list(user: UserAccessContext, query: ListRoomsV2QueryDto) {
+  async list(user: UserAccessContext, dto: unknown) {
+    const query = await this.validateQuery(ListRoomsV2QueryDto, dto);
     const scope = await this.scope(user, query.property_id);
     const { limit, offset } = normalizePagination(query);
-    const filters = [
+    const search = this.escapeSearchPattern(query.q);
+    const filters: Array<string | string[] | boolean | null> = [
       scope,
       query.property_id ?? null,
       query.kost_type_id ?? null,
       query.category ?? null,
       query.building_id ?? null,
-      query.floor ?? null,
+      query.floor_code ?? null,
       query.status ?? null,
-      query.q ?? null,
+      search,
     ];
+    const optionalFilters: string[] = [];
+    if (query.gender_policy !== undefined) {
+      filters.push(query.gender_policy);
+      optionalFilters.push(`AND room.gender_policy = $${filters.length}`);
+    }
+    if (query.active_occupancy !== undefined) {
+      filters.push(query.active_occupancy);
+      optionalFilters.push(`AND (
+            EXISTS (
+              SELECT 1
+              FROM occupancies active_occupancy
+              WHERE active_occupancy.property_id = room.property_id
+                AND active_occupancy.room_id = room.id
+                AND active_occupancy.occupancy_status = 'active'
+            ) = $${filters.length}
+          )`);
+    }
+    if (query.reconciliation_state !== undefined) {
+      filters.push(query.reconciliation_state);
+      optionalFilters.push(`AND (
+            (
+              $${filters.length} = 'requires_review' AND
+              EXISTS (
+                SELECT 1
+                FROM occupancies review_occupancy
+                WHERE review_occupancy.property_id = room.property_id
+                  AND review_occupancy.room_id = room.id
+                  AND review_occupancy.occupancy_status = 'active'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM leases review_lease
+                    WHERE review_lease.property_id = room.property_id
+                      AND review_lease.room_id = room.id
+                      AND review_lease.resident_id = review_occupancy.resident_id
+                      AND review_lease.lease_status = 'active'
+                  )
+              )
+            ) OR (
+              $${filters.length} = 'normal' AND
+              NOT EXISTS (
+                SELECT 1
+                FROM occupancies review_occupancy
+                WHERE review_occupancy.property_id = room.property_id
+                  AND review_occupancy.room_id = room.id
+                  AND review_occupancy.occupancy_status = 'active'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM leases review_lease
+                    WHERE review_lease.property_id = room.property_id
+                      AND review_lease.room_id = room.id
+                      AND review_lease.resident_id = review_occupancy.resident_id
+                      AND review_lease.lease_status = 'active'
+                  )
+              )
+            )
+          )`);
+    }
     const fromAndWhere = `FROM rooms room
-       JOIN kost_types kost_type ON kost_type.id = room.kost_type_id
-       LEFT JOIN room_buildings building ON building.id = room.building_id
+       JOIN kost_types kost_type
+         ON kost_type.id = room.kost_type_id
+        AND kost_type.property_id = room.property_id
+       LEFT JOIN room_buildings building
+         ON building.id = room.building_id
+        AND building.property_id = room.property_id
        WHERE ($1::uuid[] IS NULL OR room.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR room.property_id = $2)
          AND ($3::uuid IS NULL OR room.kost_type_id = $3)
          AND ($4::text IS NULL OR kost_type.category = $4)
-         AND ($5::uuid IS NULL OR room.building_id = $5)
-         AND ($6::text IS NULL OR room.floor = $6)
+         AND ($5::uuid IS NULL OR building.id = $5)
+         AND ($6::text IS NULL OR room.floor_code = $6)
          AND ($7::text IS NULL OR room.room_status = $7)
-         AND ($8::text IS NULL OR room.number ILIKE '%' || $8 || '%' OR room.room_code ILIKE '%' || $8 || '%')`;
+         AND ($8::text IS NULL OR
+           room.number ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           room.room_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           building.building_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           building.building_name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           kost_type.name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           CASE kost_type.category
+             WHEN 'rukost' THEN 'Rumah Kost'
+             WHEN 'apartkost' THEN 'Apart Kost'
+           END ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           EXISTS (
+             SELECT 1
+             FROM occupancies active_occupancy
+             JOIN residents active_resident
+               ON active_resident.id = active_occupancy.resident_id
+              AND active_resident.property_id = active_occupancy.property_id
+             WHERE active_occupancy.property_id = room.property_id
+               AND active_occupancy.room_id = room.id
+               AND active_occupancy.occupancy_status = 'active'
+               AND active_resident.full_name ILIKE '%' || $8 || '%' ESCAPE E'\\\\'
+           )
+          )
+         ${optionalFilters.join('\n         ')}`;
     const countResult = await this.database.client.query<{ total: number }>(
       `SELECT COUNT(*)::int AS total
        ${fromAndWhere}`,
@@ -105,6 +190,9 @@ export class AdminUxRoomV2Service {
     if (total === 0 || offset >= total) {
       return v2List([], limit, offset, total);
     }
+    const orderBy = this.roomOrderBy(query.sort, query.order);
+    const limitParameter = filters.length + 1;
+    const offsetParameter = filters.length + 2;
     const result = await this.database.client.query<Row>(
       `SELECT
          room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
@@ -114,8 +202,8 @@ export class AdminUxRoomV2Service {
          kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
          building.building_code, building.building_name
        ${fromAndWhere}
-       ORDER BY room.property_id, building.building_code NULLS LAST, room.floor_code NULLS LAST, room.room_code NULLS LAST, room.number
-       LIMIT $9 OFFSET $10`,
+       ORDER BY ${orderBy}, room.id
+       LIMIT $${limitParameter} OFFSET $${offsetParameter}`,
       [...filters, limit, offset],
     );
     const records = await this.hydrate(result.rows, query.include_active_lease ?? false);
@@ -157,92 +245,16 @@ export class AdminUxRoomV2Service {
     context: RequestAuditContext,
     idempotencyKey?: string,
   ) {
-    this.assertNoCommercialFields(dto);
     const input = await this.validateWriteBody(CreateRoomV2Dto, dto);
     await this.assertCanMutate(user, input.property_id);
+    void context;
+    void idempotencyKey;
+    this.throwFixedInventory();
+  }
 
-    return this.executeCommand(
-      user,
-      input.property_id,
-      '/rooms',
-      idempotencyKey,
-      input,
-      context,
-      201,
-      async (client) => {
-        const buildings = await this.lockBuildings(client, input.property_id, [input.building_id]);
-        const building = buildings.get(input.building_id);
-        if (!building) this.throwBuildingScopeMismatch();
-        const kostType = await this.requireActiveKostType(
-          input.kost_type_id,
-          input.property_id,
-          client,
-          true,
-        );
-        this.assertBuildingMatchesType(building, kostType);
-        this.assertBuildingGender(building, input.gender_policy);
-        const canonicalFloor = this.canonicalFloor(input.floor_code);
-        this.assertFloorInputs(input, canonicalFloor);
-        if (input.primary_photo_file_id) {
-          await this.assertPhotoFile(input.primary_photo_file_id, input.property_id, client);
-        }
-
-        const result = await client.query<Row>(
-          `INSERT INTO rooms (
-             property_id, kost_type_id, number, room_code, building_id, category, unit_code, gender_policy,
-             floor, floor_code, floor_label, size_label, monthly_price, yearly_price, deposit_amount,
-             room_status, primary_photo_file_id, public_visible, created_by_user_id, updated_by_user_id
-           ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::integer, $14::integer,
-             $15::integer, 'vacant', $16, $17, $18, $18
-           ) RETURNING id`,
-          [
-            input.property_id,
-            input.kost_type_id,
-            input.number,
-            input.room_code ?? null,
-            input.building_id,
-            kostType.category,
-            input.unit_code ?? null,
-            building.gender_policy,
-            canonicalFloor.floor,
-            input.floor_code,
-            canonicalFloor.floorLabel,
-            input.size_label ?? null,
-            Number(kostType.monthly_price),
-            Number(kostType.yearly_price),
-            Number(kostType.deposit_amount),
-            input.primary_photo_file_id ?? null,
-            input.public_visible ?? true,
-            user.id,
-          ],
-        );
-        const roomId = String(result.rows[0].id);
-        await this.applyCounterDeltas(client, [
-          {
-            buildingId: input.building_id,
-            total: 1,
-            floorA: input.floor_code === 'A' ? 1 : 0,
-            floorB: input.floor_code === 'B' ? 1 : 0,
-          },
-        ]);
-        const room = await this.roomById(roomId, false, client, input.property_id);
-        await this.audit.write(
-          {
-            actorUserId: user.id,
-            propertyId: input.property_id,
-            action: 'room.create.v2',
-            resourceType: 'room',
-            resourceId: roomId,
-            afterData: this.auditRoom(room),
-            resultStatus: 'success',
-            ...context,
-          },
-          client,
-        );
-        return { resourceType: 'room', resourceId: roomId, data: room };
-      },
-    );
+  async rejectRoutineCreate(user: UserAccessContext, propertyId: string): Promise<never> {
+    await this.assertCanMutate(user, propertyId);
+    this.throwFixedInventory();
   }
 
   async update(
@@ -496,7 +508,9 @@ export class AdminUxRoomV2Service {
              JOIN occupancies occupancy
                ON occupancy.room_id = scoped.room_id
               AND occupancy.property_id = scoped.property_id
-             JOIN residents resident ON resident.id = occupancy.resident_id
+              JOIN residents resident
+                ON resident.id = occupancy.resident_id
+               AND resident.property_id = occupancy.property_id
              WHERE occupancy.occupancy_status = 'active'`,
             [roomIds, propertyIds],
           )
@@ -1011,6 +1025,50 @@ export class AdminUxRoomV2Service {
       });
     }
     return key;
+  }
+
+  private validateQuery<T extends object>(metatype: new () => T, value: unknown): Promise<T> {
+    return this.writeValidation.transform(value, {
+      type: 'query',
+      metatype,
+    }) as Promise<T>;
+  }
+
+  private escapeSearchPattern(value?: string): string | null {
+    return value ? value.replace(/[\\%_]/g, '\\$&') : null;
+  }
+
+  private roomOrderBy(
+    sort: ListRoomsV2QueryDto['sort'],
+    order: ListRoomsV2QueryDto['order'],
+  ): string {
+    const direction = order === 'desc' ? 'DESC' : 'ASC';
+    const columns: Record<NonNullable<ListRoomsV2QueryDto['sort']>, string> = {
+      room_number: 'room.number',
+      building: 'building.building_code',
+      category: 'kost_type.category',
+      gender_policy: 'room.gender_policy',
+      status: 'room.room_status',
+      active_resident: `(SELECT active_resident.full_name
+        FROM occupancies active_occupancy
+        JOIN residents active_resident
+          ON active_resident.id = active_occupancy.resident_id
+         AND active_resident.property_id = active_occupancy.property_id
+        WHERE active_occupancy.property_id = room.property_id
+          AND active_occupancy.room_id = room.id
+          AND active_occupancy.occupancy_status = 'active'
+        ORDER BY active_occupancy.start_date DESC, active_occupancy.id DESC
+        LIMIT 1)`,
+      updated_at: 'room.updated_at',
+    };
+    return `${columns[sort ?? 'room_number']} ${direction} NULLS LAST`;
+  }
+
+  private throwFixedInventory(): never {
+    throw new ConflictException({
+      code: 'ROOM_INVENTORY_FIXED',
+      message: 'Room inventory is fixed and cannot be expanded through routine operations.',
+    });
   }
 
   private stringOrEmpty(value: unknown): string {

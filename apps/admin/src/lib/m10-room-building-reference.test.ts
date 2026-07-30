@@ -7,6 +7,13 @@ import { adminUxQueryKeys } from "./admin-ux-query-keys";
 const source = (relativePath: string) =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
+const ROUTINE_ROOM_CREATE_UI =
+  /Tambah Kamar|Add Room|RoomCreateCategoryMenu|kind:\s*["']create["']|rooms\.create|create:\s*true/;
+
+function assertNoRoutineRoomCreateUi(candidate: string): void {
+  assert.doesNotMatch(candidate, ROUTINE_ROOM_CREATE_UI);
+}
+
 const PROPERTY_A = "11111111-1111-4111-8111-111111111111";
 const BUILDING_A = "22222222-2222-4222-8222-222222222222";
 
@@ -93,9 +100,50 @@ test("inventory page uses authoritative buildings independent of room page filte
   assert.match(page, /buildingQuery\.isLoading/);
   assert.match(page, /buildingQuery\.error/);
   assert.match(page, /void buildingQuery\.refetch\(\)/);
-  assert.match(page, /disabled=\{!canManage \|\| !activeType \|\| buildings\.length === 0\}/);
-  assert.match(page, /Belum ada bangunan untuk kategori/);
+  assert.match(
+    page,
+    /building\.propertyId === currentPropertyId && building\.category === category/,
+  );
+  assert.match(page, /onEdit=\{setRoomEditor\}/);
+  assert.match(page, /room=\{roomEditor\}/);
+  assert.match(page, /Edit inventori/);
   assert.doesNotMatch(page, /useMemo\(\(\) => buildingOptions\(rooms\), \[rooms\]\)/);
+});
+
+test("routine Add Room UI stays absent without removing safe existing-room edit", () => {
+  const dashboard = source("routes/index.tsx");
+  const rooms = source("routes/rooms/index.tsx");
+  const rumahKost = source("routes/rooms/rumah-kost.tsx");
+  const apartKost = source("routes/rooms/apart-kost.tsx");
+  const inventory = source("components/rooms/KostTypeInventoryPage.tsx");
+  const productionSurfaces = [dashboard, rooms, rumahKost, apartKost, inventory].join("\n");
+
+  assertNoRoutineRoomCreateUi(productionSurfaces);
+  assert.match(inventory, /onEdit=\{setRoomEditor\}/);
+  assert.match(inventory, /<RoomInventoryEditor/);
+  assert.match(inventory, /room=\{roomEditor\}/);
+  assert.match(inventory, /Edit inventori/);
+
+  for (const decoy of [
+    '<div hidden><button type="button">Tambah Kamar</button></div>',
+    '<div className="md:hidden"><RoomCreateCategoryMenu /></div>',
+    '<div className="hidden md:block"><button aria-label="Add Room" /></div>',
+    '<Link to="/rooms/rumah-kost" search={{ create: true }}>Pilih kategori kamar</Link>',
+  ]) {
+    assert.throws(() => assertNoRoutineRoomCreateUi(`${productionSurfaces}\n${decoy}`));
+  }
+});
+
+test("legacy create query is replace-only and cannot open the existing-room editor", () => {
+  for (const route of [
+    source("routes/rooms/rumah-kost.tsx"),
+    source("routes/rooms/apart-kost.tsx"),
+  ]) {
+    assert.match(route, /if \(search\.create\)/);
+    assert.match(route, /replace:\s*true/);
+    assert.match(route, /create:\s*undefined/);
+    assert.doesNotMatch(route, /setRoomEditor|RoomInventoryEditor|onCreate/);
+  }
 });
 
 test("room create serializer stays inventory-only", () => {

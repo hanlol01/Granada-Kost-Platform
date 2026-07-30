@@ -11,8 +11,21 @@ export type RoomRouteSearch = {
   category?: KostTypeCategory;
   buildingId?: string;
   floor?: string;
+  floorCode?: "A" | "B";
   status?: RoomStatus;
   visibility?: "visible" | "hidden";
+  genderPolicy?: "male" | "female";
+  activeOccupancy?: boolean;
+  reconciliationState?: "normal" | "requires_review";
+  sort?:
+    | "room_number"
+    | "building"
+    | "category"
+    | "gender_policy"
+    | "status"
+    | "active_resident"
+    | "updated_at";
+  order?: "asc" | "desc";
   offset: number;
   limit: number;
   roomId?: string;
@@ -178,10 +191,31 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
     q: optionalText(raw.q) ?? "",
     ...(category ? { category } : {}),
     buildingId: optionalText(raw.building_id, 80),
-    floor: optionalText(raw.floor, 80),
+    floor: undefined,
+    ...(raw.floor_code === "A" || raw.floor_code === "B" ? { floorCode: raw.floor_code } : {}),
     status,
-    visibility:
-      raw.visibility === "visible" || raw.visibility === "hidden" ? raw.visibility : undefined,
+    visibility: undefined,
+    ...(raw.gender_policy === "male" || raw.gender_policy === "female"
+      ? { genderPolicy: raw.gender_policy }
+      : {}),
+    ...(raw.active_occupancy === true || raw.active_occupancy === "true"
+      ? { activeOccupancy: true }
+      : raw.active_occupancy === false || raw.active_occupancy === "false"
+        ? { activeOccupancy: false }
+        : {}),
+    ...(raw.reconciliation_state === "normal" || raw.reconciliation_state === "requires_review"
+      ? { reconciliationState: raw.reconciliation_state }
+      : {}),
+    ...(raw.sort === "room_number" ||
+    raw.sort === "building" ||
+    raw.sort === "category" ||
+    raw.sort === "gender_policy" ||
+    raw.sort === "status" ||
+    raw.sort === "active_resident" ||
+    raw.sort === "updated_at"
+      ? { sort: raw.sort }
+      : {}),
+    ...(raw.order === "asc" || raw.order === "desc" ? { order: raw.order } : {}),
     offset: boundedInteger(raw.offset, 0, 0, Number.MAX_SAFE_INTEGER),
     limit: boundedInteger(raw.limit, 20, 1, 100),
     roomId: optionalText(raw.room_id ?? raw.roomId, 80),

@@ -225,6 +225,15 @@ export type RoomInventoryInput = {
 
 export type RoomInventoryUpdateInput = Partial<Omit<RoomInventoryInput, "propertyId">>;
 
+export type RoomInventorySort =
+  | "room_number"
+  | "building"
+  | "category"
+  | "gender_policy"
+  | "status"
+  | "active_resident"
+  | "updated_at";
+
 export type GalleryImageInput = GalleryTarget & {
   propertyId: string;
   fileId: string;
@@ -957,8 +966,13 @@ export const adminUxMasterApi = {
         kostTypeId?: string;
         category?: KostTypeCategory;
         buildingId?: string;
-        floor?: string;
+        floorCode?: "A" | "B";
         status?: RoomStatus;
+        genderPolicy?: "male" | "female";
+        activeOccupancy?: boolean;
+        reconciliationState?: "normal" | "requires_review";
+        sort?: RoomInventorySort;
+        order?: "asc" | "desc";
         q?: string;
         includeActiveLease?: boolean;
       },
@@ -970,8 +984,13 @@ export const adminUxMasterApi = {
             kost_type_id: input.kostTypeId,
             category: input.category,
             building_id: input.buildingId,
-            floor: input.floor,
+            floor_code: input.floorCode,
             status: input.status,
+            gender_policy: input.genderPolicy,
+            active_occupancy: input.activeOccupancy,
+            reconciliation_state: input.reconciliationState,
+            sort: input.sort,
+            order: input.order,
             q: input.q?.trim() || undefined,
             include_active_lease: input.includeActiveLease,
           },
@@ -981,7 +1000,7 @@ export const adminUxMasterApi = {
       adminUxV2Requester
         .get<unknown>("/rooms/availability", { query: { property_id: propertyId } })
         .then(parseRoomAvailabilityEnvelope),
-    buildings: (propertyId: string, category: KostTypeCategory) =>
+    buildings: (propertyId: string, category?: KostTypeCategory) =>
       adminUxV2Requester
         .get<unknown>("/rooms/buildings", {
           query: { property_id: propertyId, category },
@@ -993,10 +1012,6 @@ export const adminUxMasterApi = {
           query: { include_active_lease: includeActiveLease || undefined },
         })
         .then((value) => parseRoomInventoryDetailEnvelope(value, includeActiveLease)),
-    create: (input: RoomInventoryInput, idempotencyKey?: string) =>
-      adminUxV2Requester
-        .post<unknown>("/rooms", toRoomPersistenceBody(input), { idempotencyKey })
-        .then(parseRoomInventoryMutationEnvelope),
     update: (id: string, input: RoomInventoryUpdateInput, idempotencyKey?: string) =>
       adminUxV2Requester
         .patch<unknown>("/rooms/" + encodeURIComponent(id), toRoomPersistenceBody(input), {

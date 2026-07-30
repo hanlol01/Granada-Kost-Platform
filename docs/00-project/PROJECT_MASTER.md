@@ -21,6 +21,18 @@ Granada Kost Platform adalah monorepo untuk operasional kost dengan dua aplikasi
 - Payment gateway provider-agnostic (`PaymentGatewayProvider` interface + adapter); **Midtrans Sandbox adalah adapter pertama** (M15C). **Webhook is the source of truth** untuk status lunas otomatis; **redirect is UX only**; **manual payment proof remains fallback**. Status: **Payment Gateway sandbox/staging ready** - **production payment activation pending**; **Payment Gateway is not production-ready**.
 - Istilah UI resmi untuk resident adalah "Penghuni". Jangan gunakan istilah "tenant" pada UI.
 
+## Program Target Pasca-M19
+
+Perombakan fungsional menyeluruh berikutnya dibakukan di
+[`../21-kost-management-ecosystem-overhaul/README.md`](../21-kost-management-ecosystem-overhaul/README.md).
+Paket itu menggabungkan kebijakan pemilik properti, revisi product owner,
+evidence repository, kontrak domain, target UX, model data/API, roadmap, dan gate
+QA untuk Admin, publik `/kamar`, Penghuni, serta investor `property_owner`.
+
+Status paket: **approved planning, not implemented**. Riwayat delivery dan
+recovery di dokumen ini tetap evidence keadaan source saat ini dan tidak boleh
+dibaca seolah seluruh target baru sudah shipped.
+
 ## Status Recovery / Revision (per 2026-07-29)
 
 **recovery/revision milestone M9–M19 selesai** pada recovery implementation

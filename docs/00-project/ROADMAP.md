@@ -1,5 +1,17 @@
 # Roadmap
 
+## Current Target — KOSTATION Kost Management Ecosystem Overhaul
+
+Roadmap historis di bawah tetap menjadi catatan delivery. Target implementasi
+pasca-M19 berada di
+[`../21-kost-management-ecosystem-overhaul/IMPLEMENTATION_ROADMAP.md`](../21-kost-management-ecosystem-overhaul/IMPLEMENTATION_ROADMAP.md)
+dengan requirement authority di
+[`../21-kost-management-ecosystem-overhaul/README.md`](../21-kost-management-ecosystem-overhaul/README.md).
+
+Status: **approved planning, not implemented**. Paket `KMO-W00` sampai `KMO-W12`
+harus dijalankan sebagai vertical slice dependency-ordered, bukan satu milestone
+besar.
+
 ## Milestone 1 - Monorepo Foundation
 
 - Pindahkan Admin ke `apps/admin`.
@@ -93,6 +105,7 @@ Status: ✅ COMPLETE
 Tanggal selesai: 2026-07-02
 
 Catatan:
+
 - M11A–M11G selesai.
 - M11BV, M11CV, M11DV, M11EV, M11FV, dan M11GV seluruhnya PASS.
 - QA-01 Final Regression PASS.
@@ -106,6 +119,7 @@ Catatan:
   - Halaman Penghuni live: Home, Billing, Complaints read, Notifications, Info, Profile/session.
   - Smart Lock, CCTV, Booking, Chat, dan file upload fisik tetap placeholder/deferred sesuai scope.
 - Verdict: Milestone 11 selesai, seluruh validation gate PASS, Frontend Admin/Penghuni Phase 1 Internal Demo Ready.
+
 ## Milestone 12 - Reports + Audit Minimum
 
 - M11G - Operational Reports & Audit Readiness. Status: selesai.

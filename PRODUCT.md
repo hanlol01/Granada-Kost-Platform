@@ -18,6 +18,13 @@ KOSTATION menyatukan fakta operasional hunian agar setiap perubahan lifecycle me
 
 Keberhasilan berarti data kamar, calon penghuni, penyewaan, hunian, billing, pembayaran, komplain, dan maintenance tetap konsisten dalam scope properti yang benar serta dapat dipahami tanpa membaca detail teknis internal.
 
+Perencanaan pasca-M19 untuk perombakan fungsional menyeluruh berada di
+[`docs/21-kost-management-ecosystem-overhaul/`](docs/21-kost-management-ecosystem-overhaul/README.md).
+Paket tersebut berstatus **approved planning, not implemented** dan menjadi
+authority target untuk Admin, katalog publik, aplikasi Penghuni, serta akses
+investor `property_owner`. Keberadaan dokumen itu tidak mengubah evidence shipped
+yang dicatat di bawah.
+
 ## Positioning
 
 KOSTATION adalah sumber data operasional terpadu untuk lifecycle:

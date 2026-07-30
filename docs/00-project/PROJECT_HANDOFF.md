@@ -2,6 +2,11 @@
 
 > Diperbarui: 2026-07-29 (M19 recovery/revision closure). Dokumen serah terima kondisi proyek untuk engineer/agen berikutnya.
 > Truth matrix lengkap dan batas evidence berada di `.claude/LOCAL_CHECKPOINT.md`.
+>
+> Target kerja pasca-handoff dibakukan di
+> [`../21-kost-management-ecosystem-overhaul/README.md`](../21-kost-management-ecosystem-overhaul/README.md).
+> Status paket tersebut **approved planning, not implemented**; executor harus
+> mengambil satu work package terurut dan tidak melakukan big-bang rewrite.
 
 ## Status Saat Ini
 

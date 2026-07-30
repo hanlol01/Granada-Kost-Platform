@@ -1,6 +1,13 @@
 # Backlog
 
 > Update 2026-07-03 (M12F): item yang telah selesai ditandai "Selesai" dan tidak lagi dianggap backlog aktif. Item File API yang dulu bergantung pada "File Module belum ada" telah diselesaikan oleh M12C1 (lihat TD-004).
+>
+> Authority backlog fungsional pasca-M19 berada di
+> [`../21-kost-management-ecosystem-overhaul/IMPLEMENTATION_ROADMAP.md`](../21-kost-management-ecosystem-overhaul/IMPLEMENTATION_ROADMAP.md)
+> dan
+> [`../21-kost-management-ecosystem-overhaul/TRACEABILITY_MATRIX.md`](../21-kost-management-ecosystem-overhaul/TRACEABILITY_MATRIX.md).
+> Statusnya **approved planning, not implemented**. Butir historis di dokumen ini
+> tetap dipertahankan dan harus direkonsiliasi saat work package terkait dimulai.
 
 ## Foundation
 
@@ -56,18 +63,18 @@ Pendataan kendaraan penghuni untuk kebutuhan administrasi dan keamanan lingkunga
 
 Scope Awal:
 
-* plate_number
-* vehicle_type (motorcycle, car, bicycle, other)
-* brand
-* color
-* resident relation
-* property relation
+- plate_number
+- vehicle_type (motorcycle, car, bicycle, other)
+- brand
+- color
+- resident relation
+- property relation
 
 Catatan:
 
-* Satu penghuni dapat memiliki lebih dari satu kendaraan.
-* Data kendaraan digunakan untuk identifikasi penghuni dan keamanan lingkungan kost.
-* Approval perubahan data kendaraan dilakukan oleh Admin.
+- Satu penghuni dapat memiliki lebih dari satu kendaraan.
+- Data kendaraan digunakan untuk identifikasi penghuni dan keamanan lingkungan kost.
+- Approval perubahan data kendaraan dilakukan oleh Admin.
 
 Status:
 Deferred until backend foundation is completed.
@@ -101,6 +108,7 @@ Original description (historis):
 `payment_proof_files.file_id` saat itu belum memiliki foreign key karena File Module belum diimplementasikan.
 
 Checklist asli saat File Module dibuat (kini terpenuhi via M12C1):
+
 - Review relasi `payment_proof_files`
 - Tambahkan FK ke file metadata table
 - Evaluasi soft delete strategy
@@ -123,12 +131,14 @@ Description:
 Billing calculation helpers saat ini belum memiliki dedicated unit test coverage.
 
 Scope:
+
 - `invoice-calculation.helper`
 - `outstanding-balance.helper`
 - `late-fee-calculation.helper`
 - `payment-allocation.helper`
 
 Required Before Production:
+
 - Happy path tests
 - Partial payment tests
 - Multiple allocation tests
@@ -149,6 +159,7 @@ Description:
 Current room seed menggunakan `ON CONFLICT DO UPDATE`. Sebelum production release, seed harus aman untuk re-run.
 
 Required Before Production:
+
 - Prevent occupied rooms dari overwrite
 - Prevent active occupancy data dari reset
 - Prevent `room_status` dipaksa menjadi `vacant` ketika active occupancy masih ada
@@ -166,6 +177,7 @@ Description:
 Complaint untuk area umum (parkiran, tangga, koridor, lobby, laundry, gerbang) tidak terkait kamar tertentu. Field `complaints.room_id` harus nullable agar complaint area umum bisa dibuat tanpa room reference.
 
 Action:
+
 - Set `complaints.room_id` sebagai nullable di migration
 - Tambahkan `location_note` field opsional untuk deskripsi lokasi area umum
 - Update COMPLAINT_DOMAIN.md BD-CMP-01 sebagai decided
@@ -183,9 +195,11 @@ Description:
 `technician_profiles.skill_tags` saat ini berupa teks biasa. Jika jumlah teknisi bertambah dan spesialisasi menjadi penting (AC, Listrik, Plumbing, Internet, Furniture), skill sebaiknya dikelola melalui master table agar bisa difilter dan dicocokkan dengan kategori complaint.
 
 Phase 1:
+
 - `skill_tags` teks biasa sudah cukup.
 
 Future:
+
 - Buat `technician_skills` master table
 - Buat `technician_skill_assignments` relasi many-to-many
 - Opsional: auto-suggest teknisi berdasarkan skill match dengan kategori complaint
@@ -203,11 +217,13 @@ Description:
 Auto-close duration complaint setelah status `resolved` saat ini di-hardcode 72 jam. Owner/manager sebaiknya bisa mengatur durasi ini sesuai kebutuhan operasional properti.
 
 Opsi yang didukung:
+
 - 24 jam
 - 72 jam (default)
 - 7 hari
 
 Action:
+
 - Tambahkan `complaint_auto_close_hours` ke `property_settings`
 - Default value: 72
 - Auto-close scheduler membaca setting per property

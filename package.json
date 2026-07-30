@@ -17,6 +17,7 @@
     "build:penghuni": "npm --workspace @granada-kost/penghuni run build",
     "build:api": "npm --workspace @granada-kost/api run build",
     "db:migrate:api": "npm --workspace @granada-kost/api run db:migrate",
+    "db:reconcile:kmo": "npm --workspace @granada-kost/api run db:reconcile:kmo",
     "db:seed:api": "npm --workspace @granada-kost/api run db:seed",
     "db:seed:dev": "npm --workspace @granada-kost/api run db:seed:dev",
     "db:seed:prod": "npm --workspace @granada-kost/api run db:seed:prod",

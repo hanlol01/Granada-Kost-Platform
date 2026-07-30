@@ -104,6 +104,19 @@ test("M7-D2B rollout parser fails closed for missing, malformed, mismatched, and
   assert.equal(isDashboardEnabledForProperty([...enabled, ...enabled], PROPERTY_ID), false);
   assert.equal(isBookingHoldWriteEnabledForProperty([...enabled, ...enabled], PROPERTY_ID), false);
   assert.deepEqual(parseDashboardRollouts([...enabled, ...enabled]), []);
+  assert.deepEqual(parseDashboardRollouts([{ ...enabled[0], unexpectedRollout: true }]), []);
+  assert.deepEqual(
+    parseDashboardRollouts([
+      { ...enabled[0], adminUxRead: { enabled: true, unexpectedNested: true } },
+    ]),
+    [],
+  );
+  assert.deepEqual(
+    parseDashboardRollouts([
+      { ...enabled[0], bookingHoldWrite: { enabled: true, unexpectedNested: true } },
+    ]),
+    [],
+  );
   for (const bookingHoldWrite of [undefined, null, {}, { enabled: "true" }, { enabled: 1 }]) {
     const parsed = parseDashboardRollouts([
       { propertyId: PROPERTY_ID, adminUxRead: { enabled: true }, bookingHoldWrite },

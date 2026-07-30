@@ -211,10 +211,13 @@ The program is complete only when:
 
 ## 10. Delivery Evidence
 
-| Work package | Delivered boundary                                                                                                                                               | Evidence                                                                                                                      | Status             |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `KMO-W00`    | Route registration/navigation inventory; canonical Vehicles tabs; safe Complaints terminal states; honest Reports unavailable state; canonical Facilities search | [KMO-W00_ROUTE_MATRIX.md](evidence/KMO-W00_ROUTE_MATRIX.md), focused route/access contracts, and the aggregate read-only gate | AUTOMATED_VERIFIED |
+| Work package | Delivered boundary                                                                                                                                                     | Evidence                                                                                                                                   | Status             |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `KMO-W00`    | Route registration/navigation inventory; canonical Vehicles tabs; safe Complaints terminal states; honest Reports unavailable state; canonical Facilities search       | [KMO-W00_ROUTE_MATRIX.md](evidence/KMO-W00_ROUTE_MATRIX.md), focused route/access contracts, and the aggregate read-only gate              | AUTOMATED_VERIFIED |
+| `KMO-W01`    | Canonical target vocabulary and legacy mapping; checksum-aware live migration authority; count-only reconciliation; exact rollout parsing; atomic safe domain evidence | [KMO-W01_FOUNDATION.md](evidence/KMO-W01_FOUNDATION.md), focused behavioral contracts, lifecycle regressions, and aggregate read-only gate | AUTOMATED_VERIFIED |
 
-This delivery row does not advance any `KMO-W01..KMO-W12` work package or the
+These delivery rows do not advance any unlisted KMO work package or the
 program-level outcomes in section 2. Authenticated desktop/mobile runtime evidence
-for W00 is explicitly deferred when no process-only QA credential is available.
+for W00 is explicitly deferred when no process-only QA credential is available;
+W01 disposable concurrent-runner runtime evidence is also deferred while its
+automated advisory-lock serialization contract remains verified.

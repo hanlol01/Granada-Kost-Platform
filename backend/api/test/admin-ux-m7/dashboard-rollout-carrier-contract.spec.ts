@@ -219,6 +219,18 @@ void test('M14 rollout addition remains exact and fails closed without truthy co
     }),
   );
   assert.throws(() => assertExactRollout({ ...canonical, unexpected: true }));
+  assert.throws(() =>
+    assertExactRollout({
+      ...canonical,
+      adminUxRead: { enabled: true, unexpected: true },
+    }),
+  );
+  assert.throws(() =>
+    assertExactRollout({
+      ...canonical,
+      bookingHoldWrite: { enabled: false, unexpected: true },
+    }),
+  );
 });
 
 void test('M7-D2B1B fails closed to an empty carrier when the rollout query rejects', async () => {

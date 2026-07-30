@@ -56,6 +56,10 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function hasOnlyKeys(source: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(source).every((key) => allowed.includes(key));
+}
+
 function requiredString(source: Record<string, unknown>, key: string): string {
   const value = source[key];
   if (typeof value !== "string" || value.length === 0) {
@@ -121,6 +125,9 @@ export function parseDashboardRollouts(value: unknown): DashboardRollout[] {
   const parsed = new Map<string, DashboardRollout | null>();
   for (const item of value) {
     const source = record(item);
+    if (!source || !hasOnlyKeys(source, ["propertyId", "adminUxRead", "bookingHoldWrite"])) {
+      continue;
+    }
     const adminUxRead = source ? record(source.adminUxRead) : null;
     const bookingHoldWrite = source ? record(source.bookingHoldWrite) : null;
     const propertyId = source?.propertyId;
@@ -130,7 +137,12 @@ export function parseDashboardRollouts(value: unknown): DashboardRollout[] {
       parsed.set(propertyId, null);
       continue;
     }
-    if (typeof enabled !== "boolean") {
+    if (
+      typeof enabled !== "boolean" ||
+      !adminUxRead ||
+      !hasOnlyKeys(adminUxRead, ["enabled"]) ||
+      (bookingHoldWrite !== null && !hasOnlyKeys(bookingHoldWrite, ["enabled"]))
+    ) {
       parsed.set(propertyId, null);
       continue;
     }

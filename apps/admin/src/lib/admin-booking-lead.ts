@@ -63,6 +63,11 @@ export type BookingLeadListFilters = {
   offset?: number;
 };
 
+export type BookingLeadPage = {
+  data: BookingLeadRecord[];
+  meta: { limit: number; offset: number; total: number };
+};
+
 type BookingLeadGet = (
   path: string,
   options: {
@@ -74,9 +79,14 @@ type BookingLeadPost = (
   body: AdminBookingLeadPayload,
   options: { idempotencyKey: string },
 ) => Promise<unknown>;
-type BookingLeadPatch = (
+type LegacyBookingLeadPatch = (
   path: string,
   body: { status: BookingLeadStatus },
+  options: { idempotencyKey: string },
+) => Promise<unknown>;
+type BookingLeadPatch = (
+  path: string,
+  body: { property_id: string; status: BookingLeadStatus },
   options: { idempotencyKey: string },
 ) => Promise<unknown>;
 
@@ -129,6 +139,8 @@ const SOURCES = new Set<BookingLeadSource>(["public_kamar", "admin_quick_entry"]
 const PHONE_PATTERN = /^[0-9+\s().-]+$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/;
 const INVALID_RESPONSE = "Invalid booking lead response";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -178,7 +190,30 @@ function nullableUuid(value: Record<string, unknown>, key: string): string | nul
 
 function requiredTimestamp(value: Record<string, unknown>, key: string): string {
   const current = requiredString(value, key);
-  if (Number.isNaN(Date.parse(current))) throw new Error(INVALID_RESPONSE);
+  const match = ISO_TIMESTAMP_PATTERN.exec(current);
+  if (!match) throw new Error(INVALID_RESPONSE);
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fractionText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const millisecond = Number((fractionText ?? "").padEnd(3, "0"));
+  const calendar = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond));
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day ||
+    calendar.getUTCHours() !== hour ||
+    calendar.getUTCMinutes() !== minute ||
+    calendar.getUTCSeconds() !== second ||
+    calendar.getUTCMilliseconds() !== millisecond ||
+    Number.isNaN(Date.parse(current))
+  ) {
+    throw new Error(INVALID_RESPONSE);
+  }
   return current;
 }
 
@@ -241,6 +276,37 @@ export function parseAdminBookingLeadList(value: unknown): BookingLeadRecord[] {
   return value.map(parseAdminBookingLead);
 }
 
+export function parseAdminBookingLeadPage(value: unknown): BookingLeadPage {
+  const envelope = record(value);
+  const meta = envelope ? record(envelope.meta) : null;
+  if (
+    !envelope ||
+    Object.keys(envelope).sort().join(",") !== "data,meta" ||
+    !Array.isArray(envelope.data) ||
+    !meta ||
+    Object.keys(meta).sort().join(",") !== "limit,offset,total"
+  ) {
+    throw new Error("Invalid booking lead list response");
+  }
+  const limit = meta.limit;
+  const offset = meta.offset;
+  const total = meta.total;
+  if (
+    !Number.isInteger(limit) ||
+    !Number.isInteger(offset) ||
+    !Number.isInteger(total) ||
+    (limit as number) < 1 ||
+    (offset as number) < 0 ||
+    (total as number) < 0
+  ) {
+    throw new Error("Invalid booking lead list response");
+  }
+  return {
+    data: envelope.data.map(parseAdminBookingLead),
+    meta: { limit: limit as number, offset: offset as number, total: total as number },
+  };
+}
+
 export const bookingLeadListScopeKey = (propertyId: string) =>
   ["booking-leads", "list", { propertyId }] as const;
 
@@ -262,6 +328,29 @@ export async function requestAdminBookingLeads(
         search: filters.search,
         limit: filters.limit ?? 100,
         offset: filters.offset,
+      },
+    }),
+  );
+}
+
+export async function requestAdminBookingLeadPage(
+  get: BookingLeadGet,
+  propertyId: string,
+  filters: BookingLeadListFilters = {},
+): Promise<BookingLeadPage> {
+  if (!propertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
+  return parseAdminBookingLeadPage(
+    await get("/booking-leads", {
+      query: {
+        property_id: propertyId,
+        status: filters.status,
+        category: filters.category,
+        gender: filters.gender,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        search: filters.search,
+        limit: filters.limit ?? 20,
+        offset: filters.offset ?? 0,
       },
     }),
   );
@@ -290,7 +379,7 @@ export async function requestCreateAdminBookingLead(
 }
 
 export async function requestUpdateAdminBookingLeadStatus(
-  patch: BookingLeadPatch,
+  patch: LegacyBookingLeadPatch,
   leadId: string,
   status: BookingLeadStatus,
   idempotencyKey: string,
@@ -299,6 +388,31 @@ export async function requestUpdateAdminBookingLeadStatus(
   return parseAdminBookingLead(
     await patch(`/booking-leads/${leadId}/status`, { status }, { idempotencyKey }),
   );
+}
+
+export async function requestUpdateAdminBookingLeadStatusCommand(
+  patch: BookingLeadPatch,
+  input: {
+    propertyId: string;
+    leadId: string;
+    status: BookingLeadStatus;
+    idempotencyKey: string;
+  },
+): Promise<BookingLeadRecord> {
+  if (!input.propertyId || !input.leadId || !input.idempotencyKey) {
+    throw new Error("INVALID_BOOKING_LEAD_STATUS_REQUEST");
+  }
+  const envelope = record(
+    await patch(
+      `/booking-leads/${input.leadId}/status`,
+      { property_id: input.propertyId, status: input.status },
+      { idempotencyKey: input.idempotencyKey },
+    ),
+  );
+  if (!envelope || Object.keys(envelope).join(",") !== "data") {
+    throw new Error(INVALID_RESPONSE);
+  }
+  return parseAdminBookingLead(envelope.data);
 }
 
 export function canCreateAdminBookingLead(access: QuickBookingAccess): boolean {

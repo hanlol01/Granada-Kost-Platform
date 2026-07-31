@@ -175,29 +175,29 @@ function hasLeadSourceExpression(node: JsxNode): boolean {
     expression !== undefined &&
     ts.isPropertyAccessExpression(expression) &&
     ts.isIdentifier(expression.expression) &&
-    expression.expression.text === "l" &&
+    expression.expression.text === "lead" &&
     expression.name.text === "source"
   );
 }
 
-function filteredMapItemRoot(collection: ts.JsxElement, label: string): JsxNode {
+function leadMapItemRoot(collection: ts.JsxElement, label: string): JsxNode {
   const maps: ts.CallExpression[] = [];
   visit(collection, (node) => {
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === "filtered" &&
+      node.expression.expression.text === "leads" &&
       node.expression.name.text === "map"
     ) {
       maps.push(node);
     }
   });
-  assert.equal(maps.length, 1, `${label} collection must have one filtered.map`);
+  assert.equal(maps.length, 1, `${label} collection must have one leads.map`);
   const callback = maps[0]!.arguments[0];
   assert.ok(
     callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)),
-    `${label} filtered.map must use a function callback`,
+    `${label} leads.map must use a function callback`,
   );
   return ts.isBlock(callback.body)
     ? directReturnJsx(callback.body, `${label} item callback`)
@@ -218,9 +218,9 @@ function assertLeadSourceBadgeCoverage(text: string): void {
 
   for (const [label, collection, itemName] of [
     ["desktop", desktop[0]!, "tr"],
-    ["mobile", mobile[0]!, "div"],
+    ["mobile", mobile[0]!, "article"],
   ] as const) {
-    const item = filteredMapItemRoot(collection, label);
+    const item = leadMapItemRoot(collection, label);
     assert.equal(jsxName(item), itemName, `${label} filtered item root changed`);
     const badges = jsxNodes(item, "LeadSourceBadge").filter(hasLeadSourceExpression);
     assert.equal(badges.length, 1, `${label} lead item must render LeadSourceBadge`);
@@ -234,7 +234,7 @@ function moveBadgeOutsideItem(text: string, viewportToken: "md:block" | "md:hidd
     .filter(ts.isJsxElement)
     .find((node) => classTokens(node).has(viewportToken));
   assert.ok(collection);
-  const item = filteredMapItemRoot(collection, viewportToken);
+  const item = leadMapItemRoot(collection, viewportToken);
   const badges = jsxNodes(item, "LeadSourceBadge").filter(hasLeadSourceExpression);
   assert.equal(badges.length, 1);
   const badge = badges[0]!;
@@ -525,10 +525,10 @@ test("hooks parse before cache and create with scope, idempotency, invalidation,
   const mutations = source("hooks/useBookingLeadMutations.ts");
   const dialog = source("components/booking-leads/QuickBookingDialog.tsx");
 
-  assert.match(listHook, /requestAdminBookingLeads\(/);
+  assert.match(listHook, /requestAdminBookingLeadPage\(/);
   assert.match(listHook, /propertyId:\s*currentPropertyId/);
   assert.match(mutations, /requestCreateAdminBookingLead\(/);
-  assert.match(mutations, /requestUpdateAdminBookingLeadStatus\(/);
+  assert.match(mutations, /requestUpdateAdminBookingLeadStatusCommand\(/);
   assert.match(mutations, /input\.propertyId !== currentPropertyId/);
   assert.equal(mutations.match(/bookingLeadListScopeKey\(lead\.propertyId\)/g)?.length, 2);
   assert.doesNotMatch(mutations, /bookingLeadListScopeKey\(currentPropertyId\)/);
@@ -581,11 +581,12 @@ test("dialog copy, fields, locked gender policy, and exact request authority are
 test("lead UI renders quick source and nullable admin fields without leaking roomId to UI or WhatsApp", () => {
   const hook = source("hooks/useBookingLeads.ts");
   const route = source("routes/booking-leads.tsx");
+  const detail = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
   assert.match(hook, /admin_quick_entry:\s*"Input cepat Admin"/);
   assert.match(route, /roomNumber/);
-  assert.match(route, /visitorAddress/);
-  assert.match(route, /visitorUniversity/);
-  assert.doesNotMatch(route, /\broomId\b/);
+  assert.match(`${route}\n${detail}`, /visitorAddress/);
+  assert.match(`${route}\n${detail}`, /visitorUniversity/);
+  assert.doesNotMatch(`${route}\n${detail}`, /\broomId\b/);
   assert.match(route, /target="_blank" rel="noopener noreferrer"/);
   const whatsAppStart = route.indexOf("function whatsAppUrlFor");
   const whatsAppEnd = route.indexOf("function BookingLeadsPage", whatsAppStart);
@@ -597,7 +598,7 @@ test("lead UI renders quick source and nullable admin fields without leaking roo
     whatsAppRegion,
     /roomId|roomNumber|visitorAddress|visitorUniversity|buildingCode|floorCode/,
   );
-  assert.match(route, /halaman publik \/kamar atau input cepat Admin/);
+  assert.match(route, /publik \/kamar dan input cepat Admin/);
   assert.doesNotMatch(
     `${hook}\n${source("hooks/useBookingLeadMutations.ts")}`,
     /localStorage|sessionStorage|console\.|telemetry/i,

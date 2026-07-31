@@ -171,10 +171,10 @@ function assertBookingLeadPageHoldUi(text: string): void {
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === "filtered" &&
+        node.expression.expression.text === "leads" &&
         node.expression.name.text === "map",
     );
-    assert.equal(maps.length, 1, "one filtered item renderer per responsive branch");
+    assert.equal(maps.length, 1, "one lead item renderer per responsive branch");
     const item = maps[0]!.arguments[0];
     assert.ok(item && (ts.isArrowFunction(item) || ts.isFunctionExpression(item)));
     const itemElements = descendants(
@@ -194,15 +194,15 @@ function assertBookingLeadPageHoldUi(text: string): void {
         ts.isIdentifier(node.expression) &&
         node.expression.text === "openHoldDialog" &&
         node.arguments.length === 1 &&
-        node.arguments[0]!.getText(parsed) === "l",
+        node.arguments[0]!.getText(parsed) === "lead",
     );
     assert.equal(openCalls.length, 1, "hold action belongs to the same rendered lead");
   }
   const pageText = page.getText(parsed);
   assert.match(pageText, /useBookingLeadHolds\(\)/);
   assert.match(pageText, /<BookingLeadHoldDialog/);
-  assert.match(pageText, /Memuat status tahanan kamar/);
-  assert.match(pageText, /Penahanan kamar belum diaktifkan untuk property ini/);
+  assert.match(pageText, /Memuat status tahanan\s+kamar/);
+  assert.match(pageText, /Penahanan kamar belum diaktifkan untuk property\s+ini/);
   assert.match(pageText, /setHoldIntent\(null\)/);
   assert.equal(
     descendants(
@@ -732,8 +732,8 @@ test("desktop and mobile bind hold state and action to each rendered lead withou
   );
   assert.throws(() =>
     assertBookingLeadPageHoldUi(
-      route.replace("openHoldDialog(l)", "openHoldDialogDecoy(l)") +
-        '\nconst decoy = "openHoldDialog(l) now={holdNow} BookingLeadHoldStatus";',
+      route.replace("openHoldDialog(lead)", "openHoldDialogDecoy(lead)") +
+        '\nconst decoy = "openHoldDialog(lead) now={holdNow} BookingLeadHoldStatus";',
     ),
   );
   for (const preserved of ["LeadSourceBadge", "LeadStatusBadge", "whatsAppUrlFor", "setPending"]) {

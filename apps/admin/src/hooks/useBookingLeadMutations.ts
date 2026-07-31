@@ -6,12 +6,12 @@ import type { RoomGenderPolicy } from "@/lib/admin-ux-master-api";
 import {
   bookingLeadListScopeKey,
   requestCreateAdminBookingLead,
-  requestUpdateAdminBookingLeadStatus,
+  requestUpdateAdminBookingLeadStatusCommand,
   type BookingLeadRecord,
   type QuickBookingDraft,
 } from "@/lib/admin-booking-lead";
 import { apiClient } from "@/lib/api";
-import { newIdempotencyKey } from "@/lib/idempotency";
+import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property";
 import { BOOKING_LEAD_STATUS_LABEL, type BookingLeadStatus } from "./useBookingLeads";
@@ -52,17 +52,32 @@ export function useCreateAdminBookingLead() {
 
 export function useUpdateBookingLeadStatus() {
   const queryClient = useQueryClient();
+  const { currentPropertyId } = useProperty();
 
-  return useMutation<BookingLeadRecord, unknown, { leadId: string; status: BookingLeadStatus }>({
-    mutationFn: async ({ leadId, status }) =>
-      requestUpdateAdminBookingLeadStatus(
-        (path, body, options) => apiClient.patch<unknown>(path, body, options),
-        leadId,
-        status,
-        newIdempotencyKey(),
-      ),
-    onSuccess: (lead, { status }) => {
-      toastMutationSuccess(`Status lead diubah ke ${BOOKING_LEAD_STATUS_LABEL[status] ?? status}`);
+  return useMutation<
+    BookingLeadRecord,
+    unknown,
+    { propertyId: string; leadId: string; status: BookingLeadStatus; idempotencyKey: string }
+  >({
+    mutationFn: async (input) => {
+      if (!currentPropertyId || input.propertyId !== currentPropertyId) {
+        throw new Error("PROPERTY_SCOPE_CHANGED");
+      }
+      return requestUpdateAdminBookingLeadStatusCommand(
+        (path, body, options) => adminUxV2Requester.patch<unknown>(path, body, options),
+        {
+          propertyId: input.propertyId,
+          leadId: input.leadId,
+          status: input.status,
+          idempotencyKey: input.idempotencyKey,
+        },
+      );
+    },
+    onSuccess: (lead, input) => {
+      if (lead.propertyId !== input.propertyId || currentPropertyId !== input.propertyId) return;
+      toastMutationSuccess(
+        `Status lead diubah ke ${BOOKING_LEAD_STATUS_LABEL[input.status] ?? input.status}`,
+      );
       void queryClient.invalidateQueries({
         queryKey: bookingLeadListScopeKey(lead.propertyId),
       });

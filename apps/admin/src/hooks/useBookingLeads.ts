@@ -6,13 +6,14 @@
 // Frontend filters are UX-only; the backend remains the policy authority.
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api";
+import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import {
-  requestAdminBookingLeads,
+  requestAdminBookingLeadPage,
   type BookingLeadCategory,
   type BookingLeadGender,
   type BookingLeadListFilters,
   type BookingLeadRecord,
+  type BookingLeadPage,
   type BookingLeadStatus,
 } from "@/lib/admin-booking-lead";
 import { useProperty } from "@/lib/property";
@@ -27,8 +28,8 @@ export type {
 export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   new: "Baru",
   contacted: "Sudah Dihubungi",
-  visit_scheduled: "Jadwal Survey",
-  converted: "Dikonversi",
+  visit_scheduled: "Status lama — tindak lanjut",
+  converted: "Status lama — selesai",
   rejected: "Ditolak",
   expired: "Kedaluwarsa",
 };
@@ -51,17 +52,14 @@ export const BOOKING_LEAD_SOURCE_LABEL: Record<string, string> = {
 // Mirrors the M17B backend transition rules (UX-only convenience; the backend
 // enforces the state machine and rejects invalid transitions):
 //   new -> contacted | rejected | expired
-//   contacted -> visit_scheduled | rejected | expired
-//   visit_scheduled -> converted | rejected | expired
-//   converted / rejected / expired are terminal in MVP.
+//   contacted -> rejected | expired
+//   legacy visit_scheduled / converted and rejected / expired are read-only.
 export function allowedBookingLeadTransitions(status: BookingLeadStatus): BookingLeadStatus[] {
   switch (status) {
     case "new":
       return ["contacted", "rejected", "expired"];
     case "contacted":
-      return ["visit_scheduled", "rejected", "expired"];
-    case "visit_scheduled":
-      return ["converted", "rejected", "expired"];
+      return ["rejected", "expired"];
     default:
       return [];
   }
@@ -71,14 +69,14 @@ export type UseBookingLeadsFilters = BookingLeadListFilters;
 
 export function useBookingLeads(
   filters: UseBookingLeadsFilters = {},
-): UseQueryResult<BookingLeadRecord[]> {
+): UseQueryResult<BookingLeadPage> {
   const { currentPropertyId } = useProperty();
-  return useQuery<BookingLeadRecord[]>({
+  return useQuery<BookingLeadPage>({
     queryKey: ["booking-leads", "list", { propertyId: currentPropertyId }, filters] as const,
     queryFn: () => {
       if (!currentPropertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
-      return requestAdminBookingLeads(
-        (path, options) => apiClient.get<unknown>(path, options),
+      return requestAdminBookingLeadPage(
+        (path, options) => adminUxV2Requester.get<unknown>(path, options),
         currentPropertyId,
         filters,
       );

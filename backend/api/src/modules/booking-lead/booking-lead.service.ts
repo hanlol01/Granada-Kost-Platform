@@ -23,8 +23,8 @@ const PUBLIC_SUCCESS_MESSAGE = 'Terima kasih, admin akan menghubungi Anda via Wh
 const TERMINAL_STATUSES: BookingLeadStatus[] = ['converted', 'rejected', 'expired'];
 const ALLOWED_TRANSITIONS: Record<BookingLeadStatus, BookingLeadStatus[]> = {
   new: ['contacted', 'rejected', 'expired'],
-  contacted: ['visit_scheduled', 'rejected', 'expired'],
-  visit_scheduled: ['converted', 'rejected', 'expired'],
+  contacted: ['rejected', 'expired'],
+  visit_scheduled: [],
   converted: [],
   rejected: [],
   expired: [],
@@ -237,6 +237,26 @@ export class BookingLeadService {
       .then((leads) => leads.map((lead) => this.adminResponse(lead)));
   }
 
+  async listAdminLeadPage(propertyIds: string[], query: ListBookingLeadsQueryDto) {
+    this.assertDateRange(query.dateFrom, query.dateTo);
+    const page = await this.leads.listPageForProperties(propertyIds, {
+      status: query.status,
+      category: query.category,
+      gender: query.gender,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      search: query.search,
+      limit: query.limit,
+      offset: query.offset,
+    });
+    return {
+      data: page.data.map((lead) => this.adminResponse(lead)),
+      limit: page.limit,
+      offset: page.offset,
+      total: page.total,
+    };
+  }
+
   async get(leadId: string): Promise<BookingLeadRecord> {
     const lead = await this.leads.findById(leadId);
     if (!lead) {
@@ -246,6 +266,95 @@ export class BookingLeadService {
       });
     }
     return lead;
+  }
+
+  async getForProperty(leadId: string, propertyId: string): Promise<BookingLeadRecord> {
+    const lead = await this.leads.findForProperty(leadId, propertyId);
+    if (!lead) {
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_NOT_FOUND',
+        message: 'Booking lead not found',
+      });
+    }
+    return lead;
+  }
+
+  async updateStatusCommand(
+    current: BookingLeadRecord,
+    status: BookingLeadStatus,
+    rawIdempotencyKey: string | undefined,
+    context: BookingLeadRequestContext & { actorUserId: string },
+  ) {
+    const idempotencyKey = this.requireIdempotencyKey(rawIdempotencyKey);
+    const route = 'PATCH /booking-leads/:leadId/status';
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          actor_id: context.actorUserId,
+          booking_lead_id: current.id,
+          property_id: current.propertyId,
+          status,
+        }),
+      )
+      .digest('hex');
+
+    return this.leads.transaction(async (client) => {
+      const claim = await this.leads.claimStatusCommand(client, {
+        propertyId: current.propertyId,
+        actorUserId: context.actorUserId,
+        route,
+        idempotencyKey,
+        fingerprint,
+        correlationId: context.correlationId,
+      });
+      if (claim) return this.replayStatusCommand(claim, fingerprint);
+
+      const locked = await this.leads.findForProperty(current.id, current.propertyId, client, true);
+      if (!locked) {
+        throw new NotFoundException({
+          code: 'BOOKING_LEAD_NOT_FOUND',
+          message: 'Booking lead not found',
+        });
+      }
+      if (locked.status !== status) this.assertCanTransition(locked.status, status);
+      const updated =
+        locked.status === status
+          ? locked
+          : await this.leads.updateStatusForProperty(client, locked.id, locked.propertyId, status);
+      if (!updated) {
+        throw new NotFoundException({
+          code: 'BOOKING_LEAD_NOT_FOUND',
+          message: 'Booking lead not found',
+        });
+      }
+      const response = this.adminResponse(updated);
+      if (locked.status !== updated.status) {
+        await this.audit.write(
+          {
+            actorUserId: context.actorUserId,
+            propertyId: updated.propertyId,
+            action: 'booking_lead.status_update',
+            resourceType: 'booking_lead',
+            resourceId: updated.id,
+            beforeData: { id: locked.id, status: locked.status },
+            afterData: { id: updated.id, status: updated.status },
+            resultStatus: 'success',
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent,
+            correlationId: context.correlationId,
+          },
+          client,
+        );
+      }
+      await this.leads.completeStatusCommand(client, {
+        actorUserId: context.actorUserId,
+        route,
+        idempotencyKey,
+        body: response,
+        resourceId: updated.id,
+      });
+      return response;
+    });
   }
 
   async updateStatus(
@@ -408,6 +517,42 @@ export class BookingLeadService {
         message: 'Booking lead status transition is not allowed.',
       });
     }
+  }
+
+  private requireIdempotencyKey(value: string | undefined): string {
+    const key = value?.trim();
+    if (!key) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Idempotency-Key header is required',
+      });
+    }
+    if (key.length < 16 || key.length > 128) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_INVALID',
+        message: 'Idempotency-Key must be 16 to 128 characters',
+      });
+    }
+    return key;
+  }
+
+  private replayStatusCommand(
+    claim: import('./types/booking-lead.types').BookingLeadStatusCommandClaim,
+    fingerprint: string,
+  ): Record<string, unknown> {
+    if (claim.requestFingerprint !== fingerprint) {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message: 'Idempotency key was already used with a different payload',
+      });
+    }
+    if (claim.commandStatus !== 'succeeded' || !claim.responseStatus || !claim.responseBody) {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: 'Idempotency command is still in progress',
+      });
+    }
+    return claim.responseBody;
   }
 
   private publicResponse(lead: BookingLeadRecord) {

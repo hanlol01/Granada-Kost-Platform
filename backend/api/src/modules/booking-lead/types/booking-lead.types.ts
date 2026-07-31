@@ -99,6 +99,20 @@ export type ListBookingLeadsFilters = {
   offset?: number;
 };
 
+export type AdminBookingLeadPage = {
+  data: BookingLeadRecord[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type BookingLeadStatusCommandClaim = {
+  requestFingerprint: string;
+  commandStatus: string;
+  responseStatus: number | null;
+  responseBody: Record<string, unknown> | null;
+};
+
 export type BookingLeadRequestContext = {
   actorUserId?: string;
   ipAddress?: string;

@@ -3,12 +3,14 @@ import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import {
   AdminBookingLeadRoom,
+  AdminBookingLeadPage,
   BookingLeadCategory,
   BookingLeadFloorCode,
   BookingLeadGender,
   BookingLeadRecord,
   BookingLeadSource,
   BookingLeadStatus,
+  BookingLeadStatusCommandClaim,
   CreateAdminBookingLeadInput,
   CreateBookingLeadInput,
   ListBookingLeadsFilters,
@@ -53,6 +55,13 @@ type AdminBookingLeadRoomRow = {
   building_code: string | null;
   building_category: BookingLeadCategory | null;
   building_gender_policy: string | null;
+};
+
+type BookingLeadStatusCommandRow = {
+  request_fingerprint: string;
+  command_status: string;
+  response_status: number | null;
+  response_body: Record<string, unknown> | null;
 };
 
 @Injectable()
@@ -400,6 +409,71 @@ export class BookingLeadRepository {
     return result.rows.map((row) => this.map(row));
   }
 
+  async listPageForProperties(
+    propertyIds: string[],
+    filters: ListBookingLeadsFilters,
+  ): Promise<AdminBookingLeadPage> {
+    const limit = filters.limit ?? 20;
+    const offset = filters.offset ?? 0;
+    if (!propertyIds.length) return { data: [], limit, offset, total: 0 };
+
+    const search = filters.search?.trim() || null;
+    const phoneSearch = search?.replace(/\D/g, '') || null;
+    const values = [
+      propertyIds,
+      filters.status ?? null,
+      filters.category ?? null,
+      filters.gender ?? null,
+      filters.dateFrom ?? null,
+      filters.dateTo ?? null,
+      search,
+      phoneSearch,
+    ];
+    const where = `booking_leads.property_id = ANY($1::uuid[])
+      AND ($2::text IS NULL OR booking_leads.status = $2)
+      AND ($3::text IS NULL OR booking_leads.category = $3)
+      AND ($4::text IS NULL OR booking_leads.gender = $4)
+      AND ($5::date IS NULL OR booking_leads.created_at::date >= $5::date)
+      AND ($6::date IS NULL OR booking_leads.created_at::date <= $6::date)
+      AND (
+        $7::text IS NULL
+        OR booking_leads.visitor_name ILIKE '%' || $7 || '%'
+        OR ($8::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $8 || '%')
+      )`;
+
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const count = await client.query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total FROM booking_leads WHERE ${where}`,
+        values,
+      );
+      const rows = await client.query<BookingLeadRow>(
+        `SELECT ${this.columns('booking_leads')}, rooms.number AS room_number
+         FROM booking_leads
+         LEFT JOIN rooms
+           ON rooms.id = booking_leads.room_id
+          AND rooms.property_id = booking_leads.property_id
+         WHERE ${where}
+         ORDER BY booking_leads.created_at DESC, booking_leads.id DESC
+         LIMIT $9 OFFSET $10`,
+        [...values, limit, offset],
+      );
+      await client.query('COMMIT');
+      return {
+        data: rows.rows.map((row) => this.map(row)),
+        limit,
+        offset,
+        total: count.rows[0]?.total ?? 0,
+      };
+    } catch (error) {
+      await this.rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async findById(id: string): Promise<BookingLeadRecord | null> {
     const result = await this.database.client.query<BookingLeadRow>(
       `SELECT ${this.columns('booking_leads')},
@@ -408,6 +482,123 @@ export class BookingLeadRepository {
        LEFT JOIN rooms ON rooms.id = booking_leads.room_id
        WHERE booking_leads.id = $1`,
       [id],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async findForProperty(
+    id: string,
+    propertyId: string,
+    client?: PoolClient,
+    forUpdate = false,
+  ): Promise<BookingLeadRecord | null> {
+    const result = await (client ?? this.database.client).query<BookingLeadRow>(
+      `SELECT ${this.columns('booking_leads')}, rooms.number AS room_number
+       FROM booking_leads
+       LEFT JOIN rooms
+         ON rooms.id = booking_leads.room_id
+        AND rooms.property_id = booking_leads.property_id
+       WHERE booking_leads.id = $1
+         AND booking_leads.property_id = $2
+       ${forUpdate ? 'FOR UPDATE OF booking_leads' : ''}`,
+      [id, propertyId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async claimStatusCommand(
+    client: PoolClient,
+    input: {
+      propertyId: string;
+      actorUserId: string;
+      route: string;
+      idempotencyKey: string;
+      fingerprint: string;
+      correlationId?: string;
+    },
+  ): Promise<BookingLeadStatusCommandClaim | null> {
+    const inserted = await client.query<BookingLeadStatusCommandRow>(
+      `INSERT INTO idempotency_commands (
+         property_id, actor_user_id, route, idempotency_key, request_fingerprint, correlation_id
+       ) VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (actor_user_id, route, idempotency_key) DO NOTHING
+       RETURNING request_fingerprint, command_status, response_status, response_body`,
+      [
+        input.propertyId,
+        input.actorUserId,
+        input.route,
+        input.idempotencyKey,
+        input.fingerprint,
+        input.correlationId ?? null,
+      ],
+    );
+    if (inserted.rows[0]) return null;
+    const existing = await client.query<BookingLeadStatusCommandRow>(
+      `SELECT request_fingerprint, command_status, response_status, response_body
+       FROM idempotency_commands
+       WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3
+       FOR UPDATE`,
+      [input.actorUserId, input.route, input.idempotencyKey],
+    );
+    const row = existing.rows[0];
+    if (!row) {
+      return {
+        requestFingerprint: input.fingerprint,
+        commandStatus: 'unavailable',
+        responseStatus: null,
+        responseBody: null,
+      };
+    }
+    return {
+      requestFingerprint: row.request_fingerprint,
+      commandStatus: row.command_status,
+      responseStatus: row.response_status,
+      responseBody: row.response_body,
+    };
+  }
+
+  async completeStatusCommand(
+    client: PoolClient,
+    input: {
+      actorUserId: string;
+      route: string;
+      idempotencyKey: string;
+      body: Record<string, unknown>;
+      resourceId: string;
+    },
+  ): Promise<void> {
+    await client.query(
+      `UPDATE idempotency_commands
+       SET command_status = 'succeeded', response_status = 200, response_body = $4::jsonb,
+           resource_type = 'booking_lead', resource_id = $5, completed_at = now()
+       WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3`,
+      [
+        input.actorUserId,
+        input.route,
+        input.idempotencyKey,
+        JSON.stringify(input.body),
+        input.resourceId,
+      ],
+    );
+  }
+
+  async updateStatusForProperty(
+    client: PoolClient,
+    id: string,
+    propertyId: string,
+    status: BookingLeadStatus,
+  ): Promise<BookingLeadRecord | null> {
+    const result = await client.query<BookingLeadRow>(
+      `WITH updated AS (
+         UPDATE booking_leads
+         SET status = $3, updated_at = now()
+         WHERE id = $1 AND property_id = $2
+         RETURNING ${this.columns()}
+       )
+       SELECT ${this.columns('updated')}, rooms.number AS room_number
+       FROM updated
+       LEFT JOIN rooms ON rooms.id = updated.room_id AND rooms.property_id = updated.property_id`,
+      [id, propertyId, status],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }

@@ -1,6 +1,6 @@
 # Implementation Roadmap
 
-Status: **APPROVED PLANNING — NOT IMPLEMENTED**
+Status: **APPROVED ROADMAP — IMPLEMENTATION PARTIAL**
 
 Program package prefix: `KMO-W`
 
@@ -52,7 +52,8 @@ privacy, or existing lifecycle authority for convenience.
 W00 Truth baseline and route integrity
   ├─ W01 Domain vocabulary, rollout, and reconciliation foundation
   ├─ W02 Room/category/content authority
-  │    └─ W03 Public catalog and Booking Lead qualification
+  │    └─ ARCH-01 Database architecture truth gate
+  │         └─ W03 Public catalog and Booking Lead qualification
   ├─ W04 Resident identity and account provisioning
   ├─ W05 Lease onboarding and Booking Lead conversion
   │    ├─ W06 Billing, DP, deposit, and manual payment ledger
@@ -198,6 +199,30 @@ Exit evidence for W02:
 - no routine room creation control;
 - public-ready category records contain no internal or resident data;
 - edit/reload and publication/reload persistence.
+
+## KMO-ARCH-01 — Database Architecture Truth Gate
+
+Class: Documentation gate; not a product milestone
+
+Purpose: reconcile visual architecture, detailed target schema, living
+implementation status, and source-of-truth ownership before public catalog and
+later lifecycle packages build on W02.
+
+Required authorities:
+
+- [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md);
+- [DATA_MODEL_AND_MIGRATION.md](DATA_MODEL_AND_MIGRATION.md);
+- [SCHEMA_IMPLEMENTATION_LEDGER.md](SCHEMA_IMPLEMENTATION_LEDGER.md);
+- [DATA_AUTHORITY_MATRIX.md](DATA_AUTHORITY_MATRIX.md).
+
+Entry gate for KMO-W03:
+
+- migrations 001–023 are inventoried without implying canonical application;
+- W01 and W02 source/automated evidence is distinct from migration and runtime
+  evidence;
+- public projection, internal editorial source, category commercial source, and
+  room non-authority boundaries are explicit;
+- W03 remains pending until its own slice starts and receives evidence.
 
 ## KMO-W03 — Public Catalog and Booking Lead Qualification
 

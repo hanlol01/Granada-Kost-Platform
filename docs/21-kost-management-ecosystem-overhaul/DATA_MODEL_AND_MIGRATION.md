@@ -1,6 +1,6 @@
 # KMO Data Model and Migration Contract
 
-Status: **APPROVED PLANNING — NOT IMPLEMENTED**
+Status: **APPROVED TARGET ARCHITECTURE — IMPLEMENTATION PARTIAL**
 
 Program code: `KMO`
 
@@ -11,6 +11,13 @@ Recorded: 2026-07-30 (Asia/Jakarta)
 This document defines the target PostgreSQL model, integrity constraints,
 indexes, migration sequence, compatibility rules, and reconciliation gates for
 the KOSTATION ecosystem overhaul.
+
+Implementation truth is tracked in
+[SCHEMA_IMPLEMENTATION_LEDGER.md](SCHEMA_IMPLEMENTATION_LEDGER.md), not inferred
+from this target contract. See
+[DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md) for the visual model and
+[DATA_AUTHORITY_MATRIX.md](DATA_AUTHORITY_MATRIX.md) for source-of-truth and
+explicit non-authority decisions.
 
 It does not authorize a migration, seed, provider activation, or production
 write. Every migration package must first pass the preflight, shadow-database,
@@ -36,7 +43,9 @@ already contains:
 
 Known structural gaps that this plan closes:
 
-- the migration runner replays SQL files and has no durable checksum ledger;
+- migration 021 and the checksum-aware runner are source-implemented and
+  automated-verified, while canonical development application remains
+  unproven;
 - investor ownership is property-scoped, while the target is building-scoped;
 - resident onboarding does not atomically provision and link a login account;
 - resident identity, education, parent contact, and lease-facing profile fields
@@ -124,17 +133,18 @@ to manufacture ledger history.
 
 #### `properties`, `property_settings`, `room_buildings`
 
-These remain authoritative. Add or normalize:
+These remain authoritative for property, building, and operational settings.
+Commercial policy is not duplicated here:
 
-- `property_settings.default_security_deposit_amount`, initially one monthly
-  rent and configurable to one or two months;
-- `property_settings.minimum_lease_months`, fixed to `12` for the first release;
-- `property_settings.dp_minimum_percent`, fixed to `25.00`;
-- `property_settings.default_payment_plan`, one of
-  `annual_full|two_month_installments`;
-- `property_settings.manual_payment_methods`, restricted to
+- `property_settings.minimum_lease_months` remains fixed to `12` for the first
+  release;
+- `property_settings.manual_payment_methods` is restricted to
   `bank_transfer|cash`;
-- category-level commercial truth remains in `kost_types`, not individual rooms.
+- effective category commercial versions define the 25% minimum DP, permitted
+  payment schedules, and security deposit in tariff months;
+- the default security deposit is one month of the applicable tariff, not a
+  hardcoded amount;
+- category-level commercial truth is never an individual-room write authority.
 
 #### `investor_profiles` — new
 
@@ -182,16 +192,23 @@ cannot authorize post-cutover operational queries.
 
 ### 5.3 Kost type, facilities, gallery, and terms
 
-`kost_types` remains the commercial authority with exactly one active record for
-each property/category (`rukost`, `apartkost`). It carries editable monthly and
-yearly prices and the default security-deposit amount. Initial business values:
+`kost_types` identifies exactly two active categories per applicable property:
+one `rukost` and one `apartkost`. Effective-dated
+`kost_type_commercial_versions` is the commercial authority. Migration 022 and
+its consumers are source-implemented and automated-verified; canonical
+development application remains unproven. Initial business values:
 
 - monthly rent: Rp1,800,000;
 - annual rent: Rp21,600,000;
-- security deposit: Rp1,800,000.
+- minimum DP: 25% of contract value;
+- security deposit: one month of the applicable tariff, initially Rp1,800,000.
 
-`kost_type_facility_assignments` remains category-level authority. Per-room
-facility assignment becomes legacy read-only after reconciliation.
+Room-level tariff, deposit, DP, and facility overrides are prohibited.
+`kost_type_content_facilities` is the source-implemented target category
+facility authority; canonical application remains deferred.
+`kost_type_facility_assignments` remains a legacy compatibility source only
+until migration 023 backfill and reconciliation are proven on the canonical
+database.
 
 `hunian_gallery_images` is normalized to category-level `kost_type` targets:
 
@@ -201,16 +218,22 @@ facility assignment becomes legacy read-only after reconciliation.
 - common-area legacy images require an explicit Rumah Kost or Apart Kost
   mapping, otherwise they are archived and reported for manual review.
 
-`kost_type_rules` remains the structured source for category-specific rules.
-Property-wide terms use a new `property_policy_documents` table:
+`kost_type_content_versions` preserves immutable effective category facility and
+gallery publications. Gallery source files remain private; public projection
+uses approved derivatives.
 
-- `document_type` (`house_rules|lease_terms|privacy_notice`);
-- title, version, body, publication status, effective dates;
-- one published effective version per property/type;
-- immutable published versions; edits create a new version.
+Property-wide terms use `property_policy_documents` with exact
+`document_type = public_terms`:
 
-Public catalog reads combine the published property policy and category-specific
-rules without duplicating content.
+- separate structured `internal_content` and `public_content`;
+- draft, published, and archived states with effective dates;
+- one draft and one unambiguous effective version per property/type;
+- immutable published versions; edits create or restore a draft.
+
+Migration 023 and its Admin/public-safe consumers are source-implemented and
+automated-verified. It has not been proven applied to the canonical development
+database. The public catalog combines only effective published public-safe
+content; internal policy never enters its response.
 
 ### 5.4 Accounts and resident identity
 
@@ -527,20 +550,23 @@ The implementation migration must include mutation-sensitive tests for:
 
 ## 7. Migration Sequence
 
-Each package is a separate committed migration plus focused contract.
+Each package is a separate committed migration plus focused contract. Source
+implementation does not imply canonical database application.
 
-| Package   | Planned change                                                                              | Entry gate                                                           |
-| --------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `KMO-DB0` | Checksum ledger and safe runner; baseline 001–020 registration.                             | Exact committed checksums and schema fingerprint.                    |
-| `KMO-DB1` | Property policy settings, investor profiles, building ownership, category content cleanup.  | All 163 rooms linked to 26 authoritative buildings.                  |
-| `KMO-DB2` | Resident identity expansion and account-provisioning evidence.                              | No conflicting normalized email/phone/user links.                    |
-| `KMO-DB3` | Lease statuses, installments, activation fields, room inspection state, transfer additions. | Active lease/occupancy/room invariants reconcile to zero mismatches. |
-| `KMO-DB4` | Billing purpose, receipts, reversals, other charges, allocation constraints.                | Invoice/payment/allocation/deposit reconciliation passes.            |
-| `KMO-DB5` | Expense, reminder template/history/share link, report-export evidence.                      | File purposes and actor/property scopes verified.                    |
-| `KMO-DB6` | Query indexes, NOT NULL validation, legacy compatibility retirement.                        | Application dual-read metrics prove zero legacy dependency.          |
+| Migration/package                                     | Change                                                                                                        | Source truth                                     | Canonical entry gate                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `021_schema_migration_ledger.sql` / `KMO-W01`         | Checksum ledger, manifest, safe runner, and verified baseline registration for 001–020                        | Committed, manifest-verified, automated-verified | Exact canonical target, schema fingerprint, and explicit operator approval               |
+| `022_kost_type_commercial_authority.sql` / `KMO-W02B` | Effective-dated category tariff, annual value, 25% DP policy, payment schedules, and one-month deposit rule   | Committed, manifest-verified, automated-verified | Exactly two active categories, disposable apply/replay proof, commercial reconciliation  |
+| `023_category_content_publication.sql` / `KMO-W02C-D` | Category facilities, gallery source/derivative state, immutable publications, separated internal/public terms | Committed, manifest-verified, automated-verified | W02B prerequisite, facility/gallery/policy reconciliation, disposable apply/replay proof |
+| `KMO-DB2` / `KMO-W04`                                 | Resident identity expansion and account-provisioning evidence                                                 | Planned                                          | No conflicting normalized email/phone/user links                                         |
+| `KMO-DB3` / `KMO-W05–W07`                             | Lease statuses, installments, activation, inspection, and transfer additions                                  | Planned                                          | Active lease/occupancy/room invariants reconcile                                         |
+| `KMO-DB4` / `KMO-W06`                                 | Billing purpose, receipts, reversals, other charges, allocation constraints                                   | Planned                                          | Invoice/payment/allocation/deposit reconciliation                                        |
+| `KMO-DB5` / `KMO-W08–W10`                             | Expense, reminder history/share links, report-export and ownership evidence                                   | Planned                                          | File, actor, property, building, and financial scopes verified                           |
+| `KMO-DB6` / `KMO-W12`                                 | Final query indexes, constraints, and compatibility retirement                                                | Planned                                          | Zero legacy dependency and integrated reconciliation                                     |
 
 No package may combine a migration with unrelated UI work. The vertical slice
-may include its exact API and UI consumer after the migration passes.
+may include its exact API and UI consumer after disposable migration proof; the
+canonical application remains a separate authorized operator action.
 
 ## 8. Backfill and Reconciliation Rules
 

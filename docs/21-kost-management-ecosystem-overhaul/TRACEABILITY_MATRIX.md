@@ -1,13 +1,13 @@
 # KMO Traceability Matrix
 
-Status: **APPROVED PLANNING — NOT IMPLEMENTED**
+Status: **APPROVED PROGRAM — IMPLEMENTATION PARTIAL**
 
 This document connects owner policy, product decisions, invariants, functional
 requirements, technical contracts, work packages, and acceptance gates for the
 KOSTATION Kost Management Ecosystem Overhaul (KMO).
 
-It does not claim that the overhaul has been implemented. A row advances from
-`APPROVED` through the canonical status vocabulary and reaches
+It does not claim that the entire overhaul has been implemented. A row advances
+from `APPROVED` through the canonical status vocabulary and reaches
 `RUNTIME_VERIFIED` only after its work package, automated evidence, migration
 evidence when applicable, and authorized runtime evidence satisfy the gates in
 [QA_ACCEPTANCE_AND_RELEASE_GATES.md](QA_ACCEPTANCE_AND_RELEASE_GATES.md).
@@ -31,6 +31,12 @@ evidence when applicable, and authorized runtime evidence satisfy the gates in
 10. All rows initially have status `APPROVED`. Historical M9–M19 evidence may be
     reused only after the executor proves that it still validates the final KMO
     behavior.
+11. Visual relationships, detailed schema targets, implementation state, and
+    concept ownership must remain aligned across
+    [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md),
+    [DATA_MODEL_AND_MIGRATION.md](DATA_MODEL_AND_MIGRATION.md),
+    [SCHEMA_IMPLEMENTATION_LEDGER.md](SCHEMA_IMPLEMENTATION_LEDGER.md), and
+    [DATA_AUTHORITY_MATRIX.md](DATA_AUTHORITY_MATRIX.md).
 
 ## 2. Program-Level Traceability
 
@@ -154,6 +160,18 @@ only under the procedure documented in
 [EXECUTOR_REVIEWER_RUNBOOK.md](EXECUTOR_REVIEWER_RUNBOOK.md); the replay-all
 runner must not be assumed safe.
 
+Architecture reconciliation:
+
+| Authority                                | Architecture source                                                                                              | Implementation truth                                                                     | Invariant coverage                                            |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Migration ledger and compatibility       | [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md), [DATA_MODEL_AND_MIGRATION.md](DATA_MODEL_AND_MIGRATION.md) | [SCHEMA_IMPLEMENTATION_LEDGER.md](SCHEMA_IMPLEMENTATION_LEDGER.md) W01 and migration 021 | `INV-PROPERTY-001`, `NFR-REL-001..004`, `NFR-OBS-001`         |
+| Fixed room inventory and category source | Inventory lifecycle ERD and detailed room/category model                                                         | Schema ledger W02A–W02B                                                                  | `INV-ROOM-001..002`, `INV-BILLING-001`                        |
+| Category content/publication             | Content/operations ERD and publication model                                                                     | Schema ledger W02C-D                                                                     | `INV-CONTENT-001`, `NFR-PRIV-001`                             |
+| Domain source/non-authority boundaries   | [DATA_AUTHORITY_MATRIX.md](DATA_AUTHORITY_MATRIX.md)                                                             | Status per concept links back to the schema ledger                                       | All listed `INV-*`; no new invariant is created by the matrix |
+
+Migration 021–023 source and manifest evidence does not establish canonical
+database application. W03–W12 remain planned.
+
 ## 7. Current Evidence Boundary
 
 | Evidence source                           | Permitted use                                                                                                            |
@@ -211,14 +229,15 @@ The program is complete only when:
 
 ## 10. Delivery Evidence
 
-| Work package  | Delivered boundary                                                                                                                                                                                        | Evidence                                                                                                                                                                                     | Status                               |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `KMO-W00`     | Route registration/navigation inventory; canonical Vehicles tabs; safe Complaints terminal states; honest Reports unavailable state; canonical Facilities search                                          | [KMO-W00_ROUTE_MATRIX.md](evidence/KMO-W00_ROUTE_MATRIX.md), focused route/access contracts, and the aggregate read-only gate                                                                | AUTOMATED_VERIFIED                   |
-| `KMO-W01`     | Canonical target vocabulary and legacy mapping; checksum-aware live migration authority; count-only reconciliation; exact rollout parsing; atomic safe domain evidence                                    | [KMO-W01_FOUNDATION.md](evidence/KMO-W01_FOUNDATION.md), focused behavioral contracts, lifecycle regressions, and aggregate read-only gate                                                   | AUTOMATED_VERIFIED                   |
-| `KMO-W02A-R1` | Fixed 163-room routine-write boundary; complete property-scoped room discovery; Add Room removal; canonical Admin table/filter wire; safe existing-room edit preserved                                    | [KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md](evidence/KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md), focused backend/Admin contracts, M15 regressions, and aggregate read-only gate                          | AUTOMATED_VERIFIED                   |
-| `KMO-W02A-R2` | Property-scoped full-page room detail; safe operational projection; honest registered quick links; lifecycle-safe existing-room edit; generated route registration                                        | [KMO-W02A_R2_FULL_ROOM_DETAIL.md](evidence/KMO-W02A_R2_FULL_ROOM_DETAIL.md), focused backend/Admin contracts, W00/R1 and M10–M16 regressions, and aggregate read-only gate                   | AUTOMATED_VERIFIED                   |
-| `KMO-W02B`    | Category Kost Type is the sole effective-dated commercial authority for tariff, read-only 25% DP policy, deposit, payment schedules, and facility reads; room and lease consumers use its current version | [KMO-W02B_CATEGORY_COMMERCIAL.md](evidence/KMO-W02B_CATEGORY_COMMERCIAL.md), disposable first-apply/replay proof, focused backend/Admin contracts, and relevant W02A/M10/M13–M15 regressions | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
-| `KMO-W02C-D`  | Category facilities and gallery; public derivatives; internal policy separation; structured public-safe terms; draft, publish, effective-date, version, restore, and reconciliation authority             | [KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md](evidence/KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md), focused backend/Admin contracts, W01/W02A/M10/M13–M15 regressions, and aggregate gate     | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
+| Work package  | Delivered boundary                                                                                                                                                                                        | Evidence                                                                                                                                                                                                 | Status                               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `KMO-W00`     | Route registration/navigation inventory; canonical Vehicles tabs; safe Complaints terminal states; honest Reports unavailable state; canonical Facilities search                                          | [KMO-W00_ROUTE_MATRIX.md](evidence/KMO-W00_ROUTE_MATRIX.md), focused route/access contracts, and the aggregate read-only gate                                                                            | AUTOMATED_VERIFIED                   |
+| `KMO-W01`     | Canonical target vocabulary and legacy mapping; checksum-aware live migration authority; count-only reconciliation; exact rollout parsing; atomic safe domain evidence                                    | [KMO-W01_FOUNDATION.md](evidence/KMO-W01_FOUNDATION.md), focused behavioral contracts, lifecycle regressions, and aggregate read-only gate                                                               | AUTOMATED_VERIFIED                   |
+| `KMO-W02A-R1` | Fixed 163-room routine-write boundary; complete property-scoped room discovery; Add Room removal; canonical Admin table/filter wire; safe existing-room edit preserved                                    | [KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md](evidence/KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md), focused backend/Admin contracts, M15 regressions, and aggregate read-only gate                                      | AUTOMATED_VERIFIED                   |
+| `KMO-W02A-R2` | Property-scoped full-page room detail; safe operational projection; honest registered quick links; lifecycle-safe existing-room edit; generated route registration                                        | [KMO-W02A_R2_FULL_ROOM_DETAIL.md](evidence/KMO-W02A_R2_FULL_ROOM_DETAIL.md), focused backend/Admin contracts, W00/R1 and M10–M16 regressions, and aggregate read-only gate                               | AUTOMATED_VERIFIED                   |
+| `KMO-W02B`    | Category Kost Type is the sole effective-dated commercial authority for tariff, read-only 25% DP policy, deposit, payment schedules, and facility reads; room and lease consumers use its current version | [KMO-W02B_CATEGORY_COMMERCIAL.md](evidence/KMO-W02B_CATEGORY_COMMERCIAL.md), disposable first-apply/replay proof, focused backend/Admin contracts, and relevant W02A/M10/M13–M15 regressions             | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
+| `KMO-W02C-D`  | Category facilities and gallery; public derivatives; internal policy separation; structured public-safe terms; draft, publish, effective-date, version, restore, and reconciliation authority             | [KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md](evidence/KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md), focused backend/Admin contracts, W01/W02A/M10/M13–M15 regressions, and aggregate gate                 | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
+| `KMO-ARCH-01` | Visual database architecture, living schema status, explicit source/non-authority matrix, and Fast Critical Delivery process gate                                                                         | [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md), [SCHEMA_IMPLEMENTATION_LEDGER.md](SCHEMA_IMPLEMENTATION_LEDGER.md), [DATA_AUTHORITY_MATRIX.md](DATA_AUTHORITY_MATRIX.md), documentation validation | AUTOMATED_VERIFIED                   |
 
 Aggregate status: `KMO-W02 — AUTOMATED VERIFIED; RUNTIME DEFERRED`.
 
@@ -228,4 +247,5 @@ for W00 is explicitly deferred when no process-only QA credential is available;
 W01 disposable concurrent-runner runtime evidence is also deferred while its
 automated advisory-lock serialization contract remains verified. W02B runtime
 and canonical migration execution remain deferred. W02C-D runtime and canonical
-migration 023 execution are also deferred; W03 remains pending.
+migration 023 execution are also deferred. KMO-ARCH-01 is a documentation gate,
+not runtime or product evidence; W03 remains pending.

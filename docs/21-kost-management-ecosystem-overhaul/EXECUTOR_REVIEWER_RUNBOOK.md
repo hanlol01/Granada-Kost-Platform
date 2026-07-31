@@ -1,6 +1,6 @@
 # Executor–Reviewer Runbook
 
-Status: **APPROVED PLANNING — NOT IMPLEMENTED**
+Status: **APPROVED DELIVERY PROCESS**
 
 ## 1. Objective
 
@@ -77,12 +77,69 @@ preflight, reconciliation, and failure-injection coverage.
 Target durations are non-binding. A package stays `NOT READY FOR REVIEW` until
 its acceptance contract is complete.
 
+### Fast Critical Delivery
+
+Fast Critical Delivery is the default execution profile for a coherent KMO
+authority slice. It keeps one comprehensive reviewer gate while avoiding
+duplicate broad validation during implementation.
+
+Executor:
+
+- default model: GPT-5.6 Sol with HIGH reasoning;
+- read every mandatory authority document before editing;
+- preflight the live path, blast radius, property scope, migration impact, and
+  compatibility consumers;
+- freeze exact files and coherent atomic exceptions before mutation;
+- develop with focused tests, then run relevant lint, typecheck, and build;
+- do not run Full Admin or `qa:read-only` by default;
+- hand off only as `READY FOR FINAL REVIEW`;
+- report evidence honestly, but never assign `AUTOMATED_VERIFIED` to its own
+  patch.
+
+Reviewer:
+
+- default reasoning: HIGH;
+- use XHIGH only when explicitly requested for financial ledger, lease lifecycle,
+  migration/backfill, identity/credential, or equivalent high-risk authority;
+- perform one complete audit and one Finding Freeze;
+- focus blocking review on P0/P1 correctness, security/property scope, data
+  corruption/race, and existing-feature regression;
+- record P2 polish or maintenance outside acceptance as backlog unless it causes
+  an actual acceptance failure;
+- fix safe in-scope findings directly;
+- do not add new acceptance criteria after Finding Freeze unless the fixer
+  introduces a concrete regression;
+- run Full Admin and aggregate/QA only once after the patch is stable;
+- reuse still-valid executor evidence when production code affecting that gate
+  has not changed;
+- assign `AUTOMATED_VERIFIED` only after final-delta validation.
+
+Validation ownership:
+
+| Validation                    | Executor                            | Reviewer                        |
+| ----------------------------- | ----------------------------------- | ------------------------------- |
+| Focused tests                 | Yes                                 | Rerun after fixer               |
+| Relevant lint/typecheck/build | Yes                                 | Final run if production changed |
+| Full Admin                    | No by default                       | Once on final stable delta      |
+| `qa:read-only`                | No by default                       | Once on final stable delta      |
+| Disposable migration proof    | When the slice includes a migration | Final proof if SQL changed      |
+| Browser/runtime               | Separate authorized operator task   | No                              |
+
+Recommended package size is one authority, at most one migration, one API
+consumer, and one UI workflow, usually about 10–18 files. A larger coherent
+outcome is split into internal executor phases but still receives one final
+reviewer pass. Unrelated domains are never bundled to fit the target.
+
+After Finding Freeze, work is limited to frozen fixes, regressions introduced by
+those fixes, documentation truth, and final validation. A second broad audit is
+not opened unless the approved scope or product contract materially changes.
+
 ## 4. Leader Package Brief Template
 
 ```text
 KMO-<package> — <title>
 
-Mode: Fast Ship | Hard Ship
+Mode: Fast Ship | Hard Ship | Fast Critical Delivery
 Expected HEAD: <sha>
 Requirement IDs: <exact list>
 Authority docs: <exact paths>
@@ -252,7 +309,8 @@ Validation:
 - focused;
 - regressions;
 - lint/typecheck/build;
-- aggregate;
+- aggregate only when explicitly assigned; otherwise the reviewer owns the one
+  final stable aggregate run;
 - migration/runtime if required;
 - diff/index/integrity.
 

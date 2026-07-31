@@ -66,7 +66,7 @@ class FakeDatabase {
   readonly events: string[] = [];
   readonly querySources: Array<{ source: 'pool' | 'transaction'; sql: string }> = [];
   transactionCount = 0;
-  lifecycle = { hold: false, occupancy: false, lease: false };
+  lifecycle = { hold: false, occupancy: false, lease: false, maintenance: false };
   rooms = new Map<string, FakeRoom>();
   buildings = new Map<string, FakeRoom>();
   commands = new Map<string, Command>();
@@ -270,6 +270,8 @@ class FakeDatabase {
       return { rows: this.lifecycle.occupancy ? ([{ id: 'occupancy' }] as T[]) : ([] as T[]) };
     if (/^SELECT id FROM leases/.test(normalized))
       return { rows: this.lifecycle.lease ? ([{ id: 'lease' }] as T[]) : ([] as T[]) };
+    if (/^SELECT id FROM maintenance_work_orders/.test(normalized))
+      return { rows: this.lifecycle.maintenance ? ([{ id: 'work-order' }] as T[]) : ([] as T[]) };
     if (/^INSERT INTO rooms/.test(normalized)) {
       const duplicate = [...this.rooms.values()].some(
         (room) => room.property_id === values[0] && room.number === values[2],
@@ -884,11 +886,24 @@ test('counter matrix covers B-to-A, same-floor cross-building, opposite moves, a
   assert.equal(negative.audits.length, 0);
 });
 
-test('reserved/occupied/hold/occupancy/lease block structural edits but harmless edits remain allowed', async () => {
-  for (const blocked of ['reserved', 'occupied', 'hold', 'occupancy', 'lease'] as const) {
+test('active lifecycle, maintenance, and reconciliation block structural edits but harmless edits remain allowed', async () => {
+  for (const blocked of [
+    'reserved',
+    'occupied',
+    'maintenance_status',
+    'review_status',
+    'hold',
+    'occupancy',
+    'lease',
+    'maintenance',
+  ] as const) {
     const current = fixture();
     if (blocked === 'reserved' || blocked === 'occupied') {
       current.database.rooms.get(ROOM_A)!.room_status = blocked;
+    } else if (blocked === 'maintenance_status') {
+      current.database.rooms.get(ROOM_A)!.room_status = 'maintenance';
+    } else if (blocked === 'review_status') {
+      current.database.rooms.get(ROOM_A)!.room_status = 'requires_review';
     } else {
       current.database.lifecycle[blocked] = true;
     }
@@ -924,7 +939,7 @@ test('reserved/occupied/hold/occupancy/lease block structural edits but harmless
     assert.equal(current.database.rooms.get(ROOM_A)!.size_label, 'safe');
   }
 
-  for (const status of ['vacant', 'maintenance', 'inactive', 'requires_review'] as const) {
+  for (const status of ['vacant', 'inactive'] as const) {
     const current = fixture();
     current.database.rooms.get(ROOM_A)!.room_status = status;
     await current.service.update(
@@ -957,6 +972,7 @@ test('lock order is deterministic and audit/idempotency success share the transa
     index(/^SELECT id FROM booking_lead_holds/),
     index(/^SELECT id FROM occupancies/),
     index(/^SELECT id FROM leases/),
+    index(/^SELECT id FROM maintenance_work_orders/),
     index(/^UPDATE rooms SET kost_type_id/),
     index(/^UPDATE room_buildings/),
     current.database.events.indexOf('AUDIT'),

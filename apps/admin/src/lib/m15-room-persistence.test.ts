@@ -292,6 +292,7 @@ test("logical retries reuse one key while payload and scope changes rotate it", 
     propertyId: PROPERTY_ID,
     category: "rukost",
     roomId: ROOM_ID,
+    previousRoomNumber: "RK-01-99",
     input: updateInput,
   };
   const firstFingerprint = roomMutationFingerprint(base);
@@ -321,6 +322,7 @@ test("logical retries reuse one key while payload and scope changes rotate it", 
     propertyId: PROPERTY_ID,
     category: "rukost",
     roomId: ROOM_ID,
+    previousRoomNumber: "RK-01-99",
     input: updateInput,
   };
   const update = resolveRoomMutationIntent(null, roomMutationFingerprint(updateBase), createKey);
@@ -380,6 +382,7 @@ test("scope, authoritative references, lifecycle, and safe recovery are behavior
     propertyId: PROPERTY_ID,
     category: "rukost",
     roomId: ROOM_ID,
+    previousRoomNumber: "RK-01-99",
     input: updateInput,
   };
   assert.equal(
@@ -420,6 +423,8 @@ test("scope, authoritative references, lifecycle, and safe recovery are behavior
   assert.equal(roomStructuralEditLocked(lifecycleRoom({})), false);
   assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "reserved" })), true);
   assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "occupied" })), true);
+  assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "maintenance" })), true);
+  assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "requires_review" })), true);
   assert.equal(
     roomStructuralEditLocked(
       lifecycleRoom({ activeLease: { leaseCode: undefined, residentName: undefined } }),

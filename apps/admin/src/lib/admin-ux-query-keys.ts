@@ -95,6 +95,8 @@ export const adminUxQueryKeys = {
     list: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("rooms", propertyId, normalizePagination(filters)),
     detail: (propertyId: string, id: string) => scoped("room", propertyId, id),
+    detailByNumber: (accountId: string, propertyId: string, roomNumber: string) =>
+      ["roomDetail", accountId, propertyId, roomNumber.trim()] as const,
     availabilityAll: (propertyId: string) => scoped("roomAvailability", propertyId),
     availability: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("roomAvailability", propertyId, normalizePagination(filters)),
@@ -181,6 +183,14 @@ export function roomPersistenceInvalidationKeys(
     adminUxQueryKeys.kostTypes.all(propertyId),
     adminUxQueryKeys.dashboard.summary(propertyId),
   ];
+}
+
+export function roomDetailInvalidationKey(
+  accountId: string,
+  propertyId: string,
+  roomNumber: string,
+): QueryKey {
+  return adminUxQueryKeys.rooms.detailByNumber(accountId, propertyId, roomNumber);
 }
 
 export type AdminUxMutation =

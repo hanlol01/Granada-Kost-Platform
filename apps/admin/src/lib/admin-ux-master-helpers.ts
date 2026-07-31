@@ -3,6 +3,7 @@ import type {
   KostTypeCategory,
   RoomAvailabilityItem,
   RoomInventory,
+  RoomInventoryUpdateInput,
   RoomStatus,
 } from "@/lib/admin-ux-master-api";
 
@@ -28,7 +29,6 @@ export type RoomRouteSearch = {
   order?: "asc" | "desc";
   offset: number;
   limit: number;
-  roomId?: string;
 };
 
 const ROOM_WRITE_ROLES = new Set(["owner", "manager", "admin"]);
@@ -58,14 +58,36 @@ export function hasAuthoritativeRoomReferences(
 }
 
 export function roomStructuralEditLocked(
-  room: Pick<RoomInventory, "status" | "activeLease" | "activeOccupancy"> | null | undefined,
+  room:
+    | Pick<RoomInventory, "status" | "activeLease" | "activeOccupancy" | "structuralEditLocked">
+    | null
+    | undefined,
 ): boolean {
   return Boolean(
     room &&
-    (room.status === "reserved" ||
+    (room.structuralEditLocked ||
+      room.status === "reserved" ||
       room.status === "occupied" ||
+      room.status === "maintenance" ||
+      room.status === "requires_review" ||
       room.activeLease ||
       room.activeOccupancy),
+  );
+}
+
+export function roomStructuralInputChanged(
+  room: RoomInventory,
+  input: RoomInventoryUpdateInput,
+): boolean {
+  const normalized = (value: string | null | undefined) => value ?? null;
+  return (
+    (input.kostTypeId !== undefined && room.kostType.id !== input.kostTypeId) ||
+    (input.buildingId !== undefined &&
+      normalized(room.buildingId) !== normalized(input.buildingId)) ||
+    (input.number !== undefined && room.number !== input.number) ||
+    (input.roomCode !== undefined && normalized(room.roomCode) !== normalized(input.roomCode)) ||
+    (input.unitCode !== undefined && normalized(room.unitCode) !== normalized(input.unitCode)) ||
+    (input.floorCode !== undefined && normalized(room.floorCode) !== normalized(input.floorCode))
   );
 }
 
@@ -218,7 +240,6 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
     ...(raw.order === "asc" || raw.order === "desc" ? { order: raw.order } : {}),
     offset: boundedInteger(raw.offset, 0, 0, Number.MAX_SAFE_INTEGER),
     limit: boundedInteger(raw.limit, 20, 1, 100),
-    roomId: optionalText(raw.room_id ?? raw.roomId, 80),
   };
 }
 

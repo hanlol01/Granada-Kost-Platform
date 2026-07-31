@@ -932,12 +932,22 @@ export class AdminUxRoomV2Service {
        ORDER BY id FOR UPDATE`,
       [propertyId, roomId],
     );
+    const maintenance = await client.query<{ id: string }>(
+      `SELECT id FROM maintenance_work_orders
+       WHERE property_id = $1 AND room_id = $2
+         AND work_order_status NOT IN ('verified', 'cancelled')
+       ORDER BY id FOR UPDATE`,
+      [propertyId, roomId],
+    );
     if (
       room.room_status === 'reserved' ||
       room.room_status === 'occupied' ||
+      room.room_status === 'maintenance' ||
+      room.room_status === 'requires_review' ||
       hold.rows.length > 0 ||
       occupancy.rows.length > 0 ||
-      lease.rows.length > 0
+      lease.rows.length > 0 ||
+      maintenance.rows.length > 0
     ) {
       throw new ConflictException({
         code: 'ROOM_STRUCTURAL_EDIT_BLOCKED',

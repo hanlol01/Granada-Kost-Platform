@@ -9,6 +9,7 @@ import {
 } from './admin-ux-master.controller';
 import { AdminUxGalleryV2Service } from './admin-ux-gallery-v2.service';
 import { AdminUxRoomV2Service } from './admin-ux-room-v2.service';
+import { AdminUxRoomDetailService } from './admin-ux-room-detail.service';
 import { AdminUxMasterService } from './admin-ux-master.service';
 
 @Module({
@@ -19,7 +20,17 @@ import { AdminUxMasterService } from './admin-ux-master.service';
     RoomFacilityV2Controller,
     KostTypeRuleController,
   ],
-  providers: [AdminUxMasterService, AdminUxRoomV2Service, AdminUxGalleryV2Service],
-  exports: [AdminUxMasterService, AdminUxRoomV2Service, AdminUxGalleryV2Service],
+  providers: [
+    AdminUxMasterService,
+    AdminUxRoomV2Service,
+    AdminUxRoomDetailService,
+    AdminUxGalleryV2Service,
+  ],
+  exports: [
+    AdminUxMasterService,
+    AdminUxRoomV2Service,
+    AdminUxRoomDetailService,
+    AdminUxGalleryV2Service,
+  ],
 })
 export class AdminUxMasterModule {}

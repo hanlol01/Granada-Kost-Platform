@@ -22,7 +22,6 @@ export type RoomCategoryRouteSearch = {
   order?: "asc" | "desc";
   offset: number;
   limit: number;
-  room_id?: string;
   create?: boolean;
 };
 
@@ -40,7 +39,6 @@ function validateSearch(raw: Record<string, unknown>): RoomCategoryRouteSearch {
     order: search.order,
     offset: search.offset,
     limit: search.limit,
-    room_id: search.roomId,
     create: normalizeRoomCreateRequest(raw.create) || undefined,
   };
 }
@@ -76,7 +74,6 @@ function RumahKostRoute() {
         order: search.order,
         offset: search.offset,
         limit: search.limit,
-        roomId: search.room_id,
       }}
       onSearchChange={(next) =>
         navigate({
@@ -106,9 +103,6 @@ function RumahKostRoute() {
               ? (next.offset ?? 0)
               : current.offset,
             limit: current.limit,
-            room_id: Object.prototype.hasOwnProperty.call(next, "roomId")
-              ? next.roomId
-              : current.room_id,
             create: undefined,
           }),
         })

@@ -1,6 +1,6 @@
 // Shared M4 inventory surface for Rumah Kost and Apart Kost.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   BedDouble,
   Building2,
@@ -76,6 +76,7 @@ import {
   hasAuthoritativeRoomReferences,
   hasRoomWriteAuthority,
   roomStructuralEditLocked,
+  roomStructuralInputChanged,
   type RoomRouteSearch,
 } from "@/lib/admin-ux-master-helpers";
 import { useAuth } from "@/lib/auth";
@@ -154,7 +155,6 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   });
   const [typeEditor, setTypeEditor] = useState<KostType | null | "create">(null);
   const [roomEditor, setRoomEditor] = useState<RoomInventory | null>(null);
-  const [detailRoom, setDetailRoom] = useState<RoomInventory | null>(null);
   const [statusRoom, setStatusRoom] = useState<RoomInventory | null>(null);
   const currentRoomScope = `${currentPropertyId ?? ""}:${category}`;
   const previousRoomScope = useRef(currentRoomScope);
@@ -182,7 +182,6 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   const canPersistRoom = Boolean(canManage && activeType && buildings.length > 0);
 
   useEffect(() => {
-    setDetailRoom(null);
     setStatusRoom(null);
     setRoomEditor(null);
     previousRoomScope.current = currentRoomScope;
@@ -269,7 +268,6 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
           rooms={rooms}
           canManage={canManage}
           canEdit={canPersistRoom}
-          onDetail={setDetailRoom}
           onEdit={setRoomEditor}
           onStatus={setStatusRoom}
           showCategory={false}
@@ -300,12 +298,6 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
           onOpenChange={(open) => !open && setRoomEditor(null)}
         />
       ) : null}
-      <RoomDetailSheet
-        room={detailRoom}
-        open={detailRoom !== null}
-        onOpenChange={(open) => !open && setDetailRoom(null)}
-        onEdit={canPersistRoom ? setRoomEditor : undefined}
-      />
       <RoomStatusDialog
         room={statusRoom}
         open={statusRoom !== null}
@@ -409,7 +401,7 @@ export function RoomDiscoveryFilters({
   useEffect(() => setSearchText(search.q), [search.q]);
   const applySearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onSearchChange({ q: searchText.trim(), offset: 0, roomId: undefined });
+    onSearchChange({ q: searchText.trim(), offset: 0 });
   };
   return (
     <Card className="border-slate-800 bg-slate-900/80">
@@ -433,7 +425,6 @@ export function RoomDiscoveryFilters({
             onSearchChange({
               buildingId: buildingId === "all" ? undefined : buildingId,
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -455,7 +446,6 @@ export function RoomDiscoveryFilters({
             onSearchChange({
               status: status === "all" ? undefined : (status as RoomInventory["status"]),
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -477,7 +467,6 @@ export function RoomDiscoveryFilters({
             onSearchChange({
               floorCode: floorCode === "all" ? undefined : (floorCode as "A" | "B"),
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -497,7 +486,6 @@ export function RoomDiscoveryFilters({
               genderPolicy:
                 genderPolicy === "all" ? undefined : (genderPolicy as "male" | "female"),
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -522,7 +510,6 @@ export function RoomDiscoveryFilters({
             onSearchChange({
               activeOccupancy: value === "all" ? undefined : value === "active",
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -544,7 +531,6 @@ export function RoomDiscoveryFilters({
                   ? undefined
                   : (reconciliationState as "normal" | "requires_review"),
               offset: 0,
-              roomId: undefined,
             })
           }
         >
@@ -560,7 +546,7 @@ export function RoomDiscoveryFilters({
         <Select
           value={search.sort ?? "room_number"}
           onValueChange={(sort) =>
-            onSearchChange({ sort: sort as RoomRouteSearch["sort"], offset: 0, roomId: undefined })
+            onSearchChange({ sort: sort as RoomRouteSearch["sort"], offset: 0 })
           }
         >
           <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
@@ -578,9 +564,7 @@ export function RoomDiscoveryFilters({
         </Select>
         <Select
           value={search.order ?? "asc"}
-          onValueChange={(order) =>
-            onSearchChange({ order: order as "asc" | "desc", offset: 0, roomId: undefined })
-          }
+          onValueChange={(order) => onSearchChange({ order: order as "asc" | "desc", offset: 0 })}
         >
           <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
             <SelectValue placeholder="Arah urutan" />
@@ -604,7 +588,6 @@ export function RoomDiscoveryFilters({
               reconciliationState: undefined,
               sort: undefined,
               order: undefined,
-              roomId: undefined,
               offset: 0,
             })
           }
@@ -656,7 +639,6 @@ export function RoomInventoryTable({
   rooms,
   canManage,
   canEdit = canManage,
-  onDetail,
   onEdit,
   onStatus,
   showCategory = true,
@@ -664,19 +646,24 @@ export function RoomInventoryTable({
   rooms: RoomInventory[];
   canManage: boolean;
   canEdit?: boolean;
-  onDetail: (room: RoomInventory) => void;
   onEdit: (room: RoomInventory) => void;
   onStatus: (room: RoomInventory) => void;
   showCategory?: boolean;
 }) {
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
+  const navigate = useNavigate();
   const [quickBookingRoom, setQuickBookingRoom] = useState<RoomInventory | null>(null);
   const [legacyCheckoutRoom, setLegacyCheckoutRoom] = useState<RoomInventory | null>(null);
   const canLegacyCheckout =
     (user?.roles ?? []).some((role) => ["owner", "manager", "admin"].includes(role)) &&
     hasPermission("checkout.manage") &&
     Boolean(currentPropertyId);
+  const openDetail = (room: RoomInventory) =>
+    navigate({
+      to: "/rooms/$roomNumber",
+      params: { roomNumber: room.number },
+    });
 
   if (!rooms.length) {
     return (
@@ -716,13 +703,20 @@ export function RoomInventoryTable({
                   <tr
                     key={room.id}
                     className="cursor-pointer transition-colors hover:bg-slate-800/60"
-                    onClick={() => onDetail(room)}
+                    onClick={() => void openDetail(room)}
                   >
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-100">{roomLabel(room)}</p>
-                      {room.roomCode && room.roomCode !== room.number ? (
-                        <p className="text-xs text-slate-500">{room.number}</p>
-                      ) : null}
+                      <Link
+                        className="inline-flex min-h-11 flex-col justify-center rounded-sm font-semibold text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        to="/rooms/$roomNumber"
+                        params={{ roomNumber: room.number }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <span>{roomLabel(room)}</span>
+                        {room.roomCode && room.roomCode !== room.number ? (
+                          <span className="text-xs font-normal text-slate-500">{room.number}</span>
+                        ) : null}
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-slate-300">
                       {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
@@ -766,13 +760,14 @@ export function RoomInventoryTable({
                           <Button
                             variant="ghost"
                             size="icon"
-                            aria-label={`Aksi ${roomLabel(room)} `}
+                            className="min-h-11 min-w-11"
+                            aria-label={`Aksi ${roomLabel(room)}`}
                           >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => onDetail(room)}>
+                          <DropdownMenuItem onClick={() => void openDetail(room)}>
                             Lihat detail
                           </DropdownMenuItem>
                           {canCreateAdminBookingLead({
@@ -1180,7 +1175,7 @@ function RoomFormField({
   );
 }
 
-function RoomInventoryEditor({
+export function RoomInventoryEditor({
   room,
   propertyId,
   category,
@@ -1189,6 +1184,7 @@ function RoomInventoryEditor({
   canPersist,
   open,
   onOpenChange,
+  onSaved,
 }: {
   room: RoomInventory;
   propertyId: string | null | undefined;
@@ -1198,6 +1194,7 @@ function RoomInventoryEditor({
   canPersist: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved?: (room: RoomInventory) => void;
 }) {
   const [draft, setDraft] = useState<RoomDraft>(() => draftForRoom(room));
   const [errors, setErrors] = useState<RoomDraftErrors>({});
@@ -1277,12 +1274,20 @@ function RoomInventoryEditor({
     const generation = editorGeneration.current;
     const roomId = room.id;
     const updateInput = roomInputFromDraft(draft);
+    if (roomStructuralEditLocked(room) && roomStructuralInputChanged(room, updateInput)) {
+      setErrors({
+        number: "Identitas struktural terkunci oleh status operasional terbaru.",
+      });
+      document.getElementById(ROOM_FIELD_ID.number)?.focus();
+      return;
+    }
     try {
-      await submitRoomMutation({
+      const result = await submitRoomMutation({
         kind: "update",
         propertyId,
         category,
         roomId,
+        previousRoomNumber: room.number,
         input: updateInput,
       });
       const current = editorScope.current;
@@ -1294,6 +1299,7 @@ function RoomInventoryEditor({
         current.roomId === roomId &&
         current.canPersist
       ) {
+        onSaved?.(result.room);
         onOpenChange(false);
       }
     } catch {
@@ -1563,176 +1569,6 @@ function RoomInventoryEditor({
         </form>
       </SheetContent>
     </Sheet>
-  );
-}
-
-export function RoomDetailSheet({
-  room,
-  open,
-  onOpenChange,
-  onEdit,
-}: {
-  room: RoomInventory | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onEdit?: (room: RoomInventory) => void;
-}) {
-  const { user, hasPermission } = useAuth();
-  const { currentPropertyId } = useProperty();
-  const [legacyCheckoutRoom, setLegacyCheckoutRoom] = useState<RoomInventory | null>(null);
-  const canLegacyCheckout =
-    (user?.roles ?? []).some((role) => ["owner", "manager", "admin"].includes(role)) &&
-    hasPermission("checkout.manage") &&
-    Boolean(currentPropertyId);
-  if (!room) return null;
-  const residentName = room.activeLease?.residentName ?? room.activeOccupancy?.residentName;
-  const facilities = room.kostType.facilities ?? [];
-  return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="right"
-          className="w-full overflow-y-auto border-slate-800 bg-slate-900 sm:max-w-md"
-        >
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2 text-slate-100">
-              <BedDouble className="h-5 w-5 text-blue-300" /> {roomLabel(room)}
-            </SheetTitle>
-            <SheetDescription>Detail inventori dan sumber komersial kamar.</SheetDescription>
-          </SheetHeader>
-          <div className="space-y-5 py-5">
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-100">Inventori fisik</h3>
-              <DetailGrid
-                items={[
-                  [
-                    "Bangunan",
-                    room.buildingName || room.buildingCode || room.unitCode || "Belum bernama",
-                  ],
-                  ["Lantai", room.floorLabel || room.floor || room.floorCode || "—"],
-                  ["Ukuran", room.sizeLabel || "—"],
-                  [
-                    "Kebijakan gender",
-                    room.genderPolicy === "male"
-                      ? "Putra"
-                      : room.genderPolicy === "female"
-                        ? "Putri"
-                        : "Campur",
-                  ],
-                ]}
-              />
-            </section>
-            <section className="space-y-3 border-t border-slate-800 pt-5">
-              <h3 className="text-sm font-semibold text-slate-100">Status dan penghuni</h3>
-              <div className="flex flex-wrap gap-2">
-                <RoomStatusBadge status={room.status} />
-                {room.leaseReconciliationRequired ? (
-                  <Badge
-                    variant="outline"
-                    className="border-amber-500/30 bg-amber-500/10 text-amber-200"
-                  >
-                    Perlu rekonsiliasi penyewaan
-                  </Badge>
-                ) : null}
-              </div>
-              {residentName ? (
-                <p className="text-sm text-slate-300">
-                  <span className="text-slate-500">Penghuni aktif:</span> {residentName}
-                </p>
-              ) : (
-                <p className="text-sm text-slate-500">Tidak ada penghuni aktif yang ditampilkan.</p>
-              )}
-              {room.status === "occupied" || room.status === "reserved" ? (
-                <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-100">
-                  Status terisi dan dipesan dikelola melalui lifecycle Penyewaan, bukan dari
-                  inventori kamar.
-                </p>
-              ) : null}
-              {room.leaseReconciliationRequired ? (
-                <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-100">
-                  Hunian aktif ini berasal dari data lama tanpa Penyewaan aktif yang cocok. Gunakan
-                  jalur rekonsiliasi hanya untuk menyelesaikan data historis tersebut.
-                </p>
-              ) : null}
-            </section>
-            <section className="space-y-3 border-t border-slate-800 pt-5">
-              <h3 className="text-sm font-semibold text-slate-100">
-                Dari tipe kost: {room.kostType.name}
-              </h3>
-              <DetailGrid
-                items={[
-                  ["Harga bulanan", formatIDR(room.kostType.monthlyPrice)],
-                  ["Harga tahunan", formatIDR(room.kostType.yearlyPrice)],
-                  ["Deposit", formatIDR(room.kostType.depositAmount)],
-                ]}
-              />
-              <div>
-                <p className="mb-2 text-xs text-slate-500">Fasilitas tipe kost</p>
-                {facilities.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {facilities.map((facility) => (
-                      <Badge
-                        key={facility.id}
-                        variant="outline"
-                        className="border-slate-700 bg-slate-800 text-slate-200"
-                      >
-                        {facility.name}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    Belum ada fasilitas yang di-assign ke tipe ini.
-                  </p>
-                )}
-              </div>
-            </section>
-          </div>
-          <SheetFooter className="border-t border-slate-800 pt-4">
-            {canLegacyCheckout && room.leaseReconciliationRequired ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setLegacyCheckoutRoom(room);
-                }}
-              >
-                <ShieldAlert className="mr-2 h-4 w-4" /> Rekonsiliasi data lama
-              </Button>
-            ) : null}
-            {onEdit ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  onEdit(room);
-                  onOpenChange(false);
-                }}
-              >
-                <Pencil className="mr-2 h-4 w-4" /> Edit inventori
-              </Button>
-            ) : null}
-            <Button onClick={() => onOpenChange(false)}>Tutup</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-      <CompatibilityCheckoutDialog
-        room={legacyCheckoutRoom}
-        open={legacyCheckoutRoom !== null}
-        onOpenChange={(next) => !next && setLegacyCheckoutRoom(null)}
-      />
-    </>
-  );
-}
-
-function DetailGrid({ items }: { items: [string, string][] }) {
-  return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-      {items.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-slate-500">{label}</dt>
-          <dd className="font-medium text-slate-200">{value}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 

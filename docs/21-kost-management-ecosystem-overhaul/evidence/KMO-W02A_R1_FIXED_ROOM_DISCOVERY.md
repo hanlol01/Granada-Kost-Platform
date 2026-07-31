@@ -1,10 +1,10 @@
 # KMO-W02A R1 Fixed Room Discovery Evidence
 
-Status: **KMO-W02A — IN PROGRESS; R1 AUTOMATED VERIFIED; R2 FULL-PAGE DETAIL PENDING**
+Status: **KMO-W02A — AUTOMATED VERIFIED; RUNTIME DEFERRED**
 
 R1 establishes the fixed-inventory boundary and the complete server-side room
-discovery wire. It does not claim the KMO-W02A full-page room detail required by
-R2.
+discovery wire. R2 closes the Admin room-detail boundary in
+[KMO-W02A_R2_FULL_ROOM_DETAIL.md](KMO-W02A_R2_FULL_ROOM_DETAIL.md).
 
 ## Delivered Boundary
 
@@ -25,8 +25,9 @@ R2.
   affordance or room-create requester. A legacy `create=true` URL is replaced
   with its canonical filtered URL and never opens an editor.
 - Existing-room edit, structural lifecycle locks, operational status actions,
-  booking-lead action, authoritative metrics, server pagination, and detail
-  sheet behavior remain available.
+  booking-lead action, authoritative metrics, and server pagination remain
+  available. The former detail Sheet was superseded by the canonical full-page
+  route in R2.
 
 ## Discovery Contract
 
@@ -44,7 +45,7 @@ and commands and are not added to visible table cells.
 
 All room list surfaces use the shared discovery controls. Search is submitted
 explicitly rather than firing a request per keystroke. Any filter change resets
-offset and selected detail. The canonical columns are Kamar, Bangunan,
+the server offset. The canonical columns are Kamar, Bangunan,
 Kategori, Jenis Kelamin, Status, Penghuni Aktif, and Aksi; category pages omit
 the redundant Kategori column. Per-room commercial price columns are absent
 because commercial authority remains on the kost type.

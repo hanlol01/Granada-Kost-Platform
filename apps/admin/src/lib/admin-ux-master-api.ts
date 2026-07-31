@@ -120,6 +120,104 @@ export type RoomInventory = {
     startDate?: string;
   } | null;
   leaseReconciliationRequired?: boolean;
+  structuralEditLocked?: boolean;
+};
+
+export type RoomDetail = {
+  id: string;
+  propertyId: string;
+  number: string;
+  roomCode: string | null;
+  building: { id: string; code: string; name: string };
+  category: { id: string; code: KostTypeCategory; name: string };
+  physical: {
+    unitCode: string | null;
+    floorCode: "A" | "B";
+    floorLabel: string;
+    sizeLabel: string | null;
+    primaryPhotoFileId: string | null;
+    genderPolicy: "male" | "female";
+    status: RoomStatus;
+    publicVisible: boolean;
+    notes: string | null;
+    structuralEditLocked: boolean;
+  };
+  commercial: {
+    source: "current_category";
+    monthlyPrice: number;
+    annualContractValue: number;
+    minimumDpAmount: number;
+    minimumDpLabel: string;
+    securityDepositRequired: number;
+    paymentPlanDescription: string;
+    facilities: Array<{ id: string; name: string }>;
+  };
+  resident: {
+    displayName: string;
+    accountStatus: string;
+    university: string | null;
+    occupancyStart: string;
+  } | null;
+  lease: {
+    id: string;
+    code: string;
+    status: string;
+    startDate: string;
+    endDate: string | null;
+    durationMonths: number;
+    paymentPlan: string;
+    occupancyStart: string | null;
+    occupancyEnd: string | null;
+    occupancyState: string | null;
+  } | null;
+  reconciliation: {
+    state: "normal" | "lease_reconciliation_required";
+    messages: string[];
+  };
+  billing: {
+    contractValue: number | null;
+    verifiedInvoiceAllocated: number;
+    unpaidAmount: number;
+    nextDueDate: string | null;
+    nextDuePeriod: string | null;
+    minimumDpAmount: number;
+    dpVerifiedAmount: null;
+    dpProgressLabel: string;
+    securityDepositRequired: number;
+    depositHeld: number;
+    depositRefunded: number;
+    depositDeducted: number;
+    awaitingConfirmationAmount: number;
+  };
+  vehicles: Array<{
+    code: string;
+    plateNumber: string;
+    vehicleType: string;
+    parkingState: string | null;
+  }>;
+  complaints: Array<{
+    code: string;
+    category: string;
+    status: string;
+    priority: string;
+    workOrderCode: string | null;
+    workOrderStatus: string | null;
+    technicianName: string | null;
+  }>;
+  ownership: {
+    displayName: "KOSTATION";
+    source: "policy_default";
+    ownershipReconciliationRequired: true;
+  };
+  timeline: Array<{ eventType: string; label: string; occurredAt: string }>;
+  links: {
+    resident: null;
+    lease: string | null;
+    billing: null;
+    vehicles: null;
+    complaints: null;
+  };
+  updatedAt: string;
 };
 
 export type RoomAvailabilityItem = {
@@ -589,6 +687,539 @@ export function parseRoomInventoryMutationEnvelope(value: unknown): RoomInventor
   return room;
 }
 
+function exactRecord(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): Record<string, unknown> {
+  if (!isPlainRecord(value) || !hasExactKeys(value, keys)) {
+    throw new Error(`Invalid room detail ${label}.`);
+  }
+  return value;
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (!isNonEmptyString(value)) throw new Error(`Invalid room detail ${label}.`);
+  return value;
+}
+
+function nullableDetailString(value: unknown, label: string): string | null {
+  if (!isNullableString(value)) throw new Error(`Invalid room detail ${label}.`);
+  return value;
+}
+
+function safeMoney(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(`Invalid room detail ${label}.`);
+  }
+  return Number(value);
+}
+
+function nullableSafeMoney(value: unknown, label: string): number | null {
+  return value === null ? null : safeMoney(value, label);
+}
+
+function dateLike(value: unknown, label: string): string {
+  const candidate = requiredString(value, label);
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(candidate);
+  const timestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+    candidate,
+  );
+  if ((!dateOnly && !timestamp) || Number.isNaN(Date.parse(candidate))) {
+    throw new Error(`Invalid room detail ${label}.`);
+  }
+  return candidate;
+}
+
+function exactEnum<T extends string>(value: unknown, values: readonly T[], label: string): T {
+  if (typeof value !== "string" || !values.includes(value as T)) {
+    throw new Error(`Invalid room detail ${label}.`);
+  }
+  return value as T;
+}
+
+const ACCOUNT_STATUSES = ["active", "inactive", "suspended"] as const;
+const LEASE_STATUSES = ["active"] as const;
+const PAYMENT_PLANS = ["monthly", "yearly"] as const;
+const OCCUPANCY_STATES = ["active"] as const;
+const VEHICLE_TYPES = ["motorcycle", "car", "bicycle", "electric_scooter", "other"] as const;
+const PARKING_STATES = ["available", "occupied", "reserved", "maintenance"] as const;
+const COMPLAINT_STATUSES = [
+  "submitted",
+  "acknowledged",
+  "in_progress",
+  "on_hold",
+  "escalated",
+  "resolved",
+  "reopened",
+] as const;
+const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+const WORK_ORDER_STATUSES = [
+  "open",
+  "assigned",
+  "in_progress",
+  "on_hold",
+  "completed",
+  "rework_required",
+  "verified",
+  "cancelled",
+] as const;
+const TIMELINE_EVENT_LABELS = {
+  room_updated: "Inventori kamar diperbarui",
+  hold_created: "Kamar ditahan untuk minat booking",
+  hold_released: "Hold kamar dilepas",
+  hold_expired: "Hold kamar kedaluwarsa",
+  occupancy_check_in: "Penghuni check-in",
+  occupancy_check_out: "Penghuni check-out",
+  lease_created: "Penyewaan diaktifkan",
+  lease_updated: "Penyewaan diperbarui",
+  lease_invoice_generated: "Tagihan penyewaan dibuat",
+  lease_deposit_collected: "Deposit jaminan diterima",
+  lease_deposit_refunded: "Deposit jaminan dikembalikan",
+  lease_deposit_deducted: "Deposit jaminan dipotong",
+  lease_closed: "Penyewaan ditutup",
+  lease_transferred_out: "Penyewaan dipindahkan dari kamar",
+  lease_transferred_in: "Penyewaan dipindahkan ke kamar",
+  maintenance_open: "Work order perawatan dibuka",
+  maintenance_assigned: "Work order perawatan ditugaskan",
+  maintenance_in_progress: "Perawatan sedang dikerjakan",
+  maintenance_on_hold: "Perawatan ditunda",
+  maintenance_completed: "Perawatan diselesaikan",
+  maintenance_verified: "Perawatan diverifikasi",
+  maintenance_cancelled: "Perawatan dibatalkan",
+} as const;
+
+export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
+  const envelope = exactRecord(value, ["data"], "envelope");
+  const data = exactRecord(
+    envelope.data,
+    [
+      "id",
+      "property_id",
+      "number",
+      "room_code",
+      "building",
+      "category",
+      "physical",
+      "commercial",
+      "resident",
+      "lease",
+      "reconciliation",
+      "billing",
+      "vehicles",
+      "complaints",
+      "ownership",
+      "timeline",
+      "links",
+      "updated_at",
+    ],
+    "record",
+  );
+  if (!isUuidV4(data.id) || !isUuidV4(data.property_id)) {
+    throw new Error("Invalid room detail scope.");
+  }
+  const building = exactRecord(data.building, ["id", "code", "name"], "building");
+  const category = exactRecord(data.category, ["id", "code", "name"], "category");
+  const physical = exactRecord(
+    data.physical,
+    [
+      "unit_code",
+      "floor_code",
+      "floor_label",
+      "size_label",
+      "primary_photo_file_id",
+      "gender_policy",
+      "status",
+      "public_visible",
+      "notes",
+      "structural_edit_locked",
+    ],
+    "physical",
+  );
+  const commercial = exactRecord(
+    data.commercial,
+    [
+      "source",
+      "monthly_price",
+      "annual_contract_value",
+      "minimum_dp_amount",
+      "minimum_dp_label",
+      "security_deposit_required",
+      "payment_plan_description",
+      "facilities",
+    ],
+    "commercial",
+  );
+  if (
+    !isUuidV4(building.id) ||
+    !isUuidV4(category.id) ||
+    !isKostTypeCategory(category.code) ||
+    (physical.primary_photo_file_id !== null && !isUuidV4(physical.primary_photo_file_id)) ||
+    (physical.floor_code !== "A" && physical.floor_code !== "B") ||
+    (physical.gender_policy !== "male" && physical.gender_policy !== "female") ||
+    !isRoomStatus(physical.status) ||
+    typeof physical.public_visible !== "boolean" ||
+    typeof physical.structural_edit_locked !== "boolean" ||
+    commercial.source !== "current_category" ||
+    !Array.isArray(commercial.facilities)
+  ) {
+    throw new Error("Invalid room detail authority.");
+  }
+  const facilities = commercial.facilities.map((value) => {
+    const record = exactRecord(value, ["id", "name"], "facility");
+    if (!isUuidV4(record.id)) throw new Error("Invalid room detail facility.");
+    return { id: record.id, name: requiredString(record.name, "facility name") };
+  });
+  const resident =
+    data.resident === null
+      ? null
+      : exactRecord(
+          data.resident,
+          ["display_name", "account_status", "university", "occupancy_start"],
+          "resident",
+        );
+  const lease =
+    data.lease === null
+      ? null
+      : exactRecord(
+          data.lease,
+          [
+            "id",
+            "code",
+            "status",
+            "start_date",
+            "end_date",
+            "duration_months",
+            "payment_plan",
+            "occupancy_start",
+            "occupancy_end",
+            "occupancy_state",
+          ],
+          "lease",
+        );
+  const leaseId: string | null = lease
+    ? (() => {
+        if (!isUuidV4(lease.id)) throw new Error("Invalid room detail lease.");
+        return lease.id;
+      })()
+    : null;
+  const reconciliation = exactRecord(data.reconciliation, ["state", "messages"], "reconciliation");
+  if (
+    (reconciliation.state !== "normal" &&
+      reconciliation.state !== "lease_reconciliation_required") ||
+    !Array.isArray(reconciliation.messages) ||
+    !reconciliation.messages.every(isNonEmptyString)
+  ) {
+    throw new Error("Invalid room detail reconciliation.");
+  }
+  const relationshipMismatch = Boolean(resident) !== Boolean(lease);
+  const reconciliationRequired = reconciliation.state === "lease_reconciliation_required";
+  if (
+    relationshipMismatch !== reconciliationRequired ||
+    (reconciliationRequired && reconciliation.messages.length === 0) ||
+    (!reconciliationRequired && reconciliation.messages.length > 0)
+  ) {
+    throw new Error("Invalid room detail relationship.");
+  }
+  const billing = exactRecord(
+    data.billing,
+    [
+      "contract_value",
+      "verified_invoice_allocated",
+      "unpaid_amount",
+      "next_due_date",
+      "next_due_period",
+      "minimum_dp_amount",
+      "dp_verified_amount",
+      "dp_progress_label",
+      "security_deposit_required",
+      "deposit_held",
+      "deposit_refunded",
+      "deposit_deducted",
+      "awaiting_confirmation_amount",
+    ],
+    "billing",
+  );
+  const vehicles = Array.isArray(data.vehicles)
+    ? data.vehicles.map((value) => {
+        const record = exactRecord(
+          value,
+          ["code", "plate_number", "vehicle_type", "parking_state"],
+          "vehicle",
+        );
+        return {
+          code: requiredString(record.code, "vehicle code"),
+          plateNumber: requiredString(record.plate_number, "vehicle plate"),
+          vehicleType: exactEnum(record.vehicle_type, VEHICLE_TYPES, "vehicle type"),
+          parkingState:
+            record.parking_state === null
+              ? null
+              : exactEnum(record.parking_state, PARKING_STATES, "parking state"),
+        };
+      })
+    : (() => {
+        throw new Error("Invalid room detail vehicles.");
+      })();
+  const complaints = Array.isArray(data.complaints)
+    ? data.complaints.map((value) => {
+        const record = exactRecord(
+          value,
+          [
+            "code",
+            "category",
+            "status",
+            "priority",
+            "work_order_code",
+            "work_order_status",
+            "technician_name",
+          ],
+          "complaint",
+        );
+        return {
+          code: requiredString(record.code, "complaint code"),
+          category: requiredString(record.category, "complaint category"),
+          status: exactEnum(record.status, COMPLAINT_STATUSES, "complaint status"),
+          priority: exactEnum(record.priority, PRIORITIES, "complaint priority"),
+          workOrderCode: nullableDetailString(record.work_order_code, "work order code"),
+          workOrderStatus:
+            record.work_order_status === null
+              ? null
+              : exactEnum(record.work_order_status, WORK_ORDER_STATUSES, "work order status"),
+          technicianName: nullableDetailString(record.technician_name, "technician name"),
+        };
+      })
+    : (() => {
+        throw new Error("Invalid room detail complaints.");
+      })();
+  const ownership = exactRecord(
+    data.ownership,
+    ["display_name", "source", "ownership_reconciliation_required"],
+    "ownership",
+  );
+  if (
+    ownership.display_name !== "KOSTATION" ||
+    ownership.source !== "policy_default" ||
+    ownership.ownership_reconciliation_required !== true
+  ) {
+    throw new Error("Invalid room detail ownership.");
+  }
+  const timeline = Array.isArray(data.timeline)
+    ? data.timeline.map((value) => {
+        const record = exactRecord(value, ["event_type", "label", "occurred_at"], "timeline");
+        const eventType = requiredString(record.event_type, "timeline event");
+        const expectedLabel =
+          TIMELINE_EVENT_LABELS[eventType as keyof typeof TIMELINE_EVENT_LABELS];
+        if (!expectedLabel || record.label !== expectedLabel) {
+          throw new Error("Invalid room detail timeline event.");
+        }
+        return {
+          eventType,
+          label: expectedLabel,
+          occurredAt: dateLike(record.occurred_at, "timeline timestamp"),
+        };
+      })
+    : (() => {
+        throw new Error("Invalid room detail timeline.");
+      })();
+  const links = exactRecord(
+    data.links,
+    ["resident", "lease", "billing", "vehicles", "complaints"],
+    "links",
+  );
+  const expectedLeaseLink = leaseId ? `/penyewaan/${leaseId}` : null;
+  if (
+    links.resident !== null ||
+    links.billing !== null ||
+    links.vehicles !== null ||
+    links.complaints !== null ||
+    links.lease !== expectedLeaseLink
+  ) {
+    throw new Error("Invalid room detail links.");
+  }
+  return {
+    id: data.id,
+    propertyId: data.property_id,
+    number: requiredString(data.number, "number"),
+    roomCode: nullableDetailString(data.room_code, "room code"),
+    building: {
+      id: building.id,
+      code: requiredString(building.code, "building code"),
+      name: requiredString(building.name, "building name"),
+    },
+    category: {
+      id: category.id,
+      code: category.code,
+      name: requiredString(category.name, "category name"),
+    },
+    physical: {
+      unitCode: nullableDetailString(physical.unit_code, "unit code"),
+      floorCode: physical.floor_code,
+      floorLabel: requiredString(physical.floor_label, "floor label"),
+      sizeLabel: nullableDetailString(physical.size_label, "size label"),
+      primaryPhotoFileId: nullableDetailString(
+        physical.primary_photo_file_id,
+        "primary photo file",
+      ),
+      genderPolicy: physical.gender_policy,
+      status: physical.status,
+      publicVisible: physical.public_visible,
+      notes: nullableDetailString(physical.notes, "notes"),
+      structuralEditLocked: physical.structural_edit_locked,
+    },
+    commercial: {
+      source: "current_category",
+      monthlyPrice: safeMoney(commercial.monthly_price, "monthly price"),
+      annualContractValue: safeMoney(commercial.annual_contract_value, "annual value"),
+      minimumDpAmount: safeMoney(commercial.minimum_dp_amount, "minimum DP"),
+      minimumDpLabel: requiredString(commercial.minimum_dp_label, "minimum DP label"),
+      securityDepositRequired: safeMoney(commercial.security_deposit_required, "security deposit"),
+      paymentPlanDescription: requiredString(commercial.payment_plan_description, "payment plan"),
+      facilities,
+    },
+    resident: resident
+      ? {
+          displayName: requiredString(resident.display_name, "resident name"),
+          accountStatus: exactEnum(resident.account_status, ACCOUNT_STATUSES, "account status"),
+          university:
+            resident.university === null
+              ? null
+              : (() => {
+                  throw new Error("Invalid room detail university authority.");
+                })(),
+          occupancyStart: dateLike(resident.occupancy_start, "occupancy start"),
+        }
+      : null,
+    lease: lease
+      ? {
+          id: leaseId!,
+          code: requiredString(lease.code, "lease code"),
+          status: exactEnum(lease.status, LEASE_STATUSES, "lease status"),
+          startDate: dateLike(lease.start_date, "lease start"),
+          endDate: lease.end_date === null ? null : dateLike(lease.end_date, "lease end"),
+          durationMonths: safeMoney(lease.duration_months, "lease duration"),
+          paymentPlan: exactEnum(lease.payment_plan, PAYMENT_PLANS, "lease payment plan"),
+          occupancyStart:
+            lease.occupancy_start === null
+              ? null
+              : dateLike(lease.occupancy_start, "lease occupancy start"),
+          occupancyEnd:
+            lease.occupancy_end === null
+              ? null
+              : dateLike(lease.occupancy_end, "lease occupancy end"),
+          occupancyState:
+            lease.occupancy_state === null
+              ? null
+              : exactEnum(lease.occupancy_state, OCCUPANCY_STATES, "occupancy state"),
+        }
+      : null,
+    reconciliation: {
+      state: reconciliation.state,
+      messages: reconciliation.messages as string[],
+    },
+    billing: {
+      contractValue: nullableSafeMoney(billing.contract_value, "contract value"),
+      verifiedInvoiceAllocated: safeMoney(
+        billing.verified_invoice_allocated,
+        "verified invoice allocated",
+      ),
+      unpaidAmount: safeMoney(billing.unpaid_amount, "unpaid amount"),
+      nextDueDate:
+        billing.next_due_date === null ? null : dateLike(billing.next_due_date, "next due"),
+      nextDuePeriod: nullableDetailString(billing.next_due_period, "next due period"),
+      minimumDpAmount: safeMoney(billing.minimum_dp_amount, "billing minimum DP"),
+      dpVerifiedAmount:
+        billing.dp_verified_amount === null
+          ? null
+          : (() => {
+              throw new Error("Invalid room detail DP authority.");
+            })(),
+      dpProgressLabel: requiredString(billing.dp_progress_label, "DP progress"),
+      securityDepositRequired: safeMoney(
+        billing.security_deposit_required,
+        "billing deposit required",
+      ),
+      depositHeld: safeMoney(billing.deposit_held, "deposit held"),
+      depositRefunded: safeMoney(billing.deposit_refunded, "deposit refunded"),
+      depositDeducted: safeMoney(billing.deposit_deducted, "deposit deducted"),
+      awaitingConfirmationAmount: safeMoney(
+        billing.awaiting_confirmation_amount,
+        "awaiting confirmation",
+      ),
+    },
+    vehicles,
+    complaints,
+    ownership: {
+      displayName: "KOSTATION",
+      source: "policy_default",
+      ownershipReconciliationRequired: true,
+    },
+    timeline,
+    links: {
+      resident: null,
+      lease: links.lease as string | null,
+      billing: null,
+      vehicles: null,
+      complaints: null,
+    },
+    updatedAt: dateLike(data.updated_at, "updated timestamp"),
+  };
+}
+
+export function assertRoomDetailScope(
+  detail: RoomDetail,
+  expectedPropertyId: string,
+  expectedRoomNumber: string,
+): RoomDetail {
+  if (detail.propertyId !== expectedPropertyId || detail.number !== expectedRoomNumber.trim()) {
+    throw new Error("ROOM_DETAIL_SCOPE_MISMATCH");
+  }
+  return detail;
+}
+
+export function roomDetailToInventory(detail: RoomDetail): RoomInventory {
+  return {
+    id: detail.id,
+    propertyId: detail.propertyId,
+    number: detail.number,
+    roomCode: detail.roomCode,
+    buildingId: detail.building.id,
+    buildingCode: detail.building.code,
+    buildingName: detail.building.name,
+    unitCode: detail.physical.unitCode,
+    genderPolicy: detail.physical.genderPolicy,
+    floor: detail.physical.floorCode === "A" ? "2" : "1",
+    floorCode: detail.physical.floorCode,
+    floorLabel: detail.physical.floorLabel,
+    sizeLabel: detail.physical.sizeLabel,
+    status: detail.physical.status,
+    primaryPhotoFileId: detail.physical.primaryPhotoFileId,
+    publicVisible: detail.physical.publicVisible,
+    kostType: {
+      id: detail.category.id,
+      name: detail.category.name,
+      slug: detail.category.code,
+      category: detail.category.code,
+      monthlyPrice: detail.commercial.monthlyPrice,
+      yearlyPrice: detail.commercial.annualContractValue,
+      depositAmount: detail.commercial.securityDepositRequired,
+      facilities: detail.commercial.facilities.map((facility, sortOrder) => ({
+        id: facility.id,
+        name: facility.name,
+        icon: null,
+        description: null,
+        categoryId: null,
+        sortOrder,
+      })),
+    },
+    activeLease: detail.lease
+      ? { leaseCode: detail.lease.code, residentName: detail.resident?.displayName }
+      : null,
+    activeOccupancy: null,
+    leaseReconciliationRequired: detail.reconciliation.state === "lease_reconciliation_required",
+    structuralEditLocked: detail.physical.structuralEditLocked,
+  };
+}
+
 export function parseRoomAvailabilityEnvelope(value: unknown): RoomAvailabilityItem[] {
   if (!isPlainRecord(value) || !hasExactKeys(value, ["data"]) || !Array.isArray(value.data)) {
     throw new Error("Invalid room availability envelope.");
@@ -1012,6 +1643,12 @@ export const adminUxMasterApi = {
           query: { include_active_lease: includeActiveLease || undefined },
         })
         .then((value) => parseRoomInventoryDetailEnvelope(value, includeActiveLease)),
+    detailByNumber: (propertyId: string, roomNumber: string) =>
+      adminUxV2Requester
+        .get<unknown>("/rooms/by-number/" + encodeURIComponent(roomNumber.trim()), {
+          query: { property_id: propertyId },
+        })
+        .then(parseRoomDetailEnvelope),
     update: (id: string, input: RoomInventoryUpdateInput, idempotencyKey?: string) =>
       adminUxV2Requester
         .patch<unknown>("/rooms/" + encodeURIComponent(id), toRoomPersistenceBody(input), {

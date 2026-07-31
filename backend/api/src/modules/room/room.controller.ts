@@ -26,6 +26,7 @@ import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
 import { UpdateRoomDto, UpdateRoomStatusDto } from './dto/update-room.dto';
 import { RoomService } from './room.service';
 import { AdminUxRoomV2Service } from '../admin-ux-master/admin-ux-room-v2.service';
+import { AdminUxRoomDetailService } from '../admin-ux-master/admin-ux-room-detail.service';
 import { ListRoomBuildingsV2QueryDto } from '../admin-ux-master/admin-ux-room-v2.dto';
 import type { UpdateRoomV2StatusDto } from '../admin-ux-master/admin-ux-room-v2.dto';
 
@@ -60,6 +61,7 @@ export class RoomController {
   constructor(
     private readonly rooms: RoomService,
     private readonly roomsV2: AdminUxRoomV2Service,
+    private readonly roomDetail: AdminUxRoomDetailService,
   ) {}
 
   @Get()
@@ -99,6 +101,24 @@ export class RoomController {
   @RequirePermissions('room.read')
   buildings(@CurrentUser() user: UserAccessContext, @Query() query: ListRoomBuildingsV2QueryDto) {
     return this.roomsV2.buildings(user, query);
+  }
+
+  @Get('by-number/:roomNumber')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.read')
+  getByNumber(
+    @CurrentUser() user: UserAccessContext,
+    @Param('roomNumber') roomNumber: string,
+    @Query() query: unknown,
+    @Headers('accept') accept?: string,
+  ) {
+    if (!acceptsAdminUxV2(accept)) {
+      throw new BadRequestException({
+        code: 'ADMIN_UX_V2_REQUIRED',
+        message: 'Room-number detail requires the Admin UX V2 media type.',
+      });
+    }
+    return this.roomDetail.getByNumber(user, roomNumber, query);
   }
 
   @Post()

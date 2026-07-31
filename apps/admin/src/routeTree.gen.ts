@@ -35,6 +35,7 @@ import { Route as RoomsRumahKostRouteImport } from './routes/rooms/rumah-kost'
 import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
 import { Route as RoomsFasilitasRouteImport } from './routes/rooms/fasilitas'
 import { Route as RoomsApartKostRouteImport } from './routes/rooms/apart-kost'
+import { Route as RoomsRoomNumberRouteImport } from './routes/rooms/$roomNumber'
 import { Route as PenyewaanTambahRouteImport } from './routes/penyewaan/tambah'
 import { Route as PenyewaanLeaseIdRouteImport } from './routes/penyewaan/$leaseId'
 
@@ -168,6 +169,11 @@ const RoomsApartKostRoute = RoomsApartKostRouteImport.update({
   path: '/apart-kost',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const RoomsRoomNumberRoute = RoomsRoomNumberRouteImport.update({
+  id: '/$roomNumber',
+  path: '/$roomNumber',
+  getParentRoute: () => RoomsRouteRoute,
+} as any)
 const PenyewaanTambahRoute = PenyewaanTambahRouteImport.update({
   id: '/tambah',
   path: '/tambah',
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
   '/rooms/galeri': typeof RoomsGaleriRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
   '/rooms/galeri': typeof RoomsGaleriRoute
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
   '/rooms/galeri': typeof RoomsGaleriRoute
@@ -293,6 +302,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
     | '/rooms/galeri'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
     | '/rooms/galeri'
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
     | '/rooms/galeri'
@@ -566,6 +578,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsApartKostRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/rooms/$roomNumber': {
+      id: '/rooms/$roomNumber'
+      path: '/$roomNumber'
+      fullPath: '/rooms/$roomNumber'
+      preLoaderRoute: typeof RoomsRoomNumberRouteImport
+      parentRoute: typeof RoomsRouteRoute
+    }
     '/penyewaan/tambah': {
       id: '/penyewaan/tambah'
       path: '/tambah'
@@ -600,6 +619,7 @@ const PenyewaanRouteRouteWithChildren = PenyewaanRouteRoute._addFileChildren(
 )
 
 interface RoomsRouteRouteChildren {
+  RoomsRoomNumberRoute: typeof RoomsRoomNumberRoute
   RoomsApartKostRoute: typeof RoomsApartKostRoute
   RoomsFasilitasRoute: typeof RoomsFasilitasRoute
   RoomsGaleriRoute: typeof RoomsGaleriRoute
@@ -608,6 +628,7 @@ interface RoomsRouteRouteChildren {
 }
 
 const RoomsRouteRouteChildren: RoomsRouteRouteChildren = {
+  RoomsRoomNumberRoute: RoomsRoomNumberRoute,
   RoomsApartKostRoute: RoomsApartKostRoute,
   RoomsFasilitasRoute: RoomsFasilitasRoute,
   RoomsGaleriRoute: RoomsGaleriRoute,

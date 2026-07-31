@@ -9,6 +9,7 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   adminUxMasterApi,
+  assertRoomDetailScope,
   type GalleryTarget,
   type KostTypeCategory,
   type MasterStatus,
@@ -27,6 +28,7 @@ import {
 import { normalizeAdminError, safeErrorMessage } from "@/lib/error-normalizer";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
+import { useAuth } from "@/lib/auth";
 
 const MASTER_PAGE_LIMIT = 100;
 
@@ -159,6 +161,26 @@ export function useM4RoomInventory(filters: RoomInventoryFilters = {}) {
   });
 }
 
+export function useRoomDetailByNumber(roomNumber: string | null | undefined) {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  const normalized = roomNumber?.trim() ?? "";
+  return useQuery({
+    queryKey: adminUxQueryKeys.rooms.detailByNumber(
+      user?.id ?? "",
+      currentPropertyId ?? "",
+      normalized,
+    ),
+    queryFn: async () => {
+      const propertyId = currentPropertyId!;
+      const detail = await adminUxMasterApi.rooms.detailByNumber(propertyId, normalized);
+      return assertRoomDetailScope(detail, propertyId, normalized);
+    },
+    enabled: Boolean(user?.id && currentPropertyId && normalized),
+    retry: false,
+  });
+}
+
 export function useM4RoomAvailability() {
   const { currentPropertyId } = useProperty();
   return useQuery({
@@ -191,6 +213,7 @@ export type RoomPersistenceRequest = {
   propertyId: string;
   category: KostTypeCategory;
   roomId: string;
+  previousRoomNumber: string;
   input: RoomInventoryUpdateInput;
 };
 
@@ -252,6 +275,7 @@ export function roomMutationFingerprint(request: RoomPersistenceRequest): string
     propertyId: request.propertyId,
     category: request.category,
     roomId: request.roomId,
+    previousRoomNumber: request.previousRoomNumber,
     payload,
   });
 }
@@ -285,6 +309,7 @@ export function runRoomSubmissionOnce<T>(
 }
 
 export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const scopeRef = useRef(scope);
   const intentRef = useRef<RoomMutationIntentState | null>(null);
@@ -321,9 +346,23 @@ export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
     },
     onSuccess: async (result, request) => {
       await Promise.all(
-        roomPersistenceInvalidationKeys(result.propertyId, result.room.id).map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
+        [
+          ...roomPersistenceInvalidationKeys(result.propertyId, result.room.id),
+          ...(user?.id
+            ? [
+                adminUxQueryKeys.rooms.detailByNumber(
+                  user.id,
+                  result.propertyId,
+                  request.previousRoomNumber,
+                ),
+                adminUxQueryKeys.rooms.detailByNumber(
+                  user.id,
+                  result.propertyId,
+                  result.room.number,
+                ),
+              ]
+            : []),
+        ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       );
       if (
         intentRef.current?.fingerprint === result.fingerprint &&

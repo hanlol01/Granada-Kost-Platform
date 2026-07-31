@@ -58,8 +58,8 @@ test("room search is bounded and cost type slug is safe", () => {
     visibility: undefined,
     offset: 0,
     limit: 100,
-    roomId: undefined,
   });
+  assert.equal("roomId" in normalizeRoomSearch({ roomId: "legacy-room-id" }), false);
   assert.equal(createKostTypeSlug(" Rumah Kost Granada! "), "rumah-kost-granada");
 });
 

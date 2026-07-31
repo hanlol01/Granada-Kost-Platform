@@ -43,7 +43,6 @@ test("room search normalization carries the complete canonical discovery contrac
       order: "desc",
       offset: "20",
       limit: "20",
-      room_id: "room",
     }),
     {
       q: "RK-01",
@@ -60,7 +59,6 @@ test("room search normalization carries the complete canonical discovery contrac
       order: "desc",
       offset: 20,
       limit: 20,
-      roomId: "room",
     },
   );
   assert.equal(normalizeRoomSearch({ active_occupancy: "1" }).activeOccupancy, undefined);
@@ -165,7 +163,7 @@ test("shared discovery controls and canonical columns are wired on all room surf
   assert.match(source("routes/rooms/apart-kost.tsx"), /category="apartkost"/);
 });
 
-test("search is explicit-submit and every filter resets offset and selected detail", () => {
+test("search is explicit-submit and every filter resets the server offset", () => {
   const page = source("components/rooms/KostTypeInventoryPage.tsx");
   const controls = page.slice(
     page.indexOf("export function RoomDiscoveryFilters"),
@@ -185,11 +183,9 @@ test("search is explicit-submit and every filter resets offset and selected deta
   ]) {
     const control = selectFor(controls, anchor);
     assert.match(control, /offset:\s*0/);
-    assert.match(control, /roomId:\s*undefined/);
   }
   const searchForm = section(controls, "const applySearch", "return (");
   assert.match(searchForm, /offset:\s*0/);
-  assert.match(searchForm, /roomId:\s*undefined/);
 });
 
 test("table pagination and metrics remain server-page and authoritative-summary driven", () => {
@@ -213,10 +209,7 @@ test("root category cards keep authoritative building options and URL state cohe
       /const categoryChanged =[\s\S]*?hasOwnProperty\.call\(next, "category"\)[\s\S]*?next\.category !== search\.category/,
     );
     assert.match(candidate, /categoryChanged \? \{ buildingId: undefined \} : \{\}/);
-    assert.match(
-      candidate,
-      /onSearchChange\(\{[\s\S]*?category,[\s\S]*?offset:\s*0,[\s\S]*?roomId:\s*undefined/,
-    );
+    assert.match(candidate, /onSearchChange\(\{[\s\S]*?category,[\s\S]*?offset:\s*0/);
   };
   assertCategoryBinding(summary);
   assert.throws(() =>

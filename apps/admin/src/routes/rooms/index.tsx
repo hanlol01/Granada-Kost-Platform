@@ -5,7 +5,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import {
   Pagination,
   RoomDiscoveryFilters,
-  RoomDetailSheet,
   RoomInventoryTable,
   type BuildingOption,
 } from "@/components/rooms/KostTypeInventoryPage";
@@ -74,7 +73,7 @@ function RoomsPage() {
     if (previousPropertyId.current !== currentPropertyId) {
       void navigate({
         replace: true,
-        search: (current) => ({ ...current, offset: 0, roomId: undefined }),
+        search: (current) => ({ ...current, offset: 0 }),
       });
       previousPropertyId.current = currentPropertyId;
     }
@@ -140,7 +139,6 @@ function RoomsPage() {
     totalInventory: totalRooms,
     categoryCounts,
   } = summarizeRoomInventory(currentPropertyId ?? "", availabilityQuery.data ?? [], types);
-  const selectedRoom = rooms.find((room) => room.id === search.roomId) ?? null;
   const filters: Array<{
     category: KostTypeCategory | undefined;
     label: string;
@@ -229,7 +227,6 @@ function RoomsPage() {
                     onSearchChange({
                       category,
                       offset: 0,
-                      roomId: undefined,
                     })
                   }
                   className="rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -263,7 +260,6 @@ function RoomsPage() {
         <RoomInventoryTable
           rooms={rooms}
           canManage={false}
-          onDetail={(room) => onSearchChange({ roomId: room.id })}
           onEdit={() => undefined}
           onStatus={() => undefined}
           showCategory
@@ -272,14 +268,7 @@ function RoomsPage() {
           offset={roomsQuery.data?.offset ?? search.offset}
           limit={roomsQuery.data?.limit ?? search.limit}
           total={roomsQuery.data?.total ?? 0}
-          onChange={(offset) => onSearchChange({ offset, roomId: undefined })}
-        />
-        <RoomDetailSheet
-          room={selectedRoom}
-          open={Boolean(selectedRoom)}
-          onOpenChange={(open) => {
-            if (!open) onSearchChange({ roomId: undefined });
-          }}
+          onChange={(offset) => onSearchChange({ offset })}
         />
       </div>
     </AppShell>

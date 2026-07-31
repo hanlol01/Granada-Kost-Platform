@@ -120,6 +120,11 @@ export class ListRoomBuildingsV2QueryDto {
   category?: 'rukost' | 'apartkost';
 }
 
+export class GetRoomByNumberV2QueryDto {
+  @IsUUID('4')
+  property_id!: string;
+}
+
 export class CreateRoomV2Dto {
   @Transform(trimmedString)
   @IsUUID('4')

@@ -143,6 +143,20 @@ function assertAuthoritativeTotalMetricWiring(source: string): void {
   );
 }
 
+function assertCanonicalRoomDetailWiring(route: string, inventory: string): void {
+  assert.doesNotMatch(route, /RoomDetailSheet|search\.roomId|\broomId\s*:/);
+  assert.doesNotMatch(inventory, /RoomDetailSheet/);
+  assert.equal(
+    (
+      inventory.match(
+        /navigate\(\{\s*to:\s*"\/rooms\/\$roomNumber",\s*params:\s*\{\s*roomNumber:\s*room\.number\s*\},\s*\}\)/g,
+      ) ?? []
+    ).length,
+    1,
+    "room table must navigate exactly once to the canonical room-number detail route",
+  );
+}
+
 test("room list and availability parsers accept only exact V2 envelopes", () => {
   assert.deepEqual(
     parseRoomInventoryListEnvelope({
@@ -194,8 +208,8 @@ test("room search defaults to all categories and bounds pagination", () => {
     visibility: undefined,
     offset: 0,
     limit: 20,
-    roomId: undefined,
   });
+  assert.equal("roomId" in normalizeRoomSearch({ roomId: "legacy-room-id" }), false);
   assert.equal(normalizeRoomSearch({ category: "rukost" }).category, "rukost");
   assert.equal(normalizeRoomSearch({ category: "apartkost" }).category, "apartkost");
   assert.equal(normalizeRoomSearch({ category: "other" }).category, undefined);
@@ -283,17 +297,24 @@ test("rooms summary uses property-wide aggregate, shared table, filters, and exa
   assert.match(route, /offset:\s*search\.offset/);
   assert.match(route, /aria-pressed=/);
   assert.doesNotMatch(route, /<Link\b|Kelola/);
-  assert.match(route, /onSearchChange\(\{\s*category,\s*offset:\s*0,\s*roomId:\s*undefined/s);
+  assert.match(route, /onSearchChange\(\{\s*category,\s*offset:\s*0,\s*\}\)/s);
   assert.match(route, /canManage=\{false\}/);
   assert.match(route, /<RoomInventoryTable/);
-  assert.match(route, /<RoomDetailSheet/);
   assert.match(route, /<Pagination/);
   assert.doesNotMatch(route, /rooms\.reduce/);
 
   assert.match(inventory, /export function RoomInventoryTable/);
   assert.match(inventory, /export function Pagination/);
-  assert.match(inventory, /export function RoomDetailSheet/);
   assert.match(inventory, /if \(total <= limit && offset <= 0\) return null/);
+  assert.doesNotThrow(() => assertCanonicalRoomDetailWiring(route, inventory));
+
+  for (const [routeMutation, inventoryMutation] of [
+    [`${route}\nconst legacyRoomDetail = search.roomId;\n`, inventory],
+    [`${route}\nconst legacyRoomDetail = <RoomDetailSheet />;\n`, inventory],
+    [route, inventory.replace('to: "/rooms/$roomNumber"', 'to: "/rooms/$roomId"')],
+  ] as const) {
+    assert.throws(() => assertCanonicalRoomDetailWiring(routeMutation, inventoryMutation));
+  }
 
   assert.match(hooks, /adminUxQueryKeys\.rooms\.availability\(currentPropertyId \?\? ""\)/);
   assert.match(hooks, /adminUxMasterApi\.rooms\.availability\(currentPropertyId!\)/);

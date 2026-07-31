@@ -27,6 +27,7 @@ export type AdminRouteId =
   | "dashboard"
   | "rooms"
   | "rooms-summary"
+  | "room-detail"
   | "rooms-rumah-kost"
   | "rooms-apart-kost"
   | "rooms-fasilitas"
@@ -144,6 +145,22 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     icon: BedDouble,
     access: ROOM_MASTER_READ,
     navigation: { sidebar: true },
+  },
+  {
+    id: "room-detail",
+    to: "/rooms/$roomNumber",
+    label: "Detail Kamar",
+    parentId: "rooms-summary",
+    section: "master-data",
+    order: 21.5,
+    icon: BedDouble,
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      readCapabilities: ["room.read"],
+      mutationCapabilities: ["room.manage"],
+      feature: "adminUxMaster",
+    },
+    safeLabel: () => "Detail Kamar",
   },
   {
     id: "rooms-rumah-kost",

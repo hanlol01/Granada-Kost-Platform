@@ -39,14 +39,13 @@ export function PublicHunianGallery({
   title: string;
   className?: string;
 }) {
-  // Failed image ids are removed from the rotation instead of rendering a
-  // broken image. State only grows (no retry loop for the same id).
+  // Failed public media paths are removed instead of rendering a broken image.
   const [failedIds, setFailedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const usableImages = useMemo(
-    () => images.filter((image) => Boolean(image.contentUrl) && !failedIds.has(image.id)),
+    () => images.filter((image) => Boolean(image.contentUrl) && !failedIds.has(image.contentUrl)),
     [images, failedIds],
   );
 
@@ -99,12 +98,12 @@ export function PublicHunianGallery({
         >
           <div className="aspect-[4/3] w-full overflow-hidden sm:aspect-[16/9]">
             <img
-              key={active.id}
+              key={active.contentUrl}
               src={activeUrl ?? undefined}
               alt={activeAlt}
               loading={safeIndex === 0 ? "eager" : "lazy"}
               decoding="async"
-              onError={() => markFailed(active.id)}
+              onError={() => markFailed(active.contentUrl)}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
             />
           </div>
@@ -133,7 +132,7 @@ export function PublicHunianGallery({
             const isActive = index === safeIndex;
             return (
               <button
-                key={image.id}
+                key={image.contentUrl}
                 type="button"
                 onClick={() => setActiveIndex(index)}
                 aria-label={`Lihat foto ${index + 1} dari ${count}: ${image.altText || title}`}
@@ -151,7 +150,7 @@ export function PublicHunianGallery({
                   aria-hidden="true"
                   loading="lazy"
                   decoding="async"
-                  onError={() => markFailed(image.id)}
+                  onError={() => markFailed(image.contentUrl)}
                   className="h-full w-full object-cover"
                 />
               </button>
@@ -182,11 +181,11 @@ export function PublicHunianGallery({
           </DialogDescription>
           <div className="relative flex max-h-[80vh] min-h-[40vh] items-center justify-center bg-black">
             <img
-              key={active.id}
+              key={active.contentUrl}
               src={activeUrl ?? undefined}
               alt={activeAlt}
               decoding="async"
-              onError={() => markFailed(active.id)}
+              onError={() => markFailed(active.contentUrl)}
               className="max-h-[80vh] w-full object-contain"
             />
             {count > 1 ? (

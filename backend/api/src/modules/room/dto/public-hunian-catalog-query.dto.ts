@@ -1,5 +1,5 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, Matches } from 'class-validator';
 import { PublicRoomGenderPolicy, RoomCategory } from '../types/room.types';
 
 const lowerString = ({ value }: TransformFnParams): unknown => {
@@ -19,4 +19,12 @@ export class PublicHunianCatalogQueryDto {
   @trimLower
   @IsIn(['male', 'female'])
   gender?: PublicRoomGenderPolicy;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  planned_start?: string;
+
+  @IsOptional()
+  @IsIn(['annual', 'two_month_installments'])
+  payment_schedule?: 'annual' | 'two_month_installments';
 }

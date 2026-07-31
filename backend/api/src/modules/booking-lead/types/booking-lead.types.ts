@@ -22,6 +22,7 @@ export type BookingLeadRecord = {
   floorCode: BookingLeadFloorCode | null;
   publicGroupKey: string | null;
   visitorName: string;
+  visitorEmail?: string | null;
   visitorPhone: string;
   visitorAddress: string | null;
   visitorUniversity: string | null;
@@ -74,6 +75,9 @@ export type CreateBookingLeadInput = {
   visitorName: string;
   visitorPhone: string;
   visitorMessage?: string;
+  visitorEmail?: string;
+  visitorUniversity?: string;
+  consent?: boolean;
   preferredMoveInDate?: string;
   source: BookingLeadSource;
   metadata?: Record<string, unknown>;
@@ -82,8 +86,6 @@ export type CreateBookingLeadInput = {
 export type PublicPropertyResolutionInput = {
   category: BookingLeadCategory;
   gender: BookingLeadGender;
-  buildingCode?: string;
-  floorCode?: BookingLeadFloorCode;
 };
 
 export type ListBookingLeadsFilters = {
@@ -102,4 +104,5 @@ export type BookingLeadRequestContext = {
   ipAddress?: string;
   userAgent?: string;
   correlationId?: string;
+  idempotencyKey?: string;
 };

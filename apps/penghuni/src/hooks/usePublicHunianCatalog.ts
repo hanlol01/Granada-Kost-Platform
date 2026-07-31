@@ -18,6 +18,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ApiError, ERROR_CODES } from "@granada-kost/api-client";
+import { z } from "zod";
 import { apiClient } from "@/lib/api";
 import { env } from "@/lib/env";
 import type { PublicCategory, PublicGender, PublicRoomGroup } from "@/hooks/usePublicRooms";
@@ -34,7 +35,6 @@ export type PublicHunianGender = "male" | "female";
 // private metadata. `contentUrl` is the backend-mediated public media path
 // (GET /api/v1/public/hunian-gallery/:id/content), never a storage URL.
 export type PublicHunianGalleryImage = {
-  id: string;
   contentUrl: string;
   thumbnailUrl: string | null;
   altText: string;
@@ -69,10 +69,12 @@ export function resolveGalleryImageUrl(path: string | null | undefined): string 
 // lead fields are introduced by M18.
 export type PublicHunianBookingLeadDefaults = {
   category: PublicCategory;
+};
+
+export type PublicHunianGenderAvailability = {
   gender: PublicHunianGender;
-  buildingCode?: string | null;
-  floorCode?: string | null;
-  publicGroupKey?: string | null;
+  genderLabel: string;
+  availabilityCount: number;
 };
 
 // M18B list item (allowlisted public-safe fields only).
@@ -81,13 +83,6 @@ export type PublicHunianCatalogItem = {
   title: string;
   category: PublicCategory;
   categoryLabel: string;
-  gender: PublicHunianGender;
-  genderLabel: string;
-  buildingCode: string | null;
-  buildingName: string | null;
-  floorCode: string | null;
-  floorLabel: string | null;
-  publicGroupKey: string;
   shortDescription: string;
   priceFromMonthly: number | null;
   priceFromYearly: number | null;
@@ -98,13 +93,150 @@ export type PublicHunianCatalogItem = {
   ctaLabel: string;
   bookingLeadDefaults: PublicHunianBookingLeadDefaults;
   disclaimers: string[];
+  leaseMinimumMonths: number;
+  paymentSchedules: string[];
+  dpMinimumPercent: number;
+  securityDepositMonths: number;
+  genderAvailability: PublicHunianGenderAvailability[];
 };
 
 export type PublicHunianCatalogParams = {
   // UI-level values from the /kamar URL search params.
   gender?: PublicGender;
   category?: PublicCategory;
+  plannedStart?: string;
+  paymentSchedule?: "annual" | "two_month_installments";
 };
+
+const publicGalleryImageSchema = z
+  .object({
+    contentUrl: z
+      .string()
+      .regex(
+        /^\/api\/v1\/public\/hunian-gallery\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/content$/i,
+      ),
+    thumbnailUrl: z
+      .string()
+      .regex(
+        /^\/api\/v1\/public\/hunian-gallery\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/content$/i,
+      )
+      .nullable(),
+    altText: z.string().trim().min(1),
+    caption: z.string().nullable(),
+    sortOrder: z.number().int().nonnegative(),
+    isCover: z.boolean(),
+  })
+  .strict();
+
+const publicGallerySchema = z.array(publicGalleryImageSchema).superRefine((images, context) => {
+  if (new Set(images.map((image) => image.sortOrder)).size !== images.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Duplicate gallery order" });
+  }
+  if (images.length > 0 && images.filter((image) => image.isCover).length !== 1) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Gallery cover authority invalid" });
+  }
+  if (images.some((image, index) => image.sortOrder !== index)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Gallery order is invalid" });
+  }
+});
+
+const publicCatalogItemObjectSchema = z
+  .object({
+    slug: z.string().regex(/^[a-z0-9-]+$/),
+    title: z.string().min(1),
+    category: z.enum(["rukost", "apartkost"]),
+    categoryLabel: z.string().min(1),
+    shortDescription: z.string(),
+    priceFromMonthly: z.number().int().nonnegative().nullable(),
+    priceFromYearly: z.number().int().nonnegative().nullable(),
+    availabilityCount: z.number().int().nonnegative(),
+    facilitiesPreview: z.array(z.string().trim().min(1)),
+    galleryPreview: z
+      .array(publicGalleryImageSchema)
+      .max(1)
+      .refine(
+        (images) => images.length === 0 || (images[0]?.isCover && images[0].sortOrder === 0),
+        {
+          message: "Gallery preview must be the cover",
+        },
+      )
+      .nullable(),
+    ctaLabel: z.string().trim().min(1),
+    bookingLeadDefaults: z
+      .object({
+        category: z.enum(["rukost", "apartkost"]),
+      })
+      .strict(),
+    disclaimers: z.array(z.string().trim().min(1)),
+    leaseMinimumMonths: z.literal(12),
+    paymentSchedules: z
+      .array(z.enum(["annual", "two_month_installments"]))
+      .length(2)
+      .refine(
+        (items) =>
+          new Set(items).size === 2 &&
+          items.includes("annual") &&
+          items.includes("two_month_installments"),
+        "Payment schedule authority invalid",
+      ),
+    dpMinimumPercent: z.literal(25),
+    securityDepositMonths: z.literal(1),
+    genderAvailability: z
+      .array(
+        z
+          .object({
+            gender: z.enum(["male", "female"]),
+            genderLabel: z.string().min(1),
+            availabilityCount: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(2)
+      .refine(
+        (items) => new Set(items.map((item) => item.gender)).size === items.length,
+        "Duplicate gender availability",
+      ),
+  })
+  .strict();
+
+function validateCatalogConsistency(
+  item: z.infer<typeof publicCatalogItemObjectSchema>,
+  context: z.RefinementCtx,
+) {
+  if (item.bookingLeadDefaults.category !== item.category) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Category context mismatch" });
+  }
+  const genderTotal = item.genderAvailability.reduce(
+    (sum, entry) => sum + entry.availabilityCount,
+    0,
+  );
+  if (genderTotal !== item.availabilityCount) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Availability mismatch" });
+  }
+}
+
+const publicCatalogItemSchema = publicCatalogItemObjectSchema.superRefine(
+  validateCatalogConsistency,
+);
+
+export function parsePublicHunianCatalogList(
+  raw: unknown,
+  expectedCategory?: PublicCategory,
+): PublicHunianCatalogItem[] {
+  return z
+    .array(publicCatalogItemSchema)
+    .max(2)
+    .superRefine((items, context) => {
+      if (new Set(items.map((item) => item.category)).size !== items.length) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Duplicate category authority" });
+      }
+      if (expectedCategory && items.some((item) => item.category !== expectedCategory)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Requested category mismatch" });
+      }
+    })
+    .parse(raw);
+}
 
 const GENDER_API_MAP: Record<PublicGender, PublicHunianGender> = {
   putra: "male",
@@ -117,13 +249,17 @@ export function getPublicHunianCatalog(
   // Note: the ApiClient unwraps the top-level `data` envelope, so the sibling
   // `summary` object of this endpoint is not consumed here. The existing
   // /public/rooms/summary endpoint (M16D) remains the source for hero totals.
-  return apiClient.get<PublicHunianCatalogItem[]>("/public/hunian-catalog", {
-    anonymous: true,
-    query: {
-      gender: params.gender ? GENDER_API_MAP[params.gender] : undefined,
-      category: params.category,
-    },
-  });
+  return apiClient
+    .get<unknown>("/public/hunian-catalog", {
+      anonymous: true,
+      query: {
+        gender: params.gender ? GENDER_API_MAP[params.gender] : undefined,
+        category: params.category,
+        planned_start: params.plannedStart,
+        payment_schedule: params.paymentSchedule,
+      },
+    })
+    .then((raw) => parsePublicHunianCatalogList(raw, params.category));
 }
 
 // Availability is aggregated and admin-confirmed via WhatsApp; a short cache
@@ -134,32 +270,41 @@ export function usePublicHunianCatalog(
   params: PublicHunianCatalogParams,
 ): UseQueryResult<PublicHunianCatalogItem[]> {
   return useQuery<PublicHunianCatalogItem[]>({
-    queryKey: ["public-hunian-catalog", "list", params.gender ?? "all", params.category ?? "all"],
+    queryKey: [
+      "public-hunian-catalog",
+      "list",
+      params.gender ?? "all",
+      params.category ?? "all",
+      params.plannedStart ?? "unset",
+      params.paymentSchedule ?? "unset",
+    ],
     queryFn: () => getPublicHunianCatalog(params),
     staleTime: STALE_TIME_MS,
   });
 }
 
-// Adapter: catalog item -> frozen M16E `PublicRoomGroup` shape, so the M17D
-// `PublicBookingLeadDialog` and the frozen M16E WhatsApp templates are reused
-// WITHOUT modification. The lead payload context fields (category, gender,
-// buildingCode, floorCode, publicGroupKey) are taken from the M18B
-// `bookingLeadDefaults` verbatim to guarantee the 1:1 mapping onto the M17B
-// endpoint. Only public-safe aggregated fields are mapped — never roomId,
-// room_code, or exact room numbers (they do not exist on either type).
-export function toPublicRoomGroup(item: PublicHunianCatalogItem): PublicRoomGroup {
+// Adapter for legacy WhatsApp message helpers only. Empty physical fields are
+// never sent to the public booking-lead API or rendered as public authority.
+export function toPublicRoomGroup(
+  item: PublicHunianCatalogItem,
+  gender: PublicHunianGender,
+): PublicRoomGroup {
   const defaults = item.bookingLeadDefaults;
+  const availability = item.genderAvailability.find((entry) => entry.gender === gender);
+  if (!availability) {
+    throw new Error("Selected gender is not available for this category.");
+  }
   return {
-    groupKey: defaults.publicGroupKey ?? item.publicGroupKey,
+    groupKey: `${item.category}-${gender}`,
     category: defaults.category ?? item.category,
     categoryLabel: item.categoryLabel,
-    gender: defaults.gender ?? item.gender,
-    genderLabel: item.genderLabel,
-    buildingCode: defaults.buildingCode ?? item.buildingCode ?? "",
-    buildingName: item.buildingName ?? "",
-    floorCode: defaults.floorCode ?? item.floorCode ?? "",
-    floorLabel: item.floorLabel ?? "",
-    availableCount: item.availabilityCount,
+    gender,
+    genderLabel: availability.genderLabel,
+    buildingCode: "",
+    buildingName: "",
+    floorCode: "",
+    floorLabel: "",
+    availableCount: availability.availabilityCount,
     priceFromMonthly: item.priceFromMonthly,
     priceFromYearly: item.priceFromYearly,
     publicTitle: item.title,
@@ -178,27 +323,78 @@ export type PublicHunianFaqItem = { question: string; answer: string };
 // tenant/resident/occupancy PII, invoice/payment/bank data, or Smart Lock data.
 export type PublicHunianCatalogDetail = PublicHunianCatalogItem & {
   longDescription: string;
-  facilitiesRoom: string[];
-  facilitiesBathroom: string[];
-  facilitiesShared: string[];
-  facilitiesSecurity: string[];
-  facilitiesService: string[];
-  policies: string[];
-  rules: string[];
-  faq: PublicHunianFaqItem[];
+  facilities: string[];
+  pricingExplanation: string;
+  minimumLeaseTerm: string;
+  dpExplanation: string;
+  securityDepositExplanation: string;
+  manualPaymentMethods: string[];
+  houseRules: string[];
+  visitorHours: string | null;
+  contactInformation: string;
   // M19B: all public-visible images for the slug, cover first, then sortOrder.
   gallery: PublicHunianGalleryImage[] | null;
-  // Backend marker that some master-data claims still await owner
-  // confirmation. Rendered ONLY as a gentle generic note — raw items are not
-  // displayed. Typed defensively (array or flag) against contract evolution.
-  needsConfirmation: string[] | boolean | null;
 };
 
+export function getJakartaDateBounds(now = new Date()): { today: string; max: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const today = `${value("year")}-${value("month")}-${value("day")}`;
+  const [year, month, day] = today.split("-").map(Number);
+  const max = new Date(Date.UTC(year, month - 1, day + 62)).toISOString().slice(0, 10);
+  return { today, max };
+}
+
+export function normalizePublicPlannedStart(raw: unknown, now = new Date()): string | undefined {
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const timestamp = Date.parse(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== raw) {
+    return undefined;
+  }
+  const { today, max } = getJakartaDateBounds(now);
+  return raw >= today && raw <= max ? raw : undefined;
+}
+
+const publicCatalogDetailSchema = publicCatalogItemObjectSchema
+  .extend({
+    longDescription: z.string(),
+    facilities: z.array(z.string()),
+    pricingExplanation: z.string().min(1),
+    minimumLeaseTerm: z.string().min(1),
+    dpExplanation: z.string().min(1),
+    securityDepositExplanation: z.string().min(1),
+    manualPaymentMethods: z.array(z.string().min(1)),
+    houseRules: z.array(z.string().min(1)),
+    visitorHours: z.string().nullable(),
+    contactInformation: z.string(),
+    gallery: publicGallerySchema.nullable(),
+  })
+  .strict()
+  .superRefine(validateCatalogConsistency);
+
+export function parsePublicHunianCatalogDetail(
+  raw: unknown,
+  expectedSlug?: string,
+): PublicHunianCatalogDetail {
+  return publicCatalogDetailSchema
+    .superRefine((item, context) => {
+      if (expectedSlug && item.slug !== expectedSlug) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Requested catalog mismatch" });
+      }
+    })
+    .parse(raw);
+}
+
 export function getPublicHunianCatalogDetail(slug: string): Promise<PublicHunianCatalogDetail> {
-  return apiClient.get<PublicHunianCatalogDetail>(
-    `/public/hunian-catalog/${encodeURIComponent(slug)}`,
-    { anonymous: true },
-  );
+  return apiClient
+    .get<unknown>(`/public/hunian-catalog/${encodeURIComponent(slug)}`, { anonymous: true })
+    .then((raw) => parsePublicHunianCatalogDetail(raw, slug));
 }
 
 // Unknown slugs return HTTP 404 (NOT_FOUND) and malformed slugs HTTP 400

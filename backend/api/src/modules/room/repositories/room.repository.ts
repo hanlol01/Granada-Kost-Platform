@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { CreateRoomDto } from '../dto/create-room.dto';
 import { CreateRoomFacilityDto } from '../dto/create-room-facility.dto';
@@ -13,6 +14,7 @@ import {
   RoomGenderPolicy,
   PublicRoomAvailabilityFilters,
   PublicRoomAvailabilityGroupRecord,
+  PublicCatalogGroupRecord,
   PublicRoomGenderPolicy,
   RoomRecord,
   RoomStatus,
@@ -392,6 +394,12 @@ export class RoomRepository {
        WHERE rooms.room_status = 'vacant'
          AND rooms.public_visible = true
          AND room_buildings.public_visible = true
+         AND rooms.property_id = (
+           SELECT id FROM properties
+           WHERE status = 'active'
+           ORDER BY created_at, id
+           LIMIT 1
+         )
          AND rooms.floor_code IS NOT NULL
          AND room_buildings.category IN ('rukost', 'apartkost')
          AND room_buildings.gender_policy IN ('male', 'female')
@@ -421,6 +429,89 @@ export class RoomRepository {
       availableCount: Number(row.available_count),
       priceFromMonthly: Number(row.price_from_monthly),
       priceFromYearly: Number(row.price_from_yearly),
+    }));
+  }
+
+  async listPublicCatalogGroups(
+    filters: {
+      category?: RoomCategory;
+      gender?: PublicRoomGenderPolicy;
+    },
+    client?: PoolClient,
+  ): Promise<PublicCatalogGroupRecord[]> {
+    const result = await (client ?? this.database.client).query<{
+      property_id: string;
+      category: RoomCategory;
+      gender_policy: PublicRoomGenderPolicy;
+      available_count: string;
+      price_from_monthly: number | string;
+      price_from_yearly: number | string;
+      minimum_dp_percent: number;
+      security_deposit_months: number;
+      payment_schedules: string[];
+    }>(
+      `WITH public_property AS (
+         SELECT min(candidate.property_id::text)::uuid AS property_id
+         FROM (
+           SELECT DISTINCT property_id
+           FROM room_buildings
+           WHERE public_visible = true
+         ) candidate
+         JOIN properties ON properties.id = candidate.property_id
+         WHERE properties.status = 'active'
+         HAVING count(*) = 1
+       )
+       SELECT room_buildings.property_id, room_buildings.category, room_buildings.gender_policy,
+              count(rooms.id) AS available_count,
+              min(commercial_version.monthly_price) AS price_from_monthly,
+              min(commercial_version.annual_contract_value) AS price_from_yearly,
+              min(commercial_version.minimum_dp_percent) AS minimum_dp_percent,
+              min(commercial_version.security_deposit_months) AS security_deposit_months,
+              commercial_version.payment_schedules
+       FROM room_buildings
+       JOIN public_property
+         ON public_property.property_id = room_buildings.property_id
+       JOIN kost_types kost_type
+         ON kost_type.property_id = room_buildings.property_id
+        AND kost_type.category = room_buildings.category
+        AND kost_type.status = 'active'
+        AND kost_type.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.minimum_dp_percent, version.security_deposit_months,
+                version.payment_schedules
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+            AND version.effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+          ORDER BY version.effective_date DESC, version.id DESC
+          LIMIT 1
+       ) commercial_version ON true
+       LEFT JOIN rooms
+         ON rooms.building_id = room_buildings.id
+        AND rooms.property_id = room_buildings.property_id
+        AND rooms.category = room_buildings.category
+        AND rooms.room_status = 'vacant'
+        AND rooms.public_visible = true
+       WHERE room_buildings.public_visible = true
+          AND room_buildings.category IN ('rukost', 'apartkost')
+          AND room_buildings.gender_policy IN ('male', 'female')
+          AND ($1::text IS NULL OR room_buildings.category = $1)
+          AND ($2::text IS NULL OR room_buildings.gender_policy = $2)
+       GROUP BY room_buildings.property_id, room_buildings.category,
+                room_buildings.gender_policy, commercial_version.payment_schedules
+       ORDER BY room_buildings.category, room_buildings.gender_policy`,
+      [filters.category ?? null, filters.gender ?? null],
+    );
+    return result.rows.map((row) => ({
+      propertyId: row.property_id,
+      category: row.category,
+      gender: row.gender_policy,
+      availableCount: Number(row.available_count),
+      priceFromMonthly: Number(row.price_from_monthly),
+      priceFromYearly: Number(row.price_from_yearly),
+      minimumDpPercent: Number(row.minimum_dp_percent),
+      securityDepositMonths: Number(row.security_deposit_months),
+      paymentSchedules: [...row.payment_schedules],
     }));
   }
 

@@ -816,60 +816,86 @@ export class AdminUxContentPublicationService {
   async publicProjection(propertyId: string, category: Category) {
     return this.database.transaction(async (client) => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      const type = await client.query<Row>(
-        `SELECT id, category, name
+      return this.publicProjectionWithinSnapshot(client, propertyId, category);
+    });
+  }
+
+  async publicProjectionBatchWithinSnapshot(
+    client: PoolClient,
+    targets: Array<{ propertyId: string; category: Category }>,
+  ) {
+    const targetKeys = targets.map((target) => `${target.propertyId}:${target.category}`);
+    if (targets.length > 2 || new Set(targetKeys).size !== targets.length) {
+      throw new ConflictException({
+        code: 'PUBLIC_CATEGORY_CONTENT_AUTHORITY_AMBIGUOUS',
+        message: 'Published category content requires reconciliation.',
+      });
+    }
+    return Promise.all(
+      targets.map((target) =>
+        this.publicProjectionWithinSnapshot(client, target.propertyId, target.category),
+      ),
+    );
+  }
+
+  private async publicProjectionWithinSnapshot(
+    client: PoolClient,
+    propertyId: string,
+    category: Category,
+  ) {
+    const type = await client.query<Row>(
+      `SELECT id, category, name
        FROM kost_types
        WHERE property_id = $1 AND category = $2 AND status = 'active' AND deleted_at IS NULL`,
-        [propertyId, category],
-      );
-      if (type.rows.length !== 1) {
-        throw new NotFoundException({
-          code: 'PUBLIC_CATEGORY_CONTENT_NOT_FOUND',
-          message: 'Published category content is not available.',
-        });
-      }
-      const kostTypeId = String(type.rows[0].id);
-      const [facilities, gallery, terms] = await Promise.all([
-        this.currentPublished(client, propertyId, kostTypeId, 'facilities'),
-        this.currentPublished(client, propertyId, kostTypeId, 'gallery'),
-        client.query<Row>(
-          `SELECT version, effective_date, public_content, published_at
+      [propertyId, category],
+    );
+    if (type.rows.length !== 1) {
+      throw new NotFoundException({
+        code: 'PUBLIC_CATEGORY_CONTENT_NOT_FOUND',
+        message: 'Published category content is not available.',
+      });
+    }
+    const kostTypeId = String(type.rows[0].id);
+    const [facilities, gallery, terms] = await Promise.all([
+      this.currentPublished(client, propertyId, kostTypeId, 'facilities'),
+      this.currentPublished(client, propertyId, kostTypeId, 'gallery'),
+      client.query<Row>(
+        `SELECT version, effective_date, public_content, published_at
          FROM property_policy_documents
          WHERE property_id = $1 AND document_type = 'public_terms'
            AND publication_status = 'published'
            AND effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
          ORDER BY effective_date DESC, version DESC
          LIMIT 2`,
-          [propertyId],
-        ),
-      ]);
-      if (terms.rows.length > 1 && this.sameDate(terms.rows[0], terms.rows[1])) {
-        throw new ConflictException({
-          code: 'PUBLIC_POLICY_AUTHORITY_AMBIGUOUS',
-          message: 'Published policy authority requires reconciliation.',
-        });
-      }
-      const publicTerms = terms.rows[0]
-        ? this.publicTermsProjection(terms.rows[0].public_content, category)
-        : null;
-      return v2Data({
-        category,
-        category_label: CATEGORY_LABEL[category],
-        facilities: facilities?.items ?? [],
-        gallery: (gallery?.items ?? []).map((item: Row) => ({
-          content_url: `/api/v1/public/hunian-gallery/${String(item.id)}/content`,
-          alt_text: item.alt_text,
-          caption: item.caption ?? null,
-          sort_order: item.sort_order,
-          is_cover: item.is_cover,
-        })),
-        terms: publicTerms,
-        publication: {
-          facilities_version: facilities?.version ?? null,
-          gallery_version: gallery?.version ?? null,
-          terms_version: publicTerms ? (terms.rows[0]?.version ?? null) : null,
-        },
+        [propertyId],
+      ),
+    ]);
+    if (terms.rows.length > 1 && this.sameDate(terms.rows[0], terms.rows[1])) {
+      throw new ConflictException({
+        code: 'PUBLIC_POLICY_AUTHORITY_AMBIGUOUS',
+        message: 'Published policy authority requires reconciliation.',
       });
+    }
+    const publicTerms = terms.rows[0]
+      ? this.publicTermsProjection(terms.rows[0].public_content, category)
+      : null;
+    return v2Data({
+      category,
+      category_label: CATEGORY_LABEL[category],
+      facilities: facilities?.items ?? [],
+      gallery: (gallery?.items ?? []).map((item: Row) => ({
+        content_url: `/api/v1/public/hunian-gallery/${String(item.id)}/content`,
+        alt_text: item.alt_text,
+        caption: item.caption ?? null,
+        sort_order: item.sort_order,
+        is_cover: item.is_cover,
+      })),
+      terms: publicTerms,
+      publication: {
+        facilities_version: facilities?.version ?? null,
+        gallery_version: gallery?.version ?? null,
+        terms_version: publicTerms ? (terms.rows[0]?.version ?? null) : null,
+      },
     });
   }
 

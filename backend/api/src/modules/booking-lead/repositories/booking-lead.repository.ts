@@ -26,6 +26,8 @@ type BookingLeadRow = {
   floor_code: BookingLeadFloorCode | null;
   public_group_key: string | null;
   visitor_name: string;
+  visitor_email: string | null;
+  consent_at: Date | null;
   visitor_phone: string;
   visitor_address: string | null;
   visitor_university: string | null;
@@ -56,6 +58,42 @@ type AdminBookingLeadRoomRow = {
 @Injectable()
 export class BookingLeadRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await this.rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async lockPublicCreation(
+    client: PoolClient,
+    input: {
+      propertyId: string;
+      category: BookingLeadCategory;
+      gender: BookingLeadGender;
+      visitorPhone: string;
+      idempotencyKey?: string;
+    },
+  ): Promise<void> {
+    const lockKeys = [
+      `public-lead-duplicate:${input.propertyId}:${input.category}:${input.gender}:${input.visitorPhone}`,
+      ...(input.idempotencyKey
+        ? [`public-lead-idempotency:${input.propertyId}:${input.idempotencyKey}`]
+        : []),
+    ].sort();
+    for (const lockKey of lockKeys) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [lockKey]);
+    }
+  }
 
   async findAdminRoom(propertyId: string, roomId: string): Promise<AdminBookingLeadRoom | null> {
     const result = await this.database.client.query<AdminBookingLeadRoomRow>(
@@ -95,37 +133,53 @@ export class BookingLeadRepository {
     };
   }
 
-  async resolvePublicPropertyId(input: PublicPropertyResolutionInput): Promise<string | null> {
-    const matched = await this.database.client.query<{ property_id: string }>(
-      `SELECT rooms.property_id
-       FROM rooms
-       JOIN room_buildings ON room_buildings.id = rooms.building_id
-       JOIN properties ON properties.id = rooms.property_id
+  async resolvePublicPropertyId(
+    input: PublicPropertyResolutionInput,
+    client?: PoolClient,
+  ): Promise<string | null> {
+    const matched = await (client ?? this.database.client).query<{ property_id: string }>(
+      `SELECT DISTINCT room_buildings.property_id
+       FROM room_buildings
+       JOIN properties ON properties.id = room_buildings.property_id
+       JOIN kost_types
+         ON kost_types.property_id = room_buildings.property_id
+        AND kost_types.category = room_buildings.category
+        AND kost_types.status = 'active'
+        AND kost_types.deleted_at IS NULL
        WHERE properties.status = 'active'
-         AND rooms.room_status = 'vacant'
-         AND rooms.public_visible = true
          AND room_buildings.public_visible = true
          AND room_buildings.category = $1
          AND room_buildings.gender_policy = $2
-         AND ($3::text IS NULL OR room_buildings.building_code = $3)
-         AND ($4::text IS NULL OR rooms.floor_code = $4)
-       ORDER BY properties.created_at ASC
-       LIMIT 1`,
-      [input.category, input.gender, input.buildingCode ?? null, input.floorCode ?? null],
+         AND EXISTS (
+           SELECT 1
+           FROM kost_type_content_versions content_version
+           WHERE content_version.kost_type_id = kost_types.id
+             AND content_version.property_id = room_buildings.property_id
+             AND content_version.content_type = 'facilities'
+             AND content_version.publication_status = 'published'
+             AND content_version.effective_date
+                 <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM property_policy_documents policy
+           WHERE policy.property_id = room_buildings.property_id
+             AND policy.document_type = 'public_terms'
+             AND policy.publication_status = 'published'
+             AND policy.effective_date
+                 <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+             AND policy.public_content->'category_applicability' ? room_buildings.category
+         )
+       ORDER BY room_buildings.property_id
+       LIMIT 2`,
+      [input.category, input.gender],
     );
 
-    if (matched.rows[0]) {
+    if (matched.rows.length === 1 && matched.rows[0]) {
       return matched.rows[0].property_id;
     }
 
-    const fallback = await this.database.client.query<{ id: string }>(
-      `SELECT id
-       FROM properties
-       WHERE status = 'active'
-       ORDER BY created_at ASC
-       LIMIT 1`,
-    );
-    return fallback.rows[0]?.id ?? null;
+    return null;
   }
 
   async findRecentDuplicate(
@@ -134,8 +188,9 @@ export class BookingLeadRepository {
       'propertyId' | 'category' | 'gender' | 'visitorPhone' | 'publicGroupKey'
     >,
     windowMinutes: number,
+    client?: PoolClient,
   ): Promise<BookingLeadRecord | null> {
-    const result = await this.database.client.query<BookingLeadRow>(
+    const result = await (client ?? this.database.client).query<BookingLeadRow>(
       `SELECT ${this.columns()}
        FROM booking_leads
        WHERE property_id = $1
@@ -159,13 +214,34 @@ export class BookingLeadRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async create(input: CreateBookingLeadInput): Promise<BookingLeadRecord> {
-    const result = await this.database.client.query<BookingLeadRow>(
+  async findByPublicIdempotencyKey(
+    propertyId: string,
+    key: string,
+    client?: PoolClient,
+  ): Promise<BookingLeadRecord | null> {
+    const result = await (client ?? this.database.client).query<BookingLeadRow>(
+      `SELECT ${this.columns()}
+       FROM booking_leads
+       WHERE property_id = $1
+         AND source = 'public_kamar'
+         AND metadata->>'idempotencyKey' = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [propertyId, key],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async create(input: CreateBookingLeadInput, client?: PoolClient): Promise<BookingLeadRecord> {
+    const result = await (client ?? this.database.client).query<BookingLeadRow>(
       `INSERT INTO booking_leads (
          property_id, category, gender, building_code, floor_code, public_group_key,
-         visitor_name, visitor_phone, visitor_message, preferred_move_in_date, source, metadata
+         visitor_name, visitor_email, visitor_phone, visitor_message, visitor_university,
+         preferred_move_in_date, consent_at, consent_version, source, metadata
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12::jsonb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date,
+              CASE WHEN $13 THEN now() ELSE NULL END,
+              CASE WHEN $13 THEN 'public-lead-v1' ELSE NULL END, $14, $15::jsonb)
        RETURNING ${this.columns()}`,
       [
         input.propertyId,
@@ -175,14 +251,49 @@ export class BookingLeadRepository {
         input.floorCode ?? null,
         input.publicGroupKey ?? null,
         input.visitorName,
+        input.visitorEmail,
         input.visitorPhone,
         input.visitorMessage ?? null,
+        input.visitorUniversity ?? null,
         input.preferredMoveInDate ?? null,
+        input.consent === true,
         input.source,
-        input.metadata === undefined ? null : JSON.stringify(input.metadata),
+        JSON.stringify({ ...(input.metadata ?? {}), consent: input.consent }),
       ],
     );
     return this.map(result.rows[0]);
+  }
+
+  async writePublicCreatedEvent(
+    client: PoolClient,
+    input: {
+      lead: BookingLeadRecord;
+      correlationId?: string;
+    },
+  ): Promise<void> {
+    const safeEvidence = {
+      schema_version: 1,
+      status: input.lead.status,
+      category: input.lead.category,
+      gender: input.lead.gender,
+      source: input.lead.source,
+    };
+    await client.query(
+      `INSERT INTO business_events (
+         property_id, event_key, event_type, aggregate_type, aggregate_id,
+         payload_version, payload, correlation_id, actor_user_id, event_status
+       )
+       VALUES ($1, $2, 'booking_lead.created_public', 'booking_lead', $3,
+               1, $4::jsonb, $5, NULL, 'pending')
+       ON CONFLICT (event_key) DO NOTHING`,
+      [
+        input.lead.propertyId,
+        `booking_lead.created_public:${input.lead.id}`,
+        input.lead.id,
+        JSON.stringify(safeEvidence),
+        input.correlationId ?? null,
+      ],
+    );
   }
 
   async findOrCreateAdminLead(
@@ -323,8 +434,9 @@ export class BookingLeadRepository {
     const prefix = tableAlias ? `${tableAlias}.` : '';
     return `${prefix}id, ${prefix}property_id, ${prefix}room_id, ${prefix}category, ${prefix}gender,
             ${prefix}building_code, ${prefix}floor_code, ${prefix}public_group_key,
-            ${prefix}visitor_name, ${prefix}visitor_phone, ${prefix}visitor_address,
+            ${prefix}visitor_name, ${prefix}visitor_email, ${prefix}visitor_phone, ${prefix}visitor_address,
             ${prefix}visitor_university, ${prefix}visitor_message, ${prefix}preferred_move_in_date,
+            ${prefix}consent_at,
             ${prefix}status, ${prefix}source, ${prefix}metadata, ${prefix}created_by_user_id,
             ${prefix}created_at, ${prefix}updated_at`;
   }
@@ -341,6 +453,7 @@ export class BookingLeadRepository {
       floorCode: row.floor_code,
       publicGroupKey: row.public_group_key,
       visitorName: row.visitor_name,
+      visitorEmail: row.visitor_email,
       visitorPhone: row.visitor_phone,
       visitorAddress: row.visitor_address,
       visitorUniversity: row.visitor_university,

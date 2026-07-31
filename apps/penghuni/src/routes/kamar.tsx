@@ -16,33 +16,27 @@
 // "Lihat Detail" is a disabled placeholder on purpose: the /kamar/$slug detail
 // page ships in M18D and no placeholder route is added in M18C.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Bath,
-  BedDouble,
   Building2,
   DoorOpen,
   Image as ImageIcon,
   MessageCircle,
   RefreshCw,
   Send,
-  ShieldCheck,
-  Snowflake,
-  Wifi,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/state";
 import { formatIDR } from "@/lib/format";
+import { type PublicCategory, type PublicGender } from "@/hooks/usePublicRooms";
 import {
-  usePublicRoomSummary,
-  type PublicCategory,
-  type PublicGender,
-} from "@/hooks/usePublicRooms";
-import {
+  getJakartaDateBounds,
+  normalizePublicPlannedStart,
   resolveGalleryImageUrl,
   toPublicRoomGroup,
   usePublicHunianCatalog,
@@ -59,6 +53,8 @@ import { PublicBookingLeadDialog } from "@/components/booking-lead/PublicBooking
 type KamarSearch = {
   gender?: PublicGender;
   category?: PublicCategory;
+  plannedStart?: string;
+  paymentSchedule?: "annual" | "two_month_installments";
 };
 
 const GENDER_OPTIONS: { value: PublicGender | undefined; label: string }[] = [
@@ -73,22 +69,15 @@ const CATEGORY_OPTIONS: { value: PublicCategory | undefined; label: string }[] =
   { value: "apartkost", label: "Apart Kost" },
 ];
 
-// Hero highlights sourced ONLY from the M18A-1 normalized public-safe master
-// data (public tagline / long description). Claims still marked
-// needsConfirmation there (e.g. "dekat ITB & UNPAD", "keamanan 24 jam") are
-// intentionally NOT rendered to avoid overclaiming.
-const HERO_HIGHLIGHTS = [
-  { icon: BedDouble, label: "Fully furnished" },
-  { icon: Snowflake, label: "AC per kamar" },
-  { icon: Bath, label: "Kamar mandi dalam + air panas" },
-  { icon: Wifi, label: "WiFi" },
-  { icon: ShieldCheck, label: "Keamanan terjaga" },
-] as const;
-
 export const Route = createFileRoute("/kamar")({
   validateSearch: (raw: Record<string, unknown>): KamarSearch => ({
     gender: raw.gender === "putra" || raw.gender === "putri" ? raw.gender : undefined,
     category: raw.category === "rukost" || raw.category === "apartkost" ? raw.category : undefined,
+    plannedStart: normalizePublicPlannedStart(raw.plannedStart),
+    paymentSchedule:
+      raw.paymentSchedule === "annual" || raw.paymentSchedule === "two_month_installments"
+        ? raw.paymentSchedule
+        : undefined,
   }),
   head: () => ({
     meta: [
@@ -103,12 +92,38 @@ export const Route = createFileRoute("/kamar")({
   component: KamarPage,
 });
 
-function KamarPage() {
-  const { gender, category } = Route.useSearch();
-  const navigate = Route.useNavigate();
+function canonicalKamarSearch(search: KamarSearch): KamarSearch {
+  return {
+    gender: search.gender,
+    category: search.category,
+    plannedStart: search.plannedStart,
+    paymentSchedule: search.paymentSchedule,
+  };
+}
 
-  const summaryQuery = usePublicRoomSummary();
-  const catalog = usePublicHunianCatalog({ gender, category });
+function canonicalSearchString(search: KamarSearch): string {
+  const params = new URLSearchParams();
+  if (search.gender) params.set("gender", search.gender);
+  if (search.category) params.set("category", search.category);
+  if (search.plannedStart) params.set("plannedStart", search.plannedStart);
+  if (search.paymentSchedule) params.set("paymentSchedule", search.paymentSchedule);
+  return params.toString();
+}
+function KamarPage() {
+  const { gender, category, plannedStart, paymentSchedule } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const canonicalSearch = canonicalKamarSearch({ gender, category, plannedStart, paymentSchedule });
+  const needsCanonicalSearch =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).toString() !==
+      canonicalSearchString(canonicalSearch);
+
+  useEffect(() => {
+    if (!needsCanonicalSearch) return;
+    void navigate({ search: canonicalSearch, replace: true });
+  }, [canonicalSearch, navigate, needsCanonicalSearch]);
+
+  const catalog = usePublicHunianCatalog({ gender, category, plannedStart, paymentSchedule });
   const whatsAppNumber = getPublicWhatsAppNumber();
 
   const setGender = (value: PublicGender | undefined) =>
@@ -117,13 +132,22 @@ function KamarPage() {
     void navigate({ search: (prev) => ({ ...prev, category: value }), replace: true });
 
   const items = catalog.data ?? [];
+  const totalAvailability = items.reduce((sum, item) => sum + item.availabilityCount, 0);
+  const publishedHighlights = [...new Set(items.flatMap((item) => item.facilitiesPreview))].slice(
+    0,
+    5,
+  );
+  const dateBounds = getJakartaDateBounds();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3">
           <p className="text-sm font-bold tracking-tight">Kostation</p>
-          <Link to="/login" className="text-xs font-medium text-primary hover:underline">
+          <Link
+            to="/login"
+            className="inline-flex min-h-11 items-center text-xs font-medium text-primary hover:underline"
+          >
             Masuk Penghuni
           </Link>
         </div>
@@ -139,24 +163,22 @@ function KamarPage() {
             atau Putri, ajukan minat booking, dan admin akan menghubungi Anda.
           </p>
 
-          <div className="mx-auto mt-5 flex max-w-2xl flex-wrap items-center justify-center gap-2">
-            {HERO_HIGHLIGHTS.map((h) => (
-              <span
-                key={h.label}
-                className="inline-flex items-center gap-1.5 rounded-full border bg-background/80 px-3 py-1 text-xs font-medium text-foreground/80 shadow-sm"
-              >
-                <h.icon className="h-3.5 w-3.5 text-primary" />
-                {h.label}
-              </span>
-            ))}
-          </div>
+          {publishedHighlights.length ? (
+            <div className="mx-auto mt-5 flex max-w-2xl flex-wrap items-center justify-center gap-2">
+              {publishedHighlights.map((highlight) => (
+                <span
+                  key={highlight}
+                  className="inline-flex items-center rounded-full border bg-background/80 px-3 py-1 text-xs font-medium text-foreground/80 shadow-sm"
+                >
+                  {highlight}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
-          {summaryQuery.data ? (
+          {catalog.isSuccess ? (
             <p className="mt-5 text-xs font-medium text-muted-foreground">
-              {summaryQuery.data.totalAvailable} kamar tersedia
-              {summaryQuery.data.genders
-                .map((g) => ` • ${g.genderLabel} ${g.availableCount}`)
-                .join("")}
+              Perkiraan {totalAvailability} kamar tersedia pada kategori yang ditampilkan
             </p>
           ) : null}
 
@@ -176,7 +198,7 @@ function KamarPage() {
                 key={opt.label}
                 size="sm"
                 variant={gender === opt.value ? "default" : "outline"}
-                className="rounded-full"
+                className="min-h-11 rounded-full"
                 aria-pressed={gender === opt.value}
                 onClick={() => setGender(opt.value)}
               >
@@ -185,13 +207,86 @@ function KamarPage() {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label
+              htmlFor="public-planned-start"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Rencana mulai
+            </label>
+            <Input
+              id="public-planned-start"
+              type="date"
+              className="min-h-11 w-auto"
+              value={plannedStart ?? ""}
+              min={dateBounds.today}
+              max={dateBounds.max}
+              onChange={(event) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, plannedStart: event.target.value || undefined }),
+                  replace: true,
+                })
+              }
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="min-h-11"
+              variant="ghost"
+              onClick={() =>
+                void navigate({
+                  search: (prev) => ({ ...prev, plannedStart: undefined }),
+                  replace: true,
+                })
+              }
+            >
+              Belum ditentukan
+            </Button>
+            <Button
+              size="sm"
+              className="min-h-11"
+              variant={paymentSchedule === "annual" ? "default" : "outline"}
+              aria-pressed={paymentSchedule === "annual"}
+              onClick={() =>
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    paymentSchedule: paymentSchedule === "annual" ? undefined : "annual",
+                  }),
+                  replace: true,
+                })
+              }
+            >
+              Tahunan
+            </Button>
+            <Button
+              size="sm"
+              className="min-h-11"
+              variant={paymentSchedule === "two_month_installments" ? "default" : "outline"}
+              aria-pressed={paymentSchedule === "two_month_installments"}
+              onClick={() =>
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    paymentSchedule:
+                      paymentSchedule === "two_month_installments"
+                        ? undefined
+                        : "two_month_installments",
+                  }),
+                  replace: true,
+                })
+              }
+            >
+              Cicilan 2 bulan
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">Kategori</span>
             {CATEGORY_OPTIONS.map((opt) => (
               <Button
                 key={opt.label}
                 size="sm"
                 variant={category === opt.value ? "default" : "outline"}
-                className="rounded-full"
+                className="min-h-11 rounded-full"
                 aria-pressed={category === opt.value}
                 onClick={() => setCategory(opt.value)}
               >
@@ -228,7 +323,12 @@ function KamarPage() {
           <div className="flex min-h-[40vh] w-full flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="text-sm font-semibold">Katalog hunian belum dapat dimuat.</p>
             <p className="text-xs text-muted-foreground">Silakan coba lagi atau hubungi admin.</p>
-            <Button size="sm" variant="outline" onClick={() => void catalog.refetch()}>
+            <Button
+              size="sm"
+              className="min-h-11"
+              variant="outline"
+              onClick={() => void catalog.refetch()}
+            >
               <RefreshCw className="h-4 w-4" />
               Coba lagi
             </Button>
@@ -242,7 +342,14 @@ function KamarPage() {
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <HunianCatalogCard key={item.slug} item={item} whatsAppNumber={whatsAppNumber} />
+              <HunianCatalogCard
+                key={item.slug}
+                item={item}
+                preferredGender={
+                  gender === "putra" ? "male" : gender === "putri" ? "female" : undefined
+                }
+                whatsAppNumber={whatsAppNumber}
+              />
             ))}
           </div>
         )}
@@ -260,9 +367,11 @@ function KamarPage() {
 
 function HunianCatalogCard({
   item,
+  preferredGender,
   whatsAppNumber,
 }: {
   item: PublicHunianCatalogItem;
+  preferredGender?: "male" | "female";
   whatsAppNumber: string | null;
 }) {
   const [leadFormOpen, setLeadFormOpen] = useState(false);
@@ -271,11 +380,15 @@ function HunianCatalogCard({
   // frozen WhatsApp templates are reused unchanged. Lead context fields come
   // from the M18B bookingLeadDefaults (1:1 with the M17B payload). Never
   // includes roomId/room_code/exact room numbers.
-  const leadGroup = toPublicRoomGroup(item);
+  const directGender =
+    item.genderAvailability.find((entry) => entry.gender === preferredGender)?.gender ??
+    item.genderAvailability[0]?.gender;
+  const leadGroup = directGender ? toPublicRoomGroup(item, directGender) : null;
 
-  const href = whatsAppNumber
-    ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
-    : null;
+  const href =
+    whatsAppNumber && leadGroup
+      ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
+      : null;
 
   // M19D: cover image from the M19B allowlisted galleryPreview (cover-first,
   // publicVisible only). Only allowlisted fields are read; the resolved URL is
@@ -317,9 +430,11 @@ function HunianCatalogCard({
           </div>
         )}
         <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-          <Badge variant={item.gender === "male" ? "default" : "secondary"}>
-            {item.genderLabel}
-          </Badge>
+          {item.genderAvailability.map((entry) => (
+            <Badge key={entry.gender} variant={entry.gender === "male" ? "default" : "secondary"}>
+              {entry.genderLabel} · {entry.availabilityCount}
+            </Badge>
+          ))}
           <Badge variant="outline" className="bg-background/90">
             {item.categoryLabel}
           </Badge>
@@ -330,8 +445,7 @@ function HunianCatalogCard({
         <div>
           <p className="text-sm font-semibold leading-snug">{item.title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {item.buildingName || item.buildingCode || item.categoryLabel}
-            {item.floorLabel ? ` • ${item.floorLabel}` : ""}
+            Ketersediaan agregat kategori — penempatan kamar dikonfirmasi admin.
           </p>
         </div>
 
@@ -377,27 +491,27 @@ function HunianCatalogCard({
         ) : null}
 
         <div className="mt-auto space-y-1.5 pt-1">
-          <Button className="w-full" onClick={() => setLeadFormOpen(true)}>
+          <Button className="min-h-11 w-full" onClick={() => setLeadFormOpen(true)}>
             <Send className="h-4 w-4" />
             {item.ctaLabel || "Ajukan Minat Booking"}
           </Button>
           <div className="grid grid-cols-2 gap-1.5">
             {/* M18D: links to the public detail page /kamar/$slug (safe slug
                 identifier only — never roomId/room_code). */}
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="min-h-11">
               <Link to="/kamar/$slug" params={{ slug: item.slug }}>
                 Lihat Detail
               </Link>
             </Button>
             {href ? (
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="min-h-11">
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp
                 </a>
               </Button>
             ) : (
-              <Button variant="outline" disabled>
+              <Button variant="outline" className="min-h-11" disabled>
                 <MessageCircle className="h-4 w-4" />
                 WhatsApp
               </Button>
@@ -414,7 +528,8 @@ function HunianCatalogCard({
         </div>
       </CardContent>
       <PublicBookingLeadDialog
-        group={leadGroup}
+        item={item}
+        initialGender={preferredGender}
         whatsAppNumber={whatsAppNumber}
         open={leadFormOpen}
         onOpenChange={setLeadFormOpen}

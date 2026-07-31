@@ -204,4 +204,13 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hunian_gallery_images' AND column_name = 'public_derivative_file_id')",
     ],
   },
+  {
+    version: '024_public_booking_lead_contact.sql',
+    checksumSha256: 'c06b64fd7a242b59b1e9d6978a769dbbf526ff9854112723adaffcbcbd483d00',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'booking_leads' AND column_name = 'visitor_email')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'booking_leads' AND column_name = 'consent_at')",
+      "to_regclass('public.idx_booking_leads_public_email_created') IS NOT NULL",
+    ],
+  },
 ] as const;

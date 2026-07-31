@@ -824,3 +824,4 @@ provider, data, authorization, failure, and operational requirements:
 
 Their UI must show an honest disabled or unconfigured state and must not simulate
 success.
+| W03-PUBLIC | Public category catalog and booking lead | AUTOMATED VERIFIED; RUNTIME DEFERRED | W03C publication authoring, W04 onboarding |

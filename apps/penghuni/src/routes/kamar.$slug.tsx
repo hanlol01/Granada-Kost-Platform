@@ -19,26 +19,14 @@ import { useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
-  Bath,
-  BedDouble,
   Building2,
   Check,
   DoorOpen,
-  HelpCircle,
   MessageCircle,
   RefreshCw,
   ScrollText,
   Send,
-  ShieldCheck,
-  Sparkles,
-  Users,
 } from "lucide-react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,19 +51,6 @@ import { PublicHunianGallery } from "@/components/public-gallery/PublicHunianGal
 const FROZEN_DISCLAIMER =
   "Ketersediaan dan nomor kamar dikonfirmasi oleh admin. Pengajuan minat booking belum menjadi booking resmi.";
 
-// Gentle generic note when the backend marks content as needsConfirmation.
-const NEEDS_CONFIRMATION_COPY =
-  "Beberapa informasi dapat berubah dan akan dikonfirmasi kembali oleh admin.";
-
-// Facility sections in the frozen M18A order. Empty sections are skipped.
-const FACILITY_SECTIONS = [
-  { key: "facilitiesRoom", title: "Fasilitas Kamar", icon: BedDouble },
-  { key: "facilitiesBathroom", title: "Fasilitas Kamar Mandi", icon: Bath },
-  { key: "facilitiesShared", title: "Fasilitas Bersama", icon: Users },
-  { key: "facilitiesSecurity", title: "Keamanan & Kenyamanan", icon: ShieldCheck },
-  { key: "facilitiesService", title: "Layanan", icon: Sparkles },
-] as const;
-
 export const Route = createFileRoute("/kamar/$slug")({
   head: () => ({
     meta: [
@@ -96,7 +71,10 @@ function PageShell({ children }: { children: ReactNode }) {
       <header className="border-b">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-4 py-3">
           <p className="text-sm font-bold tracking-tight">Kostation</p>
-          <Link to="/login" className="text-xs font-medium text-primary hover:underline">
+          <Link
+            to="/login"
+            className="inline-flex min-h-11 items-center text-xs font-medium text-primary hover:underline"
+          >
             Masuk Penghuni
           </Link>
         </div>
@@ -116,7 +94,7 @@ function BackToCatalogLink() {
   return (
     <Link
       to="/kamar"
-      className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
       Kembali ke Katalog Hunian
@@ -189,7 +167,7 @@ function NotFoundState({ whatsAppNumber }: { whatsAppNumber: string | null }) {
           </Link>
         </Button>
         {href ? (
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="min-h-11">
             <a href={href} target="_blank" rel="noopener noreferrer">
               <MessageCircle className="h-4 w-4" />
               Hubungi Admin via WhatsApp
@@ -208,11 +186,11 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
       <p className="text-sm font-semibold">Detail hunian belum dapat dimuat.</p>
       <p className="text-xs text-muted-foreground">Silakan coba lagi atau hubungi admin.</p>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button size="sm" variant="outline" onClick={onRetry}>
+        <Button size="sm" variant="outline" className="min-h-11" onClick={onRetry}>
           <RefreshCw className="h-4 w-4" />
           Coba lagi
         </Button>
-        <Button asChild size="sm" variant="ghost">
+        <Button asChild size="sm" variant="ghost" className="min-h-11">
           <Link to="/kamar">Kembali ke Katalog</Link>
         </Button>
       </div>
@@ -233,24 +211,17 @@ function DetailContent({
   // frozen WhatsApp templates are reused unchanged. Lead context fields come
   // from the M18B bookingLeadDefaults (1:1 with the M17B payload). Never
   // includes roomId/room_code/exact room numbers.
-  const leadGroup = toPublicRoomGroup(detail);
-  const href = whatsAppNumber
-    ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
-    : null;
+  const directGender = detail.genderAvailability[0]?.gender;
+  const leadGroup = directGender ? toPublicRoomGroup(detail, directGender) : null;
+  const href =
+    whatsAppNumber && leadGroup
+      ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
+      : null;
 
   const gallery = detail.gallery ?? [];
-  const facilitySections = FACILITY_SECTIONS.map((section) => ({
-    ...section,
-    items: detail[section.key] ?? [],
-  })).filter((section) => section.items.length > 0);
-  const rules = detail.rules ?? [];
-  const policies = detail.policies ?? [];
-  const faq = detail.faq ?? [];
+  const facilities = detail.facilities ?? [];
+  const rules = detail.houseRules ?? [];
   const disclaimers = detail.disclaimers ?? [];
-  // Rendered only as a gentle generic note; raw backend notes are not shown.
-  const showNeedsConfirmation = Array.isArray(detail.needsConfirmation)
-    ? detail.needsConfirmation.length > 0
-    : Boolean(detail.needsConfirmation);
 
   return (
     <div className="pb-28 pt-5 sm:pb-10">
@@ -265,17 +236,18 @@ function DetailContent({
       <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant={detail.gender === "male" ? "default" : "secondary"}>
-              {detail.genderLabel}
-            </Badge>
+            {detail.genderAvailability.map((entry) => (
+              <Badge key={entry.gender} variant={entry.gender === "male" ? "default" : "secondary"}>
+                {entry.genderLabel} · {entry.availabilityCount}
+              </Badge>
+            ))}
             <Badge variant="outline">{detail.categoryLabel}</Badge>
           </div>
           <h1 className="mt-2 text-xl font-bold leading-snug tracking-tight sm:text-2xl">
             {detail.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {detail.buildingName || detail.buildingCode || detail.categoryLabel}
-            {detail.floorLabel ? ` • ${detail.floorLabel}` : ""}
+            Ringkasan kategori publik; penempatan kamar dikonfirmasi admin.
           </p>
           <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600">
             <DoorOpen className="h-4 w-4" />
@@ -310,12 +282,12 @@ function DetailContent({
 
           {/* Desktop CTAs; mobile uses the sticky bottom bar. */}
           <div className="mt-3 hidden flex-col gap-1.5 sm:flex">
-            <Button className="w-full" onClick={() => setLeadFormOpen(true)}>
+            <Button className="min-h-11 w-full" onClick={() => setLeadFormOpen(true)}>
               <Send className="h-4 w-4" />
               {detail.ctaLabel || "Ajukan Minat Booking"}
             </Button>
             {href ? (
-              <Button asChild variant="outline" className="w-full">
+              <Button asChild variant="outline" className="min-h-11 w-full">
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp Admin
@@ -323,7 +295,7 @@ function DetailContent({
               </Button>
             ) : (
               <>
-                <Button variant="outline" className="w-full" disabled>
+                <Button variant="outline" className="min-h-11 w-full" disabled>
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp Admin
                 </Button>
@@ -335,6 +307,10 @@ function DetailContent({
           </div>
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
             Nomor kamar akan dikonfirmasi oleh admin.
+          </p>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Minimum sewa {detail.leaseMinimumMonths} bulan · DP minimum {detail.dpMinimumPercent}% ·
+            deposit terpisah sebesar {detail.securityDepositMonths} bulan tarif berjalan.
           </p>
         </div>
       </div>
@@ -352,92 +328,60 @@ function DetailContent({
       ) : null}
 
       {/* Facilities */}
-      {facilitySections.length > 0 ? (
+      {facilities.length > 0 ? (
         <section className="mt-6">
           <h2 className="text-base font-semibold">Fasilitas</h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {facilitySections.map((section) => (
-              <Card key={section.key} className="shadow-sm">
-                <CardContent className="p-4">
-                  <p className="inline-flex items-center gap-2 text-sm font-semibold">
-                    <section.icon className="h-4 w-4 text-primary" />
-                    {section.title}
-                  </p>
-                  <ul className="mt-2 space-y-1.5">
-                    {section.items.map((item) => (
-                      <li
-                        key={item}
-                        className="flex items-start gap-2 text-sm text-muted-foreground"
-                      >
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Card className="mt-3 shadow-sm">
+            <CardContent className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-2">
+              {facilities.map((item) => (
+                <p key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  {item}
+                </p>
+              ))}
+            </CardContent>
+          </Card>
         </section>
       ) : null}
 
-      {/* Rules & policies */}
-      {rules.length > 0 || policies.length > 0 ? (
-        <section className="mt-6">
-          <h2 className="inline-flex items-center gap-2 text-base font-semibold">
-            <ScrollText className="h-4 w-4 text-primary" />
-            Aturan & Kebijakan Hunian
-          </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {rules.length > 0 ? (
-              <Card className="shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-sm font-semibold">Aturan Hunian</p>
-                  <ul className="mt-2 list-disc space-y-1.5 pl-4">
-                    {rules.map((rule) => (
-                      <li key={rule} className="text-sm text-muted-foreground">
-                        {rule}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            ) : null}
-            {policies.length > 0 ? (
-              <Card className="shadow-sm">
-                <CardContent className="p-4">
-                  <p className="text-sm font-semibold">Kebijakan Umum</p>
-                  <ul className="mt-2 list-disc space-y-1.5 pl-4">
-                    {policies.map((policy) => (
-                      <li key={policy} className="text-sm text-muted-foreground">
-                        {policy}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+      <section className="mt-6">
+        <h2 className="inline-flex items-center gap-2 text-base font-semibold">
+          <ScrollText className="h-4 w-4 text-primary" />
+          Ketentuan Penyewaan dan Pembayaran
+        </h2>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[
+            ["Minimum sewa", detail.minimumLeaseTerm],
+            ["Rencana pembayaran", detail.pricingExplanation],
+            ["DP", detail.dpExplanation],
+            ["Security deposit", detail.securityDepositExplanation],
+            ["Metode pembayaran manual", detail.manualPaymentMethods.join(", ")],
+            ["Jam kunjungan", detail.visitorHours ?? "Dikonfirmasi oleh Admin"],
+          ].map(([label, value]) => (
+            <Card key={label} className="shadow-sm">
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                <p className="mt-1 text-sm">{value}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <p className="mt-3 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+          DP adalah pembayaran awal sewa. Security deposit adalah dana jaminan terpisah dan tidak
+          otomatis mengurangi sewa.
+        </p>
+      </section>
 
-      {/* FAQ */}
-      {faq.length > 0 ? (
+      {rules.length > 0 ? (
         <section className="mt-6">
-          <h2 className="inline-flex items-center gap-2 text-base font-semibold">
-            <HelpCircle className="h-4 w-4 text-primary" />
-            Pertanyaan Umum
-          </h2>
-          <Accordion type="single" collapsible className="mt-2">
-            {faq.map((entry, index) => (
-              <AccordionItem key={entry.question} value={`faq-${index}`}>
-                <AccordionTrigger className="text-left text-sm">{entry.question}</AccordionTrigger>
-                <AccordionContent className="text-sm text-muted-foreground">
-                  {entry.answer}
-                </AccordionContent>
-              </AccordionItem>
+          <h2 className="text-base font-semibold">Aturan Hunian</h2>
+          <ul className="mt-3 list-disc space-y-1.5 pl-5">
+            {rules.map((rule) => (
+              <li key={rule} className="text-sm text-muted-foreground">
+                {rule}
+              </li>
             ))}
-          </Accordion>
+          </ul>
         </section>
       ) : null}
 
@@ -448,8 +392,8 @@ function DetailContent({
             {disclaimer}
           </p>
         ))}
-        {showNeedsConfirmation ? (
-          <p className="text-[11px] text-muted-foreground">{NEEDS_CONFIRMATION_COPY}</p>
+        {detail.contactInformation ? (
+          <p className="text-[11px] text-muted-foreground">{detail.contactInformation}</p>
         ) : null}
         <p className="rounded-lg border border-dashed px-3 py-2 text-center text-[11px] text-muted-foreground">
           {FROZEN_DISCLAIMER}
@@ -459,12 +403,12 @@ function DetailContent({
       {/* Sticky mobile CTA bar (simple, safe: same actions as the price card). */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 p-3 backdrop-blur sm:hidden">
         <div className="mx-auto flex w-full max-w-4xl items-center gap-2">
-          <Button className="flex-1" onClick={() => setLeadFormOpen(true)}>
+          <Button className="min-h-11 flex-1" onClick={() => setLeadFormOpen(true)}>
             <Send className="h-4 w-4" />
             {detail.ctaLabel || "Ajukan Minat Booking"}
           </Button>
           {href ? (
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="min-h-11">
               <a href={href} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp Admin">
                 <MessageCircle className="h-4 w-4" />
               </a>
@@ -474,7 +418,7 @@ function DetailContent({
       </div>
 
       <PublicBookingLeadDialog
-        group={leadGroup}
+        item={detail}
         whatsAppNumber={whatsAppNumber}
         open={leadFormOpen}
         onOpenChange={setLeadFormOpen}

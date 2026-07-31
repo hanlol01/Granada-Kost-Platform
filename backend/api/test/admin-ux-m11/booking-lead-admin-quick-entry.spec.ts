@@ -518,6 +518,8 @@ test('public create/list/status response contracts remain compatible', async () 
   const service = new BookingLeadService(
     {
       resolvePublicPropertyId: async () => PROPERTY_A,
+      transaction: async (work: (client: unknown) => Promise<unknown>) => work({}),
+      lockPublicCreation: async () => undefined,
       findRecentDuplicate: async () => existing,
       listForProperties: async () => [existing],
     } as never,
@@ -532,7 +534,10 @@ test('public create/list/status response contracts remain compatible', async () 
         category: 'rukost',
         gender: 'female',
         visitorName: 'Public Visitor',
+        visitorEmail: 'public@example.test',
         visitorPhone: '081234567890',
+        visitorUniversity: 'Universitas Demo',
+        consent: true,
       },
     ),
     {},
@@ -541,8 +546,8 @@ test('public create/list/status response contracts remain compatible', async () 
     'category',
     'createdAt',
     'gender',
-    'id',
     'message',
+    'reference',
     'status',
   ]);
 

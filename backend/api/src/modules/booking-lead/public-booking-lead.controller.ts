@@ -18,6 +18,10 @@ export class PublicBookingLeadController {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
       correlationId: request.correlationId,
+      idempotencyKey:
+        typeof request.headers['idempotency-key'] === 'string'
+          ? request.headers['idempotency-key']
+          : undefined,
     });
   }
 }

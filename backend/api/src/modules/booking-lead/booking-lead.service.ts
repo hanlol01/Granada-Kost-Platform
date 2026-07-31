@@ -5,6 +5,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { CreateAdminBookingLeadDto } from './dto/create-admin-booking-lead.dto';
 import { CreatePublicBookingLeadDto } from './dto/create-public-booking-lead.dto';
@@ -118,59 +119,106 @@ export class BookingLeadService {
   }
 
   async createPublicLead(dto: CreatePublicBookingLeadDto, context: BookingLeadRequestContext) {
-    const input = this.normalizePublicLeadInput(dto);
-    const propertyId = await this.leads.resolvePublicPropertyId(input);
-
-    if (!propertyId) {
-      throw new ServiceUnavailableException({
-        code: 'BOOKING_LEAD_PROPERTY_UNAVAILABLE',
-        message: 'Booking interest submission is temporarily unavailable.',
+    if (
+      context.idempotencyKey !== undefined &&
+      !/^[A-Za-z0-9._~-]{16,128}$/.test(context.idempotencyKey)
+    ) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_IDEMPOTENCY_KEY_INVALID',
+        message: 'Submission identity is invalid.',
       });
     }
-
-    const duplicate = await this.leads.findRecentDuplicate(
-      {
+    if (dto.consent !== true) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_CONSENT_REQUIRED',
+        message: 'Contact consent is required.',
+      });
+    }
+    const input = this.normalizePublicLeadInput(dto);
+    const requestFingerprint = this.publicRequestFingerprint(input);
+    const result = await this.leads.transaction(async (client) => {
+      const propertyId = await this.leads.resolvePublicPropertyId(input, client);
+      if (!propertyId) {
+        throw new ServiceUnavailableException({
+          code: 'BOOKING_LEAD_PROPERTY_UNAVAILABLE',
+          message: 'Booking interest submission is temporarily unavailable.',
+        });
+      }
+      await this.leads.lockPublicCreation(client, {
         propertyId,
         category: input.category,
         gender: input.gender,
         visitorPhone: input.visitorPhone,
-        publicGroupKey: input.publicGroupKey,
-      },
-      DUPLICATE_WINDOW_MINUTES,
-    );
+        idempotencyKey: context.idempotencyKey,
+      });
 
-    if (duplicate) {
-      return this.publicResponse(duplicate);
-    }
+      if (context.idempotencyKey) {
+        const replay = await this.leads.findByPublicIdempotencyKey(
+          propertyId,
+          context.idempotencyKey,
+          client,
+        );
+        if (replay) {
+          if (replay.metadata?.requestFingerprint !== requestFingerprint) {
+            throw new ConflictException({
+              code: 'BOOKING_LEAD_IDEMPOTENCY_KEY_REUSED',
+              message: 'Submission identity has already been used for different data.',
+            });
+          }
+          return { lead: replay, created: false };
+        }
+      }
 
-    const lead = await this.leads.create({
-      ...input,
-      propertyId,
-      source: 'public_kamar',
-      metadata: {
-        submittedContext: {
+      const duplicate = await this.leads.findRecentDuplicate(
+        {
+          propertyId,
           category: input.category,
           gender: input.gender,
-          buildingCode: input.buildingCode ?? null,
-          floorCode: input.floorCode ?? null,
-          publicGroupKey: input.publicGroupKey ?? null,
+          visitorPhone: input.visitorPhone,
+          publicGroupKey: undefined,
         },
-      },
+        DUPLICATE_WINDOW_MINUTES,
+        client,
+      );
+      if (duplicate) return { lead: duplicate, created: false };
+
+      const lead = await this.leads.create(
+        {
+          ...input,
+          propertyId,
+          source: 'public_kamar',
+          metadata: {
+            idempotencyKey: context.idempotencyKey ?? null,
+            requestFingerprint,
+            submittedContext: {
+              category: input.category,
+              gender: input.gender,
+            },
+          },
+        },
+        client,
+      );
+
+      await this.audit.write(
+        {
+          propertyId: lead.propertyId,
+          action: 'booking_lead.create_public',
+          resourceType: 'booking_lead',
+          resourceId: lead.id,
+          afterData: this.publicAuditSnapshot(lead),
+          resultStatus: 'success',
+          correlationId: context.correlationId,
+        },
+        client,
+      );
+      await this.leads.writePublicCreatedEvent(client, {
+        lead,
+        correlationId: context.correlationId,
+      });
+      return { lead, created: true };
     });
 
-    await this.audit.write({
-      propertyId: lead.propertyId,
-      action: 'booking_lead.create_public',
-      resourceType: 'booking_lead',
-      resourceId: lead.id,
-      afterData: this.publicAuditSnapshot(lead),
-      resultStatus: 'success',
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
-      correlationId: context.correlationId,
-    });
-
-    return this.publicResponse(lead);
+    return this.publicResponse(result.lead);
   }
 
   listAdminLeads(propertyIds: string[], query: ListBookingLeadsQueryDto) {
@@ -240,19 +288,19 @@ export class BookingLeadService {
     const category = dto.category;
     const gender = this.normalizeGender(dto.gender);
     const preferredMoveInDate = dto.preferredMoveInDate
-      ? this.assertDate(dto.preferredMoveInDate, 'preferredMoveInDate')
+      ? this.assertPublicPlannedDate(dto.preferredMoveInDate)
       : undefined;
 
     return {
       category,
       gender,
-      buildingCode: dto.buildingCode,
-      floorCode: dto.floorCode,
-      publicGroupKey: dto.publicGroupKey,
       visitorName: this.sanitizeText(dto.visitorName, 120),
       visitorPhone: this.normalizeIndonesianPhone(dto.visitorPhone),
       visitorMessage: dto.visitorMessage ? this.sanitizeText(dto.visitorMessage, 1000) : undefined,
+      visitorUniversity: this.sanitizeText(dto.visitorUniversity, 160),
       preferredMoveInDate,
+      visitorEmail: dto.visitorEmail.trim().toLowerCase(),
+      consent: true,
     };
   }
 
@@ -308,6 +356,33 @@ export class BookingLeadService {
     return value;
   }
 
+  private assertPublicPlannedDate(value: string): string {
+    const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((item) => item.type === type)?.value ?? '';
+    const today = `${part('year')}-${part('month')}-${part('day')}`;
+    const [year, month, day] = today.split('-').map(Number);
+    const max = new Date(Date.UTC(year, month - 1, day + 62)).toISOString().slice(0, 10);
+    if (
+      Number.isNaN(timestamp) ||
+      new Date(timestamp).toISOString().slice(0, 10) !== value ||
+      value < today ||
+      value > max
+    ) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_DATE_OUT_OF_RANGE',
+        message: 'preferredMoveInDate must be within the next two months.',
+      });
+    }
+    return value;
+  }
+
   private assertDateRange(dateFrom?: string, dateTo?: string): void {
     const from = dateFrom ? this.assertDate(dateFrom, 'dateFrom') : undefined;
     const to = dateTo ? this.assertDate(dateTo, 'dateTo') : undefined;
@@ -336,9 +411,10 @@ export class BookingLeadService {
   }
 
   private publicResponse(lead: BookingLeadRecord) {
+    const digest = createHash('sha256').update(lead.id).digest('hex').slice(0, 12).toUpperCase();
     return {
-      id: lead.id,
-      status: lead.status,
+      reference: `MINAT-${lead.category.toUpperCase()}-${digest}`,
+      status: 'new' as const,
       category: lead.category,
       gender: lead.gender,
       createdAt: lead.createdAt,
@@ -376,16 +452,27 @@ export class BookingLeadService {
       status: lead.status,
       category: lead.category,
       gender: lead.gender,
-      buildingCode: lead.buildingCode,
-      floorCode: lead.floorCode,
-      publicGroupKey: lead.publicGroupKey,
-      maskedPhone: this.maskPhone(lead.visitorPhone),
       source: lead.source,
     };
   }
 
-  private maskPhone(phone: string): string {
-    if (phone.length <= 6) return '***';
-    return `${phone.slice(0, 4)}***${phone.slice(-3)}`;
+  private publicRequestFingerprint(
+    input: ReturnType<BookingLeadService['normalizePublicLeadInput']>,
+  ): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          category: input.category,
+          consent: input.consent,
+          gender: input.gender,
+          preferredMoveInDate: input.preferredMoveInDate ?? null,
+          visitorEmail: input.visitorEmail,
+          visitorMessage: input.visitorMessage ?? null,
+          visitorName: input.visitorName,
+          visitorPhone: input.visitorPhone,
+          visitorUniversity: input.visitorUniversity ?? null,
+        }),
+      )
+      .digest('hex');
   }
 }

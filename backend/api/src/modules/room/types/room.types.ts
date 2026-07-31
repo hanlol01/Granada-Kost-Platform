@@ -1,4 +1,10 @@
-export type RoomStatus = 'vacant' | 'reserved' | 'occupied' | 'maintenance' | 'inactive' | 'requires_review';
+export type RoomStatus =
+  | 'vacant'
+  | 'reserved'
+  | 'occupied'
+  | 'maintenance'
+  | 'inactive'
+  | 'requires_review';
 export type MasterStatus = 'active' | 'inactive';
 export type RoomGenderPolicy = 'male' | 'female' | 'mixed';
 export type PublicRoomGenderPolicy = Exclude<RoomGenderPolicy, 'mixed'>;
@@ -65,4 +71,16 @@ export type PublicRoomAvailabilityGroupRecord = {
   availableCount: number;
   priceFromMonthly: number;
   priceFromYearly: number;
+};
+
+export type PublicCatalogGroupRecord = {
+  propertyId: string;
+  category: RoomCategory;
+  gender: PublicRoomGenderPolicy;
+  availableCount: number;
+  priceFromMonthly: number;
+  priceFromYearly: number;
+  minimumDpPercent: number;
+  securityDepositMonths: number;
+  paymentSchedules: string[];
 };

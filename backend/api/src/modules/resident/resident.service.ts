@@ -41,8 +41,23 @@ export class ResidentService {
     if (query.property_id) {
       await this.properties.assertCanReadProperty(user, query.property_id);
     }
-    const records = await this.residents.list(query, this.scopeIds(user));
+    const scopeIds = this.scopeIds(user);
+    if (scopeIds?.length === 0) return [];
+    const records = await this.residents.list(query, scopeIds);
     return records.map((record) => this.maskForList(record));
+  }
+
+  async listPage(user: UserAccessContext, query: ListResidentsQueryDto) {
+    if (query.property_id) {
+      await this.properties.assertCanReadProperty(user, query.property_id);
+    }
+    const scopeIds = this.scopeIds(user);
+    if (scopeIds?.length === 0) return { records: [], total: 0 };
+    const [records, total] = await Promise.all([
+      this.residents.list(query, scopeIds),
+      this.residents.count(query, scopeIds),
+    ]);
+    return { records: records.map((record) => this.maskForList(record)), total };
   }
 
   async get(user: UserAccessContext, residentId: string) {

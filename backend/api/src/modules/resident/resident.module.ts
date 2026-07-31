@@ -6,12 +6,13 @@ import { PropertyOwnerResidentController } from './property-owner-resident.contr
 import { MyResidentContextController } from './my-resident-context.controller';
 import { ResidentController } from './resident.controller';
 import { ResidentRepository } from './repositories/resident.repository';
+import { ResidentAccountService } from './resident-account.service';
 import { ResidentService } from './resident.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
   controllers: [ResidentController, PropertyOwnerResidentController, MyResidentContextController],
-  providers: [ResidentRepository, ResidentService],
+  providers: [ResidentRepository, ResidentService, ResidentAccountService],
   exports: [ResidentRepository, ResidentService],
 })
 export class ResidentModule {}

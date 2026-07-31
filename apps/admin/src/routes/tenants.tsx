@@ -1,58 +1,104 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/state/EmptyState";
-import { ErrorState } from "@/components/state/ErrorState";
+import { useEffect, useRef, useState } from "react";
 import {
-  Search,
-  Eye,
-  Pencil,
-  Users,
-  Phone,
-  Mail,
-  UserCheck,
-  UserX,
   CalendarPlus,
+  Eye,
+  Mail,
+  Pencil,
+  Phone,
   Plus,
+  Search,
+  UserCheck,
+  UserRoundCog,
+  Users,
+  UserX,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
-import { useResidents, type ResidentRecord } from "@/hooks/useResidents";
-import { useUpdateResidentStatus } from "@/hooks/useResidentMutations";
+import { EmptyState } from "@/components/state/EmptyState";
+import { ErrorState } from "@/components/state/ErrorState";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useProvisionResidentAccount, useUpdateResidentStatus } from "@/hooks/useResidentMutations";
+import {
+  useResidentDetail,
+  useResidents,
+  type ResidentListRecord,
+  type ResidentRecord,
+} from "@/hooks/useResidents";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseEnabled } from "@/lib/features";
+import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tenants")({ component: TenantsPage });
 
-function StatusPill({ status }: { status: ResidentRecord["residentStatus"] }) {
+const PAGE_SIZE = 20;
+
+function ResidentStatusPill({ status }: { status: ResidentListRecord["residentStatus"] }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
         status === "active" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground",
       )}
     >
-      {status === "active" ? "Aktif" : "Tidak Aktif"}
+      {status === "active" ? "Aktif" : "Diarsipkan"}
     </span>
   );
 }
 
+function AccountStatusPill({ status }: { status: ResidentListRecord["accountStatus"] }) {
+  const label = {
+    active: "Akun aktif",
+    inactive: "Akun nonaktif",
+    suspended: "Akun ditangguhkan",
+    not_provisioned: "Belum memiliki akun",
+  }[status];
+  return (
+    <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
+      {label}
+    </span>
+  );
+}
+
+function leaseDuration(record: ResidentListRecord): string {
+  if (record.leaseAuthorityCount > 1) return "Perlu rekonsiliasi";
+  if (!record.leaseStart) return "Belum ada sewa aktif";
+  if (!record.leaseEnd) return `Sejak ${formatDate(record.leaseStart)}`;
+  return `${formatDate(record.leaseStart)} – ${formatDate(record.leaseEnd)}`;
+}
+
+function formatDate(value: string): string {
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function TenantsPage() {
   const [q, setQ] = useState("");
-  const [view, setView] = useState<ResidentRecord | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [viewId, setViewId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ResidentRecord | null>(null);
   const [statusTarget, setStatusTarget] = useState<{
     resident: ResidentRecord;
     next: ResidentRecord["residentStatus"];
   } | null>(null);
+  const [accountKey, setAccountKey] = useState<string | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const detailScopeRef = useRef<{ propertyId: string | null; residentId: string | null }>({
+    propertyId: null,
+    residentId: null,
+  });
 
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
@@ -64,47 +110,82 @@ function TenantsPage() {
     Boolean(currentPropertyId);
   const leaseCreateEnabled = hasLeaseAuthority && isAdminUxLeaseEnabled();
 
-  const { data, isLoading, error, refetch } = useResidents({ q });
-  const statusMut = useUpdateResidentStatus();
-  const list = data ?? [];
-  const hasFilter = q !== "";
+  const residents = useResidents({ q, limit: PAGE_SIZE, offset });
+  const detail = useResidentDetail(viewId);
+  const statusMutation = useUpdateResidentStatus();
+  const accountMutation = useProvisionResidentAccount();
+  const list = residents.data?.data ?? [];
+  const total = residents.data?.meta.total ?? 0;
+  const hasFilter = q.trim() !== "";
+
+  useEffect(() => {
+    setOffset(0);
+    setViewId(null);
+    setAccountKey(null);
+    setTemporaryPassword(null);
+    setCreateOpen(false);
+    setEditTarget(null);
+    setStatusTarget(null);
+  }, [currentPropertyId]);
+
+  const openDetail = (residentId: string) => {
+    setViewId(residentId);
+    setAccountKey(newIdempotencyKey());
+    setTemporaryPassword(null);
+  };
+
+  const closeDetail = () => {
+    setViewId(null);
+    setAccountKey(null);
+    setTemporaryPassword(null);
+  };
+
+  const detailRecord = detail.data ?? null;
+  detailScopeRef.current = { propertyId: currentPropertyId, residentId: viewId };
 
   return (
     <AppShell
       title="Data Penghuni"
-      subtitle={data ? `${list.length} penghuni terdaftar` : "Memuat..."}
+      subtitle={residents.data ? `${total} penghuni terdaftar` : "Memuat..."}
       actions={
         canManage ? (
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Tambah Penghuni
+          <Button onClick={() => setCreateOpen(true)} className="min-h-11">
+            <Plus className="mr-1 h-4 w-4" /> Tambah Penghuni
           </Button>
         ) : null
       }
     >
       <div className="relative mb-4 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(event) => {
+            setQ(event.target.value);
+            setOffset(0);
+          }}
           placeholder="Cari nama, telepon, atau email..."
           className="pl-9"
+          aria-label="Cari penghuni"
         />
       </div>
 
-      {error ? (
-        <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat penghuni" />
-      ) : isLoading ? (
+      {residents.error ? (
+        <ErrorState
+          error={residents.error}
+          onRetry={() => residents.refetch()}
+          title="Gagal memuat penghuni"
+        />
+      ) : residents.isLoading ? (
         <Card>
           <CardContent className="p-0">
-            <div className="divide-y divide-border">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="p-4 flex items-center gap-3">
+            <div className="divide-y divide-border" role="status" aria-label="Memuat penghuni">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="flex items-center gap-3 p-4">
                   <Skeleton className="h-10 w-10 rounded-full" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-4 w-40" />
                     <Skeleton className="h-3 w-56" />
                   </div>
-                  <Skeleton className="h-6 w-16 rounded-full" />
                 </div>
               ))}
             </div>
@@ -117,11 +198,11 @@ function TenantsPage() {
               icon={<Users className="h-5 w-5" />}
               title={hasFilter ? "Tidak ada penghuni cocok" : "Belum ada penghuni"}
               description={
-                hasFilter
-                  ? "Ubah kata kunci pencarian atau kosongkan filter."
-                  : canManage
-                    ? "Klik 'Tambah Penghuni' untuk onboarding pertama."
-                    : "Anda tidak memiliki izin untuk menambah penghuni."
+                offset > 0
+                  ? "Halaman ini kosong. Kembali ke halaman sebelumnya."
+                  : hasFilter
+                    ? "Ubah kata kunci pencarian atau kosongkan filter."
+                    : "Resident dapat disiapkan tanpa dianggap telah menempati kamar."
               }
             />
           </CardContent>
@@ -129,55 +210,47 @@ function TenantsPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
-                <thead className="bg-muted/40 border-b border-border">
+                <thead className="border-b border-border bg-muted/40">
                   <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-5 py-3 font-medium">Penghuni</th>
-                    <th className="px-5 py-3 font-medium">Kontak</th>
-                    <th className="px-5 py-3 font-medium">Gender</th>
-                    <th className="px-5 py-3 font-medium">Status</th>
-                    <th className="px-5 py-3 font-medium text-right">Aksi</th>
+                    <th className="px-4 py-3 font-medium">No</th>
+                    <th className="px-4 py-3 font-medium">Nama Penghuni</th>
+                    <th className="px-4 py-3 font-medium">No Unit</th>
+                    <th className="px-4 py-3 font-medium">Universitas/Pendidikan</th>
+                    <th className="px-4 py-3 font-medium">Durasi Sewa</th>
+                    <th className="px-4 py-3 font-medium">Status Akun</th>
+                    <th className="px-4 py-3 font-medium">Status Penghuni</th>
+                    <th className="px-4 py-3 text-right font-medium">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((t) => (
+                  {list.map((resident, index) => (
                     <tr
-                      key={t.id}
-                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                      key={resident.id}
+                      className="border-b border-border transition-colors last:border-0 hover:bg-muted/30"
                     >
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold text-sm">
-                            {t.fullName.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium">{t.fullName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {t.ktpNumber ? `KTP · ${maskKtp(t.ktpNumber)}` : "–"}
-                            </p>
-                          </div>
-                        </div>
+                      <td className="px-4 py-3 text-muted-foreground">{offset + index + 1}</td>
+                      <td className="px-4 py-3 font-medium">{resident.fullName}</td>
+                      <td className="px-4 py-3">{resident.roomNumber ?? "Belum ditempatkan"}</td>
+                      <td className="px-4 py-3">{resident.university ?? "Belum diisi"}</td>
+                      <td className="px-4 py-3">{leaseDuration(resident)}</td>
+                      <td className="px-4 py-3">
+                        <AccountStatusPill status={resident.accountStatus} />
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
-                        <span className="block">{t.phone ?? "–"}</span>
-                        <span className="block text-xs">{t.email ?? "–"}</span>
+                      <td className="px-4 py-3">
+                        <ResidentStatusPill status={resident.residentStatus} />
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground capitalize">
-                        {t.gender ?? "–"}
-                      </td>
-                      <td className="px-5 py-3">
-                        <StatusPill status={t.residentStatus} />
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => setView(t)}>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="min-h-11"
+                          onClick={() => openDetail(resident.id)}
+                          aria-label={`Lihat detail ${resident.fullName}`}
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {canManage ? (
-                          <Button variant="ghost" size="sm" onClick={() => setEditTarget(t)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -185,124 +258,248 @@ function TenantsPage() {
               </table>
             </div>
 
-            <div className="md:hidden divide-y divide-border">
-              {list.map((t) => (
+            <div className="divide-y divide-border md:hidden">
+              {list.map((resident) => (
                 <button
-                  key={t.id}
-                  onClick={() => setView(t)}
-                  className="w-full text-left p-4 flex items-center gap-3"
+                  key={resident.id}
+                  type="button"
+                  onClick={() => openDetail(resident.id)}
+                  className="flex min-h-11 w-full items-start gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div className="h-10 w-10 rounded-full bg-primary-soft text-primary flex items-center justify-center font-semibold">
-                    {t.fullName.charAt(0).toUpperCase()}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft font-semibold text-primary">
+                    {resident.fullName.charAt(0).toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{t.fullName}</p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Phone className="h-3 w-3" />
-                      {t.phone ?? "–"}
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-medium">{resident.fullName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {resident.roomNumber ?? "Belum ditempatkan"} ·{" "}
+                      {resident.university ?? "Pendidikan belum diisi"}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <AccountStatusPill status={resident.accountStatus} />
+                      <ResidentStatusPill status={resident.residentStatus} />
+                    </div>
                   </div>
-                  <StatusPill status={t.residentStatus} />
                 </button>
               ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4">
+              <p className="text-xs text-muted-foreground">
+                {offset + 1}–{Math.min(offset + list.length, total)} dari {total} penghuni
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                >
+                  Sebelumnya
+                </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={offset + PAGE_SIZE >= total}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                >
+                  Berikutnya
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Dialog open={!!view} onOpenChange={(o) => !o && setView(null)}>
-        <DialogContent>
+      <Dialog open={viewId !== null} onOpenChange={(open) => !open && closeDetail()}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Penghuni</DialogTitle>
           </DialogHeader>
-          {view && (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-4 pb-4 border-b">
-                <div className="h-14 w-14 rounded-full bg-primary-soft text-primary flex items-center justify-center text-xl font-semibold">
-                  {view.fullName.charAt(0).toUpperCase()}
+          {detail.error ? (
+            <ErrorState
+              error={detail.error}
+              onRetry={() => detail.refetch()}
+              title="Gagal memuat detail"
+            />
+          ) : detail.isLoading || !detailRecord ? (
+            <div className="space-y-3" role="status" aria-label="Memuat detail penghuni">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4 text-sm">
+              <div className="flex items-center gap-4 border-b pb-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xl font-semibold text-primary">
+                  {detailRecord.fullName.charAt(0).toUpperCase()}
                 </div>
-                <div>
-                  <p className="font-semibold text-base">{view.fullName}</p>
-                  <StatusPill status={view.residentStatus} />
+                <div className="min-w-0">
+                  <p className="break-words text-base font-semibold">{detailRecord.fullName}</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <AccountStatusPill status={detailRecord.accountStatus} />
+                    <ResidentStatusPill status={detailRecord.residentStatus} />
+                  </div>
                 </div>
               </div>
-              <Row
-                icon={<Phone className="h-3.5 w-3.5" />}
-                label="Nomor HP"
-                value={view.phone ?? "–"}
-              />
-              <Row
-                icon={<Mail className="h-3.5 w-3.5" />}
-                label="Email"
-                value={view.email ?? "–"}
-              />
-              <Row label="Nomor KTP" value={view.ktpNumber ? maskKtp(view.ktpNumber) : "–"} />
-              <Row label="Gender" value={view.gender ?? "–"} />
-              <Row label="Terdaftar" value={new Date(view.createdAt).toLocaleDateString("id-ID")} />
-              {view.emergencyContacts.length > 0 && (
-                <div className="pt-3 border-t">
-                  <p className="text-xs text-muted-foreground mb-2">Kontak Darurat</p>
+
+              <section aria-labelledby="resident-identity-heading">
+                <h3 id="resident-identity-heading" className="mb-2 font-semibold">
+                  Identitas dan kontak
+                </h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Row
+                    icon={<Phone className="h-3.5 w-3.5" />}
+                    label="WhatsApp"
+                    value={detailRecord.phone ?? "Belum diisi"}
+                  />
+                  <Row
+                    icon={<Mail className="h-3.5 w-3.5" />}
+                    label="Email"
+                    value={detailRecord.email ?? "Belum diisi"}
+                  />
+                  <Row
+                    label="NIK"
+                    value={detailRecord.ktpNumber ? maskKtp(detailRecord.ktpNumber) : "Belum diisi"}
+                  />
+                  <Row
+                    label="Tempat/Tanggal lahir"
+                    value={
+                      [
+                        detailRecord.placeOfBirth,
+                        detailRecord.dateOfBirth ? formatDate(detailRecord.dateOfBirth) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "Belum diisi"
+                    }
+                  />
+                  <Row label="Gender" value={detailRecord.gender ?? "Belum diisi"} />
+                  <Row label="Alamat" value={detailRecord.address ?? "Belum diisi"} />
+                </div>
+              </section>
+
+              <section aria-labelledby="resident-education-heading">
+                <h3 id="resident-education-heading" className="mb-2 font-semibold">
+                  Pendidikan dan keluarga
+                </h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Row
+                    label="Universitas/Pendidikan"
+                    value={detailRecord.university ?? "Belum diisi"}
+                  />
+                  <Row
+                    label="Fakultas/Jurusan"
+                    value={
+                      [detailRecord.faculty, detailRecord.major].filter(Boolean).join(" · ") ||
+                      "Belum diisi"
+                    }
+                  />
+                  <Row label="Angkatan" value={detailRecord.cohort ?? "Belum diisi"} />
+                  <Row label="Instagram" value={detailRecord.instagram ?? "Belum diisi"} />
+                  <Row label="Orang tua" value={detailRecord.parentName ?? "Belum diisi"} />
+                  <Row label="Kontak orang tua" value={detailRecord.parentPhone ?? "Belum diisi"} />
+                </div>
+              </section>
+
+              {detailRecord.emergencyContacts.length > 0 ? (
+                <section className="border-t pt-3" aria-labelledby="resident-emergency-heading">
+                  <h3 id="resident-emergency-heading" className="mb-2 font-semibold">
+                    Kontak darurat
+                  </h3>
                   <ul className="space-y-1">
-                    {view.emergencyContacts.map((c) => (
-                      <li key={c.id} className="text-sm">
-                        <span className="font-medium">{c.contactName}</span>
-                        <span className="text-muted-foreground"> · {c.phone}</span>
+                    {detailRecord.emergencyContacts.map((contact) => (
+                      <li key={contact.id}>
+                        <span className="font-medium">{contact.contactName}</span>
+                        <span className="text-muted-foreground"> · {contact.phone}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
+                </section>
+              ) : null}
 
-              <div className="flex flex-col sm:flex-row gap-2 pt-3 border-t border-border">
+              {temporaryPassword ? (
+                <div
+                  role="status"
+                  className="rounded-lg border border-warning/40 bg-warning/10 p-3"
+                >
+                  <p className="font-semibold">Kata sandi sementara — tampil satu kali</p>
+                  <p className="mt-1 break-all font-mono">{temporaryPassword}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Salurkan secara privat. Nilai ini tidak disimpan pada cache atau dapat
+                    ditampilkan ulang.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:flex-wrap">
                 {canManage ? (
                   <Button
                     variant="outline"
-                    size="sm"
-                    className="sm:flex-1"
+                    className="min-h-11"
                     onClick={() => {
-                      setEditTarget(view);
-                      setView(null);
+                      setEditTarget(detailRecord);
+                      closeDetail();
                     }}
                   >
-                    <Pencil className="h-4 w-4 mr-1" /> Edit
+                    <Pencil className="mr-1 h-4 w-4" /> Edit identitas
+                  </Button>
+                ) : null}
+                {canManage && detailRecord.accountStatus === "not_provisioned" ? (
+                  <Button
+                    variant="outline"
+                    className="min-h-11"
+                    disabled={accountMutation.isPending || !accountKey}
+                    onClick={async () => {
+                      if (!accountKey) return;
+                      try {
+                        const receipt = await accountMutation.mutateAsync({
+                          residentId: detailRecord.id,
+                          idempotencyKey: accountKey,
+                        });
+                        if (
+                          detailScopeRef.current.propertyId !== currentPropertyId ||
+                          detailScopeRef.current.residentId !== detailRecord.id
+                        )
+                          return;
+                        setTemporaryPassword(receipt.temporaryPassword);
+                        void detail.refetch();
+                      } catch {
+                        // Mutation feedback already presents a sanitized recovery message.
+                      }
+                    }}
+                  >
+                    <UserRoundCog className="mr-1 h-4 w-4" />
+                    {accountMutation.isPending ? "Menyiapkan..." : "Siapkan akun Penghuni"}
                   </Button>
                 ) : null}
                 {leaseCreateEnabled ? (
-                  <Button asChild variant="outline" size="sm" className="sm:flex-1">
+                  <Button asChild variant="outline" className="min-h-11">
                     <Link to="/penyewaan/tambah">
-                      <CalendarPlus className="h-4 w-4 mr-1" /> Tambah Penyewaan
+                      <CalendarPlus className="mr-1 h-4 w-4" /> Tambah Penyewaan
                     </Link>
                   </Button>
                 ) : hasLeaseAuthority ? (
-                  <div className="sm:flex-1">
-                    <Button variant="outline" size="sm" className="w-full" disabled>
-                      <CalendarPlus className="h-4 w-4 mr-1" /> Tambah Penyewaan
-                    </Button>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Fitur Penyewaan belum diaktifkan untuk rollout ini.
-                    </p>
-                  </div>
+                  <Button variant="outline" className="min-h-11" disabled>
+                    <CalendarPlus className="mr-1 h-4 w-4" /> Penyewaan belum tersedia
+                  </Button>
                 ) : null}
                 {canManage ? (
-                  view.residentStatus === "active" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="sm:flex-1"
-                      onClick={() => setStatusTarget({ resident: view, next: "inactive" })}
-                    >
-                      <UserX className="h-4 w-4 mr-1" /> Nonaktifkan
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="sm:flex-1"
-                      onClick={() => setStatusTarget({ resident: view, next: "active" })}
-                    >
-                      <UserCheck className="h-4 w-4 mr-1" /> Aktifkan
-                    </Button>
-                  )
+                  <Button
+                    variant="outline"
+                    className="min-h-11"
+                    onClick={() =>
+                      setStatusTarget({
+                        resident: detailRecord,
+                        next: detailRecord.residentStatus === "active" ? "inactive" : "active",
+                      })
+                    }
+                  >
+                    {detailRecord.residentStatus === "active" ? (
+                      <UserX className="mr-1 h-4 w-4" />
+                    ) : (
+                      <UserCheck className="mr-1 h-4 w-4" />
+                    )}
+                    {detailRecord.residentStatus === "active" ? "Arsipkan" : "Aktifkan"}
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -313,35 +510,30 @@ function TenantsPage() {
       <ResidentFormDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ResidentFormDialog
         open={editTarget !== null}
-        onOpenChange={(o) => !o && setEditTarget(null)}
+        onOpenChange={(open) => !open && setEditTarget(null)}
         initial={editTarget}
       />
 
       <ConfirmDialog
         open={statusTarget !== null}
-        onOpenChange={(o) => !o && setStatusTarget(null)}
-        title={statusTarget?.next === "active" ? "Aktifkan penghuni" : "Nonaktifkan penghuni"}
+        onOpenChange={(open) => !open && setStatusTarget(null)}
+        title={statusTarget?.next === "active" ? "Aktifkan penghuni" : "Arsipkan penghuni"}
         description={
           statusTarget
-            ? `Konfirmasi ubah status ${statusTarget.resident.fullName} menjadi ${
-                statusTarget.next === "active" ? "aktif" : "tidak aktif"
-              }?`
+            ? `Konfirmasi perubahan status ${statusTarget.resident.fullName}. Riwayat operasional tetap dipertahankan.`
             : null
         }
-        confirmLabel={statusTarget?.next === "active" ? "Aktifkan" : "Nonaktifkan"}
+        confirmLabel={statusTarget?.next === "active" ? "Aktifkan" : "Arsipkan"}
         destructive={statusTarget?.next === "inactive"}
-        pending={statusMut.isPending}
+        pending={statusMutation.isPending}
         onConfirm={async () => {
           if (!statusTarget) return;
-          try {
-            await statusMut.mutateAsync({
-              residentId: statusTarget.resident.id,
-              status: statusTarget.next,
-            });
-            setStatusTarget(null);
-          } catch {
-            // Already toasted by hook.
-          }
+          await statusMutation.mutateAsync({
+            residentId: statusTarget.resident.id,
+            status: statusTarget.next,
+          });
+          setStatusTarget(null);
+          closeDetail();
         }}
       />
     </AppShell>
@@ -350,17 +542,16 @@ function TenantsPage() {
 
 function Row({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-4">
-      <span className="text-muted-foreground inline-flex items-center gap-1">
+    <div className="min-w-0 rounded-lg bg-muted/35 p-3">
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
         {icon} {label}
       </span>
-      <span className="font-medium text-right">{value}</span>
+      <p className="mt-1 break-words font-medium">{value}</p>
     </div>
   );
 }
 
 function maskKtp(ktp: string): string {
-  // Show first 6 and last 4 only — align with PII masking norms (ADR-FE-008).
   if (ktp.length <= 10) return ktp;
   return `${ktp.slice(0, 6)}******${ktp.slice(-4)}`;
 }

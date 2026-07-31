@@ -185,7 +185,7 @@ function assertSourceContracts(sources: ReturnType<typeof readSources>): void {
     /resident_membership\.property_id\s*=\s*residents\.property_id/,
   );
   assert.match(sources.residentRepository, /resident_membership\.revoked_at IS NULL/);
-  assert.match(sources.residentRepository, /resident_role\.name\s*=\s*'resident'/);
+  assert.match(sources.residentRepository, /resident_role\.code\s*=\s*'resident'/);
   assert.match(sources.residentRepository, /LIMIT 2/);
   assert.doesNotMatch(
     sources.residentRepository.slice(
@@ -335,7 +335,7 @@ test('canonical membership predicate binds user, resident role, and exact non-re
   assert.match(sql, /resident_membership\.user_id = \$2/);
   assert.match(sql, /resident_membership\.property_id = residents\.property_id/);
   assert.match(sql, /resident_membership\.revoked_at IS NULL/);
-  assert.match(sql, /resident_role\.name = 'resident'/);
+  assert.match(sql, /resident_role\.code = 'resident'/);
 });
 
 test('resident context is bounded, deterministic, safe-null, and conflicts on ambiguity', async () => {
@@ -498,7 +498,7 @@ test('all vulnerable repository paths enforce shared same-property resident memb
   for (const [index, query] of captured.queries.entries()) {
     assert.match(query.sql, /resident_membership\.property_id = residents\.property_id/);
     assert.match(query.sql, /resident_membership\.revoked_at IS NULL/);
-    assert.match(query.sql, /resident_role\.name = 'resident'/);
+    assert.match(query.sql, /resident_role\.code = 'resident'/);
     assert.match(query.sql, /\bEXISTS\s*\(/);
     assert.match(
       query.sql,
@@ -616,7 +616,7 @@ test('mutation proof rejects identity writes, missing membership/property/role p
     {
       ...sources,
       residentRepository: sources.residentRepository.replace(
-        "resident_role.name = 'resident'",
+        "resident_role.code = 'resident'",
         'true',
       ),
     },

@@ -213,4 +213,14 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_booking_leads_public_email_created') IS NOT NULL",
     ],
   },
+  {
+    version: '025_resident_identity_account_authority.sql',
+    checksumSha256: 'eef1a64f52112c6160703ce8d8b095854b9286d13bd49e7b57613791fb92f851',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'residents' AND column_name = 'university')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'residents' AND column_name = 'parent_phone')",
+      "to_regclass('public.idx_residents_property_name_identity') IS NOT NULL",
+      "to_regclass('public.idx_residents_property_user_identity') IS NOT NULL",
+    ],
+  },
 ] as const;

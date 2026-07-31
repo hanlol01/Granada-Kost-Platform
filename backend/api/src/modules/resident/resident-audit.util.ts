@@ -6,12 +6,24 @@ export function sanitizeResidentForAudit(resident: ResidentRecord | null): unkno
   }
 
   return {
-    ...resident,
+    id: resident.id,
+    propertyId: resident.propertyId,
+    userId: resident.userId,
+    fullName: resident.fullName,
     phone: maskMiddle(resident.phone),
     email: maskEmail(resident.email),
     ktpNumber: maskMiddle(resident.ktpNumber),
+    gender: resident.gender,
+    residentStatus: resident.residentStatus,
+    accountStatus: resident.accountStatus,
+    university: resident.university,
+    faculty: resident.faculty,
+    major: resident.major,
+    cohort: resident.cohort,
     emergencyContacts: resident.emergencyContacts.map((contact) => ({
-      ...contact,
+      id: contact.id,
+      contactName: contact.contactName,
+      relationship: contact.relationship,
       phone: maskMiddle(contact.phone),
     })),
   };

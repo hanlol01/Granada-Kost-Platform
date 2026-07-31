@@ -40,6 +40,17 @@ const Schema = z.object({
   phone: z.string().trim().optional().or(z.literal("")),
   email: z.union([z.literal(""), z.string().email("Email tidak valid")]).optional(),
   ktpNumber: z.string().trim().optional().or(z.literal("")),
+  dateOfBirth: z.string().optional().or(z.literal("")),
+  placeOfBirth: z.string().trim().optional().or(z.literal("")),
+  address: z.string().trim().optional().or(z.literal("")),
+  university: z.string().trim().optional().or(z.literal("")),
+  faculty: z.string().trim().optional().or(z.literal("")),
+  major: z.string().trim().optional().or(z.literal("")),
+  cohort: z.string().trim().optional().or(z.literal("")),
+  instagram: z.string().trim().optional().or(z.literal("")),
+  parentName: z.string().trim().optional().or(z.literal("")),
+  parentPhone: z.string().trim().optional().or(z.literal("")),
+  emergencyPhone: z.string().trim().optional().or(z.literal("")),
   gender: z.enum(["male", "female", "other"]).optional().or(z.literal("")),
 });
 
@@ -57,6 +68,17 @@ function toDefaults(initial?: ResidentRecord | null): FormValues {
     phone: initial?.phone ?? "",
     email: initial?.email ?? "",
     ktpNumber: initial?.ktpNumber ?? "",
+    dateOfBirth: initial?.dateOfBirth ?? "",
+    placeOfBirth: initial?.placeOfBirth ?? "",
+    address: initial?.address ?? "",
+    university: initial?.university ?? "",
+    faculty: initial?.faculty ?? "",
+    major: initial?.major ?? "",
+    cohort: initial?.cohort ?? "",
+    instagram: initial?.instagram ?? "",
+    parentName: initial?.parentName ?? "",
+    parentPhone: initial?.parentPhone ?? "",
+    emergencyPhone: initial?.emergencyPhone ?? "",
     gender: (initial?.gender ?? "") as FormValues["gender"],
   };
 }
@@ -74,6 +96,17 @@ function applyServerErrors(
     email: "email",
     ktp_number: "ktpNumber",
     gender: "gender",
+    date_of_birth: "dateOfBirth",
+    place_of_birth: "placeOfBirth",
+    address: "address",
+    university: "university",
+    faculty: "faculty",
+    major: "major",
+    cohort: "cohort",
+    instagram: "instagram",
+    parent_name: "parentName",
+    parent_phone: "parentPhone",
+    emergency_phone: "emergencyPhone",
   };
   let handled = false;
   for (const [k, msg] of Object.entries(details)) {
@@ -106,6 +139,17 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
       phone: values.phone || null,
       email: values.email || null,
       ktpNumber: values.ktpNumber || null,
+      dateOfBirth: values.dateOfBirth || null,
+      placeOfBirth: values.placeOfBirth || null,
+      address: values.address || null,
+      university: values.university || null,
+      faculty: values.faculty || null,
+      major: values.major || null,
+      cohort: values.cohort || null,
+      instagram: values.instagram || null,
+      parentName: values.parentName || null,
+      parentPhone: values.parentPhone || null,
+      emergencyPhone: values.emergencyPhone || null,
       gender: (values.gender || null) as CreateResidentInput["gender"],
     };
     try {
@@ -122,7 +166,7 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
 
   return (
     <Dialog open={open} onOpenChange={(o) => !pending && onOpenChange(o)}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Penghuni" : "Tambah Penghuni"}</DialogTitle>
         </DialogHeader>
@@ -136,6 +180,43 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
             </Field>
             <Field label="Email" error={form.formState.errors.email?.message}>
               <Input type="email" {...form.register("email")} disabled={pending} />
+            </Field>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Tempat Lahir" error={form.formState.errors.placeOfBirth?.message}>
+              <Input {...form.register("placeOfBirth")} disabled={pending} />
+            </Field>
+            <Field label="Tanggal Lahir" error={form.formState.errors.dateOfBirth?.message}>
+              <Input type="date" {...form.register("dateOfBirth")} disabled={pending} />
+            </Field>
+          </div>
+          <Field label="Alamat" error={form.formState.errors.address?.message}>
+            <Input {...form.register("address")} disabled={pending} />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Universitas/Pendidikan" error={form.formState.errors.university?.message}>
+              <Input {...form.register("university")} disabled={pending} />
+            </Field>
+            <Field label="Angkatan" error={form.formState.errors.cohort?.message}>
+              <Input {...form.register("cohort")} disabled={pending} />
+            </Field>
+            <Field label="Fakultas" error={form.formState.errors.faculty?.message}>
+              <Input {...form.register("faculty")} disabled={pending} />
+            </Field>
+            <Field label="Jurusan" error={form.formState.errors.major?.message}>
+              <Input {...form.register("major")} disabled={pending} />
+            </Field>
+            <Field label="Instagram (opsional)" error={form.formState.errors.instagram?.message}>
+              <Input {...form.register("instagram")} disabled={pending} />
+            </Field>
+            <Field label="Kontak Darurat" error={form.formState.errors.emergencyPhone?.message}>
+              <Input {...form.register("emergencyPhone")} disabled={pending} />
+            </Field>
+            <Field label="Nama Orang Tua" error={form.formState.errors.parentName?.message}>
+              <Input {...form.register("parentName")} disabled={pending} />
+            </Field>
+            <Field label="Kontak Orang Tua" error={form.formState.errors.parentPhone?.message}>
+              <Input {...form.register("parentPhone")} disabled={pending} />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">

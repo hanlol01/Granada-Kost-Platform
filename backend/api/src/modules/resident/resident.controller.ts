@@ -20,16 +20,21 @@ import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { ListResidentsQueryDto } from './dto/list-residents-query.dto';
+import { ProvisionResidentAccountDto } from './dto/provision-resident-account.dto';
 import { UpdateResidentStatusDto } from './dto/update-resident-status.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentService } from './resident.service';
+import { ResidentAccountService } from './resident-account.service';
 import { ResidentRecord } from './types/resident.types';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
 @Controller('residents')
 export class ResidentController {
-  constructor(private readonly residents: ResidentService) {}
+  constructor(
+    private readonly residents: ResidentService,
+    private readonly accounts: ResidentAccountService,
+  ) {}
 
   @Get()
   @RequirePermissions('resident.read')
@@ -38,17 +43,17 @@ export class ResidentController {
     @Query() query: ListResidentsQueryDto,
     @Headers('accept') accept?: string,
   ) {
-    const records = await this.residents.list(user, query);
     if (!acceptsAdminUxV2(accept)) {
-      return records;
+      return this.residents.list(user, query);
     }
+    const { records, total } = await this.residents.listPage(user, query);
     const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
     const offset = Math.max(query.offset ?? 0, 0);
     return v2List(
-      records.slice(offset, offset + limit).map((record) => this.toV2Resident(record, true)),
+      records.map((record) => this.toV2Resident(record, true)),
       limit,
       offset,
-      records.length,
+      total,
     );
   }
 
@@ -69,6 +74,28 @@ export class ResidentController {
   @RequirePermissions('resident.read')
   ktpDocument(@CurrentUser() user: UserAccessContext, @Param('residentId') residentId: string) {
     return this.residents.ktpDocument(user, residentId);
+  }
+
+  @Post(':residentId/account')
+  @RequirePermissions('resident.manage')
+  async provisionAccount(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId') residentId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() _dto: ProvisionResidentAccountDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const result = await this.accounts.provision(
+      user,
+      residentId,
+      _dto.property_id,
+      idempotencyKey,
+      this.contextFromRequest(request),
+    );
+    return v2Data({
+      status: result.status,
+      temporary_password: result.temporaryPassword,
+    });
   }
 
   @Get(':residentId')
@@ -113,6 +140,22 @@ export class ResidentController {
   }
 
   private toV2Resident(resident: ResidentRecord, list = false) {
+    if (list) {
+      return {
+        id: resident.id,
+        property_id: resident.propertyId,
+        full_name: resident.fullName,
+        university: resident.university,
+        room_number: resident.roomNumber,
+        lease_start: resident.leaseStart,
+        lease_end: resident.leaseEnd,
+        lease_authority_count: resident.leaseAuthorityCount,
+        account_status: resident.accountStatus,
+        resident_status: resident.residentStatus,
+        created_at: resident.createdAt,
+        updated_at: resident.updatedAt,
+      };
+    }
     const base = {
       id: resident.id,
       property_id: resident.propertyId,
@@ -121,25 +164,26 @@ export class ResidentController {
       phone: resident.phone,
       email: resident.email,
       gender: resident.gender,
+      account_status: resident.accountStatus,
       resident_status: resident.residentStatus,
       active_lease: null,
       created_at: resident.createdAt,
       updated_at: resident.updatedAt,
     };
-    if (list) {
-      return {
-        ...base,
-        ktp_number_masked: resident.ktpNumber,
-        date_of_birth: resident.dateOfBirth,
-        profile_photo_file_id: null,
-      };
-    }
     return {
       ...base,
       ktp_number: resident.ktpNumber,
       date_of_birth: resident.dateOfBirth,
       place_of_birth: resident.placeOfBirth,
       address: resident.address,
+      university: resident.university,
+      faculty: resident.faculty,
+      major: resident.major,
+      cohort: resident.cohort,
+      instagram: resident.instagram,
+      parent_name: resident.parentName,
+      parent_phone: resident.parentPhone,
+      marital_status: resident.maritalStatus,
       emergency_phone: resident.emergencyPhone,
       emergency_contacts: resident.emergencyContacts.map((contact) => ({
         id: contact.id,

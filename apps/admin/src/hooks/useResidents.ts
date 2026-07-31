@@ -1,45 +1,61 @@
-// Residents domain hook. Backend: GET /api/v1/residents (resident.controller.ts).
-// Returns ResidentRecord[]. Search is server-side via ?q=.
-
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api";
+import { adminUxV2Requester } from "@/lib/admin-ux-api";
+import {
+  parseResidentDetail,
+  parseResidentPage,
+  type ResidentDetail,
+  type ResidentPage,
+  type ResidentStatus,
+} from "@/lib/admin-resident";
 import { useProperty } from "@/lib/property";
 
-export type ResidentStatus = "active" | "inactive";
-export type ResidentGender = "male" | "female" | "other";
-
-export type ResidentRecord = {
-  id: string;
-  propertyId: string;
-  userId: string | null;
-  fullName: string;
-  phone: string | null;
-  email: string | null;
-  ktpNumber: string | null;
-  gender: ResidentGender | null;
-  residentStatus: ResidentStatus;
-  emergencyContacts: { id: string; contactName: string; phone: string }[];
-  createdAt: string;
-  updatedAt: string;
-};
+export type { ResidentDetail, ResidentListRecord, ResidentStatus } from "@/lib/admin-resident";
+export type ResidentRecord = ResidentDetail;
 
 export type UseResidentsFilters = {
   status?: ResidentStatus;
   q?: string;
+  limit?: number;
+  offset?: number;
 };
 
-export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<ResidentRecord[]> {
+export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<ResidentPage> {
   const { currentPropertyId } = useProperty();
-  return useQuery<ResidentRecord[]>({
+  return useQuery<ResidentPage>({
     queryKey: ["residents", "list", { propertyId: currentPropertyId }, filters] as const,
-    queryFn: () =>
-      apiClient.get<ResidentRecord[]>("/residents", {
-        query: {
-          property_id: currentPropertyId ?? undefined,
-          status: filters.status,
-          q: filters.q || undefined,
-        },
-      }),
+    queryFn: async ({ signal }) => {
+      if (!currentPropertyId) throw new Error("Property scope belum aktif.");
+      return parseResidentPage(
+        await adminUxV2Requester.get("/residents", {
+          query: {
+            property_id: currentPropertyId,
+            status: filters.status,
+            q: filters.q?.trim() || undefined,
+            limit: filters.limit ?? 20,
+            offset: filters.offset ?? 0,
+          },
+          signal,
+        }),
+        currentPropertyId,
+      );
+    },
     enabled: Boolean(currentPropertyId),
+  });
+}
+
+export function useResidentDetail(residentId: string | null): UseQueryResult<ResidentDetail> {
+  const { currentPropertyId } = useProperty();
+  return useQuery<ResidentDetail>({
+    queryKey: ["residents", "detail", { propertyId: currentPropertyId, residentId }] as const,
+    queryFn: async ({ signal }) => {
+      if (!currentPropertyId || !residentId) throw new Error("Property scope belum aktif.");
+      return parseResidentDetail(
+        await adminUxV2Requester.get(`/residents/${encodeURIComponent(residentId)}`, {
+          signal,
+        }),
+        currentPropertyId,
+      );
+    },
+    enabled: Boolean(currentPropertyId && residentId),
   });
 }

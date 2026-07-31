@@ -114,13 +114,22 @@ export const adminUxQueryKeys = {
     list: (propertyId: string, scope: "global" | "kost_type", kostTypeId?: string) =>
       scoped("kostTypeRules", propertyId, scope, kostTypeId ?? null),
   },
+  categoryContent: {
+    all: (propertyId: string) => scoped("categoryContent", propertyId),
+    workspace: (accountId: string, propertyId: string, kostTypeId: string) =>
+      ["categoryContent", accountId, propertyId, kostTypeId] as const,
+  },
+  propertyPolicy: {
+    workspace: (accountId: string, propertyId: string) =>
+      ["propertyPolicy", accountId, propertyId] as const,
+  },
   gallery: {
     list: (
       propertyId: string,
-      targetType: "kost_type" | "common_area",
-      targetId: string,
+      targetType: "kost_type",
+      kostTypeId: string,
       filters: QueryFilters = {},
-    ) => scoped("hunianGallery", propertyId, targetType, targetId, normalizePagination(filters)),
+    ) => scoped("hunianGallery", propertyId, targetType, kostTypeId, normalizePagination(filters)),
   },
   leases: {
     all: (propertyId: string) => scoped("leases", propertyId),

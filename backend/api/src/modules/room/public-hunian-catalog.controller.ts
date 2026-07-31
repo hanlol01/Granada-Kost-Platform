@@ -12,7 +12,10 @@ export class PublicHunianCatalogController {
   ) {}
 
   @Get()
-  async list(@Query() query: PublicHunianCatalogQueryDto, @Req() request: RequestWithCorrelationId) {
+  async list(
+    @Query() query: PublicHunianCatalogQueryDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     await this.rateLimiter.assertAllowed(request.ip, 'hunian-catalog');
     return this.catalog.list(query);
   }
@@ -21,5 +24,11 @@ export class PublicHunianCatalogController {
   async detail(@Param('slug') slug: string, @Req() request: RequestWithCorrelationId) {
     await this.rateLimiter.assertAllowed(request.ip, 'hunian-catalog-detail');
     return this.catalog.detail(slug);
+  }
+
+  @Get(':slug/content')
+  async categoryContent(@Param('slug') slug: string, @Req() request: RequestWithCorrelationId) {
+    await this.rateLimiter.assertAllowed(request.ip, 'hunian-catalog-content');
+    return this.catalog.categoryContent(slug);
   }
 }

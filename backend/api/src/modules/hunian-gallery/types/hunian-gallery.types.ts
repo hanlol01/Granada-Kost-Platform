@@ -14,6 +14,8 @@ export type HunianGalleryRecord = {
   buildingCode: string | null;
   floorCode: HunianGalleryFloorCode | null;
   fileId: string;
+  publicDerivativeFileId: string | null;
+  contentState: 'draft' | 'archived';
   altText: string;
   caption: string | null;
   sortOrder: number;

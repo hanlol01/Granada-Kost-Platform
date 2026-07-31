@@ -154,6 +154,92 @@ export const RECONCILIATION_CHECKS: readonly {
              )`,
   },
   {
+    check: 'category.exactly_two',
+    cleanOutcome: 'matched',
+    findingOutcome: 'blocking',
+    sql: `SELECT count(*)::int AS count FROM (
+            SELECT property_id
+            FROM kost_types
+            WHERE deleted_at IS NULL
+            GROUP BY property_id
+            HAVING count(*) <> 2
+               OR count(*) FILTER (WHERE category = 'rukost') <> 1
+               OR count(*) FILTER (WHERE category = 'apartkost') <> 1
+          ) finding`,
+  },
+  {
+    check: 'category.facility_authority',
+    cleanOutcome: 'matched',
+    findingOutcome: 'blocking',
+    sql: `SELECT count(*)::int AS count
+          FROM kost_type_content_facilities facility
+          LEFT JOIN kost_types type ON type.id = facility.kost_type_id
+          WHERE type.id IS NULL
+             OR type.property_id <> facility.property_id
+             OR facility.normalized_label <> lower(btrim(facility.label))
+             OR EXISTS (
+               SELECT 1
+               FROM kost_type_content_facilities duplicate
+               WHERE duplicate.kost_type_id = facility.kost_type_id
+                 AND duplicate.normalized_label = facility.normalized_label
+                 AND duplicate.archived_at IS NULL
+                 AND facility.archived_at IS NULL
+                 AND duplicate.id <> facility.id
+             )`,
+  },
+  {
+    check: 'category.gallery_authority',
+    cleanOutcome: 'matched',
+    findingOutcome: 'blocking',
+    sql: `SELECT count(*)::int AS count
+          FROM hunian_gallery_images image
+          LEFT JOIN kost_types type ON type.id = image.kost_type_id
+          WHERE image.deleted_at IS NULL AND (
+            (image.target_type = 'common_area' AND image.content_state <> 'archived')
+            OR (image.target_type = 'kost_type' AND (
+              type.id IS NULL OR type.property_id <> image.property_id
+              OR (image.content_state = 'draft' AND image.public_derivative_file_id IS NULL)
+            ))
+            OR (
+              image.target_type = 'kost_type' AND image.content_state = 'draft'
+              AND image.is_cover = true
+              AND EXISTS (
+                SELECT 1 FROM hunian_gallery_images duplicate
+                WHERE duplicate.property_id = image.property_id
+                  AND duplicate.kost_type_id = image.kost_type_id
+                  AND duplicate.content_state = 'draft'
+                  AND duplicate.deleted_at IS NULL
+                  AND duplicate.is_cover = true
+                  AND duplicate.id <> image.id
+              )
+            )
+          )`,
+  },
+  {
+    check: 'category.publication_authority',
+    cleanOutcome: 'matched',
+    findingOutcome: 'blocking',
+    sql: `SELECT count(*)::int AS count FROM (
+            SELECT kost_type_id, content_type, effective_date
+            FROM kost_type_content_versions
+            WHERE publication_status = 'published'
+            GROUP BY kost_type_id, content_type, effective_date
+            HAVING count(*) <> 1
+          ) finding`,
+  },
+  {
+    check: 'property.policy_publication_authority',
+    cleanOutcome: 'matched',
+    findingOutcome: 'blocking',
+    sql: `SELECT count(*)::int AS count FROM (
+            SELECT property_id, document_type, effective_date
+            FROM property_policy_documents
+            WHERE publication_status = 'published'
+            GROUP BY property_id, document_type, effective_date
+            HAVING count(*) <> 1
+          ) finding`,
+  },
+  {
     check: 'building.ownership_authority',
     cleanOutcome: 'not_yet_representable',
     findingOutcome: 'not_yet_representable',

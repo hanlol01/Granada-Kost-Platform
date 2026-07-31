@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   ArrayMinSize,
+  IsDefined,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -102,6 +103,7 @@ export class CreateKostTypeDto {
   yearly_price!: number;
 
   @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
   effective_date!: string;
 
   @IsOptional()
@@ -455,4 +457,152 @@ export class ReorderKostTypeRulesDto extends ReorderFacilityCategoriesDto {
   @IsOptional()
   @IsUUID('4')
   kost_type_id?: string | null;
+}
+
+export class CategoryContentFacilityItemDto {
+  @IsOptional()
+  @IsUUID('4')
+  id?: string;
+
+  @IsString()
+  @MaxLength(120)
+  @Matches(/\S/)
+  label!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  public_description?: string | null;
+
+  @IsInt()
+  @Min(0)
+  sort_order!: number;
+
+  @IsIn(['active', 'archived'])
+  content_state!: 'active' | 'archived';
+
+  @IsBoolean()
+  public_visible!: boolean;
+}
+
+export class ReplaceCategoryFacilitiesDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoryContentFacilityItemDto)
+  items!: CategoryContentFacilityItemDto[];
+}
+
+export class PublishCategoryContentDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsIn(['facilities', 'gallery'])
+  content_type!: 'facilities' | 'gallery';
+
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  effective_date!: string;
+}
+
+export class UnpublishCategoryContentDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsIn(['facilities', 'gallery'])
+  content_type!: 'facilities' | 'gallery';
+}
+
+export class RestoreCategoryContentDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsUUID('4')
+  version_id!: string;
+}
+
+export class PublicTermsContentDto {
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/\S/)
+  pricing_explanation!: string;
+
+  @IsString()
+  @MaxLength(300)
+  @Matches(/\S/)
+  minimum_lease_term!: string;
+
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/\S/)
+  dp_explanation!: string;
+
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/\S/)
+  security_deposit_explanation!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  @Matches(/\S/, { each: true })
+  @MaxLength(300, { each: true })
+  manual_payment_methods!: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @Matches(/\S/, { each: true })
+  @MaxLength(500, { each: true })
+  house_rules!: string[];
+
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  visitor_hours!: string;
+
+  @IsString()
+  @MaxLength(500)
+  @Matches(/\S/)
+  contact_information!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsIn(['rukost', 'apartkost'], { each: true })
+  category_applicability!: Array<'rukost' | 'apartkost'>;
+}
+
+export class SavePropertyPolicyDraftDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsString()
+  @MaxLength(5000)
+  internal_operating_policy!: string;
+
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => PublicTermsContentDto)
+  public_content!: PublicTermsContentDto;
+}
+
+export class PublishPropertyPolicyDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsDateString()
+  effective_date!: string;
+}
+
+export class UnpublishPropertyPolicyDto {
+  @IsUUID('4')
+  property_id!: string;
+}
+
+export class RestorePropertyPolicyDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsUUID('4')
+  version_id!: string;
 }

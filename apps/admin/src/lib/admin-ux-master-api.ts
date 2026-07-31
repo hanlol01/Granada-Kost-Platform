@@ -23,7 +23,6 @@ export type RoomStatus =
   | "requires_review";
 export type RoomGenderPolicy = "male" | "female" | "mixed";
 export type RuleCategory = "general" | "guest" | "resident" | "other" | "special_notes";
-export type CommonAreaKey = "lobby" | "dapur" | "rooftop" | "koridor" | "parkir";
 
 export type PropertyPageInput = {
   propertyId: string;
@@ -252,24 +251,110 @@ export type RoomBuildingReference = {
   genderPolicy: Exclude<RoomGenderPolicy, "mixed">;
 };
 
-export type GalleryTarget =
-  | { targetType: "kost_type"; kostTypeId: string }
-  | { targetType: "common_area"; commonAreaKey: CommonAreaKey };
+export type GalleryTarget = { targetType: "kost_type"; kostTypeId: string };
+
+export type ContentPublicationVersion = {
+  id: string;
+  contentType: "facilities" | "gallery";
+  version: number;
+  publicationStatus: "published" | "archived";
+  effectiveDate: string;
+  restoredFromVersionId: string | null;
+  publishedAt: string;
+  publishedByUserId: string | null;
+  createdAt: string;
+};
+
+export type CategoryContentFacility = {
+  id: string;
+  label: string;
+  normalizedLabel: string;
+  publicDescription: string | null;
+  sortOrder: number;
+  contentState: "active" | "archived";
+  publicVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type GalleryImage = {
   id: string;
   propertyId: string;
-  targetType: GalleryTarget["targetType"];
-  targetId: string;
-  kostTypeId?: string | null;
-  kostTypeName?: string | null;
-  commonAreaKey?: CommonAreaKey | null;
-  fileId: string;
+  targetType: "kost_type";
+  kostTypeId: string;
+  kostTypeName: string | null;
+  sourceFileId: string;
+  publicDerivativeFileId: string | null;
+  sourceContentUrl: string;
+  publicPreviewUrl: string | null;
   altText: string;
-  caption?: string | null;
+  caption: string | null;
   sortOrder: number;
   isCover: boolean;
+  contentState: "draft" | "archived";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CategoryContentWorkspace = {
+  propertyId: string;
+  kostTypeId: string;
+  category: { category: KostTypeCategory; label: string };
+  facilities: CategoryContentFacility[];
+  gallery: Array<Omit<GalleryImage, "propertyId" | "targetType" | "kostTypeId" | "kostTypeName">>;
+  publication: {
+    facilities: ContentPublicationVersion[];
+    gallery: ContentPublicationVersion[];
+  };
+};
+
+export type PublicTermsContent = {
+  pricingExplanation: string;
+  minimumLeaseTerm: string;
+  dpExplanation: string;
+  securityDepositExplanation: string;
+  manualPaymentMethods: string[];
+  houseRules: string[];
+  visitorHours: string;
+  contactInformation: string;
+  categoryApplicability: KostTypeCategory[];
+};
+
+export type PropertyPolicyWorkspace = {
+  propertyId: string;
+  draft: {
+    id: string;
+    internalOperatingPolicy: string;
+    publicContent: PublicTermsContent;
+    restoredFromVersionId: string | null;
+    updatedAt: string;
+  } | null;
+  versions: Array<{
+    id: string;
+    version: number;
+    publicationStatus: "published" | "archived";
+    effectiveDate: string | null;
+    publicContent: PublicTermsContent;
+    restoredFromVersionId: string | null;
+    publishedAt: string | null;
+    publishedByUserId: string | null;
+    createdAt: string;
+  }>;
+};
+
+export type CategoryFacilityDraft = {
+  id?: string;
+  label: string;
+  publicDescription?: string | null;
+  sortOrder: number;
+  contentState: "active" | "archived";
   publicVisible: boolean;
+};
+
+export type PropertyPolicyDraftInput = {
+  propertyId: string;
+  internalOperatingPolicy: string;
+  publicContent: PublicTermsContent;
 };
 
 export type KostTypeInput = {
@@ -355,18 +440,15 @@ export type RoomInventorySort =
 
 export type GalleryImageInput = GalleryTarget & {
   propertyId: string;
-  fileId: string;
+  sourceFileId: string;
+  publicDerivativeFileId: string;
   altText: string;
   caption?: string | null;
-  publicVisible?: boolean;
-  sortOrder?: number;
 };
 
 export type GalleryImageUpdateInput = {
   altText?: string;
   caption?: string | null;
-  publicVisible?: boolean;
-  sortOrder?: number;
 };
 
 export type ReorderItem = { id: string; sortOrder: number };
@@ -681,6 +763,467 @@ function parseKostTypeDataEnvelope(value: unknown): KostType {
     throw new Error("Invalid kost type envelope.");
   }
   return parseKostTypeRecord(value.data);
+}
+
+const CATEGORY_CONTENT_FACILITY_KEYS = [
+  "id",
+  "label",
+  "normalized_label",
+  "public_description",
+  "sort_order",
+  "content_state",
+  "public_visible",
+  "created_at",
+  "updated_at",
+] as const;
+const CATEGORY_CONTENT_GALLERY_KEYS = [
+  "id",
+  "source_file_id",
+  "public_derivative_file_id",
+  "source_content_url",
+  "public_preview_url",
+  "alt_text",
+  "caption",
+  "sort_order",
+  "is_cover",
+  "content_state",
+  "created_at",
+  "updated_at",
+] as const;
+const CATEGORY_CONTENT_VERSION_KEYS = [
+  "id",
+  "content_type",
+  "version",
+  "publication_status",
+  "effective_date",
+  "restored_from_version_id",
+  "published_at",
+  "published_by_user_id",
+  "created_at",
+] as const;
+const PUBLIC_TERMS_KEYS = [
+  "pricing_explanation",
+  "minimum_lease_term",
+  "dp_explanation",
+  "security_deposit_explanation",
+  "manual_payment_methods",
+  "house_rules",
+  "visitor_hours",
+  "contact_information",
+  "category_applicability",
+] as const;
+
+function nullableUuid(value: unknown): value is string | null {
+  return value === null || isUuidV4(value);
+}
+
+function nullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function parseCategoryContentFacility(value: unknown): CategoryContentFacility {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, CATEGORY_CONTENT_FACILITY_KEYS) ||
+    !isUuidV4(value.id) ||
+    !isNonEmptyString(value.label) ||
+    typeof value.normalized_label !== "string" ||
+    !nullableString(value.public_description) ||
+    !isIntegerAtLeast(value.sort_order, 0) ||
+    (value.content_state !== "active" && value.content_state !== "archived") ||
+    typeof value.public_visible !== "boolean" ||
+    !isIsoTimestamp(value.created_at) ||
+    !isIsoTimestamp(value.updated_at)
+  ) {
+    throw new Error("Invalid category facility record.");
+  }
+  return {
+    id: value.id,
+    label: value.label,
+    normalizedLabel: value.normalized_label,
+    publicDescription: value.public_description,
+    sortOrder: value.sort_order,
+    contentState: value.content_state,
+    publicVisible: value.public_visible,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  };
+}
+
+function parseCategoryGalleryImage(value: unknown): CategoryContentWorkspace["gallery"][number] {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, CATEGORY_CONTENT_GALLERY_KEYS) ||
+    !isUuidV4(value.id) ||
+    !isUuidV4(value.source_file_id) ||
+    !nullableUuid(value.public_derivative_file_id) ||
+    !nullableString(value.public_preview_url) ||
+    value.source_content_url !== `/api/v1/files/${String(value.source_file_id)}/content` ||
+    (value.public_derivative_file_id === null
+      ? value.public_preview_url !== null
+      : value.public_preview_url !==
+        `/api/v1/files/${String(value.public_derivative_file_id)}/content`) ||
+    !isNonEmptyString(value.alt_text) ||
+    !nullableString(value.caption) ||
+    !isIntegerAtLeast(value.sort_order, 0) ||
+    typeof value.is_cover !== "boolean" ||
+    (value.content_state !== "draft" && value.content_state !== "archived") ||
+    !isIsoTimestamp(value.created_at) ||
+    !isIsoTimestamp(value.updated_at)
+  ) {
+    throw new Error("Invalid category gallery record.");
+  }
+  return {
+    id: value.id,
+    sourceFileId: value.source_file_id,
+    publicDerivativeFileId: value.public_derivative_file_id,
+    sourceContentUrl: value.source_content_url,
+    publicPreviewUrl: value.public_preview_url,
+    altText: value.alt_text,
+    caption: value.caption,
+    sortOrder: value.sort_order,
+    isCover: value.is_cover,
+    contentState: value.content_state,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  };
+}
+
+function parseContentPublicationVersion(value: unknown): ContentPublicationVersion {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, CATEGORY_CONTENT_VERSION_KEYS) ||
+    !isUuidV4(value.id) ||
+    (value.content_type !== "facilities" && value.content_type !== "gallery") ||
+    !isIntegerAtLeast(value.version, 1) ||
+    (value.publication_status !== "published" && value.publication_status !== "archived") ||
+    !isCanonicalDate(value.effective_date) ||
+    !nullableUuid(value.restored_from_version_id) ||
+    !isIsoTimestamp(value.published_at) ||
+    !nullableUuid(value.published_by_user_id) ||
+    !isIsoTimestamp(value.created_at)
+  ) {
+    throw new Error("Invalid category publication version.");
+  }
+  return {
+    id: value.id,
+    contentType: value.content_type,
+    version: value.version,
+    publicationStatus: value.publication_status,
+    effectiveDate: value.effective_date,
+    restoredFromVersionId: value.restored_from_version_id,
+    publishedAt: value.published_at,
+    publishedByUserId: value.published_by_user_id,
+    createdAt: value.created_at,
+  };
+}
+
+export function parseCategoryContentWorkspaceEnvelope(
+  value: unknown,
+  expected?: { propertyId: string; kostTypeId: string },
+): CategoryContentWorkspace {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data"]) ||
+    !isPlainRecord(value.data) ||
+    !hasExactKeys(value.data, [
+      "property_id",
+      "kost_type_id",
+      "category",
+      "facilities",
+      "gallery",
+      "publication",
+    ]) ||
+    !isUuidV4(value.data.property_id) ||
+    !isUuidV4(value.data.kost_type_id) ||
+    (expected !== undefined &&
+      (value.data.property_id !== expected.propertyId ||
+        value.data.kost_type_id !== expected.kostTypeId)) ||
+    !isPlainRecord(value.data.category) ||
+    !hasExactKeys(value.data.category, ["category", "label"]) ||
+    !isKostTypeCategory(value.data.category.category) ||
+    !isNonEmptyString(value.data.category.label) ||
+    !Array.isArray(value.data.facilities) ||
+    !Array.isArray(value.data.gallery) ||
+    !isPlainRecord(value.data.publication) ||
+    !hasExactKeys(value.data.publication, ["facilities", "gallery"]) ||
+    !Array.isArray(value.data.publication.facilities) ||
+    !Array.isArray(value.data.publication.gallery)
+  ) {
+    throw new Error("Invalid category content workspace envelope.");
+  }
+  return {
+    propertyId: value.data.property_id,
+    kostTypeId: value.data.kost_type_id,
+    category: {
+      category: value.data.category.category,
+      label: value.data.category.label,
+    },
+    facilities: value.data.facilities.map(parseCategoryContentFacility),
+    gallery: value.data.gallery.map(parseCategoryGalleryImage),
+    publication: {
+      facilities: value.data.publication.facilities.map(parseContentPublicationVersion),
+      gallery: value.data.publication.gallery.map(parseContentPublicationVersion),
+    },
+  };
+}
+
+export function parsePublicTermsContent(value: unknown): PublicTermsContent {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, PUBLIC_TERMS_KEYS) ||
+    ![
+      value.pricing_explanation,
+      value.minimum_lease_term,
+      value.dp_explanation,
+      value.security_deposit_explanation,
+      value.visitor_hours,
+      value.contact_information,
+    ].every(isNonEmptyString) ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value.visitor_hours)) ||
+    !Array.isArray(value.manual_payment_methods) ||
+    value.manual_payment_methods.length === 0 ||
+    !value.manual_payment_methods.every(isNonEmptyString) ||
+    !Array.isArray(value.house_rules) ||
+    !value.house_rules.every(isNonEmptyString) ||
+    !Array.isArray(value.category_applicability) ||
+    value.category_applicability.length === 0 ||
+    new Set(value.category_applicability).size !== value.category_applicability.length ||
+    !value.category_applicability.every(isKostTypeCategory)
+  ) {
+    throw new Error("Invalid public terms content.");
+  }
+  return {
+    pricingExplanation: value.pricing_explanation as string,
+    minimumLeaseTerm: value.minimum_lease_term as string,
+    dpExplanation: value.dp_explanation as string,
+    securityDepositExplanation: value.security_deposit_explanation as string,
+    manualPaymentMethods: value.manual_payment_methods as string[],
+    houseRules: value.house_rules as string[],
+    visitorHours: value.visitor_hours as string,
+    contactInformation: value.contact_information as string,
+    categoryApplicability: value.category_applicability as KostTypeCategory[],
+  };
+}
+
+function parsePropertyPolicyVersion(value: unknown): PropertyPolicyWorkspace["versions"][number] {
+  const keys = [
+    "id",
+    "version",
+    "publication_status",
+    "effective_date",
+    "public_content",
+    "restored_from_version_id",
+    "published_at",
+    "published_by_user_id",
+    "created_at",
+  ] as const;
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, keys) ||
+    !isUuidV4(value.id) ||
+    !isIntegerAtLeast(value.version, 1) ||
+    (value.publication_status !== "published" && value.publication_status !== "archived") ||
+    (value.effective_date !== null && !isCanonicalDate(value.effective_date)) ||
+    !nullableUuid(value.restored_from_version_id) ||
+    (value.published_at !== null && !isIsoTimestamp(value.published_at)) ||
+    !nullableUuid(value.published_by_user_id) ||
+    !isIsoTimestamp(value.created_at)
+  ) {
+    throw new Error("Invalid property policy version.");
+  }
+  return {
+    id: value.id,
+    version: value.version,
+    publicationStatus: value.publication_status,
+    effectiveDate: value.effective_date,
+    publicContent: parsePublicTermsContent(value.public_content),
+    restoredFromVersionId: value.restored_from_version_id,
+    publishedAt: value.published_at,
+    publishedByUserId: value.published_by_user_id,
+    createdAt: value.created_at,
+  };
+}
+
+export function parsePropertyPolicyWorkspaceEnvelope(
+  value: unknown,
+  expectedPropertyId?: string,
+): PropertyPolicyWorkspace {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data"]) ||
+    !isPlainRecord(value.data) ||
+    !hasExactKeys(value.data, ["property_id", "draft", "versions"]) ||
+    !isUuidV4(value.data.property_id) ||
+    (expectedPropertyId !== undefined && value.data.property_id !== expectedPropertyId) ||
+    !Array.isArray(value.data.versions)
+  ) {
+    throw new Error("Invalid property policy workspace envelope.");
+  }
+  let draft: PropertyPolicyWorkspace["draft"] = null;
+  if (value.data.draft !== null) {
+    const candidate = value.data.draft;
+    if (
+      !isPlainRecord(candidate) ||
+      !hasExactKeys(candidate, [
+        "id",
+        "internal_operating_policy",
+        "public_content",
+        "restored_from_version_id",
+        "updated_at",
+      ]) ||
+      !isUuidV4(candidate.id) ||
+      typeof candidate.internal_operating_policy !== "string" ||
+      !nullableUuid(candidate.restored_from_version_id) ||
+      !isIsoTimestamp(candidate.updated_at)
+    ) {
+      throw new Error("Invalid property policy draft.");
+    }
+    draft = {
+      id: candidate.id,
+      internalOperatingPolicy: candidate.internal_operating_policy,
+      publicContent: parsePropertyPolicyDraftContent(candidate.public_content),
+      restoredFromVersionId: candidate.restored_from_version_id,
+      updatedAt: candidate.updated_at,
+    };
+  }
+  return {
+    propertyId: value.data.property_id,
+    draft,
+    versions: value.data.versions.map(parsePropertyPolicyVersion),
+  };
+}
+
+function parseGalleryRecord(
+  value: unknown,
+  expected?: { propertyId: string; kostTypeId: string },
+): GalleryImage {
+  const keys = [
+    "id",
+    "property_id",
+    "target_type",
+    "kost_type_id",
+    "kost_type_name",
+    ...CATEGORY_CONTENT_GALLERY_KEYS.slice(1),
+  ];
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, keys) ||
+    !isUuidV4(value.property_id) ||
+    value.target_type !== "kost_type" ||
+    !isUuidV4(value.kost_type_id) ||
+    !nullableString(value.kost_type_name) ||
+    (expected !== undefined &&
+      (value.property_id !== expected.propertyId || value.kost_type_id !== expected.kostTypeId))
+  ) {
+    throw new Error("Invalid gallery record.");
+  }
+  const image = parseCategoryGalleryImage(
+    Object.fromEntries(CATEGORY_CONTENT_GALLERY_KEYS.map((key) => [key, value[key]])),
+  );
+  return {
+    propertyId: value.property_id,
+    targetType: "kost_type",
+    kostTypeId: value.kost_type_id,
+    kostTypeName: value.kost_type_name,
+    ...image,
+  };
+}
+
+export function parseGalleryListEnvelope(
+  value: unknown,
+  expected?: { propertyId: string; kostTypeId: string },
+): AdminUxPage<GalleryImage> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data", "meta"]) ||
+    !Array.isArray(value.data) ||
+    !isPlainRecord(value.meta) ||
+    !hasExactKeys(value.meta, ["limit", "offset", "total"]) ||
+    !isIntegerAtLeast(value.meta.limit, 1) ||
+    value.meta.limit > 100 ||
+    !isIntegerAtLeast(value.meta.offset, 0) ||
+    !isIntegerAtLeast(value.meta.total, 0)
+  ) {
+    throw new Error("Invalid gallery list envelope.");
+  }
+  return {
+    items: value.data.map((item) => parseGalleryRecord(item, expected)),
+    limit: value.meta.limit as number,
+    offset: value.meta.offset as number,
+    total: value.meta.total as number,
+  };
+}
+
+export function parseGalleryDataEnvelope(
+  value: unknown,
+  expected?: { propertyId: string; kostTypeId: string },
+): GalleryImage {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"])) {
+    throw new Error("Invalid gallery data envelope.");
+  }
+  return parseGalleryRecord(value.data, expected);
+}
+
+function parsePropertyPolicyDraftContent(value: unknown): PublicTermsContent {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, PUBLIC_TERMS_KEYS) ||
+    ![
+      value.pricing_explanation,
+      value.minimum_lease_term,
+      value.dp_explanation,
+      value.security_deposit_explanation,
+      value.visitor_hours,
+      value.contact_information,
+    ].every((item) => typeof item === "string") ||
+    (value.visitor_hours !== "" &&
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value.visitor_hours))) ||
+    !Array.isArray(value.manual_payment_methods) ||
+    !value.manual_payment_methods.every((item) => typeof item === "string") ||
+    !Array.isArray(value.house_rules) ||
+    !value.house_rules.every((item) => typeof item === "string") ||
+    !Array.isArray(value.category_applicability) ||
+    new Set(value.category_applicability).size !== value.category_applicability.length ||
+    !value.category_applicability.every(isKostTypeCategory)
+  ) {
+    throw new Error("Invalid property policy draft content.");
+  }
+  return {
+    pricingExplanation: value.pricing_explanation as string,
+    minimumLeaseTerm: value.minimum_lease_term as string,
+    dpExplanation: value.dp_explanation as string,
+    securityDepositExplanation: value.security_deposit_explanation as string,
+    manualPaymentMethods: value.manual_payment_methods as string[],
+    houseRules: value.house_rules as string[],
+    visitorHours: value.visitor_hours as string,
+    contactInformation: value.contact_information as string,
+    categoryApplicability: value.category_applicability as KostTypeCategory[],
+  };
+}
+
+function parseGalleryArrayEnvelope(
+  value: unknown,
+  expected?: { propertyId: string; kostTypeId: string },
+): GalleryImage[] {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"]) || !Array.isArray(value.data)) {
+    throw new Error("Invalid gallery array envelope.");
+  }
+  return value.data.map((item) => parseGalleryRecord(item, expected));
+}
+
+function parseGalleryArchiveEnvelope(value: unknown): { id: string; archived: true } {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data"]) ||
+    !isPlainRecord(value.data) ||
+    !hasExactKeys(value.data, ["id", "archived"]) ||
+    !isUuidV4(value.data.id) ||
+    value.data.archived !== true
+  ) {
+    throw new Error("Invalid gallery archive envelope.");
+  }
+  return { id: value.data.id, archived: true };
 }
 
 function isRoomBuildingGenderPolicy(
@@ -1944,78 +2487,222 @@ export const adminUxMasterApi = {
         ),
       ),
   },
+  categoryContent: {
+    get: (propertyId: string, kostTypeId: string) =>
+      adminUxV2Requester
+        .get<unknown>(`/kost-types/${encodeURIComponent(kostTypeId)}/content`, {
+          query: { property_id: propertyId },
+        })
+        .then((value) => parseCategoryContentWorkspaceEnvelope(value, { propertyId, kostTypeId })),
+    replaceFacilities: (
+      propertyId: string,
+      kostTypeId: string,
+      items: CategoryFacilityDraft[],
+      idempotencyKey?: string,
+    ) =>
+      adminUxV2Requester
+        .put<unknown>(
+          `/kost-types/${encodeURIComponent(kostTypeId)}/content/facilities`,
+          {
+            property_id: propertyId,
+            items: items.map((item) => ({
+              id: item.id,
+              label: item.label,
+              public_description: item.publicDescription,
+              sort_order: item.sortOrder,
+              content_state: item.contentState,
+              public_visible: item.publicVisible,
+            })),
+          },
+          { idempotencyKey },
+        )
+        .then((value) => parseCategoryContentWorkspaceEnvelope(value, { propertyId, kostTypeId })),
+    publish: (
+      propertyId: string,
+      kostTypeId: string,
+      contentType: "facilities" | "gallery",
+      effectiveDate: string,
+      idempotencyKey?: string,
+    ) =>
+      adminUxV2Requester
+        .post<unknown>(
+          `/kost-types/${encodeURIComponent(kostTypeId)}/content/publish`,
+          {
+            property_id: propertyId,
+            content_type: contentType,
+            effective_date: effectiveDate,
+          },
+          { idempotencyKey },
+        )
+        .then((value) => parseCategoryContentWorkspaceEnvelope(value, { propertyId, kostTypeId })),
+    unpublish: (
+      propertyId: string,
+      kostTypeId: string,
+      contentType: "facilities" | "gallery",
+      idempotencyKey?: string,
+    ) =>
+      adminUxV2Requester
+        .post<unknown>(
+          `/kost-types/${encodeURIComponent(kostTypeId)}/content/unpublish`,
+          { property_id: propertyId, content_type: contentType },
+          { idempotencyKey },
+        )
+        .then((value) => parseCategoryContentWorkspaceEnvelope(value, { propertyId, kostTypeId })),
+    restore: (propertyId: string, kostTypeId: string, versionId: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .post<unknown>(
+          `/kost-types/${encodeURIComponent(kostTypeId)}/content/restore`,
+          { property_id: propertyId, version_id: versionId },
+          { idempotencyKey },
+        )
+        .then((value) => parseCategoryContentWorkspaceEnvelope(value, { propertyId, kostTypeId })),
+  },
+  propertyPolicy: {
+    get: (propertyId: string) =>
+      adminUxV2Requester
+        .get<unknown>("/property-policy-documents", {
+          query: { property_id: propertyId },
+        })
+        .then((value) => parsePropertyPolicyWorkspaceEnvelope(value, propertyId)),
+    saveDraft: (input: PropertyPolicyDraftInput, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .put<unknown>(
+          "/property-policy-documents/draft",
+          {
+            property_id: input.propertyId,
+            internal_operating_policy: input.internalOperatingPolicy,
+            public_content: {
+              pricing_explanation: input.publicContent.pricingExplanation,
+              minimum_lease_term: input.publicContent.minimumLeaseTerm,
+              dp_explanation: input.publicContent.dpExplanation,
+              security_deposit_explanation: input.publicContent.securityDepositExplanation,
+              manual_payment_methods: input.publicContent.manualPaymentMethods,
+              house_rules: input.publicContent.houseRules,
+              visitor_hours: input.publicContent.visitorHours,
+              contact_information: input.publicContent.contactInformation,
+              category_applicability: input.publicContent.categoryApplicability,
+            },
+          },
+          { idempotencyKey },
+        )
+        .then((value) => parsePropertyPolicyWorkspaceEnvelope(value, input.propertyId)),
+    publish: (propertyId: string, effectiveDate: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .post<unknown>(
+          "/property-policy-documents/publish",
+          { property_id: propertyId, effective_date: effectiveDate },
+          { idempotencyKey },
+        )
+        .then((value) => parsePropertyPolicyWorkspaceEnvelope(value, propertyId)),
+    unpublish: (propertyId: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .post<unknown>(
+          "/property-policy-documents/unpublish",
+          { property_id: propertyId },
+          { idempotencyKey },
+        )
+        .then((value) => parsePropertyPolicyWorkspaceEnvelope(value, propertyId)),
+    restore: (propertyId: string, versionId: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .post<unknown>(
+          "/property-policy-documents/restore",
+          { property_id: propertyId, version_id: versionId },
+          { idempotencyKey },
+        )
+        .then((value) => parsePropertyPolicyWorkspaceEnvelope(value, propertyId)),
+  },
   gallery: {
-    list: (input: PropertyPageInput & Partial<GalleryTarget>) =>
-      list<GalleryImage>("/hunian-gallery", {
-        ...pageQuery(input),
-        target_type: input.targetType,
-        kost_type_id: input.targetType === "kost_type" ? input.kostTypeId : undefined,
-        common_area_key: input.targetType === "common_area" ? input.commonAreaKey : undefined,
-      }),
+    list: (input: PropertyPageInput & GalleryTarget) =>
+      adminUxV2Requester
+        .get<unknown>("/hunian-gallery", {
+          query: {
+            ...pageQuery(input),
+            target_type: "kost_type",
+            kost_type_id: input.kostTypeId,
+          },
+        })
+        .then((value) =>
+          parseGalleryListEnvelope(value, {
+            propertyId: input.propertyId,
+            kostTypeId: input.kostTypeId,
+          }),
+        ),
     create: (input: GalleryImageInput, idempotencyKey?: string) =>
-      data<GalleryImage>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+      adminUxV2Requester
+        .post<unknown>(
           "/hunian-gallery",
           {
             property_id: input.propertyId,
-            target_type: input.targetType,
-            kost_type_id: input.targetType === "kost_type" ? input.kostTypeId : undefined,
-            common_area_key: input.targetType === "common_area" ? input.commonAreaKey : undefined,
-            file_id: input.fileId,
+            target_type: "kost_type",
+            kost_type_id: input.kostTypeId,
+            file_id: input.sourceFileId,
+            public_derivative_file_id: input.publicDerivativeFileId,
             alt_text: input.altText,
             caption: input.caption ?? undefined,
-            public_visible: input.publicVisible,
-            sort_order: input.sortOrder,
           },
           { idempotencyKey },
+        )
+        .then((value) =>
+          parseGalleryDataEnvelope(value, {
+            propertyId: input.propertyId,
+            kostTypeId: input.kostTypeId,
+          }),
         ),
-      ),
-    update: (id: string, input: GalleryImageUpdateInput, idempotencyKey?: string) =>
-      data<GalleryImage>(
-        adminUxV2Requester.patch<V2DataEnvelope<unknown>>(
+    update: (
+      propertyId: string,
+      kostTypeId: string,
+      id: string,
+      input: GalleryImageUpdateInput,
+      idempotencyKey?: string,
+    ) =>
+      adminUxV2Requester
+        .patch<unknown>(
           "/hunian-gallery/" + encodeURIComponent(id),
           {
+            property_id: propertyId,
             alt_text: input.altText,
             caption: input.caption,
-            public_visible: input.publicVisible,
-            sort_order: input.sortOrder,
           },
           { idempotencyKey },
-        ),
-      ),
-    setCover: (id: string, idempotencyKey?: string) =>
-      data<GalleryImage>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+        )
+        .then((value) => parseGalleryDataEnvelope(value, { propertyId, kostTypeId })),
+    setCover: (propertyId: string, kostTypeId: string, id: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .post<unknown>(
           "/hunian-gallery/" + encodeURIComponent(id) + "/set-cover",
-          {},
+          { property_id: propertyId },
           { idempotencyKey },
-        ),
-      ),
+        )
+        .then((value) => parseGalleryDataEnvelope(value, { propertyId, kostTypeId })),
     reorder: (
       propertyId: string,
       target: GalleryTarget,
       items: ReorderItem[],
       idempotencyKey?: string,
     ) =>
-      data<GalleryImage[]>(
-        adminUxV2Requester.put<V2DataEnvelope<unknown>>(
+      adminUxV2Requester
+        .put<unknown>(
           "/hunian-gallery/reorder",
           {
             property_id: propertyId,
-            target_type: target.targetType,
-            kost_type_id: target.targetType === "kost_type" ? target.kostTypeId : undefined,
-            common_area_key: target.targetType === "common_area" ? target.commonAreaKey : undefined,
+            target_type: "kost_type",
+            kost_type_id: target.kostTypeId,
             items: reorderItems(items),
           },
           { idempotencyKey },
+        )
+        .then((value) =>
+          parseGalleryArrayEnvelope(value, {
+            propertyId,
+            kostTypeId: target.kostTypeId,
+          }),
         ),
-      ),
-    remove: (id: string, idempotencyKey?: string) =>
-      data<{ id: string; deleted: boolean }>(
-        adminUxV2Requester.delete<V2DataEnvelope<unknown>>(
-          "/hunian-gallery/" + encodeURIComponent(id),
-          { idempotencyKey },
-        ),
-      ),
+    remove: (propertyId: string, id: string, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .delete<unknown>("/hunian-gallery/" + encodeURIComponent(id), {
+          query: { property_id: propertyId },
+          idempotencyKey,
+        })
+        .then(parseGalleryArchiveEnvelope),
   },
 };

@@ -84,34 +84,49 @@ export class FileService {
         validation.extension,
       );
 
-      const record = await this.files.create({
-        id: fileId,
-        propertyId: dto.property_id,
-        uploaderUserId: user.id,
-        originalFilename: file.originalname,
-        sanitizedFilename: validation.sanitizedFilename,
-        mimeType: validation.mimeType,
-        fileExtension: validation.extension,
-        fileSizeBytes: file.size,
-        filePurpose: dto.file_purpose,
-        storageDriver: 'local',
-        storagePath,
-        checksumSha256,
-        metadata: {
-          detected_mime_type: validation.detectedMimeType,
-          detected_extension: validation.detectedExtension,
-        },
-      });
+      let record: FileRecord;
+      try {
+        record = await this.files.create({
+          id: fileId,
+          propertyId: dto.property_id,
+          uploaderUserId: user.id,
+          originalFilename: file.originalname,
+          sanitizedFilename: validation.sanitizedFilename,
+          mimeType: validation.mimeType,
+          fileExtension: validation.extension,
+          fileSizeBytes: file.size,
+          filePurpose: dto.file_purpose,
+          storageDriver: 'local',
+          storagePath,
+          checksumSha256,
+          metadata: {
+            detected_mime_type: validation.detectedMimeType,
+            detected_extension: validation.detectedExtension,
+            public_safe_derivative:
+              dto.file_purpose === 'hunian_gallery' && validation.publicMetadataSafe,
+            ...(validation.dimensions ?? {}),
+          },
+        });
+      } catch (error) {
+        await this.storage.delete(storagePath).catch(() => undefined);
+        throw error;
+      }
 
-      await this.audit.write({
-        ...context,
-        propertyId: record.propertyId,
-        action: 'file.upload',
-        resourceType: 'file',
-        resourceId: record.id,
-        resultStatus: 'success',
-        afterData: this.auditPayload(record),
-      });
+      try {
+        await this.audit.write({
+          ...context,
+          propertyId: record.propertyId,
+          action: 'file.upload',
+          resourceType: 'file',
+          resourceId: record.id,
+          resultStatus: 'success',
+          afterData: this.auditPayload(record),
+        });
+      } catch (error) {
+        await this.files.softDelete(record.id, user.id).catch(() => null);
+        await this.storage.delete(storagePath).catch(() => undefined);
+        throw error;
+      }
 
       return record;
     } catch (error) {
@@ -296,13 +311,130 @@ export class FileService {
       });
     }
 
+    const dimensions = this.imageDimensions(file.buffer!, detectedMimeType);
+    if (detectedMimeType.startsWith('image/') && !dimensions) {
+      throw new BadRequestException({
+        code: 'FILE_IMAGE_DIMENSIONS_INVALID',
+        message: 'Image dimensions could not be validated',
+      });
+    }
+
     return {
       sanitizedFilename,
       extension,
       mimeType: detectedMimeType,
       detectedMimeType,
       detectedExtension: detected.ext,
+      dimensions,
+      publicMetadataSafe: this.hasNoPublicImageMetadata(file.buffer!, detectedMimeType),
     };
+  }
+
+  private hasNoPublicImageMetadata(buffer: Buffer, mimeType: SupportedMimeType): boolean {
+    if (mimeType === 'image/jpeg') {
+      let offset = 2;
+      while (offset + 4 <= buffer.length) {
+        if (buffer[offset] !== 0xff) return false;
+        const marker = buffer[offset + 1];
+        if (marker === 0xda || marker === 0xd9) return true;
+        offset += 2;
+        if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+        if (offset + 2 > buffer.length) return false;
+        const length = buffer.readUInt16BE(offset);
+        if (length < 2 || offset + length > buffer.length) return false;
+        if ((marker >= 0xe1 && marker <= 0xef) || marker === 0xfe) return false;
+        offset += length;
+      }
+      return false;
+    }
+    if (mimeType === 'image/png') {
+      let offset = 8;
+      const blocked = new Set(['eXIf', 'tEXt', 'zTXt', 'iTXt', 'iCCP']);
+      while (offset + 12 <= buffer.length) {
+        const length = buffer.readUInt32BE(offset);
+        const type = buffer.toString('ascii', offset + 4, offset + 8);
+        if (blocked.has(type)) return false;
+        const next = offset + 12 + length;
+        if (next > buffer.length) return false;
+        if (type === 'IEND') return next === buffer.length;
+        offset = next;
+      }
+      return false;
+    }
+    if (mimeType === 'image/webp') {
+      if (buffer.length < 12 || buffer.toString('ascii', 0, 4) !== 'RIFF') return false;
+      const blocked = new Set(['EXIF', 'XMP ', 'ICCP']);
+      let offset = 12;
+      while (offset + 8 <= buffer.length) {
+        const type = buffer.toString('ascii', offset, offset + 4);
+        const length = buffer.readUInt32LE(offset + 4);
+        if (blocked.has(type)) return false;
+        offset += 8 + length + (length % 2);
+        if (offset > buffer.length) return false;
+      }
+      return offset === buffer.length;
+    }
+    return false;
+  }
+
+  private imageDimensions(
+    buffer: Buffer,
+    mimeType: SupportedMimeType,
+  ): { width: number; height: number } | null {
+    if (mimeType === 'image/png' && buffer.length >= 24) {
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+      return this.validDimensions(width, height);
+    }
+    if (mimeType === 'image/jpeg') {
+      let offset = 2;
+      while (offset + 9 < buffer.length) {
+        if (buffer[offset] !== 0xff) return null;
+        const marker = buffer[offset + 1];
+        offset += 2;
+        if (marker === 0xd8 || marker === 0xd9) continue;
+        if (marker === 0xda) break;
+        const length = buffer.readUInt16BE(offset);
+        if (length < 2 || offset + length > buffer.length) return null;
+        if (
+          [0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(
+            marker,
+          )
+        ) {
+          return this.validDimensions(
+            buffer.readUInt16BE(offset + 5),
+            buffer.readUInt16BE(offset + 3),
+          );
+        }
+        offset += length;
+      }
+      return null;
+    }
+    if (mimeType === 'image/webp' && buffer.length >= 30) {
+      const chunk = buffer.toString('ascii', 12, 16);
+      if (chunk === 'VP8X') {
+        const width = 1 + buffer.readUIntLE(24, 3);
+        const height = 1 + buffer.readUIntLE(27, 3);
+        return this.validDimensions(width, height);
+      }
+      if (chunk === 'VP8 ' && buffer.length >= 30) {
+        return this.validDimensions(
+          buffer.readUInt16LE(26) & 0x3fff,
+          buffer.readUInt16LE(28) & 0x3fff,
+        );
+      }
+      if (chunk === 'VP8L' && buffer.length >= 25) {
+        const bits = buffer.readUInt32LE(21);
+        return this.validDimensions((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
+      }
+    }
+    return null;
+  }
+
+  private validDimensions(width: number, height: number) {
+    return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0
+      ? { width, height }
+      : null;
   }
 
   private async detectMagicBytes(buffer: Buffer): Promise<DetectedFileType | undefined> {
@@ -493,7 +625,6 @@ export class FileService {
       resultStatus: status,
       afterData: {
         file_purpose: dto.file_purpose,
-        original_filename: file?.originalname,
         declared_mime_type: file?.mimetype,
         file_size_bytes: file?.size,
         error_code: this.errorCode(error),

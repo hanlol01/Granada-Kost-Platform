@@ -548,18 +548,35 @@ export class AdminUxRoomV2Service {
   private async hydrate(rows: Row[], includeActiveLease: boolean, client?: PoolClient) {
     if (!rows.length) return [];
     const queryable = client ?? this.database.client;
-    const typeIds = [...new Set(rows.map((row) => String(row.kost_type_id)))];
+    const typeScopes = [
+      ...new Map(
+        rows.map((row) => [
+          `${String(row.property_id)}:${String(row.kost_type_id)}`,
+          { propertyId: String(row.property_id), kostTypeId: String(row.kost_type_id) },
+        ]),
+      ).values(),
+    ];
+    const typeIds = typeScopes.map((scope) => scope.kostTypeId);
+    const typePropertyIds = typeScopes.map((scope) => scope.propertyId);
     const roomIds = rows.map((row) => String(row.id));
     const propertyIds = rows.map((row) => String(row.property_id));
     const [facilities, occupancies] = await Promise.all([
       queryable.query<Row>(
-        `SELECT assignment.kost_type_id, facility.id, facility.name, facility.icon, facility.description,
-                facility.category_id, facility.sort_order
-         FROM kost_type_facility_assignments assignment
-         JOIN room_facilities facility ON facility.id = assignment.facility_id
-         WHERE assignment.kost_type_id = ANY($1::uuid[])
-         ORDER BY facility.sort_order, facility.name`,
-        [typeIds],
+        `WITH scoped AS (
+           SELECT unnest($1::uuid[]) AS kost_type_id,
+                  unnest($2::uuid[]) AS property_id
+         )
+         SELECT facility.kost_type_id, facility.id, facility.label AS name,
+                NULL::text AS icon, facility.public_description AS description,
+                NULL::uuid AS category_id, facility.sort_order
+         FROM scoped
+         JOIN kost_type_content_facilities facility
+           ON facility.kost_type_id = scoped.kost_type_id
+          AND facility.property_id = scoped.property_id
+         WHERE facility.content_state = 'active'
+           AND facility.archived_at IS NULL
+         ORDER BY facility.sort_order, facility.normalized_label`,
+        [typeIds, typePropertyIds],
       ),
       includeActiveLease
         ? queryable.query<Row>(

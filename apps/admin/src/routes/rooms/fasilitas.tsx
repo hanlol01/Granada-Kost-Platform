@@ -1,56 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ClipboardList,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  Wrench,
-} from "lucide-react";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
+import { Archive, ChevronDown, ChevronUp, Plus, RotateCcw, Save } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  useCategoryContent,
+  useContentPublicationMutation,
+  useM4KostTypes,
+} from "@/hooks/useAdminUxMaster";
+import {
   adminUxMasterApi,
-  type FacilityCategory,
-  type FacilityCategoryInput,
+  type CategoryContentWorkspace,
+  type CategoryFacilityDraft,
   type KostType,
-  type RoomFacility,
-  type RoomFacilityInput,
 } from "@/lib/admin-ux-master-api";
 import { useAuth } from "@/lib/auth";
-import {
-  useM4FacilityCategories,
-  useM4KostType,
-  useM4KostTypes,
-  useM4Mutation,
-  useM4RoomFacilities,
-} from "@/hooks/useAdminUxMaster";
 import {
   canonicalSearchReplacement,
   facilitiesNavigationSearch,
@@ -63,15 +34,16 @@ export const Route = createFileRoute("/rooms/fasilitas")({
   component: FasilitasRoute,
 });
 
-type CategoryDraft = { name: string; icon: string };
-const EMPTY_FACILITIES: RoomFacility[] = [];
-
-type FacilityDraft = {
-  categoryId: string;
-  name: string;
-  icon: string;
-  description: string;
-  status: "active" | "inactive";
+const today = () => {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
 function FasilitasRoute() {
@@ -79,736 +51,542 @@ function FasilitasRoute() {
   const canManage = hasPermission("room.manage");
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const canonicalSearch = facilitiesSearchString(search);
-  const categoriesQuery = useM4FacilityCategories();
-  const facilitiesQuery = useM4RoomFacilities({ limit: 100 });
   const typesQuery = useM4KostTypes({ status: "active", limit: 100 });
-  const [categoryEditor, setCategoryEditor] = useState<FacilityCategory | "create" | null>(null);
-  const [facilityEditor, setFacilityEditor] = useState<RoomFacility | "create" | null>(null);
-  const [assignmentIds, setAssignmentIds] = useState<string[]>([]);
-  const categories = categoriesQuery.data?.items ?? [];
-  const facilities = facilitiesQuery.data?.items ?? EMPTY_FACILITIES;
   const types = typesQuery.data?.items ?? [];
-  const selectedKostTypeId = search.kost_type_id ?? types[0]?.id ?? null;
-  const selectedKostTypeQuery = useM4KostType(selectedKostTypeId);
+  const selectedType = resolveSelectedType(types, search.kost_type_id);
+  const workspaceQuery = useCategoryContent(selectedType?.id);
+  const [items, setItems] = useState<CategoryFacilityDraft[]>([]);
+  const [effectiveDate, setEffectiveDate] = useState(today());
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (canonicalSearchReplacement(window.location.search, canonicalSearch) === null) return;
-    void navigate({ search: facilitiesNavigationSearch(search) as never, replace: true });
-  }, [canonicalSearch, navigate, search]);
+    const canonicalSearch = facilitiesSearchString(search);
+    if (
+      typeof window !== "undefined" &&
+      canonicalSearchReplacement(window.location.search, canonicalSearch) !== null
+    ) {
+      void navigate({ search: facilitiesNavigationSearch(search) as never, replace: true });
+    }
+  }, [navigate, search]);
 
   useEffect(() => {
-    setAssignmentIds(selectedKostTypeQuery.data?.facilities?.map((facility) => facility.id) ?? []);
-  }, [selectedKostTypeQuery.data?.facilities, selectedKostTypeId]);
+    setItems(
+      workspaceQuery.data?.facilities.map((facility) => ({
+        id: facility.id,
+        label: facility.label,
+        publicDescription: facility.publicDescription,
+        sortOrder: facility.sortOrder,
+        contentState: facility.contentState,
+        publicVisible: facility.publicVisible,
+      })) ?? [],
+    );
+  }, [selectedType?.id, workspaceQuery.data]);
 
-  const visibleFacilities = useMemo(
-    () =>
-      facilities.filter((facility) => {
-        const query = search.q.toLowerCase();
-        return (
-          (!search.category_id || facility.categoryId === search.category_id) &&
-          (!query || `${facility.name} ${facility.description ?? ""}`.toLowerCase().includes(query))
-        );
-      }),
-    [facilities, search.category_id, search.q],
+  const save = useContentPublicationMutation<
+    CategoryContentWorkspace,
+    { kostTypeId: string; items: CategoryFacilityDraft[] }
+  >("category-content", "Draft fasilitas disimpan", (propertyId, values, key) =>
+    adminUxMasterApi.categoryContent.replaceFacilities(
+      propertyId,
+      values.kostTypeId,
+      values.items,
+      key,
+    ),
+  );
+  const publish = useContentPublicationMutation<
+    CategoryContentWorkspace,
+    { kostTypeId: string; effectiveDate: string }
+  >("category-content", "Fasilitas dijadwalkan untuk publikasi", (propertyId, values, key) =>
+    adminUxMasterApi.categoryContent.publish(
+      propertyId,
+      values.kostTypeId,
+      "facilities",
+      values.effectiveDate,
+      key,
+    ),
+  );
+  const restore = useContentPublicationMutation<
+    CategoryContentWorkspace,
+    { kostTypeId: string; versionId: string }
+  >("category-content", "Versi fasilitas dipulihkan sebagai draft", (propertyId, values, key) =>
+    adminUxMasterApi.categoryContent.restore(propertyId, values.kostTypeId, values.versionId, key),
+  );
+  const unpublish = useContentPublicationMutation<CategoryContentWorkspace, { kostTypeId: string }>(
+    "category-content",
+    "Publikasi fasilitas dinonaktifkan",
+    (propertyId, values, key) =>
+      adminUxMasterApi.categoryContent.unpublish(propertyId, values.kostTypeId, "facilities", key),
   );
 
-  if (categoriesQuery.isLoading || facilitiesQuery.isLoading || typesQuery.isLoading) {
+  const query = search.q.trim().toLocaleLowerCase("id-ID");
+  const visibleItems = useMemo(
+    () =>
+      items
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) =>
+          query
+            ? `${item.label} ${item.publicDescription ?? ""}`
+                .toLocaleLowerCase("id-ID")
+                .includes(query)
+            : true,
+        ),
+    [items, query],
+  );
+  const busy = save.isPending || publish.isPending || restore.isPending || unpublish.isPending;
+  const versions = workspaceQuery.data?.publication.facilities ?? [];
+  const savedItems = workspaceQuery.data?.facilities ?? [];
+  const normalizedLabels = items.map((item) => item.label.trim().toLocaleLowerCase("id-ID"));
+  const hasMissingLabel = normalizedLabels.some((label) => !label);
+  const hasDuplicateLabel =
+    new Set(normalizedLabels.filter(Boolean)).size !== normalizedLabels.filter(Boolean).length;
+  const draftInvalid = hasMissingLabel || hasDuplicateLabel;
+  const isDirty =
+    JSON.stringify(
+      items.map((item, sortOrder) => ({
+        id: item.id ?? null,
+        label: item.label.trim(),
+        publicDescription: item.publicDescription?.trim() || null,
+        sortOrder,
+        contentState: item.contentState,
+        publicVisible: item.contentState === "active" && item.publicVisible,
+      })),
+    ) !==
+    JSON.stringify(
+      savedItems.map((item) => ({
+        id: item.id,
+        label: item.label,
+        publicDescription: item.publicDescription,
+        sortOrder: item.sortOrder,
+        contentState: item.contentState,
+        publicVisible: item.publicVisible,
+      })),
+    );
+
+  useBlocker({
+    shouldBlockFn: () =>
+      isDirty && !window.confirm("Perubahan draft fasilitas belum disimpan. Tinggalkan halaman?"),
+    enableBeforeUnload: isDirty,
+  });
+
+  if (typesQuery.isLoading || workspaceQuery.isLoading) {
     return (
-      <AppShell title="Fasilitas" subtitle="Master fasilitas dan assignment tipe kost">
-        <LoadingState label="Memuat fasilitas..." />
+      <AppShell title="Fasilitas Kategori" subtitle="Konten fasilitas Rumah Kost dan Apart Kost">
+        <LoadingState label="Memuat authority fasilitas..." />
       </AppShell>
     );
   }
-  if (categoriesQuery.error || facilitiesQuery.error || typesQuery.error) {
+  if (typesQuery.error || workspaceQuery.error) {
     return (
-      <AppShell title="Fasilitas" subtitle="Master fasilitas dan assignment tipe kost">
+      <AppShell title="Fasilitas Kategori" subtitle="Konten fasilitas Rumah Kost dan Apart Kost">
         <ErrorState
-          error={categoriesQuery.error ?? facilitiesQuery.error ?? typesQuery.error}
-          title="Gagal memuat fasilitas"
+          error={typesQuery.error ?? workspaceQuery.error}
+          title="Gagal memuat fasilitas kategori"
           onRetry={() => {
-            void categoriesQuery.refetch();
-            void facilitiesQuery.refetch();
             void typesQuery.refetch();
+            void workspaceQuery.refetch();
           }}
         />
       </AppShell>
     );
   }
-
-  const updateSearch = (next: Partial<typeof search>) =>
-    navigate({ search: (current) => ({ ...current, ...next }) });
+  if (!selectedType || types.length !== 2) {
+    return (
+      <AppShell title="Fasilitas Kategori" subtitle="Konten fasilitas Rumah Kost dan Apart Kost">
+        <EmptyState
+          title="Authority kategori perlu direkonsiliasi"
+          description="Properti aktif harus memiliki tepat satu Rumah Kost dan satu Apart Kost."
+        />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
-      title="Fasilitas"
-      subtitle="Kelola kategori dan master fasilitas; assignment berlaku per tipe kost, bukan per kamar."
+      title="Fasilitas Kategori"
+      subtitle="Fasilitas dimiliki kategori dan berlaku ke seluruh kamar pada kategori tersebut."
       actions={
         canManage ? (
-          <Button onClick={() => setFacilityEditor("create")} disabled={!categories.length}>
-            <Plus className="mr-2 h-4 w-4" /> Tambah Fasilitas
+          <Button
+            className="min-h-11"
+            disabled={busy}
+            onClick={() =>
+              setItems((current) => [
+                ...current,
+                {
+                  label: "",
+                  publicDescription: "",
+                  sortOrder: current.length,
+                  contentState: "active",
+                  publicVisible: true,
+                },
+              ])
+            }
+          >
+            <Plus className="mr-2 h-4 w-4" /> Tambah fasilitas
           </Button>
         ) : null
       }
     >
       <div className="space-y-5 pb-24 lg:pb-8">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-          <FacilityCatalog
-            categories={categories}
-            facilities={visibleFacilities}
-            canManage={canManage}
-            selectedCategoryId={search.category_id}
-            onSelectCategory={(categoryId) => updateSearch({ category_id: categoryId })}
-            onCreateCategory={() => setCategoryEditor("create")}
-            onEditCategory={setCategoryEditor}
-            onCreateFacility={() => setFacilityEditor("create")}
-            onEditFacility={setFacilityEditor}
-          />
-          <AssignmentPanel
-            types={types}
-            selectedTypeId={selectedKostTypeId}
-            selectedType={selectedKostTypeQuery.data ?? null}
-            facilities={facilities.filter((facility) => facility.status === "active")}
-            assignedIds={assignmentIds}
-            canManage={canManage}
-            loading={selectedKostTypeQuery.isLoading}
-            onTypeChange={(kostTypeId) => updateSearch({ kost_type_id: kostTypeId })}
-            onChange={setAssignmentIds}
-          />
-        </div>
-        <div className="relative max-w-lg">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <Input
-            className="border-slate-700 bg-slate-950 pl-9"
-            value={search.q}
-            placeholder="Cari fasilitas"
-            onChange={(event) => updateSearch({ q: event.target.value })}
-          />
-        </div>
+        <CategoryTabs
+          types={types}
+          selectedId={selectedType.id}
+          onSelect={(kostTypeId) =>
+            void navigate({
+              search: (current) => ({ ...current, kost_type_id: kostTypeId }),
+            })
+          }
+        />
+
+        <Card>
+          <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>{workspaceQuery.data?.category.label}</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Draft internal; publik hanya membaca versi published yang sudah efektif.
+              </p>
+            </div>
+            <Badge variant="outline">
+              {versions.find((version) => version.publicationStatus === "published")
+                ? `Published v${versions.find((version) => version.publicationStatus === "published")?.version}`
+                : "Belum dipublikasikan"}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="max-w-md">
+              <Label htmlFor="facility-search">Cari fasilitas</Label>
+              <Input
+                id="facility-search"
+                className="min-h-11"
+                value={search.q}
+                placeholder="Nama atau deskripsi fasilitas"
+                onChange={(event) =>
+                  void navigate({
+                    search: (current) => ({ ...current, q: event.target.value }),
+                  })
+                }
+              />
+            </div>
+            {visibleItems.length ? (
+              <div className="space-y-3">
+                {visibleItems.map(({ item, index }) => (
+                  <FacilityRow
+                    key={item.id ?? `new-${index}`}
+                    item={item}
+                    index={index}
+                    total={items.length}
+                    disabled={!canManage || busy}
+                    onChange={(next) =>
+                      setItems((current) =>
+                        current.map((candidate, candidateIndex) =>
+                          candidateIndex === index ? next : candidate,
+                        ),
+                      )
+                    }
+                    onMove={(direction) =>
+                      setItems((current) => moveItem(current, index, direction))
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title={query ? "Fasilitas tidak ditemukan" : "Belum ada fasilitas kategori"}
+                description="Tambahkan konten fasilitas yang aman ditampilkan kepada calon penghuni."
+              />
+            )}
+            {canManage ? (
+              <div className="flex flex-wrap items-end justify-end gap-3 border-t pt-4">
+                <div className="min-w-48">
+                  <Label htmlFor="facility-effective-date">Tanggal efektif publikasi</Label>
+                  <Input
+                    id="facility-effective-date"
+                    className="min-h-11"
+                    type="date"
+                    value={effectiveDate}
+                    onChange={(event) => setEffectiveDate(event.target.value)}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={busy || draftInvalid}
+                  onClick={() =>
+                    void save.mutateAsync({
+                      kostTypeId: selectedType.id,
+                      items: items.map((item, sortOrder) => ({ ...item, sortOrder })),
+                    })
+                  }
+                >
+                  <Save className="mr-2 h-4 w-4" /> Simpan draft
+                </Button>
+                <Button
+                  className="min-h-11"
+                  disabled={busy || !effectiveDate || isDirty || draftInvalid}
+                  onClick={() => {
+                    if (!window.confirm("Publikasikan snapshot fasilitas yang sudah disimpan?"))
+                      return;
+                    void publish.mutateAsync({
+                      kostTypeId: selectedType.id,
+                      effectiveDate,
+                    });
+                  }}
+                >
+                  Publikasikan
+                </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={
+                    busy || !versions.some((version) => version.publicationStatus === "published")
+                  }
+                  onClick={() => {
+                    if (!window.confirm("Hentikan seluruh publikasi fasilitas kategori ini?"))
+                      return;
+                    void unpublish.mutateAsync({ kostTypeId: selectedType.id });
+                  }}
+                >
+                  Unpublish
+                </Button>
+              </div>
+            ) : null}
+            {isDirty ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Simpan perubahan draft sebelum publikasi.
+              </p>
+            ) : null}
+            {hasDuplicateLabel ? (
+              <p className="text-sm text-destructive" role="alert">
+                Nama fasilitas harus unik dalam satu kategori.
+              </p>
+            ) : null}
+            {hasMissingLabel ? (
+              <p className="text-sm text-destructive" role="alert">
+                Setiap fasilitas harus memiliki nama.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card aria-label="Preview draft fasilitas publik">
+          <CardHeader>
+            <CardTitle>Preview draft publik</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {items.some(
+              (item) => item.contentState === "active" && item.publicVisible && item.label.trim(),
+            ) ? (
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {items
+                  .filter(
+                    (item) =>
+                      item.contentState === "active" && item.publicVisible && item.label.trim(),
+                  )
+                  .map((item, index) => (
+                    <li key={item.id ?? `preview-${index}`} className="rounded-lg border p-3">
+                      <p className="font-medium">{item.label}</p>
+                      {item.publicDescription ? (
+                        <p className="text-sm text-muted-foreground">{item.publicDescription}</p>
+                      ) : null}
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Tidak ada fasilitas draft yang ditandai tampil publik.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <VersionHistory
+          versions={versions}
+          disabled={!canManage || busy}
+          onRestore={(versionId) => {
+            if (!window.confirm("Pulihkan versi fasilitas ini sebagai draft baru?")) return;
+            void restore.mutateAsync({ kostTypeId: selectedType.id, versionId });
+          }}
+        />
       </div>
-      <CategoryEditor
-        category={categoryEditor === "create" ? null : categoryEditor}
-        open={categoryEditor !== null}
-        onOpenChange={(open) => !open && setCategoryEditor(null)}
-      />
-      <FacilityEditor
-        categories={categories}
-        facility={facilityEditor === "create" ? null : facilityEditor}
-        open={facilityEditor !== null}
-        onOpenChange={(open) => !open && setFacilityEditor(null)}
-      />
     </AppShell>
   );
 }
 
-function FacilityCatalog({
-  categories,
-  facilities,
-  canManage,
-  selectedCategoryId,
-  onSelectCategory,
-  onCreateCategory,
-  onEditCategory,
-  onCreateFacility,
-  onEditFacility,
-}: {
-  categories: FacilityCategory[];
-  facilities: RoomFacility[];
-  canManage: boolean;
-  selectedCategoryId?: string;
-  onSelectCategory: (categoryId?: string) => void;
-  onCreateCategory: () => void;
-  onEditCategory: (category: FacilityCategory) => void;
-  onCreateFacility: () => void;
-  onEditFacility: (facility: RoomFacility) => void;
-}) {
-  const reorderCategories = useM4Mutation<unknown, { items: { id: string; sortOrder: number }[] }>(
-    "facility",
-    "Urutan kategori disimpan",
-    (propertyId, values, key) =>
-      adminUxMasterApi.facilities.reorderCategories(propertyId, values.items, key),
-  );
-  const reorderFacilities = useM4Mutation<
-    unknown,
-    { categoryId?: string; items: { id: string; sortOrder: number }[] }
-  >("facility", "Urutan fasilitas disimpan", (propertyId, values, key) =>
-    adminUxMasterApi.facilities.reorderRoomFacilities(
-      propertyId,
-      values.categoryId,
-      values.items,
-      key,
-    ),
-  );
-  const deleteCategory = useM4Mutation<unknown, { id: string }>(
-    "facility",
-    "Kategori dihapus",
-    (_propertyId, values, key) => adminUxMasterApi.facilities.removeCategory(values.id, key),
-  );
-  const deleteFacility = useM4Mutation<unknown, { id: string }>(
-    "facility",
-    "Fasilitas dihapus",
-    (_propertyId, values, key) => adminUxMasterApi.facilities.removeRoomFacility(values.id, key),
-  );
-  const grouped = categories.map((category) => ({
-    category,
-    facilities: facilities
-      .filter((facility) => facility.categoryId === category.id)
-      .sort((a, b) => a.sortOrder - b.sortOrder),
-  }));
-
-  const moveCategory = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= categories.length) return;
-    const next = [...categories];
-    [next[index], next[target]] = [next[target], next[index]];
-    void reorderCategories.mutateAsync({
-      items: next.map((item, sortOrder) => ({ id: item.id, sortOrder })),
-    });
-  };
-  const moveFacility = (
-    categoryId: string,
-    items: RoomFacility[],
-    index: number,
-    direction: -1 | 1,
-  ) => {
-    const target = index + direction;
-    if (target < 0 || target >= items.length) return;
-    const next = [...items];
-    [next[index], next[target]] = [next[target], next[index]];
-    void reorderFacilities.mutateAsync({
-      categoryId,
-      items: next.map((item, sortOrder) => ({ id: item.id, sortOrder })),
-    });
-  };
-
-  return (
-    <Card className="border-slate-800 bg-slate-900/85">
-      <CardContent className="space-y-4 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-100">Master fasilitas</h2>
-            <p className="text-sm text-slate-400">Urutkan kategori dan fasilitas secara atomik.</p>
-          </div>
-          {canManage ? (
-            <Button size="sm" variant="outline" onClick={onCreateCategory}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" /> Kategori
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2 border-y border-slate-800 py-3">
-          <Button
-            size="sm"
-            variant={!selectedCategoryId ? "secondary" : "ghost"}
-            onClick={() => onSelectCategory(undefined)}
-          >
-            Semua
-          </Button>
-          {categories.map((category) => (
-            <Button
-              key={category.id}
-              size="sm"
-              variant={selectedCategoryId === category.id ? "secondary" : "ghost"}
-              onClick={() => onSelectCategory(category.id)}
-            >
-              {category.name}
-            </Button>
-          ))}
-        </div>
-        {grouped.length ? (
-          grouped.map(({ category, facilities: categoryFacilities }, index) => (
-            <section
-              key={category.id}
-              className="rounded-xl border border-slate-800 bg-slate-950/45"
-            >
-              <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-                <div>
-                  <p className="font-semibold text-slate-100">{category.name}</p>
-                  <p className="text-xs text-slate-500">{categoryFacilities.length} fasilitas</p>
-                </div>
-                {canManage ? (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={index === 0 || reorderCategories.isPending}
-                      onClick={() => moveCategory(index, -1)}
-                      aria-label="Naikkan kategori"
-                    >
-                      <ChevronUp className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={index === categories.length - 1 || reorderCategories.isPending}
-                      onClick={() => moveCategory(index, 1)}
-                      aria-label="Turunkan kategori"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => onEditCategory(category)}
-                      aria-label="Edit kategori"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-rose-300 hover:text-rose-200"
-                      onClick={() => {
-                        if (window.confirm(`Hapus kategori ${category.name}?`))
-                          void deleteCategory.mutateAsync({ id: category.id });
-                      }}
-                      aria-label="Hapus kategori"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : null}
-              </header>
-              {categoryFacilities.length ? (
-                <div className="divide-y divide-slate-800">
-                  {categoryFacilities.map((facility, facilityIndex) => (
-                    <div
-                      key={facility.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-200">{facility.name}</p>
-                        <p className="truncate text-xs text-slate-500">
-                          {facility.description || "Tanpa deskripsi"}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Badge
-                          variant="outline"
-                          className={
-                            facility.status === "active"
-                              ? "border-emerald-500/30 text-emerald-300"
-                              : "border-slate-700 text-slate-400"
-                          }
-                        >
-                          {facility.status === "active" ? "Aktif" : "Nonaktif"}
-                        </Badge>
-                        {canManage ? (
-                          <>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              disabled={facilityIndex === 0 || reorderFacilities.isPending}
-                              onClick={() =>
-                                moveFacility(category.id, categoryFacilities, facilityIndex, -1)
-                              }
-                              aria-label="Naikkan fasilitas"
-                            >
-                              <ChevronUp className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              disabled={
-                                facilityIndex === categoryFacilities.length - 1 ||
-                                reorderFacilities.isPending
-                              }
-                              onClick={() =>
-                                moveFacility(category.id, categoryFacilities, facilityIndex, 1)
-                              }
-                              aria-label="Turunkan fasilitas"
-                            >
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => onEditFacility(facility)}
-                              aria-label="Edit fasilitas"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-rose-300 hover:text-rose-200"
-                              onClick={() => {
-                                if (window.confirm(`Hapus fasilitas ${facility.name}?`))
-                                  void deleteFacility.mutateAsync({ id: facility.id });
-                              }}
-                              aria-label="Hapus fasilitas"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="px-4 py-5 text-sm text-slate-500">
-                  Belum ada fasilitas pada kategori ini.
-                </p>
-              )}
-            </section>
-          ))
-        ) : (
-          <EmptyState
-            icon={<ClipboardList className="h-5 w-5" />}
-            title="Belum ada kategori fasilitas"
-            description="Buat kategori sebelum menambahkan fasilitas."
-            action={
-              canManage ? <Button onClick={onCreateCategory}>Buat Kategori</Button> : undefined
-            }
-          />
-        )}
-        {canManage && categories.length ? (
-          <Button variant="outline" className="w-full" onClick={onCreateFacility}>
-            <Plus className="mr-2 h-4 w-4" /> Tambah fasilitas
-          </Button>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AssignmentPanel({
+function CategoryTabs({
   types,
-  selectedTypeId,
-  selectedType,
-  facilities,
-  assignedIds,
-  canManage,
-  loading,
-  onTypeChange,
-  onChange,
+  selectedId,
+  onSelect,
 }: {
   types: KostType[];
-  selectedTypeId: string | null;
-  selectedType: KostType | null;
-  facilities: RoomFacility[];
-  assignedIds: string[];
-  canManage: boolean;
-  loading: boolean;
-  onTypeChange: (id?: string) => void;
-  onChange: (ids: string[]) => void;
+  selectedId: string;
+  onSelect: (id: string) => void;
 }) {
-  const replace = useM4Mutation<KostType, { id: string; facilityIds: string[] }>(
-    "facility",
-    "Assignment fasilitas diperbarui",
-    (propertyId, values, key) =>
-      adminUxMasterApi.kostTypes.replaceFacilities(values.id, propertyId, values.facilityIds, key),
-  );
-  const toggle = (id: string) =>
-    onChange(
-      assignedIds.includes(id) ? assignedIds.filter((item) => item !== id) : [...assignedIds, id],
-    );
-  const grouped = new Map<string, RoomFacility[]>();
-  for (const facility of facilities) {
-    const label = facility.categoryName || "Tanpa kategori";
-    grouped.set(label, [...(grouped.get(label) ?? []), facility]);
-  }
-  const changed = selectedType
-    ? [...assignedIds].sort().join("|") !==
-      [...(selectedType.facilities?.map((item) => item.id) ?? [])].sort().join("|")
-    : false;
-
   return (
-    <Card className="h-fit border-slate-800 bg-slate-900/85">
-      <CardContent className="space-y-4 p-5">
-        <div>
-          <h2 className="text-base font-semibold text-slate-100">Assignment tipe kost</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Satu checklist mengganti set fasilitas secara atomik.
-          </p>
-        </div>
-        <Select
-          value={selectedTypeId ?? "none"}
-          onValueChange={(id) => onTypeChange(id === "none" ? undefined : id)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pilih tipe kost" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Pilih tipe kost</SelectItem>
-            {types.map((type) => (
-              <SelectItem key={type.id} value={type.id}>
-                {type.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {loading ? (
-          <LoadingState label="Memuat assignment..." />
-        ) : selectedType ? (
-          <>
-            <div className="rounded-lg border border-blue-500/25 bg-blue-500/10 p-3 text-sm text-blue-100">
-              {selectedType.name} · {assignedIds.length} fasilitas terpilih
-            </div>
-            <div className="max-h-[440px] space-y-4 overflow-y-auto pr-1">
-              {[...grouped.entries()].map(([category, categoryFacilities]) => (
-                <div key={category}>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {category}
-                  </p>
-                  <div className="space-y-2">
-                    {categoryFacilities.map((facility) => {
-                      const checked = assignedIds.includes(facility.id);
-                      return (
-                        <label
-                          key={facility.id}
-                          className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/45 p-3 transition hover:border-slate-700"
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-blue-500"
-                            checked={checked}
-                            disabled={!canManage || replace.isPending}
-                            onChange={() => toggle(facility.id)}
-                          />
-                          <span className="min-w-0">
-                            <span className="block text-sm font-medium text-slate-200">
-                              {facility.name}
-                            </span>
-                            <span className="block text-xs text-slate-500">
-                              {facility.description || "Tanpa deskripsi"}
-                            </span>
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {canManage ? (
-              <Button
-                className="w-full"
-                disabled={!changed || replace.isPending}
-                onClick={() =>
-                  void replace.mutateAsync({ id: selectedType.id, facilityIds: assignedIds })
-                }
-              >
-                {replace.isPending ? "Menyimpan assignment..." : "Simpan Assignment"}
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <EmptyState
-            icon={<Wrench className="h-5 w-5" />}
-            title="Pilih tipe kost"
-            description="Assignment fasilitas akan muncul setelah tipe kost dipilih."
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label="Kategori hunian">
+      {types
+        .slice()
+        .sort((left, right) => left.category.localeCompare(right.category))
+        .map((type) => (
+          <Button
+            key={type.id}
+            role="tab"
+            aria-selected={selectedId === type.id}
+            variant={selectedId === type.id ? "default" : "outline"}
+            className="min-h-11"
+            onClick={() => onSelect(type.id)}
+          >
+            {type.category === "rukost" ? "Rumah Kost" : "Apart Kost"}
+          </Button>
+        ))}
+    </div>
+  );
+}
+
+function FacilityRow({
+  item,
+  index,
+  total,
+  disabled,
+  onChange,
+  onMove,
+}: {
+  item: CategoryFacilityDraft;
+  index: number;
+  total: number;
+  disabled: boolean;
+  onChange: (item: CategoryFacilityDraft) => void;
+  onMove: (direction: -1 | 1) => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border bg-card p-4 lg:grid-cols-[1fr_1.4fr_auto]">
+      <div>
+        <Label htmlFor={`facility-label-${index}`}>Nama fasilitas</Label>
+        <Input
+          id={`facility-label-${index}`}
+          className="min-h-11"
+          value={item.label}
+          maxLength={120}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...item, label: event.target.value })}
+        />
+      </div>
+      <div>
+        <Label htmlFor={`facility-description-${index}`}>Deskripsi publik</Label>
+        <Textarea
+          id={`facility-description-${index}`}
+          value={item.publicDescription ?? ""}
+          maxLength={500}
+          rows={2}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...item, publicDescription: event.target.value })}
+        />
+      </div>
+      <div className="flex min-h-11 flex-wrap items-center justify-end gap-2">
+        <label className="flex items-center gap-2 text-sm">
+          <Switch
+            checked={item.publicVisible}
+            disabled={disabled}
+            onCheckedChange={(publicVisible) => onChange({ ...item, publicVisible })}
           />
+          Tampil publik
+        </label>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-11 w-11"
+          disabled={disabled || index === 0}
+          aria-label="Naikkan fasilitas"
+          onClick={() => onMove(-1)}
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-11 w-11"
+          disabled={disabled || index === total - 1}
+          aria-label="Turunkan fasilitas"
+          onClick={() => onMove(1)}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-11 w-11"
+          disabled={disabled}
+          aria-label={item.contentState === "active" ? "Arsipkan fasilitas" : "Aktifkan fasilitas"}
+          onClick={() =>
+            onChange({
+              ...item,
+              contentState: item.contentState === "active" ? "archived" : "active",
+              publicVisible: item.contentState !== "active",
+            })
+          }
+        >
+          {item.contentState === "active" ? (
+            <Archive className="h-4 w-4" />
+          ) : (
+            <RotateCcw className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function VersionHistory({
+  versions,
+  disabled,
+  onRestore,
+}: {
+  versions: CategoryContentWorkspace["publication"]["facilities"];
+  disabled: boolean;
+  onRestore: (id: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Riwayat publikasi fasilitas</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {versions.length ? (
+          versions.map((version) => (
+            <div
+              key={version.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+            >
+              <p className="text-sm">
+                Versi {version.version} · efektif {version.effectiveDate}
+              </p>
+              <Badge variant="outline">
+                {version.publicationStatus === "published" ? "Published" : "Archived"}
+              </Badge>
+              <Button
+                variant="outline"
+                className="min-h-11"
+                disabled={disabled}
+                onClick={() => onRestore(version.id)}
+              >
+                Pulihkan sebagai draft
+              </Button>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">Belum ada versi published.</p>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function CategoryEditor({
-  category,
-  open,
-  onOpenChange,
-}: {
-  category: FacilityCategory | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [draft, setDraft] = useState<CategoryDraft>({ name: "", icon: "" });
-  const create = useM4Mutation<FacilityCategory, CategoryDraft>(
-    "facility",
-    "Kategori fasilitas disimpan",
-    (propertyId, input, key) =>
-      adminUxMasterApi.facilities.createCategory({ ...input, propertyId }, key),
-  );
-  const update = useM4Mutation<FacilityCategory, { id: string; input: CategoryDraft }>(
-    "facility",
-    "Kategori fasilitas diperbarui",
-    (_propertyId, values, key) =>
-      adminUxMasterApi.facilities.updateCategory(values.id, values.input, key),
-  );
-  const pending = create.isPending || update.isPending;
-  useEffect(() => {
-    if (open) setDraft({ name: category?.name ?? "", icon: category?.icon ?? "" });
-  }, [category, open]);
-  const submit = async () => {
-    if (!draft.name.trim()) return;
-    try {
-      if (category) await update.mutateAsync({ id: category.id, input: draft });
-      else await create.mutateAsync(draft);
-      onOpenChange(false);
-    } catch {
-      /* safe toast */
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent className="border-slate-800 bg-slate-900 text-slate-100">
-        <DialogHeader>
-          <DialogTitle>{category ? "Edit kategori" : "Buat kategori"}</DialogTitle>
-          <DialogDescription>Kategori membantu mengelompokkan fasilitas aktif.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Nama kategori</Label>
-            <Input
-              value={draft.name}
-              maxLength={120}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, name: event.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Ikon (opsional)</Label>
-            <Input
-              value={draft.icon}
-              maxLength={80}
-              placeholder="Mis. wifi"
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, icon: event.target.value }))
-              }
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-            Batal
-          </Button>
-          <Button disabled={!draft.name.trim() || pending} onClick={() => void submit()}>
-            {pending ? "Menyimpan..." : "Simpan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+function resolveSelectedType(types: KostType[], requestedId?: string): KostType | null {
+  return types.find((type) => type.id === requestedId) ?? types[0] ?? null;
 }
 
-function FacilityEditor({
-  categories,
-  facility,
-  open,
-  onOpenChange,
-}: {
-  categories: FacilityCategory[];
-  facility: RoomFacility | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [draft, setDraft] = useState<FacilityDraft>({
-    categoryId: "",
-    name: "",
-    icon: "",
-    description: "",
-    status: "active",
-  });
-  const create = useM4Mutation<RoomFacility, Omit<RoomFacilityInput, "propertyId">>(
-    "facility",
-    "Fasilitas berhasil disimpan",
-    (propertyId, input, key) =>
-      adminUxMasterApi.facilities.createRoomFacility({ ...input, propertyId }, key),
-  );
-  const update = useM4Mutation<RoomFacility, { id: string; input: FacilityDraft }>(
-    "facility",
-    "Fasilitas berhasil diperbarui",
-    (_propertyId, values, key) =>
-      adminUxMasterApi.facilities.updateRoomFacility(values.id, values.input, key),
-  );
-  const pending = create.isPending || update.isPending;
-  useEffect(() => {
-    if (open)
-      setDraft({
-        categoryId: facility?.categoryId ?? categories[0]?.id ?? "",
-        name: facility?.name ?? "",
-        icon: facility?.icon ?? "",
-        description: facility?.description ?? "",
-        status: facility?.status ?? "active",
-      });
-  }, [categories, facility, open]);
-  const valid = Boolean(draft.categoryId && draft.name.trim());
-  const submit = async () => {
-    if (!valid) return;
-    try {
-      if (facility) await update.mutateAsync({ id: facility.id, input: draft });
-      else await create.mutateAsync(draft);
-      onOpenChange(false);
-    } catch {
-      /* safe toast */
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent className="border-slate-800 bg-slate-900 text-slate-100">
-        <DialogHeader>
-          <DialogTitle>{facility ? "Edit fasilitas" : "Tambah fasilitas"}</DialogTitle>
-          <DialogDescription>Fasilitas di-assign ke tipe kost setelah dibuat.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Kategori</Label>
-            <Select
-              value={draft.categoryId || "none"}
-              onValueChange={(categoryId) =>
-                setDraft((current) => ({
-                  ...current,
-                  categoryId: categoryId === "none" ? "" : categoryId,
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih kategori" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pilih kategori</SelectItem>
-                {categories.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Nama fasilitas</Label>
-            <Input
-              value={draft.name}
-              maxLength={120}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, name: event.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Deskripsi</Label>
-            <Textarea
-              value={draft.description}
-              maxLength={500}
-              rows={3}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, description: event.target.value }))
-              }
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-800 p-3">
-            <Label>Fasilitas aktif</Label>
-            <Switch
-              checked={draft.status === "active"}
-              onCheckedChange={(checked) =>
-                setDraft((current) => ({ ...current, status: checked ? "active" : "inactive" }))
-              }
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-            Batal
-          </Button>
-          <Button disabled={!valid || pending} onClick={() => void submit()}>
-            {pending ? "Menyimpan..." : "Simpan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+function moveItem<T>(items: T[], index: number, direction: -1 | 1): T[] {
+  const target = index + direction;
+  if (target < 0 || target >= items.length) return items;
+  const next = [...items];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
 }

@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../infrastructure/database/database.service';
-import type { FilePurpose, FileRecord, FileStorageDriver, SupportedMimeType } from '../file/types/file.types';
+import type {
+  FilePurpose,
+  FileRecord,
+  FileStorageDriver,
+  SupportedMimeType,
+} from '../file/types/file.types';
 import type {
   HunianCatalogTarget,
   HunianGalleryCategory,
@@ -21,6 +26,8 @@ type HunianGalleryRow = {
   building_code: string | null;
   floor_code: HunianGalleryFloorCode | null;
   file_id: string;
+  public_derivative_file_id: string | null;
+  content_state: 'draft' | 'archived';
   alt_text: string;
   caption: string | null;
   sort_order: number;
@@ -106,7 +113,7 @@ export type FindCatalogTargetInput = {
 
 const GALLERY_SELECT = `
   id, property_id, catalog_slug, public_group_key, category, gender, building_code,
-  floor_code, file_id, alt_text, caption, sort_order, is_cover, public_visible,
+  floor_code, file_id, public_derivative_file_id, content_state, alt_text, caption, sort_order, is_cover, public_visible,
   created_by, updated_by, deleted_at, deleted_by, created_at, updated_at
 `;
 
@@ -114,7 +121,10 @@ const GALLERY_SELECT = `
 export class HunianGalleryRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(scopedPropertyIds: string[] | undefined, filters: ListHunianGalleryFilters): Promise<HunianGalleryRecord[]> {
+  async list(
+    scopedPropertyIds: string[] | undefined,
+    filters: ListHunianGalleryFilters,
+  ): Promise<HunianGalleryRecord[]> {
     if (scopedPropertyIds && scopedPropertyIds.length === 0) {
       return [];
     }
@@ -204,7 +214,10 @@ export class HunianGalleryRepository {
     return this.map(result.rows[0]);
   }
 
-  async update(id: string, input: UpdateHunianGalleryRecordInput): Promise<HunianGalleryRecord | null> {
+  async update(
+    id: string,
+    input: UpdateHunianGalleryRecordInput,
+  ): Promise<HunianGalleryRecord | null> {
     const result = await this.database.client.query<HunianGalleryRow>(
       `UPDATE hunian_gallery_images
        SET alt_text = COALESCE($2, alt_text),
@@ -273,7 +286,10 @@ export class HunianGalleryRepository {
     }
   }
 
-  async reorder(items: Array<{ id: string; sortOrder: number }>, updatedBy: string): Promise<HunianGalleryRecord[]> {
+  async reorder(
+    items: Array<{ id: string; sortOrder: number }>,
+    updatedBy: string,
+  ): Promise<HunianGalleryRecord[]> {
     const client = await this.database.client.connect();
     try {
       await client.query('BEGIN');
@@ -336,7 +352,12 @@ export class HunianGalleryRepository {
     return {
       propertyId: row.property_id,
       catalogSlug: this.slugFor(row.category, row.gender_policy, row.building_code, row.floor_code),
-      publicGroupKey: this.publicGroupKey(row.category, row.gender_policy, row.building_code, row.floor_code),
+      publicGroupKey: this.publicGroupKey(
+        row.category,
+        row.gender_policy,
+        row.building_code,
+        row.floor_code,
+      ),
       category: row.category,
       gender: row.gender_policy,
       buildingCode: row.building_code,
@@ -366,7 +387,9 @@ export class HunianGalleryRepository {
   async findPublicWithFile(id: string): Promise<HunianGalleryFileRecord | null> {
     const result = await this.database.client.query<HunianGalleryFileRow>(
       `SELECT hgi.id, hgi.property_id, hgi.catalog_slug, hgi.public_group_key, hgi.category, hgi.gender,
-              hgi.building_code, hgi.floor_code, hgi.file_id, hgi.alt_text, hgi.caption, hgi.sort_order,
+               hgi.building_code, hgi.floor_code, hgi.file_id,
+               published_item.item ->> 'public_derivative_file_id' AS public_derivative_file_id,
+               hgi.content_state, hgi.alt_text, hgi.caption, hgi.sort_order,
               hgi.is_cover, hgi.public_visible, hgi.created_by, hgi.updated_by, hgi.deleted_at, hgi.deleted_by,
               hgi.created_at, hgi.updated_at,
               files.property_id AS file_property_id,
@@ -387,23 +410,67 @@ export class HunianGalleryRepository {
               files.created_at AS file_created_at,
               files.updated_at AS file_updated_at
        FROM hunian_gallery_images hgi
-       JOIN files ON files.id = hgi.file_id
+        JOIN LATERAL (
+          SELECT version.payload
+          FROM kost_type_content_versions version
+          WHERE version.property_id = hgi.property_id
+            AND version.kost_type_id = hgi.kost_type_id
+            AND version.content_type = 'gallery'
+            AND version.publication_status = 'published'
+            AND version.effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+          ORDER BY version.effective_date DESC, version.version DESC
+          LIMIT 1
+        ) publication ON true
+        JOIN LATERAL (
+          SELECT item
+          FROM jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(publication.payload -> 'items') = 'array'
+                THEN publication.payload -> 'items'
+              ELSE '[]'::jsonb
+            END
+          ) item
+          WHERE item ->> 'id' = hgi.id::text
+            AND CASE
+              WHEN jsonb_typeof(item) = 'object' THEN jsonb_object_length(item)
+              ELSE -1
+            END = 7
+            AND item ?& ARRAY[
+              'id', 'source_file_id', 'public_derivative_file_id', 'alt_text',
+              'caption', 'sort_order', 'is_cover'
+            ]
+            AND item ->> 'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            AND item ->> 'source_file_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            AND item ->> 'source_file_id' = hgi.file_id::text
+            AND item ->> 'public_derivative_file_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            AND item ->> 'public_derivative_file_id' <> item ->> 'source_file_id'
+            AND length(btrim(item ->> 'alt_text')) > 0
+            AND (jsonb_typeof(item -> 'caption') IN ('string', 'null'))
+            AND jsonb_typeof(item -> 'sort_order') = 'number'
+            AND item ->> 'sort_order' ~ '^[0-9]+$'
+            AND jsonb_typeof(item -> 'is_cover') = 'boolean'
+        ) published_item ON true
+        JOIN files ON files.id = (published_item.item ->> 'public_derivative_file_id')::uuid
        WHERE hgi.id = $1
-         AND hgi.public_visible = true
-         AND hgi.deleted_at IS NULL
-         AND files.is_deleted = false
-         AND files.file_purpose = 'hunian_gallery'`,
+          AND hgi.target_type = 'kost_type'
+          AND files.property_id = hgi.property_id
+          AND files.is_deleted = false
+          AND files.file_purpose = 'hunian_gallery'
+          AND files.metadata ->> 'public_safe_derivative' = 'true'`,
       [id],
     );
 
     const row = result.rows[0];
-    if (!row) {
+    if (result.rows.length !== 1 || !row) {
       return null;
     }
     return { gallery: this.map(row), file: this.mapFile(row) };
   }
 
-  private async findByIdForUpdate(client: PoolClient, id: string): Promise<HunianGalleryRecord | null> {
+  private async findByIdForUpdate(
+    client: PoolClient,
+    id: string,
+  ): Promise<HunianGalleryRecord | null> {
     const result = await client.query<HunianGalleryRow>(
       `SELECT ${GALLERY_SELECT}
        FROM hunian_gallery_images
@@ -425,6 +492,8 @@ export class HunianGalleryRepository {
       buildingCode: row.building_code,
       floorCode: row.floor_code,
       fileId: row.file_id,
+      publicDerivativeFileId: row.public_derivative_file_id,
+      contentState: row.content_state,
       altText: row.alt_text,
       caption: row.caption,
       sortOrder: row.sort_order,
@@ -441,7 +510,7 @@ export class HunianGalleryRepository {
 
   private mapFile(row: HunianGalleryFileRow): FileRecord {
     return {
-      id: row.file_id,
+      id: row.public_derivative_file_id ?? row.file_id,
       propertyId: row.file_property_id,
       uploaderUserId: row.file_uploader_user_id,
       originalFilename: row.file_original_filename,
@@ -478,7 +547,14 @@ export class HunianGalleryRepository {
     floorCode: HunianGalleryFloorCode,
   ): string {
     const genderSlug = gender === 'male' ? 'putra' : 'putri';
-    return [category, genderSlug, 'unit', this.slugPart(buildingCode), 'lantai', floorCode.toLowerCase()].join('-');
+    return [
+      category,
+      genderSlug,
+      'unit',
+      this.slugPart(buildingCode),
+      'lantai',
+      floorCode.toLowerCase(),
+    ].join('-');
   }
 
   private slugPart(value: string): string {

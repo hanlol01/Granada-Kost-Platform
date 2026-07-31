@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AdminUxContentPublicationService } from '../admin-ux-master/admin-ux-content-publication.service';
 import { HunianGalleryService } from '../hunian-gallery/hunian-gallery.service';
 import { PublicHunianCatalogQueryDto } from './dto/public-hunian-catalog-query.dto';
 import { PUBLIC_HUNIAN_CATALOG_CONTENT } from './public-hunian-catalog.content';
@@ -41,6 +42,7 @@ export class PublicHunianCatalogService {
   constructor(
     private readonly rooms: RoomRepository,
     private readonly gallery: HunianGalleryService,
+    private readonly content: AdminUxContentPublicationService,
   ) {}
 
   async list(query: PublicHunianCatalogQueryDto) {
@@ -50,7 +52,11 @@ export class PublicHunianCatalogService {
     );
     return {
       data: groups.map((group) =>
-        this.mapListItem(group, galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ?? []),
+        this.mapListItem(
+          group,
+          galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ??
+            [],
+        ),
       ),
       summary: {
         totalItems: groups.length,
@@ -84,9 +90,33 @@ export class PublicHunianCatalogService {
     return {
       data: this.mapDetailItem(
         group,
-        galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ?? [],
+        galleryByCatalog.get(this.gallery.publicMapKey(group.propertyId, this.slugFor(group))) ??
+          [],
       ),
     };
+  }
+
+  async categoryContent(slug: string) {
+    const group = await this.requireGroupBySlug(slug);
+    return this.content.publicProjection(group.propertyId, group.category);
+  }
+
+  private async requireGroupBySlug(slug: string) {
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      throw new BadRequestException({
+        code: 'PUBLIC_HUNIAN_CATALOG_SLUG_INVALID',
+        message: 'Public hunian catalog slug is invalid.',
+      });
+    }
+    const groups = await this.rooms.listPublicAvailabilityGroups({});
+    const matches = groups.filter((item) => this.slugFor(item) === slug);
+    if (matches.length !== 1) {
+      throw new NotFoundException({
+        code: 'PUBLIC_HUNIAN_CATALOG_NOT_FOUND',
+        message: 'Public hunian catalog item is not available.',
+      });
+    }
+    return matches[0];
   }
 
   private normalizeFilters(query: PublicHunianCatalogQueryDto): PublicRoomAvailabilityFilters {
@@ -162,13 +192,19 @@ export class PublicHunianCatalogService {
   }
 
   private publicGroupKey(
-    group: Pick<PublicRoomAvailabilityGroupRecord, 'category' | 'gender' | 'buildingCode' | 'floorCode'>,
+    group: Pick<
+      PublicRoomAvailabilityGroupRecord,
+      'category' | 'gender' | 'buildingCode' | 'floorCode'
+    >,
   ) {
     return `${group.category}-${group.gender}-${group.buildingCode}-${group.floorCode}`;
   }
 
   private slugFor(
-    group: Pick<PublicRoomAvailabilityGroupRecord, 'category' | 'gender' | 'buildingCode' | 'floorCode'>,
+    group: Pick<
+      PublicRoomAvailabilityGroupRecord,
+      'category' | 'gender' | 'buildingCode' | 'floorCode'
+    >,
   ) {
     return [
       group.category,

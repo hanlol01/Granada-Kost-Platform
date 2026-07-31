@@ -2,21 +2,17 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { V2PaginationQueryDto } from './admin-ux-master.dto';
-
-const COMMON_AREA_KEYS = ['lobby', 'dapur', 'rooftop', 'koridor', 'parkir'] as const;
-
-export type CommonAreaKey = (typeof COMMON_AREA_KEYS)[number];
 
 export class ListHunianGalleryV2QueryDto extends V2PaginationQueryDto {
   @IsOptional()
@@ -24,37 +20,32 @@ export class ListHunianGalleryV2QueryDto extends V2PaginationQueryDto {
   property_id?: string;
 
   @IsOptional()
-  @IsIn(['kost_type', 'common_area'])
-  target_type?: 'kost_type' | 'common_area';
+  @IsIn(['kost_type'])
+  target_type?: 'kost_type';
 
   @IsOptional()
   @IsUUID('4')
   kost_type_id?: string;
-
-  @IsOptional()
-  @IsIn(COMMON_AREA_KEYS)
-  common_area_key?: CommonAreaKey;
 }
 
 export class CreateHunianGalleryV2Dto {
   @IsUUID('4')
   property_id!: string;
 
-  @IsIn(['kost_type', 'common_area'])
-  target_type!: 'kost_type' | 'common_area';
+  @IsIn(['kost_type'])
+  target_type!: 'kost_type';
 
-  @IsOptional()
   @IsUUID('4')
-  kost_type_id?: string;
-
-  @IsOptional()
-  @IsIn(COMMON_AREA_KEYS)
-  common_area_key?: CommonAreaKey;
+  kost_type_id!: string;
 
   @IsUUID('4')
   file_id!: string;
 
+  @IsUUID('4')
+  public_derivative_file_id!: string;
+
   @IsString()
+  @Matches(/\S/)
   @MaxLength(180)
   alt_text!: string;
 
@@ -62,21 +53,15 @@ export class CreateHunianGalleryV2Dto {
   @IsString()
   @MaxLength(240)
   caption?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  public_visible?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  sort_order?: number;
 }
 
 export class UpdateHunianGalleryV2Dto {
+  @IsUUID('4')
+  property_id!: string;
+
   @IsOptional()
   @IsString()
+  @Matches(/\S/)
   @MaxLength(180)
   alt_text?: string;
 
@@ -84,23 +69,17 @@ export class UpdateHunianGalleryV2Dto {
   @IsString()
   @MaxLength(240)
   caption?: string | null;
+}
 
-  @IsOptional()
-  @IsBoolean()
-  public_visible?: boolean;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  sort_order?: number;
+export class HunianGalleryMutationScopeDto {
+  @IsUUID('4')
+  property_id!: string;
 }
 
 export class GalleryReorderItemDto {
   @IsUUID('4')
   id!: string;
 
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   sort_order!: number;
@@ -110,16 +89,11 @@ export class ReorderHunianGalleryV2Dto {
   @IsUUID('4')
   property_id!: string;
 
-  @IsIn(['kost_type', 'common_area'])
-  target_type!: 'kost_type' | 'common_area';
+  @IsIn(['kost_type'])
+  target_type!: 'kost_type';
 
-  @IsOptional()
   @IsUUID('4')
-  kost_type_id?: string;
-
-  @IsOptional()
-  @IsIn(COMMON_AREA_KEYS)
-  common_area_key?: CommonAreaKey;
+  kost_type_id!: string;
 
   @IsArray()
   @ArrayMinSize(1)
@@ -127,5 +101,3 @@ export class ReorderHunianGalleryV2Dto {
   @Type(() => GalleryReorderItemDto)
   items!: GalleryReorderItemDto[];
 }
-
-export { COMMON_AREA_KEYS };

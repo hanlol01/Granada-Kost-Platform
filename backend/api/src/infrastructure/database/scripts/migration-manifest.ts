@@ -194,4 +194,14 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kost_type_commercial_versions' AND column_name = 'payment_schedules')",
     ],
   },
+  {
+    version: '023_category_content_publication.sql',
+    checksumSha256: '2a5b314f24fea2c7cff4bc9c532646da71a0145071d2627b31dceddb5ce41bcb',
+    sentinels: [
+      "to_regclass('public.kost_type_content_facilities') IS NOT NULL",
+      "to_regclass('public.kost_type_content_versions') IS NOT NULL",
+      "to_regclass('public.property_policy_documents') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hunian_gallery_images' AND column_name = 'public_derivative_file_id')",
+    ],
+  },
 ] as const;

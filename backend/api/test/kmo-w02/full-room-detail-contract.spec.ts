@@ -91,7 +91,7 @@ function fixture(
     calls.push({ sql: sql.replace(/\s+/g, ' ').trim(), values });
     if (sql.startsWith('SET TRANSACTION')) return { rows: [] };
     if (sql.includes('FROM rooms room')) return { rows: [identity] };
-    if (sql.includes('FROM kost_type_facility_assignments')) {
+    if (sql.includes('FROM kost_type_content_facilities')) {
       return { rows: [{ id: TYPE_ID, name: 'Kasur' }] };
     }
     if (sql.includes('FROM occupancies occupancy')) {

@@ -126,13 +126,13 @@ export class AdminUxRoomDetailService {
 
     const [facilitiesResult, occupancyResult, leaseResult] = await Promise.all([
       client.query<Row>(
-        `SELECT facility.id, facility.name
-           FROM kost_type_facility_assignments assignment
-           JOIN room_facilities facility
-             ON facility.id = assignment.facility_id
-            AND facility.property_id = $1
-           WHERE assignment.kost_type_id = $2
-           ORDER BY facility.sort_order, facility.name, facility.id`,
+        `SELECT facility.id, facility.label AS name
+           FROM kost_type_content_facilities facility
+           WHERE facility.property_id = $1
+             AND facility.kost_type_id = $2
+             AND facility.content_state = 'active'
+             AND facility.archived_at IS NULL
+           ORDER BY facility.sort_order, facility.normalized_label, facility.id`,
         [propertyId, room.kost_type_id],
       ),
       client.query<Row>(

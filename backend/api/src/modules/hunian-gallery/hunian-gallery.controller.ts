@@ -21,17 +21,8 @@ import { RequirePermissions } from '../rbac/decorators/permissions.decorator';
 import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
-import { CreateHunianGalleryImageDto } from './dto/create-hunian-gallery-image.dto';
-import { ListHunianGalleryQueryDto } from './dto/list-hunian-gallery-query.dto';
-import { ReorderHunianGalleryDto } from './dto/reorder-hunian-gallery.dto';
-import { UpdateHunianGalleryImageDto } from './dto/update-hunian-gallery-image.dto';
 import { HunianGalleryService } from './hunian-gallery.service';
 import { AdminUxGalleryV2Service } from '../admin-ux-master/admin-ux-gallery-v2.service';
-import type {
-  CreateHunianGalleryV2Dto,
-  ListHunianGalleryV2QueryDto,
-  ReorderHunianGalleryV2Dto,
-} from '../admin-ux-master/admin-ux-gallery-v2.dto';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @Controller('hunian-gallery')
@@ -46,11 +37,11 @@ export class HunianGalleryController {
   @RequirePermissions('room.read')
   list(
     @CurrentUser() user: UserAccessContext,
-    @Query() query: ListHunianGalleryQueryDto,
+    @Query() query: unknown,
     @Headers('accept') accept?: string,
   ) {
     if (acceptsAdminUxV2(accept)) {
-      return this.galleryV2.list(user, query as ListHunianGalleryV2QueryDto);
+      return this.galleryV2.list(user, query);
     }
     return this.gallery.list(user, query);
   }
@@ -60,14 +51,15 @@ export class HunianGalleryController {
   @RequirePermissions('room.manage')
   create(
     @CurrentUser() user: UserAccessContext,
-    @Body() dto: CreateHunianGalleryImageDto,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
   ) {
     if (acceptsAdminUxV2(request.headers.accept)) {
       return this.galleryV2.create(
         user,
-        dto as CreateHunianGalleryV2Dto,
+        dto,
         this.contextFromRequest(request),
+        this.idempotencyKey(request),
       );
     }
     return this.gallery.create(user, dto, this.contextFromRequest(request));
@@ -79,11 +71,17 @@ export class HunianGalleryController {
   update(
     @CurrentUser() user: UserAccessContext,
     @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
-    @Body() dto: UpdateHunianGalleryImageDto,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
   ) {
     if (acceptsAdminUxV2(request.headers.accept)) {
-      return this.galleryV2.update(user, imageId, dto, this.contextFromRequest(request));
+      return this.galleryV2.update(
+        user,
+        imageId,
+        dto,
+        this.contextFromRequest(request),
+        this.idempotencyKey(request),
+      );
     }
     return this.gallery.update(user, imageId, dto, this.contextFromRequest(request));
   }
@@ -94,10 +92,17 @@ export class HunianGalleryController {
   setCover(
     @CurrentUser() user: UserAccessContext,
     @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
   ) {
     if (acceptsAdminUxV2(request.headers.accept)) {
-      return this.galleryV2.setCover(user, imageId, this.contextFromRequest(request));
+      return this.galleryV2.setCover(
+        user,
+        imageId,
+        dto,
+        this.contextFromRequest(request),
+        this.idempotencyKey(request),
+      );
     }
     return this.gallery.setCover(user, imageId, this.contextFromRequest(request));
   }
@@ -108,14 +113,15 @@ export class HunianGalleryController {
   @RequirePermissions('room.manage')
   reorder(
     @CurrentUser() user: UserAccessContext,
-    @Body() dto: ReorderHunianGalleryDto,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
   ) {
     if (acceptsAdminUxV2(request.headers.accept)) {
       return this.galleryV2.reorder(
         user,
-        dto as ReorderHunianGalleryV2Dto,
+        dto,
         this.contextFromRequest(request),
+        this.idempotencyKey(request),
       );
     }
     return this.gallery.reorder(user, dto, this.contextFromRequest(request));
@@ -127,10 +133,17 @@ export class HunianGalleryController {
   delete(
     @CurrentUser() user: UserAccessContext,
     @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
+    @Query() query: unknown,
     @Req() request: RequestWithCorrelationId,
   ) {
     if (acceptsAdminUxV2(request.headers.accept)) {
-      return this.galleryV2.remove(user, imageId, this.contextFromRequest(request));
+      return this.galleryV2.remove(
+        user,
+        imageId,
+        query,
+        this.contextFromRequest(request),
+        this.idempotencyKey(request),
+      );
     }
     return this.gallery.delete(user, imageId, this.contextFromRequest(request));
   }
@@ -141,5 +154,10 @@ export class HunianGalleryController {
       userAgent: request.headers['user-agent'],
       correlationId: request.correlationId,
     };
+  }
+
+  private idempotencyKey(request: RequestWithCorrelationId): string | undefined {
+    const value = request.headers['idempotency-key'];
+    return Array.isArray(value) ? value[0] : value;
   }
 }

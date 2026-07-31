@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -31,10 +32,19 @@ import {
   ReorderKostTypeRulesDto,
   ReorderRoomFacilitiesDto,
   ReplaceKostTypeFacilitiesDto,
+  PublishCategoryContentDto,
+  PublishPropertyPolicyDto,
+  ReplaceCategoryFacilitiesDto,
+  RestoreCategoryContentDto,
+  RestorePropertyPolicyDto,
+  SavePropertyPolicyDraftDto,
+  UnpublishCategoryContentDto,
+  UnpublishPropertyPolicyDto,
   UpdateFacilityCategoryDto,
   UpdateKostTypeRuleDto,
   UpdateRoomFacilityV2Dto,
 } from './admin-ux-master.dto';
+import { AdminUxContentPublicationService } from './admin-ux-content-publication.service';
 import { AdminUxMasterService } from './admin-ux-master.service';
 
 function context(request: RequestWithCorrelationId) {
@@ -284,5 +294,138 @@ export class KostTypeRuleController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.master.deleteRule(user, id, context(request));
+  }
+}
+
+@UseGuards(JwtAuthGuard, RbacGuard)
+@Controller('kost-types/:kostTypeId/content')
+export class KostTypeContentController {
+  constructor(private readonly content: AdminUxContentPublicationService) {}
+
+  @Get()
+  @RequireRoles('owner', 'manager', 'admin', 'property_owner')
+  @RequirePermissions('room.read')
+  get(
+    @CurrentUser() user: UserAccessContext,
+    @Param('kostTypeId', new ParseUUIDPipe({ version: '4' })) kostTypeId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    return this.content.categoryWorkspace(user, propertyId, kostTypeId);
+  }
+
+  @Put('facilities')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  replaceFacilities(
+    @CurrentUser() user: UserAccessContext,
+    @Param('kostTypeId', new ParseUUIDPipe({ version: '4' })) kostTypeId: string,
+    @Body() body: ReplaceCategoryFacilitiesDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.replaceFacilities(user, kostTypeId, body, context(request), idempotencyKey);
+  }
+
+  @Post('publish')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  publish(
+    @CurrentUser() user: UserAccessContext,
+    @Param('kostTypeId', new ParseUUIDPipe({ version: '4' })) kostTypeId: string,
+    @Body() body: PublishCategoryContentDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.publishCategory(user, kostTypeId, body, context(request), idempotencyKey);
+  }
+
+  @Post('unpublish')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  unpublish(
+    @CurrentUser() user: UserAccessContext,
+    @Param('kostTypeId', new ParseUUIDPipe({ version: '4' })) kostTypeId: string,
+    @Body() body: UnpublishCategoryContentDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.unpublishCategory(user, kostTypeId, body, context(request), idempotencyKey);
+  }
+
+  @Post('restore')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  restore(
+    @CurrentUser() user: UserAccessContext,
+    @Param('kostTypeId', new ParseUUIDPipe({ version: '4' })) kostTypeId: string,
+    @Body() body: RestoreCategoryContentDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.restoreCategory(user, kostTypeId, body, context(request), idempotencyKey);
+  }
+}
+
+@UseGuards(JwtAuthGuard, RbacGuard)
+@Controller('property-policy-documents')
+export class PropertyPolicyDocumentController {
+  constructor(private readonly content: AdminUxContentPublicationService) {}
+
+  @Get()
+  @RequireRoles('owner', 'manager', 'admin', 'property_owner')
+  @RequirePermissions('room.read')
+  get(
+    @CurrentUser() user: UserAccessContext,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    return this.content.policyWorkspace(user, propertyId);
+  }
+
+  @Put('draft')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  saveDraft(
+    @CurrentUser() user: UserAccessContext,
+    @Body() body: SavePropertyPolicyDraftDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.savePolicyDraft(user, body, context(request), idempotencyKey);
+  }
+
+  @Post('publish')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  publish(
+    @CurrentUser() user: UserAccessContext,
+    @Body() body: PublishPropertyPolicyDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.publishPolicy(user, body, context(request), idempotencyKey);
+  }
+
+  @Post('unpublish')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  unpublish(
+    @CurrentUser() user: UserAccessContext,
+    @Body() body: UnpublishPropertyPolicyDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.unpublishPolicy(user, body, context(request), idempotencyKey);
+  }
+
+  @Post('restore')
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  restore(
+    @CurrentUser() user: UserAccessContext,
+    @Body() body: RestorePropertyPolicyDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.content.restorePolicy(user, body, context(request), idempotencyKey);
   }
 }

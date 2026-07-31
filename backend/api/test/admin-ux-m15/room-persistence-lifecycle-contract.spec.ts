@@ -349,6 +349,12 @@ class FakeDatabase {
             : ([] as T[]),
       };
     }
+    if (
+      /SELECT facility\.kost_type_id/.test(normalized) &&
+      /JOIN kost_type_content_facilities facility/.test(normalized)
+    ) {
+      return { rows: [] as T[] };
+    }
     if (/^SELECT assignment\.kost_type_id/.test(normalized)) return { rows: [] as T[] };
     throw new Error(`Unhandled fake SQL: ${normalized}`);
   }

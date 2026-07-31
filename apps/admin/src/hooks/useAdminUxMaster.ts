@@ -10,10 +10,12 @@ import { toast } from "sonner";
 import {
   adminUxMasterApi,
   assertRoomDetailScope,
+  type CategoryContentWorkspace,
   type GalleryTarget,
   type KostType,
   type KostTypeCategory,
   type MasterStatus,
+  type PropertyPolicyWorkspace,
   type RoomInventory,
   type RoomInventoryUpdateInput,
   type RoomInventorySort,
@@ -429,19 +431,13 @@ export function useRoomPersistenceMutation(scope: RoomPersistenceScope) {
 
 export function useM4Gallery(target: GalleryTarget | null, options: PageOptions = {}) {
   const { currentPropertyId } = useProperty();
-  const targetId =
-    target?.targetType === "kost_type"
-      ? target.kostTypeId
-      : target?.targetType === "common_area"
-        ? "common_area:" + target.commonAreaKey
-        : "";
   const keyFilters = { ...options, limit: options.limit ?? 20 };
   const normalized = normalizePagination(keyFilters);
   return useQuery({
     queryKey: adminUxQueryKeys.gallery.list(
       currentPropertyId ?? "",
-      target?.targetType ?? "common_area",
-      targetId,
+      "kost_type",
+      target?.kostTypeId ?? "",
       keyFilters,
     ),
     queryFn: () =>
@@ -454,6 +450,121 @@ export function useM4Gallery(target: GalleryTarget | null, options: PageOptions 
     enabled: Boolean(currentPropertyId && target),
   });
 }
+
+export function useCategoryContent(kostTypeId: string | null | undefined) {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.categoryContent.workspace(
+      user?.id ?? "",
+      currentPropertyId ?? "",
+      kostTypeId ?? "",
+    ),
+    queryFn: () => adminUxMasterApi.categoryContent.get(currentPropertyId!, kostTypeId!),
+    enabled: Boolean(user?.id && currentPropertyId && kostTypeId),
+    retry: false,
+  });
+}
+
+export function usePropertyPolicyWorkspace() {
+  const { user } = useAuth();
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.propertyPolicy.workspace(user?.id ?? "", currentPropertyId ?? ""),
+    queryFn: () => adminUxMasterApi.propertyPolicy.get(currentPropertyId!),
+    enabled: Boolean(user?.id && currentPropertyId),
+    retry: false,
+  });
+}
+
+export async function invalidateCategoryContent(
+  queryClient: ReturnType<typeof useQueryClient>,
+  propertyId: string,
+): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey[0] === "categoryContent" && query.queryKey[2] === propertyId,
+    }),
+    queryClient.invalidateQueries({ queryKey: ["hunianGallery", propertyId] }),
+    queryClient.invalidateQueries({ queryKey: adminUxQueryKeys.kostTypes.all(propertyId) }),
+    queryClient.invalidateQueries({ queryKey: adminUxQueryKeys.rooms.all(propertyId) }),
+    queryClient.invalidateQueries({ queryKey: adminUxQueryKeys.rooms.availabilityAll(propertyId) }),
+    queryClient.invalidateQueries({ queryKey: adminUxQueryKeys.dashboard.summary(propertyId) }),
+    queryClient.invalidateQueries({ queryKey: ["kostTypeFacilities", propertyId] }),
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] === "roomDetail" && query.queryKey[2] === propertyId,
+    }),
+  ]);
+}
+
+type ContentMutationDomain = "category-content" | "property-policy";
+
+export function useContentPublicationMutation<TData, TVariables>(
+  domain: ContentMutationDomain,
+  successMessage: string,
+  runner: M4MutationRunner<TData, TVariables>,
+): UseMutationResult<TData, unknown, TVariables> {
+  const { currentPropertyId } = useProperty();
+  const queryClient = useQueryClient();
+  const propertyRef = useRef(currentPropertyId);
+  const intentRef = useRef<CommercialIntent | null>(null);
+  const activeRef = useRef<ActiveCommercialSubmission<TData> | null>(null);
+  const successfulPropertyRef = useRef<string | null>(null);
+  const attemptedPropertyRef = useRef<string | null>(null);
+  propertyRef.current = currentPropertyId;
+
+  return useMutation({
+    mutationFn: async (variables) => {
+      successfulPropertyRef.current = null;
+      const propertyId = propertyRef.current;
+      if (!propertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
+      attemptedPropertyRef.current = propertyId;
+      const fingerprint = commercialMutationFingerprint(propertyId, variables);
+      const intent = resolveCommercialMutationIntent(intentRef.current, fingerprint);
+      intentRef.current = intent;
+      let result: TData;
+      try {
+        result = await runCommercialSubmissionOnce(activeRef, fingerprint, () =>
+          runner(propertyId, variables, intent.idempotencyKey),
+        );
+      } catch (error) {
+        if (propertyRef.current !== propertyId) throw new Error("PROPERTY_SCOPE_CHANGED");
+        throw error;
+      }
+      if (propertyRef.current !== propertyId) throw new Error("PROPERTY_SCOPE_CHANGED");
+      successfulPropertyRef.current = propertyId;
+      return result;
+    },
+    onSuccess: async () => {
+      const propertyId = successfulPropertyRef.current;
+      if (!propertyId || propertyRef.current !== propertyId) return;
+      if (domain === "category-content") {
+        await invalidateCategoryContent(queryClient, propertyId);
+      } else {
+        await queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === "propertyPolicy" && query.queryKey[2] === propertyId,
+        });
+      }
+      intentRef.current = null;
+      successfulPropertyRef.current = null;
+      attemptedPropertyRef.current = null;
+      toast.success(successMessage);
+    },
+    onError: (error) => {
+      successfulPropertyRef.current = null;
+      const attemptedProperty = attemptedPropertyRef.current;
+      attemptedPropertyRef.current = null;
+      if (!attemptedProperty || propertyRef.current !== attemptedProperty) return;
+      if (isCommercialScopeMismatch(error)) return;
+      if (propertyRef.current) toast.error(safeErrorMessage(error));
+    },
+  });
+}
+
+export type CategoryContentMutationResult = CategoryContentWorkspace;
+export type PropertyPolicyMutationResult = PropertyPolicyWorkspace;
 
 type M4MutationRunner<TData, TVariables> = (
   propertyId: string,

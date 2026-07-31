@@ -31,11 +31,53 @@ export type FileUploadInput = {
 };
 
 export type FileUploadHookOptions = {
+  /** Suppress generic mutation toasts when a domain workflow owns feedback. */
+  silent?: boolean;
   /** Called after a successful upload with the server response. */
   onUploadSuccess?: (response: FileResponse) => void;
   /** Called after an upload error. */
   onUploadError?: (error: unknown) => void;
 };
+
+export const PUBLIC_GALLERY_MAX_DIMENSION = 1920;
+
+export async function createPublicGalleryDerivative(file: File): Promise<File> {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    throw new Error("GALLERY_IMAGE_TYPE_INVALID");
+  }
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(
+      1,
+      PUBLIC_GALLERY_MAX_DIMENSION / bitmap.width,
+      PUBLIC_GALLERY_MAX_DIMENSION / bitmap.height,
+    );
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("GALLERY_DERIVATIVE_UNAVAILABLE");
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => (result ? resolve(result) : reject(new Error("GALLERY_DERIVATIVE_FAILED"))),
+        file.type,
+        file.type === "image/png" ? undefined : 0.86,
+      );
+    });
+    const extension =
+      file.type === "image/png" ? ".png" : file.type === "image/webp" ? ".webp" : ".jpg";
+    const stem = file.name.replace(/\.[^.]+$/, "").slice(0, 100) || "gallery";
+    return new File([blob], `${stem}-public${extension}`, {
+      type: file.type,
+      lastModified: Date.now(),
+    });
+  } finally {
+    bitmap.close();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // useFileUpload
@@ -74,11 +116,11 @@ export function useFileUpload(options?: FileUploadHookOptions) {
       });
     },
     onSuccess: (data) => {
-      toastMutationSuccess("File berhasil diupload");
+      if (!options?.silent) toastMutationSuccess("File berhasil diupload");
       options?.onUploadSuccess?.(data);
     },
     onError: (err) => {
-      toastMutationError(err, "Gagal mengupload file");
+      if (!options?.silent) toastMutationError(err, "Gagal mengupload file");
       options?.onUploadError?.(err);
     },
   });
@@ -131,15 +173,15 @@ export function useFilePreview(fileId: string | null) {
 // useFileDelete
 // ---------------------------------------------------------------------------
 
-export function useFileDelete() {
+export function useFileDelete(options?: { silent?: boolean }) {
   return useMutation<{ success: boolean; file: FileResponse }, unknown, string>({
     mutationFn: async (fileId: string) =>
       apiClient.delete<{ success: boolean; file: FileResponse }>(`/files/${fileId}`),
     onSuccess: () => {
-      toastMutationSuccess("File berhasil dihapus");
+      if (!options?.silent) toastMutationSuccess("File berhasil dihapus");
     },
     onError: (err) => {
-      toastMutationError(err, "Gagal menghapus file");
+      if (!options?.silent) toastMutationError(err, "Gagal menghapus file");
     },
   });
 }

@@ -218,10 +218,14 @@ The program is complete only when:
 | `KMO-W02A-R1` | Fixed 163-room routine-write boundary; complete property-scoped room discovery; Add Room removal; canonical Admin table/filter wire; safe existing-room edit preserved                                    | [KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md](evidence/KMO-W02A_R1_FIXED_ROOM_DISCOVERY.md), focused backend/Admin contracts, M15 regressions, and aggregate read-only gate                          | AUTOMATED_VERIFIED                   |
 | `KMO-W02A-R2` | Property-scoped full-page room detail; safe operational projection; honest registered quick links; lifecycle-safe existing-room edit; generated route registration                                        | [KMO-W02A_R2_FULL_ROOM_DETAIL.md](evidence/KMO-W02A_R2_FULL_ROOM_DETAIL.md), focused backend/Admin contracts, W00/R1 and M10–M16 regressions, and aggregate read-only gate                   | AUTOMATED_VERIFIED                   |
 | `KMO-W02B`    | Category Kost Type is the sole effective-dated commercial authority for tariff, read-only 25% DP policy, deposit, payment schedules, and facility reads; room and lease consumers use its current version | [KMO-W02B_CATEGORY_COMMERCIAL.md](evidence/KMO-W02B_CATEGORY_COMMERCIAL.md), disposable first-apply/replay proof, focused backend/Admin contracts, and relevant W02A/M10/M13–M15 regressions | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
+| `KMO-W02C-D`  | Category facilities and gallery; public derivatives; internal policy separation; structured public-safe terms; draft, publish, effective-date, version, restore, and reconciliation authority             | [KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md](evidence/KMO-W02C_D_CATEGORY_CONTENT_PUBLICATION.md), focused backend/Admin contracts, W01/W02A/M10/M13–M15 regressions, and aggregate gate     | AUTOMATED_VERIFIED; RUNTIME_DEFERRED |
+
+Aggregate status: `KMO-W02 — AUTOMATED VERIFIED; RUNTIME DEFERRED`.
 
 These delivery rows do not advance any unlisted KMO work package or the
 program-level outcomes in section 2. Authenticated desktop/mobile runtime evidence
 for W00 is explicitly deferred when no process-only QA credential is available;
 W01 disposable concurrent-runner runtime evidence is also deferred while its
 automated advisory-lock serialization contract remains verified. W02B runtime
-and canonical migration execution remain deferred.
+and canonical migration execution remain deferred. W02C-D runtime and canonical
+migration 023 execution are also deferred; W03 remains pending.

@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { FileRepository } from '../file/file.repository';
 import { FileService } from '../file/file.service';
@@ -64,6 +70,13 @@ const PUBLIC_TEXT_FORBIDDEN_PATTERNS = [
 
 @Injectable()
 export class HunianGalleryService {
+  private readonly strictValidation = new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transformOptions: { enableImplicitConversion: false },
+  });
+
   constructor(
     private readonly gallery: HunianGalleryRepository,
     private readonly files: FileRepository,
@@ -72,7 +85,8 @@ export class HunianGalleryService {
     private readonly audit: AuditRepository,
   ) {}
 
-  async list(user: UserAccessContext, query: ListHunianGalleryQueryDto): Promise<HunianGalleryAdminResponse[]> {
+  async list(user: UserAccessContext, body: unknown): Promise<HunianGalleryAdminResponse[]> {
+    const query = await this.validate(ListHunianGalleryQueryDto, body);
     const propertyIds = await this.scopedPropertyIds(user, query.property_id);
     const records = await this.gallery.list(propertyIds, {
       propertyId: query.property_id,
@@ -86,9 +100,10 @@ export class HunianGalleryService {
 
   async create(
     user: UserAccessContext,
-    dto: CreateHunianGalleryImageDto,
+    body: unknown,
     context: RequestAuditContext,
   ): Promise<HunianGalleryAdminResponse> {
+    const dto = await this.validate(CreateHunianGalleryImageDto, body);
     const file = await this.requireGalleryFile(dto.fileId);
     await this.assertCanMutateProperty(user, file.propertyId);
 
@@ -138,13 +153,15 @@ export class HunianGalleryService {
   async update(
     user: UserAccessContext,
     imageId: string,
-    dto: UpdateHunianGalleryImageDto,
+    body: unknown,
     context: RequestAuditContext,
   ): Promise<HunianGalleryAdminResponse> {
+    const dto = await this.validate(UpdateHunianGalleryImageDto, body);
     const before = await this.requireImage(imageId);
     await this.assertCanMutateProperty(user, before.propertyId);
     if (dto.altText !== undefined) this.assertPublicTextSafe(dto.altText, 'altText');
-    if (Object.prototype.hasOwnProperty.call(dto, 'caption')) this.assertPublicTextSafe(dto.caption ?? null, 'caption');
+    if (Object.prototype.hasOwnProperty.call(dto, 'caption'))
+      this.assertPublicTextSafe(dto.caption ?? null, 'caption');
 
     const updated = await this.gallery.update(imageId, {
       altText: dto.altText,
@@ -154,7 +171,10 @@ export class HunianGalleryService {
       updatedBy: user.id,
     });
     if (!updated) {
-      throw new NotFoundException({ code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND', message: 'Gallery image not found.' });
+      throw new NotFoundException({
+        code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND',
+        message: 'Gallery image not found.',
+      });
     }
 
     await this.audit.write({
@@ -181,7 +201,10 @@ export class HunianGalleryService {
     await this.assertCanMutateProperty(user, before.propertyId);
     const updated = await this.gallery.setCover(imageId, user.id);
     if (!updated) {
-      throw new NotFoundException({ code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND', message: 'Gallery image not found.' });
+      throw new NotFoundException({
+        code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND',
+        message: 'Gallery image not found.',
+      });
     }
 
     await this.audit.write({
@@ -201,9 +224,10 @@ export class HunianGalleryService {
 
   async reorder(
     user: UserAccessContext,
-    dto: ReorderHunianGalleryDto,
+    body: unknown,
     context: RequestAuditContext,
   ): Promise<HunianGalleryAdminResponse[]> {
+    const dto = await this.validate(ReorderHunianGalleryDto, body);
     const ids = dto.items.map((item) => item.id);
     const records = await this.gallery.findActiveByIds(ids);
     if (records.length !== ids.length) {
@@ -215,7 +239,10 @@ export class HunianGalleryService {
 
     const propertyId = records[0]?.propertyId;
     if (!propertyId) {
-      throw new BadRequestException({ code: 'HUNIAN_GALLERY_REORDER_EMPTY', message: 'Reorder items are required.' });
+      throw new BadRequestException({
+        code: 'HUNIAN_GALLERY_REORDER_EMPTY',
+        message: 'Reorder items are required.',
+      });
     }
     await this.assertCanMutateProperty(user, propertyId);
 
@@ -252,7 +279,10 @@ export class HunianGalleryService {
     await this.assertCanMutateProperty(user, before.propertyId);
     const deleted = await this.gallery.softDelete(imageId, user.id);
     if (!deleted) {
-      throw new NotFoundException({ code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND', message: 'Gallery image not found.' });
+      throw new NotFoundException({
+        code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND',
+        message: 'Gallery image not found.',
+      });
     }
 
     await this.audit.write({
@@ -274,7 +304,9 @@ export class HunianGalleryService {
     targets: PublicCatalogTargetRef[],
   ): Promise<Map<string, HunianGalleryPublicResponse[]>> {
     const propertyIds = [...new Set(targets.map((target) => target.propertyId))];
-    const targetKeys = new Set(targets.map((target) => this.publicMapKey(target.propertyId, target.catalogSlug)));
+    const targetKeys = new Set(
+      targets.map((target) => this.publicMapKey(target.propertyId, target.catalogSlug)),
+    );
     const records = await this.gallery.listPublicForProperties(propertyIds);
     const grouped = new Map<string, HunianGalleryPublicResponse[]>();
 
@@ -294,7 +326,10 @@ export class HunianGalleryService {
   async readPublicContent(imageId: string): Promise<FileContent> {
     const record = await this.gallery.findPublicWithFile(imageId);
     if (!record) {
-      throw new NotFoundException({ code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND', message: 'Gallery image not found.' });
+      throw new NotFoundException({
+        code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND',
+        message: 'Gallery image not found.',
+      });
     }
     return this.fileService.readStoredContent(record.file);
   }
@@ -315,7 +350,10 @@ export class HunianGalleryService {
     };
   }
 
-  private async scopedPropertyIds(user: UserAccessContext, propertyId?: string): Promise<string[] | undefined> {
+  private async scopedPropertyIds(
+    user: UserAccessContext,
+    propertyId?: string,
+  ): Promise<string[] | undefined> {
     if (propertyId) {
       await this.properties.assertCanReadProperty(user, propertyId);
       return user.roles.includes('owner') ? undefined : [propertyId];
@@ -323,7 +361,10 @@ export class HunianGalleryService {
     return user.roles.includes('owner') ? undefined : user.propertyIds;
   }
 
-  private async assertCanMutateProperty(user: UserAccessContext, propertyId: string): Promise<void> {
+  private async assertCanMutateProperty(
+    user: UserAccessContext,
+    propertyId: string,
+  ): Promise<void> {
     if (user.roles.includes('property_owner')) {
       throw new ForbiddenException({
         code: 'PROPERTY_OWNER_READ_ONLY',
@@ -336,7 +377,10 @@ export class HunianGalleryService {
   private async requireImage(imageId: string): Promise<HunianGalleryRecord> {
     const record = await this.gallery.findById(imageId);
     if (!record) {
-      throw new NotFoundException({ code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND', message: 'Gallery image not found.' });
+      throw new NotFoundException({
+        code: 'HUNIAN_GALLERY_IMAGE_NOT_FOUND',
+        message: 'Gallery image not found.',
+      });
     }
     return record;
   }
@@ -344,7 +388,10 @@ export class HunianGalleryService {
   private async requireGalleryFile(fileId: string): Promise<FileRecord> {
     const file = await this.files.findById(fileId);
     if (!file || file.isDeleted) {
-      throw new BadRequestException({ code: 'HUNIAN_GALLERY_FILE_INVALID', message: 'Gallery file is invalid.' });
+      throw new BadRequestException({
+        code: 'HUNIAN_GALLERY_FILE_INVALID',
+        message: 'Gallery file is invalid.',
+      });
     }
     if (file.filePurpose !== 'hunian_gallery') {
       throw new BadRequestException({
@@ -408,7 +455,10 @@ export class HunianGalleryService {
       });
     }
 
-    if (target.catalogSlug !== input.catalogSlug || target.publicGroupKey !== input.publicGroupKey) {
+    if (
+      target.catalogSlug !== input.catalogSlug ||
+      target.publicGroupKey !== input.publicGroupKey
+    ) {
       throw new BadRequestException({
         code: 'HUNIAN_GALLERY_CATALOG_TARGET_MISMATCH',
         message: 'Gallery target does not match the public catalog contract.',
@@ -418,7 +468,9 @@ export class HunianGalleryService {
     return target;
   }
 
-  private parsePublicGroupKey(publicGroupKey: string): Omit<NormalizedGalleryTargetInput, 'catalogSlug' | 'publicGroupKey'> {
+  private parsePublicGroupKey(
+    publicGroupKey: string,
+  ): Omit<NormalizedGalleryTargetInput, 'catalogSlug' | 'publicGroupKey'> {
     const parts = publicGroupKey.split('-');
     if (parts.length < 4) {
       throw new BadRequestException({
@@ -432,7 +484,12 @@ export class HunianGalleryService {
     const floor = parts.pop()?.toUpperCase() as HunianGalleryFloorCode | undefined;
     const buildingCode = parts.join('-');
 
-    if (!['rukost', 'apartkost'].includes(category) || !['male', 'female'].includes(gender) || !floor || !['A', 'B'].includes(floor)) {
+    if (
+      !['rukost', 'apartkost'].includes(category) ||
+      !['male', 'female'].includes(gender) ||
+      !floor ||
+      !['A', 'B'].includes(floor)
+    ) {
       throw new BadRequestException({
         code: 'HUNIAN_GALLERY_GROUP_KEY_INVALID',
         message: 'publicGroupKey is invalid.',
@@ -497,5 +554,12 @@ export class HunianGalleryService {
       publicVisible: record.publicVisible,
       deleted: record.deletedAt !== null,
     };
+  }
+
+  private async validate<T extends object>(type: new () => T, body: unknown): Promise<T> {
+    return (await this.strictValidation.transform(body, {
+      type: 'body',
+      metatype: type,
+    })) as T;
   }
 }

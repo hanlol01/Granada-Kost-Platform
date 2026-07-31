@@ -1,427 +1,586 @@
-import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ChevronUp,
-  ClipboardList,
-  Pencil,
-  Plus,
-  ShieldCheck,
-  Trash2,
-} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
+import { Eye, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { EmptyState, ErrorState, LoadingState } from "@/components/state";
+import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  useContentPublicationMutation,
+  usePropertyPolicyWorkspace,
+} from "@/hooks/useAdminUxMaster";
+import {
   adminUxMasterApi,
-  type KostType,
-  type KostTypeRule,
-  type KostTypeRuleInput,
-  type RuleCategory,
+  type PropertyPolicyDraftInput,
+  type PropertyPolicyWorkspace,
+  type PublicTermsContent,
 } from "@/lib/admin-ux-master-api";
 import { useAuth } from "@/lib/auth";
-import { useM4KostTypeRules, useM4KostTypes, useM4Mutation } from "@/hooks/useAdminUxMaster";
-
-const RULE_CATEGORY_LABEL: Record<RuleCategory, string> = {
-  general: "Umum",
-  guest: "Tamu",
-  resident: "Penghuni",
-  other: "Lainnya",
-  special_notes: "Catatan khusus",
-};
 
 export const Route = createFileRoute("/syarat-ketentuan")({
-  validateSearch: (raw: Record<string, unknown>) => ({
-    scope: raw.scope === "kost_type" ? ("kost_type" as const) : ("global" as const),
-    kost_type_id: typeof raw.kost_type_id === "string" ? raw.kost_type_id : undefined,
-  }),
   component: SyaratKetentuanRoute,
 });
 
-type RuleDraft = {
-  ruleCategory: RuleCategory;
-  ruleText: string;
-  icon: string;
-  isAllowed: boolean;
+type PolicyDraft = {
+  internalOperatingPolicy: string;
+  pricingExplanation: string;
+  minimumLeaseTerm: string;
+  dpExplanation: string;
+  securityDepositExplanation: string;
+  manualPaymentMethods: string;
+  houseRules: string;
+  visitorHours: string;
+  contactInformation: string;
+  categories: Array<"rukost" | "apartkost">;
+};
+
+const EMPTY_DRAFT: PolicyDraft = {
+  internalOperatingPolicy: "",
+  pricingExplanation: "",
+  minimumLeaseTerm: "",
+  dpExplanation: "",
+  securityDepositExplanation: "",
+  manualPaymentMethods: "",
+  houseRules: "",
+  visitorHours: "21:00",
+  contactInformation: "",
+  categories: ["rukost", "apartkost"],
+};
+const today = () => {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
 function SyaratKetentuanRoute() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("room.manage");
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const typesQuery = useM4KostTypes({ status: "active", limit: 100 });
-  const types = typesQuery.data?.items ?? [];
-  const selectedTypeId =
-    search.scope === "kost_type" ? (search.kost_type_id ?? types[0]?.id) : undefined;
-  const rulesQuery = useM4KostTypeRules(search.scope, selectedTypeId);
-  const [editor, setEditor] = useState<KostTypeRule | "create" | null>(null);
+  const workspace = usePropertyPolicyWorkspace();
+  const [draft, setDraft] = useState<PolicyDraft>(EMPTY_DRAFT);
+  const [effectiveDate, setEffectiveDate] = useState(today());
+  const [preview, setPreview] = useState(false);
 
-  if (typesQuery.isLoading || rulesQuery.isLoading) {
+  useEffect(() => {
+    setDraft(workspace.data?.draft ? fromAuthority(workspace.data.draft) : EMPTY_DRAFT);
+    setPreview(false);
+  }, [workspace.data]);
+
+  const save = useContentPublicationMutation<
+    PropertyPolicyWorkspace,
+    Omit<PropertyPolicyDraftInput, "propertyId">
+  >("property-policy", "Draft kebijakan disimpan", (propertyId, values, key) =>
+    adminUxMasterApi.propertyPolicy.saveDraft({ ...values, propertyId }, key),
+  );
+  const publish = useContentPublicationMutation<PropertyPolicyWorkspace, { effectiveDate: string }>(
+    "property-policy",
+    "Kebijakan dijadwalkan untuk publikasi",
+    (propertyId, values, key) =>
+      adminUxMasterApi.propertyPolicy.publish(propertyId, values.effectiveDate, key),
+  );
+  const restore = useContentPublicationMutation<PropertyPolicyWorkspace, { versionId: string }>(
+    "property-policy",
+    "Versi kebijakan dipulihkan sebagai draft",
+    (propertyId, values, key) =>
+      adminUxMasterApi.propertyPolicy.restore(propertyId, values.versionId, key),
+  );
+  const unpublish = useContentPublicationMutation<PropertyPolicyWorkspace, Record<string, never>>(
+    "property-policy",
+    "Publikasi syarat dan ketentuan dinonaktifkan",
+    (propertyId, _values, key) => adminUxMasterApi.propertyPolicy.unpublish(propertyId, key),
+  );
+
+  const publicContent = useMemo(() => toPublicContent(draft), [draft]);
+  const valid = isDraftValid(draft);
+  const busy = save.isPending || publish.isPending || restore.isPending || unpublish.isPending;
+  const isDirty =
+    JSON.stringify(draft) !==
+    JSON.stringify(workspace.data?.draft ? fromAuthority(workspace.data.draft) : EMPTY_DRAFT);
+
+  useBlocker({
+    shouldBlockFn: () =>
+      isDirty && !window.confirm("Perubahan draft kebijakan belum disimpan. Tinggalkan halaman?"),
+    enableBeforeUnload: isDirty,
+  });
+
+  if (workspace.isLoading) {
     return (
-      <AppShell title="Syarat & Ketentuan" subtitle="Aturan global dan per tipe kost">
-        <LoadingState label="Memuat aturan..." />
+      <AppShell title="Syarat & Ketentuan" subtitle="Kebijakan internal dan konten publik">
+        <LoadingState label="Memuat kebijakan properti..." />
       </AppShell>
     );
   }
-  if (typesQuery.error || rulesQuery.error) {
+  if (workspace.error) {
     return (
-      <AppShell title="Syarat & Ketentuan" subtitle="Aturan global dan per tipe kost">
+      <AppShell title="Syarat & Ketentuan" subtitle="Kebijakan internal dan konten publik">
         <ErrorState
-          error={typesQuery.error ?? rulesQuery.error}
-          title="Gagal memuat aturan"
-          onRetry={() => {
-            void typesQuery.refetch();
-            void rulesQuery.refetch();
-          }}
+          error={workspace.error}
+          title="Gagal memuat kebijakan properti"
+          onRetry={() => void workspace.refetch()}
         />
       </AppShell>
     );
   }
 
-  const rules = rulesQuery.data?.items ?? [];
-  const updateSearch = (next: Partial<typeof search>) =>
-    navigate({ search: (current) => ({ ...current, ...next }) });
   return (
     <AppShell
       title="Syarat & Ketentuan"
-      subtitle="Aturan yang dipakai bersama atau khusus pada setiap tipe kost."
+      subtitle="Kebijakan operasional internal dipisahkan dari konten aman untuk calon penghuni."
       actions={
-        canManage ? (
-          <Button
-            onClick={() => setEditor("create")}
-            disabled={search.scope === "kost_type" && !selectedTypeId}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Tambah Aturan
-          </Button>
-        ) : null
+        <Button
+          variant="outline"
+          className="min-h-11"
+          onClick={() => setPreview((current) => !current)}
+        >
+          <Eye className="mr-2 h-4 w-4" />
+          {preview ? "Tutup preview" : "Preview draft publik"}
+        </Button>
       }
     >
       <div className="space-y-5 pb-24 lg:pb-8">
-        <Card className="border-slate-800 bg-slate-900/85">
-          <CardContent className="grid gap-3 p-4 md:grid-cols-2">
-            <Select
-              value={search.scope}
-              onValueChange={(scope) =>
-                updateSearch({
-                  scope: scope as "global" | "kost_type",
-                  kost_type_id: scope === "global" ? undefined : types[0]?.id,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="global">Aturan global</SelectItem>
-                <SelectItem value="kost_type">Aturan per tipe kost</SelectItem>
-              </SelectContent>
-            </Select>
-            {search.scope === "kost_type" ? (
-              <Select
-                value={selectedTypeId ?? "none"}
-                onValueChange={(kost_type_id) =>
-                  updateSearch({ kost_type_id: kost_type_id === "none" ? undefined : kost_type_id })
+        <Card>
+          <CardHeader className="gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Dokumen kebijakan properti</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Draft dapat diubah; versi published bersifat immutable.
+              </p>
+            </div>
+            <Badge variant="outline">
+              {workspace.data?.versions.find((version) => version.publicationStatus === "published")
+                ? `Published v${workspace.data.versions.find((version) => version.publicationStatus === "published")?.version}`
+                : "Belum published"}
+            </Badge>
+          </CardHeader>
+        </Card>
+
+        {preview ? (
+          <PublicPreview content={publicContent} />
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Kebijakan operasional internal</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Tidak pernah masuk ke projection publik.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Label htmlFor="internal-policy">Catatan operasional</Label>
+                <Textarea
+                  id="internal-policy"
+                  rows={18}
+                  maxLength={5000}
+                  value={draft.internalOperatingPolicy}
+                  disabled={!canManage || busy}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      internalOperatingPolicy: event.target.value,
+                    }))
+                  }
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Konten aman untuk publik</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Hanya field terstruktur ini yang dapat dipublikasikan.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Field
+                  id="pricing-explanation"
+                  label="Penjelasan harga"
+                  value={draft.pricingExplanation}
+                  maxLength={2000}
+                  disabled={!canManage || busy}
+                  onChange={(pricingExplanation) =>
+                    setDraft((current) => ({ ...current, pricingExplanation }))
+                  }
+                />
+                <div>
+                  <Label htmlFor="minimum-lease-term">Masa sewa minimum</Label>
+                  <Input
+                    id="minimum-lease-term"
+                    className="min-h-11"
+                    maxLength={300}
+                    value={draft.minimumLeaseTerm}
+                    disabled={!canManage || busy}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        minimumLeaseTerm: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <Field
+                  id="dp-explanation"
+                  label="Penjelasan DP"
+                  value={draft.dpExplanation}
+                  maxLength={2000}
+                  disabled={!canManage || busy}
+                  onChange={(dpExplanation) =>
+                    setDraft((current) => ({ ...current, dpExplanation }))
+                  }
+                />
+                <Field
+                  id="deposit-explanation"
+                  label="Penjelasan security deposit"
+                  value={draft.securityDepositExplanation}
+                  maxLength={2000}
+                  disabled={!canManage || busy}
+                  onChange={(securityDepositExplanation) =>
+                    setDraft((current) => ({ ...current, securityDepositExplanation }))
+                  }
+                />
+                <Field
+                  id="manual-payment-methods"
+                  label="Metode pembayaran manual (satu per baris)"
+                  value={draft.manualPaymentMethods}
+                  disabled={!canManage || busy}
+                  onChange={(manualPaymentMethods) =>
+                    setDraft((current) => ({ ...current, manualPaymentMethods }))
+                  }
+                />
+                <Field
+                  id="house-rules"
+                  label="Aturan hunian publik (satu per baris)"
+                  value={draft.houseRules}
+                  disabled={!canManage || busy}
+                  onChange={(houseRules) => setDraft((current) => ({ ...current, houseRules }))}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="visitor-hours">Batas jam kunjungan</Label>
+                    <Input
+                      id="visitor-hours"
+                      className="min-h-11"
+                      type="time"
+                      value={draft.visitorHours}
+                      disabled={!canManage || busy}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          visitorHours: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="public-contact">Kontak publik</Label>
+                    <Input
+                      id="public-contact"
+                      className="min-h-11"
+                      maxLength={500}
+                      value={draft.contactInformation}
+                      disabled={!canManage || busy}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          contactInformation: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <fieldset className="rounded-xl border p-4">
+                  <legend className="px-1 text-sm font-medium">Berlaku untuk kategori</legend>
+                  <div className="mt-2 flex flex-wrap gap-4">
+                    {[
+                      ["rukost", "Rumah Kost"],
+                      ["apartkost", "Apart Kost"],
+                    ].map(([value, label]) => (
+                      <label key={value} className="flex min-h-11 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={draft.categories.includes(value as "rukost" | "apartkost")}
+                          disabled={!canManage || busy}
+                          onChange={() =>
+                            setDraft((current) => ({
+                              ...current,
+                              categories: toggleCategory(
+                                current.categories,
+                                value as "rukost" | "apartkost",
+                              ),
+                            }))
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {canManage ? (
+          <Card>
+            <CardContent className="flex flex-wrap items-end justify-end gap-3 p-4">
+              <div className="min-w-48">
+                <Label htmlFor="policy-effective-date">Tanggal efektif publikasi</Label>
+                <Input
+                  id="policy-effective-date"
+                  className="min-h-11"
+                  type="date"
+                  value={effectiveDate}
+                  onChange={(event) => setEffectiveDate(event.target.value)}
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="min-h-11"
+                disabled={busy || !valid}
+                onClick={() =>
+                  void save.mutateAsync({
+                    internalOperatingPolicy: draft.internalOperatingPolicy,
+                    publicContent,
+                  })
                 }
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih tipe kost" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Pilih tipe kost</SelectItem>
-                  {types.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <p className="self-center text-sm text-slate-400">
-                Aturan ini berlaku untuk seluruh tipe kost pada properti aktif.
+                <Save className="mr-2 h-4 w-4" /> Simpan draft
+              </Button>
+              <Button
+                className="min-h-11"
+                disabled={busy || !valid || !workspace.data?.draft || !effectiveDate || isDirty}
+                onClick={() => {
+                  if (
+                    !window.confirm("Publikasikan draft syarat dan ketentuan yang sudah disimpan?")
+                  ) {
+                    return;
+                  }
+                  void publish.mutateAsync({ effectiveDate });
+                }}
+              >
+                <ShieldCheck className="mr-2 h-4 w-4" /> Publikasikan
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-11"
+                disabled={
+                  busy ||
+                  !workspace.data?.versions.some(
+                    (version) => version.publicationStatus === "published",
+                  )
+                }
+                onClick={() => {
+                  if (!window.confirm("Hentikan seluruh publikasi syarat dan ketentuan?")) return;
+                  void unpublish.mutateAsync({});
+                }}
+              >
+                Unpublish
+              </Button>
+            </CardContent>
+            {isDirty ? (
+              <p className="px-4 pb-4 text-sm text-muted-foreground" role="status">
+                Simpan perubahan draft sebelum publikasi.
               </p>
+            ) : null}
+            {!valid ? (
+              <p className="px-4 pb-4 text-sm text-destructive" role="alert">
+                Lengkapi seluruh konten publik, metode pembayaran, kategori, dan format jam.
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Riwayat versi published</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {workspace.data?.versions.length ? (
+              workspace.data.versions.map((version) => (
+                <div
+                  key={version.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <span className="text-sm">
+                    Versi {version.version} · efektif {version.effectiveDate}
+                  </span>
+                  <Badge variant="outline">
+                    {version.publicationStatus === "published" ? "Published" : "Archived"}
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    className="min-h-11"
+                    disabled={!canManage || busy}
+                    onClick={() => {
+                      if (!window.confirm("Pulihkan versi ini sebagai draft baru?")) return;
+                      void restore.mutateAsync({ versionId: version.id });
+                    }}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" /> Pulihkan sebagai draft
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">Belum ada versi published.</p>
             )}
           </CardContent>
         </Card>
-        <RuleList
-          rules={rules}
-          kostTypeId={selectedTypeId}
-          canManage={canManage}
-          onEdit={setEditor}
-        />
       </div>
-      <RuleEditor
-        rule={editor === "create" ? null : editor}
-        kostTypeId={selectedTypeId ?? null}
-        scope={search.scope}
-        open={editor !== null}
-        onOpenChange={(open) => !open && setEditor(null)}
-      />
     </AppShell>
   );
 }
 
-function RuleList({
-  rules,
-  kostTypeId,
-  canManage,
-  onEdit,
+function Field({
+  id,
+  label,
+  value,
+  disabled,
+  maxLength,
+  onChange,
 }: {
-  rules: KostTypeRule[];
-  kostTypeId?: string;
-  canManage: boolean;
-  onEdit: (rule: KostTypeRule) => void;
+  id: string;
+  label: string;
+  value: string;
+  disabled: boolean;
+  maxLength?: number;
+  onChange: (value: string) => void;
 }) {
-  const reorder = useM4Mutation<unknown, { items: { id: string; sortOrder: number }[] }>(
-    "rule",
-    "Urutan aturan disimpan",
-    (propertyId, values, key) =>
-      adminUxMasterApi.rules.reorder(propertyId, kostTypeId, values.items, key),
-  );
-  const remove = useM4Mutation<unknown, { id: string }>(
-    "rule",
-    "Aturan dihapus",
-    (_propertyId, values, key) => adminUxMasterApi.rules.remove(values.id, key),
-  );
-  const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= rules.length) return;
-    const next = [...rules];
-    [next[index], next[target]] = [next[target], next[index]];
-    void reorder.mutateAsync({
-      items: next.map((item, sortOrder) => ({ id: item.id, sortOrder })),
-    });
-  };
-  if (!rules.length) {
-    return (
-      <Card className="border-slate-800 bg-slate-900/85">
-        <CardContent className="p-6">
-          <EmptyState
-            icon={<ClipboardList className="h-5 w-5" />}
-            title="Belum ada aturan"
-            description="Tambahkan aturan agar ketentuan tampil konsisten pada tipe kost."
-          />
-        </CardContent>
-      </Card>
-    );
-  }
   return (
-    <div className="space-y-3">
-      {rules.map((rule, index) => (
-        <Card key={rule.id} className="border-slate-800 bg-slate-900/85">
-          <CardContent className="flex items-start justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-300">
-                  {RULE_CATEGORY_LABEL[rule.ruleCategory]}
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className={
-                    rule.isAllowed === false
-                      ? "border-rose-500/30 text-rose-300"
-                      : "border-emerald-500/30 text-emerald-300"
-                  }
-                >
-                  {rule.isAllowed === false ? "Tidak diizinkan" : "Diizinkan"}
-                </Badge>
-              </div>
-              <p className="whitespace-pre-wrap text-sm text-slate-200">{rule.ruleText}</p>
-            </div>
-            {canManage ? (
-              <div className="flex shrink-0 gap-1">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={index === 0 || reorder.isPending}
-                  onClick={() => move(index, -1)}
-                  aria-label="Naikkan aturan"
-                >
-                  <ChevronUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={index === rules.length - 1 || reorder.isPending}
-                  onClick={() => move(index, 1)}
-                  aria-label="Turunkan aturan"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => onEdit(rule)}
-                  aria-label="Edit aturan"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-rose-300 hover:text-rose-200"
-                  onClick={() => {
-                    if (window.confirm("Hapus aturan ini?"))
-                      void remove.mutateAsync({ id: rule.id });
-                  }}
-                  aria-label="Hapus aturan"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ))}
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <Textarea
+        id={id}
+        rows={3}
+        value={value}
+        maxLength={maxLength}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }
 
-function RuleEditor({
-  rule,
-  scope,
-  kostTypeId,
-  open,
-  onOpenChange,
-}: {
-  rule: KostTypeRule | null;
-  scope: "global" | "kost_type";
-  kostTypeId: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [draft, setDraft] = useState<RuleDraft>({
-    ruleCategory: "general",
-    ruleText: "",
-    icon: "",
-    isAllowed: true,
-  });
-  const create = useM4Mutation<
-    KostTypeRule,
-    Omit<KostTypeRuleInput, "propertyId" | "kostTypeId"> & { kostTypeId: string | null }
-  >("rule", "Aturan disimpan", (propertyId, values, key) =>
-    adminUxMasterApi.rules.create({ ...values, propertyId }, key),
-  );
-  const update = useM4Mutation<KostTypeRule, { id: string; input: RuleDraft }>(
-    "rule",
-    "Aturan diperbarui",
-    (_propertyId, values, key) => adminUxMasterApi.rules.update(values.id, values.input, key),
-  );
-  const pending = create.isPending || update.isPending;
-  useEffect(() => {
-    if (open)
-      setDraft({
-        ruleCategory: rule?.ruleCategory ?? "general",
-        ruleText: rule?.ruleText ?? "",
-        icon: rule?.icon ?? "",
-        isAllowed: rule?.isAllowed !== false,
-      });
-  }, [open, rule]);
-  const submit = async () => {
-    if (!draft.ruleText.trim()) return;
-    try {
-      if (rule) await update.mutateAsync({ id: rule.id, input: draft });
-      else
-        await create.mutateAsync({
-          ...draft,
-          kostTypeId: scope === "kost_type" ? kostTypeId : null,
-        });
-      onOpenChange(false);
-    } catch {
-      /* safe toast */
-    }
-  };
+function PublicPreview({ content }: { content: PublicTermsContent }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent className="border-slate-800 bg-slate-900 text-slate-100">
-        <DialogHeader>
-          <DialogTitle>{rule ? "Edit aturan" : "Tambah aturan"}</DialogTitle>
-          <DialogDescription>
-            {scope === "global"
-              ? "Aturan ini berlaku global."
-              : "Aturan ini berlaku untuk tipe kost yang dipilih."}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Kategori aturan</Label>
-            <Select
-              value={draft.ruleCategory}
-              onValueChange={(ruleCategory) =>
-                setDraft((current) => ({ ...current, ruleCategory: ruleCategory as RuleCategory }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(RULE_CATEGORY_LABEL).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Isi aturan</Label>
-            <Textarea
-              value={draft.ruleText}
-              maxLength={1000}
-              rows={5}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, ruleText: event.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Ikon (opsional)</Label>
-            <Input
-              value={draft.icon}
-              maxLength={80}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, icon: event.target.value }))
-              }
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-lg border border-slate-800 p-3">
-            <Label>Aturan diizinkan</Label>
-            <Switch
-              checked={draft.isAllowed}
-              onCheckedChange={(isAllowed) => setDraft((current) => ({ ...current, isAllowed }))}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-            Batal
-          </Button>
-          <Button disabled={!draft.ruleText.trim() || pending} onClick={() => void submit()}>
-            {pending ? "Menyimpan..." : "Simpan"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Card aria-label="Preview konten publik">
+      <CardHeader>
+        <CardTitle>Preview publik</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Catatan internal tidak ditampilkan pada preview ini.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-5 md:grid-cols-2">
+        <PreviewSection title="Harga dan masa sewa">
+          <p>{content.pricingExplanation}</p>
+          <p>{content.minimumLeaseTerm}</p>
+        </PreviewSection>
+        <PreviewSection title="DP dan security deposit">
+          <p>{content.dpExplanation}</p>
+          <p>{content.securityDepositExplanation}</p>
+        </PreviewSection>
+        <PreviewSection title="Pembayaran">
+          <List items={content.manualPaymentMethods} />
+        </PreviewSection>
+        <PreviewSection title="Aturan hunian">
+          <List items={content.houseRules} />
+          <p>Jam kunjungan sampai {content.visitorHours}</p>
+        </PreviewSection>
+        <PreviewSection title="Kontak">
+          <p>{content.contactInformation}</p>
+        </PreviewSection>
+        <PreviewSection title="Kategori">
+          <p>
+            {content.categoryApplicability
+              .map((category) => (category === "rukost" ? "Rumah Kost" : "Apart Kost"))
+              .join(" · ")}
+          </p>
+        </PreviewSection>
+      </CardContent>
+    </Card>
   );
+}
+
+function PreviewSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="font-semibold">{title}</h2>
+      <div className="space-y-2 break-words text-sm text-muted-foreground">{children}</div>
+    </section>
+  );
+}
+
+function List({ items }: { items: string[] }) {
+  return (
+    <ul className="list-disc space-y-1 pl-5">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function fromAuthority(draft: NonNullable<PropertyPolicyWorkspace["draft"]>): PolicyDraft {
+  return {
+    internalOperatingPolicy: draft.internalOperatingPolicy,
+    pricingExplanation: draft.publicContent.pricingExplanation,
+    minimumLeaseTerm: draft.publicContent.minimumLeaseTerm,
+    dpExplanation: draft.publicContent.dpExplanation,
+    securityDepositExplanation: draft.publicContent.securityDepositExplanation,
+    manualPaymentMethods: draft.publicContent.manualPaymentMethods.join("\n"),
+    houseRules: draft.publicContent.houseRules.join("\n"),
+    visitorHours: draft.publicContent.visitorHours,
+    contactInformation: draft.publicContent.contactInformation,
+    categories: draft.publicContent.categoryApplicability,
+  };
+}
+
+function toPublicContent(draft: PolicyDraft): PublicTermsContent {
+  const lines = (value: string) =>
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  return {
+    pricingExplanation: draft.pricingExplanation.trim(),
+    minimumLeaseTerm: draft.minimumLeaseTerm.trim(),
+    dpExplanation: draft.dpExplanation.trim(),
+    securityDepositExplanation: draft.securityDepositExplanation.trim(),
+    manualPaymentMethods: lines(draft.manualPaymentMethods),
+    houseRules: lines(draft.houseRules),
+    visitorHours: draft.visitorHours,
+    contactInformation: draft.contactInformation.trim(),
+    categoryApplicability: draft.categories,
+  };
+}
+
+function isDraftValid(draft: PolicyDraft): boolean {
+  const content = toPublicContent(draft);
+  return (
+    Boolean(draft.internalOperatingPolicy.trim()) &&
+    Boolean(content.pricingExplanation) &&
+    Boolean(content.minimumLeaseTerm) &&
+    Boolean(content.dpExplanation) &&
+    Boolean(content.securityDepositExplanation) &&
+    content.manualPaymentMethods.length > 0 &&
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(content.visitorHours) &&
+    Boolean(content.contactInformation) &&
+    content.categoryApplicability.length > 0
+  );
+}
+
+function toggleCategory(
+  categories: Array<"rukost" | "apartkost">,
+  category: "rukost" | "apartkost",
+) {
+  return categories.includes(category)
+    ? categories.filter((item) => item !== category)
+    : [...categories, category];
 }

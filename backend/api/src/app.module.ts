@@ -29,6 +29,7 @@ import { BookingLeadModule } from './modules/booking-lead/booking-lead.module';
 import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.module';
 import { LeaseModule } from './modules/lease/lease.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { OnboardingModule } from './modules/resident/onboarding.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     PropertyModule,
     RoomModule,
     ResidentModule,
+    OnboardingModule,
     OccupancyModule,
     BillingModule,
     ComplaintModule,

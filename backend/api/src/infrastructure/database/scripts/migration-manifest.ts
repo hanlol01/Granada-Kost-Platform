@@ -223,4 +223,13 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_residents_property_user_identity') IS NOT NULL",
     ],
   },
+  {
+    version: '026_resident_onboarding_lease_activation.sql',
+    checksumSha256: '39b2a33de23cc9c83f1d5bd17101b9abc93e9c7e2447c720e910a7dd60efe68a',
+    sentinels: [
+      "to_regclass('public.onboarding_commitments') IS NOT NULL",
+      "to_regclass('public.lease_installments') IS NOT NULL",
+      "to_regclass('public.uq_onboarding_commitments_active_room') IS NOT NULL",
+    ],
+  },
 ] as const;

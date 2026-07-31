@@ -4,9 +4,14 @@ export type BookingLeadStatus =
   | "new"
   | "contacted"
   | "visit_scheduled"
+  | "negotiating"
+  | "awaiting_dp"
+  | "onboarding"
+  | "leased"
   | "converted"
   | "rejected"
-  | "expired";
+  | "expired"
+  | "cancelled";
 export type BookingLeadCategory = "rukost" | "apartkost";
 export type BookingLeadGender = "male" | "female";
 export type BookingLeadFloorCode = "A" | "B";
@@ -129,9 +134,14 @@ const STATUSES = new Set<BookingLeadStatus>([
   "new",
   "contacted",
   "visit_scheduled",
+  "negotiating",
+  "awaiting_dp",
+  "onboarding",
+  "leased",
   "converted",
   "rejected",
   "expired",
+  "cancelled",
 ]);
 const CATEGORIES = new Set<BookingLeadCategory>(["rukost", "apartkost"]);
 const GENDERS = new Set<BookingLeadGender>(["male", "female"]);

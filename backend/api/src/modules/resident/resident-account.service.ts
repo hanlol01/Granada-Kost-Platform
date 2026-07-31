@@ -135,6 +135,37 @@ export class ResidentAccountService {
     });
   }
 
+  /**
+   * W05 uses the same W04 account authority inside its onboarding transaction.
+   * This method deliberately does not claim idempotency or open a transaction;
+   * the caller owns both boundaries and must complete its own command record.
+   */
+  async provisionInTransaction(
+    client: PoolClient,
+    actor: UserAccessContext,
+    residentId: string,
+    propertyId: string,
+    context: RequestAuditContext,
+  ): Promise<ResidentAccountProvisionResult> {
+    const locked = await this.lockResident(client, residentId, propertyId);
+    const identity = this.canonicalIdentity(locked);
+    const result = await this.linkAccount(client, locked, identity, actor.id);
+    await this.audit.write(
+      {
+        actorUserId: actor.id,
+        propertyId: locked.property_id,
+        action: 'resident.account_provision',
+        resourceType: 'resident',
+        resourceId: locked.id,
+        afterData: { account_status: result.status },
+        resultStatus: 'success',
+        ...context,
+      },
+      client,
+    );
+    return result;
+  }
+
   private async replay(
     client: PoolClient,
     actorId: string,

@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { BookingLeadDetailsDialog } from "@/components/booking-leads/BookingLeadDetailsDialog";
+import { ResidentOnboardingDialog } from "@/components/onboarding/ResidentOnboardingDialog";
 import {
   BookingLeadHoldDialog,
   BookingLeadHoldStatus,
@@ -71,9 +72,14 @@ const STATUS_CLS: Record<BookingLeadStatus, string> = {
   new: "bg-warning/20 text-warning-foreground",
   contacted: "bg-chart-4/15 text-chart-4",
   visit_scheduled: "bg-muted text-muted-foreground",
+  negotiating: "bg-muted text-muted-foreground",
+  awaiting_dp: "bg-warning/20 text-warning-foreground",
+  onboarding: "bg-chart-4/15 text-chart-4",
+  leased: "bg-success/15 text-success",
   converted: "bg-muted text-muted-foreground",
   rejected: "bg-destructive/15 text-destructive",
   expired: "bg-muted text-muted-foreground",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 function LeadStatusBadge({ status }: { status: BookingLeadStatus }) {
@@ -132,10 +138,15 @@ function BookingLeadsPage() {
     lead: BookingLeadRecord;
     hold: BookingLeadHoldRecord | null;
   } | null>(null);
+  const [onboardingLead, setOnboardingLead] = useState<BookingLeadRecord | null>(null);
+  const [manualOnboarding, setManualOnboarding] = useState(false);
 
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
   const canManage = hasPermission("room.manage");
+  const canManageOnboarding =
+    hasPermission("resident.manage") &&
+    Boolean(user?.roles.some((role) => role === "owner" || role === "manager" || role === "admin"));
   const canManageHolds =
     canManage && Boolean(user?.roles.some((role) => role === "manager" || role === "admin"));
   const leadsQuery = useBookingLeads({
@@ -245,6 +256,18 @@ function BookingLeadsPage() {
           </span>
         ))}
       </div>
+      {canManageOnboarding ? (
+        <div className="mb-4 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => setManualOnboarding(true)}
+          >
+            Onboarding manual
+          </Button>
+        </div>
+      ) : null}
 
       {holdsQuery.accessEnabled && holdsQuery.isPending ? (
         <div
@@ -487,6 +510,22 @@ function BookingLeadsPage() {
                                 onSelect={(next) => queueStatusChange(lead, next)}
                               />
                             ) : null}
+                            {canManageOnboarding &&
+                            [
+                              "new",
+                              "contacted",
+                              "visit_scheduled",
+                              "negotiating",
+                              "awaiting_dp",
+                            ].includes(lead.status) ? (
+                              <Button
+                                className="min-h-11"
+                                size="sm"
+                                onClick={() => setOnboardingLead(lead)}
+                              >
+                                Lanjutkan onboarding
+                              </Button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -590,6 +629,22 @@ function BookingLeadsPage() {
                           onSelect={(next) => queueStatusChange(lead, next)}
                         />
                       ) : null}
+                      {canManageOnboarding &&
+                      [
+                        "new",
+                        "contacted",
+                        "visit_scheduled",
+                        "negotiating",
+                        "awaiting_dp",
+                      ].includes(lead.status) ? (
+                        <Button
+                          className="min-h-11"
+                          size="sm"
+                          onClick={() => setOnboardingLead(lead)}
+                        >
+                          Lanjutkan onboarding
+                        </Button>
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -641,6 +696,17 @@ function BookingLeadsPage() {
         hold={holdIntent?.hold ?? null}
         coverage={holdCoverage}
         onOpenChange={(open) => !open && setHoldIntent(null)}
+      />
+      <ResidentOnboardingDialog
+        lead={onboardingLead}
+        manual={manualOnboarding}
+        open={onboardingLead !== null || manualOnboarding}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOnboardingLead(null);
+            setManualOnboarding(false);
+          }
+        }}
       />
       <ConfirmDialog
         open={pending !== null}

@@ -13,6 +13,6 @@ import { ResidentService } from './resident.service';
   imports: [FileModule, PropertyModule, RbacModule],
   controllers: [ResidentController, PropertyOwnerResidentController, MyResidentContextController],
   providers: [ResidentRepository, ResidentService, ResidentAccountService],
-  exports: [ResidentRepository, ResidentService],
+  exports: [ResidentRepository, ResidentService, ResidentAccountService],
 })
 export class ResidentModule {}

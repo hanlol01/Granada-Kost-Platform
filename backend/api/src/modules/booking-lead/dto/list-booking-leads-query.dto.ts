@@ -31,7 +31,19 @@ export class ListBookingLeadsQueryDto extends PaginationQueryDto {
 
   @IsOptional()
   @optionalTrimLower
-  @IsIn(['new', 'contacted', 'visit_scheduled', 'converted', 'rejected', 'expired'])
+  @IsIn([
+    'new',
+    'contacted',
+    'visit_scheduled',
+    'negotiating',
+    'awaiting_dp',
+    'onboarding',
+    'leased',
+    'converted',
+    'rejected',
+    'expired',
+    'cancelled',
+  ])
   status?: BookingLeadStatus;
 
   @IsOptional()

@@ -20,14 +20,25 @@ import {
 
 const DUPLICATE_WINDOW_MINUTES = 15;
 const PUBLIC_SUCCESS_MESSAGE = 'Terima kasih, admin akan menghubungi Anda via WhatsApp.';
-const TERMINAL_STATUSES: BookingLeadStatus[] = ['converted', 'rejected', 'expired'];
+const TERMINAL_STATUSES: BookingLeadStatus[] = [
+  'converted',
+  'rejected',
+  'expired',
+  'leased',
+  'cancelled',
+];
 const ALLOWED_TRANSITIONS: Record<BookingLeadStatus, BookingLeadStatus[]> = {
   new: ['contacted', 'rejected', 'expired'],
   contacted: ['rejected', 'expired'],
   visit_scheduled: [],
+  negotiating: [],
+  awaiting_dp: [],
+  onboarding: [],
+  leased: [],
   converted: [],
   rejected: [],
   expired: [],
+  cancelled: [],
 };
 
 @Injectable()

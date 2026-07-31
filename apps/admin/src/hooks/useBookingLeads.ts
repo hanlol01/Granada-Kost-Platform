@@ -29,9 +29,14 @@ export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   new: "Baru",
   contacted: "Sudah Dihubungi",
   visit_scheduled: "Status lama — tindak lanjut",
+  negotiating: "Dalam Negosiasi",
+  awaiting_dp: "Menunggu DP",
+  onboarding: "Dalam Onboarding",
+  leased: "Sewa Aktif",
   converted: "Status lama — selesai",
   rejected: "Ditolak",
   expired: "Kedaluwarsa",
+  cancelled: "Dibatalkan",
 };
 
 export const BOOKING_LEAD_CATEGORY_LABEL: Record<BookingLeadCategory, string> = {

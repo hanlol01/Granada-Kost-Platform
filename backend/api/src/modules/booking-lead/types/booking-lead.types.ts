@@ -6,9 +6,14 @@ export type BookingLeadStatus =
   | 'new'
   | 'contacted'
   | 'visit_scheduled'
+  | 'negotiating'
+  | 'awaiting_dp'
+  | 'onboarding'
+  | 'leased'
   | 'converted'
   | 'rejected'
-  | 'expired';
+  | 'expired'
+  | 'cancelled';
 export type BookingLeadSource = 'public_kamar' | 'admin_quick_entry';
 
 export type BookingLeadRecord = {

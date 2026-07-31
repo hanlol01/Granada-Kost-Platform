@@ -133,6 +133,14 @@ gender, hold, DP, deposit, resident, or lease activation checks.
 | Open WhatsApp manually and record outcome          | `DEC-REMINDER-001`, `DEC-REMINDER-010`          | `KMO-W08A`, `KMO-W08C` | `QA-REMINDER-003..005`                   |
 | Clear stale work item after payment/reconciliation | `INV-NOTIFICATION-001`, `INV-REMINDER-001..002` | `KMO-W08B`, `KMO-W08D` | `QA-NOTIFICATION-001`, `QA-REMINDER-004` |
 
+W06A–W06E source evidence, including exact schedule totals, manual
+transfer/cash behavior, oldest-first DP, separate deposit liability,
+multi-invoice allocation, immutable receipt/reversal records, Admin/Penghuni
+boundaries, and disposable migration replay/rollback is recorded in
+[KMO-W06_BILLING_MANUAL_PAYMENTS.md](evidence/KMO-W06_BILLING_MANUAL_PAYMENTS.md).
+Final-review approval, canonical application, and authenticated browser evidence
+are not implied by this trace.
+
 ## 5. Non-Functional Traceability
 
 | Requirement         | Applies to                                         | Required proof                                                                                                          |

@@ -44,6 +44,8 @@ type ActivationLeaseRow = {
   commitment_category: 'rukost' | 'apartkost';
   commitment_gender: 'male' | 'female';
   commitment_status: string;
+  dp_required_amount: string;
+  security_deposit_required_amount: string;
 };
 
 type ActivationHoldRow = {
@@ -113,6 +115,7 @@ export class LeaseActivationService {
         `SELECT
            l.id,l.property_id,l.resident_id,l.room_id,l.lease_status,l.start_date,l.end_date,
            l.onboarding_commitment_id,r.room_status,r.number AS room_number,
+           l.dp_required_amount,l.security_deposit_required_amount,
            r.property_id AS room_property_id,r.category AS room_category,
            r.gender_policy AS room_gender_policy,
            rb.property_id AS building_property_id,rb.category AS building_category,
@@ -171,6 +174,64 @@ export class LeaseActivationService {
         throw new ConflictException({
           code: 'LEASE_ACTIVATION_AUTHORITY_MISMATCH',
           message: 'Lease activation authority requires reconciliation',
+        });
+      const financials = await client.query<{
+        dp_verified_amount: string;
+        deposit_balance: string;
+        first_due_date: string | null;
+        first_invoice_status: string | null;
+      }>(
+        `SELECT
+           COALESCE((
+             SELECT sum(payment.amount)
+             FROM payments payment
+             LEFT JOIN payment_reversals reversal ON reversal.payment_id=payment.id
+             WHERE payment.property_id=$1 AND payment.lease_id=$2
+               AND payment.payment_purpose='dp' AND payment.payment_status='verified'
+               AND reversal.id IS NULL
+               AND EXISTS (SELECT 1 FROM payment_allocations allocation WHERE allocation.payment_id=payment.id)
+           ),0) AS dp_verified_amount,
+           COALESCE((
+             SELECT sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END)
+             FROM lease_deposit_transactions ledger
+             WHERE ledger.property_id=$1 AND ledger.lease_id=$2
+           ),0) AS deposit_balance,
+           (SELECT installment.due_date::text FROM lease_installments installment
+             WHERE installment.property_id=$1 AND installment.lease_id=$2
+             ORDER BY installment.sequence_number LIMIT 1) AS first_due_date,
+           (SELECT invoice.invoice_status FROM lease_installments installment
+             JOIN invoices invoice ON invoice.id=installment.invoice_id
+             WHERE installment.property_id=$1 AND installment.lease_id=$2
+             ORDER BY installment.sequence_number LIMIT 1) AS first_invoice_status`,
+        [propertyId, lease.id],
+      );
+      const financial = financials.rows[0];
+      if (
+        !financial ||
+        Number(financial.dp_verified_amount) < Number(lease.dp_required_amount) ||
+        Number(financial.deposit_balance) < Number(lease.security_deposit_required_amount)
+      )
+        throw new ConflictException({
+          code: 'LEASE_ACTIVATION_FINANCIAL_OBLIGATION_UNMET',
+          message: 'Verified DP and security-deposit ledger obligations must be satisfied',
+        });
+      if (
+        !financial.first_due_date ||
+        !financial.first_invoice_status ||
+        !['issued', 'partially_paid', 'paid', 'overdue'].includes(financial.first_invoice_status)
+      )
+        throw new ConflictException({
+          code: 'LEASE_ACTIVATION_BILLING_AUTHORITY_MISSING',
+          message: 'The first contract installment must have an issued invoice',
+        });
+      const dueBoundary = await client.query<{ due_is_valid: boolean }>(
+        `SELECT $1::date <= (COALESCE($2::timestamptz,now()) AT TIME ZONE 'Asia/Jakarta')::date AS due_is_valid`,
+        [financial.first_due_date, dto.activated_at ?? null],
+      );
+      if (!dueBoundary.rows[0]?.due_is_valid)
+        throw new ConflictException({
+          code: 'LEASE_ACTIVATION_FIRST_INSTALLMENT_NOT_DUE',
+          message: 'First installment must be due no later than activation',
         });
       if (lease.room_status !== 'reserved' && lease.room_status !== 'vacant')
         throw new ConflictException({

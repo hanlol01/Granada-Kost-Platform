@@ -1,5 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { FileService } from '../../file/file.service';
+import { Controller, Get, GoneException, Param, Query, UseGuards } from '@nestjs/common';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
@@ -19,31 +18,67 @@ export class PaymentProofController {
   constructor(
     private readonly proofs: PaymentProofService,
     private readonly properties: PropertyService,
-    private readonly fileService: FileService,
   ) {}
 
   @Get()
   async list(@CurrentUser() user: UserAccessContext, @Query() query: ListPaymentProofsQueryDto) {
     const propertyIds = await scopedPropertyIds(this.properties, user, query.property_id);
     const results = await Promise.all(
-      propertyIds.map((propertyId) => this.proofs.list(propertyId, query.status, query.limit, query.offset)),
+      propertyIds.map((propertyId) =>
+        this.proofs.list(propertyId, query.status, query.limit, query.offset),
+      ),
     );
     return results.flat();
   }
 
   @Get(':proofId')
-  async get(@CurrentUser() user: UserAccessContext, @Param('proofId') proofId: string) {
+  async get(
+    @CurrentUser() user: UserAccessContext,
+    @Param('proofId') proofId: string,
+    @Query('property_id') propertyId?: string,
+  ) {
+    if (!propertyId)
+      throw new GoneException({
+        code: 'PROPERTY_SCOPE_REQUIRED',
+        message: 'property_id is required',
+      });
+    await this.properties.assertCanReadProperty(user, propertyId);
     const proof = await this.proofs.get(proofId);
-    await this.properties.assertCanReadProperty(user, proof.propertyId);
+    if (proof.propertyId !== propertyId)
+      throw new GoneException({
+        code: 'PAYMENT_PROOF_SCOPE_MISMATCH',
+        message: 'Payment proof is unavailable',
+      });
     return proof;
   }
 
   /** Returns safe file metadata for a payment proof (no storage_path). */
   @Get(':proofId/files')
-  async listFiles(@CurrentUser() user: UserAccessContext, @Param('proofId') proofId: string) {
+  async listFiles(
+    @CurrentUser() user: UserAccessContext,
+    @Param('proofId') proofId: string,
+    @Query('property_id') propertyId?: string,
+  ) {
+    if (!propertyId)
+      throw new GoneException({
+        code: 'PROPERTY_SCOPE_REQUIRED',
+        message: 'property_id is required',
+      });
+    await this.properties.assertCanReadProperty(user, propertyId);
     const proof = await this.proofs.get(proofId);
-    await this.properties.assertCanReadProperty(user, proof.propertyId);
+    if (proof.propertyId !== propertyId)
+      throw new GoneException({
+        code: 'PAYMENT_PROOF_SCOPE_MISMATCH',
+        message: 'Payment proof is unavailable',
+      });
     const records = await this.proofs.listFiles(proofId);
-    return records.map((r) => this.fileService.toResponse(r));
+    return records.map((record) => ({
+      id: record.id,
+      original_filename: record.originalFilename,
+      mime_type: record.mimeType,
+      file_size_bytes: record.fileSizeBytes,
+      created_at: record.createdAt,
+      content_path: `/files/${record.id}/content`,
+    }));
   }
 }

@@ -489,6 +489,15 @@ Exit evidence:
 - public/Property Owner privacy;
 - PDF content and authorization.
 
+Executor implementation note (2026-07-31): W06A–W06E source is implemented and
+is **ready for final review**, with migration `027_billing_manual_payments.sql`
+manifest-bound and proven on disposable PostgreSQL for first apply, replay, and
+synthetic rollback. Authenticated, server-mediated invoice PDF downloads are
+implemented for Admin and Penghuni without exposing storage metadata. Canonical
+migration application, authenticated browser evidence, provider checkout, and
+reminder delivery remain separate authorized or later-package work; this note does not award
+`AUTOMATED_VERIFIED` or `RUNTIME_VERIFIED`.
+
 ## KMO-W07 — Resident/Room 360, Transfer, Renewal, and Checkout
 
 Class: Program Ship; split into `KMO-W07A`–`KMO-W07D`

@@ -203,53 +203,18 @@ test("M7-B2 hooks use only approved GET paths and enforce property/access cache 
   assert.doesNotMatch(source, /paymentUrl|snapToken|providerTransactionId|metadata|rawProvider/);
 });
 
-test("M7-B2 Online list and detail expose required states without rendering opaque or forbidden fields", async () => {
+test("M7-B2 compatibility stays read-only while W06 makes manual billing the live payments route", async () => {
   const source = await readFile(new URL("../routes/payments.tsx", import.meta.url), "utf8");
-  const gatewaySection = source.slice(source.indexOf("// --- Payment gateway"));
-
-  assert.match(
-    source,
-    /canReadGatewayTransactions \? <TabsTrigger value="online">Online<\/TabsTrigger> : null/,
+  const workspace = await readFile(
+    new URL("../components/billing/W06PaymentsWorkspace.tsx", import.meta.url),
+    "utf8",
   );
-  assert.match(source, /Boolean\(currentPropertyId\).*canReadAdminPaymentTransactions/s);
-  assert.match(source, /activeTab === "online" && canReadGatewayTransactions/);
-  assert.match(source, /gatewayMatchesProperty.*gatewayState\.propertyId === currentPropertyId/s);
-  assert.match(source, /selectedGatewayTransactionId = gatewayMatchesProperty/s);
-  assert.match(gatewaySection, /query\.isPending.*Memuat transaksi pembayaran online/s);
-  assert.match(source, /Belum ada transaksi pembayaran online/);
-  assert.match(gatewaySection, /isForbiddenError\(query\.error\)/);
-  assert.match(source, /Gagal memuat transaksi pembayaran online/);
-  assert.match(gatewaySection, /query\.isPending.*Memuat detail transaksi online/s);
-  assert.match(gatewaySection, /Detail transaksi tidak tersedia/);
-  assert.match(gatewaySection, /isNotFoundError\(query\.error\)/);
-  assert.match(gatewaySection, /Gagal memuat detail transaksi/);
-  assert.match(gatewaySection, /page\.meta\.offset - page\.meta\.limit/);
-  assert.match(gatewaySection, /page\.meta\.offset \+ page\.meta\.limit >= page\.meta\.total/);
-  assert.match(gatewaySection, /page\.meta\.offset \+ page\.data\.length/);
-  assert.match(source, /<TabsTrigger value="invoices">Invoice<\/TabsTrigger>/);
-  assert.match(source, /<TabsTrigger value="payments">Pembayaran<\/TabsTrigger>/);
-  assert.match(source, /<TabsContent value="invoices">/);
-  assert.match(source, /<TabsContent value="payments">/);
 
-  for (const forbiddenName of [
-    "residentId",
-    "requestedByUserId",
-    "residentName",
-    "invoiceCode",
-    "providerTransactionId",
-    "expiresAt",
-    "paymentUrl",
-    "snapToken",
-    "metadata",
-    "rawProvider",
-  ]) {
-    assert.equal(gatewaySection.includes(forbiddenName), false);
-  }
-  assert.doesNotMatch(gatewaySection, /console\.(log|error|warn|info)/);
-  assert.doesNotMatch(
-    gatewaySection,
-    /mutate|mutation|polling|export|apiClient\.(post|patch|put|delete)/,
-  );
+  assert.match(source, /W06PaymentsWorkspace/);
+  assert.match(workspace, /bank_transfer/);
+  assert.match(workspace, /security_deposit/);
+  assert.doesNotMatch(`${source}\n${workspace}`, /usePaymentGateway|OnlinePayment|QRIS|ewallet/i);
+  assert.doesNotMatch(source, /apiClient\.(post|patch|put|delete)|console\.(log|error|warn|info)/);
 });
 
 test("PG3 keeps the generated route limited to the existing payments route", async () => {

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../infrastructure/database/database.service';
@@ -17,6 +17,7 @@ import {
   calculateOnboardingCommercial,
   OnboardingCommitmentResponse,
 } from './types/onboarding.types';
+import { buildContractSchedule } from '../billing/helpers/contract-schedule.helper';
 
 type RoomRow = {
   id: string;
@@ -52,6 +53,7 @@ type ExistingResidentRow = {
   id: string;
   property_id: string;
   gender: 'male' | 'female';
+  full_name: string;
 };
 type LeadRow = {
   id: string;
@@ -190,7 +192,7 @@ export class OnboardingService {
       let existingResident: ExistingResidentRow | null = null;
       if (dto.resident_id) {
         const existingResidentResult = await client.query<ExistingResidentRow>(
-          `SELECT id,property_id,gender FROM residents WHERE id=$1 AND property_id=$2 FOR UPDATE`,
+          `SELECT id,property_id,gender,full_name FROM residents WHERE id=$1 AND property_id=$2 FOR UPDATE`,
           [dto.resident_id, dto.property_id],
         );
         existingResident = existingResidentResult.rows[0] ?? null;
@@ -435,31 +437,83 @@ export class OnboardingService {
           JSON.stringify({ source: 'resident_onboarding', lease_status: 'awaiting_activation' }),
         ],
       );
-      const installmentCount = dto.payment_plan_type === 'annual_full' ? 1 : 6;
-      const baseInstallment = Math.floor(contractRent / installmentCount);
-      for (let sequence = 1; sequence <= installmentCount; sequence += 1) {
-        const coverageStart = new Date(`${dto.start_date}T00:00:00.000Z`);
-        coverageStart.setUTCMonth(coverageStart.getUTCMonth() + (sequence - 1) * 2);
-        const coverageEnd = new Date(coverageStart);
-        coverageEnd.setUTCMonth(
-          coverageEnd.getUTCMonth() + (dto.payment_plan_type === 'annual_full' ? 12 : 2),
-        );
-        coverageEnd.setUTCDate(coverageEnd.getUTCDate() - 1);
-        const amount =
-          sequence === installmentCount
-            ? contractRent - baseInstallment * (installmentCount - 1)
-            : baseInstallment;
+      const schedule = buildContractSchedule({
+        startDate: dto.start_date,
+        termMonths: dto.term_months,
+        paymentPlanType: dto.payment_plan_type,
+        contractRentAmount: contractRent,
+      });
+      for (const item of schedule) {
+        const installmentId = randomUUID();
         await client.query(
-          `INSERT INTO lease_installments(property_id,lease_id,sequence_number,coverage_start_date,coverage_end_date,due_date,scheduled_amount,installment_status)
-           VALUES($1,$2,$3,$4::date,$5::date,$4::date,$6,'scheduled')`,
+          `INSERT INTO lease_installments(id,property_id,lease_id,sequence_number,coverage_start_date,coverage_end_date,due_date,scheduled_amount,installment_status)
+           VALUES($1,$2,$3,$4,$5::date,$6::date,$7::date,$8,$9)`,
           [
+            installmentId,
             dto.property_id,
             lease.rows[0].id,
-            sequence,
-            coverageStart.toISOString().slice(0, 10),
-            coverageEnd.toISOString().slice(0, 10),
-            amount,
+            item.sequenceNumber,
+            item.coverageStartDate,
+            item.coverageEndDate,
+            item.dueDate,
+            item.scheduledAmount,
+            item.sequenceNumber === 1 ? 'issued' : 'scheduled',
           ],
+        );
+        const invoiceId = randomUUID();
+        await client.query(
+          `INSERT INTO invoices(
+             id,property_id,resident_id,room_id,occupancy_id,billing_period_id,lease_id,installment_id,
+             invoice_code,invoice_status,subtotal_amount,total_amount,due_date,issued_at,
+             snapshot_period_key,snapshot_period_start_date,snapshot_period_end_date,
+             snapshot_room_number,snapshot_resident_name,snapshot_monthly_price,
+             cycle_start_date,cycle_end_date,snapshot_billing_cycle,snapshot_rent_amount,
+             generation_source,invoice_purpose,authority_source,snapshot_building_code,
+             snapshot_category_name,snapshot_contract_rent_amount,snapshot_payment_plan_type,
+             created_by_user_id
+           ) VALUES(
+             $1,$2,$3,$4,NULL,NULL,$5,$6,$7,$8,$9,$9,$10::date,
+             CASE WHEN $8='issued' THEN now() ELSE NULL END,$11,$12::date,$13::date,$14,$15,
+             $16,$12::date,$13::date,$17,$9,'auto','rent','contract_schedule',$18,$19,$20,$21,$22
+           )`,
+          [
+            invoiceId,
+            dto.property_id,
+            residentId,
+            room.id,
+            lease.rows[0].id,
+            installmentId,
+            `RENT-${lease.rows[0].id.slice(0, 8).toUpperCase()}-${String(item.sequenceNumber).padStart(2, '0')}`,
+            item.sequenceNumber === 1 ? 'issued' : 'draft',
+            item.scheduledAmount,
+            item.dueDate,
+            `LEASE-${lease.rows[0].id}-${item.sequenceNumber}`,
+            item.coverageStartDate,
+            item.coverageEndDate,
+            room.room_number,
+            existingResident?.full_name ?? dto.visitor_name.trim(),
+            room.monthly_price,
+            dto.billing_cycle,
+            room.building_code,
+            room.kost_type_name,
+            contractRent,
+            dto.payment_plan_type,
+            actor.id,
+          ],
+        );
+        await client.query(
+          `INSERT INTO invoice_line_items(invoice_id,line_type,description,quantity,unit_amount,total_amount,sort_order,metadata)
+           VALUES($1,'rent',$2,1,$3,$3,0,$4::jsonb)`,
+          [
+            invoiceId,
+            `Sewa ${item.coverageStartDate} s.d. ${item.coverageEndDate}`,
+            item.scheduledAmount,
+            JSON.stringify({ lease_id: lease.rows[0].id, installment_id: installmentId }),
+          ],
+        );
+        await client.query(
+          `UPDATE lease_installments SET invoice_id=$2 WHERE id=$1 AND lease_id=$3`,
+          [installmentId, invoiceId, lease.rows[0].id],
         );
       }
       if (hold)

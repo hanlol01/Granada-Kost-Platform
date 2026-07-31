@@ -21,6 +21,7 @@ import { PaymentService } from './services/payment.service';
 import { AdminBillingController } from './controllers/admin-billing.controller';
 import { AdminBillingRepository } from './repositories/admin-billing.repository';
 import { AdminBillingService } from './services/admin-billing.service';
+import { W06BillingService } from './services/w06-billing.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
@@ -36,6 +37,7 @@ import { AdminBillingService } from './services/admin-billing.service';
   providers: [
     AdminBillingRepository,
     AdminBillingService,
+    W06BillingService,
     BillingPeriodRepository,
     InvoiceRepository,
     PaymentRepository,
@@ -47,6 +49,6 @@ import { AdminBillingService } from './services/admin-billing.service';
     PaymentService,
     PaymentProofService,
   ],
-  exports: [BillingService, InvoiceService, PaymentService, PaymentProofService],
+  exports: [BillingService, InvoiceService, PaymentService, PaymentProofService, W06BillingService],
 })
 export class BillingModule {}

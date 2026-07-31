@@ -237,6 +237,8 @@ function activationLease(overrides: Record<string, unknown> = {}) {
     commitment_category: 'rukost',
     commitment_gender: 'female',
     commitment_status: 'committed',
+    dp_required_amount: '5400000',
+    security_deposit_required_amount: '1800000',
     ...overrides,
   };
 }
@@ -273,6 +275,20 @@ function createActivationHarness(options: HarnessOptions = {}) {
         };
       if (/FROM leases l/.test(normalized))
         return { rows: [activationLease(options.roomOverrides)], rowCount: 1 };
+      if (/AS dp_verified_amount/.test(normalized))
+        return {
+          rows: [
+            {
+              dp_verified_amount: '5400000',
+              deposit_balance: '1800000',
+              first_due_date: '2026-08-01',
+              first_invoice_status: 'partially_paid',
+            },
+          ],
+          rowCount: 1,
+        };
+      if (/AS due_is_valid/.test(normalized))
+        return { rows: [{ due_is_valid: true }], rowCount: 1 };
       if (/FROM booking_lead_holds/.test(normalized)) return { rows: [], rowCount: 0 };
       if (/FROM occupancies/.test(normalized))
         return {

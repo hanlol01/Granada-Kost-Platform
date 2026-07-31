@@ -235,11 +235,15 @@ export class InvoiceRepository {
 
   async listAllocations(invoiceId: string): Promise<PaymentAllocationRecord[]> {
     const result = await this.database.client.query<AllocationRow>(
-      `SELECT id, payment_id, target_type, target_id, invoice_id, allocated_amount,
-              allocation_status, allocated_at
-       FROM payment_allocations
-       WHERE invoice_id = $1
-       ORDER BY allocated_at`,
+      `SELECT allocation.id, allocation.payment_id, allocation.target_type,
+              allocation.target_id, allocation.invoice_id, allocation.allocated_amount,
+              CASE WHEN reversal.id IS NULL THEN allocation.allocation_status ELSE 'reversed' END AS allocation_status,
+              allocation.allocated_at
+       FROM payment_allocations allocation
+       LEFT JOIN payment_reversal_allocations reversal
+         ON reversal.original_allocation_id=allocation.id
+       WHERE allocation.invoice_id = $1
+       ORDER BY allocation.allocated_at`,
       [invoiceId],
     );
     return result.rows.map((row) => ({
@@ -269,10 +273,13 @@ export class InvoiceRepository {
               count(*) FILTER (WHERE invoices.invoice_status = 'overdue') AS overdue_invoices
        FROM invoices
        LEFT JOIN (
-         SELECT invoice_id, sum(allocated_amount) AS allocated_amount
-         FROM payment_allocations
-         WHERE allocation_status = 'active'
-         GROUP BY invoice_id
+         SELECT allocation.invoice_id,
+                sum(allocation.allocated_amount)-COALESCE(sum(reversal.reversed_amount),0) AS allocated_amount
+         FROM payment_allocations allocation
+         LEFT JOIN payment_reversal_allocations reversal
+           ON reversal.original_allocation_id=allocation.id
+         WHERE allocation.allocation_status = 'active'
+         GROUP BY allocation.invoice_id
        ) allocations ON allocations.invoice_id = invoices.id
        WHERE invoices.property_id = ANY($1::uuid[])
          AND invoices.invoice_status <> 'void'`,

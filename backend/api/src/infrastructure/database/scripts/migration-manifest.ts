@@ -232,4 +232,15 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.uq_onboarding_commitments_active_room') IS NOT NULL",
     ],
   },
+  {
+    version: '027_billing_manual_payments.sql',
+    checksumSha256: 'f67c73e21492d0cbd98a2a0777719b60e606be7754d707546098bd647d8b2ad4',
+    sentinels: [
+      "to_regclass('public.payment_receipts') IS NOT NULL",
+      "to_regclass('public.payment_reversals') IS NOT NULL",
+      "to_regclass('public.payment_allocation_intents') IS NOT NULL",
+      "to_regclass('public.invoice_evidence_files') IS NOT NULL",
+      "to_regclass('public.uq_invoices_w06_installment') IS NOT NULL",
+    ],
+  },
 ] as const;

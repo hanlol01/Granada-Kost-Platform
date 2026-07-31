@@ -1,5 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
+import {
+  Body,
+  Controller,
+  Get,
+  GoneException,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
@@ -7,11 +15,10 @@ import { RequirePermissions } from '../../rbac/decorators/permissions.decorator'
 import { RequireRoles } from '../../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../../rbac/guards/rbac.guard';
-import { CancelInvoiceDto } from '../dto/cancel-invoice.dto';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
 import { ListInvoicesQueryDto } from '../dto/list-invoices-query.dto';
 import { InvoiceService } from '../services/invoice.service';
-import { auditContext, scopedPropertyIds } from './billing-controller.util';
+import { scopedPropertyIds } from './billing-controller.util';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -34,60 +41,51 @@ export class InvoiceController {
 
   @Get(':invoiceId')
   @RequirePermissions('billing.read')
-  async get(@CurrentUser() user: UserAccessContext, @Param('invoiceId') invoiceId: string) {
+  async get(
+    @CurrentUser() user: UserAccessContext,
+    @Param('invoiceId') invoiceId: string,
+    @Query('property_id') propertyId?: string,
+  ) {
+    if (!propertyId)
+      throw new GoneException({
+        code: 'PROPERTY_SCOPE_REQUIRED',
+        message: 'Use the scoped W06 invoice workspace',
+      });
+    await this.properties.assertCanReadProperty(user, propertyId);
     const invoice = await this.invoices.get(invoiceId);
-    await this.properties.assertCanReadProperty(user, invoice.propertyId);
+    if (invoice.propertyId !== propertyId)
+      throw new GoneException({
+        code: 'INVOICE_SCOPE_MISMATCH',
+        message: 'Invoice is unavailable',
+      });
     return invoice;
   }
 
   @Post()
   @RequirePermissions('billing.manage')
-  async create(
-    @CurrentUser() user: UserAccessContext,
-    @Body() dto: CreateInvoiceDto,
-    @Req() request: RequestWithCorrelationId,
-  ) {
+  async create(@CurrentUser() user: UserAccessContext, @Body() dto: CreateInvoiceDto) {
     await this.properties.assertCanReadProperty(user, dto.property_id);
-    return this.invoices.createInvoice(
-      {
-        propertyId: dto.property_id,
-        residentId: dto.resident_id,
-        roomId: dto.room_id,
-        occupancyId: dto.occupancy_id,
-        billingPeriodId: dto.billing_period_id,
-        invoiceCode: dto.invoice_code,
-        subtotalAmount: dto.subtotal_amount,
-        dueDate: dto.due_date,
-        snapshotPeriodKey: dto.snapshot_period_key,
-        snapshotPeriodStartDate: dto.snapshot_period_start_date,
-        snapshotPeriodEndDate: dto.snapshot_period_end_date,
-        snapshotRoomNumber: dto.snapshot_room_number,
-        snapshotResidentName: dto.snapshot_resident_name,
-        snapshotMonthlyPrice: dto.snapshot_monthly_price,
-        createdByUserId: user.id,
-      },
-      auditContext(user, request),
-    );
+    throw new GoneException({
+      code: 'LEGACY_INVOICE_WRITE_DISABLED',
+      message: 'Use the W06 schedule or other-charge authority',
+    });
   }
 
   @Post(':invoiceId/issue')
   @RequirePermissions('billing.manage')
-  async issue(@CurrentUser() user: UserAccessContext, @Param('invoiceId') invoiceId: string, @Req() request: RequestWithCorrelationId) {
-    const invoice = await this.invoices.get(invoiceId);
-    await this.properties.assertCanReadProperty(user, invoice.propertyId);
-    return this.invoices.issueInvoice(invoiceId, auditContext(user, request));
+  issue() {
+    throw new GoneException({
+      code: 'LEGACY_INVOICE_WRITE_DISABLED',
+      message: 'Invoice issue is schedule-controlled',
+    });
   }
 
   @Post(':invoiceId/cancel')
   @RequirePermissions('billing.manage')
-  async cancel(
-    @CurrentUser() user: UserAccessContext,
-    @Param('invoiceId') invoiceId: string,
-    @Body() dto: CancelInvoiceDto,
-    @Req() request: RequestWithCorrelationId,
-  ) {
-    const invoice = await this.invoices.get(invoiceId);
-    await this.properties.assertCanReadProperty(user, invoice.propertyId);
-    return this.invoices.cancelInvoice(invoiceId, dto.reason, auditContext(user, request));
+  cancel() {
+    throw new GoneException({
+      code: 'LEGACY_INVOICE_WRITE_DISABLED',
+      message: 'Use the scoped W06 void command',
+    });
   }
 }

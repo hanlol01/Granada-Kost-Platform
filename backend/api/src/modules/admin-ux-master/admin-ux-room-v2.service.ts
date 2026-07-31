@@ -148,6 +148,15 @@ export class AdminUxRoomV2Service {
        JOIN kost_types kost_type
          ON kost_type.id = room.kost_type_id
         AND kost_type.property_id = room.property_id
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
        LEFT JOIN room_buildings building
          ON building.id = room.building_id
         AND building.property_id = room.property_id
@@ -181,11 +190,55 @@ export class AdminUxRoomV2Service {
            )
           )
          ${optionalFilters.join('\n         ')}`;
-    const countResult = await this.database.client.query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total
+    const countResult = await this.database.client.query<{
+      total: number;
+      commercial_drift?: boolean;
+    }>(
+      `SELECT COUNT(*)::int AS total,
+              EXISTS (
+                SELECT 1
+                FROM properties reconciliation_property
+                WHERE reconciliation_property.status = 'active'
+                  AND ($1::uuid[] IS NULL OR reconciliation_property.id = ANY($1::uuid[]))
+                  AND ($2::uuid IS NULL OR reconciliation_property.id = $2)
+                  AND (
+                    (
+                      SELECT COUNT(*)
+                      FROM kost_types reconciliation_type
+                      WHERE reconciliation_type.property_id = reconciliation_property.id
+                        AND reconciliation_type.status = 'active'
+                        AND reconciliation_type.deleted_at IS NULL
+                    ) <> 2
+                    OR EXISTS (
+                      SELECT 1
+                      FROM rooms reconciliation_room
+                      LEFT JOIN kost_types reconciliation_type
+                        ON reconciliation_type.id = reconciliation_room.kost_type_id
+                       AND reconciliation_type.property_id = reconciliation_room.property_id
+                       AND reconciliation_type.category = reconciliation_room.category
+                       AND reconciliation_type.deleted_at IS NULL
+                      WHERE reconciliation_room.property_id = reconciliation_property.id
+                        AND (
+                          reconciliation_type.id IS NULL
+                          OR NOT EXISTS (
+                            SELECT 1
+                            FROM kost_type_commercial_versions reconciliation_version
+                            WHERE reconciliation_version.kost_type_id = reconciliation_type.id
+                              AND reconciliation_version.effective_date <= CURRENT_DATE
+                          )
+                        )
+                    )
+                  )
+              ) AS commercial_drift
        ${fromAndWhere}`,
       filters,
     );
+    if (countResult.rows[0]?.commercial_drift) {
+      throw new ConflictException({
+        code: 'KOST_TYPE_COMMERCIAL_RECONCILIATION_REQUIRED',
+        message: 'Room category commercial authority requires reconciliation.',
+      });
+    }
     const total = Number(countResult.rows[0]?.total ?? 0);
     if (total === 0 || offset >= total) {
       return v2List([], limit, offset, total);
@@ -199,7 +252,10 @@ export class AdminUxRoomV2Service {
          room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
          room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
-         kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
+         commercial_version.monthly_price,
+         commercial_version.annual_contract_value AS yearly_price,
+         (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+           AS deposit_amount,
          building.building_code, building.building_name
        ${fromAndWhere}
        ORDER BY ${orderBy}, room.id
@@ -337,9 +393,8 @@ export class AdminUxRoomV2Service {
           `UPDATE rooms
            SET kost_type_id = $3, number = $4, room_code = $5, building_id = $6, category = $7,
                unit_code = $8, gender_policy = $9, floor = $10, floor_code = $11, floor_label = $12,
-               size_label = $13, primary_photo_file_id = $14, public_visible = $15,
-               monthly_price = $16::integer, yearly_price = $17::integer, deposit_amount = $18::integer,
-               updated_by_user_id = $19, updated_at = now()
+                size_label = $13, primary_photo_file_id = $14, public_visible = $15,
+                updated_by_user_id = $16, updated_at = now()
            WHERE id = $1 AND property_id = $2
            RETURNING id`,
           [
@@ -358,9 +413,6 @@ export class AdminUxRoomV2Service {
             proposed.sizeLabel,
             proposed.primaryPhotoFileId,
             proposed.publicVisible,
-            Number(kostType.monthly_price),
-            Number(kostType.yearly_price),
-            Number(kostType.deposit_amount),
             user.id,
           ],
         );
@@ -461,11 +513,29 @@ export class AdminUxRoomV2Service {
          room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
          room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
-         kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
+         commercial_version.monthly_price,
+         commercial_version.annual_contract_value AS yearly_price,
+         (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+           AS deposit_amount,
          building.building_code, building.building_name
        FROM rooms room
-       JOIN kost_types kost_type ON kost_type.id = room.kost_type_id
-       LEFT JOIN room_buildings building ON building.id = room.building_id
+       JOIN kost_types kost_type
+         ON kost_type.id = room.kost_type_id
+        AND kost_type.property_id = room.property_id
+        AND kost_type.category = room.category
+        AND kost_type.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
+       LEFT JOIN room_buildings building
+         ON building.id = room.building_id
+        AND building.property_id = room.property_id
        WHERE room.id = $1
          AND ($2::uuid IS NULL OR room.property_id = $2)`,
       [roomId, propertyId ?? null],
@@ -601,7 +671,8 @@ export class AdminUxRoomV2Service {
   ): Promise<Row> {
     const result = await (client ?? this.database.client).query<Row>(
       `SELECT * FROM kost_types
-       WHERE id = $1 AND property_id = $2 AND status = 'active' AND deleted_at IS NULL
+       WHERE id = $1 AND property_id = $2
+         AND status = 'active' AND deleted_at IS NULL
        ${lock ? 'FOR KEY SHARE' : ''}`,
       [id, propertyId],
     );
@@ -660,7 +731,17 @@ export class AdminUxRoomV2Service {
       input.monthly_price !== undefined ||
       input.yearly_price !== undefined ||
       input.deposit_amount !== undefined ||
-      input.facility_ids !== undefined
+      input.facility_ids !== undefined ||
+      input.monthlyPrice !== undefined ||
+      input.yearlyPrice !== undefined ||
+      input.depositAmount !== undefined ||
+      input.facilityIds !== undefined ||
+      input.minimum_dp_percent !== undefined ||
+      input.minimumDpPercent !== undefined ||
+      input.payment_schedules !== undefined ||
+      input.paymentSchedules !== undefined ||
+      input.security_deposit_months !== undefined ||
+      input.securityDepositMonths !== undefined
     ) {
       throw new BadRequestException({
         code: 'IMMUTABLE_ROOM_COMMERCIAL_FIELD',

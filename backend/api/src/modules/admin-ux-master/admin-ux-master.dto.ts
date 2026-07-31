@@ -1,13 +1,16 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -61,10 +64,12 @@ export class CreateKostTypeDto {
 
   @IsString()
   @MaxLength(120)
+  @Matches(/\S/)
   name!: string;
 
   @IsString()
   @MaxLength(120)
+  @Matches(/\S/)
   slug!: string;
 
   @IsOptional()
@@ -88,20 +93,29 @@ export class CreateKostTypeDto {
   @Min(1)
   room_size_m2?: number;
 
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   monthly_price!: number;
 
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   yearly_price!: number;
 
-  @Type(() => Number)
+  @IsDateString()
+  effective_date!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMinSize(1)
+  @IsIn(['annual', 'two_month_installments'], { each: true })
+  payment_schedules?: Array<'annual' | 'two_month_installments'>;
+
+  @IsOptional()
   @IsInt()
-  @Min(0)
-  deposit_amount!: number;
+  @Min(1)
+  @Max(2)
+  security_deposit_months?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -118,14 +132,19 @@ export class CreateKostTypeDto {
 }
 
 export class UpdateKostTypeDto {
+  @IsUUID('4')
+  property_id!: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)
+  @Matches(/\S/)
   name?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(120)
+  @Matches(/\S/)
   slug?: string;
 
   @IsOptional()
@@ -144,28 +163,36 @@ export class UpdateKostTypeDto {
   room_size_label?: string;
 
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(1)
   room_size_m2?: number;
 
   @IsOptional()
-  @Type(() => Number)
+  @IsDateString()
+  effective_date?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMinSize(1)
+  @IsIn(['annual', 'two_month_installments'], { each: true })
+  payment_schedules?: Array<'annual' | 'two_month_installments'>;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   monthly_price?: number;
 
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
   @Min(0)
   yearly_price?: number;
 
   @IsOptional()
-  @Type(() => Number)
   @IsInt()
-  @Min(0)
-  deposit_amount?: number;
+  @Min(1)
+  @Max(2)
+  security_deposit_months?: number;
 
   @IsOptional()
   @IsBoolean()

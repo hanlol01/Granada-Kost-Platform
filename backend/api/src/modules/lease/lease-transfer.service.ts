@@ -154,7 +154,11 @@ export class LeaseTransferService {
         throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found' });
       }
       this.assertTargetRoom(scope.property_id, sourceRoom, targetRoom);
-      const targetKostType = await this.lockKostType(client, targetRoom.kost_type_id as string);
+      const targetKostType = await this.lockKostType(
+        client,
+        targetRoom.kost_type_id as string,
+        today,
+      );
       this.assertTargetKostType(scope.property_id, targetKostType);
 
       const invoices = await this.readLeaseInvoices(client, source.id, 'FOR SHARE');
@@ -255,7 +259,11 @@ export class LeaseTransferService {
           throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found' });
         }
         this.assertTargetRoom(scope.property_id, sourceRoom, targetRoom);
-        const targetKostType = await this.lockKostType(client, targetRoom.kost_type_id as string);
+        const targetKostType = await this.lockKostType(
+          client,
+          targetRoom.kost_type_id as string,
+          today,
+        );
         this.assertTargetKostType(scope.property_id, targetKostType);
 
         const resident = await this.lockResident(client, source.resident_id);
@@ -810,11 +818,31 @@ export class LeaseTransferService {
     return new Map(result.rows.map((row) => [row.id, row]));
   }
 
-  private async lockKostType(client: PoolClient, kostTypeId: string): Promise<KostTypeRow> {
+  private async lockKostType(
+    client: PoolClient,
+    kostTypeId: string,
+    effectiveDate: string,
+  ): Promise<KostTypeRow> {
     const result = await client.query<KostTypeRow>(
-      `SELECT id, property_id, name, monthly_price, yearly_price, deposit_amount, status, deleted_at
-       FROM kost_types WHERE id = $1 FOR SHARE`,
-      [kostTypeId],
+      `SELECT kost_type.id, kost_type.property_id, kost_type.name,
+              commercial_version.monthly_price,
+              commercial_version.annual_contract_value AS yearly_price,
+              (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+                AS deposit_amount,
+              kost_type.status, kost_type.deleted_at
+       FROM kost_types kost_type
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= $2::date
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
+       WHERE kost_type.id = $1
+       FOR SHARE OF kost_type`,
+      [kostTypeId, effectiveDate],
     );
     if (!result.rows[0]) {
       throw new NotFoundException({ code: 'KOST_TYPE_NOT_FOUND', message: 'Kost type not found' });

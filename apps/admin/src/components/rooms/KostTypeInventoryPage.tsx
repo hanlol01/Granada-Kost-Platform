@@ -81,14 +81,18 @@ import {
 } from "@/lib/admin-ux-master-helpers";
 import { useAuth } from "@/lib/auth";
 import { canCreateAdminBookingLead } from "@/lib/admin-booking-lead";
+import { safeErrorMessage } from "@/lib/error-normalizer";
 import { formatIDR } from "@/lib/format";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 import {
+  assertKostTypeScope,
+  isCommercialScopeMismatch,
   useM4KostTypes,
   useM4Mutation,
   useM4RoomBuildings,
   useM4RoomInventory,
+  useKostTypeCommercialMutation,
   useRoomPersistenceMutation,
 } from "@/hooks/useAdminUxMaster";
 
@@ -184,6 +188,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   useEffect(() => {
     setStatusRoom(null);
     setRoomEditor(null);
+    setTypeEditor(null);
     previousRoomScope.current = currentRoomScope;
   }, [currentRoomScope]);
 
@@ -822,6 +827,7 @@ export function RoomInventoryTable({
 type KostTypeDraft = Omit<KostTypeInput, "propertyId" | "category">;
 
 function draftForKostType(kostType: KostType | null): KostTypeDraft {
+  const authority = kostType?.futureCommercial ?? kostType?.commercial;
   return {
     name: kostType?.name ?? "",
     slug: kostType?.slug ?? "",
@@ -829,13 +835,32 @@ function draftForKostType(kostType: KostType | null): KostTypeDraft {
     descriptionLong: kostType?.descriptionLong ?? "",
     roomSizeLabel: kostType?.roomSizeLabel ?? "",
     roomSizeM2: kostType?.roomSizeM2 ?? undefined,
-    monthlyPrice: kostType?.monthlyPrice ?? 0,
-    yearlyPrice: kostType?.yearlyPrice ?? 0,
-    depositAmount: kostType?.depositAmount ?? 0,
+    monthlyPrice: authority?.monthlyPrice ?? 1_800_000,
+    yearlyPrice: authority?.annualContractValue ?? 21_600_000,
+    effectiveDate: kostType ? "" : jakartaDate(),
+    paymentSchedules: authority?.paymentSchedules ?? ["annual", "two_month_installments"],
+    securityDepositMonths: authority?.securityDepositMonths ?? 1,
     publicVisible: kostType?.publicVisible ?? true,
     notes: kostType?.notes ?? "",
     status: kostType?.status ?? "active",
   };
+}
+
+function jakartaDate(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function nextCanonicalDate(value: string): string {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 function KostTypeEditor({
@@ -850,17 +875,20 @@ function KostTypeEditor({
   onOpenChange: (open: boolean) => void;
 }) {
   const [draft, setDraft] = useState<KostTypeDraft>(() => draftForKostType(kostType));
-  const create = useM4Mutation<KostType, Omit<KostTypeInput, "propertyId">>(
-    "kost-type",
+  const create = useKostTypeCommercialMutation<KostType, Omit<KostTypeInput, "propertyId">>(
     "Tipe kost berhasil disimpan",
     (propertyId, input, key) => adminUxMasterApi.kostTypes.create({ ...input, propertyId }, key),
+    (result, propertyId) => assertKostTypeScope(result, propertyId, category),
   );
-  const update = useM4Mutation<KostType, { id: string; input: KostTypeDraft }>(
-    "kost-type",
+  const update = useKostTypeCommercialMutation<KostType, { id: string; input: KostTypeDraft }>(
     "Tipe kost berhasil diperbarui",
-    (propertyId, variables, key) => {
-      void propertyId;
-      return adminUxMasterApi.kostTypes.update(variables.id, variables.input, key);
+    (propertyId, variables, key) =>
+      adminUxMasterApi.kostTypes.update(variables.id, { ...variables.input, propertyId }, key),
+    (result, propertyId) => {
+      assertKostTypeScope(result, propertyId, category);
+      if (kostType && result.id !== kostType.id) {
+        throw new Error("KOST_TYPE_SCOPE_MISMATCH");
+      }
     },
   );
   const pending = create.isPending || update.isPending;
@@ -872,7 +900,21 @@ function KostTypeEditor({
   const set = <Key extends keyof KostTypeDraft>(key: Key, value: KostTypeDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
-  const valid = Boolean(draft.name.trim() && draft.slug.trim());
+  const valid = Boolean(
+    draft.name.trim() &&
+    draft.slug.trim() &&
+    Number.isInteger(draft.monthlyPrice) &&
+    draft.monthlyPrice > 0 &&
+    Number.isInteger(draft.yearlyPrice) &&
+    draft.yearlyPrice > 0 &&
+    draft.effectiveDate &&
+    (!kostType || draft.effectiveDate > jakartaDate()) &&
+    draft.paymentSchedules?.length &&
+    Number.isInteger(draft.securityDepositMonths) &&
+    (draft.securityDepositMonths === 1 || draft.securityDepositMonths === 2),
+  );
+  const mutationError = create.error ?? update.error;
+  const formError = isCommercialScopeMismatch(mutationError) ? null : mutationError;
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -893,19 +935,40 @@ function KostTypeEditor({
     <Sheet open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-slate-800 bg-slate-900 sm:max-w-xl"
+        className="w-full overflow-y-auto border-border bg-background sm:max-w-xl"
       >
         <SheetHeader>
           <SheetTitle>{kostType ? "Edit Tipe Kost" : "Buat Tipe Kost"}</SheetTitle>
           <SheetDescription>
-            Harga, deposit, ukuran, dan visibilitas dikelola pada tipe kost lalu diwariskan ke
-            inventori.
+            Tarif, DP, deposit, dan fasilitas adalah authority kategori; kamar hanya menyimpan
+            atribut fisik.
           </SheetDescription>
         </SheetHeader>
         <form className="space-y-5 py-5" onSubmit={submit}>
-          <div className="rounded-lg border border-blue-500/25 bg-blue-500/10 p-3 text-sm text-blue-100">
+          <div className="rounded-lg border border-primary/25 bg-primary-soft p-3 text-sm text-accent-foreground">
             Kategori terkunci: <span className="font-semibold">{KOST_TYPE_LABEL[category]}</span>
           </div>
+          {kostType?.commercial ? (
+            <div className="grid gap-3 sm:grid-cols-2" aria-label="Status authority komersial">
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <p className="font-medium text-foreground">Tarif aktif saat ini</p>
+                <p className="mt-1 text-muted-foreground">
+                  {formatIDR(kostType.commercial.monthlyPrice)}/bulan · efektif{" "}
+                  {kostType.commercial.effectiveDate}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <p className="font-medium text-foreground">Tarif terjadwal berikutnya</p>
+                <p className="mt-1 text-muted-foreground">
+                  {kostType.futureCommercial
+                    ? `${formatIDR(kostType.futureCommercial.monthlyPrice)}/bulan · efektif ${
+                        kostType.futureCommercial.effectiveDate
+                      }`
+                    : "Belum ada perubahan tarif terjadwal."}
+                </p>
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Nama tipe kost" required>
               <Input
@@ -970,7 +1033,7 @@ function KostTypeEditor({
               />
             </Field>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Harga bulanan" required>
               <CurrencyInput
                 value={draft.monthlyPrice}
@@ -985,12 +1048,64 @@ function KostTypeEditor({
                 onValueChange={(value) => set("yearlyPrice", value)}
               />
             </Field>
-            <Field label="Deposit" required>
-              <CurrencyInput
-                value={draft.depositAmount}
+            <Field label="Tanggal efektif" required hint="Tanggal kalender, tanpa overlap ambigu.">
+              <Input
+                type="date"
+                value={draft.effectiveDate ?? ""}
+                min={kostType ? nextCanonicalDate(jakartaDate()) : undefined}
                 disabled={pending}
-                onValueChange={(value) => set("depositAmount", value)}
+                onChange={(event) => set("effectiveDate", event.target.value)}
               />
+            </Field>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+            Preview: {formatIDR(draft.monthlyPrice)}/bulan · {formatIDR(draft.yearlyPrice)}/tahun ·
+            DP minimum 25% · deposit {draft.securityDepositMonths ?? 1} bulan tarif
+            {draft.effectiveDate ? ` · efektif ${draft.effectiveDate}` : " · pilih tanggal efektif"}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Minimum DP" hint="DP adalah advance rent, bukan deposit jaminan.">
+              <div className="flex h-10 items-center rounded-md border border-border bg-muted/40 px-3 text-sm font-medium text-foreground">
+                25% dari nilai kontrak
+              </div>
+            </Field>
+            <Field label="Deposit (bulan tarif)" required>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                value={draft.securityDepositMonths ?? 1}
+                disabled={pending}
+                onChange={(event) => set("securityDepositMonths", Number(event.target.value))}
+              >
+                <option value={1}>1 bulan</option>
+                <option value={2}>2 bulan</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Kebutuhan saat ini:{" "}
+                {formatIDR(draft.monthlyPrice * (draft.securityDepositMonths ?? 1))}
+              </p>
+            </Field>
+            <Field label="Jadwal pembayaran" required>
+              <div className="space-y-2 pt-2 text-sm text-foreground">
+                {(["annual", "two_month_installments"] as const).map((schedule) => (
+                  <label key={schedule} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={draft.paymentSchedules?.includes(schedule) ?? false}
+                      disabled={pending}
+                      onChange={(event) => {
+                        const current = draft.paymentSchedules ?? [];
+                        set(
+                          "paymentSchedules",
+                          event.target.checked
+                            ? [...current, schedule]
+                            : current.filter((item) => item !== schedule),
+                        );
+                      }}
+                    />
+                    {schedule === "annual" ? "Tahunan" : "Angsuran per dua bulan"}
+                  </label>
+                ))}
+              </div>
             </Field>
           </div>
           <Field label="Catatan internal">
@@ -1002,8 +1117,8 @@ function KostTypeEditor({
               onChange={(event) => set("notes", event.target.value)}
             />
           </Field>
-          <div className="flex flex-wrap gap-5 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-            <label className="flex items-center gap-3 text-sm text-slate-200">
+          <div className="flex flex-wrap gap-5 rounded-lg border border-border bg-muted/30 p-4">
+            <label className="flex items-center gap-3 text-sm text-foreground">
               <Switch
                 checked={draft.publicVisible ?? true}
                 disabled={pending}
@@ -1011,7 +1126,7 @@ function KostTypeEditor({
               />
               Tampilkan pada katalog publik
             </label>
-            <label className="flex items-center gap-3 text-sm text-slate-200">
+            <label className="flex items-center gap-3 text-sm text-foreground">
               <Switch
                 checked={draft.status === "active"}
                 disabled={pending}
@@ -1020,7 +1135,12 @@ function KostTypeEditor({
               Tipe aktif
             </label>
           </div>
-          <SheetFooter className="border-t border-slate-800 pt-4">
+          {formError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {safeErrorMessage(formError)}
+            </p>
+          ) : null}
+          <SheetFooter className="border-t border-border pt-4">
             <Button
               type="button"
               variant="outline"

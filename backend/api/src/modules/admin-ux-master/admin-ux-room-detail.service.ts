@@ -374,7 +374,14 @@ export class AdminUxRoomDetailService {
               room.primary_photo_file_id, room.import_notes, room.updated_at,
               building.building_code, building.building_name,
               kost_type.category, kost_type.name AS kost_type_name,
-              kost_type.monthly_price, kost_type.yearly_price, kost_type.deposit_amount,
+              commercial_version.effective_date AS commercial_effective_date,
+              commercial_version.monthly_price,
+              commercial_version.annual_contract_value AS yearly_price,
+              (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+                AS deposit_amount,
+              commercial_version.minimum_dp_percent,
+              commercial_version.security_deposit_months,
+              commercial_version.payment_schedules,
               EXISTS (
                 SELECT 1 FROM booking_lead_holds active_hold
                 WHERE active_hold.property_id = room.property_id
@@ -398,6 +405,16 @@ export class AdminUxRoomDetailService {
         AND kost_type.property_id = room.property_id
         AND kost_type.category = room.category
         AND kost_type.deleted_at IS NULL
+       LEFT JOIN LATERAL (
+         SELECT DISTINCT ON (version.kost_type_id)
+                version.effective_date, version.monthly_price, version.annual_contract_value,
+                version.minimum_dp_percent, version.security_deposit_months,
+                version.payment_schedules
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.kost_type_id, version.effective_date DESC, version.id DESC
+       ) commercial_version ON true
        WHERE room.property_id = $1
          AND room.number = $2
        ORDER BY room.id`,
@@ -407,6 +424,12 @@ export class AdminUxRoomDetailService {
       throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found.' });
     }
     if (result.rows.length > 1) this.throwAmbiguous('ROOM_NUMBER_AMBIGUOUS');
+    if (!result.rows[0].commercial_effective_date) {
+      throw new ConflictException({
+        code: 'KOST_TYPE_COMMERCIAL_RECONCILIATION_REQUIRED',
+        message: 'Room category commercial authority requires reconciliation.',
+      });
+    }
     return result.rows[0];
   }
 
@@ -422,16 +445,26 @@ export class AdminUxRoomDetailService {
   ): AdminRoomDetailProjection {
     const annual = money(room.yearly_price);
     const monthly = money(room.monthly_price);
-    const minimumDp = Math.ceil((annual * 25) / 100);
+    const minimumDpPercent = Number(room.minimum_dp_percent ?? 25);
+    const minimumDp = Math.ceil((annual * minimumDpPercent) / 100);
     const verifiedInvoice = money(billing.verified_invoice_allocated);
     const openInvoiced = money(billing.open_invoiced_amount);
     const openVerifiedInvoice = money(billing.open_verified_invoice_allocated);
     const leaseMinimumDp = lease
-      ? Math.ceil((money(lease.snapshot_yearly_price) * 25) / 100)
+      ? Math.ceil((money(lease.snapshot_yearly_price) * minimumDpPercent) / 100)
       : minimumDp;
     const depositRequired = lease
       ? money(lease.snapshot_deposit_amount)
       : money(room.deposit_amount);
+    const schedules = Array.isArray(room.payment_schedules)
+      ? room.payment_schedules.map(String)
+      : ['annual', 'two_month_installments'];
+    const paymentPlanDescription =
+      schedules.includes('annual') && schedules.includes('two_month_installments')
+        ? 'Tahunan penuh atau angsuran per dua bulan'
+        : schedules.includes('annual')
+          ? 'Tahunan penuh'
+          : 'Angsuran per dua bulan';
     const reconciliationRequired = Boolean(Boolean(occupancy) !== Boolean(lease));
     const status = text(room.room_status);
     return {
@@ -471,9 +504,9 @@ export class AdminUxRoomDetailService {
         monthly_price: monthly,
         annual_contract_value: annual,
         minimum_dp_amount: minimumDp,
-        minimum_dp_label: 'Minimum 25% dari nilai kontrak tahunan',
+        minimum_dp_label: `Minimum ${minimumDpPercent}% dari nilai kontrak tahunan`,
         security_deposit_required: money(room.deposit_amount),
-        payment_plan_description: 'Tahunan penuh atau angsuran per dua bulan',
+        payment_plan_description: paymentPlanDescription,
         facilities: facilities.map((item) => ({ id: text(item.id), name: text(item.name) })),
       },
       resident: occupancy

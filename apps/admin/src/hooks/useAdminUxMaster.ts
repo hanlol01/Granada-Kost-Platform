@@ -11,6 +11,7 @@ import {
   adminUxMasterApi,
   assertRoomDetailScope,
   type GalleryTarget,
+  type KostType,
   type KostTypeCategory,
   type MasterStatus,
   type RoomInventory,
@@ -52,6 +53,27 @@ export type RoomInventoryFilters = PageOptions & {
   includeActiveLease?: boolean;
 };
 
+export function assertKostTypeScope(
+  record: Pick<KostType, "propertyId" | "category">,
+  propertyId: string,
+  category?: KostTypeCategory,
+): void {
+  if (
+    record.propertyId !== propertyId ||
+    (category !== undefined && record.category !== category)
+  ) {
+    throw new Error("KOST_TYPE_SCOPE_MISMATCH");
+  }
+}
+
+export function assertKostTypePageScope(
+  page: { items: Array<Pick<KostType, "propertyId" | "category">> },
+  propertyId: string,
+  category?: KostTypeCategory,
+): void {
+  for (const record of page.items) assertKostTypeScope(record, propertyId, category);
+}
+
 export function useM4KostTypes(
   filters: PageOptions & { category?: KostTypeCategory; q?: string; status?: MasterStatus } = {},
 ) {
@@ -60,15 +82,19 @@ export function useM4KostTypes(
   const normalized = normalizePagination(keyFilters);
   return useQuery({
     queryKey: adminUxQueryKeys.kostTypes.list(currentPropertyId ?? "", keyFilters),
-    queryFn: () =>
-      adminUxMasterApi.kostTypes.list({
+    queryFn: async () => {
+      const propertyId = currentPropertyId!;
+      const page = await adminUxMasterApi.kostTypes.list({
         propertyId: currentPropertyId!,
         category: filters.category,
         q: filters.q,
         status: filters.status,
         limit: Number(normalized.limit),
         offset: Number(normalized.offset),
-      }),
+      });
+      assertKostTypePageScope(page, propertyId, filters.category);
+      return page;
+    },
     enabled: Boolean(currentPropertyId),
   });
 }
@@ -77,7 +103,12 @@ export function useM4KostType(id: string | null | undefined) {
   const { currentPropertyId } = useProperty();
   return useQuery({
     queryKey: adminUxQueryKeys.kostTypes.detail(currentPropertyId ?? "", id ?? ""),
-    queryFn: () => adminUxMasterApi.kostTypes.detail(id!),
+    queryFn: async () => {
+      const propertyId = currentPropertyId!;
+      const record = await adminUxMasterApi.kostTypes.detail(id!);
+      assertKostTypeScope(record, propertyId);
+      return record;
+    },
     enabled: Boolean(currentPropertyId && id),
   });
 }
@@ -454,6 +485,116 @@ export function useM4Mutation<TData, TVariables>(
     },
     onError: (error) => {
       toast.error(safeErrorMessage(error));
+    },
+  });
+}
+
+type CommercialIntent = {
+  fingerprint: string;
+  idempotencyKey: string;
+};
+
+type ActiveCommercialSubmission<T> = {
+  fingerprint: string;
+  promise: Promise<T>;
+};
+
+export function commercialMutationFingerprint(propertyId: string, variables: unknown): string {
+  return JSON.stringify({ propertyId, variables });
+}
+
+export function resolveCommercialMutationIntent(
+  current: CommercialIntent | null,
+  fingerprint: string,
+  createKey: () => string = newIdempotencyKey,
+): CommercialIntent {
+  return current?.fingerprint === fingerprint
+    ? current
+    : { fingerprint, idempotencyKey: createKey() };
+}
+
+export function runCommercialSubmissionOnce<T>(
+  active: { current: ActiveCommercialSubmission<T> | null },
+  fingerprint: string,
+  request: () => Promise<T>,
+): Promise<T> {
+  if (active.current) {
+    if (active.current.fingerprint === fingerprint) return active.current.promise;
+    return Promise.reject(new Error("COMMERCIAL_SUBMISSION_IN_PROGRESS"));
+  }
+  const entry: ActiveCommercialSubmission<T> = {
+    fingerprint,
+    promise: request().finally(() => {
+      if (active.current === entry) active.current = null;
+    }),
+  };
+  active.current = entry;
+  return entry.promise;
+}
+
+export function isCommercialScopeMismatch(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message === "PROPERTY_SCOPE_CHANGED" || error.message === "KOST_TYPE_SCOPE_MISMATCH")
+  );
+}
+
+export async function invalidateKostTypeCommercial(
+  queryClient: ReturnType<typeof useQueryClient>,
+  propertyId: string,
+): Promise<void> {
+  await Promise.all([
+    invalidateAdminUxMutation(queryClient, "kost-type", propertyId),
+    queryClient.invalidateQueries({ queryKey: ["kostType", propertyId] }),
+    queryClient.invalidateQueries({ queryKey: ["room", propertyId] }),
+    queryClient.invalidateQueries({ queryKey: ["roomAvailability", propertyId] }),
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] === "roomDetail" && query.queryKey[2] === propertyId,
+    }),
+  ]);
+}
+
+export function useKostTypeCommercialMutation<TData, TVariables>(
+  successMessage: string,
+  runner: M4MutationRunner<TData, TVariables>,
+  validateResult: (result: TData, propertyId: string) => void,
+): UseMutationResult<TData, unknown, TVariables> {
+  const { currentPropertyId } = useProperty();
+  const queryClient = useQueryClient();
+  const propertyRef = useRef(currentPropertyId);
+  const intentRef = useRef<CommercialIntent | null>(null);
+  const activeRef = useRef<ActiveCommercialSubmission<TData> | null>(null);
+  const successfulPropertyRef = useRef<string | null>(null);
+  propertyRef.current = currentPropertyId;
+
+  return useMutation({
+    mutationFn: async (variables) => {
+      successfulPropertyRef.current = null;
+      const propertyId = propertyRef.current;
+      if (!propertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
+      const fingerprint = commercialMutationFingerprint(propertyId, variables);
+      const intent = resolveCommercialMutationIntent(intentRef.current, fingerprint);
+      intentRef.current = intent;
+      const result = await runCommercialSubmissionOnce(activeRef, fingerprint, () =>
+        runner(propertyId, variables, intent.idempotencyKey),
+      );
+      if (propertyRef.current !== propertyId) throw new Error("PROPERTY_SCOPE_CHANGED");
+      validateResult(result, propertyId);
+      successfulPropertyRef.current = propertyId;
+      return result;
+    },
+    onSuccess: async () => {
+      const propertyId = successfulPropertyRef.current;
+      if (!propertyId || propertyRef.current !== propertyId) return;
+      await invalidateKostTypeCommercial(queryClient, propertyId);
+      intentRef.current = null;
+      successfulPropertyRef.current = null;
+      toast.success(successMessage);
+    },
+    onError: (error) => {
+      successfulPropertyRef.current = null;
+      if (isCommercialScopeMismatch(error)) return;
+      if (propertyRef.current) toast.error(safeErrorMessage(error));
     },
   });
 }

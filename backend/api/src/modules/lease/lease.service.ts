@@ -482,7 +482,7 @@ export class LeaseService {
             message: 'Room has no kost type',
           });
         }
-        const kostType = await this.lockKostType(client, room.kost_type_id);
+        const kostType = await this.lockKostType(client, room.kost_type_id, today);
         if (
           kostType.property_id !== dto.property_id ||
           kostType.status !== 'active' ||
@@ -1480,11 +1480,31 @@ export class LeaseService {
     return result.rows[0];
   }
 
-  private async lockKostType(client: PoolClient, kostTypeId: string): Promise<KostTypeLockRow> {
+  private async lockKostType(
+    client: PoolClient,
+    kostTypeId: string,
+    effectiveDate: string,
+  ): Promise<KostTypeLockRow> {
     const result = await client.query<KostTypeLockRow>(
-      `SELECT id, property_id, name, monthly_price, yearly_price, deposit_amount, status, deleted_at
-       FROM kost_types WHERE id = $1 FOR SHARE`,
-      [kostTypeId],
+      `SELECT kost_type.id, kost_type.property_id, kost_type.name,
+              commercial_version.monthly_price,
+              commercial_version.annual_contract_value AS yearly_price,
+              (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+                AS deposit_amount,
+              kost_type.status, kost_type.deleted_at
+       FROM kost_types kost_type
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= $2::date
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
+       WHERE kost_type.id = $1
+       FOR SHARE OF kost_type`,
+      [kostTypeId, effectiveDate],
     );
     if (!result.rows[0])
       throw new NotFoundException({ code: 'KOST_TYPE_NOT_FOUND', message: 'Kost type not found' });

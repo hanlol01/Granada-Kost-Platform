@@ -96,12 +96,23 @@ export class RoomRepository {
        )
        VALUES ($1, $2, $3, $4, $5, $6, $6)
        RETURNING id, property_id, name, base_price, default_deposit_amount, description, status`,
-      [dto.property_id, dto.name, dto.base_price, dto.default_deposit_amount, dto.description ?? null, actorUserId],
+      [
+        dto.property_id,
+        dto.name,
+        dto.base_price,
+        dto.default_deposit_amount,
+        dto.description ?? null,
+        actorUserId,
+      ],
     );
     return this.mapRoomType(result.rows[0]);
   }
 
-  async updateRoomType(id: string, dto: UpdateRoomTypeDto, actorUserId: string): Promise<RoomTypeRecord | null> {
+  async updateRoomType(
+    id: string,
+    dto: UpdateRoomTypeDto,
+    actorUserId: string,
+  ): Promise<RoomTypeRecord | null> {
     const result = await this.database.client.query<RoomTypeRow>(
       `UPDATE room_types
        SET name = COALESCE($2, name),
@@ -147,7 +158,10 @@ export class RoomRepository {
     return result.rows.map((row) => this.mapFacility(row));
   }
 
-  async createFacility(dto: CreateRoomFacilityDto, actorUserId: string): Promise<RoomFacilityRecord> {
+  async createFacility(
+    dto: CreateRoomFacilityDto,
+    actorUserId: string,
+  ): Promise<RoomFacilityRecord> {
     const result = await this.database.client.query<FacilityRow>(
       `INSERT INTO room_facilities (property_id, name, status, created_by_user_id, updated_by_user_id)
        VALUES ($1, $2, COALESCE($3, 'active'), $4, $4)
@@ -160,12 +174,28 @@ export class RoomRepository {
   async listRooms(query: ListRoomsQueryDto, propertyIds?: string[]): Promise<RoomRecord[]> {
     const result = await this.database.client.query<RoomRow>(
       `SELECT rooms.id, rooms.property_id, rooms.room_type_id, rooms.number, rooms.unit_code, rooms.gender_policy,
-              rooms.floor, rooms.size_label, rooms.monthly_price, rooms.deposit_amount, rooms.room_status,
+              rooms.floor, rooms.size_label, commercial_version.monthly_price::integer AS monthly_price,
+              (commercial_version.monthly_price * commercial_version.security_deposit_months)::integer AS deposit_amount,
+              rooms.room_status,
               rooms.primary_photo_file_id, rooms.room_code, rooms.category, rooms.building_id,
               room_buildings.building_code, room_buildings.building_name, rooms.floor_code, rooms.floor_label,
-              rooms.public_visible, rooms.yearly_price
+              rooms.public_visible, commercial_version.annual_contract_value::integer AS yearly_price
        FROM rooms
        LEFT JOIN room_buildings ON room_buildings.id = rooms.building_id
+       JOIN kost_types kost_type
+         ON kost_type.id = rooms.kost_type_id
+        AND kost_type.property_id = rooms.property_id
+        AND kost_type.category = rooms.category
+        AND kost_type.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
        WHERE ($1::uuid[] IS NULL OR rooms.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR rooms.property_id = $2)
          AND ($3::text IS NULL OR rooms.room_status = $3)
@@ -187,12 +217,28 @@ export class RoomRepository {
   async findRoom(id: string): Promise<RoomRecord | null> {
     const result = await this.database.client.query<RoomRow>(
       `SELECT rooms.id, rooms.property_id, rooms.room_type_id, rooms.number, rooms.unit_code, rooms.gender_policy,
-              rooms.floor, rooms.size_label, rooms.monthly_price, rooms.deposit_amount, rooms.room_status,
+              rooms.floor, rooms.size_label, commercial_version.monthly_price::integer AS monthly_price,
+              (commercial_version.monthly_price * commercial_version.security_deposit_months)::integer AS deposit_amount,
+              rooms.room_status,
               rooms.primary_photo_file_id, rooms.room_code, rooms.category, rooms.building_id,
               room_buildings.building_code, room_buildings.building_name, rooms.floor_code, rooms.floor_label,
-              rooms.public_visible, rooms.yearly_price
+              rooms.public_visible, commercial_version.annual_contract_value::integer AS yearly_price
        FROM rooms
        LEFT JOIN room_buildings ON room_buildings.id = rooms.building_id
+       JOIN kost_types kost_type
+         ON kost_type.id = rooms.kost_type_id
+        AND kost_type.property_id = rooms.property_id
+        AND kost_type.category = rooms.category
+        AND kost_type.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value,
+                version.security_deposit_months
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
        WHERE rooms.id = $1`,
       [id],
     );
@@ -227,7 +273,11 @@ export class RoomRepository {
     return (await this.findRoom(result.rows[0].id)) as RoomRecord;
   }
 
-  async updateRoom(id: string, dto: UpdateRoomDto, actorUserId: string): Promise<RoomRecord | null> {
+  async updateRoom(
+    id: string,
+    dto: UpdateRoomDto,
+    actorUserId: string,
+  ): Promise<RoomRecord | null> {
     const result = await this.database.client.query<RoomRow>(
       `UPDATE rooms
        SET room_type_id = COALESCE($2, room_type_id),
@@ -267,7 +317,11 @@ export class RoomRepository {
     return this.findRoom(id);
   }
 
-  async updateRoomStatus(id: string, status: RoomStatus, actorUserId: string): Promise<RoomRecord | null> {
+  async updateRoomStatus(
+    id: string,
+    status: RoomStatus,
+    actorUserId: string,
+  ): Promise<RoomRecord | null> {
     const result = await this.database.client.query<RoomRow>(
       `UPDATE rooms
        SET room_status = $2,
@@ -284,8 +338,14 @@ export class RoomRepository {
     return this.findRoom(id);
   }
 
-  async availability(propertyId?: string): Promise<Array<{ propertyId: string; status: RoomStatus; total: number }>> {
-    const result = await this.database.client.query<{ property_id: string; room_status: RoomStatus; total: string }>(
+  async availability(
+    propertyId?: string,
+  ): Promise<Array<{ propertyId: string; status: RoomStatus; total: number }>> {
+    const result = await this.database.client.query<{
+      property_id: string;
+      room_status: RoomStatus;
+      total: string;
+    }>(
       `SELECT property_id, room_status, count(*) AS total
        FROM rooms
        WHERE ($1::uuid IS NULL OR property_id = $1)
@@ -312,10 +372,23 @@ export class RoomRepository {
               rooms.floor_code,
               COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code) AS floor_label,
               count(*) AS available_count,
-              min(rooms.monthly_price) AS price_from_monthly,
-              min(COALESCE(rooms.yearly_price, rooms.monthly_price * 12)) AS price_from_yearly
+              min(commercial_version.monthly_price) AS price_from_monthly,
+              min(commercial_version.annual_contract_value) AS price_from_yearly
        FROM rooms
        JOIN room_buildings ON room_buildings.id = rooms.building_id
+       JOIN kost_types kost_type
+         ON kost_type.id = rooms.kost_type_id
+        AND kost_type.property_id = rooms.property_id
+        AND kost_type.category = rooms.category
+        AND kost_type.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT version.monthly_price, version.annual_contract_value
+         FROM kost_type_commercial_versions version
+         WHERE version.kost_type_id = kost_type.id
+           AND version.effective_date <= CURRENT_DATE
+         ORDER BY version.effective_date DESC, version.id DESC
+         LIMIT 1
+       ) commercial_version ON true
        WHERE rooms.room_status = 'vacant'
          AND rooms.public_visible = true
          AND room_buildings.public_visible = true
@@ -352,7 +425,9 @@ export class RoomRepository {
   }
 
   private async replaceFacilities(roomId: string, facilityIds: string[]): Promise<void> {
-    await this.database.client.query('DELETE FROM room_facility_assignments WHERE room_id = $1', [roomId]);
+    await this.database.client.query('DELETE FROM room_facility_assignments WHERE room_id = $1', [
+      roomId,
+    ]);
     for (const facilityId of facilityIds) {
       await this.database.client.query(
         `INSERT INTO room_facility_assignments (room_id, facility_id)

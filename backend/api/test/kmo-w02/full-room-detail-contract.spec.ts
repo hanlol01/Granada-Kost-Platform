@@ -54,8 +54,12 @@ function fixture(
     category: 'rukost',
     kost_type_name: 'Rumah Kost',
     monthly_price: 1_800_000,
-    yearly_price: 24_000_000,
+    yearly_price: 21_600_000,
     deposit_amount: 1_800_000,
+    commercial_effective_date: '2026-07-31',
+    minimum_dp_percent: 25,
+    security_deposit_months: 1,
+    payment_schedules: ['annual', 'two_month_installments'],
     active_hold_exists: options.activeHold ?? false,
     active_maintenance_exists: options.activeMaintenance ?? false,
   };
@@ -148,7 +152,7 @@ test('live by-number detail returns exact envelope and safe section projection',
   });
   assert.deepEqual(Object.keys(response), ['data']);
   assert.equal(response.data.number, 'RK-01-01');
-  assert.equal(response.data.commercial.minimum_dp_amount, 6_000_000);
+  assert.equal(response.data.commercial.minimum_dp_amount, 5_400_000);
   assert.equal(response.data.billing.minimum_dp_amount, 5_400_000);
   assert.equal(response.data.billing.verified_invoice_allocated, 5_400_000);
   assert.equal(response.data.lease?.duration_months, 12);

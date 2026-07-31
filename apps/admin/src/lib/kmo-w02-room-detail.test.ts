@@ -49,7 +49,7 @@ function detailWire() {
         annual_contract_value: 21_600_000,
         minimum_dp_amount: 5_400_000,
         minimum_dp_label: "Minimum 25% dari nilai kontrak tahunan",
-        security_deposit_required: 1_000_000,
+        security_deposit_required: 1_800_000,
         payment_plan_description: "Tahunan penuh atau angsuran per dua bulan",
         facilities: [{ id: FACILITY_ID, name: "Kasur" }],
       },
@@ -135,7 +135,7 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
   assert.equal(detail.propertyId, PROPERTY_ID);
   assert.equal(detail.number, "RK-01-01");
   assert.equal(detail.commercial.minimumDpAmount, 5_400_000);
-  assert.equal(detail.commercial.securityDepositRequired, 1_000_000);
+  assert.equal(detail.commercial.securityDepositRequired, 1_800_000);
   assert.equal(detail.ownership.source, "policy_default");
   assert.equal(detail.links.lease, `/penyewaan/${LEASE_ID}`);
   assert.equal(detail.billing.verifiedInvoiceAllocated, 5_400_000);

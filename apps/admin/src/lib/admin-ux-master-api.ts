@@ -6,6 +6,7 @@ import { adminUxV2Requester, type AdminUxQueryValue } from "@/lib/admin-ux-api";
 import {
   mapV2Data,
   mapV2Page,
+  mapSnakeToCamel,
   type AdminUxPage,
   type V2DataEnvelope,
   type V2ListEnvelope,
@@ -30,6 +31,17 @@ export type PropertyPageInput = {
   offset?: number;
 };
 
+export type KostTypeCommercial = {
+  monthlyPrice: number;
+  annualContractValue: number;
+  minimumDpPercent: number;
+  minimumDpAmount: number;
+  paymentSchedules: Array<"annual" | "two_month_installments">;
+  securityDepositMonths: number;
+  securityDepositRequired: number;
+  effectiveDate: string;
+};
+
 export type KostType = {
   id: string;
   propertyId: string;
@@ -51,6 +63,11 @@ export type KostType = {
   facilityCount?: number;
   facilities?: RoomFacility[];
   rules?: KostTypeRule[];
+  commercial?: KostTypeCommercial;
+  futureCommercial?: KostTypeCommercial | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type FacilityCategory = {
@@ -266,13 +283,17 @@ export type KostTypeInput = {
   roomSizeM2?: number;
   monthlyPrice: number;
   yearlyPrice: number;
-  depositAmount: number;
+  effectiveDate?: string;
+  paymentSchedules?: Array<"annual" | "two_month_installments">;
+  securityDepositMonths?: number;
   publicVisible?: boolean;
   notes?: string;
   status?: MasterStatus;
 };
 
-export type KostTypeUpdateInput = Partial<Omit<KostTypeInput, "propertyId" | "category">>;
+export type KostTypeUpdateInput = Partial<Omit<KostTypeInput, "propertyId" | "category">> & {
+  propertyId: string;
+};
 
 export type FacilityCategoryInput = {
   propertyId: string;
@@ -412,6 +433,254 @@ function isUuidV4(value: unknown): value is string {
 
 function isKostTypeCategory(value: unknown): value is KostTypeCategory {
   return value === "rukost" || value === "apartkost";
+}
+
+const KOST_TYPE_BASE_KEYS = [
+  "id",
+  "property_id",
+  "category",
+  "name",
+  "slug",
+  "description_short",
+  "description_long",
+  "room_size_label",
+  "room_size_m2",
+  "monthly_price",
+  "yearly_price",
+  "deposit_amount",
+  "max_occupants",
+  "public_visible",
+  "notes",
+  "status",
+  "deleted_at",
+  "created_at",
+  "updated_at",
+  "commercial",
+  "future_commercial",
+] as const;
+
+const COMMERCIAL_AUTHORITY_KEYS = [
+  "monthly_price",
+  "annual_contract_value",
+  "minimum_dp_percent",
+  "minimum_dp_amount",
+  "payment_schedules",
+  "security_deposit_months",
+  "security_deposit_required",
+  "effective_date",
+] as const;
+
+function isCanonicalDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || !value.includes("T")) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isCommercialAuthority(value: unknown): value is Record<string, unknown> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, COMMERCIAL_AUTHORITY_KEYS) ||
+    !Array.isArray(value.payment_schedules) ||
+    value.payment_schedules.length === 0 ||
+    value.payment_schedules.some(
+      (item) => item !== "annual" && item !== "two_month_installments",
+    ) ||
+    new Set(value.payment_schedules).size !== value.payment_schedules.length ||
+    !isPositiveSafeInteger(value.monthly_price) ||
+    !isPositiveSafeInteger(value.annual_contract_value) ||
+    value.minimum_dp_percent !== 25 ||
+    !isPositiveSafeInteger(value.minimum_dp_amount) ||
+    (value.security_deposit_months !== 1 && value.security_deposit_months !== 2) ||
+    !isPositiveSafeInteger(value.security_deposit_required) ||
+    !isCanonicalDate(value.effective_date)
+  ) {
+    return false;
+  }
+  return (
+    value.minimum_dp_amount ===
+      Math.ceil(
+        ((value.annual_contract_value as number) * (value.minimum_dp_percent as number)) / 100,
+      ) &&
+    value.security_deposit_required ===
+      (value.monthly_price as number) * (value.security_deposit_months as number)
+  );
+}
+
+const KOST_TYPE_FACILITY_KEYS = [
+  "id",
+  "property_id",
+  "category_id",
+  "name",
+  "icon",
+  "description",
+  "status",
+  "sort_order",
+] as const;
+
+function parseKostTypeFacility(value: unknown, propertyId: string): Record<string, unknown> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, KOST_TYPE_FACILITY_KEYS) ||
+    !isUuidV4(value.id) ||
+    value.property_id !== propertyId ||
+    (value.category_id !== null && !isUuidV4(value.category_id)) ||
+    !isNonEmptyString(value.name) ||
+    !isNullableString(value.icon) ||
+    !isNullableString(value.description) ||
+    (value.status !== "active" && value.status !== "inactive") ||
+    !isNonNegativeSafeInteger(value.sort_order)
+  ) {
+    throw new Error("Invalid kost type facility.");
+  }
+  return mapSnakeToCamel<Record<string, unknown>>(value);
+}
+
+const KOST_TYPE_RULE_KEYS = [
+  "id",
+  "property_id",
+  "kost_type_id",
+  "rule_category",
+  "icon",
+  "rule_text",
+  "is_allowed",
+  "sort_order",
+] as const;
+
+function parseKostTypeRuleRecord(
+  value: unknown,
+  propertyId: string,
+  kostTypeId: string,
+): Record<string, unknown> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, KOST_TYPE_RULE_KEYS) ||
+    !isUuidV4(value.id) ||
+    value.property_id !== propertyId ||
+    (value.kost_type_id !== null && value.kost_type_id !== kostTypeId) ||
+    !["general", "guest", "resident", "other", "special_notes"].includes(
+      String(value.rule_category),
+    ) ||
+    !isNullableString(value.icon) ||
+    !isNonEmptyString(value.rule_text) ||
+    (value.is_allowed !== null && typeof value.is_allowed !== "boolean") ||
+    !isNonNegativeSafeInteger(value.sort_order)
+  ) {
+    throw new Error("Invalid kost type rule.");
+  }
+  return mapSnakeToCamel<Record<string, unknown>>(value);
+}
+
+export function parseKostTypeRecord(value: unknown): KostType {
+  if (!isPlainRecord(value)) throw new Error("Invalid kost type record.");
+  const optionalKeys = ["room_count", "facility_count", "facilities", "rules"] as const;
+  const actual = Object.keys(value);
+  if (
+    KOST_TYPE_BASE_KEYS.some((key) => !(key in value)) ||
+    actual.some(
+      (key) =>
+        !KOST_TYPE_BASE_KEYS.includes(key as (typeof KOST_TYPE_BASE_KEYS)[number]) &&
+        !optionalKeys.includes(key as (typeof optionalKeys)[number]),
+    )
+  ) {
+    throw new Error("Invalid kost type keys.");
+  }
+  const commercial = value.commercial;
+  const futureCommercial = value.future_commercial;
+  const facilities = value.facilities;
+  const rules = value.rules;
+  if (
+    !isCommercialAuthority(commercial) ||
+    (futureCommercial !== null && !isCommercialAuthority(futureCommercial)) ||
+    !isPositiveSafeInteger(value.monthly_price) ||
+    !isPositiveSafeInteger(value.yearly_price) ||
+    !isPositiveSafeInteger(value.deposit_amount) ||
+    value.monthly_price !== commercial.monthly_price ||
+    value.yearly_price !== commercial.annual_contract_value ||
+    value.deposit_amount !== commercial.security_deposit_required ||
+    (futureCommercial !== null &&
+      String(futureCommercial.effective_date) <= String(commercial.effective_date)) ||
+    !isUuidV4(value.id) ||
+    !isUuidV4(value.property_id) ||
+    !isKostTypeCategory(value.category) ||
+    !isNonEmptyString(value.name) ||
+    !isNonEmptyString(value.slug) ||
+    !isNullableString(value.description_short) ||
+    !isNullableString(value.description_long) ||
+    !isNullableString(value.room_size_label) ||
+    (value.room_size_m2 !== null && !isPositiveSafeInteger(value.room_size_m2)) ||
+    !isPositiveSafeInteger(value.max_occupants) ||
+    typeof value.public_visible !== "boolean" ||
+    !isNullableString(value.notes) ||
+    (value.status !== "active" && value.status !== "inactive") ||
+    (value.deleted_at !== null && !isIsoTimestamp(value.deleted_at)) ||
+    !isIsoTimestamp(value.created_at) ||
+    !isIsoTimestamp(value.updated_at) ||
+    ("room_count" in value && !isNonNegativeSafeInteger(value.room_count)) ||
+    ("facility_count" in value && !isNonNegativeSafeInteger(value.facility_count)) ||
+    ("facilities" in value && !Array.isArray(facilities)) ||
+    ("rules" in value && !Array.isArray(rules))
+  ) {
+    throw new Error("Invalid kost type authority.");
+  }
+  const copy: Record<string, unknown> = { ...value };
+  if (Array.isArray(facilities)) {
+    copy.facilities = facilities.map((item) =>
+      parseKostTypeFacility(item, String(value.property_id)),
+    );
+  }
+  if (Array.isArray(rules)) {
+    copy.rules = rules.map((item) =>
+      parseKostTypeRuleRecord(item, String(value.property_id), String(value.id)),
+    );
+  }
+  return mapSnakeToCamel<KostType>(copy);
+}
+
+function parseKostTypeListEnvelope(value: unknown): AdminUxPage<KostType> {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data", "meta"]) ||
+    !Array.isArray(value.data) ||
+    !isPlainRecord(value.meta) ||
+    !hasExactKeys(value.meta, ["total", "limit", "offset"])
+  ) {
+    throw new Error("Invalid kost type list envelope.");
+  }
+  const { total, limit, offset } = value.meta;
+  if (
+    ![total, limit, offset].every(
+      (item) => typeof item === "number" && Number.isSafeInteger(item) && item >= 0,
+    )
+  ) {
+    throw new Error("Invalid kost type pagination.");
+  }
+  return {
+    items: value.data.map(parseKostTypeRecord),
+    total: total as number,
+    limit: limit as number,
+    offset: offset as number,
+  };
+}
+
+function parseKostTypeDataEnvelope(value: unknown): KostType {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["data"])) {
+    throw new Error("Invalid kost type envelope.");
+  }
+  return parseKostTypeRecord(value.data);
 }
 
 function isRoomBuildingGenderPolicy(
@@ -1278,7 +1547,7 @@ export function parseRoomBuildingReferenceEnvelope(value: unknown): RoomBuilding
   });
 }
 
-function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record<string, unknown> {
+export function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record<string, unknown> {
   return {
     property_id: "propertyId" in input ? input.propertyId : undefined,
     category: "category" in input ? input.category : undefined,
@@ -1290,7 +1559,9 @@ function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record<string
     room_size_m2: input.roomSizeM2,
     monthly_price: input.monthlyPrice,
     yearly_price: input.yearlyPrice,
-    deposit_amount: input.depositAmount,
+    effective_date: input.effectiveDate,
+    payment_schedules: input.paymentSchedules,
+    security_deposit_months: input.securityDepositMonths,
     public_visible: input.publicVisible,
     notes: input.notes,
     status: input.status,
@@ -1366,30 +1637,32 @@ export const adminUxMasterApi = {
         status?: MasterStatus;
       },
     ) =>
-      list<KostType>("/kost-types", {
-        ...pageQuery(input),
-        category: input.category,
-        q: input.q?.trim() || undefined,
-        status: input.status,
-      }),
+      adminUxV2Requester
+        .get<V2ListEnvelope<unknown>>("/kost-types", {
+          query: {
+            ...pageQuery(input),
+            category: input.category,
+            q: input.q?.trim() || undefined,
+            status: input.status,
+          },
+        })
+        .then(parseKostTypeListEnvelope),
     detail: (id: string) =>
-      data<KostType>(
-        adminUxV2Requester.get<V2DataEnvelope<unknown>>("/kost-types/" + encodeURIComponent(id)),
-      ),
+      adminUxV2Requester
+        .get<V2DataEnvelope<unknown>>("/kost-types/" + encodeURIComponent(id))
+        .then(parseKostTypeDataEnvelope),
     create: (input: KostTypeInput, idempotencyKey?: string) =>
-      data<KostType>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>("/kost-types", kostTypeBody(input), {
+      adminUxV2Requester
+        .post<V2DataEnvelope<unknown>>("/kost-types", kostTypeBody(input), {
           idempotencyKey,
-        }),
-      ),
+        })
+        .then(parseKostTypeDataEnvelope),
     update: (id: string, input: KostTypeUpdateInput, idempotencyKey?: string) =>
-      data<KostType>(
-        adminUxV2Requester.patch<V2DataEnvelope<unknown>>(
-          "/kost-types/" + encodeURIComponent(id),
-          kostTypeBody(input),
-          { idempotencyKey },
-        ),
-      ),
+      adminUxV2Requester
+        .patch<
+          V2DataEnvelope<unknown>
+        >("/kost-types/" + encodeURIComponent(id), kostTypeBody(input), { idempotencyKey })
+        .then(parseKostTypeDataEnvelope),
     remove: (id: string, idempotencyKey?: string) =>
       data<{ id: string; deleted: boolean }>(
         adminUxV2Requester.delete<V2DataEnvelope<unknown>>(

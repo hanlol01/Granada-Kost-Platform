@@ -172,6 +172,7 @@ export class RoomController {
       );
     }
     const legacyDto = await this.validateLegacyBody(UpdateRoomDto, dto);
+    this.assertNoCommercialOverride(legacyDto);
     return this.rooms.updateRoom(user, roomId, legacyDto, this.contextFromRequest(request));
   }
 
@@ -205,6 +206,20 @@ export class RoomController {
   private idempotencyKeyFromRequest(request: RequestWithCorrelationId): string | undefined {
     const value = request.headers['idempotency-key'];
     return typeof value === 'string' ? value : undefined;
+  }
+
+  private assertNoCommercialOverride(dto: UpdateRoomDto): void {
+    if (
+      dto.monthly_price !== undefined ||
+      dto.yearly_price !== undefined ||
+      dto.deposit_amount !== undefined ||
+      dto.facility_ids !== undefined
+    ) {
+      throw new BadRequestException({
+        code: 'IMMUTABLE_ROOM_COMMERCIAL_FIELD',
+        message: 'Room commercial fields are derived from the category authority.',
+      });
+    }
   }
 
   private validateLegacyBody<T extends object>(metatype: new () => T, value: unknown): Promise<T> {

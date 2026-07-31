@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -20,7 +21,6 @@ import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
   CreateFacilityCategoryDto,
-  CreateKostTypeDto,
   CreateKostTypeRuleDto,
   CreateRoomFacilityV2Dto,
   ListFacilityCategoriesQueryDto,
@@ -32,7 +32,6 @@ import {
   ReorderRoomFacilitiesDto,
   ReplaceKostTypeFacilitiesDto,
   UpdateFacilityCategoryDto,
-  UpdateKostTypeDto,
   UpdateKostTypeRuleDto,
   UpdateRoomFacilityV2Dto,
 } from './admin-ux-master.dto';
@@ -70,10 +69,11 @@ export class KostTypeController {
   @RequirePermissions('room.manage')
   create(
     @CurrentUser() user: UserAccessContext,
-    @Body() dto: CreateKostTypeDto,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
-    return this.master.createKostType(user, dto, context(request));
+    return this.master.createKostType(user, dto, context(request), idempotencyKey);
   }
 
   @Patch(':id')
@@ -82,10 +82,11 @@ export class KostTypeController {
   update(
     @CurrentUser() user: UserAccessContext,
     @Param('id') id: string,
-    @Body() dto: UpdateKostTypeDto,
+    @Body() dto: unknown,
     @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
-    return this.master.updateKostType(user, id, dto, context(request));
+    return this.master.updateKostType(user, id, dto, context(request), idempotencyKey);
   }
 
   @Delete(':id')

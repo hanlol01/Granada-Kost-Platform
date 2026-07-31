@@ -182,7 +182,16 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
   },
   {
     version: '021_schema_migration_ledger.sql',
-    checksumSha256: '207944cbc54e9723849e4804d39f14080edcfab48e37dab221db39ee86a67f26',
+    checksumSha256: 'b69e8d184f6af5bcde536887c71063629cd9d465bce4cfef1873d3da446242b8',
     sentinels: ["to_regclass('public.schema_migrations') IS NOT NULL"],
+  },
+  {
+    version: '022_kost_type_commercial_authority.sql',
+    checksumSha256: 'bdcfba52722d697a161549c297871e31f9d25eee390964570b95e1d113471b7e',
+    sentinels: [
+      "to_regclass('public.kost_type_commercial_versions') IS NOT NULL",
+      "to_regclass('public.idx_kost_type_commercial_versions_effective') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kost_type_commercial_versions' AND column_name = 'payment_schedules')",
+    ],
   },
 ] as const;

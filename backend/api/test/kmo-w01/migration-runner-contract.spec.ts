@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { explicitDatabaseConfigFromEnv } from '../../src/infrastructure/database/scripts/database-url';
 import {
@@ -8,6 +11,12 @@ import {
   type MigrationSource,
 } from '../../src/infrastructure/database/scripts/migrate';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
+
+const LEDGER_VERSION = '021_schema_migration_ledger.sql';
+const MANIFEST_COUNT = MIGRATION_MANIFEST.length;
+const NON_LEDGER_COUNT = MIGRATION_MANIFEST.filter(
+  (entry) => entry.version !== LEDGER_VERSION,
+).length;
 
 type LedgerRow = { version: string; checksum_sha256: string };
 
@@ -177,12 +186,12 @@ function completeLedger(): LedgerRow[] {
 
 void test('KMO-W01 manifest matches exact source bytes and uses strong legacy sentinels', async () => {
   const sources = await loadMigrationSources();
-  assert.equal(sources.length, 21);
+  assert.equal(sources.length, MANIFEST_COUNT);
   assert.deepEqual(
     sources.map((source) => source.version),
     MIGRATION_MANIFEST.map((entry) => entry.version),
   );
-  for (const entry of MIGRATION_MANIFEST.slice(0, -1)) {
+  for (const entry of MIGRATION_MANIFEST.filter((entry) => entry.version !== LEDGER_VERSION)) {
     assert.ok(entry.sentinels.length >= 2, `${entry.version} must not use a single weak sentinel`);
   }
 
@@ -190,8 +199,25 @@ void test('KMO-W01 manifest matches exact source bytes and uses strong legacy se
   assert.deepEqual(await runMigrations(verified as never, sources), {
     applied: 0,
     baselined: 0,
-    alreadyApplied: 21,
+    alreadyApplied: MANIFEST_COUNT,
   });
+});
+
+void test('KMO-W01 disk inventory rejects a missing or extra migration file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'kostation-migrations-'));
+  try {
+    for (const entry of MIGRATION_MANIFEST) {
+      await writeFile(join(directory, entry.version), '-- synthetic inventory fixture\n', 'utf8');
+    }
+    await rm(join(directory, MIGRATION_MANIFEST[0]!.version));
+    await assert.rejects(loadMigrationSources(directory), /inventory does not match/);
+
+    await writeFile(join(directory, MIGRATION_MANIFEST[0]!.version), '-- restored\n', 'utf8');
+    await writeFile(join(directory, '999_unexpected.sql'), '-- unexpected\n', 'utf8');
+    await assert.rejects(loadMigrationSources(directory), /inventory does not match/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 void test('KMO-W01 unwraps only documented outer transactions without changing inner SQL', () => {
@@ -206,32 +232,32 @@ void test('KMO-W01 fresh, atomic baseline, and immediate replay execute each bod
   const sources = await loadMigrationSources();
 
   const fresh = new FakeClient();
-  fresh.sentinelPresence = Array(20).fill(false);
+  fresh.sentinelPresence = Array(NON_LEDGER_COUNT).fill(false);
   assert.deepEqual(await runMigrations(fresh as never, sources), {
-    applied: 21,
+    applied: MANIFEST_COUNT,
     baselined: 0,
     alreadyApplied: 0,
   });
-  assert.equal(fresh.ledger.size, 21);
-  assert.equal(fresh.state.bodyWrites, 21);
+  assert.equal(fresh.ledger.size, MANIFEST_COUNT);
+  assert.equal(fresh.state.bodyWrites, MANIFEST_COUNT);
   assert.equal(fresh.maxSentinelQueries, 1);
 
   const freshWrites = fresh.state.bodyWrites;
   assert.deepEqual(await runMigrations(fresh as never, sources), {
     applied: 0,
     baselined: 0,
-    alreadyApplied: 21,
+    alreadyApplied: MANIFEST_COUNT,
   });
   assert.equal(fresh.state.bodyWrites, freshWrites);
 
   const existing = new FakeClient();
-  existing.sentinelPresence = Array(20).fill(true);
+  existing.sentinelPresence = Array(NON_LEDGER_COUNT).fill(true);
   assert.deepEqual(await runMigrations(existing as never, sources), {
     applied: 1,
-    baselined: 20,
+    baselined: NON_LEDGER_COUNT,
     alreadyApplied: 0,
   });
-  assert.equal(existing.ledger.size, 21);
+  assert.equal(existing.ledger.size, MANIFEST_COUNT);
   assert.equal(existing.state.bodyWrites, 1);
   assert.equal(existing.maxSentinelQueries, 1);
   const bootstrapBegin = existing.calls.indexOf('BEGIN');
@@ -239,13 +265,13 @@ void test('KMO-W01 fresh, atomic baseline, and immediate replay execute each bod
   const baselineWrites = existing.calls
     .slice(bootstrapBegin, bootstrapCommit + 1)
     .filter((call) => call.startsWith('INSERT INTO schema_migrations'));
-  assert.equal(baselineWrites.length, 21);
+  assert.equal(baselineWrites.length, MANIFEST_COUNT);
 });
 
 void test('KMO-W01 locks before validation and rejects partial, order, and checksum drift', async () => {
   const sources = await loadMigrationSources();
   const partial = new FakeClient();
-  partial.sentinelPresence = [true, ...Array(19).fill(false)];
+  partial.sentinelPresence = [true, ...Array(NON_LEDGER_COUNT - 1).fill(false)];
   await assert.rejects(runMigrations(partial as never, sources), /Partial unledgered schema/);
   assert.equal(partial.ledgerPresent, false);
   assert.match(partial.calls[0]!, /pg_advisory_lock/);
@@ -274,14 +300,14 @@ void test('KMO-W01 body and ledger failures roll back atomically and preserve th
   const sources = await loadMigrationSources();
 
   const bodyFailure = new FakeClient();
-  bodyFailure.sentinelPresence = Array(20).fill(false);
+  bodyFailure.sentinelPresence = Array(NON_LEDGER_COUNT).fill(false);
   bodyFailure.failSqlIncludes = 'CREATE TABLE IF NOT EXISTS roles';
   await assert.rejects(runMigrations(bodyFailure as never, sources), /synthetic migration failure/);
   assert.equal(bodyFailure.ledger.has(MIGRATION_MANIFEST[0]!.version), false);
-  assert.equal(bodyFailure.ledger.has('021_schema_migration_ledger.sql'), true);
+  assert.equal(bodyFailure.ledger.has(LEDGER_VERSION), true);
 
   const ledgerFailure = new FakeClient();
-  ledgerFailure.sentinelPresence = Array(20).fill(false);
+  ledgerFailure.sentinelPresence = Array(NON_LEDGER_COUNT).fill(false);
   ledgerFailure.failLedgerVersion = MIGRATION_MANIFEST[0]!.version;
   ledgerFailure.failRollback = true;
   await assert.rejects(runMigrations(ledgerFailure as never, sources), /synthetic ledger failure/);
@@ -289,7 +315,7 @@ void test('KMO-W01 body and ledger failures roll back atomically and preserve th
   assert.equal(ledgerFailure.state.bodyWrites, 1);
 
   const baselineFailure = new FakeClient();
-  baselineFailure.sentinelPresence = Array(20).fill(true);
+  baselineFailure.sentinelPresence = Array(NON_LEDGER_COUNT).fill(true);
   baselineFailure.failLedgerVersion = MIGRATION_MANIFEST[9]!.version;
   await assert.rejects(
     runMigrations(baselineFailure as never, sources),
@@ -310,11 +336,11 @@ void test('KMO-W01 concurrent fresh runners share state and serialize all decisi
   ]);
 
   assert.deepEqual(results, [
-    { applied: 21, baselined: 0, alreadyApplied: 0 },
-    { applied: 0, baselined: 0, alreadyApplied: 21 },
+    { applied: MANIFEST_COUNT, baselined: 0, alreadyApplied: 0 },
+    { applied: 0, baselined: 0, alreadyApplied: MANIFEST_COUNT },
   ]);
-  assert.equal(state.bodyWrites, 21);
-  assert.equal(state.ledger.size, 21);
+  assert.equal(state.bodyWrites, MANIFEST_COUNT);
+  assert.equal(state.ledger.size, MANIFEST_COUNT);
   assert.equal(lockState.entries, 2);
   assert.equal(lockState.maxHolders, 1);
   assert.equal(lockState.holders, 0);

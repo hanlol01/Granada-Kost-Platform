@@ -14,6 +14,9 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 
 const LEDGER_VERSION = '021_schema_migration_ledger.sql';
 const MANIFEST_COUNT = MIGRATION_MANIFEST.length;
+const LEDGER_INDEX = MIGRATION_MANIFEST.findIndex((entry) => entry.version === LEDGER_VERSION);
+const PRE_LEDGER_COUNT = LEDGER_INDEX;
+const POST_LEDGER_COUNT = MANIFEST_COUNT - LEDGER_INDEX - 1;
 const NON_LEDGER_COUNT = MIGRATION_MANIFEST.filter(
   (entry) => entry.version !== LEDGER_VERSION,
 ).length;
@@ -251,27 +254,30 @@ void test('KMO-W01 fresh, atomic baseline, and immediate replay execute each bod
   assert.equal(fresh.state.bodyWrites, freshWrites);
 
   const existing = new FakeClient();
-  existing.sentinelPresence = Array(NON_LEDGER_COUNT).fill(true);
+  existing.sentinelPresence = [
+    ...Array(PRE_LEDGER_COUNT).fill(true),
+    ...Array(POST_LEDGER_COUNT).fill(false),
+  ];
   assert.deepEqual(await runMigrations(existing as never, sources), {
-    applied: 1,
-    baselined: NON_LEDGER_COUNT,
+    applied: POST_LEDGER_COUNT + 1,
+    baselined: PRE_LEDGER_COUNT,
     alreadyApplied: 0,
   });
   assert.equal(existing.ledger.size, MANIFEST_COUNT);
-  assert.equal(existing.state.bodyWrites, 1);
+  assert.equal(existing.state.bodyWrites, POST_LEDGER_COUNT + 1);
   assert.equal(existing.maxSentinelQueries, 1);
   const bootstrapBegin = existing.calls.indexOf('BEGIN');
   const bootstrapCommit = existing.calls.indexOf('COMMIT', bootstrapBegin);
   const baselineWrites = existing.calls
     .slice(bootstrapBegin, bootstrapCommit + 1)
     .filter((call) => call.startsWith('INSERT INTO schema_migrations'));
-  assert.equal(baselineWrites.length, MANIFEST_COUNT);
+  assert.equal(baselineWrites.length, PRE_LEDGER_COUNT + 1);
 });
 
 void test('KMO-W01 locks before validation and rejects partial, order, and checksum drift', async () => {
   const sources = await loadMigrationSources();
   const partial = new FakeClient();
-  partial.sentinelPresence = [true, ...Array(NON_LEDGER_COUNT - 1).fill(false)];
+  partial.sentinelPresence = [true, ...Array(PRE_LEDGER_COUNT - 1).fill(false)];
   await assert.rejects(runMigrations(partial as never, sources), /Partial unledgered schema/);
   assert.equal(partial.ledgerPresent, false);
   assert.match(partial.calls[0]!, /pg_advisory_lock/);
@@ -315,7 +321,7 @@ void test('KMO-W01 body and ledger failures roll back atomically and preserve th
   assert.equal(ledgerFailure.state.bodyWrites, 1);
 
   const baselineFailure = new FakeClient();
-  baselineFailure.sentinelPresence = Array(NON_LEDGER_COUNT).fill(true);
+  baselineFailure.sentinelPresence = Array(PRE_LEDGER_COUNT).fill(true);
   baselineFailure.failLedgerVersion = MIGRATION_MANIFEST[9]!.version;
   await assert.rejects(
     runMigrations(baselineFailure as never, sources),

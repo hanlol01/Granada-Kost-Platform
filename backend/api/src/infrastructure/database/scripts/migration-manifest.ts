@@ -196,7 +196,7 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
   },
   {
     version: '023_category_content_publication.sql',
-    checksumSha256: '2a5b314f24fea2c7cff4bc9c532646da71a0145071d2627b31dceddb5ce41bcb',
+    checksumSha256: '68892c1d9c96c23256cfe2fc3647e19d8e6ed15abd46b5c378d7c438cd3dd69d',
     sentinels: [
       "to_regclass('public.kost_type_content_facilities') IS NOT NULL",
       "to_regclass('public.kost_type_content_versions') IS NOT NULL",

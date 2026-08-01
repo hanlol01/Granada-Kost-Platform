@@ -1,6 +1,6 @@
 # KMO-W06 Billing, DP, Deposit, and Manual Payments Evidence
 
-Status: **READY FOR FINAL REVIEW — SOURCE_IMPLEMENTED; RUNTIME_DEFERRED**
+Status: **KMO-W06 — AUTOMATED VERIFIED; RUNTIME DEFERRED**
 
 Recorded: 2026-07-31 (Asia/Jakarta)
 
@@ -15,7 +15,7 @@ acceptance.
 | Reused         | W05 lease/commercial snapshots, installments, property authorization, database transactions, idempotency commands, audit, business-event outbox, mediated files, and self-context.                                                        |
 | Replaced       | Pool-scoped legacy verification/allocation writes, cosmetic invoice snapshots, destructive correction assumptions, and provider-first billing UI. Legacy reads remain available through compatibility endpoints.                          |
 | Added          | Frozen contract schedules, W06 invoices, allocation intents, immutable receipts, compensating reversals, payment/invoice evidence junctions, separate deposit liability projections, Admin workspaces, and Penghuni self-service billing. |
-| Deferred       | Canonical migration application; authenticated browser/API acceptance; gateway checkout/webhooks; reminders and notification delivery; checkout-time deposit disposition in W07.                                                          |
+| Deferred       | Authenticated browser acceptance; gateway checkout/webhooks; reminders and notification delivery; checkout-time deposit disposition in W07.                                                                                               |
 
 ## 2. Implemented authority
 
@@ -47,14 +47,14 @@ acceptance.
 
 ## 3. Migration evidence
 
-| Item                    | Evidence                                                                                                                                                                                             |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| File                    | `027_billing_manual_payments.sql`                                                                                                                                                                    |
-| SHA-256                 | `665c3788fd8a156d25247b8b0c0c0f061f4553fb2d5d404f20bddceed8beb8ad`                                                                                                                                   |
-| Manifest                | Exact filename, checksum, ordering, and sentinels through 027                                                                                                                                        |
-| Disposable PostgreSQL   | PostgreSQL 17 first apply, immediate replay, exact object probes, forced failure, and rollback probe pass                                                                                            |
-| Historical precondition | Baseline migration 023 reads `kost_type_rules.deleted_at` without a prior canonical creator. The disposable W06 test supplies only this missing pre-W06 column and does not edit migrations 001–026. |
-| Canonical database      | Untouched; separate operator authorization required                                                                                                                                                  |
+| Item                    | Evidence                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File                    | `027_billing_manual_payments.sql`                                                                                                                          |
+| SHA-256                 | `f67c73e21492d0cbd98a2a0777719b60e606be7754d707546098bd647d8b2ad4`                                                                                         |
+| Manifest                | Exact filename, checksum, ordering, and sentinels through 027                                                                                              |
+| Disposable PostgreSQL   | PostgreSQL 17 first apply, immediate replay, exact object probes, forced failure, and rollback probe pass                                                  |
+| Historical precondition | Migration 023 creates the additive `kost_type_rules.deleted_at` archive marker before publication queries use it; no out-of-band schema patch is required. |
+| Canonical database      | Backed up, migrated through 027, replayed with zero writes, and reconciled on 2026-08-01                                                                   |
 
 Migration 027 adds or hardens:
 

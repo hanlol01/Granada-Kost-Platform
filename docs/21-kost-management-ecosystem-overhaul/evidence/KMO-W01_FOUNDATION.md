@@ -48,10 +48,11 @@ existing migration 001–020 is changed.
 | Failed body               | PASS, rollback and no ledger row | Contract-tested                              |
 | Concurrent runners        | PASS, maximum one lock holder    | DEFERRED — Windows launcher returned nonzero |
 
-All disposable targets used the exact `kostation_kmo_w01_qa_` prefix. Cleanup
-left zero disposable databases, and the canonical development database count
-fingerprint was identical before and after. Migration 021 was not applied to
-the canonical database.
+All disposable targets used the exact `kostation_kmo_w01_qa_` prefix and cleanup
+left zero disposable databases. On 2026-08-01, a separate authorized demo
+readiness operation backed up the canonical development database, baselined
+001–020, applied 021–027, proved zero-write replay, and completed count-only
+reconciliation.
 
 ## Lifecycle Compatibility
 

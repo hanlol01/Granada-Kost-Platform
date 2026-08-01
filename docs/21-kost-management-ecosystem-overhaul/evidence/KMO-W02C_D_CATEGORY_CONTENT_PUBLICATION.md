@@ -42,7 +42,9 @@ Status: `KMO-W02C-D — AUTOMATED VERIFIED; RUNTIME DEFERRED`
 - Reconciliation checks cover the exact two categories, normalized facility
   duplicates, orphaned category content, gallery cover/public derivative
   integrity, publication ambiguity, and policy applicability.
-- Migration 023 has not been applied to the canonical database.
+- Migration 023 was applied to the canonical development database on
+  2026-08-01 after a custom-format backup; immediate full-manifest replay made
+  zero writes and content reconciliation remained matched.
 
 ## Automated evidence
 
@@ -59,7 +61,7 @@ Status: `KMO-W02C-D — AUTOMATED VERIFIED; RUNTIME DEFERRED`
 
 ## Deferred boundary
 
-- Browser/runtime evidence and canonical migration execution are deferred.
+- Browser publication mutation evidence remains deferred.
 - W03 public catalog UI remains pending; this package only provides its
   public-safe projection.
 - Payment gateway, provider integration, resident lifecycle, billing mutation,

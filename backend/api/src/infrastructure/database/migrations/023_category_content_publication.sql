@@ -3,6 +3,12 @@
 
 BEGIN;
 
+-- Migration 016 created the legacy policy table without an archive marker.
+-- Add it here before publication queries reference rule.deleted_at so an
+-- existing pre-ledger database can migrate without an out-of-band patch.
+ALTER TABLE kost_type_rules
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS kost_type_content_facilities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,

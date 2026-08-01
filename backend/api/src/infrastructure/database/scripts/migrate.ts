@@ -137,7 +137,12 @@ export async function runMigrations(
     let applied = 0;
 
     if (!exists) {
-      const legacy = sources.filter((source) => source.version !== LEDGER_VERSION);
+      const ledgerIndex = sources.findIndex((source) => source.version === LEDGER_VERSION);
+      if (ledgerIndex < 0) throw new Error('Migration ledger source is missing');
+      // Only migrations that predate the ledger may be baselined. Later
+      // migrations must still execute through the normal checksum/transaction
+      // path, even when the database already contains the legacy schema.
+      const legacy = sources.slice(0, ledgerIndex);
       const presence: boolean[] = [];
       for (const entry of legacy) presence.push(await sentinelPresent(client, entry));
       const presentCount = presence.filter(Boolean).length;

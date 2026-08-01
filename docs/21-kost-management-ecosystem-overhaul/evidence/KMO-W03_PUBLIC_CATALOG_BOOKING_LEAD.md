@@ -19,7 +19,7 @@ occupancy, invoice, payment, or room mutation.
 Migration 024 is additive and ledger-addressed for email, consent version/time,
 and legacy-compatible public contact validation.
 First-apply, immediate replay, and transactional rollback were verified in a
-disposable PostgreSQL harness; the canonical development database was not
-touched. Runtime/browser evidence remains deferred; W03C Admin Lead Queue
-Normalization and later
-onboarding slices remain planned, so aggregate KMO-W03 is not yet complete.
+disposable PostgreSQL harness. Migration 024 was then applied to the backed-up
+canonical development database on 2026-08-01 and full-manifest replay made zero
+writes. Public catalog and authenticated Admin lead reads return HTTP 200;
+browser mutation evidence remains deferred.

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
+import { RbacModule } from '../rbac/rbac.module';
 import { ResidentModule } from './resident.module';
 import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
@@ -7,7 +8,7 @@ import { LeaseActivationController } from '../lease/lease-activation.controller'
 import { LeaseActivationService } from '../lease/lease-activation.service';
 
 @Module({
-  imports: [ResidentModule, PropertyModule],
+  imports: [ResidentModule, PropertyModule, RbacModule],
   controllers: [OnboardingController, LeaseActivationController],
   providers: [OnboardingService, LeaseActivationService],
 })

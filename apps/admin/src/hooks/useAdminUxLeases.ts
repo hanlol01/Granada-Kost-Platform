@@ -1,6 +1,7 @@
 // Property-scoped M6 React Query hooks. Lifecycle commands deliberately have
 // no optimistic handlers: the committed server response is the source of truth.
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -42,6 +43,7 @@ export function useM6Leases(filters: LeaseListFilters = {}) {
         offset: Number(page.offset),
       }),
     enabled: Boolean(currentPropertyId),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -109,6 +111,7 @@ export function useM6LeaseAvailableRooms(q = "") {
         offset: 0,
       }),
     enabled: Boolean(currentPropertyId),
+    placeholderData: keepPreviousData,
   });
 }
 

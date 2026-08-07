@@ -25,46 +25,48 @@ delivery are explicitly outside the initial release.
 
 ## 2. Binding Decisions and Invariants
 
-| ID                     | Decision/invariant                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `POL-LEASE-001`        | New leases have a minimum term of twelve calendar months.                                                                           |
-| `POL-BILLING-001`      | Initial category tariff is Rp1,800,000/month and Rp21,600,000/year; room-level tariff override is prohibited.                       |
-| `POL-BILLING-002`      | Rent uses full annual payment or installments covering two months; minimum contract term remains twelve months.                     |
-| `POL-BILLING-003`      | Lease commercial terms are immutable snapshots; later category edits never rewrite an existing contract.                            |
-| `POL-PAYMENT-001`      | DP is verified advance rent of at least 25% of contract value and reduces rent receivable.                                          |
-| `POL-PAYMENT-002`      | Security deposit is separate, defaults to one month, may be configured to two months, and remains refundable subject to deductions. |
-| `POL-PAYMENT-003`      | Bank transfer is primary; cash is an audited operational exception with an authorized recorder and receipt.                         |
-| `POL-PAYMENT-004`      | Every payment is recorded; transfer proof is mandatory, while cash evidence is optional because receipt and recorder are retained.  |
-| `POL-PAYMENT-005`      | One verified payment may settle multiple invoices only through exact, reconciling allocations.                                      |
-| `POL-PAYMENT-006`      | Security-deposit remainder is refunded no later than seven working days after valid checkout settlement.                            |
-| `DEC-PAYMENT-001`      | Payment Gateway remains disabled; no Midtrans session, webhook, settlement, or provider call participates in the workflow.          |
-| `DEC-REMINDER-001`     | WhatsApp uses a manual `wa.me` handoff; email send is disabled until a provider is separately approved.                             |
-| `INV-BILLING-001`      | Invoice totals derive from an immutable lease commercial snapshot; category price edits never rewrite history.                      |
-| `INV-BILLING-002`      | Invoice balance equals charges plus valid adjustments minus verified allocations and valid credits.                                 |
-| `INV-PAYMENT-001`      | Payment amount reconciles to explicit allocations; no allocation can exceed current invoice outstanding.                            |
-| `INV-PAYMENT-002`      | DP reduces rent receivable; security-deposit funding/refund never settles rent or counts as rent revenue.                           |
-| `INV-PAYMENT-003`      | Verified financial records are corrected through rejection or append-only reversal, never deletion.                                 |
-| `INV-REMINDER-001`     | Reminder eligibility and header badges derive from current invoice/lease truth.                                                     |
-| `INV-NOTIFICATION-001` | Reading/dismissing a notification never mutates its source domain record or reminder eligibility.                                   |
-| `INV-REPORT-001`       | Preview, PDF, and Excel share one server query authority, filters, rows, totals, and authorization scope.                           |
+| ID                     | Decision/invariant                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POL-LEASE-001`        | Ordinary direct onboarding accepts a whole-number lease term from three through 120 months; a 1–2 month exception needs later owner approval.                            |
+| `POL-BILLING-001`      | Initial category tariff is Rp1,800,000/month and Rp21,600,000/year; room-level tariff override is prohibited.                                                            |
+| `POL-BILLING-002`      | Contract rent and schedule derive from the immutable lease snapshot: exact 12-month multiples may use annual category pricing; other ordinary terms use monthly pricing. |
+| `POL-BILLING-003`      | Lease commercial terms are immutable snapshots; later category edits never rewrite an existing contract.                                                                 |
+| `POL-PAYMENT-001`      | Verified Booking Fee plus DP is initial rent credit that reduces rent receivable. The 25% contract-value calculation is a recommended prefill, not a blocking gate.      |
+| `POL-PAYMENT-002`      | Security deposit is optional, freely entered, may be Rp0, and remains refundable subject to documented deductions.                                                       |
+| `POL-PAYMENT-003`      | Bank transfer is primary; cash is an audited operational exception with an authorized recorder and receipt.                                                              |
+| `POL-PAYMENT-004`      | Every payment is recorded; transfer proof is mandatory, while cash evidence is optional because receipt and recorder are retained.                                       |
+| `POL-PAYMENT-005`      | One verified payment may settle multiple invoices only through exact, reconciling allocations.                                                                           |
+| `POL-PAYMENT-006`      | Security-deposit remainder is refunded no later than seven working days after valid checkout settlement.                                                                 |
+| `DEC-PAYMENT-001`      | Payment Gateway remains disabled; no Midtrans session, webhook, settlement, or provider call participates in the workflow.                                               |
+| `DEC-REMINDER-001`     | WhatsApp uses a manual `wa.me` handoff; email send is disabled until a provider is separately approved.                                                                  |
+| `INV-BILLING-001`      | Invoice totals derive from an immutable lease commercial snapshot; category price edits never rewrite history.                                                           |
+| `INV-BILLING-002`      | Invoice balance equals charges plus valid adjustments minus verified allocations and valid credits.                                                                      |
+| `INV-PAYMENT-001`      | Payment amount reconciles to explicit allocations; no allocation can exceed current invoice outstanding.                                                                 |
+| `INV-PAYMENT-002`      | DP reduces rent receivable; security-deposit funding/refund never settles rent or counts as rent revenue.                                                                |
+| `INV-PAYMENT-003`      | Verified financial records are corrected through rejection or append-only reversal, never deletion.                                                                      |
+| `INV-REMINDER-001`     | Reminder eligibility and header badges derive from current invoice/lease truth.                                                                                          |
+| `INV-NOTIFICATION-001` | Reading/dismissing a notification never mutates its source domain record or reminder eligibility.                                                                        |
+| `INV-REPORT-001`       | Preview, PDF, and Excel share one server query authority, filters, rows, totals, and authorization scope.                                                                |
 
 ## 3. Financial Vocabulary
 
-| Term                               | Canonical meaning                                                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Contract rent                      | Total rent agreed for the complete lease term, captured as an immutable lease snapshot.                                        |
-| DP / uang muka                     | Verified advance rent payment, minimum 25% of contract rent, allocated to rent invoices.                                       |
-| Security deposit / deposit jaminan | Refundable liability held for damage, arrears, missing inventory, or other documented checkout deductions.                     |
-| Installment                        | Contractual scheduled rent obligation; either one full-term installment or six two-month installments for a twelve-month term. |
-| Invoice                            | Formal receivable document for one installment or an approved non-rent charge.                                                 |
-| Payment                            | One money receipt by cash or bank transfer.                                                                                    |
-| Allocation                         | Amount from one verified payment applied to one invoice or the security-deposit ledger.                                        |
-| Receipt / kuitansi                 | Immutable proof that a payment was verified/received; not the same as an invoice.                                              |
-| Payment proof                      | Transfer evidence pending review; it is not a verified payment.                                                                |
-| Other charge                       | Invoice-backed non-rent charge such as damage, utilities, parking, access card, or another approved category.                  |
-| Expense                            | Money paid out by KOSTATION for operations; it is not negative rent or a resident payment.                                     |
-| Reversal                           | Compensating record that negates a verified financial event while preserving history.                                          |
-| Cash-flow report                   | Verified cash in minus paid valid cash out for the period; not a full accrual profit-and-loss statement.                       |
+| Term                               | Canonical meaning                                                                                                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contract rent                      | Total rent agreed for the complete lease term, captured as an immutable lease snapshot.                                                                                                       |
+| Booking Fee                        | Optional advance rent credit: Rp0 or at least Rp1.000.000. It reduces remaining contract rent and may contribute to the recorded DP or full settlement.                                       |
+| DP / uang muka                     | Verified advance rent payment. The 25%-of-contract figure is shown as a recommendation and default, not a blocking minimum.                                                                   |
+| Security deposit / deposit jaminan | Refundable liability held for damage, arrears, missing inventory, or other documented checkout deductions.                                                                                    |
+| Pre-commit period revision         | Before Commit Onboarding only, Admin may revise start date/duration and receives a new server quote. The recorded lead payment stays immutable and must fit within the revised contract rent. |
+| Installment                        | Contractual scheduled rent obligation derived from the lease duration and immutable commercial snapshot.                                                                                      |
+| Invoice                            | Formal receivable document for one installment or an approved non-rent charge.                                                                                                                |
+| Payment                            | One money receipt by cash or bank transfer.                                                                                                                                                   |
+| Allocation                         | Amount from one verified payment applied to one rent invoice; security deposits use their separate liability ledger.                                                                          |
+| Receipt / kuitansi                 | Immutable proof that a payment was verified/received; not the same as an invoice.                                                                                                             |
+| Payment proof                      | Transfer evidence pending review; it is not a verified payment.                                                                                                                               |
+| Other charge                       | Invoice-backed non-rent charge such as damage, utilities, parking, access card, or another approved category.                                                                                 |
+| Expense                            | Money paid out by KOSTATION for operations; it is not negative rent or a resident payment.                                                                                                    |
+| Reversal                           | Compensating record that negates a verified financial event while preserving history.                                                                                                         |
+| Cash-flow report                   | Verified cash in minus paid valid cash out for the period; not a full accrual profit-and-loss statement.                                                                                      |
 
 Terms such as `DP`, `deposit`, `tagihan`, `invoice`, `pembayaran`, and `kuitansi`
 must not be used interchangeably in API fields or UI copy.
@@ -76,13 +78,13 @@ must not be used interchangeably in API fields or UI copy.
 The active `kost_type` for Rumah Kost or Apart Kost is the source for new lease
 pricing. Initial values for both categories:
 
-| Item             |        Initial value |
-| ---------------- | -------------------: |
-| Monthly rent     |          Rp1,800,000 |
-| Annual rent      |         Rp21,600,000 |
-| Security deposit |          Rp1,800,000 |
-| Minimum term     |            12 months |
-| Minimum DP       | 25% of contract rent |
+| Item                |        Initial value |
+| ------------------- | -------------------: |
+| Monthly rent        |          Rp1,800,000 |
+| Annual rent         |         Rp21,600,000 |
+| Security deposit    |  optional; Rp0 valid |
+| Minimum term        |             3 months |
+| Initial rent credit | 25% of contract rent |
 
 Admin can edit category pricing for future agreements. Existing lease,
 installment, invoice, payment, and receipt snapshots never change after a price
@@ -90,74 +92,54 @@ edit.
 
 ### 4.2 Start date and term
 
-- Desired start can be the agreement day through at most two months after the
-  application date.
-- The lease end date is derived from the start date and term; for twelve months,
-  it is the day before the same calendar day twelve months later.
+- Start date may be historical, current, or future; activation remains a
+  separate authoritative check-in command.
+- The lease end date is derived from the chosen whole-number term (3–120
+  months) and displayed in Indonesian date format.
 - Daily proration is not part of the initial release.
-- A longer term must be a whole number of months and a multiple of two when the
-  two-month plan is selected.
+- A term is a whole number of months. The normal Admin shortcuts are 3, 6, and
+  12 months.
 - Renewal creates a linked lease/addendum and a new price/payment snapshot; it
   does not extend history in place.
 
 ### 4.3 Payment plans
 
-#### Annual full payment
+#### Snapshot-derived schedule
 
-- one installment covers the entire term;
-- one rent invoice equals contract rent;
-- DP is allocated to that invoice;
-- the remaining invoice balance may be paid before activation or according to
-  an explicitly recorded due date.
+- The immutable lease snapshot determines contract rent, coverage, invoice
+  periods, and due dates.
+- An exact multiple of 12 months may use the category annual price; another
+  ordinary term uses the category monthly price.
+- No overlapping or missing coverage range is permitted.
+- The first invoice must be issued before activation; a verified initial rent
+  credit of at least 25% is required, while the first invoice need not be fully
+  settled unless a later policy says otherwise.
 
-#### Two-month installments
-
-- twelve months produce six consecutive installments;
-- each installment covers exactly two months;
-- at the initial Rp1,800,000 monthly rate, each installment is Rp3,600,000;
-- total remains Rp21,600,000;
-- no overlapping or missing date range is permitted;
-- due date for the first installment is no later than activation;
-- subsequent installment due dates default to seven calendar days before their
-  coverage begins.
-
-### 4.4 DP calculation
+### 4.4 Initial rent-credit calculation
 
 ```text
-minimum_dp = ceil(contract_rent_amount × 25 / 100)
+minimum_initial_rent_credit = ceil(contract_rent_amount × 25 / 100)
 ```
 
-At Rp21,600,000 contract rent, minimum DP is Rp5,400,000.
+At Rp21,600,000 contract rent, the minimum initial rent credit is Rp5,400,000.
 
-DP allocation order:
+Booking Fee/DP allocation order:
 
 1. oldest outstanding rent installment;
 2. then the next installment until the verified DP amount is exhausted;
 3. no allocation to security deposit, expense, or unrelated charge.
 
-For the two-month plan at initial rates, Rp5,400,000 pays the first
-Rp3,600,000 installment and Rp1,800,000 of the second. This is intentional
-because the owner's 25% rule outranks the installment size.
-
-An amount labelled DP but not verified does not satisfy activation.
+An amount labelled Booking Fee or DP but not verified does not satisfy
+activation. Booking Fee is either Rp0 or at least Rp1.000.000.
 
 ### 4.5 Security deposit
-
-Default:
-
-```text
-security_deposit_required = 1 × monthly_rent_snapshot
-```
-
-Property settings can explicitly choose two months for a new agreement. The
-selected requirement is frozen on the lease.
 
 Security deposit:
 
 - is collected/top-up/refunded/deducted through its own append-only ledger;
 - is not invoice rent;
 - is not included in rent paid or revenue;
-- can be carried to a transferred lease, with required top-up recorded;
+- can be carried to a transferred lease, with any agreed top-up recorded;
 - requires a reason and evidence for every deduction;
 - is refunded after checkout reconciliation within seven working days;
 - cannot have a negative ledger balance.
@@ -175,8 +157,7 @@ Security deposit:
 - signed agreement is recorded;
 - exact room is reserved;
 - schedule/invoices exist;
-- minimum DP and security deposit are verified and fully satisfy their distinct
-  onboarding gates; and
+- verified initial rent credit satisfies the onboarding gate; and
 - start date/check-in may still be future.
 
 `active` requires, in one locked command:
@@ -185,8 +166,8 @@ Security deposit:
 - complete mandatory resident identity;
 - account provisioning/link;
 - gender-compatible reserved/vacant room;
-- verified DP at least the minimum;
-- required security deposit collected;
+- verified initial rent credit at least the minimum;
+- optional security deposit recorded when applicable;
 - start date reached;
 - active occupancy created and room `occupied`.
 
@@ -873,8 +854,8 @@ Owner cache additionally binds to building-scope version.
 | Condition                                   | Required outcome                                                                                                |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Price changes after agreement               | Existing lease/installment/invoice snapshots unchanged.                                                         |
-| DP below 25%                                | Lease remains awaiting activation; safe outstanding message.                                                    |
-| Security deposit missing                    | Lease remains awaiting activation even if DP is sufficient.                                                     |
+| Initial rent credit below 25%               | Lease remains awaiting activation; safe outstanding message.                                                    |
+| Security deposit Rp0 / not agreed           | Does not block activation; no refundable-liability balance is recorded.                                         |
 | Transfer proof missing                      | Bank-transfer payment rejected before claim/write.                                                              |
 | Invoice paid/void while payment dialog open | Locked verification rejects stale allocation and refreshes authority.                                           |
 | Two Admins verify same payment              | One commits; other receives replay/conflict, no duplicate receipt.                                              |
@@ -890,14 +871,14 @@ Owner cache additionally binds to building-scope version.
 
 ### 16.1 Billing and lease
 
-| ID               | Scenario                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `QA-LEASE-001`   | Twelve-month full plan creates one exact installment/invoice.                            |
-| `QA-LEASE-002`   | Twelve-month two-month plan creates six contiguous installments totaling contract rent.  |
-| `QA-BILLING-001` | Rp21,600,000 contract yields minimum DP Rp5,400,000 and independent Rp1,800,000 deposit. |
-| `QA-BILLING-002` | Price edit affects only new agreements.                                                  |
-| `QA-BILLING-003` | No automatic late fee is generated.                                                      |
-| `QA-BILLING-004` | Activation denies missing contract, DP, deposit, start date, room, account, or identity. |
+| ID               | Scenario                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QA-LEASE-001`   | Twelve-month full plan creates one exact installment/invoice.                                                                                  |
+| `QA-LEASE-002`   | A 3–120 month snapshot-derived schedule creates contiguous invoice coverage totaling contract rent.                                            |
+| `QA-BILLING-001` | Rp21,600,000 contract displays a recommended DP of Rp5,400,000 and retains an independent deposit record.                                      |
+| `QA-BILLING-002` | Price edit affects only new agreements.                                                                                                        |
+| `QA-BILLING-003` | No automatic late fee is generated.                                                                                                            |
+| `QA-BILLING-004` | Activation denies missing contract, required deposit, start date, room, account, or identity; the DP recommendation is not an activation gate. |
 
 ### 16.2 Payment
 
@@ -939,7 +920,27 @@ Owner cache additionally binds to building-scope version.
 | `QA-REPORT-004` | Cash-flow totals exclude pending/reversed payments and deposit collections from income.   |
 | `QA-REPORT-005` | Property Owner scope includes only assigned building/effective period in rows and totals. |
 
-## 17. Explicitly Deferred
+## 17. Contract Settlement and Arrears (KMO-W07A)
+
+An activated lease owns one **Pelunasan Sewa Kontrak** balance: contract rent
+less Booking Fee/DP credits and verified rent allocations. Security deposit is
+never a normal rent allocation or revenue.
+
+| Window                           | Projection and permitted operation                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H-30, H-14, H-7                  | Reminder candidate for unpaid balance.                                                                                                                |
+| H-0                              | Due-today reminder candidate.                                                                                                                         |
+| D+1                              | `Tunggakan`; lease and room remain active.                                                                                                            |
+| D+7                              | `Tindakan Admin Diperlukan`; no automatic checkout. Partial payment remains allowed through the end of D+7.                                           |
+| One extension                    | Admin may grant one 1–14 day extension after the original deadline, with reason. Partial payment is permitted only through that extension's deadline. |
+| After the partial-payment window | After ordinary D+7, or after an extension deadline, exact full settlement or an admin-only termination case; new partial payment is rejected.         |
+
+Payment history displays each payment/event separately: Booking Fee, DP, manual
+rent settlement, transfer confirmation/rejection/reversal, deposit funding,
+deposit arrears offset, damage deduction, and deposit refund. The UI must not
+offer an invoice download until an actual generated document is available.
+
+## 18. Explicitly Deferred
 
 - Payment Gateway activation or online checkout;
 - automatic WhatsApp API delivery;

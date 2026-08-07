@@ -11,6 +11,12 @@ function ReportsCompatibilityPage() {
       milestone="KMO-W10"
       stateTitle="Laporan belum tersedia"
       description="Authority laporan Penyewaan, Pembayaran, Pengeluaran, dan Keuangan akan tersedia setelah KMO-W10. Route ini tetap aman tanpa menampilkan ringkasan atau ekspor yang belum authoritative."
+      notice={{
+        tone: "info",
+        title: "Laporan belum dapat digunakan sebagai dasar keputusan",
+        description:
+          "Ringkasan dan ekspor belum ditampilkan agar tidak ada angka keuangan atau operasional yang tidak authoritative.",
+      }}
     />
   );
 }

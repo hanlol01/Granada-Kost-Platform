@@ -27,6 +27,7 @@ const lead: BookingLeadRecord = {
   visitorUniversity: "Universitas Demo",
   visitorMessage: null,
   preferredMoveInDate: "2026-08-10",
+  activeLeaseStartDate: null,
   status: "new",
   source: "public_kamar",
   createdAt: "2026-07-31T01:00:00.000Z",
@@ -70,6 +71,7 @@ test("V2 list requester binds property, filters, and server pagination", async (
         status: undefined,
         category: "rukost",
         gender: undefined,
+        source: undefined,
         dateFrom: undefined,
         dateTo: undefined,
         search: "calon",
@@ -99,6 +101,19 @@ test("workspace uses canonical queue vocabulary and removes obsolete survey conv
   assert.doesNotMatch(page, />Pengunjung<|Tanggal Pindah|Jadwal Survey|Dikonversi/);
   assert.match(page, /Belum dipilih/);
   assert.match(page, /min-h-11/);
+  assert.match(page, /function moveInDate/);
+  assert.match(page, /lead\.activeLeaseStartDate/);
+});
+
+test("active tenancy detail exposes property-safe fast links only from the progress projection", () => {
+  const dialog = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
+  const page = source("routes/booking-leads.tsx");
+  assert.match(dialog, /Detail Penyewa Aktif/);
+  assert.match(dialog, /Lihat Detail Penghuni/);
+  assert.match(dialog, /Lihat Detail Kamar/);
+  assert.match(dialog, /progress\.tenancy\.residentId/);
+  assert.match(page, /to: "\/tenants\/\$residentId"/);
+  assert.match(page, /to: "\/rooms\/\$roomNumber"/);
 });
 
 test("status mutation keeps property scope and one stable key per logical action", () => {

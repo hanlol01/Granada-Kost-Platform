@@ -31,7 +31,7 @@ export type MyW06Billing = {
     status: "awaiting_activation" | "active";
     start_date: string;
     end_date: string;
-    payment_plan: "annual_full" | "two_month_installments";
+    payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
     contract_rent: number;
     monthly_rate: number;
     remaining_days: number;
@@ -291,7 +291,7 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       end_date: date(lease.end_date, "Akhir kontrak"),
       payment_plan: oneOf(
         lease.payment_plan,
-        ["annual_full", "two_month_installments"] as const,
+        ["annual_full", "monthly_installments", "two_month_installments"] as const,
         "Paket pembayaran",
       ),
       contract_rent: integer(lease.contract_rent, "Nilai kontrak"),

@@ -66,6 +66,22 @@ export class ResidentService {
     return resident;
   }
 
+  async tenancy(user: UserAccessContext, residentId: string, propertyId: string) {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const resident = await this.residents.findByIdInProperty(residentId, propertyId);
+    if (!resident) {
+      throw new NotFoundException({ code: 'RESIDENT_NOT_FOUND', message: 'Resident not found' });
+    }
+    const tenancies = await this.residents.findCurrentTenanciesInProperty(residentId, propertyId);
+    if (tenancies.length > 1) {
+      throw new ConflictException({
+        code: 'RESIDENT_TENANCY_AMBIGUOUS',
+        message: 'Resident has multiple current tenancy records',
+      });
+    }
+    return tenancies[0] ?? null;
+  }
+
   async myContext(userId: string) {
     return selectSingleResidentContext(await this.residents.findActiveContextsForUser(userId));
   }

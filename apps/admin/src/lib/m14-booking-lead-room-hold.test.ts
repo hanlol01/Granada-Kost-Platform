@@ -767,5 +767,8 @@ test("dialog keeps authority, idempotency, safe copy, and synchronous submission
   const status = functionText(dialog, "BookingLeadHoldDialog.tsx", "BookingLeadHoldStatus");
   assert.doesNotMatch(status, /useEffect|setInterval|createBookingHoldExpirySync|onExpired/);
   assert.match(status, /formatBookingHoldRemaining\(hold\.expiresAt, now\)/);
-  assert.doesNotMatch(dialog, /roomId\}|leadId\}|metadata|raw_payload|provider|midtrans/i);
+  assert.match(dialog, /lead\.source === "public_kamar" \? \{ roomId: selectedRoomId \}/);
+  assert.match(dialog, /room\.genderPolicy === "mixed" \|\| room\.genderPolicy === lead\?\.gender/);
+  assert.match(dialog, /room\.kostType\.category === lead\?\.category/);
+  assert.doesNotMatch(dialog, /metadata|raw_payload|provider|midtrans/i);
 });

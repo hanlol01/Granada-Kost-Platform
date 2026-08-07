@@ -34,7 +34,7 @@ type HoldGet = (
 
 type HoldPost = (
   path: string,
-  body: { property_id: string },
+  body: { property_id: string; room_id?: string },
   options: { idempotencyKey: string },
 ) => Promise<unknown>;
 
@@ -42,6 +42,7 @@ type HoldCommandInput = {
   propertyId: string;
   leadId: string;
   idempotencyKey: string;
+  roomId?: string;
 };
 
 type HoldAccess = {
@@ -243,7 +244,7 @@ async function requestBookingLeadHoldCommand(
   return parseBookingLeadHoldDetail(
     await post(
       `/booking-leads/${encodeURIComponent(input.leadId)}/hold${suffix}`,
-      { property_id: input.propertyId },
+      { property_id: input.propertyId, ...(input.roomId ? { room_id: input.roomId } : {}) },
       { idempotencyKey: input.idempotencyKey },
     ),
   );
@@ -291,7 +292,6 @@ export function canCreateBookingLeadHold(
     !hasManageAuthority(access) ||
     !propertyId ||
     lead.propertyId !== propertyId ||
-    !lead.roomId ||
     !ELIGIBLE_LEAD_STATUSES.has(lead.status) ||
     !isBookingHoldWriteEnabledForProperty(access.propertyRollouts, propertyId) ||
     !coverage ||
@@ -304,7 +304,7 @@ export function canCreateBookingLeadHold(
   return !coverage.data.some(
     (hold) =>
       hold.holdStatus === "active" &&
-      (hold.bookingLeadId === lead.id || hold.roomId === lead.roomId),
+      (hold.bookingLeadId === lead.id || (lead.roomId !== null && hold.roomId === lead.roomId)),
   );
 }
 
@@ -319,7 +319,7 @@ export function canReleaseBookingLeadHold(
     hold &&
     hold.propertyId === propertyId &&
     hold.bookingLeadId === lead.id &&
-    hold.roomId === lead.roomId &&
+    (!lead.roomId || hold.roomId === lead.roomId) &&
     hold.holdStatus === "active",
   );
 }
@@ -331,12 +331,8 @@ export function activeBookingLeadHold(
   if (!coverage || coverage.complete !== true || coverage.propertyId !== lead.propertyId)
     return null;
   return (
-    coverage.data.find(
-      (hold) =>
-        hold.holdStatus === "active" &&
-        hold.bookingLeadId === lead.id &&
-        hold.roomId === lead.roomId,
-    ) ?? null
+    coverage.data.find((hold) => hold.holdStatus === "active" && hold.bookingLeadId === lead.id) ??
+    null
   );
 }
 

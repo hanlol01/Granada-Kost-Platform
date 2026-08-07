@@ -33,6 +33,8 @@ type LeadRow = {
   property_id: string;
   room_id: string | null;
   category: string;
+  gender: 'male' | 'female';
+  source: 'public_kamar' | 'admin_quick_entry';
   status: string;
 };
 
@@ -44,6 +46,7 @@ type RoomRow = {
   building_id: string | null;
   building_property_id: string | null;
   building_category: string | null;
+  gender_policy: 'male' | 'female' | 'mixed' | null;
 };
 
 type IdempotencyRow = {
@@ -221,7 +224,7 @@ export class BookingLeadHoldRepository {
 
   async lockLead(client: PoolClient, leadId: string): Promise<BookingLeadHoldLockedLead | null> {
     const result = await client.query<LeadRow>(
-      `SELECT id, property_id, room_id, category, status
+      `SELECT id, property_id, room_id, category, gender, source, status
        FROM booking_leads
        WHERE id = $1
        FOR UPDATE`,
@@ -234,6 +237,8 @@ export class BookingLeadHoldRepository {
           propertyId: row.property_id,
           roomId: row.room_id,
           category: row.category,
+          gender: row.gender,
+          source: row.source,
           status: row.status,
         }
       : null;
@@ -243,7 +248,8 @@ export class BookingLeadHoldRepository {
     const result = await client.query<RoomRow>(
       `SELECT room.id, room.property_id, room.category, room.room_status, room.building_id,
               building.property_id AS building_property_id,
-              building.category AS building_category
+              building.category AS building_category,
+              COALESCE(room.gender_policy, building.gender_policy) AS gender_policy
        FROM rooms room
        LEFT JOIN room_buildings building ON building.id = room.building_id
        WHERE room.id = $1
@@ -260,6 +266,7 @@ export class BookingLeadHoldRepository {
           buildingId: row.building_id,
           buildingPropertyId: row.building_property_id,
           buildingCategory: row.building_category,
+          genderPolicy: row.gender_policy,
         }
       : null;
   }
@@ -345,6 +352,21 @@ export class BookingLeadHoldRepository {
       [propertyId, leadId, roomId, actorUserId],
     );
     return this.mapHold(result.rows[0]);
+  }
+
+  async assignLeadRoom(
+    client: PoolClient,
+    leadId: string,
+    propertyId: string,
+    roomId: string,
+  ): Promise<boolean> {
+    const result = await client.query(
+      `UPDATE booking_leads
+        SET room_id = $3, updated_at = now()
+        WHERE id = $1 AND property_id = $2 AND source = 'public_kamar'`,
+      [leadId, propertyId, roomId],
+    );
+    return result.rowCount === 1;
   }
 
   async transitionRoomToReserved(

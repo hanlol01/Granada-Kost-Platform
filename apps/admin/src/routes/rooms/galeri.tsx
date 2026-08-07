@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   Dialog,
   DialogContent,
@@ -396,16 +397,13 @@ function GaleriRoute() {
         {canManage ? (
           <Card>
             <CardContent className="flex flex-wrap items-end justify-end gap-3 p-4">
-              <div className="min-w-48">
-                <Label htmlFor="gallery-effective-date">Tanggal efektif publikasi</Label>
-                <Input
-                  id="gallery-effective-date"
-                  className="min-h-11"
-                  type="date"
-                  value={effectiveDate}
-                  onChange={(event) => setEffectiveDate(event.target.value)}
-                />
-              </div>
+              <HeroUiDatePicker
+                id="gallery-effective-date"
+                className="min-w-48"
+                label="Tanggal efektif publikasi"
+                value={effectiveDate}
+                onChange={(value) => setEffectiveDate(value ?? "")}
+              />
               <Button
                 className="min-h-11"
                 disabled={

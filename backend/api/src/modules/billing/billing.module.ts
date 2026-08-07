@@ -22,6 +22,7 @@ import { AdminBillingController } from './controllers/admin-billing.controller';
 import { AdminBillingRepository } from './repositories/admin-billing.repository';
 import { AdminBillingService } from './services/admin-billing.service';
 import { W06BillingService } from './services/w06-billing.service';
+import { ContractSettlementService } from './services/contract-settlement.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
@@ -38,6 +39,7 @@ import { W06BillingService } from './services/w06-billing.service';
     AdminBillingRepository,
     AdminBillingService,
     W06BillingService,
+    ContractSettlementService,
     BillingPeriodRepository,
     InvoiceRepository,
     PaymentRepository,

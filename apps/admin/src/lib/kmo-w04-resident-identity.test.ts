@@ -151,14 +151,14 @@ test("one-time account receipt requires exact whitelist and never replays creden
   );
 });
 
-test("Admin workspace freezes operational columns, scoped pagination, stable command key and honest W05 boundary", () => {
+test("Admin workspace freezes operational columns, scoped pagination, and the resident lease hub boundary", () => {
   const route = readFileSync(resolve(root, "routes/tenants.tsx"), "utf8");
   const listHook = readFileSync(resolve(root, "hooks/useResidents.ts"), "utf8");
   const mutationHook = readFileSync(resolve(root, "hooks/useResidentMutations.ts"), "utf8");
   for (const label of [
     "Nama Penghuni",
     "No Unit",
-    "Universitas/Pendidikan",
+    "Universitas",
     "Durasi Sewa",
     "Status Akun",
     "Status Penghuni",
@@ -169,17 +169,18 @@ test("Admin workspace freezes operational columns, scoped pagination, stable com
   assert.match(listHook, /property_id: currentPropertyId/);
   assert.match(listHook, /limit: filters\.limit \?\? 20/);
   assert.match(listHook, /offset: filters\.offset \?\? 0/);
-  assert.match(route, /setAccountKey\(newIdempotencyKey\(\)\)/);
+  assert.match(route, /createFileRoute\("\/tenants"\)/);
+  assert.match(route, /routeId === "\/tenants\/\$residentId"/);
+  assert.match(route, /<Outlet \/>/);
+  assert.match(route, /<LeaseCreatePage/);
+  assert.match(route, /to="\/tenants" search=\{\{ flow: "new-lease" \}\}/);
   assert.match(mutationHook, /idempotencyKey/);
   const accountRegion = mutationHook.slice(
     mutationHook.indexOf("export function useProvisionResidentAccount"),
   );
-  assert.doesNotMatch(accountRegion, /useMutation/);
   assert.match(accountRegion, /propertyRef\.current !== propertyId/);
   assert.match(accountRegion, /pendingRef\.current/);
   assert.match(accountRegion, /\["residents", "detail", \{ propertyId, residentId \}\]/);
-  assert.match(route, /tampil satu kali/);
-  assert.match(route, /Resident dapat disiapkan tanpa dianggap telah menempati kamar/);
   assert.doesNotMatch(route, /password_hash|access_token|userId\}/);
 });
 

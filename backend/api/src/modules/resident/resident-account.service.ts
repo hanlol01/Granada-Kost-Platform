@@ -292,6 +292,25 @@ export class ResidentAccountService {
       userId = inserted.rows[0].id;
     }
 
+    const existingLink = await client.query<{ id: string }>(
+      `SELECT id
+       FROM residents
+       WHERE property_id = $1 AND user_id = $2 AND id <> $3
+       ORDER BY id
+       FOR UPDATE`,
+      [resident.property_id, userId, resident.id],
+    );
+    if (existingLink.rows.length > 0) {
+      const details: Record<string, readonly ['already_used']> = {};
+      if (identity.email) details.visitor_email = ['already_used'];
+      if (identity.phone) details.visitor_phone = ['already_used'];
+      throw new ConflictException({
+        code: 'RESIDENT_IDENTITY_DUPLICATE',
+        message: 'Resident login identity is already linked to another resident in this property',
+        details,
+      });
+    }
+
     await client.query(
       `INSERT INTO user_property_roles (user_id, property_id, role_id, assigned_by_user_id)
        SELECT $1, $2, roles.id, $3

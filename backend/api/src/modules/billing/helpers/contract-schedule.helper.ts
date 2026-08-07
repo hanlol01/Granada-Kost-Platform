@@ -1,4 +1,4 @@
-export type ContractPaymentPlan = 'annual_full' | 'two_month_installments';
+export type ContractPaymentPlan = 'annual_full' | 'two_month_installments' | 'monthly_installments';
 
 export type ContractScheduleItem = {
   sequenceNumber: number;
@@ -23,20 +23,38 @@ export function minimumDpAmount(contractRentAmount: number): number {
 }
 
 export function buildContractSchedule(input: ContractScheduleInput): ContractScheduleItem[] {
-  if (!Number.isSafeInteger(input.termMonths) || input.termMonths < 12) {
-    throw new RangeError('Lease term must be at least 12 months');
+  if (!Number.isSafeInteger(input.termMonths) || input.termMonths < 3) {
+    throw new RangeError('Lease term must be at least 3 months');
   }
   if (input.paymentPlanType === 'two_month_installments' && input.termMonths % 2 !== 0) {
     throw new RangeError('Two-month installments require an even lease term');
   }
   const contractRent = exactMoney(input.contractRentAmount, 'contract rent');
   const installmentCount =
-    input.paymentPlanType === 'annual_full' ? 1 : input.termMonths / 2;
+    input.paymentPlanType === 'annual_full'
+      ? 1
+      : input.paymentPlanType === 'monthly_installments'
+        ? input.termMonths
+        : input.termMonths / 2;
   const coverageMonths =
-    input.paymentPlanType === 'annual_full' ? input.termMonths : 2;
+    input.paymentPlanType === 'annual_full'
+      ? input.termMonths
+      : input.paymentPlanType === 'monthly_installments'
+        ? 1
+        : 2;
   const start = parseBusinessDate(input.startDate);
   const amount = BigInt(contractRent);
-  const baseAmount = amount / BigInt(installmentCount);
+  const minimumDp = BigInt(minimumDpAmount(contractRent));
+  const firstInstallmentAmount =
+    input.paymentPlanType === 'annual_full'
+      ? amount
+      : minimumDp > amount / BigInt(installmentCount)
+        ? minimumDp
+        : amount / BigInt(installmentCount);
+  const remainingInstallmentCount = installmentCount - 1;
+  const remainingAmount = amount - firstInstallmentAmount;
+  const baseRemainingAmount =
+    remainingInstallmentCount > 0 ? remainingAmount / BigInt(remainingInstallmentCount) : 0n;
   const schedule: ContractScheduleItem[] = [];
   const contractEnd = addDays(addCalendarMonths(start, input.termMonths), -1);
   let coverageStart = start;
@@ -46,9 +64,11 @@ export function buildContractSchedule(input: ContractScheduleInput): ContractSch
     const coverageEnd =
       index === installmentCount - 1 ? contractEnd : addDays(nextCoverageStart, -1);
     const scheduledAmount =
-      index === installmentCount - 1
-        ? amount - baseAmount * BigInt(installmentCount - 1)
-        : baseAmount;
+      index === 0
+        ? firstInstallmentAmount
+        : index === installmentCount - 1
+          ? remainingAmount - baseRemainingAmount * BigInt(remainingInstallmentCount - 1)
+          : baseRemainingAmount;
     schedule.push({
       sequenceNumber: index + 1,
       coverageStartDate: formatBusinessDate(coverageStart),
@@ -80,9 +100,7 @@ function parseBusinessDate(value: string): Date {
 }
 
 function addCalendarMonths(date: Date, months: number): Date {
-  const firstOfTarget = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1),
-  );
+  const firstOfTarget = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
   const lastDay = new Date(
     Date.UTC(firstOfTarget.getUTCFullYear(), firstOfTarget.getUTCMonth() + 1, 0),
   ).getUTCDate();

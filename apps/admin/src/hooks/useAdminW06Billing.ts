@@ -1,7 +1,18 @@
 import { useEffect, useRef } from "react";
-import { rejectPayment } from "@/lib/admin-w06-billing";
+import {
+  cancelLeaseTermination,
+  extendContractSettlement,
+  finalizeLeaseTermination,
+  rejectPayment,
+  startLeaseTermination,
+} from "@/lib/admin-w06-billing";
 import { adminUxQueryKeys, queryKeyContainsPropertyScope } from "@/lib/admin-ux-query-keys";
-import type { W06PaymentStatus } from "@/lib/admin-w06-billing";
+import type {
+  W06InvoiceStatus,
+  W06PaymentMethod,
+  W06PaymentPurpose,
+  W06PaymentStatus,
+} from "@/lib/admin-w06-billing";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getBillingWorklist,
@@ -15,18 +26,56 @@ import {
   verifyPayment,
   verifyProof,
   createOtherCharge,
+  type CancelLeaseTerminationInput,
+  type ContractSettlementExtensionInput,
+  type FinalizeLeaseTerminationInput,
   type OtherChargeInput,
+  type StartLeaseTerminationInput,
   type ManualPaymentInput,
 } from "@/lib/admin-w06-billing";
 
 export const w06BillingKeys = {
   root: (propertyId: string) => ["admin", "w06-billing", propertyId] as const,
-  worklist: (propertyId: string, month: string, offset: number, search: string) =>
-    [...w06BillingKeys.root(propertyId), "worklist", month, offset, search] as const,
+  worklist: (
+    propertyId: string,
+    month: string,
+    offset: number,
+    search: string,
+    status: string,
+    sort: string,
+    dueWithinDays: number | null,
+  ) =>
+    [
+      ...w06BillingKeys.root(propertyId),
+      "worklist",
+      month,
+      offset,
+      search,
+      status,
+      sort,
+      dueWithinDays,
+    ] as const,
   resident: (propertyId: string, residentId: string) =>
     [...w06BillingKeys.root(propertyId), "resident", residentId] as const,
-  payments: (propertyId: string, status: string, offset: number) =>
-    [...w06BillingKeys.root(propertyId), "payments", status, offset] as const,
+  payments: (
+    propertyId: string,
+    status: string,
+    offset: number,
+    search: string,
+    method: string,
+    purpose: string,
+    dueWithinDays: number | null,
+  ) =>
+    [
+      ...w06BillingKeys.root(propertyId),
+      "payments",
+      status,
+      offset,
+      search,
+      method,
+      purpose,
+      dueWithinDays,
+    ] as const,
   proofs: (propertyId: string, status: string, offset: number) =>
     [...w06BillingKeys.root(propertyId), "proofs", status, offset] as const,
   receipt: (propertyId: string, receiptId: string) =>
@@ -65,7 +114,14 @@ function useW06Scope(propertyId: string | null) {
 
 export function useBillingWorklist(
   propertyId: string | null,
-  input: { month: string; offset: number; search: string },
+  input: {
+    month: string;
+    offset: number;
+    search: string;
+    status?: Exclude<W06InvoiceStatus, "draft" | "paid" | "void">;
+    sort?: "due_date_asc" | "due_date_desc" | "resident_asc";
+    dueWithinDays?: number;
+  },
 ) {
   return useQuery({
     queryKey: w06BillingKeys.worklist(
@@ -73,10 +129,21 @@ export function useBillingWorklist(
       input.month,
       input.offset,
       input.search,
+      input.status ?? "all",
+      input.sort ?? "due_date_asc",
+      input.dueWithinDays ?? null,
     ),
     queryFn: ({ signal }) =>
       getBillingWorklist(
-        { propertyId: propertyId!, month: input.month, offset: input.offset, search: input.search },
+        {
+          propertyId: propertyId!,
+          month: input.month,
+          offset: input.offset,
+          search: input.search,
+          status: input.status,
+          sort: input.sort,
+          dueWithinDays: input.dueWithinDays,
+        },
         signal,
       ),
     enabled: Boolean(propertyId),
@@ -94,12 +161,38 @@ export function useResidentBilling(propertyId: string | null, residentId: string
 export function useBillingPayments(
   propertyId: string | null,
   status: W06PaymentStatus,
-  offset = 0,
+  input: {
+    offset?: number;
+    search?: string;
+    method?: W06PaymentMethod;
+    purpose?: W06PaymentPurpose;
+    dueWithinDays?: number;
+  } = {},
 ) {
+  const offset = input.offset ?? 0;
   return useQuery({
-    queryKey: w06BillingKeys.payments(propertyId ?? "none", status, offset),
+    queryKey: w06BillingKeys.payments(
+      propertyId ?? "none",
+      status,
+      offset,
+      input.search ?? "",
+      input.method ?? "all",
+      input.purpose ?? "all",
+      input.dueWithinDays ?? null,
+    ),
     queryFn: ({ signal }) =>
-      getBillingPayments({ propertyId: propertyId!, status, offset }, signal),
+      getBillingPayments(
+        {
+          propertyId: propertyId!,
+          status,
+          offset,
+          search: input.search,
+          method: input.method,
+          purpose: input.purpose,
+          dueWithinDays: input.dueWithinDays,
+        },
+        signal,
+      ),
     enabled: Boolean(propertyId),
   });
 }
@@ -239,5 +332,61 @@ export function useCreateOtherCharge(propertyId: string | null) {
     propertyId,
     (variables) => variables.input.property_id,
     (variables) => createOtherCharge(variables.input, variables.idempotencyKey),
+  );
+}
+
+export function useExtendContractSettlement(propertyId: string | null) {
+  type Variables = {
+    leaseId: string;
+    input: ContractSettlementExtensionInput;
+    idempotencyKey: string;
+  };
+  return useScopedW06Mutation<Variables, Awaited<ReturnType<typeof extendContractSettlement>>>(
+    propertyId,
+    (variables) => variables.input.property_id,
+    (variables) =>
+      extendContractSettlement(variables.leaseId, variables.input, variables.idempotencyKey),
+  );
+}
+
+export function useStartLeaseTermination(propertyId: string | null) {
+  type Variables = {
+    leaseId: string;
+    input: StartLeaseTerminationInput;
+    idempotencyKey: string;
+  };
+  return useScopedW06Mutation<Variables, Awaited<ReturnType<typeof startLeaseTermination>>>(
+    propertyId,
+    (variables) => variables.input.property_id,
+    (variables) =>
+      startLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
+  );
+}
+
+export function useCancelLeaseTermination(propertyId: string | null) {
+  type Variables = {
+    leaseId: string;
+    input: CancelLeaseTerminationInput;
+    idempotencyKey: string;
+  };
+  return useScopedW06Mutation<Variables, Awaited<ReturnType<typeof cancelLeaseTermination>>>(
+    propertyId,
+    (variables) => variables.input.property_id,
+    (variables) =>
+      cancelLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
+  );
+}
+
+export function useFinalizeLeaseTermination(propertyId: string | null) {
+  type Variables = {
+    leaseId: string;
+    input: FinalizeLeaseTerminationInput;
+    idempotencyKey: string;
+  };
+  return useScopedW06Mutation<Variables, Awaited<ReturnType<typeof finalizeLeaseTermination>>>(
+    propertyId,
+    (variables) => variables.input.property_id,
+    (variables) =>
+      finalizeLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
   );
 }

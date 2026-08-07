@@ -33,6 +33,7 @@ import type { RoomInventory } from "@/lib/admin-ux-master-api";
 import { useAuth } from "@/lib/auth";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
+import { revealFirstValidationError } from "@/lib/validation-focus";
 
 type Props = {
   room: RoomInventory | null;
@@ -56,6 +57,7 @@ export function QuickBookingDialog({ room, open, onOpenChange }: Props) {
   const roomAtOpen = useRef<string | null>(null);
   const submissionKey = useRef<string | null>(null);
   const submitting = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [draft, setDraft] = useState<QuickBookingDraft>(() =>
     initialQuickBookingDraft(room?.genderPolicy),
   );
@@ -86,6 +88,12 @@ export function QuickBookingDialog({ room, open, onOpenChange }: Props) {
       onOpenChange(false);
     }
   }, [currentPropertyId, onOpenChange, open, resetCreateLead, room?.genderPolicy, room?.id]);
+
+  useEffect(() => {
+    if (open && Object.keys(errors).length > 0) {
+      revealFirstValidationError(formRef.current);
+    }
+  }, [errors, open]);
 
   if (!room) return null;
 
@@ -176,7 +184,7 @@ export function QuickBookingDialog({ room, open, onOpenChange }: Props) {
           </div>
         </dl>
 
-        <form className="space-y-4" onSubmit={submit} noValidate>
+        <form ref={formRef} className="space-y-4" onSubmit={submit} noValidate>
           <Field
             id="quick-booking-name"
             label="Nama calon penghuni"

@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   Patch,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -26,6 +27,15 @@ import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentService } from './resident.service';
 import { ResidentAccountService } from './resident-account.service';
 import { ResidentRecord } from './types/resident.types';
+
+/**
+ * PostgreSQL DATE values must remain date-only on the V2 wire contract. Nest
+ * otherwise serializes a JavaScript Date as an ISO timestamp, which does not
+ * satisfy the Admin parser or represent a date of birth correctly.
+ */
+export function toCanonicalResidentDate(value: Date | null): string | null {
+  return value === null ? null : value.toISOString().slice(0, 10);
+}
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -74,6 +84,33 @@ export class ResidentController {
   @RequirePermissions('resident.read')
   ktpDocument(@CurrentUser() user: UserAccessContext, @Param('residentId') residentId: string) {
     return this.residents.ktpDocument(user, residentId);
+  }
+
+  @Get(':residentId/tenancy')
+  @RequirePermissions('resident.read')
+  async tenancy(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId', new ParseUUIDPipe({ version: '4' })) residentId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    const tenancy = await this.residents.tenancy(user, residentId, propertyId);
+    return v2Data(
+      tenancy
+        ? {
+            resident_id: tenancy.residentId,
+            property_id: tenancy.propertyId,
+            lease_id: tenancy.leaseId,
+            lease_status: tenancy.leaseStatus,
+            room_number: tenancy.roomNumber,
+            kost_type_name: tenancy.kostTypeName,
+            building_code: tenancy.buildingCode,
+            start_date: tenancy.startDate,
+            end_date: tenancy.endDate,
+            term_months: tenancy.termMonths,
+            payment_plan_type: tenancy.paymentPlanType,
+          }
+        : null,
+    );
   }
 
   @Post(':residentId/account')
@@ -173,7 +210,7 @@ export class ResidentController {
     return {
       ...base,
       ktp_number: resident.ktpNumber,
-      date_of_birth: resident.dateOfBirth,
+      date_of_birth: toCanonicalResidentDate(resident.dateOfBirth),
       place_of_birth: resident.placeOfBirth,
       address: resident.address,
       university: resident.university,

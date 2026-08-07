@@ -5,7 +5,7 @@
 // (no real masking helper) because the field is server-side authoritative —
 // the UI list already masks the value via maskKtp().
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -34,6 +35,7 @@ import {
   useUpdateResident,
   type CreateResidentInput,
 } from "@/hooks/useResidentMutations";
+import { revealFirstValidationError } from "@/lib/validation-focus";
 
 const Schema = z.object({
   fullName: z.string().trim().min(2, "Nama lengkap minimal 2 karakter"),
@@ -123,6 +125,7 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
   const create = useCreateResident();
   const update = useUpdateResident();
   const pending = create.isPending || update.isPending;
+  const formRef = useRef<HTMLFormElement>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(Schema),
@@ -132,6 +135,12 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
   useEffect(() => {
     if (open) form.reset(toDefaults(initial));
   }, [open, initial, form]);
+
+  useEffect(() => {
+    if (open && Object.keys(form.formState.errors).length > 0) {
+      revealFirstValidationError(formRef.current);
+    }
+  }, [form.formState.errors, open]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     const payload: CreateResidentInput = {
@@ -170,7 +179,7 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
         <DialogHeader>
           <DialogTitle>{initial ? "Edit Penghuni" : "Tambah Penghuni"}</DialogTitle>
         </DialogHeader>
-        <form className="space-y-3" onSubmit={onSubmit} noValidate>
+        <form ref={formRef} className="space-y-3" onSubmit={onSubmit} noValidate>
           <Field label="Nama Lengkap" error={form.formState.errors.fullName?.message}>
             <Input {...form.register("fullName")} disabled={pending} />
           </Field>
@@ -186,9 +195,19 @@ export function ResidentFormDialog({ open, onOpenChange, initial }: ResidentForm
             <Field label="Tempat Lahir" error={form.formState.errors.placeOfBirth?.message}>
               <Input {...form.register("placeOfBirth")} disabled={pending} />
             </Field>
-            <Field label="Tanggal Lahir" error={form.formState.errors.dateOfBirth?.message}>
-              <Input type="date" {...form.register("dateOfBirth")} disabled={pending} />
-            </Field>
+            <HeroUiDatePicker
+              id="resident-date-of-birth"
+              label="Tanggal Lahir"
+              value={form.watch("dateOfBirth")}
+              onChange={(value) =>
+                form.setValue("dateOfBirth", value ?? "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              error={form.formState.errors.dateOfBirth?.message}
+              disabled={pending}
+            />
           </div>
           <Field label="Alamat" error={form.formState.errors.address?.message}>
             <Input {...form.register("address")} disabled={pending} />
@@ -280,7 +299,16 @@ function Field({
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
       {children}
-      {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
+      {error ? (
+        <p
+          className="text-[11px] text-destructive"
+          data-validation-target="true"
+          role="alert"
+          tabIndex={-1}
+        >
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

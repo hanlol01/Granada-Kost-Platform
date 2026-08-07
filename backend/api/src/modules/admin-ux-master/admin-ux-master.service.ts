@@ -77,9 +77,10 @@ export class AdminUxMasterService {
          commercial_version.annual_contract_value AS yearly_price,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
-         commercial_version.effective_date, commercial_version.minimum_dp_percent,
+         commercial_version.effective_date::text AS effective_date,
+         commercial_version.minimum_dp_percent,
          commercial_version.security_deposit_months, commercial_version.payment_schedules,
-         future_version.effective_date AS future_effective_date,
+         future_version.effective_date::text AS future_effective_date,
          future_version.monthly_price AS future_monthly_price,
          future_version.annual_contract_value AS future_yearly_price,
          future_version.minimum_dp_percent AS future_minimum_dp_percent,
@@ -1097,7 +1098,8 @@ export class AdminUxMasterService {
 
   private async currentCommercial(kostTypeId: string, client?: PoolClient): Promise<DbRow> {
     const result = await (client ?? this.database.client).query<DbRow>(
-      `SELECT effective_date, monthly_price, annual_contract_value, minimum_dp_percent,
+      `SELECT effective_date::text AS effective_date,
+              monthly_price, annual_contract_value, minimum_dp_percent,
               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1 AND effective_date <= CURRENT_DATE
@@ -1116,7 +1118,8 @@ export class AdminUxMasterService {
 
   private async nextCommercial(kostTypeId: string, client?: PoolClient): Promise<DbRow | null> {
     const result = await (client ?? this.database.client).query<DbRow>(
-      `SELECT effective_date, monthly_price, annual_contract_value, minimum_dp_percent,
+      `SELECT effective_date::text AS effective_date,
+              monthly_price, annual_contract_value, minimum_dp_percent,
               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1 AND effective_date > CURRENT_DATE

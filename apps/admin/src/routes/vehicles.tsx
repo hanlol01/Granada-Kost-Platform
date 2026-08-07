@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import { Input } from "@/components/ui/input";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -233,6 +235,11 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
   }, [data, q]);
 
   const hasFilter = q !== "" || status !== "all" || type !== "all";
+  const activeFilterCount =
+    Number(Boolean(q.trim())) + Number(status !== "all") + Number(type !== "all");
+  const filterSignature = `${q}:${status}:${type}`;
+  const pendingApprovalCount =
+    data?.filter((vehicle) => vehicle.vehicleStatus === "pending_approval").length ?? 0;
   const mutationPending =
     approveMut.isPending ||
     rejectMut.isPending ||
@@ -316,6 +323,20 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
       }
     >
       {workspaceNavigation}
+      <NoticeAlert
+        className="mb-4"
+        tone={pendingApprovalCount > 0 ? "warning" : "info"}
+        title={
+          pendingApprovalCount > 0
+            ? `${pendingApprovalCount} kendaraan menunggu persetujuan`
+            : "Perhatikan status kendaraan"
+        }
+        description={
+          pendingApprovalCount > 0
+            ? "Periksa data kendaraan dan penghuni sebelum menyetujui atau menolak pendaftaran."
+            : "Status kendaraan berubah melalui proses persetujuan, penolakan, suspend, atau aktivasi kembali."
+        }
+      />
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -354,6 +375,16 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
           </SelectContent>
         </Select>
       </div>
+
+      {!isLoading && !isFetching && !error ? (
+        <FilterResultNotice
+          key={filterSignature}
+          entityLabel="kendaraan"
+          resultCount={filtered.length}
+          activeFilterCount={activeFilterCount}
+          searchTerm={q}
+        />
+      ) : null}
 
       {error ? (
         <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat kendaraan" />

@@ -18,6 +18,7 @@ export const FILE_PURPOSES = [
   "room_photo",
   "property_logo",
   "ktp",
+  "profile_photo",
   "hunian_gallery",
 ] as const;
 
@@ -27,7 +28,11 @@ export type FilePurpose = (typeof FILE_PURPOSES)[number];
 // MIME types
 // ---------------------------------------------------------------------------
 
-export type SupportedMimeType = "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
+export type SupportedMimeType =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp"
+  | "application/pdf";
 
 // ---------------------------------------------------------------------------
 // Purpose policies
@@ -126,13 +131,25 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     purpose: "ktp",
     allowedMimeTypes: ["image/jpeg", "image/png", "application/pdf"],
     maxBytesByMimeType: {
-      "image/jpeg": 2 * 1024 * 1024,
-      "image/png": 2 * 1024 * 1024,
+      "image/jpeg": 5 * 1024 * 1024,
+      "image/png": 5 * 1024 * 1024,
       "application/pdf": 5 * 1024 * 1024,
     },
     maxFilesPerEntity: 1,
     label: "KTP",
     compressImages: false,
+  },
+  profile_photo: {
+    purpose: "profile_photo",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    maxBytesByMimeType: {
+      "image/jpeg": 5 * 1024 * 1024,
+      "image/png": 5 * 1024 * 1024,
+      "image/webp": 5 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 1,
+    label: "Foto profil penghuni",
+    compressImages: true,
   },
   // M19B/M19C hunian gallery. Backend policy (015_hunian_gallery.sql + file
   // constants): JPEG/PNG/WebP only, max 3 MB, max 10 active images per public
@@ -213,6 +230,19 @@ export const IMAGE_COMPRESSION = {
 // ---------------------------------------------------------------------------
 
 export const DANGEROUS_FILE_EXTENSIONS = new Set([
-  "exe", "sh", "bat", "cmd", "ps1", "vbs", "js",
-  "html", "htm", "svg", "xml", "php", "asp", "jar", "war",
+  "exe",
+  "sh",
+  "bat",
+  "cmd",
+  "ps1",
+  "vbs",
+  "js",
+  "html",
+  "htm",
+  "svg",
+  "xml",
+  "php",
+  "asp",
+  "jar",
+  "war",
 ]);

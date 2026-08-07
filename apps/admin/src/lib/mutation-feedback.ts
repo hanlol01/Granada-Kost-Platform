@@ -5,6 +5,7 @@
 
 import { toast } from "sonner";
 import { ApiError } from "@granada-kost/api-client";
+import { adminErrorNotice } from "./error-normalizer";
 
 export function toastMutationSuccess(message: string): void {
   toast.success(message);
@@ -14,25 +15,12 @@ export function toastMutationError(
   err: unknown,
   fallback: string,
 ): { status: number | null; code: string | null; correlationId: string | null } {
+  const notice = adminErrorNotice(err, fallback);
+
   if (ApiError.isApiError(err)) {
-    const desc = err.correlationId ? `${err.message} (ref: ${err.correlationId})` : err.message;
-    if (err.status === 403) {
-      toast.error("Tidak diizinkan oleh server", { description: desc });
-    } else if (err.status === 429) {
-      toast.error("Terlalu banyak permintaan", { description: desc });
-    } else if (err.status === 409) {
-      toast.error("Terjadi konflik data", { description: desc });
-    } else if (err.status === 422) {
-      toast.error("Validasi gagal", { description: desc });
-    } else if (err.status === 502 || err.status === 503) {
-      toast.error("Layanan tidak tersedia", { description: desc });
-    } else if (err.status === 0) {
-      toast.error("Jaringan terputus", { description: desc });
-    } else {
-      toast.error(fallback, { description: desc });
-    }
+    toast.error(notice.title, { description: notice.description });
     return { status: err.status, code: err.code, correlationId: err.correlationId ?? null };
   }
-  toast.error(fallback);
+  toast.error(notice.title, { description: notice.description });
   return { status: null, code: null, correlationId: null };
 }

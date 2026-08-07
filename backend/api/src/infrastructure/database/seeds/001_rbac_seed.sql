@@ -128,6 +128,7 @@ WITH grants(role_code, permission_code) AS (
     ('admin', 'lease.manage'),
     ('admin', 'checkout.manage'),
     ('admin', 'billing.read'),
+    ('admin', 'billing.manage'),
     ('admin', 'payment.verify'),
     ('admin', 'complaint.manage'),
     ('admin', 'maintenance.manage'),

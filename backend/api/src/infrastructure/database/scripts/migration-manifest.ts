@@ -243,4 +243,37 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.uq_invoices_w06_installment') IS NOT NULL",
     ],
   },
+  {
+    version: '028_flexible_lease_term_and_booking_fee.sql',
+    checksumSha256: '5ca0873b1d5ca51de30fe50f523f5dc6d5e7e636691c469dafd3a0dc45bae28f',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='onboarding_commitments' AND column_name='booking_fee_paid_amount')",
+      "to_regclass('public.onboarding_commitments') IS NOT NULL",
+    ],
+  },
+  {
+    version: '029_booking_lead_payment_commitments.sql',
+    checksumSha256: '11a921a900fb2067bffd325d335f9dd24888ab189fe7b058911a2e196411d71e',
+    sentinels: [
+      "to_regclass('public.booking_lead_payment_commitments') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='materialized_onboarding_commitment_id')",
+    ],
+  },
+  {
+    version: '030_contract_settlement_termination.sql',
+    checksumSha256: 'ef570de0ed639843a0b07321dab149dd286163131ff08fcfdd74ff790117fc68',
+    sentinels: [
+      "to_regclass('public.lease_contract_settlements') IS NOT NULL",
+      "to_regclass('public.lease_termination_cases') IS NOT NULL",
+      "to_regclass('public.contract_settlement_deposit_offsets') IS NOT NULL",
+    ],
+  },
+  {
+    version: '031_admin_billing_manage_permission.sql',
+    checksumSha256: '7ff3ad0bd30a4a2aa647d35bf684999950b4153fea2a94d08a0eb688c47b85a0',
+    sentinels: [
+      "to_regclass('public.role_permissions') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM role_permissions role_permission JOIN roles role ON role.id=role_permission.role_id JOIN permissions permission ON permission.id=role_permission.permission_id WHERE role.code='admin' AND permission.code='billing.manage')",
+    ],
+  },
 ] as const;

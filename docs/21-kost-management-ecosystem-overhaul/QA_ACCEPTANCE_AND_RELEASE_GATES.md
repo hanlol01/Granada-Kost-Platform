@@ -319,7 +319,8 @@ For each:
 
 `QA-LEASE-010`
 
-- Minimum 12-month policy and approved payment schedule validated.
+- A historical/current/future start date and a 3–120 month term are validated;
+  the normal 3-, 6-, and 12-month shortcuts and snapshot-derived schedule agree.
 - Lease statuses follow canonical lifecycle.
 - Room status is derived from lease/hold/inspection authority.
 
@@ -344,8 +345,9 @@ For each:
 
 `QA-BILLING-001`
 
-- Annual and two-month installment schedules generate exact periods and totals.
-- DP credits rent, never security deposit.
+- Snapshot-derived schedules generate exact periods and totals for 3–120 month
+  terms; exact 12-month multiples may use annual category pricing.
+- Booking Fee and DP credit rent, never security deposit.
 - Security deposit is a liability, never revenue.
 - Partial, exact, over, and multi-invoice payments allocate correctly.
 - Transfer proof mandatory; cash receipt mandatory.

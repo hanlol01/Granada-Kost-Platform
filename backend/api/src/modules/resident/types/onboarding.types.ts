@@ -11,10 +11,23 @@ export type OnboardingCommitmentResponse = {
   endDate: string;
   termMonths: number;
   billingCycle: 'monthly' | 'yearly';
-  paymentPlanType: 'annual_full' | 'two_month_installments';
+  paymentPlanType: 'annual_full' | 'two_month_installments' | 'monthly_installments';
   contractRentAmount: number;
   dpRequiredAmount: number;
   securityDepositRequiredAmount: number;
+  initialPayment: {
+    method: 'cash' | 'bank_transfer';
+    status: 'verified' | 'pending_confirmation';
+    dpRecordedAmount: number;
+    securityDepositRecordedAmount: number;
+    dpVerifiedAmount: number;
+    securityDepositVerifiedAmount: number;
+    receipts: Array<{
+      id: string;
+      purpose: 'dp' | 'security_deposit';
+      amount: number;
+    }>;
+  };
   temporaryPassword: string | null;
 };
 
@@ -30,7 +43,7 @@ export function calculateOnboardingCommercial(
     monthlyPrice < 0 ||
     yearlyPrice < 0 ||
     !Number.isSafeInteger(termMonths) ||
-    termMonths < 12 ||
+    termMonths < 3 ||
     (billingCycle === 'yearly' && termMonths % 12 !== 0)
   ) {
     throw new RangeError('Invalid onboarding commercial authority');
@@ -40,6 +53,8 @@ export function calculateOnboardingCommercial(
   return {
     contractRent,
     dpRequired: Math.ceil(contractRent * 0.25),
-    depositRequired: monthlyPrice,
+    // Security deposit remains a separate liability. Its funding is a free
+    // non-negative commitment input and never reduces rent receivable.
+    depositRequired: 0,
   };
 }

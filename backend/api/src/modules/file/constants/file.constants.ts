@@ -89,17 +89,17 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     purpose: 'profile_photo',
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxBytesByMimeType: {
-      'image/jpeg': 2 * 1024 * 1024,
-      'image/png': 2 * 1024 * 1024,
-      'image/webp': 2 * 1024 * 1024,
+      'image/jpeg': 5 * 1024 * 1024,
+      'image/png': 5 * 1024 * 1024,
+      'image/webp': 5 * 1024 * 1024,
     },
   },
   ktp: {
     purpose: 'ktp',
     allowedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
     maxBytesByMimeType: {
-      'image/jpeg': 2 * 1024 * 1024,
-      'image/png': 2 * 1024 * 1024,
+      'image/jpeg': 5 * 1024 * 1024,
+      'image/png': 5 * 1024 * 1024,
       'application/pdf': 5 * 1024 * 1024,
     },
   },

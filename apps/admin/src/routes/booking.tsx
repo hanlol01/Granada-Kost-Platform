@@ -3,6 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,6 +52,7 @@ function BookingPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [lastBookingRoom, setLastBookingRoom] = useState<string>("");
+  const [checkInDate, setCheckInDate] = useState("");
 
   const filtered = useMemo(
     () =>
@@ -325,10 +327,13 @@ function BookingPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="checkin">Tanggal Masuk</Label>
-                <Input id="checkin" type="date" required />
-              </div>
+              <HeroUiDatePicker
+                id="checkin"
+                label="Tanggal Masuk"
+                value={checkInDate}
+                onChange={(value) => setCheckInDate(value ?? "")}
+                required
+              />
               <div>
                 <Label htmlFor="duration">Durasi Sewa</Label>
                 <Select defaultValue="6">

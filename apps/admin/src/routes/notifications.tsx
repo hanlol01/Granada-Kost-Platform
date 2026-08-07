@@ -9,6 +9,8 @@ import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import {
   Select,
   SelectContent,
@@ -64,6 +66,9 @@ function NotificationsPage() {
   });
   const forbidden =
     !query.hasAccess || (query.error as { status?: unknown } | null | undefined)?.status === 403;
+  const unreadCount =
+    query.data?.data.filter((notification) => notification.notification_status === "unread")
+      .length ?? 0;
 
   const handleStatusChange = (value: string) => {
     setStatus(value as AdminNotificationStatus | "all");
@@ -104,6 +109,19 @@ function NotificationsPage() {
         />
       ) : query.data.data.length === 0 ? (
         <div className="space-y-4">
+          <NoticeAlert
+            tone={status === "all" ? "info" : "warning"}
+            title={
+              status === "all" ? "Belum ada notifikasi baru" : "Filter belum menemukan notifikasi"
+            }
+            description="Notifikasi bersifat read-only. Periksa status dan kedaluwarsa sebelum mengambil tindakan pada data terkait."
+          />
+          <FilterResultNotice
+            key={status}
+            entityLabel="notifikasi"
+            resultCount={0}
+            activeFilterCount={Number(status !== "all")}
+          />
           <EmptyState
             icon={<Bell className="h-5 w-5" />}
             title="Belum ada notifikasi"
@@ -122,6 +140,23 @@ function NotificationsPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          <NoticeAlert
+            tone={unreadCount > 0 ? "info" : "success"}
+            title={
+              unreadCount > 0
+                ? `${unreadCount} notifikasi belum dibaca`
+                : "Semua notifikasi pada halaman ini sudah dibaca"
+            }
+            description="Notifikasi bersifat read-only. Periksa status dan kedaluwarsa sebelum mengambil tindakan pada data terkait."
+          />
+          {!query.isFetching ? (
+            <FilterResultNotice
+              key={status}
+              entityLabel="notifikasi"
+              resultCount={query.data.data.length}
+              activeFilterCount={Number(status !== "all")}
+            />
+          ) : null}
           <Card>
             <CardContent className="divide-y divide-border p-0">
               {query.data.data.map((notification) => (

@@ -249,7 +249,7 @@ contains:
 - physical inventory: building, category, floor, size, gender policy, status,
   visibility, and notes;
 - category commercial source: monthly display price, annual contract value,
-  minimum DP rule, security-deposit rule, and category facilities;
+  recommended 25% DP prefill, security-deposit rule, and category facilities;
 - ownership: current building owner label, defaulting to KOSTATION;
 - active resident summary: name, account status, phone/WhatsApp action,
   university, lease period, and quick link to resident detail;
@@ -404,19 +404,19 @@ Stage 1 captures:
 - gender;
 - email;
 - normalized phone/WhatsApp;
-- NIK;
-- birth place and birth date;
-- address;
+- NIK, birth place, birth date, and address, optional;
 - marital status;
-- university, faculty/major, and cohort;
+- university, faculty/major, and cohort, optional;
 - Instagram username, optional;
-- parent/guardian name and relationship;
-- parent/guardian phone/WhatsApp;
-- emergency contact;
-- KTP and other required identity documents;
+- parent/guardian name/relationship, guardian phone/WhatsApp, and emergency
+  contact, optional;
+- KTP upload, optional, with preview, replace, removal, supported-type feedback,
+  and a maximum size defined by the upload contract;
 - lease start and end;
-- minimum 12-month term;
-- annual-full or two-month installment plan;
+- a whole-number term from 3 through 120 months, with 3-, 6-, and 12-month
+  shortcuts;
+- derived schedule and date label, with a historical/current/future start date
+  selected by the operator;
 - notes; and
 - required acknowledgements.
 
@@ -431,7 +431,8 @@ No., Kategori, Kamar, Gender, Status, and Pilih.
 
 Selecting one room disables other Select controls until **Batalkan Pilihan** is
 used. The selection summary shows category, room number, category tariff,
-lease/payment plan, gender, floor, minimum DP, and security deposit.
+lease/payment plan, gender, floor, minimum initial-rent credit, Booking Fee,
+DP, and optional security deposit.
 
 The final confirmation “Saya meyakini data yang saya masukkan telah sesuai” is
 mandatory. Save remains disabled until both stages pass authoritative
@@ -617,20 +618,24 @@ lead, dashboard, and availability views.
 
 **Disewa** opens a financial confirmation before onboarding:
 
-- rent DP amount and method;
-- security-deposit amount and method;
+- optional Booking Fee amount and method;
+- rent DP / initial-rent-credit amount and method;
+- optional security-deposit amount and method;
 - payment date;
 - bank/cash reference;
 - transfer proof when applicable; and
 - notes.
 
-DP must meet `POL-PAYMENT-001` and is allocated against rent. Security deposit
-is a separate liability under `POL-PAYMENT-002`. Transfer is primary and cash is
-an audited exception under `POL-PAYMENT-003`.
+Verified Booking Fee and DP together must meet `POL-PAYMENT-001` and are
+allocated against rent. A Booking Fee is either Rp0 or at least Rp1.000.000.
+Security deposit is a separate optional liability under `POL-PAYMENT-002`; Rp0
+is valid. Transfer is primary and cash is an audited exception under
+`POL-PAYMENT-003`.
 
-The UI must not label the two amounts interchangeably. Insufficient DP, missing
-deposit, missing proof for transfer, invalid hold, or unavailable room blocks
-activation. Successful capture continues to the resident/lease onboarding flow.
+The UI must not label the three amounts interchangeably. An insufficient initial
+rent credit, missing proof for transfer, invalid hold, or unavailable room blocks
+activation. A zero security deposit does not block activation. Successful capture
+continues to the resident/lease onboarding flow.
 
 ## 9. Billing and Payments
 
@@ -1008,7 +1013,8 @@ single-room level.
 1. Public visitor submits category + gender interest.
 2. Admin reviews the new lead and contacts the candidate.
 3. Admin selects a compatible vacant room and creates a 24-hour hold.
-4. Admin records qualifying DP and security deposit.
+4. Admin records qualifying Booking Fee and/or DP, plus an optional security
+   deposit when one is agreed.
 5. **Disewa** opens pre-filled resident and lease onboarding.
 6. Missing identity/education/guardian/document fields are completed.
 7. **Commit Onboarding** atomically provisions/links the account, creates the

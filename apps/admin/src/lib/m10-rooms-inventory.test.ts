@@ -297,7 +297,13 @@ test("rooms summary uses property-wide aggregate, shared table, filters, and exa
   assert.match(route, /offset:\s*search\.offset/);
   assert.match(route, /aria-pressed=/);
   assert.doesNotMatch(route, /<Link\b|Kelola/);
-  assert.match(route, /onSearchChange\(\{\s*category,\s*offset:\s*0,\s*\}\)/s);
+  assert.match(route, /useM4RoomInventory\(\{ status: "vacant", limit: 1, offset: 0 \}\)/);
+  assert.match(route, /category: "rukost",\s*status: "vacant",\s*limit: 1,\s*offset: 0/s);
+  assert.match(route, /category: "apartkost",\s*status: "vacant",\s*limit: 1,\s*offset: 0/s);
+  assert.match(route, /availableRoomsQuery\.data\?\.total/);
+  assert.match(route, /availableRumahKostQuery\.data\?\.total/);
+  assert.match(route, /availableApartKostQuery\.data\?\.total/);
+  assert.match(route, /onSearchChange\(\{\s*category,\s*status: "vacant",\s*offset: 0,\s*\}\)/s);
   assert.match(route, /canManage=\{false\}/);
   assert.match(route, /<RoomInventoryTable/);
   assert.match(route, /<Pagination/);

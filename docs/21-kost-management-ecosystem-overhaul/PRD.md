@@ -115,8 +115,8 @@ an alternative lifecycle.
 KOSTATION has two categories: Rumah Kost and Apart Kost. Initial commercial
 defaults are Rp1.800.000 per month and Rp21.600.000 per year for each category.
 Admin may change these values at category/type authority, not independently on
-ordinary rooms. Initial security-deposit policy is one monthly rate and may be
-configured up to two monthly rates.
+ordinary rooms. Security deposit is recorded separately at lease level as an
+optional refundable liability; Rp0 is valid and it never changes category rent.
 
 ### 5.3 Fixed Physical Inventory
 
@@ -164,11 +164,13 @@ The following decisions bind all product surfaces:
 - `DEC-LEAD-001`: public lead, Admin quick lead, and direct onboarding converge
   on one activation authority; `INV-LEAD-001` keeps lead, hold, lease, and
   occupancy distinct.
-- `POL-LEASE-001`: the minimum lease term is 12 months.
-- `POL-BILLING-002`: rent is payable annually in full or in two-month
-  installments.
-- `POL-PAYMENT-001` and `POL-PAYMENT-002`: DP is an advance rent credit;
-  security deposit is a separate refundable liability.
+- `POL-LEASE-001`: ordinary direct onboarding accepts a whole-number term from
+  3 through 120 months; a 1–2 month exception needs later owner approval.
+- `POL-BILLING-002`: rent and its schedule derive from the immutable lease
+  snapshot; exact 12-month multiples may use annual category pricing.
+- `POL-PAYMENT-001`, `POL-PAYMENT-002`, and `POL-PAYMENT-009`: Booking Fee and
+  DP are advance rent credits; security deposit is a separate optional
+  refundable liability.
 - `POL-PAYMENT-003`: bank transfer is primary; cash is an audited exception.
 - `DEC-PAYMENT-001`: payment gateway and automatic provider settlement are
   disabled for this overhaul.
@@ -194,8 +196,15 @@ The following decisions bind all product surfaces:
 6. Admin receives the lead, contacts the prospect, and records progress.
 7. After agreement, Admin selects one eligible vacant room and may place a
    24-hour hold.
-8. Admin records verified DP and security-deposit payments separately.
-9. Admin completes the resident, lease, room, billing, and onboarding checklist.
+8. Admin creates a separate **Lead Payment Commitment** after the active hold:
+   Booking Fee, DP, or full settlement; it is not yet a W06 payment-ledger row.
+9. Admin selects **Lengkapi Data Penyewaan** and completes the resident, lease,
+   room, billing, and onboarding checklist in `/tenants`. Before **Commit
+   Onboarding**, the contractual start date and duration may be revised; the
+   server recalculates the commercial quote for that final period while the
+   recorded Lead Payment Commitment remains immutable. A lead credit that would
+   exceed the recalculated contract rent blocks commit and requires an explicit
+   lead correction or cancellation.
 10. **Commit Onboarding** atomically provisions/links the account, creates the
     pending resident and awaiting-activation lease, freezes billing, and keeps
     the exact room reserved.
@@ -222,6 +231,15 @@ resident, invoice, or payment.
 `FR-ADM-LEAD-002`: Quick-entry must retain the selected exact room as an Admin
 preference while still requiring a hold or activation command before room
 status changes.
+
+`FR-ADM-LEAD-006`: A Booking Lead must have a currently active, compatible
+24-hour hold before Admin can create its Lead Payment Commitment or open the
+lead-based `Tambah Penyewaan` flow. A new lead never exposes direct onboarding.
+
+`FR-ADM-LEAD-007`: Completing a lead records exactly one Lead Payment
+Commitment. It is materialized exactly once into the W06 ledger/deposit records
+when **Commit Onboarding** succeeds; the lead commitment itself is not a payment
+receipt or settlement.
 
 ### 7.3 Direct Resident and Lease Onboarding
 
@@ -601,6 +619,21 @@ unallocated balance, and no allocation exceeds invoice outstanding balance.
 `INV-PAYMENT-002`: DP reduces rent receivable while security-deposit funding and
 refund never settle rent or count as revenue. Payment proof remains evidence,
 not confirmation.
+
+`FR-ADM-SETTLEMENT-001`: Detail Penghuni exposes one authoritative contract-rent
+balance with contract total, initial rent credit, allocations, remaining amount,
+effective deadline, arrears state, and contextual payment action.
+
+`FR-ADM-SETTLEMENT-002`: Admin may record a partial amount through the end of
+ordinary D+7 after the two-month deadline. If the single approved extension is
+used, partial payment is allowed only through its deadline. After the applicable
+partial-payment window, only exact settlement or admin-only termination is
+available. A room stays active while overdue.
+
+`FR-ADM-TERMINATION-001`: An admin with `lease.manage` may start a documented
+termination case after the final deadline, cancel it after full settlement, and
+finalize checkout. Finalization applies deposit to arrears first, then
+evidence-backed damage, and records evidence-backed refund of the remainder.
 
 `INV-REPORT-001`: Screen totals, preview, PDF, and Excel for identical filters
 come from one server-side authority and reconcile to the same records.

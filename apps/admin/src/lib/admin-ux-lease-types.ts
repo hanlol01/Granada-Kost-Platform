@@ -115,6 +115,8 @@ export type LeaseResidentOption = {
 export type LeaseRoomOption = {
   id: string;
   number: string;
+  genderPolicy: "male" | "female" | "mixed";
+  roomStatus: "vacant";
   buildingName?: string | null;
   buildingCode?: string | null;
   unitCode?: string | null;

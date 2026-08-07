@@ -1,7 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { LeaseCreatePage } from "@/components/leases/LeaseCreatePage";
 
 export const Route = createFileRoute("/penyewaan/tambah")({
+  beforeLoad: () => {
+    throw redirect({
+      to: "/tenants",
+      search: { flow: "new-lease" },
+      replace: true,
+    });
+  },
   component: TambahPenyewaanRoute,
 });
 

@@ -28,7 +28,9 @@ import {
 import { CreateMyPaymentProofDto } from '../dto/create-my-payment-proof.dto';
 import {
   createBillingInvoicePdf,
+  createBillingReceiptPdf,
   type BillingInvoiceDocument,
+  type BillingReceiptDocument,
 } from '../helpers/billing-document.helper';
 
 type LeaseTupleRow = {
@@ -43,7 +45,7 @@ type LeaseTupleRow = {
   contract_rent_amount: string;
   dp_required_amount: string;
   security_deposit_required_amount: string;
-  payment_plan_type: 'annual_full' | 'two_month_installments';
+  payment_plan_type: 'annual_full' | 'monthly_installments' | 'two_month_installments';
   snapshot_monthly_price: string;
   snapshot_room_number: string;
   snapshot_kost_type_name: string;
@@ -102,6 +104,8 @@ type PaymentWorkspaceRow = PaymentProjectionRow & {
   resident_name: string;
   room_number: string;
   reference_number: string | null;
+  rent_allocation_amount: string;
+  settles_rent_contract: boolean;
   evidence: Array<{
     id: string;
     original_filename: string;
@@ -121,6 +125,39 @@ type InvoiceProjectionRow = {
   coverage_start: string;
   coverage_end: string;
 };
+type ContractSettlementProjectionRow = {
+  id: string;
+  state: 'awaiting_activation' | 'open' | 'termination_pending' | 'terminated' | 'paid';
+  invoice_id: string;
+  activated_at: Date | null;
+  original_due_at: Date | null;
+  extension_due_at: Date | null;
+  extension_reason: string | null;
+  total_amount: string;
+  credit_amount: string;
+  allocated_amount: string;
+  initial_payment_allocated: string;
+  deposit_offset_amount: string;
+  termination_case_id: string | null;
+  termination_status: 'pending' | 'cancelled' | 'checked_out' | null;
+  planned_checkout_date: string | null;
+};
+
+export function summarizeContractSettlementRentPayments({
+  invoiceCreditAmount,
+  allocatedAmount,
+  onboardingAllocatedAmount,
+}: {
+  invoiceCreditAmount: number;
+  allocatedAmount: number;
+  onboardingAllocatedAmount: number;
+}) {
+  const initialRentCredit = Math.max(0, invoiceCreditAmount + onboardingAllocatedAmount);
+  return {
+    initialRentCredit,
+    additionalRentPayments: Math.max(0, allocatedAmount - onboardingAllocatedAmount),
+  };
+}
 type ProofProjectionRow = {
   id: string;
   invoice_id: string;
@@ -159,6 +196,18 @@ type InvoiceDocumentRow = {
   outstanding_amount: string;
   issued_at: Date | null;
 };
+type ReceiptDocumentRow = {
+  receipt_code: string;
+  amount: string;
+  issued_at: Date;
+  payment_code: string;
+  payment_method: string;
+  payment_purpose: string;
+  paid_at: Date | null;
+  resident_name: string;
+  room_number: string;
+  allocations: Array<{ invoice_code: string; amount: string | number }>;
+};
 type ReplayRow = {
   request_fingerprint: string;
   command_status: string;
@@ -172,6 +221,35 @@ type SafePaymentResult = {
   payment_purpose: W06PaymentPurpose;
   amount: number;
   receipt_id: string | null;
+};
+
+export type InitialOnboardingPaymentInput = {
+  propertyId: string;
+  residentId: string;
+  leaseId: string;
+  firstRentInvoiceId: string;
+  method: 'bank_transfer' | 'cash';
+  dpAmount: number;
+  securityDepositAmount: number;
+  evidenceFileIds: string[];
+  paymentNote?: string;
+  commandFingerprint: string;
+  actor: UserAccessContext;
+  context: RequestAuditContext;
+};
+
+export type InitialOnboardingPaymentSummary = {
+  method: 'bank_transfer' | 'cash';
+  status: 'pending_confirmation' | 'verified';
+  dpRecordedAmount: number;
+  securityDepositRecordedAmount: number;
+  dpVerifiedAmount: number;
+  securityDepositVerifiedAmount: number;
+  receipts: Array<{
+    id: string;
+    purpose: 'dp' | 'security_deposit';
+    amount: number;
+  }>;
 };
 
 const IDEMPOTENCY_MIN = 16;
@@ -196,7 +274,15 @@ export class W06BillingService {
         : query.sort === 'resident_asc'
           ? 'i.snapshot_resident_name ASC,i.due_date ASC,i.id ASC'
           : 'i.due_date ASC,i.id ASC';
-    const values = [query.property_id, month, query.search?.trim() || null, limit, offset];
+    const values = [
+      query.property_id,
+      month,
+      query.search?.trim() || null,
+      query.status ?? null,
+      query.due_within_days ?? null,
+      limit,
+      offset,
+    ];
     const common = `
       FROM invoices i
       LEFT JOIN LATERAL (
@@ -210,15 +296,24 @@ export class W06BillingService {
         AND i.lease_id IS NOT NULL
         AND i.authority_source='contract_schedule'
         AND i.invoice_status IN ('issued','partially_paid','overdue')
+        AND ($4::text IS NULL OR i.invoice_status=$4)
         AND (
           date_trunc('month',i.due_date)::date=$2::date
           OR (i.due_date<$2::date AND GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0)
         )
-        AND ($3::text IS NULL OR i.snapshot_resident_name ILIKE '%'||$3||'%' OR i.snapshot_room_number ILIKE '%'||$3||'%')`;
+        AND ($3::text IS NULL
+          OR i.snapshot_resident_name ILIKE '%'||$3||'%'
+          OR i.snapshot_room_number ILIKE '%'||$3||'%'
+          OR i.snapshot_building_code ILIKE '%'||$3||'%'
+          OR i.invoice_code ILIKE '%'||$3||'%')
+        AND ($5::int IS NULL OR (
+          i.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+          AND i.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $5::int)
+        ))`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
-        values.slice(0, 3),
+        values.slice(0, 5),
       ),
       this.database.client.query<{
         id: string;
@@ -240,7 +335,7 @@ export class W06BillingService {
                 COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
                 i.due_date::text,i.invoice_status,i.total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
-         ${common} ORDER BY ${order} LIMIT $4 OFFSET $5`,
+         ${common} ORDER BY ${order} LIMIT $6 OFFSET $7`,
         values,
       ),
     ]);
@@ -291,21 +386,55 @@ export class W06BillingService {
     await this.properties.assertCanReadProperty(user, query.property_id);
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
-    const values = [query.property_id, query.status ?? null, limit, offset];
-    const [count, page] = await Promise.all([
-      this.database.client.query<{ total: string }>(
-        `SELECT count(*) AS total
+    const values = [
+      query.property_id,
+      query.status ?? null,
+      query.search?.trim() || null,
+      query.method ?? null,
+      query.purpose ?? null,
+      query.due_within_days ?? null,
+      limit,
+      offset,
+    ];
+    const common = `
          FROM payments p
+         JOIN leases lease ON lease.id=p.lease_id AND lease.property_id=p.property_id
+         JOIN residents resident ON resident.id=p.resident_id AND resident.property_id=p.property_id
+         JOIN rooms room ON room.id=lease.room_id AND room.property_id=p.property_id
          LEFT JOIN payment_reversals reversal ON reversal.payment_id=p.id
          WHERE p.property_id=$1
            AND p.authority_source IN ('manual_transfer','audited_cash')
-           AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)`,
-        values.slice(0, 2),
+           AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)
+           AND ($3::text IS NULL
+             OR resident.full_name ILIKE '%'||$3||'%'
+             OR room.number ILIKE '%'||$3||'%'
+             OR p.payment_code ILIKE '%'||$3||'%'
+             OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
+            AND ($4::text IS NULL OR p.payment_method=$4)
+            AND ($5::text IS NULL OR p.payment_purpose=$5)
+            AND ($6::int IS NULL OR EXISTS (
+              SELECT 1
+              FROM payment_allocations deadline_allocation
+              JOIN invoices deadline_invoice
+                ON deadline_invoice.id=deadline_allocation.invoice_id
+                AND deadline_invoice.property_id=p.property_id
+              WHERE deadline_allocation.payment_id=p.id
+                AND deadline_invoice.invoice_purpose='rent'
+                AND deadline_invoice.authority_source='contract_schedule'
+                AND deadline_invoice.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+                AND deadline_invoice.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $6::int)
+            ))`;
+    const [count, page] = await Promise.all([
+      this.database.client.query<{ total: string }>(
+        `SELECT count(*) AS total ${common}`,
+        values.slice(0, 6),
       ),
       this.database.client.query<PaymentWorkspaceRow>(
         `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,p.reference_number,
                 p.resident_id,p.lease_id,resident.full_name AS resident_name,room.number AS room_number,
                 reversal.id AS reversal_id,receipt.id AS receipt_id,
+                COALESCE(allocation_summary.rent_amount,0) AS rent_allocation_amount,
+                (COALESCE(rent_contract.fully_paid,false) AND latest_rent_payment.id=p.id) AS settles_rent_contract,
                 COALESCE(allocation_rows.items,'[]'::jsonb) AS allocations,
                 COALESCE(evidence_rows.items,'[]'::jsonb) AS evidence
          FROM payments p
@@ -314,6 +443,41 @@ export class W06BillingService {
          JOIN rooms room ON room.id=lease.room_id AND room.property_id=p.property_id
          LEFT JOIN payment_reversals reversal ON reversal.payment_id=p.id
          LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment'
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(allocation.allocated_amount) FILTER(WHERE invoice.invoice_purpose='rent'),0) AS rent_amount
+           FROM payment_allocations allocation
+           JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=p.property_id
+           WHERE allocation.payment_id=p.id
+         ) allocation_summary ON true
+         LEFT JOIN LATERAL (
+           SELECT count(*)>0 AND bool_and(
+             GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(invoice_allocation.net,0),0)=0
+           ) AS fully_paid
+           FROM invoices invoice
+           LEFT JOIN LATERAL (
+             SELECT COALESCE(sum(allocation.allocated_amount),0)-COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+             FROM payment_allocations allocation
+             LEFT JOIN payment_reversal_allocations reversal_allocation
+               ON reversal_allocation.original_allocation_id=allocation.id
+             WHERE allocation.invoice_id=invoice.id
+           ) invoice_allocation ON true
+           WHERE invoice.property_id=p.property_id AND invoice.lease_id=p.lease_id
+             AND invoice.invoice_purpose='rent' AND invoice.invoice_status<>'void'
+         ) rent_contract ON true
+         LEFT JOIN LATERAL (
+           SELECT candidate.id
+           FROM payments candidate
+           JOIN payment_allocations candidate_allocation ON candidate_allocation.payment_id=candidate.id
+           JOIN invoices candidate_invoice ON candidate_invoice.id=candidate_allocation.invoice_id
+             AND candidate_invoice.property_id=candidate.property_id
+             AND candidate_invoice.lease_id=candidate.lease_id
+             AND candidate_invoice.invoice_purpose='rent'
+           LEFT JOIN payment_reversals candidate_reversal ON candidate_reversal.payment_id=candidate.id
+           WHERE candidate.property_id=p.property_id AND candidate.lease_id=p.lease_id
+             AND candidate.payment_status='verified' AND candidate_reversal.id IS NULL
+           ORDER BY candidate.verified_at DESC NULLS LAST,candidate.paid_at DESC,candidate.id DESC
+           LIMIT 1
+         ) latest_rent_payment ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('invoice_id',allocation.invoice_id,'amount',allocation.allocated_amount) ORDER BY allocation.invoice_id) AS items
            FROM payment_allocations allocation
@@ -332,8 +496,27 @@ export class W06BillingService {
          WHERE p.property_id=$1
            AND p.authority_source IN ('manual_transfer','audited_cash')
            AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)
-         ORDER BY p.paid_at DESC,p.id DESC
-         LIMIT $3 OFFSET $4`,
+           AND ($3::text IS NULL
+             OR resident.full_name ILIKE '%'||$3||'%'
+             OR room.number ILIKE '%'||$3||'%'
+             OR p.payment_code ILIKE '%'||$3||'%'
+             OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
+            AND ($4::text IS NULL OR p.payment_method=$4)
+            AND ($5::text IS NULL OR p.payment_purpose=$5)
+            AND ($6::int IS NULL OR EXISTS (
+              SELECT 1
+              FROM payment_allocations deadline_allocation
+              JOIN invoices deadline_invoice
+                ON deadline_invoice.id=deadline_allocation.invoice_id
+                AND deadline_invoice.property_id=p.property_id
+              WHERE deadline_allocation.payment_id=p.id
+                AND deadline_invoice.invoice_purpose='rent'
+                AND deadline_invoice.authority_source='contract_schedule'
+                AND deadline_invoice.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+                AND deadline_invoice.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $6::int)
+            ))
+          ORDER BY p.paid_at DESC,p.id DESC
+          LIMIT $7 OFFSET $8`,
         values,
       ),
     ]);
@@ -594,6 +777,171 @@ export class W06BillingService {
     };
   }
 
+  /**
+   * W05 invokes this only after it has created and locked the awaiting-activation
+   * lease plus its first issued rent invoice. It deliberately receives the W05
+   * transaction client: onboarding owns the one logical command/idempotency
+   * boundary, while W06 remains the sole writer of payment, allocation, deposit,
+   * receipt, audit, and event records.
+   */
+  async recordInitialOnboardingPaymentsInTransaction(
+    client: PoolClient,
+    input: InitialOnboardingPaymentInput,
+  ): Promise<InitialOnboardingPaymentSummary> {
+    if (!Number.isSafeInteger(input.dpAmount) || input.dpAmount < 0)
+      throw new BadRequestException({
+        code: 'ONBOARDING_DP_AMOUNT_INVALID',
+        message: 'Initial DP must be a non-negative exact amount',
+      });
+    if (!Number.isSafeInteger(input.securityDepositAmount) || input.securityDepositAmount < 0)
+      throw new BadRequestException({
+        code: 'ONBOARDING_SECURITY_DEPOSIT_INVALID',
+        message: 'Security deposit must be a non-negative exact amount',
+      });
+    if (!/^[a-f0-9]{64}$/i.test(input.commandFingerprint))
+      throw new BadRequestException({
+        code: 'ONBOARDING_PAYMENT_FINGERPRINT_INVALID',
+        message: 'Initial payment command requires a canonical fingerprint',
+      });
+
+    const lease = await this.lockLeaseTuple(
+      client,
+      input.propertyId,
+      input.leaseId,
+      input.residentId,
+    );
+    await this.validateEvidence(
+      client,
+      input.evidenceFileIds,
+      input.propertyId,
+      input.actor.id,
+      input.method === 'bank_transfer',
+    );
+
+    const status = input.method === 'cash' ? 'verified' : 'pending_confirmation';
+    const payments: Array<{
+      purpose: Extract<W06PaymentPurpose, 'dp' | 'security_deposit'>;
+      amount: number;
+      allocations: Array<{ invoice_id: string; amount: number }>;
+    }> = [];
+    const receipts: InitialOnboardingPaymentSummary['receipts'] = [];
+    if (input.dpAmount > 0)
+      payments.push({
+        purpose: 'dp',
+        amount: input.dpAmount,
+        allocations: [{ invoice_id: input.firstRentInvoiceId, amount: input.dpAmount }],
+      });
+    if (input.securityDepositAmount > 0)
+      payments.push({
+        purpose: 'security_deposit',
+        amount: input.securityDepositAmount,
+        allocations: [],
+      });
+
+    for (const item of payments) {
+      const invoiceRows = await this.lockAndValidateInvoices(
+        client,
+        lease,
+        item.allocations,
+        item.purpose,
+      );
+      const childFingerprint = `onboarding:${input.commandFingerprint}:${item.purpose}`;
+      const payment = await client.query<PaymentRow>(
+        `INSERT INTO payments(property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,received_by_user_id,verified_by_user_id,verified_at,reference_number,notes,authority_source,command_fingerprint)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9::uuid,CASE WHEN $6='verified' THEN $9::uuid ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,NULL,$10,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$11)
+         ON CONFLICT(property_id,command_fingerprint) WHERE command_fingerprint IS NOT NULL DO NOTHING
+         RETURNING id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes`,
+        [
+          input.propertyId,
+          input.residentId,
+          input.leaseId,
+          `PAY-ONB-${input.commandFingerprint.slice(0, 16).toUpperCase()}-${item.purpose === 'dp' ? 'DP' : 'DEP'}`,
+          input.method,
+          status,
+          item.purpose,
+          item.amount,
+          input.actor.id,
+          input.paymentNote?.trim() || null,
+          childFingerprint,
+        ],
+      );
+      if (!payment.rows[0])
+        throw new ConflictException({
+          code: 'ONBOARDING_PAYMENT_DUPLICATE_COMMAND',
+          message: 'Initial onboarding payment command already exists',
+        });
+      await this.insertIntents(client, payment.rows[0], item.allocations);
+      await this.attachEvidence(
+        client,
+        payment.rows[0].id,
+        input.propertyId,
+        input.evidenceFileIds,
+        input.method,
+        input.actor.id,
+      );
+      const receiptId =
+        status === 'verified'
+          ? await this.applyVerifiedEffects(
+              client,
+              payment.rows[0],
+              lease,
+              invoiceRows,
+              input.actor.id,
+            )
+          : null;
+      const result = this.safePayment(payment.rows[0], receiptId);
+      if (receiptId)
+        receipts.push({
+          id: receiptId,
+          purpose: item.purpose,
+          amount: item.amount,
+        });
+      await this.audit.write(
+        {
+          actorUserId: input.actor.id,
+          propertyId: input.propertyId,
+          action:
+            status === 'verified'
+              ? 'billing.onboarding_cash_recorded'
+              : 'billing.onboarding_transfer_recorded',
+          resourceType: 'payment',
+          resourceId: payment.rows[0].id,
+          afterData: result,
+          resultStatus: 'success',
+          ...input.context,
+        },
+        client,
+      );
+      await this.event(
+        client,
+        input.propertyId,
+        `payment.recorded:${payment.rows[0].id}`,
+        'payment.recorded',
+        'payment',
+        payment.rows[0].id,
+        input.actor.id,
+        input.context,
+        {
+          payment_id: payment.rows[0].id,
+          payment_status: status,
+          payment_purpose: item.purpose,
+          amount: item.amount,
+          source: 'resident_onboarding',
+        },
+      );
+    }
+
+    return {
+      method: input.method,
+      status,
+      dpRecordedAmount: input.dpAmount,
+      securityDepositRecordedAmount: input.securityDepositAmount,
+      dpVerifiedAmount: status === 'verified' ? input.dpAmount : 0,
+      securityDepositVerifiedAmount: status === 'verified' ? input.securityDepositAmount : 0,
+      receipts,
+    };
+  }
+
   async recordManualPayment(
     user: UserAccessContext,
     dto: RecordManualPaymentDto,
@@ -659,10 +1007,17 @@ export class W06BillingService {
         dto.allocations,
         dto.payment_purpose,
       );
+      await this.assertContractSettlementPaymentEligibility(
+        client,
+        lease,
+        dto.payment_purpose,
+        dto.allocations,
+        invoiceRows,
+      );
       const status = dto.method === 'cash' ? 'verified' : 'pending_confirmation';
       const payment = await client.query<PaymentRow>(
         `INSERT INTO payments(property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,received_by_user_id,verified_by_user_id,verified_at,reference_number,notes,authority_source,command_fingerprint)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz,now()),$10,CASE WHEN $6='verified' THEN $10 ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,$11,$12,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$13)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz,now()),$10::uuid,CASE WHEN $6='verified' THEN $10::uuid ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,$11,$12,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$13)
          ON CONFLICT(property_id,command_fingerprint) WHERE command_fingerprint IS NOT NULL DO NOTHING
          RETURNING id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes`,
         [
@@ -825,6 +1180,16 @@ export class W06BillingService {
           amount: this.money(item.intended_amount),
         })),
         payment.payment_purpose,
+      );
+      await this.assertContractSettlementPaymentEligibility(
+        client,
+        lease,
+        payment.payment_purpose,
+        intents.map((item) => ({
+          invoice_id: item.invoice_id,
+          amount: this.money(item.intended_amount),
+        })),
+        invoiceRows,
       );
       await client.query(
         `UPDATE payments SET payment_status='verified',verified_by_user_id=$2,verified_at=now(),updated_at=now() WHERE id=$1 AND payment_status='pending_confirmation'`,
@@ -1718,6 +2083,53 @@ export class W06BillingService {
     };
   }
 
+  async receiptDocument(
+    user: UserAccessContext,
+    propertyId: string,
+    receiptId: string,
+  ): Promise<BillingReceiptDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const result = await this.database.client.query<ReceiptDocumentRow>(
+      `SELECT receipt.receipt_code,receipt.amount,receipt.issued_at,
+              payment.payment_code,payment.payment_method,payment.payment_purpose,payment.paid_at,
+              resident.full_name AS resident_name,room.number AS room_number,
+              COALESCE(jsonb_agg(jsonb_build_object(
+                'invoice_code',invoice.invoice_code,'amount',allocation.allocated_amount
+              ) ORDER BY invoice.invoice_code) FILTER(WHERE allocation.id IS NOT NULL),'[]'::jsonb) AS allocations
+       FROM payment_receipts receipt
+       JOIN payments payment ON payment.id=receipt.payment_id AND payment.property_id=receipt.property_id
+       JOIN residents resident ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
+       JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
+       JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+       LEFT JOIN payment_allocations allocation ON allocation.payment_id=payment.id
+       LEFT JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=payment.property_id
+       WHERE receipt.id=$1 AND receipt.property_id=$2 AND receipt.receipt_kind='payment'
+       GROUP BY receipt.id,payment.id,resident.id,room.id`,
+      [receiptId, propertyId],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new NotFoundException({
+        code: 'RECEIPT_DOCUMENT_NOT_FOUND',
+        message: 'Receipt document not found',
+      });
+    return createBillingReceiptPdf({
+      receiptCode: row.receipt_code,
+      paymentCode: row.payment_code,
+      paymentMethod: row.payment_method,
+      paymentPurpose: row.payment_purpose,
+      residentName: row.resident_name,
+      roomNumber: row.room_number,
+      amount: this.money(row.amount),
+      paidAt: row.paid_at,
+      issuedAt: row.issued_at,
+      allocations: (Array.isArray(row.allocations) ? row.allocations : []).map((allocation) => ({
+        invoiceCode: allocation.invoice_code,
+        amount: this.money(allocation.amount),
+      })),
+    });
+  }
+
   async invoiceDocument(
     user: UserAccessContext,
     propertyId: string,
@@ -1764,24 +2176,64 @@ export class W06BillingService {
     lease: LeaseTupleRow,
     view: 'admin' | 'self',
   ) {
-    const [invoiceResult, paymentResult, proofResult, installmentResult] = await Promise.all([
-      client.query<InvoiceProjectionRow>(
-        `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,i.due_date::text,COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.property_id=$1 AND i.lease_id=$2 ORDER BY i.due_date DESC,i.id DESC`,
-        [lease.property_id, lease.id],
-      ),
-      client.query<PaymentProjectionRow>(
-        `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,r.id AS reversal_id,receipt.id AS receipt_id,COALESCE(jsonb_agg(jsonb_build_object('invoice_id',pa.invoice_id,'amount',pa.allocated_amount)) FILTER(WHERE pa.id IS NOT NULL),'[]'::jsonb) AS allocations FROM payments p LEFT JOIN payment_reversals r ON r.payment_id=p.id LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment' LEFT JOIN payment_allocations pa ON pa.payment_id=p.id WHERE p.property_id=$1 AND p.lease_id=$2 AND p.authority_source IN ('manual_transfer','audited_cash') GROUP BY p.id,r.id,receipt.id ORDER BY p.paid_at DESC,p.id DESC`,
-        [lease.property_id, lease.id],
-      ),
-      client.query<ProofProjectionRow>(
-        `SELECT pp.id,pp.invoice_id,pp.proof_status,pp.claimed_amount,pp.payment_purpose,pp.uploaded_at,pp.reviewed_at,pp.reject_reason FROM payment_proofs pp WHERE pp.property_id=$1 AND COALESCE(pp.lease_id,$2)=$2 AND pp.resident_id=$3 ORDER BY pp.uploaded_at DESC`,
-        [lease.property_id, lease.id, lease.resident_id],
-      ),
-      client.query<{ total: string; paid: string; next_due: string | null }>(
-        `SELECT count(*) AS total,count(*) FILTER(WHERE installment_status='paid') AS paid,min(due_date)::text FILTER(WHERE installment_status IN('scheduled','issued','partially_paid')) AS next_due FROM lease_installments WHERE property_id=$1 AND lease_id=$2`,
-        [lease.property_id, lease.id],
-      ),
-    ]);
+    const [invoiceResult, paymentResult, proofResult, installmentResult, settlementResult] =
+      await Promise.all([
+        client.query<InvoiceProjectionRow>(
+          `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,i.due_date::text,COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.property_id=$1 AND i.lease_id=$2 ORDER BY i.due_date DESC,i.id DESC`,
+          [lease.property_id, lease.id],
+        ),
+        client.query<PaymentProjectionRow>(
+          `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,r.id AS reversal_id,receipt.id AS receipt_id,COALESCE(jsonb_agg(jsonb_build_object('invoice_id',pa.invoice_id,'amount',pa.allocated_amount)) FILTER(WHERE pa.id IS NOT NULL),'[]'::jsonb) AS allocations FROM payments p LEFT JOIN payment_reversals r ON r.payment_id=p.id LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment' LEFT JOIN payment_allocations pa ON pa.payment_id=p.id WHERE p.property_id=$1 AND p.lease_id=$2 AND p.authority_source IN ('manual_transfer','audited_cash') GROUP BY p.id,r.id,receipt.id ORDER BY p.paid_at DESC,p.id DESC`,
+          [lease.property_id, lease.id],
+        ),
+        client.query<ProofProjectionRow>(
+          `SELECT pp.id,pp.invoice_id,pp.proof_status,pp.claimed_amount,pp.payment_purpose,pp.uploaded_at,pp.reviewed_at,pp.reject_reason FROM payment_proofs pp WHERE pp.property_id=$1 AND COALESCE(pp.lease_id,$2)=$2 AND pp.resident_id=$3 ORDER BY pp.uploaded_at DESC`,
+          [lease.property_id, lease.id, lease.resident_id],
+        ),
+        client.query<{ total: string; paid: string; next_due: string | null }>(
+          `SELECT count(*) AS total,count(*) FILTER(WHERE installment_status='paid') AS paid,(min(due_date) FILTER(WHERE installment_status IN('scheduled','issued','partially_paid')))::text AS next_due FROM lease_installments WHERE property_id=$1 AND lease_id=$2`,
+          [lease.property_id, lease.id],
+        ),
+        client.query<ContractSettlementProjectionRow>(
+          `SELECT settlement.id,settlement.state,settlement.invoice_id,
+                settlement.activated_at,settlement.original_due_at,
+                settlement.extension_due_at,settlement.extension_reason,
+                invoice.total_amount,invoice.credit_amount,
+                COALESCE(allocation.net,0) AS allocated_amount,
+                COALESCE(initial_payment.net,0) AS initial_payment_allocated,
+                COALESCE(offsets.amount,0) AS deposit_offset_amount,
+                termination.id AS termination_case_id,termination.status AS termination_status,
+                termination.planned_checkout_date::text AS planned_checkout_date
+           FROM lease_contract_settlements settlement
+           JOIN invoices invoice ON invoice.id=settlement.invoice_id
+           LEFT JOIN LATERAL (
+             SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
+                      - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+               FROM payment_allocations payment_allocation
+               LEFT JOIN payment_reversal_allocations reversal_allocation
+                 ON reversal_allocation.original_allocation_id=payment_allocation.id
+              WHERE payment_allocation.invoice_id=invoice.id
+           ) allocation ON true
+           LEFT JOIN LATERAL (
+             SELECT COALESCE(sum(payment_allocation.allocated_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0)
+                      - COALESCE(sum(reversal_allocation.reversed_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0) AS net
+               FROM payment_allocations payment_allocation
+               JOIN payments payment ON payment.id=payment_allocation.payment_id
+               LEFT JOIN payment_reversal_allocations reversal_allocation
+                 ON reversal_allocation.original_allocation_id=payment_allocation.id
+              WHERE payment_allocation.invoice_id=invoice.id
+           ) initial_payment ON true
+           LEFT JOIN LATERAL (
+             SELECT COALESCE(sum(amount),0) AS amount
+               FROM contract_settlement_deposit_offsets
+              WHERE settlement_id=settlement.id
+           ) offsets ON true
+           LEFT JOIN lease_termination_cases termination
+             ON termination.settlement_id=settlement.id AND termination.status='pending'
+          WHERE settlement.property_id=$1 AND settlement.lease_id=$2`,
+          [lease.property_id, lease.id],
+        ),
+      ]);
     const invoices = invoiceResult.rows.map((row) => this.sanitizeInvoice(row));
     const payments = paymentResult.rows.map((row) => this.sanitizePaymentDetail(row));
     const deposit = await this.depositProjection(client, lease);
@@ -1792,6 +2244,8 @@ export class W06BillingService {
       .filter((row) => row.invoice_purpose === 'rent')
       .reduce((sum, row) => sum + row.outstanding_amount, 0);
     const progress = installmentResult.rows[0] ?? { total: '0', paid: '0', next_due: null };
+    const settlement = settlementResult.rows[0] ?? null;
+    const contractSettlement = settlement ? this.projectContractSettlement(settlement) : null;
     return {
       lease: {
         id: lease.id,
@@ -1823,6 +2277,7 @@ export class W06BillingService {
           (row) => row.invoice_status === 'overdue' && row.outstanding_amount > 0,
         ).length,
       },
+      contract_settlement: contractSettlement,
       invoices,
       payments,
       proofs: proofResult.rows.map((row) => ({
@@ -1872,6 +2327,205 @@ export class W06BillingService {
       outstandingAmount: this.money(row.outstanding_amount),
       issuedAt: row.issued_at,
     });
+  }
+
+  /**
+   * Contract settlement is an authority on top of the ordinary allocation
+   * ledger. It never changes the allocation rules; it decides whether a new
+   * rent/DP allocation is allowed to be partial at this instant.
+   */
+  private async assertContractSettlementPaymentEligibility(
+    client: PoolClient,
+    lease: LeaseTupleRow,
+    purpose: W06PaymentPurpose,
+    allocations: Array<{ invoice_id: string; amount: number }>,
+    invoiceRows: InvoiceLockRow[],
+  ): Promise<void> {
+    if (purpose !== 'rent' && purpose !== 'dp') return;
+    const settlementResult = await client.query<ContractSettlementProjectionRow>(
+      `SELECT settlement.id,settlement.state,settlement.invoice_id,
+              settlement.activated_at,settlement.original_due_at,
+              settlement.extension_due_at,settlement.extension_reason,
+              invoice.total_amount,invoice.credit_amount,
+              COALESCE(allocation.net,0) AS allocated_amount,
+              COALESCE(offsets.amount,0) AS deposit_offset_amount,
+              termination.id AS termination_case_id,termination.status AS termination_status,
+              termination.planned_checkout_date::text AS planned_checkout_date
+         FROM lease_contract_settlements settlement
+         JOIN invoices invoice
+           ON invoice.id=settlement.invoice_id
+          AND invoice.property_id=settlement.property_id
+          AND invoice.lease_id=settlement.lease_id
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
+                    - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+             FROM payment_allocations payment_allocation
+             LEFT JOIN payment_reversal_allocations reversal_allocation
+               ON reversal_allocation.original_allocation_id=payment_allocation.id
+            WHERE payment_allocation.invoice_id=invoice.id
+         ) allocation ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(amount),0) AS amount
+             FROM contract_settlement_deposit_offsets
+            WHERE settlement_id=settlement.id
+         ) offsets ON true
+         LEFT JOIN lease_termination_cases termination
+           ON termination.settlement_id=settlement.id AND termination.status='pending'
+        WHERE settlement.property_id=$1 AND settlement.lease_id=$2
+        FOR UPDATE OF settlement,invoice`,
+      [lease.property_id, lease.id],
+    );
+    if (settlementResult.rows.length > 1)
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_AMBIGUOUS',
+        message: 'Contract settlement authority requires reconciliation',
+      });
+    const settlement = settlementResult.rows[0];
+    if (!settlement) return;
+
+    if (
+      !allocations.length ||
+      allocations.some((item) => item.invoice_id !== settlement.invoice_id)
+    )
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_ALLOCATION_SCOPE_INVALID',
+        message: 'Rent payment must be allocated only to the contract settlement invoice',
+      });
+    if (!invoiceRows.some((invoice) => invoice.id === settlement.invoice_id))
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_INVOICE_MISSING',
+        message: 'Contract settlement invoice is unavailable',
+      });
+    if (settlement.state === 'awaiting_activation')
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_NOT_ACTIVE',
+        message: 'Contract settlement starts only after room activation',
+      });
+    if (settlement.state === 'terminated')
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_TERMINATED',
+        message: 'A terminated lease cannot receive a contract settlement payment',
+      });
+
+    const outstanding = Math.max(
+      0,
+      this.money(settlement.total_amount) -
+        this.money(settlement.credit_amount) -
+        this.money(settlement.allocated_amount),
+    );
+    const requested = allocations.reduce((sum, item) => sum + item.amount, 0);
+    if (requested > outstanding)
+      throw new UnprocessableEntityException({
+        code: 'CONTRACT_SETTLEMENT_AMOUNT_EXCEEDS_BALANCE',
+        message: 'Payment amount cannot exceed the remaining contract-rent balance',
+        details: { outstanding_amount: outstanding },
+      });
+    // The ordinary settlement window remains open through D+7. An approved
+    // extension replaces that grace window: it expires exactly at the extended
+    // deadline and may only be granted once.
+    const partialWindowResult = settlement.original_due_at
+      ? await client.query<{ passed: boolean }>(
+          `SELECT now() > CASE
+             WHEN $2::timestamptz IS NULL THEN $1::timestamptz + INTERVAL '7 days'
+             ELSE $2::timestamptz
+           END AS passed`,
+          [settlement.original_due_at, settlement.extension_due_at],
+        )
+      : null;
+    const partialWindowClosed = partialWindowResult?.rows[0]?.passed === true;
+    const mustSettleInFull = settlement.termination_status === 'pending' || partialWindowClosed;
+    if (mustSettleInFull && requested !== outstanding)
+      throw new UnprocessableEntityException({
+        code: 'CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED',
+        message:
+          'After the partial-payment window closes, the remaining contract-rent balance must be paid in full',
+        details: { outstanding_amount: outstanding },
+      });
+  }
+
+  private projectContractSettlement(row: ContractSettlementProjectionRow) {
+    const total = this.money(row.total_amount);
+    const credit = this.money(row.credit_amount);
+    const allocated = this.money(row.allocated_amount);
+    const paymentBreakdown = summarizeContractSettlementRentPayments({
+      invoiceCreditAmount: credit,
+      allocatedAmount: allocated,
+      onboardingAllocatedAmount: this.money(row.initial_payment_allocated),
+    });
+    const depositOffset = this.money(row.deposit_offset_amount);
+    const outstanding = Math.max(0, total - credit - allocated);
+    const dueAt = row.extension_due_at ?? row.original_due_at;
+    const now = Date.now();
+    const dueAtTime = dueAt ? new Date(dueAt).getTime() : null;
+    const isPaid = outstanding === 0;
+    const overdue = Boolean(!isPaid && dueAtTime && now > dueAtTime);
+    const partialPaymentDeadlineTime = row.extension_due_at
+      ? dueAtTime
+      : dueAtTime
+        ? dueAtTime + 7 * 24 * 60 * 60 * 1000
+        : null;
+    const adminActionRequired = Boolean(
+      !isPaid && partialPaymentDeadlineTime && now > partialPaymentDeadlineTime,
+    );
+    const daysUntilDue = dueAtTime ? Math.ceil((dueAtTime - now) / (24 * 60 * 60 * 1000)) : null;
+    const reminderStage =
+      daysUntilDue === null || isPaid
+        ? null
+        : daysUntilDue <= -7
+          ? 'D+7'
+          : daysUntilDue <= -1
+            ? 'D+1'
+            : daysUntilDue === 0
+              ? 'H-0'
+              : daysUntilDue <= 7
+                ? 'H-7'
+                : daysUntilDue <= 14
+                  ? 'H-14'
+                  : daysUntilDue <= 30
+                    ? 'H-30'
+                    : null;
+    const status = isPaid
+      ? 'paid'
+      : row.termination_status === 'pending'
+        ? 'termination_pending'
+        : adminActionRequired
+          ? 'admin_action_required'
+          : overdue
+            ? 'overdue'
+            : row.extension_due_at
+              ? 'extended'
+              : row.state;
+    const finalDeadlinePassed = adminActionRequired;
+    return {
+      id: row.id,
+      invoice_id: row.invoice_id,
+      status,
+      activated_at: row.activated_at?.toISOString() ?? null,
+      original_due_at: row.original_due_at?.toISOString() ?? null,
+      extension_due_at: row.extension_due_at?.toISOString() ?? null,
+      extension_reason: row.extension_reason,
+      effective_due_at: dueAt?.toISOString() ?? null,
+      contract_rent_amount: total,
+      initial_rent_credit: paymentBreakdown.initialRentCredit,
+      payment_allocated: paymentBreakdown.additionalRentPayments,
+      deposit_offset_amount: depositOffset,
+      outstanding_amount: outstanding,
+      reminder_stage: reminderStage,
+      admin_action_required: adminActionRequired,
+      partial_payment_allowed:
+        !isPaid && row.termination_status !== 'pending' && !finalDeadlinePassed,
+      full_payment_required:
+        !isPaid && (row.termination_status === 'pending' || finalDeadlinePassed),
+      extension_available:
+        !isPaid && !row.extension_due_at && overdue && row.termination_status !== 'pending',
+      termination_case: row.termination_case_id
+        ? {
+            id: row.termination_case_id,
+            status: row.termination_status,
+            planned_checkout_date: row.planned_checkout_date,
+          }
+        : null,
+    };
   }
 
   private async lockAndValidateInvoices(
@@ -1980,7 +2634,7 @@ export class W06BillingService {
       const balance = await this.depositBalance(client, lease.id);
       const amount = this.money(payment.amount);
       const required = this.money(lease.security_deposit_required_amount);
-      if (balance + amount > required)
+      if (required > 0 && balance + amount > required)
         throw new UnprocessableEntityException({
           code: 'DEPOSIT_OVERPAYMENT',
           message: 'Security deposit exceeds the frozen lease requirement',
@@ -2015,6 +2669,7 @@ export class W06BillingService {
         await this.refreshInvoiceStatus(client, invoice.id);
       }
     }
+    await this.syncOnboardingFinancialProjection(client, lease);
     return this.insertReceipt(
       client,
       lease.property_id,
@@ -2034,12 +2689,84 @@ export class W06BillingService {
 
   private async refreshInvoiceStatus(client: PoolClient, invoiceId: string) {
     await client.query(
-      `UPDATE invoices i SET invoice_status=CASE WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN 'paid' WHEN COALESCE(a.net,0)>0 THEN 'partially_paid' WHEN i.due_date<(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date THEN 'overdue' ELSE 'issued' END,paid_at=CASE WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN now() ELSE NULL END,updated_at=now() FROM (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=$1)a WHERE i.id=$1 AND i.invoice_status<>'void'`,
+      `UPDATE invoices i
+          SET invoice_status=CASE
+                WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN 'paid'
+                WHEN COALESCE(a.net,0)>0 THEN 'partially_paid'
+                WHEN settlement.id IS NOT NULL
+                  AND settlement.activated_at IS NOT NULL
+                  AND COALESCE(settlement.extension_due_at,settlement.original_due_at)<now()
+                  THEN 'overdue'
+                WHEN settlement.id IS NULL
+                  AND i.due_date<(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+                  THEN 'overdue'
+                ELSE 'issued'
+              END,
+              paid_at=CASE WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN now() ELSE NULL END,
+              updated_at=now()
+         FROM (
+           SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
+             FROM payment_allocations pa
+             LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
+            WHERE pa.invoice_id=$1
+         ) a
+         LEFT JOIN lease_contract_settlements settlement ON settlement.invoice_id=$1
+        WHERE i.id=$1 AND i.invoice_status<>'void'`,
       [invoiceId],
     );
     await client.query(
       `UPDATE lease_installments installment SET installment_status=CASE invoice.invoice_status WHEN 'paid' THEN 'paid' WHEN 'partially_paid' THEN 'partially_paid' WHEN 'void' THEN 'void' ELSE 'issued' END FROM invoices invoice WHERE invoice.id=$1 AND installment.invoice_id=invoice.id`,
       [invoiceId],
+    );
+    // A normal fully paid settlement is closed automatically. A pending
+    // termination deliberately remains pending until an admin records the
+    // cancellation reason, preserving that operational audit trail.
+    await client.query(
+      `UPDATE lease_contract_settlements settlement
+          SET state='paid',updated_at=now()
+        WHERE settlement.invoice_id=$1
+          AND settlement.state='open'
+          AND NOT EXISTS (
+            SELECT 1 FROM invoices invoice
+            LEFT JOIN LATERAL (
+              SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
+                       - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+                FROM payment_allocations payment_allocation
+                LEFT JOIN payment_reversal_allocations reversal_allocation
+                  ON reversal_allocation.original_allocation_id=payment_allocation.id
+               WHERE payment_allocation.invoice_id=invoice.id
+            ) allocation ON true
+            WHERE invoice.id=$1
+              AND GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0)>0
+          )`,
+      [invoiceId],
+    );
+  }
+
+  /** Keep the legacy W05 commitment amounts as a read model of verified W06 ledger state. */
+  private async syncOnboardingFinancialProjection(client: PoolClient, lease: LeaseTupleRow) {
+    await client.query(
+      `UPDATE onboarding_commitments commitment
+       SET dp_verified_amount=COALESCE((
+             SELECT sum(payment.amount)
+             FROM payments payment
+             LEFT JOIN payment_reversals reversal ON reversal.payment_id=payment.id
+             WHERE payment.property_id=commitment.property_id
+               AND payment.lease_id=commitment.lease_id
+               AND payment.payment_purpose='dp'
+               AND payment.payment_status='verified'
+               AND reversal.id IS NULL
+               AND EXISTS (SELECT 1 FROM payment_allocations allocation WHERE allocation.payment_id=payment.id)
+           ),0),
+           security_deposit_funded_amount=COALESCE((
+             SELECT sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END)
+             FROM lease_deposit_transactions ledger
+             WHERE ledger.property_id=commitment.property_id
+               AND ledger.lease_id=commitment.lease_id
+           ),0),
+           updated_at=now()
+       WHERE commitment.property_id=$1 AND commitment.lease_id=$2`,
+      [lease.property_id, lease.id],
     );
   }
 
@@ -2375,6 +3102,8 @@ export class W06BillingService {
       resident_name: row.resident_name,
       room_number: row.room_number,
       reference_number: row.reference_number,
+      rent_allocation_amount: this.money(row.rent_allocation_amount),
+      settles_rent_contract: row.settles_rent_contract === true,
       evidence: (Array.isArray(row.evidence) ? row.evidence : []).map((file) => ({
         id: file.id,
         original_filename: file.original_filename,

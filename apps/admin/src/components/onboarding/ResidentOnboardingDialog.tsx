@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
+import { NoticeAlert } from "@/components/ui/notice-alert";
+import { useM4KostTypes } from "@/hooks/useAdminUxMaster";
 import { useResidentOnboarding } from "@/hooks/useResidentOnboarding";
 import { useLeaseActivation } from "@/hooks/useLeaseActivation";
 import { adminUxMasterApi } from "@/lib/admin-ux-master-api";
 import { adminUxQueryKeys } from "@/lib/admin-ux-query-keys";
+import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import { onboardingErrorNotice } from "@/lib/onboarding-error-notice";
 import type { BookingLeadRecord } from "@/hooks/useBookingLeads";
 import { useProperty } from "@/lib/property";
 
@@ -45,6 +50,18 @@ export function ResidentOnboardingDialog({
     enabled: Boolean(open && needsRoomSelection && currentPropertyId),
     retry: false,
   });
+  const kostTypes = useM4KostTypes({ limit: 100 });
+  const selectedRoom = rooms.data?.items.find((room) => room.id === roomId);
+  const selectedCategory = selectedRoom?.kostType.category ?? lead?.category;
+  const commercial = kostTypes.data?.items.find((item) => item.category === selectedCategory);
+  const requiredDp = commercial ? Math.ceil(commercial.monthlyPrice * 12 * 0.25) : null;
+  const requiredDeposit = commercial ? 0 : null;
+  const financialAuthorityReady =
+    requiredDp !== null &&
+    requiredDeposit !== null &&
+    Number(dp) >= requiredDp &&
+    Number.isFinite(Number(deposit)) &&
+    Number(deposit) >= 0;
   useEffect(() => {
     setName(lead?.visitorName ?? "");
     setStart(lead?.preferredMoveInDate ?? "");
@@ -59,6 +76,11 @@ export function ResidentOnboardingDialog({
     resetActivation();
     setActivationKey(newIdempotencyKey());
   }, [lead, open, currentPropertyId, resetActivation, resetOnboarding]);
+  useEffect(() => {
+    if (!open || requiredDp === null || requiredDeposit === null) return;
+    setDp((current) => current || String(requiredDp));
+    setDeposit((current) => current || "0");
+  }, [open, requiredDeposit, requiredDp]);
   if (!lead && !manual) return null;
   const clearTransientResult = () => {
     setTemporaryPassword(null);
@@ -67,8 +89,10 @@ export function ResidentOnboardingDialog({
     setActivationKey(newIdempotencyKey());
   };
   const mutationMatchesScope = mutation.variables?.property_id === currentPropertyId;
+  const mutationNotice =
+    mutation.error && mutationMatchesScope ? onboardingErrorNotice(mutation.error) : null;
   const submit = () => {
-    if (!currentPropertyId || !name.trim() || !start || !roomId) return;
+    if (!currentPropertyId || !name.trim() || !start || !roomId || !financialAuthorityReady) return;
     setTemporaryPassword(null);
     mutation.mutate({
       property_id: currentPropertyId,
@@ -85,6 +109,7 @@ export function ResidentOnboardingDialog({
       accepted_terms_version: "KMO-W05-v1",
       dp_verified_amount: Number(dp),
       security_deposit_funded_amount: Number(deposit),
+      payment_method: "cash",
     });
   };
   const handleOpenChange = (nextOpen: boolean) => {
@@ -110,17 +135,16 @@ export function ResidentOnboardingDialog({
             }}
           />
         </label>
-        <label className="grid gap-1 text-sm">
-          Tanggal mulai
-          <Input
-            type="date"
-            value={start}
-            onChange={(event) => {
-              clearTransientResult();
-              setStart(event.target.value);
-            }}
-          />
-        </label>
+        <HeroUiDatePicker
+          id="legacy-onboarding-start-date"
+          label="Tanggal mulai"
+          value={start}
+          onChange={(value) => {
+            clearTransientResult();
+            setStart(value ?? "");
+          }}
+          required
+        />
         {manual ? (
           <>
             <label className="grid gap-1 text-sm">
@@ -189,7 +213,7 @@ export function ResidentOnboardingDialog({
           </label>
         ) : null}
         <label className="grid gap-1 text-sm">
-          DP terverifikasi
+          DP tunai dicatat
           <Input
             type="number"
             min="0"
@@ -199,9 +223,13 @@ export function ResidentOnboardingDialog({
               setDp(event.target.value);
             }}
           />
+          <span className="text-xs text-muted-foreground">
+            Minimum 25% nilai kontrak 12 bulan
+            {requiredDp === null ? "." : `: ${formatIDR(requiredDp)}.`}
+          </span>
         </label>
         <label className="grid gap-1 text-sm">
-          Security deposit terdanai
+          Security deposit dicatat
           <Input
             type="number"
             min="0"
@@ -211,11 +239,24 @@ export function ResidentOnboardingDialog({
               setDeposit(event.target.value);
             }}
           />
+          <span className="text-xs text-muted-foreground">
+            Nilainya bebas mulai Rp0 dan terpisah dari pembayaran sewa.
+          </span>
         </label>
-        {mutation.error && mutationMatchesScope ? (
+        {(dp || deposit) &&
+        requiredDp !== null &&
+        requiredDeposit !== null &&
+        !financialAuthorityReady ? (
           <p role="alert" className="text-sm text-destructive">
-            Onboarding belum dapat disimpan. Periksa kamar, data, dan kewenangan.
+            DP belum memenuhi minimum atau security deposit bukan nominal yang valid.
           </p>
+        ) : null}
+        {mutationNotice ? (
+          <NoticeAlert
+            tone="destructive"
+            title={mutationNotice.title}
+            description={mutationNotice.description}
+          />
         ) : null}
         <Button
           disabled={
@@ -224,7 +265,7 @@ export function ResidentOnboardingDialog({
             !start ||
             !roomId ||
             !dp ||
-            !deposit ||
+            !financialAuthorityReady ||
             (manual && !phone.trim() && !email.trim())
           }
           onClick={submit}

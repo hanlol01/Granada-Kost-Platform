@@ -6,8 +6,20 @@ export class ListResidentsQueryDto {
   property_id?: string;
 
   @IsOptional()
-  @IsIn(['active', 'inactive'])
+  @IsIn(['draft', 'pending_activation', 'active', 'inactive', 'archived'])
   status?: string;
+
+  @IsOptional()
+  @IsIn(['active', 'inactive', 'suspended', 'not_provisioned'])
+  account_status?: string;
+
+  @IsOptional()
+  @IsIn(['male', 'female', 'other'])
+  gender?: string;
+
+  @IsOptional()
+  @IsIn(['awaiting_activation', 'active', 'none'])
+  tenancy_status?: string;
 
   @IsOptional()
   @IsString()

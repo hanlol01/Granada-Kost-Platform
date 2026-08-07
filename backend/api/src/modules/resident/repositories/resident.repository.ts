@@ -4,7 +4,11 @@ import { CreateResidentDto } from '../dto/create-resident.dto';
 import { EmergencyContactDto } from '../dto/emergency-contact.dto';
 import { ListResidentsQueryDto } from '../dto/list-residents-query.dto';
 import { UpdateResidentDto } from '../dto/update-resident.dto';
-import { EmergencyContactRecord, ResidentRecord } from '../types/resident.types';
+import {
+  EmergencyContactRecord,
+  ResidentRecord,
+  ResidentTenancyRecord,
+} from '../types/resident.types';
 
 type ResidentRow = {
   id: string;
@@ -47,6 +51,20 @@ type ContactRow = {
   phone: string;
 };
 
+type ResidentTenancyRow = {
+  resident_id: string;
+  property_id: string;
+  lease_id: string;
+  lease_status: ResidentTenancyRecord['leaseStatus'];
+  room_number: string;
+  kost_type_name: string;
+  building_code: string;
+  start_date: string;
+  end_date: string;
+  term_months: number;
+  payment_plan_type: ResidentTenancyRecord['paymentPlanType'];
+};
+
 export type ResidentSelfContext = {
   displayName: string;
   phone: string | null;
@@ -86,47 +104,54 @@ export class ResidentRepository {
               residents.emergency_phone, residents.ktp_file_id, residents.profile_photo_file_id,
               residents.gender, residents.resident_status, residents.created_at, residents.updated_at,
               COALESCE(users.user_status, 'not_provisioned') AS account_status,
-              CASE WHEN occupancy_authority.authority_count = 1 THEN occupancy_authority.room_number END AS room_number,
+              CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.room_number END AS room_number,
               CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.start_date END AS lease_start,
               CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.end_date END AS lease_end,
               COALESCE(lease_authority.authority_count, 0)::text AS lease_authority_count
        FROM residents
        LEFT JOIN users ON users.id = residents.user_id
-       LEFT JOIN LATERAL (
-         SELECT count(*)::integer AS authority_count,
-                min(rooms.number) AS room_number
-         FROM occupancies
-         JOIN rooms ON rooms.id = occupancies.room_id
-                   AND rooms.property_id = occupancies.property_id
-         WHERE occupancies.resident_id = residents.id
-           AND occupancies.property_id = residents.property_id
-           AND occupancies.occupancy_status = 'active'
-           AND occupancies.end_date IS NULL
-       ) AS occupancy_authority ON TRUE
-       LEFT JOIN LATERAL (
-         SELECT count(*)::integer AS authority_count,
-                min(leases.start_date)::text AS start_date,
-                min(leases.end_date)::text AS end_date
-         FROM leases
-         WHERE leases.resident_id = residents.id
-           AND leases.property_id = residents.property_id
-           AND leases.lease_status = 'active'
-       ) AS lease_authority ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT count(*)::integer AS authority_count,
+                 min(rooms.number) AS room_number,
+                 min(leases.start_date)::text AS start_date,
+                 min(leases.end_date)::text AS end_date,
+                 min(leases.lease_status::text) AS lease_status
+          FROM leases
+          JOIN rooms ON rooms.id = leases.room_id
+                    AND rooms.property_id = leases.property_id
+          WHERE leases.resident_id = residents.id
+            AND leases.property_id = residents.property_id
+            AND leases.lease_status IN ('awaiting_activation', 'active')
+        ) AS lease_authority ON TRUE
        WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR residents.property_id = $2)
          AND ($3::text IS NULL OR residents.resident_status = $3)
+         AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
+         AND ($5::text IS NULL OR residents.gender = $5)
          AND (
-           $4::text IS NULL
-           OR residents.full_name ILIKE '%' || $4 || '%'
-           OR residents.phone ILIKE '%' || $4 || '%'
-           OR residents.email ILIKE '%' || $4 || '%'
+           $6::text IS NULL
+           OR ($6 = 'none' AND COALESCE(lease_authority.authority_count, 0) = 0)
+           OR ($6 <> 'none' AND lease_authority.authority_count = 1 AND lease_authority.lease_status = $6)
+         )
+         AND (
+           $7::text IS NULL
+           OR residents.full_name ILIKE '%' || $7 || '%'
+           OR residents.phone ILIKE '%' || $7 || '%'
+           OR residents.email ILIKE '%' || $7 || '%'
+           OR residents.university ILIKE '%' || $7 || '%'
+           OR residents.faculty ILIKE '%' || $7 || '%'
+           OR residents.major ILIKE '%' || $7 || '%'
+           OR lease_authority.room_number ILIKE '%' || $7 || '%'
          )
        ORDER BY residents.full_name ASC, residents.id ASC
-       LIMIT $5 OFFSET $6`,
+       LIMIT $8 OFFSET $9`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
         query.status ?? null,
+        query.account_status ?? null,
+        query.gender ?? null,
+        query.tenancy_status ?? null,
         query.q?.trim() || null,
         Math.min(Math.max(query.limit ?? 20, 1), 100),
         Math.max(query.offset ?? 0, 0),
@@ -139,19 +164,45 @@ export class ResidentRepository {
     const result = await this.database.client.query<{ total: string }>(
       `SELECT count(*)::text AS total
        FROM residents
-       WHERE ($1::uuid[] IS NULL OR property_id = ANY($1::uuid[]))
-         AND ($2::uuid IS NULL OR property_id = $2)
-         AND ($3::text IS NULL OR resident_status = $3)
+       LEFT JOIN users ON users.id = residents.user_id
+       LEFT JOIN LATERAL (
+          SELECT count(*)::integer AS authority_count,
+                 min(rooms.number) AS room_number,
+                 min(leases.lease_status::text) AS lease_status
+          FROM leases
+          JOIN rooms ON rooms.id = leases.room_id
+                    AND rooms.property_id = leases.property_id
+          WHERE leases.resident_id = residents.id
+            AND leases.property_id = residents.property_id
+            AND leases.lease_status IN ('awaiting_activation', 'active')
+        ) AS lease_authority ON TRUE
+       WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
+         AND ($2::uuid IS NULL OR residents.property_id = $2)
+         AND ($3::text IS NULL OR residents.resident_status = $3)
+         AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
+         AND ($5::text IS NULL OR residents.gender = $5)
          AND (
-           $4::text IS NULL
-           OR full_name ILIKE '%' || $4 || '%'
-           OR phone ILIKE '%' || $4 || '%'
-           OR email ILIKE '%' || $4 || '%'
+           $6::text IS NULL
+           OR ($6 = 'none' AND COALESCE(lease_authority.authority_count, 0) = 0)
+           OR ($6 <> 'none' AND lease_authority.authority_count = 1 AND lease_authority.lease_status = $6)
+         )
+         AND (
+           $7::text IS NULL
+           OR residents.full_name ILIKE '%' || $7 || '%'
+           OR residents.phone ILIKE '%' || $7 || '%'
+           OR residents.email ILIKE '%' || $7 || '%'
+           OR residents.university ILIKE '%' || $7 || '%'
+           OR residents.faculty ILIKE '%' || $7 || '%'
+           OR residents.major ILIKE '%' || $7 || '%'
+           OR lease_authority.room_number ILIKE '%' || $7 || '%'
          )`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
         query.status ?? null,
+        query.account_status ?? null,
+        query.gender ?? null,
+        query.tenancy_status ?? null,
         query.q?.trim() || null,
       ],
     );
@@ -164,6 +215,41 @@ export class ResidentRepository {
 
   async findByIdInProperty(id: string, propertyId: string): Promise<ResidentRecord | null> {
     return this.findByIdScoped(id, propertyId);
+  }
+
+  async findCurrentTenanciesInProperty(
+    residentId: string,
+    propertyId: string,
+  ): Promise<ResidentTenancyRecord[]> {
+    const result = await this.database.client.query<ResidentTenancyRow>(
+      `SELECT leases.resident_id,leases.property_id,leases.id AS lease_id,leases.lease_status,
+              rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
+              buildings.building_code,leases.start_date::text,leases.end_date::text,
+              leases.term_months,leases.payment_plan_type
+       FROM leases
+       JOIN rooms ON rooms.id=leases.room_id AND rooms.property_id=leases.property_id
+       JOIN room_buildings AS buildings
+         ON buildings.id=rooms.building_id AND buildings.property_id=leases.property_id
+       WHERE leases.resident_id=$1
+         AND leases.property_id=$2
+         AND leases.lease_status IN ('awaiting_activation','active')
+       ORDER BY CASE leases.lease_status WHEN 'active' THEN 0 ELSE 1 END, leases.created_at DESC, leases.id DESC
+       LIMIT 2`,
+      [residentId, propertyId],
+    );
+    return result.rows.map((row) => ({
+      residentId: row.resident_id,
+      propertyId: row.property_id,
+      leaseId: row.lease_id,
+      leaseStatus: row.lease_status,
+      roomNumber: row.room_number,
+      kostTypeName: row.kost_type_name,
+      buildingCode: row.building_code,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      termMonths: Number(row.term_months),
+      paymentPlanType: row.payment_plan_type,
+    }));
   }
 
   private async findByIdScoped(

@@ -22,7 +22,7 @@ export type CreatePublicBookingLeadInput = {
   category: PublicCategory;
   gender: "male" | "female";
   visitorName: string;
-  visitorEmail: string;
+  visitorEmail?: string;
   visitorPhone: string;
   visitorUniversity: string;
   consent: true;

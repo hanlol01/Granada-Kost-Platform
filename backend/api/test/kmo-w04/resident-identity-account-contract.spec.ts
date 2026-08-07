@@ -212,7 +212,7 @@ test('new account is linked atomically with one resident membership and no lifec
       queries.push({ sql, params });
       if (/INSERT INTO idempotency_commands/.test(sql))
         return { rows: [{ id: 'command' }], rowCount: 1 };
-      if (/FROM residents[\s\S]*FOR UPDATE/.test(sql)) {
+      if (/FROM residents[\s\S]*WHERE id = \$1 AND property_id = \$2[\s\S]*FOR UPDATE/.test(sql)) {
         return {
           rows: [
             {
@@ -333,7 +333,7 @@ test('audit failure rolls back account provisioning, completion, and resident li
       queries.push({ sql, params });
       if (/INSERT INTO idempotency_commands/.test(sql))
         return { rows: [{ id: 'command' }], rowCount: 1 };
-      if (/FROM residents[\s\S]*FOR UPDATE/.test(sql)) {
+      if (/FROM residents[\s\S]*WHERE id = \$1 AND property_id = \$2[\s\S]*FOR UPDATE/.test(sql)) {
         return {
           rows: [
             {

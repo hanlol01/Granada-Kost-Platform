@@ -59,6 +59,8 @@ function workspacePayment(status = "pending_confirmation") {
     resident_name: "Ayu",
     room_number: "A-01",
     reference_number: "TRX-001",
+    rent_allocation_amount: 1_800_000,
+    settles_rent_contract: false,
     evidence: [
       {
         id: fileId,
@@ -189,7 +191,13 @@ test("W06 Admin requesters preserve property scope, cancellation, and caller-own
   };
 
   await getBillingWorklist(
-    { propertyId: residentId, month: "2026-08", limit: 20, offset: 0 },
+    {
+      propertyId: residentId,
+      month: "2026-08",
+      limit: 20,
+      offset: 0,
+      dueWithinDays: 30,
+    },
     controller.signal,
     requester as never,
   );
@@ -214,6 +222,7 @@ test("W06 Admin requesters preserve property scope, cancellation, and caller-own
     limit: 20,
     offset: 0,
     search: undefined,
+    due_within_days: 30,
   });
   assert.equal((calls[0].options as { signal: AbortSignal }).signal, controller.signal);
   assert.equal(
@@ -244,7 +253,7 @@ test("W06 Admin pending workspace and rejection use exact property-scoped endpoi
     },
   };
   const pending = await getBillingPayments(
-    { propertyId: residentId, status: "pending_confirmation" },
+    { propertyId: residentId, status: "pending_confirmation", dueWithinDays: 30 },
     undefined,
     requester as never,
   );
@@ -262,6 +271,7 @@ test("W06 Admin pending workspace and rejection use exact property-scoped endpoi
     status: "pending_confirmation",
     limit: 20,
     offset: 0,
+    due_within_days: 30,
   });
   assert.equal(calls[1].path, "/admin/billing/payments/" + paymentId + "/reject");
   assert.deepEqual(calls[1].body, {
@@ -352,11 +362,86 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /security_deposit/);
   assert.match(workspace, /documented_damage/);
   assert.match(workspace, /downloadAdminInvoiceDocument/);
+  assert.match(workspace, /downloadAdminReceiptDocument/);
+  assert.match(workspace, /settles_rent_contract/);
+  assert.match(workspace, /Sewa kontrak lunas/);
+  assert.match(workspace, /scrollIntoView/);
+  assert.doesNotMatch(workspace, /Kuitansi tersedia/);
   assert.match(workspace, /pending_confirmation/);
   assert.match(workspace, /useVerifyPayment/);
   assert.match(workspace, /useRejectPayment/);
-  assert.match(
-    readFileSync(new URL("./admin-w06-billing.ts", import.meta.url), "utf8"),
-    /billing\/invoices\/.*\/document/,
+  const apiSource = readFileSync(new URL("./admin-w06-billing.ts", import.meta.url), "utf8");
+  assert.match(apiSource, /billing\/invoices\/.*\/document/);
+  assert.match(apiSource, /billing\/receipts\/.*\/document/);
+});
+
+test("W07 settlement UI uses operational copy, contextual payment controls, and stacked payment history", () => {
+  const residentDetail = readFileSync(
+    new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url),
+    "utf8",
   );
+  const workspace = readFileSync(
+    new URL("../components/billing/W06PaymentsWorkspace.tsx", import.meta.url),
+    "utf8",
+  );
+  const noticeAlert = readFileSync(
+    new URL("../components/ui/notice-alert.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(residentDetail, /className="space-y-5" aria-label="Tagihan dan pembayaran"/);
+  assert.match(residentDetail, /Total pembayaran sewa yang sudah diterima/);
+  assert.match(residentDetail, /Sisa yang wajib dilunasi/);
+  assert.match(residentDetail, /Tenggat jatuh tempo pelunasan/);
+  assert.match(residentDetail, /triggerLabel="Catat Pembayaran"/);
+  assert.match(residentDetail, /triggerLabel="Lunasi Sisa"/);
+  assert.match(residentDetail, /Status verifikasi/);
+  assert.match(residentDetail, /Keterangan pembayaran/);
+  assert.match(residentDetail, /Pembayaran awal sewa/);
+  assert.match(residentDetail, /Pembayaran tambahan yang sudah diterima/);
+  assert.match(residentDetail, /Pembayaran awal sewa \(DP\)/);
+  assert.match(residentDetail, /Pembayaran untuk sewa kontrak/);
+  assert.match(residentDetail, /Bayar sebagian untuk pelunasan sewa kontrak/);
+  assert.match(residentDetail, /Bukan tagihan sewa bulanan/);
+  assert.match(residentDetail, /Skema pelunasan/);
+  assert.match(residentDetail, /Pelunasan penuh sebelum tenggat/);
+  assert.match(residentDetail, /ContractPaymentBadges/);
+  assert.match(residentDetail, /Bayar sebagian/);
+  assert.match(residentDetail, /Yang perlu diperhatikan/);
+  assert.match(residentDetail, /Pelunasan sewa selesai/);
+  assert.match(residentDetail, /Tindakan admin diperlukan/);
+  assert.match(residentDetail, /transfer menunggu konfirmasi/);
+  assert.match(residentDetail, /Tutup pengingat:/);
+  assert.match(noticeAlert, /onDismiss/);
+  assert.match(noticeAlert, /Tutup pemberitahuan/);
+  assert.doesNotMatch(
+    residentDetail,
+    /<SummaryMetric label="Kredit awal"|<SummaryMetric label="Pembayaran ledger"|<SummaryMetric label="Saldo sewa"/,
+  );
+
+  assert.match(workspace, /Bayar Sebagian/);
+  assert.match(workspace, /Lunasi Sekarang/);
+  assert.match(workspace, /Bukti transfer \(wajib\)/);
+  assert.match(workspace, /<option value="cash">Tunai<\/option>/);
+  assert.match(workspace, /Nominal pembayaran sewa/);
+  assert.match(workspace, /Jumlah yang akan dicatat/);
+  assert.match(workspace, /Sisa pembayaran sewa setelah dicatat/);
+  assert.match(workspace, /Pembayaran sebagian tidak mengubah tenggat pelunasan kontrak/);
+  assert.match(workspace, /tidak\s+ada\s+tagihan sewa bulanan baru/);
+  assert.match(workspace, /Nomor bukti penerimaan \(opsional\)/);
+  assert.match(workspace, /Nomor referensi transfer \(opsional\)/);
+  assert.match(workspace, /Pilih bukti pembayaran/);
+  assert.match(workspace, /toastMutationSuccess/);
+  assert.match(workspace, /Pembayaran berhasil dicatat dan terverifikasi/);
+  assert.match(workspace, /setReference\(""\);/);
+  assert.match(workspace, /setNote\(""\);/);
+  assert.match(
+    workspace,
+    /contractSettlementMode === "full" \? contractSettlementInvoice\.outstanding_amount : 0/,
+  );
+  assert.match(
+    workspace,
+    /Nominal belum diisi\. Masukkan nominal lebih dari Rp0 untuk mencatat pembayaran\./,
+  );
+  assert.doesNotMatch(workspace, /Alokasi invoice/);
 });

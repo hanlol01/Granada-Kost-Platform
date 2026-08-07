@@ -34,6 +34,13 @@ import {
   VerifyManualPaymentDto,
   VoidInvoiceDto,
 } from '../dto/w06-billing.dto';
+import {
+  CancelLeaseTerminationDto,
+  ExtendContractSettlementDto,
+  FinalizeLeaseTerminationDto,
+  StartLeaseTerminationDto,
+} from '../dto/contract-settlement.dto';
+import { ContractSettlementService } from '../services/contract-settlement.service';
 import { W06BillingService } from '../services/w06-billing.service';
 import { auditContext } from './billing-controller.util';
 
@@ -45,6 +52,7 @@ export class AdminBillingController {
   constructor(
     private readonly billing: AdminBillingService,
     private readonly w06: W06BillingService,
+    private readonly contractSettlements: ContractSettlementService,
   ) {}
 
   @Get('invoices')
@@ -97,6 +105,21 @@ export class AdminBillingController {
     @Query() query: AdminBillingScopeQueryDto,
   ) {
     return this.w06.receipt(user, query.property_id, receiptId);
+  }
+
+  @Get('billing/receipts/:receiptId/document')
+  @Header('Cache-Control', 'private, no-store')
+  async receiptDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('receiptId') receiptId: string,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    const document = await this.w06.receiptDocument(user, query.property_id, receiptId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
   }
 
   @Get('billing/invoices/:invoiceId/document')
@@ -206,5 +229,75 @@ export class AdminBillingController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.w06.voidInvoice(user, invoiceId, dto, key, auditContext(user, request));
+  }
+
+  @Post('billing/leases/:leaseId/contract-settlement/extend')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  extendContractSettlement(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: ExtendContractSettlementDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.contractSettlements.extend(user, leaseId, dto, key, auditContext(user, request));
+  }
+
+  @Post('billing/leases/:leaseId/contract-settlement/termination')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  startLeaseTermination(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: StartLeaseTerminationDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.contractSettlements.startTermination(
+      user,
+      leaseId,
+      dto,
+      key,
+      auditContext(user, request),
+    );
+  }
+
+  @Post('billing/leases/:leaseId/contract-settlement/termination/cancel')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  cancelLeaseTermination(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: CancelLeaseTerminationDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.contractSettlements.cancelTermination(
+      user,
+      leaseId,
+      dto,
+      key,
+      auditContext(user, request),
+    );
+  }
+
+  @Post('billing/leases/:leaseId/contract-settlement/termination/finalize')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  finalizeLeaseTermination(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: FinalizeLeaseTerminationDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.contractSettlements.finalizeTermination(
+      user,
+      leaseId,
+      dto,
+      key,
+      auditContext(user, request),
+    );
   }
 }

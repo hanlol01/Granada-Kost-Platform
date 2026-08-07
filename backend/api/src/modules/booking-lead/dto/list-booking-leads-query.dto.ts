@@ -4,6 +4,7 @@ import { PaginationQueryDto } from '../../billing/dto/pagination-query.dto';
 import {
   BookingLeadCategory,
   BookingLeadGender,
+  BookingLeadSource,
   BookingLeadStatus,
 } from '../types/booking-lead.types';
 
@@ -55,6 +56,11 @@ export class ListBookingLeadsQueryDto extends PaginationQueryDto {
   @optionalTrimLower
   @IsIn(['male', 'female'])
   gender?: BookingLeadGender;
+
+  @IsOptional()
+  @optionalTrimLower
+  @IsIn(['public_kamar', 'admin_quick_entry'])
+  source?: BookingLeadSource;
 
   @IsOptional()
   @optionalTrim

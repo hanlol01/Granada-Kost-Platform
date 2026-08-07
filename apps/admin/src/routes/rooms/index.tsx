@@ -10,6 +10,7 @@ import {
 } from "@/components/rooms/KostTypeInventoryPage";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import {
   useM4KostTypes,
   useM4AllRoomBuildings,
@@ -43,6 +44,19 @@ function RoomsPage() {
   const typesQuery = useM4KostTypes({ limit: 100 });
   const availabilityQuery = useM4RoomAvailability();
   const buildingsQuery = useM4AllRoomBuildings();
+  const availableRoomsQuery = useM4RoomInventory({ status: "vacant", limit: 1, offset: 0 });
+  const availableRumahKostQuery = useM4RoomInventory({
+    category: "rukost",
+    status: "vacant",
+    limit: 1,
+    offset: 0,
+  });
+  const availableApartKostQuery = useM4RoomInventory({
+    category: "apartkost",
+    status: "vacant",
+    limit: 1,
+    offset: 0,
+  });
   const roomsQuery = useM4RoomInventory({
     category: search.category,
     q: search.q,
@@ -97,6 +111,9 @@ function RoomsPage() {
     typesQuery.isLoading ||
     availabilityQuery.isLoading ||
     buildingsQuery.isLoading ||
+    availableRoomsQuery.isLoading ||
+    availableRumahKostQuery.isLoading ||
+    availableApartKostQuery.isLoading ||
     roomsQuery.isLoading
   ) {
     return (
@@ -105,18 +122,35 @@ function RoomsPage() {
       </AppShell>
     );
   }
-  if (typesQuery.error || availabilityQuery.error || buildingsQuery.error || roomsQuery.error) {
+  if (
+    typesQuery.error ||
+    availabilityQuery.error ||
+    buildingsQuery.error ||
+    availableRoomsQuery.error ||
+    availableRumahKostQuery.error ||
+    availableApartKostQuery.error ||
+    roomsQuery.error
+  ) {
     return (
       <AppShell title="Ringkasan Kamar" subtitle="Inventori fisik dan tipe kost">
         <ErrorState
           error={
-            typesQuery.error ?? availabilityQuery.error ?? buildingsQuery.error ?? roomsQuery.error
+            typesQuery.error ??
+            availabilityQuery.error ??
+            buildingsQuery.error ??
+            availableRoomsQuery.error ??
+            availableRumahKostQuery.error ??
+            availableApartKostQuery.error ??
+            roomsQuery.error
           }
           title="Gagal memuat ringkasan kamar"
           onRetry={() => {
             void typesQuery.refetch();
             void availabilityQuery.refetch();
             void buildingsQuery.refetch();
+            void availableRoomsQuery.refetch();
+            void availableRumahKostQuery.refetch();
+            void availableApartKostQuery.refetch();
             void roomsQuery.refetch();
           }}
         />
@@ -144,10 +178,37 @@ function RoomsPage() {
     label: string;
     count: number;
   }> = [
-    { category: undefined, label: "Semua", count: totalRooms },
-    { category: "rukost", label: KOST_TYPE_LABEL.rukost, count: categoryCounts.rukost },
-    { category: "apartkost", label: KOST_TYPE_LABEL.apartkost, count: categoryCounts.apartkost },
+    { category: undefined, label: "Semua tersedia", count: availableRoomsQuery.data?.total ?? 0 },
+    {
+      category: "rukost",
+      label: "Rumah Kost tersedia",
+      count: availableRumahKostQuery.data?.total ?? 0,
+    },
+    {
+      category: "apartkost",
+      label: "Apart Kost tersedia",
+      count: availableApartKostQuery.data?.total ?? 0,
+    },
   ];
+  const activeFilterCount =
+    Number(search.q.trim() !== "") +
+    Number(Boolean(search.category)) +
+    Number(Boolean(search.buildingId)) +
+    Number(Boolean(search.floorCode)) +
+    Number(Boolean(search.status)) +
+    Number(Boolean(search.genderPolicy)) +
+    Number(search.activeOccupancy !== undefined) +
+    Number(Boolean(search.reconciliationState));
+  const filterSignature = [
+    search.q.trim(),
+    search.category,
+    search.buildingId,
+    search.floorCode,
+    search.status,
+    search.genderPolicy,
+    search.activeOccupancy,
+    search.reconciliationState,
+  ].join("|");
 
   return (
     <AppShell
@@ -212,12 +273,12 @@ function RoomsPage() {
               Filter kategori
             </h2>
             <p className="text-sm text-muted-foreground">
-              Tampilkan semua kamar atau persempit tabel berdasarkan kategori.
+              Pilih kategori untuk melihat kamar kosong yang tersedia saat ini.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             {filters.map(({ category, label, count }) => {
-              const selected = search.category === category;
+              const selected = search.category === category && search.status === "vacant";
               return (
                 <button
                   key={category ?? "all"}
@@ -226,6 +287,7 @@ function RoomsPage() {
                   onClick={() =>
                     onSearchChange({
                       category,
+                      status: "vacant",
                       offset: 0,
                     })
                   }
@@ -243,7 +305,7 @@ function RoomsPage() {
                         {label}
                       </p>
                       <p className="mt-1 text-2xl font-semibold text-foreground">{count}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">kamar</p>
+                      <p className="mt-1 text-xs text-muted-foreground">kamar kosong</p>
                     </CardContent>
                   </Card>
                 </button>
@@ -257,6 +319,15 @@ function RoomsPage() {
           search={search}
           onSearchChange={onSearchChange}
         />
+        {!roomsQuery.isFetching ? (
+          <FilterResultNotice
+            key={filterSignature}
+            entityLabel="kamar"
+            resultCount={roomsQuery.data?.total ?? 0}
+            activeFilterCount={activeFilterCount}
+            searchTerm={search.q}
+          />
+        ) : null}
         <RoomInventoryTable
           rooms={rooms}
           canManage={false}

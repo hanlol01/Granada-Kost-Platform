@@ -1,10 +1,4 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 import { CORRELATION_ID_HEADER } from '../../shared/constants/correlation-id.constants';
 import type { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';

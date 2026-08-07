@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -121,16 +122,14 @@ export function CompatibilityCheckoutDialog({
             <ShieldAlert className="mr-2 inline h-4 w-4" />
             Pastikan data lama memang perlu direkonsiliasi sebelum melanjutkan.
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="legacy-checkout-end-date">Tanggal selesai</Label>
-            <Input
-              id="legacy-checkout-end-date"
-              type="date"
-              value={endDate}
-              disabled={pending}
-              onChange={(event) => setEndDate(event.target.value)}
-            />
-          </div>
+          <HeroUiDatePicker
+            id="legacy-checkout-end-date"
+            label="Tanggal selesai"
+            value={endDate}
+            disabled={pending}
+            onChange={(value) => setEndDate(value ?? "")}
+            required
+          />
           <div className="space-y-1.5">
             <Label>Status kamar setelah selesai</Label>
             <Select

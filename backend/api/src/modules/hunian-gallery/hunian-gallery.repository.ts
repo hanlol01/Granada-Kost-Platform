@@ -432,7 +432,8 @@ export class HunianGalleryRepository {
           ) item
           WHERE item ->> 'id' = hgi.id::text
             AND CASE
-              WHEN jsonb_typeof(item) = 'object' THEN jsonb_object_length(item)
+              WHEN jsonb_typeof(item) = 'object'
+                THEN (SELECT count(*) FROM jsonb_object_keys(item))
               ELSE -1
             END = 7
             AND item ?& ARRAY[

@@ -21,6 +21,8 @@ export type FilePickerButtonProps = {
   filePurpose: FilePurpose;
   /** Called when files pass client-side validation. */
   onFilesSelected: (files: File[]) => void;
+  /** Prepares files before purpose-based client validation, e.g. image compression. */
+  prepareFiles?: (files: File[]) => Promise<File[]>;
   /** Allow selecting multiple files. Default: false. */
   multiple?: boolean;
   /** Mobile camera capture attribute ("environment" | "user"). */
@@ -34,6 +36,7 @@ export type FilePickerButtonProps = {
 export function FilePickerButton({
   filePurpose,
   onFilesSelected,
+  prepareFiles,
   multiple = false,
   capture,
   disabled = false,
@@ -47,23 +50,40 @@ export function FilePickerButton({
 
   const maxSizes = Object.entries(policy.maxBytesByMimeType)
     .map(([mime, bytes]) => {
-      const label = mime === "image/jpeg" ? "JPEG" : mime === "image/png" ? "PNG" : "PDF";
+      const label =
+        mime === "image/jpeg"
+          ? "JPEG"
+          : mime === "image/png"
+            ? "PNG"
+            : mime === "image/webp"
+              ? "WebP"
+              : "PDF";
       return `${label} maks. ${formatFileSize(bytes as number)}`;
     })
     .join(", ");
 
-  function handleChange(e: ChangeEvent<HTMLInputElement>) {
+  async function handleChange(e: ChangeEvent<HTMLInputElement>) {
     setValidationError(null);
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
-    const files = Array.from(fileList);
+    let files = Array.from(fileList);
     const maxFiles = multiple ? policy.maxFilesPerEntity : 1;
 
     if (files.length > maxFiles) {
       setValidationError(`Maksimum ${maxFiles} file.`);
       resetInput();
       return;
+    }
+
+    if (prepareFiles) {
+      try {
+        files = await prepareFiles(files);
+      } catch {
+        setValidationError("File belum dapat disiapkan. Coba pilih foto lain.");
+        resetInput();
+        return;
+      }
     }
 
     // Validate each file.

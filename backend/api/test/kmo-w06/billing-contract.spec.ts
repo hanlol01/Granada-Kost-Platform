@@ -11,9 +11,15 @@ import {
   buildContractSchedule,
   minimumDpAmount,
 } from '../../src/modules/billing/helpers/contract-schedule.helper';
-import { createBillingInvoicePdf } from '../../src/modules/billing/helpers/billing-document.helper';
+import {
+  createBillingInvoicePdf,
+  createBillingReceiptPdf,
+} from '../../src/modules/billing/helpers/billing-document.helper';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
-import { W06BillingService } from '../../src/modules/billing/services/w06-billing.service';
+import {
+  summarizeContractSettlementRentPayments,
+  W06BillingService,
+} from '../../src/modules/billing/services/w06-billing.service';
 
 const root = resolve(__dirname, '../..');
 const migration = readFileSync(
@@ -31,6 +37,31 @@ const PAYMENT_ID = '88888888-8888-4888-8888-888888888888';
 const RECEIPT_ID = '99999999-9999-4999-8999-999999999999';
 const REVERSAL_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
 const KEY = 'w06-contract-idempotency-0001';
+
+test('contract settlement separates verified onboarding payment from later rent payment', () => {
+  assert.deepEqual(
+    summarizeContractSettlementRentPayments({
+      invoiceCreditAmount: 0,
+      allocatedAmount: 1_350_000,
+      onboardingAllocatedAmount: 1_350_000,
+    }),
+    {
+      initialRentCredit: 1_350_000,
+      additionalRentPayments: 0,
+    },
+  );
+  assert.deepEqual(
+    summarizeContractSettlementRentPayments({
+      invoiceCreditAmount: 1_000_000,
+      allocatedAmount: 2_350_000,
+      onboardingAllocatedAmount: 1_350_000,
+    }),
+    {
+      initialRentCredit: 2_350_000,
+      additionalRentPayments: 1_000_000,
+    },
+  );
+});
 
 async function reserveLocalPort(): Promise<number> {
   const server = createServer();
@@ -58,6 +89,47 @@ function sql(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+test('worklist and payment workspace constrain the due-day window with Jakarta business dates', async () => {
+  const queries: Array<{ statement: string; values: readonly unknown[] }> = [];
+  const service = new W06BillingService(
+    {
+      client: {
+        query: async (statement: string, values: readonly unknown[] = []) => {
+          queries.push({ statement: sql(statement), values });
+          if (statement.includes('count(*) AS total')) return { rows: [{ total: '0' }] };
+          return { rows: [] };
+        },
+      },
+    } as never,
+    { assertCanReadProperty: async () => undefined } as never,
+    {} as never,
+  );
+
+  await service.currentWorklist(actor as never, {
+    property_id: PROPERTY_ID,
+    month: '2026-08',
+    due_within_days: 30,
+  });
+  await service.paymentWorkspace(actor as never, {
+    property_id: PROPERTY_ID,
+    status: 'verified',
+    due_within_days: 30,
+  });
+
+  assert.equal(
+    queries.every((query) => query.values.includes(30)),
+    true,
+  );
+  assert.equal(
+    queries.every((query) => query.statement.includes("now() AT TIME ZONE 'Asia/Jakarta'")),
+    true,
+  );
+  assert.equal(
+    queries.some((query) => query.statement.includes('payment_allocations deadline_allocation')),
+    true,
+  );
+});
+
 type HarnessOptions = {
   auditFailure?: Error;
   authorizeFailure?: Error;
@@ -65,6 +137,14 @@ type HarnessOptions = {
   replayFingerprint?: string;
   paymentStatus?: 'pending_confirmation' | 'verified' | 'rejected';
   initialIntents?: Array<{ invoice_id: string; intended_amount: string }>;
+  contractSettlement?: {
+    originalDueAt: Date;
+    extensionDueAt?: Date | null;
+    deadlinePassed: boolean;
+    initialPaymentAllocated?: number;
+    outstanding?: number;
+    terminationPending?: boolean;
+  };
 };
 
 function paymentHarness(options: HarnessOptions = {}) {
@@ -155,6 +235,13 @@ function paymentHarness(options: HarnessOptions = {}) {
       if (/FROM payment_evidence_files/.test(normalized))
         return { rows: [{ id: FILE_ID }], rowCount: 1 };
       if (/FROM files WHERE/.test(normalized)) return { rows: [{ id: FILE_ID }], rowCount: 1 };
+      if (/SELECT i.id,GREATEST/.test(normalized))
+        return {
+          rows: [{ id: INVOICE_1, outstanding: String(options.invoiceOutstanding ?? 1_800_000) }],
+          rowCount: 1,
+        };
+      if (/SELECT i.id FROM invoices i LEFT JOIN LATERAL/.test(normalized))
+        return { rows: [{ id: INVOICE_1 }], rowCount: 1 };
       if (/FROM invoices i/.test(normalized) && /ANY\(\$1::uuid\[\]\)/.test(normalized)) {
         const ids = params[0] as string[];
         return {
@@ -173,6 +260,43 @@ function paymentHarness(options: HarnessOptions = {}) {
           rowCount: ids.length,
         };
       }
+      if (/FROM lease_contract_settlements settlement/.test(normalized)) {
+        const settlement = options.contractSettlement;
+        if (!settlement) return { rows: [], rowCount: 0 };
+        return {
+          rows: [
+            {
+              id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              state: 'open',
+              invoice_id: INVOICE_1,
+              activated_at: new Date('2026-01-01T00:00:00.000Z'),
+              original_due_at: settlement.originalDueAt,
+              extension_due_at: settlement.extensionDueAt ?? null,
+              extension_reason: null,
+              total_amount: '10800000',
+              credit_amount: '2700000',
+              allocated_amount: String(8_100_000 - (settlement.outstanding ?? 8_100_000)),
+              initial_payment_allocated: String(settlement.initialPaymentAllocated ?? 0),
+              deposit_offset_amount: '0',
+              termination_case_id: settlement.terminationPending
+                ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                : null,
+              termination_status: settlement.terminationPending ? 'pending' : null,
+              planned_checkout_date: null,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (
+        /SELECT now\(\) > CASE WHEN \$2::timestamptz IS NULL THEN \$1::timestamptz \+ INTERVAL '7 days' ELSE \$2::timestamptz END AS passed/.test(
+          normalized,
+        )
+      )
+        return {
+          rows: [{ passed: options.contractSettlement?.deadlinePassed ?? false }],
+          rowCount: 1,
+        };
       if (/INSERT INTO payments/.test(normalized))
         return {
           rows: [
@@ -237,7 +361,7 @@ function paymentHarness(options: HarnessOptions = {}) {
       },
     } as never,
   );
-  return { events, queries, service };
+  return { events, queries, service, client };
 }
 
 function paymentDto(method: 'cash' | 'bank_transfer' = 'cash') {
@@ -256,6 +380,14 @@ function paymentDto(method: 'cash' | 'bank_transfer' = 'cash') {
       { invoice_id: INVOICE_1, amount: 1_800_000 },
       { invoice_id: INVOICE_2, amount: 1_800_000 },
     ],
+  };
+}
+
+function contractSettlementPaymentDto(amount: number) {
+  return {
+    ...paymentDto('cash'),
+    amount,
+    allocations: [{ invoice_id: INVOICE_1, amount }],
   };
 }
 
@@ -302,11 +434,11 @@ test('W06 annual and two-month schedules reconcile exact coverage and money', ()
     () =>
       buildContractSchedule({
         startDate: '2026-01-01',
-        termMonths: 11,
+        termMonths: 2,
         paymentPlanType: 'annual_full',
         contractRentAmount: 1,
       }),
-    /at least 12 months/,
+    /at least 3 months/,
   );
   assert.equal(minimumDpAmount(21_600_001), 5_400_001);
 });
@@ -332,6 +464,28 @@ test('server-mediated invoice PDF is valid, deterministic, and contains no inter
   assert.ok(source.endsWith('%%EOF\n'));
   assert.match(source, /INV-KMO-W06-001/);
   assert.ok(source.includes('Siti \\(Utami\\)'));
+  assert.doesNotMatch(source, new RegExp(PROPERTY_ID, 'i'));
+  assert.doesNotMatch(source, /storage|content_path|file_id/i);
+});
+
+test('server-mediated payment receipt PDF distinguishes payment proof from an invoice', () => {
+  const document = createBillingReceiptPdf({
+    receiptCode: 'KWT-KMO-W06-001',
+    paymentCode: 'PAY-KMO-W06-001',
+    residentName: 'Siti Utami',
+    roomNumber: 'A-12',
+    paymentMethod: 'cash',
+    paymentPurpose: 'rent',
+    amount: 2_050_000,
+    paidAt: new Date('2026-08-07T01:30:00.000Z'),
+    issuedAt: new Date('2026-08-07T01:30:01.000Z'),
+    allocations: [{ invoiceCode: 'INV-KMO-W06-001', amount: 2_050_000 }],
+  });
+  const source = document.content.toString('latin1');
+  assert.equal(document.filename, 'KWT-KMO-W06-001.pdf');
+  assert.ok(source.startsWith('%PDF-1.4'));
+  assert.match(source, /KUITANSI PEMBAYARAN/);
+  assert.match(source, /Kuitansi ini membuktikan penerimaan pembayaran/);
   assert.doesNotMatch(source, new RegExp(PROPERTY_ID, 'i'));
   assert.doesNotMatch(source, /storage|content_path|file_id/i);
 });
@@ -373,6 +527,13 @@ test('audited cash allocates multiple invoices and creates receipt, audit, outbo
   );
   assert.equal(result.data.payment_status, 'verified');
   assert.equal(result.data.receipt_id, RECEIPT_ID);
+  const paymentInsert = harness.queries.find(({ sql: statement }) =>
+    /INSERT INTO payments\(/.test(statement),
+  );
+  assert.match(
+    paymentInsert?.sql ?? '',
+    /\$10::uuid,CASE WHEN \$6='verified' THEN \$10::uuid ELSE NULL END/,
+  );
   assert.equal(
     harness.queries.filter(({ sql: statement }) =>
       /INSERT INTO payment_allocations/.test(statement),
@@ -411,6 +572,23 @@ test('bank transfer remains pending confirmation and creates no allocation or re
   );
   assert.equal(
     harness.queries.some(({ sql: statement }) => /INSERT INTO payment_receipts/.test(statement)),
+    false,
+  );
+});
+
+test('bank transfer without proof is rejected before payment writes', async () => {
+  const harness = paymentHarness();
+  const dto = { ...paymentDto('bank_transfer'), evidence_file_ids: [] };
+  await assert.rejects(
+    harness.service.recordManualPayment(actor as never, dto, KEY, {}),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'TRANSFER_PROOF_REQUIRED',
+  );
+  assert.equal(
+    harness.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
     false,
   );
 });
@@ -553,6 +731,60 @@ test('DP distribution is deterministic oldest-first and rejects a claim above re
       (error as { getResponse: () => { code: string } }).getResponse().code ===
         'PAYMENT_OVERPAYMENT',
   );
+});
+
+test('onboarding may record a zero DP when the 25% amount is only a recommendation', async () => {
+  const harness = paymentHarness();
+  const result = await harness.service.recordInitialOnboardingPaymentsInTransaction(
+    harness.client as never,
+    {
+      propertyId: PROPERTY_ID,
+      residentId: RESIDENT_ID,
+      leaseId: LEASE_ID,
+      firstRentInvoiceId: INVOICE_1,
+      method: 'cash',
+      dpAmount: 0,
+      securityDepositAmount: 0,
+      evidenceFileIds: [],
+      commandFingerprint: 'a'.repeat(64),
+      actor: actor as never,
+      context: {},
+    },
+  );
+  assert.deepEqual(result, {
+    method: 'cash',
+    status: 'verified',
+    dpRecordedAmount: 0,
+    securityDepositRecordedAmount: 0,
+    dpVerifiedAmount: 0,
+    securityDepositVerifiedAmount: 0,
+    receipts: [],
+  });
+  assert.equal(
+    harness.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
+    false,
+  );
+});
+
+test('verified onboarding cash returns the receipt reference needed by the success screen', async () => {
+  const harness = paymentHarness();
+  const result = await harness.service.recordInitialOnboardingPaymentsInTransaction(
+    harness.client as never,
+    {
+      propertyId: PROPERTY_ID,
+      residentId: RESIDENT_ID,
+      leaseId: LEASE_ID,
+      firstRentInvoiceId: INVOICE_1,
+      method: 'cash',
+      dpAmount: 1_000_000,
+      securityDepositAmount: 0,
+      evidenceFileIds: [],
+      commandFingerprint: 'b'.repeat(64),
+      actor: actor as never,
+      context: {},
+    },
+  );
+  assert.deepEqual(result.receipts, [{ id: RECEIPT_ID, purpose: 'dp', amount: 1_000_000 }]);
 });
 
 test('reversal appends compensating allocation and receipt records without mutating original authority', async () => {
@@ -702,6 +934,96 @@ test('over-allocation fails before payment creation and audit failure rolls back
   assert.deepEqual(rollback.events.slice(-2), ['rollback', 'release']);
 });
 
+test('contract settlement allows partial payment through D+7 and requires full settlement after the partial-payment window closes', async () => {
+  const beforeDeadline = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2027-03-01T00:00:00.000Z'),
+      deadlinePassed: false,
+    },
+  });
+  const partial = await beforeDeadline.service.recordManualPayment(
+    actor as never,
+    contractSettlementPaymentDto(1_000_000),
+    KEY,
+    {},
+  );
+  assert.equal(partial.data.amount, 1_000_000);
+  assert.equal(
+    beforeDeadline.queries.some(({ sql: statement }) =>
+      /SELECT now\(\) > CASE WHEN \$2::timestamptz IS NULL THEN \$1::timestamptz \+ INTERVAL '7 days' ELSE \$2::timestamptz END AS passed/.test(
+        statement,
+      ),
+    ),
+    true,
+  );
+
+  const afterDeadline = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2026-03-01T00:00:00.000Z'),
+      deadlinePassed: true,
+    },
+  });
+  await assert.rejects(
+    afterDeadline.service.recordManualPayment(
+      actor as never,
+      contractSettlementPaymentDto(1_000_000),
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED',
+  );
+  assert.equal(
+    afterDeadline.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
+    false,
+  );
+});
+
+test('a granted extension keeps partial payment available only until its own deadline', async () => {
+  const duringExtension = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2026-03-01T00:00:00.000Z'),
+      extensionDueAt: new Date('2027-03-15T23:59:59.999Z'),
+      deadlinePassed: false,
+    },
+  });
+  const partial = await duringExtension.service.recordManualPayment(
+    actor as never,
+    contractSettlementPaymentDto(1),
+    KEY,
+    {},
+  );
+  assert.equal(partial.data.amount, 1);
+
+  const afterExtension = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2026-03-01T00:00:00.000Z'),
+      extensionDueAt: new Date('2026-03-15T23:59:59.999Z'),
+      deadlinePassed: true,
+    },
+  });
+  await assert.rejects(
+    afterExtension.service.recordManualPayment(
+      actor as never,
+      contractSettlementPaymentDto(1),
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED',
+  );
+  assert.equal(
+    afterExtension.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
+    false,
+  );
+});
+
 test('property authorization happens before transaction and exact idempotency replay skips domain writes', async () => {
   const sentinel = new Error('denied');
   const denied = paymentHarness({ authorizeFailure: sentinel });
@@ -810,9 +1132,10 @@ void test(
     const files = readdirSync(migrationDirectory)
       .filter((name) => /^\d{3}_.+\.sql$/.test(name))
       .sort();
-    assert.equal(files.at(-1), '027_billing_manual_payments.sql');
+    const w06MigrationIndex = files.indexOf('027_billing_manual_payments.sql');
+    assert.notEqual(w06MigrationIndex, -1, 'migration 027 must remain in the manifest sequence');
     const prior = files
-      .slice(0, -1)
+      .slice(0, w06MigrationIndex)
       .map((name) => {
         const source = readFileSync(resolve(migrationDirectory, name), 'utf8');
         // Baseline 023 reads this soft-delete column but no prior canonical migration creates it.

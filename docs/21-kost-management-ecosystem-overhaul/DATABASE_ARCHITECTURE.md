@@ -196,6 +196,12 @@ Lifecycle meaning:
 
 - A Booking Lead records interest; it is not a reservation.
 - A Hold temporarily claims a room; it is not a tenancy.
+- A Lead Payment Commitment is a pre-lease commercial agreement bound to one
+  active hold. It is neither a W06 payment ledger row nor a lease; it can be
+  materialized exactly once by Commit Onboarding.
+- Before that materialization, the final lease start date and duration may be
+  revised and re-quoted from commercial authority. The payment commitment itself
+  is immutable; its rent credit must not exceed the re-quoted contract rent.
 - Onboarding provisions identity and commits lease authority; it does not
   automatically prove physical occupancy.
 - Lease records the commercial term. Occupancy records the physical stay. Their
@@ -537,3 +543,17 @@ database application and consumer runtime status are tracked only in
 
 KMO-W03 through KMO-W12 remain planned unless that ledger and the
 [TRACEABILITY_MATRIX.md](TRACEABILITY_MATRIX.md) provide later evidence.
+
+## 7. Contract Settlement and Termination Authority (KMO-W07A)
+
+`lease_contract_settlements` is one-to-one with an onboarded lease and its
+contract-rent invoice. It stores only activation/deadline/extension authority;
+the outstanding amount remains a projection of immutable invoice credits and
+payment allocations. `lease_termination_cases` is a separate case lifecycle:
+pending, cancelled, or checked out. It does not mutate occupancy until checkout.
+
+`contract_settlement_deposit_offsets` connects a termination case, the lease,
+the contract invoice, and an immutable deposit transaction. It is the only
+authority permitted to increase an issued invoice's credit for default arrears
+offset. This protects already-recorded Booking Fee/DP credits from being
+rewritten and keeps deposit liability distinct from rental revenue.

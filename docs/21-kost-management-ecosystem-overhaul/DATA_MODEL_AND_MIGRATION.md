@@ -51,7 +51,7 @@ Known structural gaps that this plan closes:
 - resident identity, education, parent contact, and lease-facing profile fields
   are incomplete;
 - current lease statuses and billing cycles do not express draft activation,
-  twelve-month terms, or two-month installments;
+  the approved 3–120-month direct-onboarding term policy, or its derived schedules;
 - DP and security deposit are not represented as two explicit obligations;
 - payment reversal, receipt, manual other-charge, expense, reminder-template,
   reminder-history, and report-export evidence need canonical models;
@@ -140,10 +140,10 @@ Commercial policy is not duplicated here:
   release;
 - `property_settings.manual_payment_methods` is restricted to
   `bank_transfer|cash`;
-- effective category commercial versions define the 25% minimum DP, permitted
-  payment schedules, and security deposit in tariff months;
-- the default security deposit is one month of the applicable tariff, not a
-  hardcoded amount;
+- effective category commercial versions define the recommended 25% initial-rent prefill
+  credit and permitted payment schedules;
+- security deposit is a lease-level optional liability amount, not a category
+  tariff-month requirement or a hardcoded amount;
 - category-level commercial truth is never an individual-room write authority.
 
 #### `investor_profiles` — new
@@ -200,8 +200,10 @@ development application remains unproven. Initial business values:
 
 - monthly rent: Rp1,800,000;
 - annual rent: Rp21,600,000;
-- minimum DP: 25% of contract value;
-- security deposit: one month of the applicable tariff, initially Rp1,800,000.
+- a 25% initial-rent-credit recommendation, composed of Booking Fee (when any)
+  plus DP; authorized agreement may record a lower DP;
+- security deposit: optional and freely entered; Rp0 is valid and a nonzero
+  amount is a separate refundable liability.
 
 Room-level tariff, deposit, DP, and facility overrides are prohibited.
 `kost_type_content_facilities` is the source-implemented target category
@@ -321,10 +323,12 @@ Normalize target statuses:
 Add:
 
 - nullable `booking_lead_id`;
-- `term_months`, minimum `12`;
-- `payment_plan_type` (`annual_full|two_month_installments`);
+- `term_months`, minimum `3`;
+- `payment_plan_type` (`annual_full|two_month_installments|monthly_installments`);
 - `contract_rent_amount`;
-- `dp_required_amount`;
+- `dp_required_amount` (legacy column name retained for the snapshot of the
+  recommended 25% DP; it is not a blocking minimum);
+- `booking_fee_paid_amount`;
 - `security_deposit_required_amount`;
 - `signed_at`, `activated_at`, `completed_at`;
 - snapshot building/category/gender/rate/deposit/policy fields;
@@ -338,9 +342,10 @@ conversion authority.
 
 Represents contractual rent schedule independently from payments:
 
-- `annual_full` plan: one installment covering the twelve-month term;
-- two-month plan: six consecutive two-month installments for a twelve-month
-  term;
+- a 3–120-month lease generates deterministic installments from its immutable
+  commercial snapshot;
+- an exact 12-month multiple may use the annual category rate; other ordinary
+  terms use the monthly category rate;
 - `sequence_number`, coverage start/end, due date, scheduled amount;
 - `invoice_id` after invoice generation;
 - status derived from invoice balance, not freely edited.
@@ -393,11 +398,22 @@ the base. Normalize as follows.
 - balance is authoritative from active verified allocations;
 - issued/paid/void snapshots are immutable.
 
-#### DP
+#### Booking Fee and DP
 
-DP has no separate deposit ledger. It is a verified rent payment allocated to
-the earliest outstanding rent invoices and tagged with
-`payment_purpose = 'rent_advance_dp'`. The minimum is 25% of contract rent.
+Booking Fee and DP have no separate deposit ledger. Both are verified rent
+credits allocated to rent invoices. Booking Fee is optional but must be Rp0 or
+at least Rp1.000.000. DP is prefilled at 25% of contract rent as a
+recommendation, not a blocking minimum. Neither is security-deposit funding.
+
+#### Booking Lead Payment Commitment (Migration 029)
+
+`booking_lead_payment_commitments` records one property-scoped initial-payment
+agreement after an active hold and before a lease exists. It carries the held
+room, start/term/end dates, payment type/method, optional transfer evidence,
+rent credit, optional security deposit, and materialization marker. A bank
+transfer may initially be `pending_confirmation` without evidence; its
+verification remains an activation prerequisite. The row is not W06 payment
+ledger authority until its one-time materialization during Commit Onboarding.
 
 #### Security deposit
 
@@ -537,8 +553,8 @@ The implementation migration must include mutation-sensitive tests for:
 3. one active building owner assignment;
 4. no active resident archive;
 5. gender compatibility on lease activation and room transfer;
-6. twelve-month minimum and exact installment coverage;
-7. `dp_required_amount >= ceil(contract_rent_amount * 25 / 100)`;
+6. 3–120-month ordinary term and exact schedule coverage;
+7. `initial_rent_credit_required >= ceil(contract_rent_amount * 25 / 100)`;
 8. security-deposit amount independent from DP;
 9. active allocations not exceeding payment or invoice balance;
 10. immutable verified payment/receipt/deposit/expense/reminder evidence;
@@ -553,16 +569,24 @@ The implementation migration must include mutation-sensitive tests for:
 Each package is a separate committed migration plus focused contract. Source
 implementation does not imply canonical database application.
 
-| Migration/package                                     | Change                                                                                                        | Source truth                                     | Canonical entry gate                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `021_schema_migration_ledger.sql` / `KMO-W01`         | Checksum ledger, manifest, safe runner, and verified baseline registration for 001–020                        | Committed, manifest-verified, automated-verified | Exact canonical target, schema fingerprint, and explicit operator approval               |
-| `022_kost_type_commercial_authority.sql` / `KMO-W02B` | Effective-dated category tariff, annual value, 25% DP policy, payment schedules, and one-month deposit rule   | Committed, manifest-verified, automated-verified | Exactly two active categories, disposable apply/replay proof, commercial reconciliation  |
-| `023_category_content_publication.sql` / `KMO-W02C-D` | Category facilities, gallery source/derivative state, immutable publications, separated internal/public terms | Committed, manifest-verified, automated-verified | W02B prerequisite, facility/gallery/policy reconciliation, disposable apply/replay proof |
-| `KMO-DB2` / `KMO-W04`                                 | Resident identity expansion and account-provisioning evidence                                                 | Planned                                          | No conflicting normalized email/phone/user links                                         |
-| `KMO-DB3` / `KMO-W05–W07`                             | Lease statuses, installments, activation, inspection, and transfer additions                                  | Planned                                          | Active lease/occupancy/room invariants reconcile                                         |
-| `KMO-DB4` / `KMO-W06`                                 | Billing purpose, receipts, reversals, other charges, allocation constraints                                   | Planned                                          | Invoice/payment/allocation/deposit reconciliation                                        |
-| `KMO-DB5` / `KMO-W08–W10`                             | Expense, reminder history/share links, report-export and ownership evidence                                   | Planned                                          | File, actor, property, building, and financial scopes verified                           |
-| `KMO-DB6` / `KMO-W12`                                 | Final query indexes, constraints, and compatibility retirement                                                | Planned                                          | Zero legacy dependency and integrated reconciliation                                     |
+| Migration/package                                                 | Change                                                                                                        | Source truth                                                                                                | Canonical entry gate                                                                                                                  |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `021_schema_migration_ledger.sql` / `KMO-W01`                     | Checksum ledger, manifest, safe runner, and verified baseline registration for 001–020                        | Committed, manifest-verified, automated-verified                                                            | Exact canonical target, schema fingerprint, and explicit operator approval                                                            |
+| `022_kost_type_commercial_authority.sql` / `KMO-W02B`             | Effective-dated category tariff, annual value, 25% initial-rent-credit policy, and payment schedule authority | Committed, manifest-verified, automated-verified                                                            | Exactly two active categories, disposable apply/replay proof, commercial reconciliation                                               |
+| `023_category_content_publication.sql` / `KMO-W02C-D`             | Category facilities, gallery source/derivative state, immutable publications, separated internal/public terms | Committed, manifest-verified, automated-verified                                                            | W02B prerequisite, facility/gallery/policy reconciliation, disposable apply/replay proof                                              |
+| `025_resident_identity_account_authority.sql` / `KMO-W04`         | Resident identity, active property membership, account linkage, and one-time credential receipt               | Committed, manifest-verified, automated-verified                                                            | Disposable apply/replay/rollback proof; canonical migration application remains separately evidenced                                  |
+| `026_resident_onboarding_lease_activation.sql` / `KMO-W05`        | Onboarding commitment, awaiting-activation lease, lifecycle locks, and separate activation authority          | Committed, manifest-verified, automated-verified                                                            | Disposable apply/replay/rollback proof; direct form permits 3–120-month terms and an optional deposit                                 |
+| `027_billing_manual_payments.sql` / `KMO-W06`                     | Manual payment/allocation, receipt, reversal, Booking Fee/DP rent credit, and deposit-liability authority     | Committed, manifest-verified, automated-verified                                                            | Disposable apply/replay/rollback proof; canonical migration application remains separately evidenced                                  |
+| `030_contract_settlement_termination.sql` / `KMO-W07A`            | Contract-rent balance, final deadline, one extension, termination case, and deposit-offset authority          | Source implemented; manifest-bound; canonical migration application remains separately evidenced            | Additive only; preserves prior invoice credit and history; executable migration proof remains required before automated verification  |
+| `028_flexible_lease_term_and_booking_fee.sql` / W05/W06 amendment | Flexible start/term compatibility, `booking_fee_paid_amount`, and schedule constraints for direct onboarding  | Applied development migration; source remains uncommitted until the current form-revision patch is reviewed | Read-only ledger verification on 2026-08-03 found migration 028 applied; no automatic status is inferred for the surrounding UI patch |
+| `KMO-DB7` / `KMO-W07`                                             | Transfer, renewal, checkout, inspection, and deposit-disposition additions                                    | Planned                                                                                                     | Active lease/occupancy/room invariants reconcile                                                                                      |
+| `KMO-DB5` / `KMO-W08–W10`                                         | Expense, reminder history/share links, report-export and ownership evidence                                   | Planned                                                                                                     | File, actor, property, building, and financial scopes verified                                                                        |
+| `KMO-DB6` / `KMO-W12`                                             | Final query indexes, constraints, and compatibility retirement                                                | Planned                                                                                                     | Zero legacy dependency and integrated reconciliation                                                                                  |
+
+The W02 category-commercial migration retains an historical category deposit
+field for compatibility. It is not the current direct-onboarding requirement:
+since W05/W06, `POL-PAYMENT-002` governs an operational security deposit as an
+optional lease-level liability, including a valid value of Rp0.
 
 No package may combine a migration with unrelated UI work. The vertical slice
 may include its exact API and UI consumer after disposable migration proof; the
@@ -590,10 +614,10 @@ For every package:
 - Lease `active → active`, `ended → completed`, `cancelled → cancelled`,
   `transferred → transferred`.
 - Existing monthly/yearly billing cycles become `legacy_monthly` or
-  `legacy_yearly` compatibility plans; they are never guessed into the new
-  twelve-month schedules.
-- New lease commands accept only `annual_full` or
-  `two_month_installments`.
+  `legacy_yearly` compatibility plans; they are never guessed into a new
+  term schedule.
+- New direct-onboarding leases accept only an integer term from 3 through 120
+  months and derive their schedule from the immutable commercial snapshot.
 - Existing lease deposit ledger entries remain security-deposit history.
 - Existing invoice allocations remain rent/charge history. An ambiguous legacy
   payment must be flagged for manual classification, not recast as DP.
@@ -661,14 +685,16 @@ until an explicit remediation package is approved. A migration must not select a
 
 ## 11. Acceptance Evidence
 
-| ID                | Required evidence                                                                                          |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `QA-OPS-001`      | Migration ledger rejects checksum drift and skips an already-applied migration.                            |
-| `QA-PROPERTY-001` | Building ownership backfill gives 26/26 buildings KOSTATION default ownership and zero overlaps.           |
-| `QA-RESIDENT-001` | Account reconciliation detects duplicate email/phone/user identity and performs no partial linking.        |
-| `QA-LEASE-001`    | New twelve-month schedules produce one full invoice or six exact two-month installments.                   |
-| `QA-BILLING-001`  | DP and security deposit reconcile independently; financial report excludes deposit liability from revenue. |
-| `QA-PAYMENT-001`  | Multi-invoice allocation, proof, receipt, reversal, and invoice balances remain atomic.                    |
-| `QA-REMINDER-001` | Selected invoice snapshots and secure links stay property/resident scoped and revoke correctly.            |
-| `QA-EXPENSE-001`  | Approval threshold, evidence, payment, reversal, and cash-flow inclusion are proven.                       |
-| `QA-REPORT-001`   | List, preview, PDF, and Excel derive identical row IDs and totals from one filter snapshot.                |
+| ID                   | Required evidence                                                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `QA-OPS-001`         | Migration ledger rejects checksum drift and skips an already-applied migration.                                                          |
+| `QA-PROPERTY-001`    | Building ownership backfill gives 26/26 buildings KOSTATION default ownership and zero overlaps.                                         |
+| `QA-RESIDENT-001`    | Account reconciliation detects duplicate email/phone/user identity and performs no partial linking.                                      |
+| `QA-LEASE-001`       | New 3–120-month schedules reconcile exactly to the immutable commercial snapshot.                                                        |
+| `QA-BILLING-001`     | Booking Fee/DP rent credits and security deposit reconcile independently; report excludes deposit liability from revenue.                |
+| `QA-PAYMENT-001`     | Multi-invoice allocation, proof, receipt, reversal, and invoice balances remain atomic.                                                  |
+| `QA-SETTLEMENT-001`  | Contract balance accepts partial pre-deadline payment, requires full settlement after final deadline, and records one audited extension. |
+| `QA-TERMINATION-001` | Termination preserves active occupancy until final checkout; deposit offsets arrears before evidence-backed damage/refund.               |
+| `QA-REMINDER-001`    | Selected invoice snapshots and secure links stay property/resident scoped and revoke correctly.                                          |
+| `QA-EXPENSE-001`     | Approval threshold, evidence, payment, reversal, and cash-flow inclusion are proven.                                                     |
+| `QA-REPORT-001`      | List, preview, PDF, and Excel derive identical row IDs and totals from one filter snapshot.                                              |

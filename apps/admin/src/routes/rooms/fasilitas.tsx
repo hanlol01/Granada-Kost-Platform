@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -296,16 +297,13 @@ function FasilitasRoute() {
             )}
             {canManage ? (
               <div className="flex flex-wrap items-end justify-end gap-3 border-t pt-4">
-                <div className="min-w-48">
-                  <Label htmlFor="facility-effective-date">Tanggal efektif publikasi</Label>
-                  <Input
-                    id="facility-effective-date"
-                    className="min-h-11"
-                    type="date"
-                    value={effectiveDate}
-                    onChange={(event) => setEffectiveDate(event.target.value)}
-                  />
-                </div>
+                <HeroUiDatePicker
+                  id="facility-effective-date"
+                  className="min-w-48"
+                  label="Tanggal efektif publikasi"
+                  value={effectiveDate}
+                  onChange={(value) => setEffectiveDate(value ?? "")}
+                />
                 <Button
                   variant="outline"
                   className="min-h-11"

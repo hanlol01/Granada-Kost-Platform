@@ -371,8 +371,8 @@ export class RoomRepository {
               room_buildings.gender_policy,
               room_buildings.building_code,
               room_buildings.building_name,
-              rooms.floor_code,
-              COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code) AS floor_label,
+              COALESCE(rooms.floor_code, 'all') AS floor_code,
+              COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code, 'Semua kamar') AS floor_label,
               count(*) AS available_count,
               min(commercial_version.monthly_price) AS price_from_monthly,
               min(commercial_version.annual_contract_value) AS price_from_yearly
@@ -400,7 +400,6 @@ export class RoomRepository {
            ORDER BY created_at, id
            LIMIT 1
          )
-         AND rooms.floor_code IS NOT NULL
          AND room_buildings.category IN ('rukost', 'apartkost')
          AND room_buildings.gender_policy IN ('male', 'female')
          AND ($1::text IS NULL OR room_buildings.gender_policy = $1)
@@ -408,8 +407,10 @@ export class RoomRepository {
          AND ($3::text IS NULL OR room_buildings.building_code = $3)
          AND ($4::text IS NULL OR rooms.floor_code = $4)
        GROUP BY room_buildings.property_id, room_buildings.category, room_buildings.gender_policy, room_buildings.building_code,
-                room_buildings.building_name, rooms.floor_code, COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code)
-       ORDER BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code, rooms.floor_code`,
+                room_buildings.building_name, COALESCE(rooms.floor_code, 'all'),
+                COALESCE(rooms.floor_label, rooms.floor, rooms.floor_code, 'Semua kamar')
+       ORDER BY room_buildings.category, room_buildings.gender_policy, room_buildings.building_code,
+                COALESCE(rooms.floor_code, 'all')`,
       [
         filters.gender ?? null,
         filters.category ?? null,

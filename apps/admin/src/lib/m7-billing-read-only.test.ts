@@ -117,20 +117,22 @@ test("M7 billing requests are GET-only and property-scoped", async () => {
   ]);
 });
 
-test("M7 billing route is read-only with isolated states and property query keys", async () => {
+test("M7 billing route delegates to the W06 workspace with isolated states and property authority", async () => {
   const route = await readFile(resolve(root, "routes/payments.tsx"), "utf8");
-  const hook = await readFile(resolve(root, "hooks/useAdminBillingReadOnly.ts"), "utf8");
-  assert.match(route, /createFileRoute\(['"]\/payments['"]\)/);
-  assert.match(route, /ForbiddenState/);
-  assert.match(route, /LoadingState/);
-  assert.match(route, /ErrorState/);
-  assert.match(route, /EmptyState/);
-  assert.match(route, /invoicePage\.propertyId === currentPropertyId/);
-  assert.match(route, /paymentPage\.propertyId === currentPropertyId/);
-  assert.match(hook, /currentPropertyId \?\? ['"]no-property['"]/);
-  assert.match(hook, /enabled: enabled && Boolean\(currentPropertyId\) && hasAccess/);
-  assert.doesNotMatch(
-    route + hook,
-    /useMutation|apiClient\.(post|patch|put|delete)|Midtrans|webhook|payment-proof|verifyPayment|rejectPayment|refund|exportCsv|download/i,
+  const workspace = await readFile(
+    resolve(root, "components/billing/W06PaymentsWorkspace.tsx"),
+    "utf8",
   );
+  const hook = await readFile(resolve(root, "hooks/useAdminW06Billing.ts"), "utf8");
+  assert.match(route, /createFileRoute\(['"]\/payments['"]\)/);
+  assert.match(route, /W06PaymentsWorkspace/);
+  assert.match(workspace, /ForbiddenState/);
+  assert.match(workspace, /LoadingState/);
+  assert.match(workspace, /ErrorState/);
+  assert.match(workspace, /EmptyState/);
+  assert.match(workspace, /permissions\?\.includes\("billing\.read"\)/);
+  assert.match(workspace, /propertyId=\{currentPropertyId\}/);
+  assert.match(hook, /scope\.begin\(requestedProperty\(variables\)\)/);
+  assert.match(hook, /propertyId !== scopeRef\.current/);
+  assert.doesNotMatch(route, /useMutation|apiClient\.(post|patch|put|delete)|Midtrans|webhook/i);
 });

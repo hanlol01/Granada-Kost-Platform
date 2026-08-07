@@ -184,7 +184,7 @@ test("default Rooms wire remains compatible while exact detail wrapper is enforc
   );
 });
 
-test("Admin move-in uses canonical Lease route and contains every direct check-in caller", () => {
+test("Admin move-in uses the canonical resident lease hub and contains every direct check-in caller", () => {
   const tenants = source("routes/tenants.tsx");
   const hooks = source("hooks/useOccupancyMutations.ts");
   const oldDialog = fileURLToPath(
@@ -192,11 +192,12 @@ test("Admin move-in uses canonical Lease route and contains every direct check-i
   );
   assert.equal(existsSync(oldDialog), false);
   assert.doesNotMatch(tenants + hooks, /\/check-ins|CheckInDialog|useCompleteCheckIn/);
-  assert.match(tenants, /to="\/penyewaan\/tambah"/);
+  assert.match(tenants, /to="\/tenants" search=\{\{ flow: "new-lease" \}\}/);
   assert.match(tenants, /Tambah Penyewaan/);
   assert.match(tenants, /lease\.read[\s\S]*lease\.manage[\s\S]*currentPropertyId/);
   assert.match(tenants, /isAdminUxLeaseEnabled\(\)/);
-  assert.match(tenants, /Fitur Penyewaan belum diaktifkan untuk rollout ini\./);
+  assert.match(tenants, /<LeaseCreatePage/);
+  assert.match(tenants, /routeId === "\/tenants\/\$residentId"/);
 });
 
 test("anomaly UI is conditional, permission-gated, and never renders opaque ids", () => {

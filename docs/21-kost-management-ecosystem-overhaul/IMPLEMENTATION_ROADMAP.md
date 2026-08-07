@@ -1,6 +1,6 @@
 # Implementation Roadmap
 
-Status: **APPROVED ROADMAP — IMPLEMENTATION PARTIAL**
+Status: **APPROVED ROADMAP — IMPLEMENTATION PARTIAL (KMO-W00 through KMO-W06 source delivered)**
 
 Program package prefix: `KMO-W`
 
@@ -357,6 +357,8 @@ Scope:
 - full-page two-stage Resident & Lease / Choose Room flow;
 - manual resident entry or safe resident selection;
 - gender-compatible vacant-room authority;
+- valid historical, current, or future contractual start date;
+- ordinary term from 3 through 120 months, with 3/6/12-month shortcuts;
 - required confirmation and activation summary;
 - stable idempotency and scope isolation.
 
@@ -373,6 +375,12 @@ Scope:
 - select room for category-only public lead;
 - retain exact room preference for Admin lead;
 - 24-hour hold and safe expiry;
+- prohibit direct onboarding until the hold is active;
+- record one Lead Payment Commitment, then route to `/tenants` for data
+  completion; public leads select an exact room only inside this Admin hold flow;
+- allow an authoritative re-quote of the final start date/duration before Commit
+  Onboarding without mutating the recorded Lead Payment Commitment; block a
+  period whose historical rent credit would exceed its revised contract rent;
 - agreement/decline/expiry transitions;
 - no automatic reservation on lead creation.
 
@@ -380,10 +388,13 @@ Scope:
 
 Scope:
 
-- capture DP and security deposit as separate commitments/payments;
+- capture Booking Fee, DP, and security deposit as separate commitments/payments;
 - method is transfer or audited cash;
-- DP minimum 25% of contract value;
-- deposit policy one month by default, configurable up to two;
+- Booking Fee is optional but, when entered, is Rp0 or at least Rp1.000.000 and credits rent;
+- prefill a 25% DP recommendation while allowing a lower authorized agreed DP;
+- materialize a Lead Payment Commitment exactly once to the W06 ledger/deposit
+  records when Commit Onboarding succeeds;
+- security deposit is optional, freely entered, and may be Rp0; it remains a distinct refundable liability;
 - signed lease, identity, room, payment, inventory, and handover prerequisites;
 - reject activation when only a cosmetic status or insufficient DP exists.
 
@@ -419,9 +430,9 @@ Class: Program Ship; split into `KMO-W06A`–`KMO-W06E`
 
 Scope:
 
-- minimum 12-month lease schedule;
-- annual full payment or two-month installment plan;
-- reject terms shorter than twelve months until a separate approved policy exists;
+- ordinary 3–120-month lease schedule;
+- category-derived monthly rent, with annual category pricing available for exact 12-month multiples;
+- reject terms shorter than three months until a separate approved exception policy exists;
 - invoice generation, due dates, revisions, and secure PDF;
 - no payment gateway dependency.
 
@@ -447,8 +458,9 @@ Scope:
 
 Scope:
 
-- DP credits rent obligations;
+- Booking Fee and DP credit rent obligations;
 - deposit liability receipt, documented deduction, refund, and disposition;
+- a zero security-deposit amount is valid and does not reduce contract rent;
 - deposit is excluded from revenue;
 - evidence and audit.
 
@@ -489,14 +501,15 @@ Exit evidence:
 - public/Property Owner privacy;
 - PDF content and authorization.
 
-Executor implementation note (2026-07-31): W06A–W06E source is implemented and
-is **ready for final review**, with migration `027_billing_manual_payments.sql`
-manifest-bound and proven on disposable PostgreSQL for first apply, replay, and
-synthetic rollback. Authenticated, server-mediated invoice PDF downloads are
-implemented for Admin and Penghuni without exposing storage metadata. Canonical
-migration application, authenticated browser evidence, provider checkout, and
-reminder delivery remain separate authorized or later-package work; this note does not award
-`AUTOMATED_VERIFIED` or `RUNTIME_VERIFIED`.
+Implementation truth (2026-08-03): `KMO-W05` and `KMO-W06` are
+`AUTOMATED_VERIFIED; RUNTIME_DEFERRED`. Their committed source deliveries are
+`a6dc5395` and `40b820d3`. The subsequent direct-form policy amendment is
+`SOURCE_IMPLEMENTED` only until its own focused review and commit: it uses
+`028_flexible_lease_term_and_booking_fee.sql`, which is manifest-bound and
+present in the development migration ledger. That amendment records the
+approved Booking Fee, optional security deposit, historical date, and 3–120
+month policy above. Authenticated browser evidence, provider checkout, and
+reminder delivery remain separate authorized or later-package work.
 
 ## KMO-W07 — Resident/Room 360, Transfer, Renewal, and Checkout
 
@@ -504,12 +517,23 @@ Class: Program Ship; split into `KMO-W07A`–`KMO-W07D`
 
 ### KMO-W07A — Resident and Room 360
 
+Current source boundary: `SOURCE_IMPLEMENTED; AUTOMATED REVIEW PENDING; RUNTIME DEFERRED`.
+
 Scope:
 
 - complete room and resident linked panels;
 - vehicles, complaints, billing, lease, owner, and activity timeline;
 - stable full-page routes and breadcrumbs;
 - quick links to canonical details.
+- one contract-rent settlement balance per activated lease, with a two-month
+  final deadline, explicit one-time extension, arrears projection, and no
+  automatic eviction;
+- contextual payment actions and an admin-only, audit-safe termination path;
+- deposit offset, documented damage deduction, and receipt-backed refund only
+  when checkout is finalized.
+
+W07A deliberately does not claim W08 delivery-provider execution: H-30/H-14/
+H-7/H-0/D+1/D+7 are derived reminder stages for the later reminder workspace.
 
 ### KMO-W07B — Room Transfer
 

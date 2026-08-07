@@ -72,6 +72,8 @@ export type BillingWorkspacePayment = BillingPayment & {
   resident_name: string;
   room_number: string;
   reference_number: string | null;
+  rent_allocation_amount: number;
+  settles_rent_contract: boolean;
   evidence: BillingEvidence[];
 };
 
@@ -116,7 +118,7 @@ export type ResidentBilling = {
     status: "awaiting_activation" | "active";
     start_date: string;
     end_date: string;
-    payment_plan: "annual_full" | "two_month_installments";
+    payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
     contract_rent: number;
     monthly_rate: number;
     remaining_days: number;
@@ -136,6 +138,39 @@ export type ResidentBilling = {
     next_due_date: string | null;
     overdue_count: number;
   };
+  contract_settlement: {
+    id: string;
+    invoice_id: string;
+    status:
+      | "awaiting_activation"
+      | "open"
+      | "extended"
+      | "overdue"
+      | "admin_action_required"
+      | "termination_pending"
+      | "terminated"
+      | "paid";
+    activated_at: string | null;
+    original_due_at: string | null;
+    extension_due_at: string | null;
+    extension_reason: string | null;
+    effective_due_at: string | null;
+    contract_rent_amount: number;
+    initial_rent_credit: number;
+    payment_allocated: number;
+    deposit_offset_amount: number;
+    outstanding_amount: number;
+    reminder_stage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
+    admin_action_required: boolean;
+    partial_payment_allowed: boolean;
+    full_payment_required: boolean;
+    extension_available: boolean;
+    termination_case: {
+      id: string;
+      status: "pending" | "cancelled" | "checked_out";
+      planned_checkout_date: string;
+    } | null;
+  } | null;
   invoices: Array<{
     id: string;
     invoice_code: string;
@@ -200,6 +235,38 @@ export type SafePaymentResult = {
   receipt_id: string | null;
 };
 
+export type ContractSettlementExtensionInput = {
+  property_id: string;
+  extension_days: number;
+  reason: string;
+};
+
+export type StartLeaseTerminationInput = {
+  property_id: string;
+  reason: string;
+  notes?: string;
+  planned_checkout_date: string;
+};
+
+export type CancelLeaseTerminationInput = {
+  property_id: string;
+  reason: string;
+};
+
+export type FinalizeLeaseTerminationInput = {
+  property_id: string;
+  inspection_notes?: string;
+  room_status_after_checkout: "vacant" | "maintenance";
+  damage_deduction_amount: number;
+  damage_reason?: string;
+  damage_evidence_file_id?: string;
+  refund_amount: number;
+  refund_method?: "cash" | "bank_transfer";
+  refunded_at?: string;
+  refund_note?: string;
+  refund_evidence_file_id?: string;
+};
+
 type Requester = Pick<AdminUxV2Requester, "get" | "post">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MONTH_DATE = /^\d{4}-(0[1-9]|1[0-2])-01$/;
@@ -230,6 +297,10 @@ function uuid(value: unknown, label: string): string {
 function integer(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
     throw new Error(`${label} tidak valid.`);
+  return value;
+}
+function flag(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${label} tidak valid.`);
   return value;
 }
 function date(value: unknown, label: string): string {
@@ -346,6 +417,8 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
       "resident_name",
       "room_number",
       "reference_number",
+      "rent_allocation_amount",
+      "settles_rent_contract",
       "evidence",
     ],
     "pembayaran workspace",
@@ -373,6 +446,8 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
     reference_number: nullable(record.reference_number, (item) =>
       text(item, "Referensi pembayaran"),
     ),
+    rent_allocation_amount: integer(record.rent_allocation_amount, "Alokasi pembayaran sewa"),
+    settles_rent_contract: flag(record.settles_rent_contract, "Penanda pelunasan kontrak"),
     evidence: record.evidence.map(evidence),
   };
 }
@@ -468,7 +543,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
   const envelope = object(value, ["data"], "detail billing penghuni");
   const data = object(
     envelope.data,
-    ["lease", "summary", "invoices", "payments", "proofs"],
+    ["lease", "summary", "contract_settlement", "invoices", "payments", "proofs"],
     "detail billing penghuni",
   );
   const lease = object(
@@ -507,6 +582,97 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
   );
   if (!Array.isArray(data.invoices) || !Array.isArray(data.payments) || !Array.isArray(data.proofs))
     throw new Error("Riwayat billing tidak valid.");
+  const settlement = nullable(data.contract_settlement, (item) => {
+    const record = object(
+      item,
+      [
+        "id",
+        "invoice_id",
+        "status",
+        "activated_at",
+        "original_due_at",
+        "extension_due_at",
+        "extension_reason",
+        "effective_due_at",
+        "contract_rent_amount",
+        "initial_rent_credit",
+        "payment_allocated",
+        "deposit_offset_amount",
+        "outstanding_amount",
+        "reminder_stage",
+        "admin_action_required",
+        "partial_payment_allowed",
+        "full_payment_required",
+        "extension_available",
+        "termination_case",
+      ],
+      "pelunasan kontrak",
+    );
+    const terminationCase = nullable(record.termination_case, (value) => {
+      const termination = object(
+        value,
+        ["id", "status", "planned_checkout_date"],
+        "proses pemberhentian sewa",
+      );
+      return {
+        id: uuid(termination.id, "ID proses pemberhentian"),
+        status: oneOf(
+          termination.status,
+          ["pending", "cancelled", "checked_out"] as const,
+          "Status proses pemberhentian",
+        ),
+        planned_checkout_date: date(termination.planned_checkout_date, "Tanggal checkout rencana"),
+      };
+    });
+    const boolean = (value: unknown, label: string) => {
+      if (typeof value !== "boolean") throw new Error(`${label} tidak valid.`);
+      return value;
+    };
+    return {
+      id: uuid(record.id, "ID pelunasan kontrak"),
+      invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
+      status: oneOf(
+        record.status,
+        [
+          "awaiting_activation",
+          "open",
+          "extended",
+          "overdue",
+          "admin_action_required",
+          "termination_pending",
+          "terminated",
+          "paid",
+        ] as const,
+        "Status pelunasan kontrak",
+      ),
+      activated_at: nullable(record.activated_at, (value) => timestamp(value, "Waktu aktivasi")),
+      original_due_at: nullable(record.original_due_at, (value) =>
+        timestamp(value, "Tenggat awal"),
+      ),
+      extension_due_at: nullable(record.extension_due_at, (value) =>
+        timestamp(value, "Tenggat perpanjangan"),
+      ),
+      extension_reason: nullable(record.extension_reason, (value) =>
+        text(value, "Alasan perpanjangan"),
+      ),
+      effective_due_at: nullable(record.effective_due_at, (value) =>
+        timestamp(value, "Tenggat efektif"),
+      ),
+      contract_rent_amount: integer(record.contract_rent_amount, "Total sewa kontrak"),
+      initial_rent_credit: integer(record.initial_rent_credit, "Kredit sewa awal"),
+      payment_allocated: integer(record.payment_allocated, "Pembayaran sewa"),
+      deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit sewa"),
+      outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
+      reminder_stage: nullable(record.reminder_stage, (value) =>
+        oneOf(value, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "Tahap pengingat"),
+      ),
+      admin_action_required: boolean(record.admin_action_required, "Kebutuhan tindakan admin"),
+      partial_payment_allowed: boolean(record.partial_payment_allowed, "Izin pembayaran sebagian"),
+      full_payment_required: boolean(record.full_payment_required, "Kewajiban pelunasan penuh"),
+      extension_available: boolean(record.extension_available, "Izin perpanjangan"),
+      termination_case: terminationCase,
+    };
+  });
   return {
     lease: {
       id: uuid(lease.id, "ID sewa"),
@@ -516,7 +682,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       end_date: date(lease.end_date, "Tanggal selesai"),
       payment_plan: oneOf(
         lease.payment_plan,
-        ["annual_full", "two_month_installments"] as const,
+        ["annual_full", "monthly_installments", "two_month_installments"] as const,
         "Paket pembayaran",
       ),
       contract_rent: integer(lease.contract_rent, "Nilai kontrak"),
@@ -540,6 +706,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       ),
       overdue_count: integer(summary.overdue_count, "Jumlah terlambat"),
     },
+    contract_settlement: settlement,
     invoices: data.invoices.map(invoice),
     payments: data.payments.map(payment),
     proofs: data.proofs.map((item) => {
@@ -730,7 +897,16 @@ export function canVerifyW06Payment(access: {
 }
 
 export async function getBillingWorklist(
-  input: { propertyId: string; month: string; limit?: number; offset?: number; search?: string },
+  input: {
+    propertyId: string;
+    month: string;
+    limit?: number;
+    offset?: number;
+    search?: string;
+    status?: Exclude<W06InvoiceStatus, "draft" | "paid" | "void">;
+    sort?: "due_date_asc" | "due_date_desc" | "resident_asc";
+    dueWithinDays?: number;
+  },
   signal?: AbortSignal,
   requester: Requester = adminUxV2Requester,
 ) {
@@ -742,6 +918,9 @@ export async function getBillingWorklist(
         limit: input.limit ?? 20,
         offset: input.offset ?? 0,
         search: input.search,
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.sort ? { sort: input.sort } : {}),
+        ...(input.dueWithinDays !== undefined ? { due_within_days: input.dueWithinDays } : {}),
       },
       signal,
     }),
@@ -766,6 +945,10 @@ export async function getBillingPayments(
     status?: W06PaymentStatus;
     limit?: number;
     offset?: number;
+    search?: string;
+    method?: W06PaymentMethod;
+    purpose?: W06PaymentPurpose;
+    dueWithinDays?: number;
   },
   signal?: AbortSignal,
   requester: Requester = adminUxV2Requester,
@@ -777,6 +960,10 @@ export async function getBillingPayments(
         status: input.status,
         limit: input.limit ?? 20,
         offset: input.offset ?? 0,
+        ...(input.search ? { search: input.search } : {}),
+        ...(input.method ? { method: input.method } : {}),
+        ...(input.purpose ? { purpose: input.purpose } : {}),
+        ...(input.dueWithinDays !== undefined ? { due_within_days: input.dueWithinDays } : {}),
       },
       signal,
     }),
@@ -903,6 +1090,58 @@ export async function createOtherCharge(
   return requester.post<unknown>("/admin/billing/other-charges", input, { idempotencyKey });
 }
 
+export async function extendContractSettlement(
+  leaseId: string,
+  input: ContractSettlementExtensionInput,
+  idempotencyKey: string,
+  requester: Requester = adminUxV2Requester,
+) {
+  return requester.post<unknown>(
+    `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/extend`,
+    input,
+    { idempotencyKey },
+  );
+}
+
+export async function startLeaseTermination(
+  leaseId: string,
+  input: StartLeaseTerminationInput,
+  idempotencyKey: string,
+  requester: Requester = adminUxV2Requester,
+) {
+  return requester.post<unknown>(
+    `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/termination`,
+    input,
+    { idempotencyKey },
+  );
+}
+
+export async function cancelLeaseTermination(
+  leaseId: string,
+  input: CancelLeaseTerminationInput,
+  idempotencyKey: string,
+  requester: Requester = adminUxV2Requester,
+) {
+  return requester.post<unknown>(
+    `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/termination/cancel`,
+    input,
+    { idempotencyKey },
+  );
+}
+
+export async function finalizeLeaseTermination(
+  leaseId: string,
+  input: FinalizeLeaseTerminationInput,
+  idempotencyKey: string,
+  requester: Requester = adminUxV2Requester,
+) {
+  return requester.post<unknown>(
+    `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/termination/finalize`,
+    input,
+    { idempotencyKey },
+  );
+}
+
 export async function downloadAdminInvoiceDocument(
   propertyId: string,
   invoiceId: string,
@@ -924,6 +1163,31 @@ export async function downloadAdminInvoiceDocument(
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadAdminReceiptDocument(
+  propertyId: string,
+  receiptId: string,
+  receiptCode: string,
+) {
+  const query = new URLSearchParams({ property_id: propertyId });
+  const token = getAccessToken();
+  const response = await fetch(
+    `${env.VITE_API_BASE_URL}/admin/billing/receipts/${encodeURIComponent(receiptId)}/document?${query}`,
+    {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  );
+  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+    throw new Error(`Dokumen kuitansi gagal diunduh (HTTP ${response.status}).`);
+
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${receiptCode.replace(/[^a-z0-9_-]+/gi, "-") || "kuitansi"}.pdf`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

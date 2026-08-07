@@ -1,10 +1,10 @@
 # KOSTATION Kost Management Ecosystem Overhaul
 
-Status: **APPROVED TARGET — PARTIAL IMPLEMENTATION**
+Status: **APPROVED TARGET — KMO-W00 THROUGH KMO-W06 DELIVERED; W07+ PLANNED**
 
 Program code: `KMO`
 
-Recorded: 2026-07-30 (Asia/Jakarta)
+Last policy alignment: 2026-08-03 (Asia/Jakarta)
 
 This directory is the canonical implementation plan for the post-M19 KOSTATION
 functional overhaul. It turns the owner's operating policy, the product owner's
@@ -15,6 +15,10 @@ Planning documents do not prove implementation by themselves. Current source,
 canonical database, reconciliation, automated, and runtime truth are separated
 in the schema ledger and traceability evidence. A requirement advances only
 after evidence is recorded against its traceability entry.
+
+The latest direct-onboarding form amendment is recorded as
+`SOURCE_IMPLEMENTED` until it has completed its own focused review and commit.
+It does not retroactively change the delivered status of W05/W06 or advance W07.
 
 ## Authority Order
 
@@ -40,35 +44,37 @@ implement.
    requirements.
 2. [`OWNER_POLICY_DECISIONS_AND_GLOSSARY.md`](OWNER_POLICY_DECISIONS_AND_GLOSSARY.md)
    — binding business rules and canonical terminology.
-3. [`DOMAIN_LIFECYCLE_CONTRACTS.md`](DOMAIN_LIFECYCLE_CONTRACTS.md) — state
+3. [`CONTEXT.md`](CONTEXT.md) — compact current ubiquitous language for
+   Booking Fee, DP, deposit, lease, and occupancy.
+4. [`DOMAIN_LIFECYCLE_CONTRACTS.md`](DOMAIN_LIFECYCLE_CONTRACTS.md) — state
    machines and cross-domain invariants.
-4. [`DATABASE_ARCHITECTURE.md`](DATABASE_ARCHITECTURE.md) — concise visual
+5. [`DATABASE_ARCHITECTURE.md`](DATABASE_ARCHITECTURE.md) — concise visual
    current/target/transition database architecture.
-5. [`DATA_MODEL_AND_MIGRATION.md`](DATA_MODEL_AND_MIGRATION.md) — detailed target
+6. [`DATA_MODEL_AND_MIGRATION.md`](DATA_MODEL_AND_MIGRATION.md) — detailed target
    persistence, compatibility, backfill, and reconciliation.
-6. [`SCHEMA_IMPLEMENTATION_LEDGER.md`](SCHEMA_IMPLEMENTATION_LEDGER.md) — living
+7. [`SCHEMA_IMPLEMENTATION_LEDGER.md`](SCHEMA_IMPLEMENTATION_LEDGER.md) — living
    source, migration, canonical database, reconciliation, and consumer status.
-7. [`DATA_AUTHORITY_MATRIX.md`](DATA_AUTHORITY_MATRIX.md) — source-of-truth and
+8. [`DATA_AUTHORITY_MATRIX.md`](DATA_AUTHORITY_MATRIX.md) — source-of-truth and
    explicit non-authority matrix.
-8. [`ADMIN_INFORMATION_ARCHITECTURE.md`](ADMIN_INFORMATION_ARCHITECTURE.md) —
+9. [`ADMIN_INFORMATION_ARCHITECTURE.md`](ADMIN_INFORMATION_ARCHITECTURE.md) —
    Admin navigation, pages, forms, and operational flows.
-9. [`PUBLIC_AND_PENGHUNI_EXPERIENCE.md`](PUBLIC_AND_PENGHUNI_EXPERIENCE.md) —
-   public catalog and authenticated Penghuni application.
-10. [`PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md`](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
+10. [`PUBLIC_AND_PENGHUNI_EXPERIENCE.md`](PUBLIC_AND_PENGHUNI_EXPERIENCE.md) —
+    public catalog and authenticated Penghuni application.
+11. [`PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md`](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
     — investor ownership and building-scoped read-only access.
-11. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
+12. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
     transaction, idempotency, audit, file, cache, and adapter contracts.
-12. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
+13. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
     — detailed money, reminder, notification, expense, and report behavior.
-13. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
+14. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
     vertical slices.
-14. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
+15. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
     required automated, migration, runtime, and release evidence.
-15. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
+16. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
     and implementation status.
-16. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
+17. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
     and review protocol.
-17. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
+18. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
     derived from third-party screenshots and rejected reference behavior.
 
 The architecture set has four distinct jobs: visual relationships live in

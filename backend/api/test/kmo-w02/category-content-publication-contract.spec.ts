@@ -719,7 +719,7 @@ test('live paths lock publication, preserve history, and expose only published d
     /JOIN files ON files\.id = \(published_item\.item ->> 'public_derivative_file_id'\)::uuid/,
   );
   assert.match(publicGalleryLookup, /item ->> 'source_file_id' = hgi\.file_id::text/);
-  assert.match(publicGalleryLookup, /jsonb_object_length\(item\)/);
+  assert.match(publicGalleryLookup, /count\(\*\) FROM jsonb_object_keys\(item\)/);
   assert.match(repository, /result\.rows\.length !== 1/);
   assert.doesNotMatch(publicGalleryLookup, /files\.id = hgi\.public_derivative_file_id/);
   assert.match(roomDetail, /kost_type_content_facilities/);

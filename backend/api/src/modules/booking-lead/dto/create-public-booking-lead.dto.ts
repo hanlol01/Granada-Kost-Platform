@@ -47,10 +47,11 @@ export class CreatePublicBookingLeadDto {
   @MaxLength(120)
   visitorName!: string;
 
-  @trim
+  @IsOptional()
+  @optionalTrim
   @IsEmail()
   @MaxLength(254)
-  visitorEmail!: string;
+  visitorEmail?: string;
 
   @trim
   @IsString()

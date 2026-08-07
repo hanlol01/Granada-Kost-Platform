@@ -40,6 +40,8 @@ export type BookingLeadHoldLockedLead = {
   propertyId: string;
   roomId: string | null;
   category: string;
+  gender: 'male' | 'female';
+  source: 'public_kamar' | 'admin_quick_entry';
   status: string;
 };
 
@@ -51,6 +53,7 @@ export type BookingLeadHoldLockedRoom = {
   buildingId: string | null;
   buildingPropertyId: string | null;
   buildingCategory: string | null;
+  genderPolicy: 'male' | 'female' | 'mixed' | null;
 };
 
 export type BookingLeadHoldLockedMatch = BookingLeadHoldRecord & {

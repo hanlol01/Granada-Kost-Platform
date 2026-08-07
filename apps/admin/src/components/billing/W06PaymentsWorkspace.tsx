@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+  type ReactNode,
+} from "react";
 import {
   Banknote,
   Download,
@@ -15,7 +25,11 @@ import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
+import { MonthYearPicker } from "@/components/ui/month-year-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +67,7 @@ import {
   canManageW06Billing,
   canVerifyW06Payment,
   downloadAdminInvoiceDocument,
+  downloadAdminReceiptDocument,
   type BillingProof,
   type BillingWorkspacePayment,
   type ResidentBilling,
@@ -62,6 +77,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import { toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property/useProperty";
 
 type WorkspaceTab = "unpaid" | "paid" | "pending" | "other";
@@ -72,24 +88,78 @@ export function W06PaymentsWorkspace() {
   const [tab, setTab] = useState<WorkspaceTab>("unpaid");
   const [month, setMonth] = useState(jakartaMonth());
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
+  const [invoiceStatus, setInvoiceStatus] = useState<"" | "issued" | "partially_paid" | "overdue">(
+    "",
+  );
+  const [invoiceSort, setInvoiceSort] = useState<"due_date_asc" | "due_date_desc" | "resident_asc">(
+    "due_date_asc",
+  );
+  const [dueWithinDaysInput, setDueWithinDaysInput] = useState("");
+  const dueWithinDays = parseDueWithinDays(dueWithinDaysInput);
+  const hasInvalidDueWithinDays = dueWithinDaysInput !== "" && dueWithinDays === undefined;
   const [offset, setOffset] = useState(0);
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const deferredPaymentSearch = useDeferredValue(paymentSearch.trim());
+  const [paymentMethod, setPaymentMethod] = useState<"" | W06PaymentMethod>("");
+  const [paymentPurpose, setPaymentPurpose] = useState<"" | W06PaymentPurpose>("");
+  const [paymentOffset, setPaymentOffset] = useState(0);
   const [selection, setSelection] = useState<{ propertyId: string; residentId: string } | null>(
     null,
   );
   const selectedResidentId =
     selection?.propertyId === currentPropertyId ? selection.residentId : null;
+  const detailSectionRef = useRef<HTMLElement>(null);
   const canManage = canManageW06Billing({ roles: user?.roles, permissions: user?.permissions });
   const canVerify = canVerifyW06Payment({ roles: user?.roles, permissions: user?.permissions });
-  const worklist = useBillingWorklist(currentPropertyId, { month, offset, search });
-  const paid = useBillingPayments(currentPropertyId, "verified");
-  const pendingPayments = useBillingPayments(currentPropertyId, "pending_confirmation");
+  const worklist = useBillingWorklist(currentPropertyId, {
+    month,
+    offset,
+    search: deferredSearch,
+    status: invoiceStatus || undefined,
+    sort: invoiceSort,
+    dueWithinDays,
+  });
+  const paymentFilters = {
+    offset: paymentOffset,
+    search: deferredPaymentSearch || undefined,
+    method: paymentMethod || undefined,
+    purpose: paymentPurpose || undefined,
+    dueWithinDays,
+  };
+  const paid = useBillingPayments(currentPropertyId, "verified", paymentFilters);
+  const pendingPayments = useBillingPayments(
+    currentPropertyId,
+    "pending_confirmation",
+    paymentFilters,
+  );
   const proofs = useBillingProofs(currentPropertyId, "pending_review");
   const detail = useResidentBilling(currentPropertyId, selectedResidentId);
+  const activeFilterCount =
+    Number(Boolean(deferredSearch)) +
+    Number(month !== jakartaMonth()) +
+    Number(Boolean(invoiceStatus)) +
+    Number(invoiceSort !== "due_date_asc") +
+    Number(Boolean(dueWithinDaysInput));
+  const paymentActiveFilterCount =
+    Number(Boolean(deferredPaymentSearch)) +
+    Number(Boolean(paymentMethod)) +
+    Number(Boolean(paymentPurpose)) +
+    Number(Boolean(dueWithinDaysInput));
+  const filterSignature = `${month}:${deferredSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}`;
+  const paymentFilterSignature = `${deferredPaymentSearch}:${paymentMethod}:${paymentPurpose}:${dueWithinDaysInput}`;
 
   useEffect(() => {
     setSelection(null);
     setOffset(0);
+    setPaymentOffset(0);
   }, [currentPropertyId]);
+
+  useEffect(() => {
+    if (!selectedResidentId || !detail.data || !detailSectionRef.current) return;
+    detailSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    detailSectionRef.current.focus({ preventScroll: true });
+  }, [detail.data, selectedResidentId]);
 
   if (!user?.permissions?.includes("billing.read"))
     return (
@@ -101,38 +171,53 @@ export function W06PaymentsWorkspace() {
   return (
     <AppShell
       title="Pembayaran"
-      subtitle="Tagihan kontrak, transfer manual, kas, DP, dan deposit dalam satu ledger"
+      subtitle="Tagihan sewa, pembayaran, DP, dan deposit dalam satu ruang kerja"
     >
       <div key={currentPropertyId ?? "none"} className="space-y-5">
+        <NoticeAlert
+          tone="info"
+          title="Perhatikan pencatatan pembayaran"
+          description="Pembayaran tunai langsung terverifikasi. Transfer bank memerlukan bukti dan verifikasi sebelum mengurangi kewajiban sewa."
+        />
         <Tabs value={tab} onValueChange={(value) => setTab(value as WorkspaceTab)}>
-          <TabsList className="h-auto min-h-11 flex-wrap justify-start">
-            <TabsTrigger className="min-h-11" value="unpaid">
+          <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-xl p-1 sm:grid-cols-2 xl:grid-cols-4">
+            <TabsTrigger
+              className="min-h-12 w-full whitespace-normal px-3 text-center"
+              value="unpaid"
+            >
               Tagihan Belum Dibayar
             </TabsTrigger>
-            <TabsTrigger className="min-h-11" value="paid">
+            <TabsTrigger
+              className="min-h-12 w-full whitespace-normal px-3 text-center"
+              value="paid"
+            >
               Tagihan Sudah Dibayar
             </TabsTrigger>
-            <TabsTrigger className="min-h-11" value="pending">
+            <TabsTrigger
+              className="min-h-12 w-full whitespace-normal px-3 text-center"
+              value="pending"
+            >
               Pembayaran Menunggu Konfirmasi
             </TabsTrigger>
-            <TabsTrigger className="min-h-11" value="other">
+            <TabsTrigger
+              className="min-h-12 w-full whitespace-normal px-3 text-center"
+              value="other"
+            >
               Pembayaran Lainnya
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="unpaid" className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Input
-                className="min-h-11 sm:max-w-44"
-                type="month"
+            <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-4">
+              <MonthYearPicker
                 value={month}
-                onChange={(event) => {
-                  setMonth(event.target.value);
+                onChange={(value) => {
+                  setMonth(value);
                   setOffset(0);
                 }}
-                aria-label="Bulan tagihan"
+                label="Pilih periode tagihan"
               />
-              <div className="relative flex-1 sm:max-w-sm">
+              <div className="relative min-w-0 xl:col-span-2">
                 <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="min-h-11 pl-9"
@@ -141,11 +226,75 @@ export function W06PaymentsWorkspace() {
                     setSearch(event.target.value);
                     setOffset(0);
                   }}
-                  placeholder="Cari nama atau kamar"
+                  placeholder="Cari penghuni, kamar, bangunan, atau kode tagihan"
                   aria-label="Cari tagihan"
                 />
               </div>
+              <select
+                className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+                value={invoiceStatus}
+                onChange={(event) => {
+                  setInvoiceStatus(event.target.value as typeof invoiceStatus);
+                  setOffset(0);
+                }}
+                aria-label="Filter status tagihan"
+              >
+                <option value="">Semua status tagihan</option>
+                <option value="issued">Belum dibayar</option>
+                <option value="partially_paid">Dibayar sebagian</option>
+                <option value="overdue">Terlambat</option>
+              </select>
+              <select
+                className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+                value={invoiceSort}
+                onChange={(event) => {
+                  setInvoiceSort(event.target.value as typeof invoiceSort);
+                  setOffset(0);
+                }}
+                aria-label="Urutkan tagihan"
+              >
+                <option value="due_date_asc">Jatuh tempo terdekat</option>
+                <option value="due_date_desc">Jatuh tempo terjauh</option>
+                <option value="resident_asc">Nama penghuni A–Z</option>
+              </select>
+              <DeadlineWindowFilter
+                value={dueWithinDaysInput}
+                invalid={hasInvalidDueWithinDays}
+                onChange={(value) => {
+                  setDueWithinDaysInput(value);
+                  setOffset(0);
+                }}
+                onQuickThirtyDays={() => {
+                  setDueWithinDaysInput("30");
+                  setOffset(0);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 w-full"
+                disabled={activeFilterCount === 0}
+                onClick={() => {
+                  setMonth(jakartaMonth());
+                  setSearch("");
+                  setInvoiceStatus("");
+                  setInvoiceSort("due_date_asc");
+                  setDueWithinDaysInput("");
+                  setOffset(0);
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" /> Reset
+              </Button>
             </div>
+            {!worklist.isFetching && !worklist.isError ? (
+              <FilterResultNotice
+                key={filterSignature}
+                entityLabel="tagihan"
+                resultCount={worklist.data?.meta.total ?? 0}
+                activeFilterCount={activeFilterCount}
+                searchTerm={deferredSearch}
+              />
+            ) : null}
             <WorklistPanel
               query={worklist}
               onSelect={(residentId) =>
@@ -157,20 +306,93 @@ export function W06PaymentsWorkspace() {
             />
           </TabsContent>
 
-          <TabsContent value="paid">
-            <PaidPanel
-              query={paid}
-              detail={detail.data ?? null}
-              canManage={canManage}
-              propertyId={currentPropertyId}
+          <TabsContent value="paid" className="space-y-4">
+            <PaymentFilterBar
+              search={paymentSearch}
+              method={paymentMethod}
+              purpose={paymentPurpose}
+              dueWithinDays={dueWithinDaysInput}
+              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              onSearch={(value) => {
+                setPaymentSearch(value);
+                setPaymentOffset(0);
+              }}
+              onMethod={(value) => {
+                setPaymentMethod(value);
+                setPaymentOffset(0);
+              }}
+              onPurpose={(value) => {
+                setPaymentPurpose(value);
+                setPaymentOffset(0);
+              }}
+              onDueWithinDays={(value) => {
+                setDueWithinDaysInput(value);
+                setPaymentOffset(0);
+              }}
+              onQuickThirtyDays={() => {
+                setDueWithinDaysInput("30");
+                setPaymentOffset(0);
+              }}
+              onReset={() => {
+                setPaymentSearch("");
+                setPaymentMethod("");
+                setPaymentPurpose("");
+                setDueWithinDaysInput("");
+                setPaymentOffset(0);
+              }}
             />
+            {!paid.isFetching && !paid.isError ? (
+              <FilterResultNotice
+                key={`paid:${paymentFilterSignature}`}
+                entityLabel="pembayaran terverifikasi"
+                resultCount={paid.data?.meta.total ?? 0}
+                activeFilterCount={paymentActiveFilterCount}
+                searchTerm={deferredPaymentSearch}
+              />
+            ) : null}
+            <PaidPanel query={paid} propertyId={currentPropertyId} onOffset={setPaymentOffset} />
           </TabsContent>
 
           <TabsContent value="pending" className="space-y-4">
+            <PaymentFilterBar
+              search={paymentSearch}
+              method={paymentMethod}
+              purpose={paymentPurpose}
+              dueWithinDays={dueWithinDaysInput}
+              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              onSearch={(value) => {
+                setPaymentSearch(value);
+                setPaymentOffset(0);
+              }}
+              onMethod={(value) => {
+                setPaymentMethod(value);
+                setPaymentOffset(0);
+              }}
+              onPurpose={(value) => {
+                setPaymentPurpose(value);
+                setPaymentOffset(0);
+              }}
+              onDueWithinDays={(value) => {
+                setDueWithinDaysInput(value);
+                setPaymentOffset(0);
+              }}
+              onQuickThirtyDays={() => {
+                setDueWithinDaysInput("30");
+                setPaymentOffset(0);
+              }}
+              onReset={() => {
+                setPaymentSearch("");
+                setPaymentMethod("");
+                setPaymentPurpose("");
+                setDueWithinDaysInput("");
+                setPaymentOffset(0);
+              }}
+            />
             <PendingPaymentPanel
               query={pendingPayments}
               canVerify={canVerify}
               propertyId={currentPropertyId}
+              onOffset={setPaymentOffset}
             />
             <ProofPanel
               query={proofs}
@@ -184,7 +406,20 @@ export function W06PaymentsWorkspace() {
             />
           </TabsContent>
 
-          <TabsContent value="other">
+          <TabsContent value="other" className="space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <DeadlineWindowFilter
+                value={dueWithinDaysInput}
+                invalid={hasInvalidDueWithinDays}
+                disabled
+                onChange={() => undefined}
+                onQuickThirtyDays={() => undefined}
+              />
+              <p className="mt-3 text-sm text-muted-foreground">
+                Biaya lain tidak memakai tenggat pelunasan kontrak, sehingga filter hari tidak
+                diterapkan pada tab ini.
+              </p>
+            </div>
             <OtherChargePanel
               detail={detail.data ?? null}
               propertyId={currentPropertyId}
@@ -195,6 +430,7 @@ export function W06PaymentsWorkspace() {
 
         {selectedResidentId ? (
           <ResidentBillingPanel
+            sectionRef={detailSectionRef}
             query={detail}
             propertyId={currentPropertyId}
             canManage={canManage}
@@ -203,6 +439,141 @@ export function W06PaymentsWorkspace() {
         ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function PaymentFilterBar({
+  search,
+  method,
+  purpose,
+  dueWithinDays,
+  dueWithinDaysInvalid,
+  onSearch,
+  onMethod,
+  onPurpose,
+  onDueWithinDays,
+  onQuickThirtyDays,
+  onReset,
+}: {
+  search: string;
+  method: "" | W06PaymentMethod;
+  purpose: "" | W06PaymentPurpose;
+  dueWithinDays: string;
+  dueWithinDaysInvalid: boolean;
+  onSearch: (value: string) => void;
+  onMethod: (value: "" | W06PaymentMethod) => void;
+  onPurpose: (value: "" | W06PaymentPurpose) => void;
+  onDueWithinDays: (value: string) => void;
+  onQuickThirtyDays: () => void;
+  onReset: () => void;
+}) {
+  const hasFilters = Boolean(search.trim() || method || purpose || dueWithinDays);
+  return (
+    <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="relative min-w-0 xl:col-span-2">
+        <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          className="min-h-11 pl-9"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          placeholder="Cari penghuni, kamar, kode, atau referensi"
+          aria-label="Cari pembayaran"
+        />
+      </div>
+      <select
+        className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+        value={method}
+        onChange={(event) => onMethod(event.target.value as "" | W06PaymentMethod)}
+        aria-label="Filter metode pembayaran"
+      >
+        <option value="">Semua metode</option>
+        <option value="cash">Tunai</option>
+        <option value="bank_transfer">Transfer bank</option>
+      </select>
+      <select
+        className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+        value={purpose}
+        onChange={(event) => onPurpose(event.target.value as "" | W06PaymentPurpose)}
+        aria-label="Filter jenis pembayaran"
+      >
+        <option value="">Semua jenis</option>
+        <option value="rent">Pembayaran sewa</option>
+        <option value="dp">DP / uang muka sewa</option>
+        <option value="security_deposit">Security deposit</option>
+        <option value="other_charge">Tagihan lainnya</option>
+      </select>
+      <DeadlineWindowFilter
+        value={dueWithinDays}
+        invalid={dueWithinDaysInvalid}
+        onChange={onDueWithinDays}
+        onQuickThirtyDays={onQuickThirtyDays}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-11 w-full"
+        disabled={!hasFilters}
+        onClick={onReset}
+      >
+        <RotateCcw className="mr-2 h-4 w-4" /> Reset
+      </Button>
+    </div>
+  );
+}
+
+function DeadlineWindowFilter({
+  value,
+  invalid,
+  disabled = false,
+  onChange,
+  onQuickThirtyDays,
+}: {
+  value: string;
+  invalid: boolean;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  onQuickThirtyDays: () => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="space-y-2">
+        <div className="relative min-w-0">
+          <Input
+            className="min-h-11 pr-12"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={365}
+            step={1}
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Tenggat ≤ hari"
+            aria-label="Jatuh tempo dalam berapa hari lagi"
+            aria-invalid={invalid || undefined}
+          />
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+            hari
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant={value === "30" ? "default" : "outline"}
+          className="min-h-11 w-full px-3 text-xs"
+          disabled={disabled}
+          onClick={onQuickThirtyDays}
+        >
+          30 hari lagi
+        </Button>
+      </div>
+      {invalid ? (
+        <p className="text-xs text-destructive">Masukkan 0 sampai 365 hari.</p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Jatuh tempo dalam rentang hari dari hari ini.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -300,11 +671,13 @@ function ResidentBillingPanel({
   propertyId,
   canManage,
   onClose,
+  sectionRef,
 }: {
   query: ReturnType<typeof useResidentBilling>;
   propertyId: string | null;
   canManage: boolean;
   onClose: () => void;
+  sectionRef: RefObject<HTMLElement | null>;
 }) {
   if (query.isPending) return <LoadingState label="Memuat detail billing penghuni..." />;
   if (query.isError)
@@ -318,13 +691,18 @@ function ResidentBillingPanel({
   const data = query.data;
   if (!data) return null;
   return (
-    <section aria-label="Detail billing penghuni" className="space-y-4 border-t border-border pt-5">
+    <section
+      ref={sectionRef}
+      tabIndex={-1}
+      aria-label="Detail pembayaran penghuni"
+      className="scroll-mt-24 space-y-4 border-t border-border pt-5 outline-none"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Detail billing kanonis
+            Detail pembayaran penghuni
           </p>
-          <h2 className="mt-1 text-xl font-semibold">Kontrak dan histori keuangan</h2>
+          <h2 className="mt-1 text-xl font-semibold">Kontrak, tagihan, dan riwayat pembayaran</h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{data.lease.note}</p>
         </div>
         <Button variant="outline" className="min-h-11" onClick={onClose}>
@@ -471,22 +849,14 @@ function PaymentHistory({
                     {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu belum tersedia"}
                   </p>
                 </div>
-                <Badge variant="outline">
-                  {payment.reversal_id
-                    ? "Dibalik"
-                    : payment.payment_status === "verified"
-                      ? "Terverifikasi"
-                      : payment.payment_status === "pending_confirmation"
-                        ? "Menunggu konfirmasi"
-                        : payment.payment_status === "rejected"
-                          ? "Ditolak"
-                          : "Dibalik"}
-                </Badge>
+                <StatusBadge status={payment.reversal_id ? "reversed" : payment.payment_status} />
               </div>
               <p className="mt-2 text-right font-semibold">{formatIDR(payment.amount)}</p>
               <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                 {payment.allocations.map((allocation) => (
-                  <p key={allocation.invoice_id}>Alokasi invoice: {formatIDR(allocation.amount)}</p>
+                  <p key={allocation.invoice_id}>
+                    Pembayaran untuk tagihan: {formatIDR(allocation.amount)}
+                  </p>
                 ))}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -552,6 +922,12 @@ function AdminReceiptDialog({
   onClose: () => void;
 }) {
   const query = useBillingReceipt(propertyId, receiptId);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
+  useEffect(() => {
+    setIsDownloading(false);
+    setDownloadError(false);
+  }, [receiptId]);
   return (
     <Dialog open={Boolean(receiptId)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -579,8 +955,37 @@ function AdminReceiptDialog({
             <DetailRow label="Nominal" value={formatIDR(query.data.amount)} />
           </div>
         ) : null}
+        {downloadError ? (
+          <p role="alert" className="text-sm text-destructive">
+            PDF kuitansi belum dapat diunduh. Silakan coba lagi.
+          </p>
+        ) : null}
         <DialogFooter>
-          <Button className="min-h-11" onClick={onClose}>
+          {query.data && propertyId ? (
+            <Button
+              className="min-h-11"
+              variant="outline"
+              disabled={isDownloading}
+              onClick={() => {
+                setIsDownloading(true);
+                setDownloadError(false);
+                void downloadAdminReceiptDocument(
+                  propertyId,
+                  query.data.id,
+                  query.data.receipt_code,
+                )
+                  .then(() => setIsDownloading(false))
+                  .catch(() => {
+                    setIsDownloading(false);
+                    setDownloadError(true);
+                  });
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {isDownloading ? "Menyiapkan PDF..." : "Unduh kuitansi"}
+            </Button>
+          ) : null}
+          <Button className="min-h-11" variant="outline" onClick={onClose}>
             Tutup
           </Button>
         </DialogFooter>
@@ -598,33 +1003,51 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RecordPaymentDialog({
+export function RecordPaymentDialog({
   data,
   propertyId,
+  triggerLabel = "Catat pembayaran manual",
+  triggerVariant,
+  contractSettlementInvoiceId = null,
+  contractSettlementMode,
 }: {
   data: ResidentBilling;
   propertyId: string | null;
+  triggerLabel?: string;
+  triggerVariant?: "default" | "outline";
+  contractSettlementInvoiceId?: string | null;
+  contractSettlementMode?: "choose" | "full";
 }) {
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<W06PaymentMethod>("bank_transfer");
   const [purpose, setPurpose] = useState<W06PaymentPurpose>("rent");
+  const [settlementChoice, setSettlementChoice] = useState<"partial" | "full">("partial");
   const [selected, setSelected] = useState<Record<string, number>>({});
   const [depositAmount, setDepositAmount] = useState(0);
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
   const [fileId, setFileId] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const proofInputId = useId();
   const upload = useFileUpload();
   const mutation = useRecordManualPayment(propertyId);
+  const resetPaymentMutation = mutation.reset;
   const eligible = useMemo(
     () =>
       data.invoices.filter(
         (invoice) =>
           invoice.outstanding_amount > 0 &&
           ["issued", "partially_paid", "overdue"].includes(invoice.invoice_status) &&
-          invoice.invoice_purpose === (purpose === "other_charge" ? "other_charge" : "rent"),
+          invoice.invoice_purpose === (purpose === "other_charge" ? "other_charge" : "rent") &&
+          (!contractSettlementInvoiceId || invoice.id === contractSettlementInvoiceId),
       ),
-    [data.invoices, purpose],
+    [contractSettlementInvoiceId, data.invoices, purpose],
   );
+  const contractSettlementInvoice = contractSettlementInvoiceId
+    ? (data.invoices.find((invoice) => invoice.id === contractSettlementInvoiceId) ?? null)
+    : null;
+  const isContractSettlement = Boolean(contractSettlementInvoice && contractSettlementMode);
+  const isFullSettlement = contractSettlementMode === "full" || settlementChoice === "full";
   const allocations = Object.entries(selected)
     .filter(([, amount]) => amount > 0)
     .map(([invoice_id, amount]) => ({ invoice_id, amount }));
@@ -632,6 +1055,13 @@ function RecordPaymentDialog({
     purpose === "security_deposit"
       ? depositAmount
       : allocations.reduce((sum, item) => sum + item.amount, 0);
+  const remainingAfterContractPayment =
+    isContractSettlement && contractSettlementInvoice
+      ? Math.max(0, contractSettlementInvoice.outstanding_amount - amount)
+      : null;
+  const contractSettlementDueLabel = data.contract_settlement?.effective_due_at
+    ? timeOnly(data.contract_settlement.effective_due_at)
+    : null;
   const fingerprint = JSON.stringify({
     propertyId,
     data: data.lease.id,
@@ -642,20 +1072,54 @@ function RecordPaymentDialog({
     reference,
     note,
     fileId,
+    contractSettlementInvoiceId,
+    contractSettlementMode,
+    settlementChoice,
   });
   const key = useLogicalKey(fingerprint);
+  const resetForm = useCallback(() => {
+    setMethod("bank_transfer");
+    setPurpose("rent");
+    setSelected({});
+    setDepositAmount(0);
+    setReference("");
+    setNote("");
+    setFileId(null);
+    setSelectedFileName(null);
+    setSettlementChoice("partial");
+    resetPaymentMutation();
+  }, [resetPaymentMutation]);
   useEffect(() => {
     if (!open) {
-      setSelected({});
-      setDepositAmount(0);
-      setFileId(null);
-      mutation.reset();
+      resetForm();
+    } else if (contractSettlementInvoice) {
+      setPurpose("rent");
+      setSelected({
+        [contractSettlementInvoice.id]:
+          contractSettlementMode === "full" ? contractSettlementInvoice.outstanding_amount : 0,
+      });
+      setSettlementChoice(contractSettlementMode === "full" ? "full" : "partial");
     }
-  }, [open]);
+  }, [contractSettlementInvoice, contractSettlementMode, open, resetForm]);
+  function chooseSettlementPayment(next: "partial" | "full") {
+    if (!contractSettlementInvoice) return;
+    setSettlementChoice(next);
+    setSelected({
+      [contractSettlementInvoice.id]:
+        next === "full" ? contractSettlementInvoice.outstanding_amount : 0,
+    });
+  }
   async function fileSelected(file: File) {
     if (!propertyId) return;
-    const record = await upload.uploadAsync({ file, propertyId, filePurpose: "payment_proof" });
-    setFileId(record.id);
+    try {
+      const record = await upload.uploadAsync({ file, propertyId, filePurpose: "payment_proof" });
+      setFileId(record.id);
+      setSelectedFileName(record.original_filename);
+    } catch {
+      // The upload hook owns the localized error toast; do not continue with a stale proof id.
+      setFileId(null);
+      setSelectedFileName(null);
+    }
   }
   function submit() {
     if (!propertyId || mutation.isPending) return;
@@ -675,22 +1139,34 @@ function RecordPaymentDialog({
         },
         idempotencyKey: key.current.key,
       },
-      { onSuccess: () => setOpen(false) },
+      {
+        onSuccess: (result) => {
+          toastMutationSuccess(
+            result.payment_status === "verified"
+              ? "Pembayaran berhasil dicatat dan terverifikasi."
+              : "Pembayaran berhasil dicatat dan menunggu konfirmasi.",
+          );
+          setOpen(false);
+        },
+      },
     );
   }
   return (
     <>
-      <Button className="min-h-11" onClick={() => setOpen(true)}>
+      <Button className="min-h-11" variant={triggerVariant} onClick={() => setOpen(true)}>
         <Banknote className="mr-2 h-4 w-4" />
-        Catat pembayaran manual
+        {triggerLabel}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Catat pembayaran manual</DialogTitle>
+            <DialogTitle>
+              {isContractSettlement ? "Catat Pembayaran" : "Catat pembayaran manual"}
+            </DialogTitle>
             <DialogDescription>
-              Pilih invoice dan alokasi eksplisit. Transfer tetap menunggu verifikasi; kas dicatat
-              dan diterbitkan kuitansinya secara atomik.
+              {isContractSettlement
+                ? "Catat pembayaran untuk pelunasan sewa kontrak. Tunai langsung terverifikasi; transfer bank wajib menyertakan bukti dan menunggu konfirmasi."
+                : "Pilih tagihan dan nominal pembayaran. Transfer tetap menunggu verifikasi; kas dicatat dan diterbitkan kuitansinya secara atomik."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -704,25 +1180,59 @@ function RecordPaymentDialog({
                 }}
               >
                 <option value="bank_transfer">Transfer bank</option>
-                <option value="cash">Kas diterima</option>
+                <option value="cash">Tunai</option>
               </select>
             </Field>
-            <Field label="Tujuan">
-              <select
-                className="min-h-11 w-full rounded-md border border-input bg-background px-3"
-                value={purpose}
-                onChange={(event) => {
-                  setPurpose(event.target.value as W06PaymentPurpose);
-                  setSelected({});
-                  setDepositAmount(0);
-                }}
-              >
-                <option value="rent">Sewa</option>
-                <option value="dp">DP sewa</option>
-                <option value="security_deposit">Deposit keamanan</option>
-                <option value="other_charge">Tagihan lainnya</option>
-              </select>
-            </Field>
+            {isContractSettlement ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Jenis pembayaran</p>
+                {contractSettlementMode === "choose" ? (
+                  <div
+                    className="grid gap-2 sm:grid-cols-2"
+                    role="group"
+                    aria-label="Jenis pembayaran sewa"
+                  >
+                    <Button
+                      type="button"
+                      variant={settlementChoice === "partial" ? "default" : "outline"}
+                      className="min-h-11"
+                      onClick={() => chooseSettlementPayment("partial")}
+                    >
+                      Bayar Sebagian
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={settlementChoice === "full" ? "default" : "outline"}
+                      className="min-h-11"
+                      onClick={() => chooseSettlementPayment("full")}
+                    >
+                      Lunasi Sekarang
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm font-medium text-primary">
+                    Pelunasan penuh diperlukan untuk melanjutkan.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <Field label="Tujuan">
+                <select
+                  className="min-h-11 w-full rounded-md border border-input bg-background px-3"
+                  value={purpose}
+                  onChange={(event) => {
+                    setPurpose(event.target.value as W06PaymentPurpose);
+                    setSelected({});
+                    setDepositAmount(0);
+                  }}
+                >
+                  <option value="rent">Sewa</option>
+                  <option value="dp">DP sewa</option>
+                  <option value="security_deposit">Deposit keamanan</option>
+                  <option value="other_charge">Tagihan lainnya</option>
+                </select>
+              </Field>
+            )}
             {purpose === "security_deposit" ? (
               <Field label="Nominal deposit keamanan">
                 <Input
@@ -735,39 +1245,109 @@ function RecordPaymentDialog({
                   Deposit masuk ke ledger kewajiban terpisah dan tidak dialokasikan ke invoice sewa.
                 </p>
               </Field>
+            ) : isContractSettlement && contractSettlementInvoice ? (
+              <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">Nominal pembayaran sewa</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Sisa sewa yang perlu dibayar{" "}
+                      {formatIDR(contractSettlementInvoice.outstanding_amount)}.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                    Pelunasan sewa kontrak
+                  </span>
+                </div>
+                <div
+                  className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
+                  data-invalid={
+                    amount <= 0 ||
+                    amount > contractSettlementInvoice.outstanding_amount ||
+                    undefined
+                  }
+                >
+                  <span className="inline-flex items-center border-r border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
+                    Rp
+                  </span>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
+                    disabled={isFullSettlement}
+                    value={amount ? new Intl.NumberFormat("id-ID").format(amount) : ""}
+                    onChange={(event) => {
+                      const numeric = event.target.value.replace(/\D/g, "");
+                      setSelected({
+                        [contractSettlementInvoice.id]: numeric ? Number(numeric) : 0,
+                      });
+                    }}
+                    aria-label={
+                      isFullSettlement ? "Jumlah pelunasan sewa" : "Nominal pembayaran sewa"
+                    }
+                    aria-invalid={
+                      amount <= 0 ||
+                      amount > contractSettlementInvoice.outstanding_amount ||
+                      undefined
+                    }
+                  />
+                </div>
+                {amount > contractSettlementInvoice.outstanding_amount ? (
+                  <p className="text-sm font-medium text-destructive">
+                    Nominal pembayaran tidak boleh melebihi sisa sewa{" "}
+                    {formatIDR(contractSettlementInvoice.outstanding_amount)}.
+                  </p>
+                ) : amount <= 0 ? (
+                  <p className="text-sm font-medium text-destructive" role="alert">
+                    Nominal belum diisi. Masukkan nominal lebih dari Rp0 untuk mencatat pembayaran.
+                  </p>
+                ) : null}
+              </div>
             ) : (
               <div>
-                <p className="mb-2 text-sm font-medium">Alokasi invoice</p>
+                <p className="mb-2 text-sm font-medium">Tagihan yang dibayar</p>
                 <div className="space-y-2">
                   {eligible.map((invoice) => (
                     <label
                       key={invoice.id}
                       className="grid grid-cols-[auto_1fr_9rem] items-center gap-3 rounded-lg border border-border p-3"
                     >
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5"
-                        checked={selected[invoice.id] !== undefined}
-                        onChange={(event) =>
-                          setSelected((current) => {
-                            const next = { ...current };
-                            if (event.target.checked) next[invoice.id] = invoice.outstanding_amount;
-                            else delete next[invoice.id];
-                            return next;
-                          })
-                        }
-                      />
+                      {isContractSettlement ? (
+                        <span
+                          className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5"
+                          checked={selected[invoice.id] !== undefined}
+                          onChange={(event) =>
+                            setSelected((current) => {
+                              const next = { ...current };
+                              if (event.target.checked)
+                                next[invoice.id] = invoice.outstanding_amount;
+                              else delete next[invoice.id];
+                              return next;
+                            })
+                          }
+                        />
+                      )}
                       <span>
-                        <span className="block text-sm font-medium">{invoice.invoice_code}</span>
+                        <span className="block text-sm font-medium">
+                          {isContractSettlement ? "Pelunasan sewa kontrak" : invoice.invoice_code}
+                        </span>
                         <span className="text-xs text-muted-foreground">
-                          Sisa {formatIDR(invoice.outstanding_amount)}
+                          Sisa yang wajib dilunasi {formatIDR(invoice.outstanding_amount)}
                         </span>
                       </span>
                       <Input
                         type="number"
                         min={1}
                         max={invoice.outstanding_amount}
-                        disabled={selected[invoice.id] === undefined}
+                        disabled={isFullSettlement || selected[invoice.id] === undefined}
                         value={selected[invoice.id] ?? ""}
                         onChange={(event) =>
                           setSelected((current) => ({
@@ -775,7 +1355,7 @@ function RecordPaymentDialog({
                             [invoice.id]: Number(event.target.value),
                           }))
                         }
-                        aria-label={`Alokasi ${invoice.invoice_code}`}
+                        aria-label={`Nominal ${invoice.invoice_code}`}
                       />
                     </label>
                   ))}
@@ -788,31 +1368,124 @@ function RecordPaymentDialog({
               </div>
             )}
             <div className="rounded-lg bg-muted p-3 text-sm">
-              <span>Total alokasi</span>
+              <span>Jumlah yang akan dicatat</span>
               <strong className="float-right">{formatIDR(amount)}</strong>
             </div>
+            {isContractSettlement &&
+            contractSettlementInvoice &&
+            remainingAfterContractPayment !== null &&
+            amount > 0 &&
+            amount <= contractSettlementInvoice.outstanding_amount ? (
+              <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm">
+                <p className="font-semibold text-foreground">Setelah pembayaran ini</p>
+                <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    Sisa pembayaran sewa setelah dicatat
+                  </span>
+                  <strong className="text-base text-primary">
+                    {formatIDR(remainingAfterContractPayment)}
+                  </strong>
+                </div>
+                {remainingAfterContractPayment > 0 ? (
+                  <div className="mt-3 space-y-1.5 text-xs leading-5 text-muted-foreground">
+                    <p>
+                      <strong className="text-foreground">Status periode berikutnya:</strong> tidak
+                      ada tagihan sewa bulanan baru. Sisa ini tetap merupakan pelunasan untuk
+                      kontrak yang sama.
+                    </p>
+                    <p>
+                      Pembayaran sebagian tidak mengubah tenggat pelunasan kontrak
+                      {contractSettlementDueLabel ? `, yaitu ${contractSettlementDueLabel}` : ""}.
+                    </p>
+                    {method === "bank_transfer" ? (
+                      <p>
+                        Transfer akan mengurangi sisa setelah admin memverifikasi bukti pembayaran.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    Setelah pembayaran ini tercatat, pelunasan sewa kontrak selesai.
+                    {method === "bank_transfer"
+                      ? " Transfer tetap harus diverifikasi terlebih dahulu."
+                      : ""}
+                  </p>
+                )}
+              </div>
+            ) : null}
             <Field
-              label={method === "bank_transfer" ? "Bukti transfer (wajib)" : "Bukti kas (opsional)"}
+              label={
+                method === "bank_transfer"
+                  ? "Bukti transfer (wajib)"
+                  : "Bukti pembayaran (opsional)"
+              }
             >
-              <Input
-                type="file"
-                accept="image/jpeg,image/png,application/pdf"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void fileSelected(file);
-                }}
-                disabled={upload.isUploading}
-              />
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3">
+                <input
+                  id={proofInputId}
+                  className="sr-only"
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void fileSelected(file);
+                    event.currentTarget.value = "";
+                  }}
+                  disabled={upload.isUploading}
+                />
+                <label
+                  htmlFor={proofInputId}
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-input bg-background px-3 py-2 transition-colors hover:border-primary/60 hover:bg-primary/5"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <FileCheck2 className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">
+                      {upload.isUploading
+                        ? "Mengunggah bukti pembayaran..."
+                        : "Pilih bukti pembayaran"}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      JPG, PNG, atau PDF. Maksimal sesuai kebijakan unggahan.
+                    </span>
+                  </span>
+                </label>
+                {selectedFileName ? (
+                  <p className="mt-2 flex items-center gap-2 text-sm font-medium text-success">
+                    <FileCheck2 className="h-4 w-4" aria-hidden="true" />
+                    {selectedFileName} siap ditautkan ke pembayaran.
+                  </p>
+                ) : null}
+              </div>
               {fileId ? (
-                <p className="mt-1 text-xs text-success">File tervalidasi dan siap ditautkan.</p>
+                <p className="mt-1 text-xs text-success">
+                  Bukti pembayaran tervalidasi dan siap ditautkan.
+                </p>
               ) : null}
             </Field>
-            <Field label="Nomor referensi">
+            <Field
+              label={
+                method === "bank_transfer"
+                  ? "Nomor referensi transfer (opsional)"
+                  : "Nomor bukti penerimaan (opsional)"
+              }
+            >
               <Input
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
                 maxLength={100}
+                placeholder={
+                  method === "bank_transfer"
+                    ? "Contoh: nomor transaksi dari bank"
+                    : "Contoh: nomor kuitansi atau buku kas"
+                }
               />
+              <p className="text-xs font-normal text-muted-foreground">
+                {method === "bank_transfer"
+                  ? "Isi bila bank memberi nomor transaksi. Kode pembayaran sistem dibuat otomatis setelah disimpan."
+                  : "Isi bila ada nomor kuitansi atau buku kas internal. Kode pembayaran sistem tetap dibuat otomatis."}
+              </p>
             </Field>
             <Field label="Catatan">
               <textarea
@@ -833,7 +1506,13 @@ function RecordPaymentDialog({
             <Button
               className="min-h-11"
               disabled={
-                mutation.isPending || amount <= 0 || (method === "bank_transfer" && !fileId)
+                mutation.isPending ||
+                upload.isUploading ||
+                amount <= 0 ||
+                (isContractSettlement &&
+                  contractSettlementInvoice !== null &&
+                  amount > contractSettlementInvoice.outstanding_amount) ||
+                (method === "bank_transfer" && !fileId)
               }
               onClick={submit}
             >
@@ -848,18 +1527,16 @@ function RecordPaymentDialog({
 
 function PaidPanel({
   query,
-  detail,
-  canManage,
   propertyId,
+  onOffset,
 }: {
   query: ReturnType<typeof useBillingPayments>;
-  detail: ResidentBilling | null;
-  canManage: boolean;
   propertyId: string | null;
+  onOffset: (offset: number) => void;
 }) {
-  void detail;
-  void canManage;
-  void propertyId;
+  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadErrorId, setDownloadErrorId] = useState<string | null>(null);
   if (query.isPending) return <LoadingState label="Memuat pembayaran terverifikasi..." />;
   if (query.isError)
     return (
@@ -878,36 +1555,118 @@ function PaidPanel({
       />
     );
   return (
-    <Card>
-      <CardContent className="overflow-x-auto p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Kode</TableHead>
-              <TableHead>Metode</TableHead>
-              <TableHead>Tanggal</TableHead>
-              <TableHead>Tujuan</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead>Referensi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {query.data.data.map((payment) => (
-              <TableRow key={payment.id}>
-                <TableCell className="font-medium">{payment.payment_code}</TableCell>
-                <TableCell>{methodLabel(payment.payment_method)}</TableCell>
-                <TableCell>{payment.paid_at ? timeOnly(payment.paid_at) : "-"}</TableCell>
-                <TableCell>{purposeLabel(payment.payment_purpose)}</TableCell>
-                <TableCell className="text-right font-semibold">
-                  {formatIDR(payment.amount)}
-                </TableCell>
-                <TableCell>{payment.receipt_id ? "Kuitansi tersedia" : "-"}</TableCell>
+    <div className="space-y-3">
+      <Card>
+        <CardContent className="overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Penghuni / Kamar</TableHead>
+                <TableHead>Kode / Tanggal</TableHead>
+                <TableHead>Jenis</TableHead>
+                <TableHead>Metode</TableHead>
+                <TableHead>Status pembayaran</TableHead>
+                <TableHead className="text-right">Nominal</TableHead>
+                <TableHead className="text-right">Dokumen</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            </TableHeader>
+            <TableBody>
+              {query.data.data.map((payment) => (
+                <TableRow key={payment.id}>
+                  <TableCell>
+                    <p className="font-medium">{payment.resident_name}</p>
+                    <p className="text-xs text-muted-foreground">Kamar {payment.room_number}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="font-medium">{payment.payment_code}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu belum tersedia"}
+                    </p>
+                  </TableCell>
+                  <TableCell>{purposeLabel(payment.payment_purpose)}</TableCell>
+                  <TableCell>{methodLabel(payment.payment_method)}</TableCell>
+                  <TableCell>
+                    <div className="flex min-w-40 flex-col items-start gap-1.5">
+                      {payment.settles_rent_contract ? (
+                        <StatusBadge status="contract_settled" />
+                      ) : payment.rent_allocation_amount > 0 ? (
+                        <StatusBadge status="rent_partial" />
+                      ) : (
+                        <StatusBadge status={payment.payment_status} />
+                      )}
+                      {payment.rent_allocation_amount > 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          {formatIDR(payment.rent_allocation_amount)} untuk sewa
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {formatIDR(payment.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex min-w-44 justify-end gap-2">
+                      {payment.receipt_id ? (
+                        <>
+                          <Button
+                            className="min-h-11"
+                            variant="outline"
+                            onClick={() => setReceiptId(payment.receipt_id)}
+                          >
+                            Rincian
+                          </Button>
+                          <Button
+                            className="min-h-11"
+                            variant="outline"
+                            disabled={!propertyId || downloadingId === payment.id}
+                            onClick={() => {
+                              if (!propertyId || !payment.receipt_id) return;
+                              setDownloadingId(payment.id);
+                              setDownloadErrorId(null);
+                              void downloadAdminReceiptDocument(
+                                propertyId,
+                                payment.receipt_id,
+                                `KWT-${payment.payment_code}`,
+                              )
+                                .then(() => setDownloadingId(null))
+                                .catch(() => {
+                                  setDownloadingId(null);
+                                  setDownloadErrorId(payment.id);
+                                });
+                            }}
+                          >
+                            <Download className="mr-2 h-4 w-4" />
+                            {downloadingId === payment.id ? "Menyiapkan..." : "Unduh kuitansi"}
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Belum diterbitkan</span>
+                      )}
+                    </div>
+                    {downloadErrorId === payment.id ? (
+                      <p role="alert" className="mt-1 text-right text-xs text-destructive">
+                        Kuitansi belum dapat diunduh.
+                      </p>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <PageButtons
+        offset={query.data.meta.offset}
+        limit={query.data.meta.limit}
+        total={query.data.meta.total}
+        onOffset={onOffset}
+      />
+      <AdminReceiptDialog
+        propertyId={propertyId}
+        receiptId={receiptId}
+        onClose={() => setReceiptId(null)}
+      />
+    </div>
   );
 }
 
@@ -915,10 +1674,12 @@ function PendingPaymentPanel({
   query,
   canVerify,
   propertyId,
+  onOffset,
 }: {
   query: ReturnType<typeof useBillingPayments>;
   canVerify: boolean;
   propertyId: string | null;
+  onOffset: (offset: number) => void;
 }) {
   const verify = useVerifyPayment(propertyId);
   const reject = useRejectPayment(propertyId);
@@ -1023,6 +1784,12 @@ function PendingPaymentPanel({
               { onSuccess: () => setAction(null) },
             );
         }}
+      />
+      <PageButtons
+        offset={query.data.meta.offset}
+        limit={query.data.meta.limit}
+        total={query.data.meta.total}
+        onOffset={onOffset}
       />
     </div>
   );
@@ -1244,13 +2011,12 @@ function OtherChargePanel({
                 onChange={(event) => setAmount(Number(event.target.value))}
               />
             </Field>
-            <Field label="Jatuh tempo">
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-              />
-            </Field>
+            <HeroUiDatePicker
+              id="other-charge-due-date"
+              label="Jatuh tempo"
+              value={dueDate}
+              onChange={(value) => setDueDate(value ?? "")}
+            />
             {category === "documented_damage" ? (
               <Field label="Bukti kerusakan (wajib)">
                 <Input
@@ -1418,8 +2184,26 @@ function StatusBadge({ status }: { status: string }) {
     verified: "Terverifikasi",
     rejected: "Ditolak",
     reversed: "Dibalik",
+    contract_settled: "Sewa kontrak lunas",
+    rent_partial: "Pembayaran sewa sebagian",
   };
-  return <Badge variant="outline">{label[status] ?? "Tidak tersedia"}</Badge>;
+  const tone =
+    status === "paid" || status === "verified" || status === "contract_settled"
+      ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+      : status === "partially_paid" ||
+          status === "rent_partial" ||
+          status === "pending_confirmation"
+        ? "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
+        : status === "issued"
+          ? "border-sky-500/35 bg-sky-500/12 text-sky-700 dark:text-sky-300"
+          : status === "overdue" || status === "rejected" || status === "reversed"
+            ? "border-rose-500/35 bg-rose-500/12 text-rose-700 dark:text-rose-300"
+            : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300";
+  return (
+    <Badge variant="outline" className={`rounded-full px-2.5 py-1 font-semibold ${tone}`}>
+      {label[status] ?? "Tidak tersedia"}
+    </Badge>
+  );
 }
 function PageButtons({
   offset,
@@ -1476,6 +2260,11 @@ function jakartaMonth() {
     month: "2-digit",
   }).formatToParts(new Date());
   return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
+}
+function parseDueWithinDays(value: string) {
+  if (!/^\d{1,3}$/.test(value)) return undefined;
+  const days = Number(value);
+  return days >= 0 && days <= 365 ? days : undefined;
 }
 function dateOnly(value: string) {
   return new Intl.DateTimeFormat("id-ID", {

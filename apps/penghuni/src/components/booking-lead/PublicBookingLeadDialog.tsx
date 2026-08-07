@@ -15,6 +15,7 @@ import { CheckCircle2, Loader2, MessageCircle, Send } from "lucide-react";
 import { ApiError, ERROR_CODES } from "@granada-kost/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatIDR } from "@/lib/format";
 import {
@@ -80,7 +88,7 @@ function validateFields(
   if (!isLikelyWhatsAppPhone(phone)) {
     errors.visitorPhone = "Masukkan nomor WhatsApp yang valid, contoh: 08123456789.";
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+  if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     errors.visitorEmail = "Masukkan alamat email yang valid.";
   }
   if (university.trim().length < 2 || university.trim().length > 160) {
@@ -91,7 +99,6 @@ function validateFields(
 
 export function PublicBookingLeadDialog({
   item,
-  initialGender,
   whatsAppNumber,
   open,
   onOpenChange,
@@ -129,12 +136,8 @@ export function PublicBookingLeadDialog({
   const selectedGroup = selectedGender ? toPublicRoomGroup(item, selectedGender) : null;
 
   useEffect(() => {
-    if (!open) return;
-    const available = item.genderAvailability.map((entry) => entry.gender);
-    setSelectedGender(
-      initialGender && available.includes(initialGender) ? initialGender : (available[0] ?? ""),
-    );
-  }, [initialGender, item.genderAvailability, open]);
+    if (open) setSelectedGender("");
+  }, [open]);
 
   useEffect(() => {
     if (submitted) successHeadingRef.current?.focus();
@@ -174,7 +177,7 @@ export function PublicBookingLeadDialog({
       return;
     }
     const errors = validateFields(visitorName, visitorPhone, visitorEmail, visitorUniversity);
-    if (!selectedGroup) errors.gender = "Pilih hunian Putra atau Putri.";
+    if (!selectedGroup) errors.gender = "Jenis kelamin wajib dipilih.";
     if (!consent) errors.consent = "Persetujuan diperlukan sebelum pengajuan dikirim.";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0 || !selectedGroup) return;
@@ -185,7 +188,7 @@ export function PublicBookingLeadDialog({
       category: selectedGroup.category,
       gender: selectedGroup.gender,
       visitorName: visitorName.trim(),
-      visitorEmail: visitorEmail.trim(),
+      ...(visitorEmail.trim() ? { visitorEmail: visitorEmail.trim() } : {}),
       visitorPhone: visitorPhone.trim(),
       visitorUniversity: visitorUniversity.trim(),
       consent: true,
@@ -303,25 +306,17 @@ export function PublicBookingLeadDialog({
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div className="rounded-lg border bg-muted/40 p-3 text-left">
               <p className="text-sm font-semibold leading-snug">{item.title}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 <Badge variant="outline">{item.categoryLabel}</Badge>
                 {item.genderAvailability.map((entry) => (
-                  <Button
+                  <span
                     key={entry.gender}
-                    type="button"
-                    size="sm"
-                    className="min-h-11"
-                    variant={selectedGender === entry.gender ? "default" : "outline"}
-                    aria-pressed={selectedGender === entry.gender}
-                    onClick={() => setSelectedGender(entry.gender)}
+                    className="rounded-full border bg-background px-2.5 py-1"
                   >
                     {entry.genderLabel} · {entry.availabilityCount}
-                  </Button>
+                  </span>
                 ))}
               </div>
-              {fieldErrors.gender ? (
-                <p className="mt-1 text-xs text-destructive">{fieldErrors.gender}</p>
-              ) : null}
               {item.priceFromMonthly !== null ? (
                 <p className="mt-2 text-xs font-medium">
                   Mulai {formatIDR(item.priceFromMonthly)}/bulan
@@ -331,6 +326,34 @@ export function PublicBookingLeadDialog({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Nomor kamar akan dikonfirmasi oleh admin.
               </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor={`${idPrefix}-gender`}>Jenis kelamin *</Label>
+              <Select
+                value={selectedGender}
+                onValueChange={(value) => setSelectedGender(value as PublicHunianGender)}
+              >
+                <SelectTrigger
+                  id={`${idPrefix}-gender`}
+                  aria-invalid={Boolean(fieldErrors.gender)}
+                  aria-describedby={fieldErrors.gender ? `${idPrefix}-gender-error` : undefined}
+                >
+                  <SelectValue placeholder="Pilih jenis kelamin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {item.genderAvailability.map((entry) => (
+                    <SelectItem key={entry.gender} value={entry.gender}>
+                      {entry.genderLabel} ({entry.availabilityCount} kamar tersedia)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {fieldErrors.gender ? (
+                <p id={`${idPrefix}-gender-error`} className="text-xs text-destructive">
+                  {fieldErrors.gender}
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
@@ -374,7 +397,7 @@ export function PublicBookingLeadDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor={`${idPrefix}-email`}>Email *</Label>
+              <Label htmlFor={`${idPrefix}-email`}>Email (opsional)</Label>
               <Input
                 id={`${idPrefix}-email`}
                 type="email"
@@ -383,7 +406,6 @@ export function PublicBookingLeadDialog({
                 autoComplete="email"
                 aria-invalid={Boolean(fieldErrors.visitorEmail)}
                 aria-describedby={fieldErrors.visitorEmail ? `${idPrefix}-email-error` : undefined}
-                required
               />
               {fieldErrors.visitorEmail ? (
                 <p id={`${idPrefix}-email-error`} className="text-xs text-destructive">
@@ -412,17 +434,14 @@ export function PublicBookingLeadDialog({
               ) : null}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor={`${idPrefix}-date`}>Tanggal Rencana Masuk (opsional)</Label>
-              <Input
-                id={`${idPrefix}-date`}
-                type="date"
-                value={preferredMoveInDate}
-                min={dateBounds.today}
-                max={dateBounds.max}
-                onChange={(e) => setPreferredMoveInDate(e.target.value)}
-              />
-            </div>
+            <HeroUiDatePicker
+              id={`${idPrefix}-date`}
+              label="Tanggal Rencana Masuk (opsional)"
+              value={preferredMoveInDate}
+              minDate={dateBounds.today}
+              maxDate={dateBounds.max}
+              onChange={(value) => setPreferredMoveInDate(value ?? "")}
+            />
 
             <div className="space-y-1.5">
               <Label htmlFor={`${idPrefix}-message`}>Catatan untuk Admin (opsional)</Label>

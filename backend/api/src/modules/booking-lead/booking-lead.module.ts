@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { BookingLeadController } from './booking-lead.controller';
+import { BookingLeadCompletionController } from './booking-lead-completion.controller';
+import { BookingLeadCompletionService } from './booking-lead-completion.service';
 import {
   BookingLeadHoldCommandController,
   BookingLeadHoldReadController,
@@ -20,12 +22,14 @@ import { BookingLeadRepository } from './repositories/booking-lead.repository';
   controllers: [
     PublicBookingLeadController,
     BookingLeadController,
+    BookingLeadCompletionController,
     BookingLeadHoldCommandController,
     BookingLeadHoldReadController,
   ],
   providers: [
     BookingLeadRepository,
     BookingLeadService,
+    BookingLeadCompletionService,
     BookingLeadRateLimiterService,
     BookingLeadHoldRepository,
     BookingLeadHoldFeatureService,

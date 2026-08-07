@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, ForbiddenState, LoadingState } from "@/components/state";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -255,6 +257,9 @@ function ComplaintsPage() {
     ).length;
     return { total, done, inProgress };
   }, [items]);
+  const slaBreachedCount = items.filter((item) => item.resolutionSlaBreached).length;
+  const activeFilterCount = Number(Boolean(q.trim())) + Number(tab !== "all");
+  const filterSignature = `${q}:${tab}`;
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -374,6 +379,20 @@ function ComplaintsPage() {
 
   return (
     <AppShell title="Komplain Penghuni" subtitle="Kelola tiket keluhan & maintenance">
+      <NoticeAlert
+        className="mb-4"
+        tone={slaBreachedCount > 0 ? "warning" : "info"}
+        title={
+          slaBreachedCount > 0
+            ? `${slaBreachedCount} komplain melewati target penyelesaian`
+            : "Perhatikan tindak lanjut komplain"
+        }
+        description={
+          slaBreachedCount > 0
+            ? "Prioritaskan komplain yang melewati target penyelesaian dan pastikan status serta penugasannya diperbarui."
+            : "Perbarui status komplain setelah tindakan dilakukan agar penghuni dan tim operasional melihat kondisi yang sama."
+        }
+      />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading ? (
           <>
@@ -497,6 +516,16 @@ function ComplaintsPage() {
               <TabsTrigger value="closed">Ditutup</TabsTrigger>
             </TabsList>
           </Tabs>
+
+          {!isLoading && !isFetching ? (
+            <FilterResultNotice
+              key={filterSignature}
+              entityLabel="komplain"
+              resultCount={filtered.length}
+              activeFilterCount={activeFilterCount}
+              searchTerm={q}
+            />
+          ) : null}
 
           {error ? (
             <ErrorState error={error} onRetry={() => refetch()} title="Gagal memuat komplain" />

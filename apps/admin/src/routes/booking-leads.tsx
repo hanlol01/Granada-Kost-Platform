@@ -1,16 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import {
   Eye,
+  Globe2,
   Inbox,
   Loader2,
   MessageCircle,
   MoreHorizontal,
+  MonitorSmartphone,
   Search,
   ShieldCheck,
 } from "lucide-react";
 import { BookingLeadDetailsDialog } from "@/components/booking-leads/BookingLeadDetailsDialog";
-import { ResidentOnboardingDialog } from "@/components/onboarding/ResidentOnboardingDialog";
+import { BookingLeadStatusBadge } from "@/components/booking-leads/BookingLeadStatusBadge";
+import { CompleteBookingLeadDialog } from "@/components/booking-leads/CompleteBookingLeadDialog";
 import {
   BookingLeadHoldDialog,
   BookingLeadHoldStatus,
@@ -21,6 +24,7 @@ import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   Select,
   SelectContent,
@@ -49,6 +54,7 @@ import {
   type BookingLeadCategory,
   type BookingLeadGender,
   type BookingLeadRecord,
+  type BookingLeadSource,
   type BookingLeadStatus,
 } from "@/hooks/useBookingLeads";
 import {
@@ -68,36 +74,28 @@ import { buildLeadWhatsAppUrl } from "@/lib/whatsapp-lead";
 export const Route = createFileRoute("/booking-leads")({ component: BookingLeadsPage });
 
 const PAGE_SIZE = 20;
-const STATUS_CLS: Record<BookingLeadStatus, string> = {
-  new: "bg-warning/20 text-warning-foreground",
-  contacted: "bg-chart-4/15 text-chart-4",
-  visit_scheduled: "bg-muted text-muted-foreground",
-  negotiating: "bg-muted text-muted-foreground",
-  awaiting_dp: "bg-warning/20 text-warning-foreground",
-  onboarding: "bg-chart-4/15 text-chart-4",
-  leased: "bg-success/15 text-success",
-  converted: "bg-muted text-muted-foreground",
-  rejected: "bg-destructive/15 text-destructive",
-  expired: "bg-muted text-muted-foreground",
-  cancelled: "bg-muted text-muted-foreground",
-};
-
+const SEARCH_DEBOUNCE_MS = 350;
+const BOOKING_LEAD_STATUS_OPTIONS = Object.entries(BOOKING_LEAD_STATUS_LABEL) as [
+  BookingLeadStatus,
+  string,
+][];
 function LeadStatusBadge({ status }: { status: BookingLeadStatus }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap",
-        STATUS_CLS[status],
-      )}
-    >
-      {BOOKING_LEAD_STATUS_LABEL[status]}
-    </span>
-  );
+  return <BookingLeadStatusBadge label={BOOKING_LEAD_STATUS_LABEL[status]} status={status} />;
 }
 
 function LeadSourceBadge({ source }: { source: BookingLeadRecord["source"] }) {
+  const isPublic = source === "public_kamar";
+  const Icon = isPublic ? Globe2 : MonitorSmartphone;
   return (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+    <span
+      className={cn(
+        "inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold whitespace-nowrap",
+        isPublic
+          ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+          : "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+      )}
+    >
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
       {BOOKING_LEAD_SOURCE_LABEL[source] ?? source}
     </span>
   );
@@ -108,6 +106,15 @@ function roomTarget(lead: BookingLeadRecord): string {
   return [lead.roomNumber, lead.buildingCode, lead.floorCode ? `Lantai ${lead.floorCode}` : null]
     .filter(Boolean)
     .join(" · ");
+}
+
+function moveInDate(lead: BookingLeadRecord): string {
+  if (lead.status === "leased") {
+    return lead.activeLeaseStartDate
+      ? formatDate(lead.activeLeaseStartDate)
+      : "Tanggal sewa belum tersedia";
+  }
+  return lead.preferredMoveInDate ? formatDate(lead.preferredMoveInDate) : "Belum ditentukan";
 }
 
 function whatsAppUrlFor(lead: BookingLeadRecord): string | null {
@@ -126,6 +133,9 @@ function BookingLeadsPage() {
   const [status, setStatus] = useState<"all" | BookingLeadStatus>("all");
   const [category, setCategory] = useState<"all" | BookingLeadCategory>("all");
   const [gender, setGender] = useState<"all" | BookingLeadGender>("all");
+  const [source, setSource] = useState<"all" | BookingLeadSource>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedLead, setSelectedLead] = useState<BookingLeadRecord | null>(null);
   const [pending, setPending] = useState<{
@@ -138,11 +148,11 @@ function BookingLeadsPage() {
     lead: BookingLeadRecord;
     hold: BookingLeadHoldRecord | null;
   } | null>(null);
-  const [onboardingLead, setOnboardingLead] = useState<BookingLeadRecord | null>(null);
-  const [manualOnboarding, setManualOnboarding] = useState(false);
+  const [completionLead, setCompletionLead] = useState<BookingLeadRecord | null>(null);
 
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
+  const navigate = Route.useNavigate();
   const canManage = hasPermission("room.manage");
   const canManageOnboarding =
     hasPermission("resident.manage") &&
@@ -153,6 +163,9 @@ function BookingLeadsPage() {
     status: status === "all" ? undefined : status,
     category: category === "all" ? undefined : category,
     gender: gender === "all" ? undefined : gender,
+    source: source === "all" ? undefined : source,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
     search: search || undefined,
     limit: PAGE_SIZE,
     offset,
@@ -179,6 +192,16 @@ function BookingLeadsPage() {
     return () => clearInterval(interval);
   }, [currentPropertyId]);
 
+  useEffect(() => {
+    const nextSearch = searchDraft.trim();
+    const timeout = window.setTimeout(() => {
+      if (nextSearch === search) return;
+      setOffset(0);
+      setSearch(nextSearch);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [search, searchDraft]);
+
   const holdAccess = {
     roles: user?.roles ?? [],
     permissions: user?.permissions ?? [],
@@ -186,12 +209,34 @@ function BookingLeadsPage() {
   };
   const leads = leadsQuery.data?.data ?? [];
   const meta = leadsQuery.data?.meta;
-  const hasFilter = search !== "" || status !== "all" || category !== "all" || gender !== "all";
+  const hasFilter =
+    search !== "" ||
+    status !== "all" ||
+    category !== "all" ||
+    gender !== "all" ||
+    source !== "all" ||
+    dateFrom !== "" ||
+    dateTo !== "";
+  const activeFilterCount =
+    Number(search !== "") +
+    Number(status !== "all") +
+    Number(category !== "all") +
+    Number(gender !== "all") +
+    Number(source !== "all") +
+    Number(dateFrom !== "") +
+    Number(dateTo !== "");
+  const filterSignature = [search, status, category, gender, source, dateFrom, dateTo].join("|");
 
-  const applySearch = (event: FormEvent) => {
-    event.preventDefault();
+  const resetFilters = () => {
+    setSearchDraft("");
+    setSearch("");
+    setStatus("all");
+    setCategory("all");
+    setGender("all");
+    setSource("all");
+    setDateFrom("");
+    setDateTo("");
     setOffset(0);
-    setSearch(searchDraft.trim());
   };
 
   const openHoldDialog = (lead: BookingLeadRecord) => {
@@ -262,9 +307,9 @@ function BookingLeadsPage() {
             type="button"
             variant="outline"
             className="min-h-11"
-            onClick={() => setManualOnboarding(true)}
+            onClick={() => navigate({ to: "/tenants", search: { flow: "new-lease" } })}
           >
-            Onboarding manual
+            Tambah Penyewaan
           </Button>
         </div>
       ) : null}
@@ -293,12 +338,12 @@ function BookingLeadsPage() {
         </div>
       ) : null}
 
-      <form
-        className="mb-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,auto))]"
-        onSubmit={applySearch}
+      <section
+        aria-label="Pencarian dan filter minat booking"
+        className="mb-4 rounded-xl border border-border bg-card p-3"
       >
-        <div className="flex min-w-0 gap-2">
-          <div className="relative min-w-0 flex-1">
+        <div className="grid gap-3 lg:grid-cols-12">
+          <div className="relative min-w-0 lg:col-span-5">
             <Search
               className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
@@ -307,62 +352,130 @@ function BookingLeadsPage() {
               aria-label="Cari calon penyewa"
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Cari nama atau nomor WhatsApp..."
+              placeholder="Cari nama, WhatsApp, email, universitas, kamar, atau bangunan..."
               className="h-11 pl-9"
             />
           </div>
-          <Button className="min-h-11 shrink-0" type="submit" variant="outline">
-            Cari
-          </Button>
+          <Select
+            value={status}
+            onValueChange={(value) => {
+              setStatus(value as "all" | BookingLeadStatus);
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger className="min-h-11 lg:col-span-3" aria-label="Filter status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              {BOOKING_LEAD_STATUS_OPTIONS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={source}
+            onValueChange={(value) => {
+              setSource(value as "all" | BookingLeadSource);
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger className="min-h-11 lg:col-span-2" aria-label="Filter sumber data">
+              <SelectValue placeholder="Semua sumber" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Sumber</SelectItem>
+              <SelectItem value="public_kamar">Halaman Publik</SelectItem>
+              <SelectItem value="admin_quick_entry">Input Cepat Admin</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasFilter ? (
+            <Button
+              className="min-h-11 lg:col-span-2"
+              type="button"
+              variant="outline"
+              onClick={resetFilters}
+            >
+              Reset Filter
+            </Button>
+          ) : null}
+
+          <Select
+            value={category}
+            onValueChange={(value) => setCategoryFilter(value as "all" | BookingLeadCategory)}
+          >
+            <SelectTrigger className="min-h-11 lg:col-span-3" aria-label="Filter kategori kost">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Kategori</SelectItem>
+              <SelectItem value="rukost">Rumah Kost</SelectItem>
+              <SelectItem value="apartkost">Apart Kost</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={gender}
+            onValueChange={(value) => {
+              setGender(value as "all" | BookingLeadGender);
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger className="min-h-11 lg:col-span-3" aria-label="Filter jenis kelamin">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Jenis Kelamin</SelectItem>
+              <SelectItem value="male">Putra</SelectItem>
+              <SelectItem value="female">Putri</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="lg:col-span-6">
+            <div className="grid grid-cols-[minmax(0,1fr)_1.25rem_minmax(0,1fr)] items-center gap-2">
+              <HeroUiDatePicker
+                ariaLabel="Tanggal pencatatan awal"
+                id="lead-date-from"
+                maxDate={dateTo || undefined}
+                onChange={(value) => {
+                  setDateFrom(value ?? "");
+                  setOffset(0);
+                }}
+                placeholder="dd/mm/yyyy"
+                value={dateFrom}
+              />
+              <span
+                aria-hidden="true"
+                className="text-center text-base font-semibold text-muted-foreground"
+              >
+                –
+              </span>
+              <HeroUiDatePicker
+                ariaLabel="Tanggal pencatatan akhir"
+                id="lead-date-to"
+                minDate={dateFrom || undefined}
+                onChange={(value) => {
+                  setDateTo(value ?? "");
+                  setOffset(0);
+                }}
+                placeholder="dd/mm/yyyy"
+                value={dateTo}
+              />
+            </div>
+          </div>
         </div>
-        <Select
-          value={status}
-          onValueChange={(value) => {
-            setStatus(value as "all" | BookingLeadStatus);
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger className="min-h-11" aria-label="Filter status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="new">Baru</SelectItem>
-            <SelectItem value="contacted">Sudah Dihubungi</SelectItem>
-            <SelectItem value="rejected">Ditolak</SelectItem>
-            <SelectItem value="expired">Kedaluwarsa</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={category}
-          onValueChange={(value) => setCategoryFilter(value as "all" | BookingLeadCategory)}
-        >
-          <SelectTrigger className="min-h-11" aria-label="Filter kategori kost">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Kategori</SelectItem>
-            <SelectItem value="rukost">Rumah Kost</SelectItem>
-            <SelectItem value="apartkost">Apart Kost</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={gender}
-          onValueChange={(value) => {
-            setGender(value as "all" | BookingLeadGender);
-            setOffset(0);
-          }}
-        >
-          <SelectTrigger className="min-h-11" aria-label="Filter jenis kelamin">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Jenis Kelamin</SelectItem>
-            <SelectItem value="male">Putra</SelectItem>
-            <SelectItem value="female">Putri</SelectItem>
-          </SelectContent>
-        </Select>
-      </form>
+      </section>
+
+      {!leadsQuery.isLoading && !leadsQuery.isFetching && !leadsQuery.error && meta ? (
+        <FilterResultNotice
+          key={filterSignature}
+          className="mb-4"
+          entityLabel="minat booking"
+          resultCount={meta.total}
+          activeFilterCount={activeFilterCount}
+          searchTerm={search}
+        />
+      ) : null}
 
       {leadsQuery.error ? (
         <ErrorState
@@ -462,11 +575,7 @@ function BookingLeadsPage() {
                           <LeadSourceBadge source={lead.source} />
                         </td>
                         <td className="max-w-52 px-4 py-3 break-words">{roomTarget(lead)}</td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {lead.preferredMoveInDate
-                            ? formatDate(lead.preferredMoveInDate)
-                            : "Belum ditentukan"}
-                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{moveInDate(lead)}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-col items-start gap-1.5">
                             <LeadStatusBadge status={lead.status} />
@@ -510,7 +619,22 @@ function BookingLeadsPage() {
                                 onSelect={(next) => queueStatusChange(lead, next)}
                               />
                             ) : null}
+                            {canManageOnboarding && activeHold && lead.status === "onboarding" ? (
+                              <Button
+                                className="min-h-11"
+                                size="sm"
+                                onClick={() =>
+                                  navigate({
+                                    to: "/tenants",
+                                    search: { flow: "new-lease", bookingLeadId: lead.id },
+                                  })
+                                }
+                              >
+                                Lengkapi Data Penyewaan
+                              </Button>
+                            ) : null}
                             {canManageOnboarding &&
+                            activeHold &&
                             [
                               "new",
                               "contacted",
@@ -521,9 +645,9 @@ function BookingLeadsPage() {
                               <Button
                                 className="min-h-11"
                                 size="sm"
-                                onClick={() => setOnboardingLead(lead)}
+                                onClick={() => setCompletionLead(lead)}
                               >
-                                Lanjutkan onboarding
+                                Selesaikan Minat Booking
                               </Button>
                             ) : null}
                           </div>
@@ -584,12 +708,8 @@ function BookingLeadsPage() {
                       </div>
                       <MobileFact label="Kamar/Target" value={roomTarget(lead)} />
                       <MobileFact
-                        label="Rencana Masuk"
-                        value={
-                          lead.preferredMoveInDate
-                            ? formatDate(lead.preferredMoveInDate)
-                            : "Belum ditentukan"
-                        }
+                        label={lead.status === "leased" ? "Mulai Sewa" : "Rencana Masuk"}
+                        value={moveInDate(lead)}
                       />
                     </dl>
                     {activeHold ? (
@@ -629,7 +749,22 @@ function BookingLeadsPage() {
                           onSelect={(next) => queueStatusChange(lead, next)}
                         />
                       ) : null}
+                      {canManageOnboarding && activeHold && lead.status === "onboarding" ? (
+                        <Button
+                          className="min-h-11"
+                          size="sm"
+                          onClick={() =>
+                            navigate({
+                              to: "/tenants",
+                              search: { flow: "new-lease", bookingLeadId: lead.id },
+                            })
+                          }
+                        >
+                          Lengkapi Data Penyewaan
+                        </Button>
+                      ) : null}
                       {canManageOnboarding &&
+                      activeHold &&
                       [
                         "new",
                         "contacted",
@@ -640,9 +775,9 @@ function BookingLeadsPage() {
                         <Button
                           className="min-h-11"
                           size="sm"
-                          onClick={() => setOnboardingLead(lead)}
+                          onClick={() => setCompletionLead(lead)}
                         >
-                          Lanjutkan onboarding
+                          Selesaikan Minat Booking
                         </Button>
                       ) : null}
                     </div>
@@ -688,6 +823,14 @@ function BookingLeadsPage() {
         lead={selectedLead}
         open={selectedLead !== null}
         onOpenChange={(open) => !open && setSelectedLead(null)}
+        onViewResident={(residentId) => {
+          setSelectedLead(null);
+          void navigate({ to: "/tenants/$residentId", params: { residentId } });
+        }}
+        onViewRoom={(roomNumber) => {
+          setSelectedLead(null);
+          void navigate({ to: "/rooms/$roomNumber", params: { roomNumber } });
+        }}
       />
       <BookingLeadHoldDialog
         open={holdIntent !== null}
@@ -697,15 +840,16 @@ function BookingLeadsPage() {
         coverage={holdCoverage}
         onOpenChange={(open) => !open && setHoldIntent(null)}
       />
-      <ResidentOnboardingDialog
-        lead={onboardingLead}
-        manual={manualOnboarding}
-        open={onboardingLead !== null || manualOnboarding}
-        onOpenChange={(open) => {
-          if (!open) {
-            setOnboardingLead(null);
-            setManualOnboarding(false);
-          }
+      <CompleteBookingLeadDialog
+        lead={completionLead}
+        open={completionLead !== null}
+        onOpenChange={(open) => !open && setCompletionLead(null)}
+        onComplete={(leadId) => {
+          setCompletionLead(null);
+          void navigate({
+            to: "/tenants",
+            search: { flow: "new-lease", bookingLeadId: leadId },
+          });
         }}
       />
       <ConfirmDialog

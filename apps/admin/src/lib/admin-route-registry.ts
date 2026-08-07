@@ -228,7 +228,10 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       readCapabilities: ["lease.read"],
       feature: "adminUxLease",
     },
-    navigation: { sidebar: true, mobilePriority: 30 },
+    // Lease endpoints remain technical authorities, but the resident + lease
+    // hub is the only operator-facing navigation entry.
+    redirectOnly: true,
+    navigation: { sidebar: false },
   },
   {
     id: "leases-create",
@@ -244,6 +247,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       mutationCapabilities: ["lease.manage"],
       feature: "adminUxLease",
     },
+    redirectOnly: true,
   },
   {
     id: "lease-detail",
@@ -310,7 +314,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     to: "/booking-leads",
     label: "Minat Booking",
     section: "pengelolaan",
-    order: 80,
+    order: 45,
     icon: Inbox,
     access: { roles: ["manager", "admin"] },
     navigation: { sidebar: true, mobilePriority: 70 },

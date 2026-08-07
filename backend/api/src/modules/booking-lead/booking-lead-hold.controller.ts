@@ -57,6 +57,7 @@ export class BookingLeadHoldCommandController {
     const result = await this.holds.create(
       leadId,
       dto.property_id,
+      dto.room_id,
       idempotencyKey,
       requestContext(user, request),
     );

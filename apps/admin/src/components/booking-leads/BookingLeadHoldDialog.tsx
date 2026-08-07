@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, Loader2, LockKeyhole, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ import { useAuth } from "@/lib/auth";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
+import { useM6LeaseAvailableRooms } from "@/hooks/useAdminUxLeases";
 
 type HoldDialogProps = {
   open: boolean;
@@ -46,7 +47,7 @@ export function BookingLeadHoldStatus({
 }) {
   return (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2 py-1 text-xs font-medium text-warning-foreground">
+      <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-amber-600/35 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950 shadow-sm dark:border-amber-300/35 dark:bg-amber-300/15 dark:text-amber-100">
         <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" /> Ditahan
       </span>
       <span
@@ -84,6 +85,16 @@ export function BookingLeadHoldDialog({
   const leadAtOpen = useRef<string | null>(null);
   const submissionKey = useRef<string | null>(null);
   const submitting = useRef(false);
+  const isPublicLead = lead?.source === "public_kamar";
+  const [selectedRoomId, setSelectedRoomId] = useState(isPublicLead ? "" : (lead?.roomId ?? ""));
+  const availableRooms = useM6LeaseAvailableRooms();
+  const compatibleRooms = useMemo(
+    () =>
+      (availableRooms.data?.items ?? [])
+        .filter((room) => room.genderPolicy === "mixed" || room.genderPolicy === lead?.gender)
+        .filter((room) => room.kostType.category === lead?.category),
+    [availableRooms.data?.items, lead?.category, lead?.gender],
+  );
 
   const access = {
     roles: user?.roles ?? [],
@@ -109,6 +120,7 @@ export function BookingLeadHoldDialog({
       propertyAtOpen.current = null;
       leadAtOpen.current = null;
       submissionKey.current = null;
+      setSelectedRoomId(lead?.source === "public_kamar" ? "" : (lead?.roomId ?? ""));
       resetCreate();
       resetRelease();
       return;
@@ -127,7 +139,16 @@ export function BookingLeadHoldDialog({
       resetRelease();
       onOpenChange(false);
     }
-  }, [currentPropertyId, lead?.id, onOpenChange, open, resetCreate, resetRelease]);
+  }, [
+    currentPropertyId,
+    lead?.id,
+    lead?.roomId,
+    lead?.source,
+    onOpenChange,
+    open,
+    resetCreate,
+    resetRelease,
+  ]);
 
   if (!lead) return null;
 
@@ -147,7 +168,12 @@ export function BookingLeadHoldDialog({
     const idempotencyKey = submissionKey.current ?? newIdempotencyKey();
     submissionKey.current = idempotencyKey;
     try {
-      await mutation.mutateAsync({ propertyId, leadId: lead.id, idempotencyKey });
+      await mutation.mutateAsync({
+        propertyId,
+        leadId: lead.id,
+        idempotencyKey,
+        ...(createMode && lead.source === "public_kamar" ? { roomId: selectedRoomId } : {}),
+      });
       submissionKey.current = null;
       onOpenChange(false);
     } catch {
@@ -180,9 +206,36 @@ export function BookingLeadHoldDialog({
           </div>
           <div className="min-w-0">
             <dt className="text-muted-foreground">Kamar</dt>
-            <dd className="break-words font-medium">{lead.roomNumber ?? "Belum terhubung"}</dd>
+            <dd className="break-words font-medium">
+              {lead.source === "public_kamar"
+                ? "Dipilih saat tahan kamar"
+                : (lead.roomNumber ?? "Belum terhubung")}
+            </dd>
           </div>
         </dl>
+
+        {createMode && lead.source === "public_kamar" ? (
+          <label className="grid gap-2 text-sm font-medium">
+            Pilih kamar kosong yang sesuai
+            <select
+              className="min-h-11 rounded-md border border-input bg-background px-3 text-sm font-normal"
+              value={selectedRoomId}
+              onChange={(event) => setSelectedRoomId(event.target.value)}
+              disabled={pending || availableRooms.isPending}
+            >
+              <option value="">{availableRooms.isPending ? "Memuat kamar…" : "Pilih kamar"}</option>
+              {compatibleRooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.number} · {room.kostType.name}
+                </option>
+              ))}
+            </select>
+            <span className="font-normal text-muted-foreground">
+              Hanya kamar kosong kategori {lead.category === "rukost" ? "Rumah Kost" : "Apart Kost"}{" "}
+              untuk {lead.gender === "male" ? "Putra" : "Putri"} yang ditampilkan.
+            </span>
+          </label>
+        ) : null}
 
         {errorMessage ? (
           <p role="alert" className="break-words text-sm text-destructive">
@@ -197,7 +250,11 @@ export function BookingLeadHoldDialog({
           <Button
             variant={createMode ? "default" : "destructive"}
             onClick={() => void submit()}
-            disabled={!accessAllowed || pending}
+            disabled={
+              !accessAllowed ||
+              pending ||
+              (createMode && lead.source === "public_kamar" && !selectedRoomId)
+            }
           >
             {pending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />

@@ -312,20 +312,21 @@ test("M6 C1 lease detail route guards UUIDs and preserves partial search", async
   assert.doesNotMatch(source, /RouteFoundationPage/);
 });
 
-test("M6 C2 create selector keeps resident IDs scoped and labels masked", async () => {
+test("M6 C2 create flow keeps the new resident and room selection property scoped", async () => {
   const source = await readFile(
     new URL("../components/leases/LeaseCreatePage.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /useM6LeaseResidentOptions\(\)/);
   assert.match(source, /useProperty\(\)/);
-  assert.match(source, /\[currentPropertyId\]/);
-  assert.match(source, /setResidentId\(""\)/);
-  assert.match(source, /value=\{resident\.id\}/);
-  assert.match(source, /resident\.displayNameMasked/);
-  assert.match(source, /selectedResident\?\.displayNameMasked/);
+  assert.match(source, /useM6LeaseAvailableRooms\(deferredRoomSearch\)/);
+  assert.match(source, /property_id: currentPropertyId/);
+  assert.match(source, /visitor_name: resident\.fullName\.trim\(\)/);
+  assert.match(source, /visitor_phone: resident\.phone\.trim\(\)/);
+  assert.match(source, /room_id: selectedRoom\.id/);
+  assert.match(source, /room\.genderPolicy === gender/);
+  assert.match(source, /gender: resident\.gender/);
   assert.doesNotMatch(source, /placeholder="UUID penghuni"/);
   assert.doesNotMatch(source, /existing-resident-id/);
-  assert.doesNotMatch(source, /\/residents/);
+  assert.doesNotMatch(source, /useM6LeaseResidentOptions\(\)/);
 });

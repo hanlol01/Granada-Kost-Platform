@@ -1,6 +1,11 @@
 import { ApiError, ERROR_CODES } from "@granada-kost/domain";
 
-export type ResidentStatus = "active" | "inactive";
+/**
+ * Lifecycle status is server-owned. A resident prepared by W05 is deliberately
+ * visible as pending_activation before the separate lease activation command
+ * creates occupancy; it must not be mistaken for an invalid list response.
+ */
+export type ResidentStatus = "draft" | "pending_activation" | "active" | "inactive" | "archived";
 export type ResidentAccountStatus = "active" | "inactive" | "suspended" | "not_provisioned";
 
 export type ResidentListRecord = {
@@ -48,6 +53,20 @@ export type ResidentDetail = ResidentListRecord & {
 export type ResidentPage = {
   data: ResidentListRecord[];
   meta: { limit: number; offset: number; total: number };
+};
+
+export type ResidentTenancy = {
+  residentId: string;
+  propertyId: string;
+  leaseId: string;
+  leaseStatus: "awaiting_activation" | "active";
+  roomNumber: string;
+  kostTypeName: string;
+  buildingCode: string;
+  startDate: string;
+  endDate: string;
+  termMonths: number;
+  paymentPlanType: "annual_full" | "monthly_installments" | "two_month_installments";
 };
 
 export type ResidentAccountReceipt = {
@@ -169,7 +188,13 @@ function parseListRecord(value: unknown): ResidentListRecord {
       "suspended",
       "not_provisioned",
     ]),
-    residentStatus: enumValue(item.resident_status, ["active", "inactive"]),
+    residentStatus: enumValue(item.resident_status, [
+      "draft",
+      "pending_activation",
+      "active",
+      "inactive",
+      "archived",
+    ]),
     createdAt: timestamp(item.created_at),
     updatedAt: timestamp(item.updated_at),
   };
@@ -266,7 +291,13 @@ export function parseResidentDetail(value: unknown, expectedPropertyId: string):
       "suspended",
       "not_provisioned",
     ]),
-    residentStatus: enumValue(item.resident_status, ["active", "inactive"]),
+    residentStatus: enumValue(item.resident_status, [
+      "draft",
+      "pending_activation",
+      "active",
+      "inactive",
+      "archived",
+    ]),
     roomNumber: null,
     leaseStart: null,
     leaseEnd: null,
@@ -289,6 +320,50 @@ export function parseResidentDetail(value: unknown, expectedPropertyId: string):
     profilePhotoFileId: uuid(item.profile_photo_file_id, true),
     createdAt: timestamp(item.created_at),
     updatedAt: timestamp(item.updated_at),
+  };
+}
+
+export function parseResidentTenancy(
+  value: unknown,
+  expectedPropertyId: string,
+  expectedResidentId: string,
+): ResidentTenancy | null {
+  const envelope = record(value);
+  exact(envelope, ["data"]);
+  if (envelope.data === null) return null;
+  const item = record(envelope.data);
+  exact(item, [
+    "resident_id",
+    "property_id",
+    "lease_id",
+    "lease_status",
+    "room_number",
+    "kost_type_name",
+    "building_code",
+    "start_date",
+    "end_date",
+    "term_months",
+    "payment_plan_type",
+  ]);
+  const propertyId = uuid(item.property_id) as string;
+  const residentId = uuid(item.resident_id) as string;
+  if (propertyId !== expectedPropertyId || residentId !== expectedResidentId) return invalid();
+  return {
+    residentId,
+    propertyId,
+    leaseId: uuid(item.lease_id) as string,
+    leaseStatus: enumValue(item.lease_status, ["awaiting_activation", "active"] as const),
+    roomNumber: text(item.room_number) as string,
+    kostTypeName: text(item.kost_type_name) as string,
+    buildingCode: text(item.building_code) as string,
+    startDate: date(item.start_date) as string,
+    endDate: date(item.end_date) as string,
+    termMonths: integer(item.term_months),
+    paymentPlanType: enumValue(item.payment_plan_type, [
+      "annual_full",
+      "monthly_installments",
+      "two_month_installments",
+    ] as const),
   };
 }
 

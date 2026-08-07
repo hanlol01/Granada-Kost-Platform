@@ -90,8 +90,8 @@ Discovery controls are:
 - **Kategori**: Semua, Rumah Kost, Apart Kost;
 - **Untuk**: Putra or Putri;
 - **Rencana Mulai**: date or “Belum ditentukan”; and
-- **Rencana Sewa**: minimum 12 months, with annual-full or two-month installment
-  interest.
+- **Rencana Sewa**: a 3-, 6-, or 12-month starting choice, with another whole
+  number from 3 through 120 months available in the subsequent Admin workflow.
 
 Gender can be left unset while browsing, but is required before lead
 submission. Category can be unset on the listing, but a category is required
@@ -164,10 +164,11 @@ The detail page shows:
 - complete published category facilities;
 - property/common facilities;
 - category tariff;
-- minimum 12-month lease term;
-- annual-full or two-month installment explanation;
-- DP minimum;
-- security-deposit explanation;
+- a minimum three-month lease term and duration options;
+- payment schedule explanation derived from the chosen duration;
+- 25% initial-rent-credit explanation, including the distinction between
+  optional Booking Fee and DP;
+- optional security-deposit explanation;
 - payment method statement;
 - one-person/one-room and gender policy;
 - house-rule highlights;
@@ -176,9 +177,9 @@ The detail page shows:
 - location and contact; and
 - links to the complete published terms.
 
-DP and security deposit must be presented as different concepts. Public copy
-must not state that DP is refundable security or that the security deposit
-reduces rent.
+Booking Fee, DP, and security deposit must be presented as three different
+concepts. Public copy must not state that Booking Fee or DP is refundable
+security, or that a security deposit reduces rent.
 
 ### FR-PUB-PUBLIC-104 — Category CTA
 
@@ -693,6 +694,13 @@ provider payloads, audit snapshots, or unrelated PII.
    retention policy.
 
 ## 16. Completion Gate
+
+### Booking-form gender presentation amendment
+
+`Jenis Kelamin` starts blank and is required in the public lead form. Category
+cards may display aggregate Putra/Putri availability counts, but never use a
+gender quick-toggle or reveal room IDs/numbers. Exact-room selection occurs only
+after an authorized Admin creates the hold.
 
 The Public and Penghuni experience is not complete until:
 

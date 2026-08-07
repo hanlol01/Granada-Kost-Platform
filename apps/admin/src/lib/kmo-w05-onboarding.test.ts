@@ -39,7 +39,27 @@ const response = {
     paymentPlanType: "two_month_installments",
     contractRentAmount: 21600000,
     dpRequiredAmount: 5400000,
-    securityDepositRequiredAmount: 1800000,
+    securityDepositRequiredAmount: 0,
+    initialPayment: {
+      method: "cash",
+      status: "verified",
+      dpRecordedAmount: 5400000,
+      securityDepositRecordedAmount: 1800000,
+      dpVerifiedAmount: 5400000,
+      securityDepositVerifiedAmount: 1800000,
+      receipts: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          purpose: "dp",
+          amount: 5400000,
+        },
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          purpose: "security_deposit",
+          amount: 1800000,
+        },
+      ],
+    },
     temporaryPassword: "one-time",
   },
 };
@@ -54,6 +74,7 @@ const payload: OnboardingPayload = {
   accepted_terms_version: "W05-v1",
   dp_verified_amount: 5400000,
   security_deposit_funded_amount: 1800000,
+  payment_method: "cash",
 };
 
 type OnboardingMutation = ReturnType<typeof useResidentOnboarding>;
@@ -116,8 +137,66 @@ function cachedMutationData(queryClient: QueryClient): unknown[] {
 test("strict onboarding response parser and one-time credential boundary", () => {
   const parsed = parseAdminOnboarding(response);
   assert.equal(parsed.roomNumber, "RK-01-01");
+  assert.equal(parsed.initialPayment.receipts.length, 2);
+  assert.equal(
+    parseAdminOnboarding({
+      ...response,
+      data: {
+        ...response.data,
+        termMonths: 3,
+        endDate: "2026-10-31",
+        contractRentAmount: 5400000,
+        dpRequiredAmount: 1350000,
+        initialPayment: {
+          ...response.data.initialPayment,
+          dpRecordedAmount: 1350000,
+          dpVerifiedAmount: 1350000,
+        },
+      },
+    }).termMonths,
+    3,
+  );
+  assert.throws(() =>
+    parseAdminOnboarding({
+      ...response,
+      data: {
+        ...response.data,
+        termMonths: 121,
+      },
+    }),
+  );
   assert.throws(() =>
     parseAdminOnboarding({ ...response, data: { ...response.data, roomId: id } }),
+  );
+  assert.throws(() =>
+    parseAdminOnboarding({
+      ...response,
+      data: {
+        ...response.data,
+        initialPayment: { ...response.data.initialPayment, status: "pending" },
+      },
+    }),
+  );
+  assert.throws(() =>
+    parseAdminOnboarding({
+      ...response,
+      data: {
+        ...response.data,
+        initialPayment: { ...response.data.initialPayment, securityDepositRecordedAmount: -1 },
+      },
+    }),
+  );
+  assert.throws(() =>
+    parseAdminOnboarding({
+      ...response,
+      data: {
+        ...response.data,
+        initialPayment: {
+          ...response.data.initialPayment,
+          receipts: [{ id: "not-a-uuid", purpose: "dp", amount: 1 }],
+        },
+      },
+    }),
   );
 });
 test("request uses stable idempotency and no lifecycle shortcut", async () => {
@@ -325,4 +404,23 @@ test("dialog owns and clears the one-time receipt without implicit activation", 
   assert.ok(resetEffect);
   assert.doesNotMatch(resetEffect, /activation\.mutate/);
   assert.equal(dialog.match(/activation\.mutate/g)?.length, 1);
+});
+
+test("booking-lead lease flow explains its recorded period and a revised calculation", () => {
+  const page = readFileSync(
+    resolve(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "../components/leases/LeaseCreatePage.tsx",
+    ),
+    "utf8",
+  );
+
+  assert.match(page, /Periode dari Minat Booking/);
+  assert.match(page, /Tanggal mulai dan durasi di bawah dapat disesuaikan/);
+  assert.match(
+    page,
+    /Jumlah sewa dan sisa\s+pembayaran akan dihitung ulang,\s+lalu diverifikasi server/,
+  );
+  assert.match(page, /bookingPeriod\.startDate !== startDate/);
+  assert.match(page, /bookingPeriod\.termMonths !== termMonths/);
 });

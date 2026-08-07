@@ -33,6 +33,12 @@ export type BookingLeadRecord = {
   visitorUniversity: string | null;
   visitorMessage: string | null;
   preferredMoveInDate: string | null;
+  /**
+   * Projected only for the Admin queue. This is the authoritative lease
+   * start date once a booking lead has become an active tenancy; it is not
+   * the optional move-in preference captured when the lead was created.
+   */
+  activeLeaseStartDate: string | null;
   status: BookingLeadStatus;
   source: BookingLeadSource;
   metadata: Record<string, unknown> | null;
@@ -97,6 +103,7 @@ export type ListBookingLeadsFilters = {
   status?: BookingLeadStatus;
   category?: BookingLeadCategory;
   gender?: BookingLeadGender;
+  source?: BookingLeadSource;
   dateFrom?: string;
   dateTo?: string;
   search?: string;

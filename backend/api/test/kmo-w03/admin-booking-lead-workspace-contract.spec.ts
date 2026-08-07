@@ -30,6 +30,7 @@ const lead = (status: BookingLeadRecord['status'] = 'new'): BookingLeadRecord =>
   visitorUniversity: null,
   visitorMessage: null,
   preferredMoveInDate: null,
+  activeLeaseStartDate: null,
   status,
   source: 'public_kamar',
   metadata: null,
@@ -53,6 +54,9 @@ test('repository list is property-aligned, repeatable-read, counted and determin
   assert.match(repository, /REPEATABLE READ READ ONLY/);
   assert.match(repository, /COUNT\(\*\)::int AS total/);
   assert.match(repository, /rooms\.property_id = booking_leads\.property_id/);
+  assert.match(repository, /active_lease\.property_id = booking_leads\.property_id/);
+  assert.match(repository, /active_lease\.lease_status = 'active'/);
+  assert.match(repository, /active_lease_start_date/);
   assert.match(repository, /ORDER BY booking_leads\.created_at DESC, booking_leads\.id DESC/);
 });
 
@@ -105,6 +109,7 @@ test('Admin projection remains a strict PII-minimized whitelist', () => {
   assert.doesNotMatch(response, /metadata:|createdByUserId:|consentAt:|visitorEmail:/);
   assert.match(response, /roomNumber/);
   assert.match(response, /publicGroupKey/);
+  assert.match(response, /activeLeaseStartDate/);
 });
 
 test('missing idempotency fails before transaction, claim, status mutation, or audit', async () => {

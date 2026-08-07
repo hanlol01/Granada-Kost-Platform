@@ -26,6 +26,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import {
   Dialog,
   DialogContent,
@@ -184,6 +187,24 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     [buildingQuery.data, category, currentPropertyId],
   );
   const canPersistRoom = Boolean(canManage && activeType && buildings.length > 0);
+  const activeFilterCount = [
+    Boolean(search.q?.trim()),
+    Boolean(search.buildingId),
+    Boolean(search.floorCode),
+    Boolean(search.status),
+    Boolean(search.genderPolicy),
+    search.activeOccupancy !== undefined,
+    Boolean(search.reconciliationState),
+  ].filter(Boolean).length;
+  const filterSignature = JSON.stringify({
+    q: search.q,
+    buildingId: search.buildingId,
+    floorCode: search.floorCode,
+    status: search.status,
+    genderPolicy: search.genderPolicy,
+    activeOccupancy: search.activeOccupancy,
+    reconciliationState: search.reconciliationState,
+  });
 
   useEffect(() => {
     setStatusRoom(null);
@@ -263,12 +284,35 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
           </Card>
         )}
 
+        <NoticeAlert
+          tone={activeType ? "info" : "warning"}
+          title={
+            activeType
+              ? `Perhatikan inventori ${KOST_TYPE_LABEL[category]}`
+              : `Tipe ${KOST_TYPE_LABEL[category]} belum aktif`
+          }
+          description={
+            activeType
+              ? "Harga, fasilitas, dan deposit mengikuti tipe kost. Status kamar Dipesan atau Terisi berubah melalui proses minat booking dan penyewaan."
+              : "Aktifkan tipe kost terlebih dahulu agar harga, fasilitas, dan inventori dapat dikelola dengan benar."
+          }
+        />
+
         <RoomDiscoveryFilters
           category={category}
           buildings={buildings}
           search={search}
           onSearchChange={onSearchChange}
         />
+        {!roomQuery.isFetching ? (
+          <FilterResultNotice
+            key={filterSignature}
+            entityLabel={`kamar ${KOST_TYPE_LABEL[category]}`}
+            resultCount={roomQuery.data?.total ?? 0}
+            activeFilterCount={activeFilterCount}
+            searchTerm={search.q}
+          />
+        ) : null}
         <RoomInventoryTable
           rooms={rooms}
           canManage={canManage}
@@ -1048,15 +1092,16 @@ function KostTypeEditor({
                 onValueChange={(value) => set("yearlyPrice", value)}
               />
             </Field>
-            <Field label="Tanggal efektif" required hint="Tanggal kalender, tanpa overlap ambigu.">
-              <Input
-                type="date"
-                value={draft.effectiveDate ?? ""}
-                min={kostType ? nextCanonicalDate(jakartaDate()) : undefined}
-                disabled={pending}
-                onChange={(event) => set("effectiveDate", event.target.value)}
-              />
-            </Field>
+            <HeroUiDatePicker
+              id="kost-type-effective-date"
+              label="Tanggal efektif"
+              required
+              description="Tanggal kalender, tanpa overlap ambigu."
+              value={draft.effectiveDate ?? ""}
+              minDate={kostType ? nextCanonicalDate(jakartaDate()) : undefined}
+              disabled={pending}
+              onChange={(value) => set("effectiveDate", value)}
+            />
           </div>
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
             Preview: {formatIDR(draft.monthlyPrice)}/bulan · {formatIDR(draft.yearlyPrice)}/tahun ·

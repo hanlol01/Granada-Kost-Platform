@@ -80,7 +80,7 @@ Public/Admin inquiry
   → Booking Lead
   → optional 24-hour Room Hold
   → Admin-selected exact Room
-  → verified DP (advance rent, minimum 25% contract)
+  → Lead Payment Commitment (Booking Fee, DP, or full settlement)
   → Onboarding draft
   → Lease awaiting activation reserves Room
   → documents + security deposit + agreement + schedule ready
@@ -98,6 +98,13 @@ Public/Admin inquiry
 Direct Admin onboarding starts at `Onboarding draft` without fabricating a
 Booking Lead. A public visitor never selects an exact room.
 
+Before `Commit Onboarding`, lead-based onboarding may revise only the proposed
+lease period (valid start date and 3–120-month duration). The final quote is
+derived again from the authoritative room/category commercial schedule. The
+Lead Payment Commitment remains an immutable historical record: its rent credit
+must fit within the revised contract rent, otherwise commit fails closed until
+the lead is explicitly corrected or cancelled.
+
 ## 4. Booking Lead Lifecycle
 
 Authority: `INV-LEAD-001`, `INV-LEAD-002`, `DEC-LEAD-001` through
@@ -111,7 +118,7 @@ Authority: `INV-LEAD-001`, `INV-LEAD-002`, `DEC-LEAD-001` through
 | `contacted` | Sudah Dihubungi | Admin recorded a real contact attempt. |
 | `negotiating` | Dalam Kesepakatan | Category, gender, timing, terms, and commercial intent are being agreed. |
 | `awaiting_dp` | Menunggu DP | Exact room and contract quote exist; qualifying DP is not yet verified. |
-| `onboarding` | Melengkapi Data | DP threshold is met and resident/lease activation data are being completed. |
+| `onboarding` | Melengkapi Data | An active hold and one Lead Payment Commitment are present; resident/lease data are being completed in `/tenants`. |
 | `leased` | Disewa | Atomic lease activation completed. Terminal. |
 | `rejected` | Ditolak | Admin rejected the lead with reason. Terminal. |
 | `expired` | Kedaluwarsa | Lead passed the configured follow-up window without agreement. Terminal. |
@@ -126,7 +133,7 @@ Authority: `INV-LEAD-001`, `INV-LEAD-002`, `DEC-LEAD-001` through
 | `RecordContact` | `new` | `contacted` | Records channel, timestamp, actor, and safe note. |
 | `BeginNegotiation` | `contacted` | `negotiating` | Records agreed category/gender and planned start. Survey may be an activity, not a state. |
 | `AwaitDP` | `negotiating` | `awaiting_dp` | Admin selected an eligible room and created an immutable quote/contract-value snapshot. |
-| `BeginOnboarding` | `awaiting_dp` | `onboarding` | Verified DP allocation is at least 25% of contract value; exact room remains reserved by hold or awaiting-activation lease. |
+| `CompleteLead` | `new`, `contacted`, `negotiating`, `awaiting_dp` | `onboarding` | Requires an active compatible hold. Records exactly one Lead Payment Commitment; a 25% DP value is a recommendation, not a blocking minimum. The exact room remains reserved by hold. |
 | `ActivateLease` | `onboarding` | `leased` | Performed only inside atomic activation transaction. |
 | `RejectLead` | any nonterminal | `rejected` | Reason required; safely release active hold/reservation authority. |
 | `ExpireLead` | `new`, `contacted`, `negotiating`, `awaiting_dp` | `expired` | Database-time worker/manual command; no active committed lease. |
@@ -142,6 +149,8 @@ Authority: `INV-LEAD-001`, `INV-LEAD-002`, `DEC-LEAD-001` through
   dropdown.
 - A hold expiry may move `awaiting_dp` back to `negotiating` and clear the room
   proposal only when no committed reservation replaces the hold.
+- `Booking Lead != Hold != Lead Payment Commitment != Lease != Occupancy`.
+  Each transition is explicit and separately auditable.
 
 ## 5. Room Hold Lifecycle
 
@@ -195,11 +204,15 @@ persisted status is never sufficient.
 - parent/emergency contacts;
 - required KTP/KK/KTM or approved document references;
 - authoritative category, room, building, floor, and gender compatibility;
-- twelve-month lease dates and immutable tariff snapshot;
-- annual or two-month installment schedule;
+- valid historical/current/future contractual dates, a 3–120-month term, and
+  immutable tariff snapshot;
+- schedule derived from the commercial snapshot;
 - accepted/versioned terms and agreement evidence;
-- verified DP of at least 25% contract value;
-- funded security deposit of one configured month by default;
+- a recorded initial-rent credit. The UI pre-fills a 25% contract-value DP
+  recommendation, but an authorized admin may record a lower agreed DP; Booking
+  Fee remains a separate rent credit of Rp0 or at least Rp1.000.000;
+- optional security-deposit liability recorded separately; an amount of Rp0 is
+  valid and does not block the initial-rent gate;
 - room/check-in inventory readiness;
 - no conflicting account, resident, lease, hold, occupancy, or room claim.
 
@@ -218,8 +231,8 @@ persisted status is never sufficient.
 ### 7.2 Resident provisioning
 
 `ProvisionResidentAccount` runs only inside the atomic onboarding-commit
-command after the agreement, exact room, minimum DP, security deposit, and
-billing schedule have been revalidated:
+command after the agreement, exact room, initial-rent credit, optional
+security-deposit record, and billing schedule have been revalidated:
 
 1. normalize email and Indonesian phone forms (`08`, `628`, `+628`);
 2. search by normalized identifiers under locks;
@@ -288,7 +301,7 @@ Authority: `POL-LEASE-001` through `POL-LEASE-004`,
 
 | Command | Transition | Contract |
 | --- | --- | --- |
-| `CreateLeaseDraft` | — → `draft` | Twelve-month minimum, snapshot category tariff, and exact resident/onboarding scope. |
+| `CreateLeaseDraft` | — → `draft` | 3–120-month ordinary term, snapshot category tariff, and exact resident/onboarding scope. |
 | `CommitRoomAndQuote` | `draft` → `awaiting_activation` | Exact eligible room locked; active hold promoted/released; room remains `reserved`. |
 | `ActivateLease` | `awaiting_activation` → `active` | Atomic activation contract in Section 24. |
 | `TransferWithAddendum` | `active` → `active` | Same commercial contract; append addendum and room-transfer event. |
@@ -362,15 +375,12 @@ constraint would be invalidated.
 | `completed` | Every scheduled charge is paid, voided, credited, or settled at checkout. |
 | `cancelled` | Pre-activation plan abandoned; issued records require explicit void, not deletion. |
 
-The schedule covers at least twelve months:
-
-- `annual_full`: one annual rent obligation; or
-- `two_month_installments`: six two-month rent obligations for a twelve-month
-  lease.
-
-DP is allocated against rent obligations and reduces their remaining balance.
-An Admin may record one payment that settles multiple issued obligations, but
-the plan itself remains annual or two-month installment.
+The schedule covers the committed 3–120-month term and is derived from the
+immutable commercial snapshot. An exact 12-month multiple may use the annual
+category rate; other ordinary terms use the monthly category rate. Booking Fee
+and DP are allocated against rent obligations and reduce their remaining
+balance. An Admin may record one payment that settles multiple issued
+obligations.
 
 ### 12.2 Invoice states
 
@@ -425,9 +435,9 @@ quoted → pending_confirmation → verified → allocated_to_rent
                                       ↘ reversed/refunded by explicit command
 ```
 
-Lead progression uses the cumulative verified, non-reversed DP allocation
-against the immutable contract quote. It must meet 25% before onboarding may
-progress. DP never funds the security-deposit ledger.
+Lead progression uses cumulative verified, non-reversed Booking Fee and DP
+rent credits against the immutable contract quote. They must meet 25% before
+onboarding may progress. Neither credit funds the security-deposit ledger.
 
 ### 13.4 Receipt and invoice artifacts
 
@@ -736,10 +746,11 @@ Under locks, verify:
 - normalized identity is not ambiguous;
 - room is still reserved for this onboarding/lease and is gender compatible;
 - no active occupancy or competing lease claims the room/resident;
-- contract duration is at least twelve months;
+- contract duration is 3–120 months unless a future exception authority is
+  explicitly approved;
 - commercial snapshot and accepted terms are present;
-- verified non-reversed DP is at least 25%;
-- configured security deposit is fully held;
+- verified non-reversed initial rent credit is at least 25%;
+- an optional recorded security deposit is represented as a separate liability;
 - billing schedule reconciles to contract value;
 - contractual start date has been reached using database time;
 - check-in inventory/access prerequisites are complete.
@@ -882,7 +893,33 @@ A vertical slice implementing any lifecycle is not ready for review until:
 1. state and transition tables have exact backend enum/constraint coverage;
 2. transition guards are tested through live service/repository paths;
 3. same-key replay, key reuse, concurrency, rollback, and audit failure are
-   tested;
+tested;
+
+## 31. Contract Settlement, Arrears, and Termination (KMO-W07A)
+
+```text
+awaiting_activation settlement
+  └─ ActivateLease → open balance / final deadline = activation + 2 months
+open or extended balance
+  ├─ verified rent allocation before deadline → remains open or becomes paid
+  ├─ one 1–14 day extension after original deadline → extended
+  ├─ final deadline passes with balance → overdue / admin action required
+  └─ admin starts termination → termination_pending
+termination_pending
+  ├─ exact full rent settlement → paid → admin may cancel termination
+  └─ approved checkout → terminated + occupancy ended + room vacant|maintenance
+```
+
+- `D+1` and `D+7` are calculated projections, not stale persisted lifecycle
+  states. The lease remains active and occupied at both points.
+- A verified manual rent payment may be partial through the end of ordinary D+7.
+  If the one permitted extension is granted, partial payment is instead allowed
+  only through that extension's deadline; after the applicable window, the
+  amount must equal the authoritative remaining balance.
+- A termination is a case, not a payment. It never creates an implicit checkout.
+- Finalization applies deposit to outstanding rent first, then evidence-backed
+  damage; any remaining deposit must be refunded with evidence. It retains all
+  lease, occupancy, payment, allocation, and deposit history.
 4. property/building cross-scope attempts are denied before mutation/query;
 5. invalid predecessor states and terminal-state mutations fail closed;
 6. list/detail/UI parser and cache invalidation use authoritative response

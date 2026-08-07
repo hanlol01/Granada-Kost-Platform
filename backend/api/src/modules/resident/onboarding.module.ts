@@ -6,9 +6,10 @@ import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
 import { LeaseActivationController } from '../lease/lease-activation.controller';
 import { LeaseActivationService } from '../lease/lease-activation.service';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [ResidentModule, PropertyModule, RbacModule],
+  imports: [ResidentModule, PropertyModule, RbacModule, BillingModule],
   controllers: [OnboardingController, LeaseActivationController],
   providers: [OnboardingService, LeaseActivationService],
 })

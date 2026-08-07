@@ -147,7 +147,10 @@ export const adminUxQueryKeys = {
     all: (propertyId: string) => scoped("residents", propertyId),
     list: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("residents", propertyId, normalizePagination(filters)),
-    detail: (propertyId: string, residentId: string) => scoped("resident", propertyId, residentId),
+    detail: (propertyId: string, residentId: string) =>
+      scoped("residents", propertyId, "detail", residentId),
+    tenancy: (propertyId: string, residentId: string) =>
+      scoped("residents", propertyId, "tenancy", residentId),
   },
   invoices: {
     all: (propertyId: string) => scoped("invoices", propertyId),

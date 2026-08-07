@@ -19,6 +19,7 @@ import { CreatePublicBookingLeadDto } from '../../src/modules/booking-lead/dto/c
 import { calculateOnboardingCommercial } from '../../src/modules/resident/types/onboarding.types';
 import { OnboardingService } from '../../src/modules/resident/onboarding.service';
 import { LeaseActivationService } from '../../src/modules/lease/lease-activation.service';
+import { W06BillingService } from '../../src/modules/billing/services/w06-billing.service';
 
 const root = resolve(__dirname, '../..');
 const migration = readFileSync(
@@ -37,6 +38,9 @@ const COMMITMENT_ID = '55555555-5555-4555-8555-555555555555';
 const LEASE_ID = '66666666-6666-4666-8666-666666666666';
 const KOST_TYPE_ID = '77777777-7777-4777-8777-777777777777';
 const OCCUPANCY_ID = '88888888-8888-4888-8888-888888888888';
+const KTP_FILE_ID = '99999999-9999-4999-8999-999999999999';
+const PAYMENT_EVIDENCE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const FIRST_RENT_INVOICE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const IDEMPOTENCY_KEY = 'w05-idempotency-key-0001';
 
 const actor = {
@@ -58,15 +62,26 @@ const onboardingDto = {
   payment_plan_type: 'two_month_installments' as const,
   accepted_terms_version: 'W05-v1',
   dp_verified_amount: 5_400_000,
+  booking_fee_paid_amount: 1_000_000,
   security_deposit_funded_amount: 1_800_000,
+  payment_method: 'cash' as const,
+  ktp_file_id: KTP_FILE_ID,
 };
 
 type HarnessOptions = {
   auditFailure?: Error;
   occupancyRows?: string[];
   leaseRows?: string[];
+  identityRows?: Array<{
+    id: string;
+    email: string | null;
+    phone: string | null;
+    ktp_number: string | null;
+  }>;
   roomOverrides?: Record<string, unknown>;
   replayFingerprint?: string;
+  expectedBookingFeeAmount?: number;
+  expectedInitialRentCredit?: number;
 };
 
 function normalizedSql(sql: string): string {
@@ -106,7 +121,16 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
                   paymentPlanType: 'two_month_installments',
                   contractRentAmount: 21_600_000,
                   dpRequiredAmount: 5_400_000,
-                  securityDepositRequiredAmount: 1_800_000,
+                  securityDepositRequiredAmount: 0,
+                  initialPayment: {
+                    method: 'cash',
+                    status: 'verified',
+                    dpRecordedAmount: 5_400_000,
+                    securityDepositRecordedAmount: 1_800_000,
+                    dpVerifiedAmount: 5_400_000,
+                    securityDepositVerifiedAmount: 1_800_000,
+                    receipts: [],
+                  },
                   temporaryPassword: null,
                 },
               },
@@ -117,6 +141,13 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
       if (/SELECT id FROM properties/.test(normalized))
         return { rows: [{ id: PROPERTY_ID }], rowCount: 1 };
       if (/FROM booking_lead_holds/.test(normalized)) return { rows: [], rowCount: 0 };
+      if (/FROM residents/.test(normalized) && /lower\(email\)=lower\(\$2\)/.test(normalized))
+        return {
+          rows: options.identityRows ?? [],
+          rowCount: options.identityRows?.length ?? 0,
+        };
+      if (/FROM files/.test(normalized) && /file_purpose='ktp'/.test(normalized))
+        return { rows: [{ id: KTP_FILE_ID }], rowCount: 1 };
       if (/FROM rooms r/.test(normalized))
         return {
           rows: [
@@ -201,6 +232,36 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
         if (options.auditFailure) throw options.auditFailure;
       },
     } as never,
+    {
+      recordInitialOnboardingPaymentsInTransaction: async (
+        transactionClient: unknown,
+        input: {
+          method: 'cash' | 'bank_transfer';
+          dpAmount: number;
+          securityDepositAmount: number;
+          paymentNote?: string;
+        },
+      ) => {
+        assert.equal(transactionClient, client);
+        assert.equal(
+          input.dpAmount,
+          options.expectedInitialRentCredit ??
+            onboardingDto.dp_verified_amount +
+              (options.expectedBookingFeeAmount ?? onboardingDto.booking_fee_paid_amount ?? 0),
+          'booking fee must become rent credit before the W06 DP allocation is recorded',
+        );
+        events.push('payment');
+        return {
+          method: input.method,
+          status: input.method === 'cash' ? 'verified' : 'pending_confirmation',
+          dpRecordedAmount: input.dpAmount,
+          securityDepositRecordedAmount: input.securityDepositAmount,
+          dpVerifiedAmount: input.method === 'cash' ? input.dpAmount : 0,
+          securityDepositVerifiedAmount: input.method === 'cash' ? input.securityDepositAmount : 0,
+          receipts: [],
+        };
+      },
+    } as never,
   );
   return { client, events, queries, service };
 }
@@ -215,7 +276,7 @@ function activationLease(overrides: Record<string, unknown> = {}) {
     start_date: '2026-08-01',
     end_date: '2027-07-31',
     onboarding_commitment_id: COMMITMENT_ID,
-    room_status: 'vacant',
+    room_status: 'reserved',
     room_number: 'RK-01-01',
     room_property_id: PROPERTY_ID,
     room_category: 'rukost',
@@ -357,12 +418,14 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
     visitor_name: 'Resident',
     gender: 'female',
     start_date: '2026-08-01',
-    term_months: 12,
+    term_months: 3,
     billing_cycle: 'monthly',
-    payment_plan_type: 'two_month_installments',
+    payment_plan_type: 'monthly_installments',
     accepted_terms_version: 'W05-v1',
     dp_verified_amount: 100,
     security_deposit_funded_amount: 100,
+    payment_method: 'cash',
+    ktp_file_id: KTP_FILE_ID,
   };
   assert.equal(
     (
@@ -375,7 +438,7 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
   );
   for (const input of [
     { ...valid, user_id: 'x' },
-    { ...valid, term_months: 6 },
+    { ...valid, term_months: 2 },
     { ...valid, gender: 'other' },
     { ...valid, contract_rent_amount: 1 },
   ]) {
@@ -390,13 +453,105 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
   }
 });
 
-test('commercial calculation keeps DP and one-month deposit separate and public lead cannot inject room', async () => {
+test('onboarding accepts zero or a minimum Rp1.000.000 booking fee and rejects an in-between value', async () => {
+  const zero = createOnboardingHarness({ expectedBookingFeeAmount: 0 });
+  await zero.service.commit(
+    actor as never,
+    { ...onboardingDto, booking_fee_paid_amount: 0 },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+  assert.equal(zero.events[0], 'authorized');
+
+  const belowMinimum = createOnboardingHarness();
+  await assert.rejects(
+    belowMinimum.service.commit(
+      actor as never,
+      { ...onboardingDto, booking_fee_paid_amount: 999_999 },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'BOOKING_FEE_MINIMUM_NOT_MET',
+  );
+  assert.deepEqual(belowMinimum.events, []);
+});
+
+test('three-month full payment accepts Rp1.000.000 booking credit plus Rp4.400.000 cash rent', async () => {
+  const harness = createOnboardingHarness({ expectedInitialRentCredit: 5_400_000 });
+  const response = await harness.service.commit(
+    actor as never,
+    {
+      ...onboardingDto,
+      term_months: 3,
+      billing_cycle: 'monthly',
+      payment_plan_type: 'annual_full',
+      dp_verified_amount: 4_400_000,
+      booking_fee_paid_amount: 1_000_000,
+      security_deposit_funded_amount: 0,
+      payment_method: 'cash',
+    },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+
+  assert.equal(response.contractRentAmount, 5_400_000);
+  assert.equal(response.dpRequiredAmount, 1_350_000);
+  assert.equal(response.securityDepositRequiredAmount, 0);
+  assert.equal(response.initialPayment.dpRecordedAmount, 5_400_000);
+  assert.equal(response.initialPayment.securityDepositRecordedAmount, 0);
+
+  const leaseInsert = harness.queries.find(({ sql }) => /INSERT INTO leases/.test(sql));
+  assert.ok(leaseInsert, 'onboarding must create an awaiting-activation lease');
+  assert.match(
+    leaseInsert.sql,
+    /security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id\) VALUES\([\s\S]*?\$20,now\(\),\$21,\$21\)/,
+    'lease INSERT must bind exactly one expression for each final target column',
+  );
+  assert.doesNotMatch(
+    leaseInsert.sql,
+    /\$20,\$21,now\(\),\$21,\$21/,
+    'actor id must not be inserted as an extra expression before signed_at',
+  );
+});
+
+test('three-month DP plan records the 25% figure as a recommendation and accepts a lower agreed amount', async () => {
+  const harness = createOnboardingHarness({ expectedInitialRentCredit: 100_000 });
+  const response = await harness.service.commit(
+    actor as never,
+    {
+      ...onboardingDto,
+      term_months: 3,
+      billing_cycle: 'monthly',
+      payment_plan_type: 'monthly_installments',
+      dp_verified_amount: 100_000,
+      booking_fee_paid_amount: 0,
+      security_deposit_funded_amount: 0,
+      payment_method: 'cash',
+    },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+
+  assert.equal(response.contractRentAmount, 5_400_000);
+  assert.equal(response.dpRequiredAmount, 1_350_000);
+  assert.equal(response.initialPayment.dpRecordedAmount, 100_000);
+});
+
+test('commercial calculation keeps DP and free security deposit separate and public lead cannot inject room', async () => {
   assert.deepEqual(calculateOnboardingCommercial(1_800_000, 21_600_000, 'yearly', 12), {
     contractRent: 21_600_000,
     dpRequired: 5_400_000,
-    depositRequired: 1_800_000,
+    depositRequired: 0,
   });
-  assert.throws(() => calculateOnboardingCommercial(1_800_000, 21_600_000, 'monthly', 6));
+  assert.deepEqual(calculateOnboardingCommercial(1_800_000, 21_600_000, 'monthly', 3), {
+    contractRent: 5_400_000,
+    dpRequired: 1_350_000,
+    depositRequired: 0,
+  });
   const publicLead = plainToInstance(CreatePublicBookingLeadDto, {
     category: 'rukost',
     gender: 'female',
@@ -414,6 +569,92 @@ test('commercial calculation keeps DP and one-month deposit separate and public 
         forbidNonWhitelisted: true,
       })
     ).some((error) => error.property === 'room_id'),
+  );
+});
+
+test('onboarding reads the canonical category commercial version without legacy kost type columns', async () => {
+  const harness = createOnboardingHarness();
+  await harness.service.commit(actor as never, onboardingDto, IDEMPOTENCY_KEY, {});
+  const roomAuthority = harness.queries.find(({ sql }) => /FROM rooms r/.test(sql));
+  assert.ok(roomAuthority);
+  assert.match(roomAuthority.sql, /kcv\.annual_contract_value/);
+  assert.match(roomAuthority.sql, /kcv\.monthly_price \* kcv\.security_deposit_months/);
+  assert.doesNotMatch(roomAuthority.sql, /kcv\.annual_price|kt\.annual_price/);
+  assert.doesNotMatch(
+    roomAuthority.sql,
+    /kcv\.security_deposit_amount|kt\.security_deposit_amount/,
+  );
+  assert.deepEqual(
+    roomAuthority.params,
+    [ROOM_ID, PROPERTY_ID, onboardingDto.start_date],
+    'commercial authority must be selected for the final contractual start date',
+  );
+});
+
+test('resident insert binds date of birth as a date and keeps address as text', async () => {
+  const harness = createOnboardingHarness();
+  await harness.service.commit(
+    actor as never,
+    {
+      ...onboardingDto,
+      place_of_birth: 'Bandung',
+      date_of_birth: '2004-08-02',
+      address: 'Jalan Demo Nomor 1',
+    },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+
+  const residentInsert = harness.queries.find(({ sql }) => /INSERT INTO residents/.test(sql));
+  assert.ok(residentInsert);
+  assert.match(
+    residentInsert.sql,
+    /VALUES\( \$1,\$2,\$3,\$4,\$5,'pending_activation',\$6,\$7::date,\$8,\$9/,
+  );
+  assert.equal(residentInsert.params[5], 'Bandung');
+  assert.equal(residentInsert.params[6], '2004-08-02');
+  assert.equal(residentInsert.params[7], 'Jalan Demo Nomor 1');
+});
+
+test('onboarding rejects duplicate resident contact before any resident or lease write', async () => {
+  const harness = createOnboardingHarness({
+    identityRows: [
+      {
+        id: RESIDENT_ID,
+        email: 'resident@example.test',
+        phone: '628111111111',
+        ktp_number: null,
+      },
+    ],
+  });
+  await assert.rejects(
+    harness.service.commit(
+      actor as never,
+      { ...onboardingDto, visitor_email: 'resident@example.test' },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error && 'getResponse' in error);
+      assert.deepEqual((error as { getResponse: () => unknown }).getResponse(), {
+        code: 'RESIDENT_IDENTITY_DUPLICATE',
+        message: 'Resident identity is already used in this property',
+        details: {
+          visitor_email: ['already_used'],
+        },
+      });
+      return true;
+    },
+  );
+  assert.deepEqual(
+    harness.events.filter((event) =>
+      ['authorized', 'begin', 'rollback', 'release'].includes(event),
+    ),
+    ['authorized', 'begin', 'rollback', 'release'],
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) => /INSERT INTO residents|INSERT INTO leases/.test(sql)),
+    false,
   );
 });
 
@@ -446,6 +687,7 @@ test('authorization completes before transaction lookup for onboarding and activ
     { assertCanReadProperty: async () => Promise.reject(sentinel) } as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   await assert.rejects(
     onboarding.commit(actor as never, onboardingDto, IDEMPOTENCY_KEY, {}),
@@ -476,25 +718,195 @@ test('authorization completes before transaction lookup for onboarding and activ
   assert.equal(activationTransaction, false);
 });
 
-test('onboarding commits with one transaction client and does not create occupancy or occupy room', async () => {
+test('direct onboarding reserves its room without creating occupancy or occupying it', async () => {
   const harness = createOnboardingHarness();
   const response = await harness.service.commit(actor as never, onboardingDto, IDEMPOTENCY_KEY, {});
   assert.equal(response.leaseStatus, 'awaiting_activation');
   assert.equal(response.temporaryPassword, 'transient-only');
   assert.deepEqual(
     harness.events.filter((event) =>
-      ['authorized', 'begin', 'account', 'audit', 'commit', 'release'].includes(event),
+      ['authorized', 'begin', 'account', 'payment', 'audit', 'commit', 'release'].includes(event),
     ),
-    ['authorized', 'begin', 'account', 'audit', 'commit', 'release'],
+    ['authorized', 'begin', 'account', 'payment', 'audit', 'commit', 'release'],
   );
   assert.equal(
-    harness.queries.some(({ sql }) => /INSERT INTO occupancies|UPDATE rooms/.test(sql)),
+    harness.queries.some(({ sql }) => /INSERT INTO occupancies/.test(sql)),
+    false,
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) =>
+      /UPDATE rooms SET room_status='reserved',updated_at=now\(\)/.test(sql),
+    ),
+    true,
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) => /UPDATE rooms SET room_status='occupied'/.test(sql)),
     false,
   );
   assert.equal(
     harness.queries.some(({ sql }) => /UPDATE idempotency_commands/.test(sql)),
     true,
   );
+});
+
+test('W06 records onboarding transfer DP and free deposit on the supplied transaction client', async () => {
+  const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
+  const audits: Array<{ entry: unknown; client: unknown }> = [];
+  let paymentSequence = 0;
+  const client = {
+    query: async (sql: string, params: readonly unknown[] = []) => {
+      const normalized = normalizedSql(sql);
+      queries.push({ sql: normalized, params });
+      if (/FROM leases l JOIN residents/.test(normalized))
+        return {
+          rows: [
+            {
+              id: LEASE_ID,
+              property_id: PROPERTY_ID,
+              resident_id: RESIDENT_ID,
+              room_id: ROOM_ID,
+              occupancy_id: null,
+              lease_status: 'awaiting_activation',
+              start_date: '2026-08-01',
+              end_date: '2027-07-31',
+              contract_rent_amount: '21600000',
+              dp_required_amount: '5400000',
+              security_deposit_required_amount: '0',
+              payment_plan_type: 'two_month_installments',
+              snapshot_monthly_price: '1800000',
+              snapshot_room_number: 'RK-01-01',
+              snapshot_kost_type_name: 'Rumah Kost',
+              building_code: 'RK-01',
+              resident_name: 'Resident',
+              remaining_days: 365,
+            },
+          ],
+          rowCount: 1,
+        };
+      if (/FROM files/.test(normalized))
+        return { rows: [{ id: PAYMENT_EVIDENCE_ID }], rowCount: 1 };
+      if (/SELECT i\.id,i\.property_id/.test(normalized))
+        return {
+          rows: [
+            {
+              id: FIRST_RENT_INVOICE_ID,
+              property_id: PROPERTY_ID,
+              resident_id: RESIDENT_ID,
+              lease_id: LEASE_ID,
+              invoice_status: 'issued',
+              invoice_purpose: 'rent',
+              due_date: '2026-08-01',
+              total_amount: '5400000',
+              credit_amount: '0',
+              allocated_amount: '0',
+            },
+          ],
+          rowCount: 1,
+        };
+      if (/SELECT i\.id FROM invoices/.test(normalized))
+        return { rows: [{ id: FIRST_RENT_INVOICE_ID }], rowCount: 1 };
+      if (/INSERT INTO payments/.test(normalized)) {
+        paymentSequence += 1;
+        return {
+          rows: [
+            {
+              id: `cccccccc-cccc-4ccc-8ccc-ccccccccccc${paymentSequence}`,
+              property_id: PROPERTY_ID,
+              resident_id: RESIDENT_ID,
+              lease_id: LEASE_ID,
+              payment_code: params[3],
+              payment_method: params[4],
+              payment_status: params[5],
+              payment_purpose: params[6],
+              amount: String(params[7]),
+              paid_at: new Date('2026-08-01T00:00:00.000Z'),
+              verified_at: null,
+              proof_id: null,
+              reference_number: null,
+              notes: params[9],
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const service = new W06BillingService(
+    {
+      transaction: async () => {
+        assert.fail('W06 must not open a nested transaction for the W05 command');
+      },
+    } as never,
+    {} as never,
+    {
+      write: async (entry: unknown, transactionClient: unknown) => {
+        assert.equal(transactionClient, client);
+        audits.push({ entry, client: transactionClient });
+      },
+    } as never,
+  );
+  const summary = await service.recordInitialOnboardingPaymentsInTransaction(client as never, {
+    propertyId: PROPERTY_ID,
+    residentId: RESIDENT_ID,
+    leaseId: LEASE_ID,
+    firstRentInvoiceId: FIRST_RENT_INVOICE_ID,
+    method: 'bank_transfer',
+    dpAmount: 5_400_000,
+    securityDepositAmount: 300_000,
+    evidenceFileIds: [PAYMENT_EVIDENCE_ID],
+    paymentNote: 'Transfer dari rekening orang tua',
+    commandFingerprint: 'a'.repeat(64),
+    actor: actor as never,
+    context: {},
+  });
+  assert.deepEqual(summary, {
+    method: 'bank_transfer',
+    status: 'pending_confirmation',
+    dpRecordedAmount: 5_400_000,
+    securityDepositRecordedAmount: 300_000,
+    dpVerifiedAmount: 0,
+    securityDepositVerifiedAmount: 0,
+    receipts: [],
+  });
+  const paymentWrites = queries.filter(({ sql }) => /INSERT INTO payments/.test(sql));
+  assert.equal(paymentWrites.length, 2);
+  assert.equal(
+    paymentWrites.every(({ sql }) =>
+      /\$9::uuid,CASE WHEN \$6='verified' THEN \$9::uuid ELSE NULL END/.test(sql),
+    ),
+    true,
+    'actor identity must be bound explicitly as UUID in both payment columns',
+  );
+  assert.deepEqual(
+    paymentWrites.map(({ params }) => params[6]),
+    ['dp', 'security_deposit'],
+  );
+  assert.equal(
+    paymentWrites.every(({ params }) => params[5] === 'pending_confirmation'),
+    true,
+  );
+  assert.equal(
+    paymentWrites.every(({ params }) => params[9] === 'Transfer dari rekening orang tua'),
+    true,
+  );
+  assert.equal(
+    queries.filter(({ sql }) => /INSERT INTO payment_evidence_files/.test(sql)).length,
+    2,
+  );
+  assert.equal(
+    queries.filter(({ sql }) => /INSERT INTO payment_allocation_intents/.test(sql)).length,
+    1,
+  );
+  assert.equal(
+    queries.some(({ sql }) => /INSERT INTO payment_allocations/.test(sql)),
+    false,
+  );
+  assert.equal(
+    queries.some(({ sql }) => /INSERT INTO payment_receipts/.test(sql)),
+    false,
+  );
+  assert.equal(audits.length, 2);
 });
 
 test('onboarding replay returns no credential and mismatched key reuse fails before domain lookup', async () => {

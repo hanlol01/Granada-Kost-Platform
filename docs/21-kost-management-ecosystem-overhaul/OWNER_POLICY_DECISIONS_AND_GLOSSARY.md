@@ -3,11 +3,11 @@
 <!-- Canonical matrices intentionally use compact Markdown for stable review diffs. -->
 <!-- prettier-ignore-start -->
 
-Status: **APPROVED PLANNING — NOT IMPLEMENTED**
+Status: **APPROVED POLICY — IMPLEMENTATION PARTIAL**
 
 Program: `KMO` — KOSTATION Kost Management Ecosystem Overhaul
 
-Recorded: 2026-07-30 (Asia/Jakarta)
+Recorded: 2026-08-03 (Asia/Jakarta)
 
 ## 1. Purpose and Authority
 
@@ -69,19 +69,20 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 | ID | Binding policy |
 | --- | --- |
 | `POL-BILLING-001` | Initial category tariff is Rp1.800.000 per month and Rp21.600.000 per year for both Rumah Kost and Apart Kost. Tariffs remain editable at category authority; ordinary room editing must not create a room-specific tariff. |
-| `POL-BILLING-002` | The supported rent schedule is full annual payment or installments covering two months per installment. The contractual minimum remains twelve months even when rent is paid in installments. |
+| `POL-BILLING-002` | Ordinary direct onboarding supports a minimum term of three months. The current form offers 3, 6, and 12-month shortcuts and accepts an integer term from 3 through 120 months. Contract rent is derived from the category commercial snapshot; a term that is an exact multiple of 12 may use the annual category rate. |
 | `POL-BILLING-003` | A lease stores a commercial snapshot of tariff, deposit requirement, payment schedule, and accepted terms. Later category edits must not rewrite an existing contract. |
-| `POL-LEASE-001` | Minimum lease duration is twelve months. A shorter 2–11 month lease is not an ordinary option and requires a future owner-approved exception policy. |
-| `POL-LEASE-002` | The planned move-in date may be the agreement date and may be no later than two months after application unless an owner-approved exception is recorded. |
+| `POL-LEASE-001` | Minimum lease duration is three months. A 1–2 month term is not an ordinary option and requires a future owner-approved exception policy. |
+| `POL-LEASE-002` | Admin may record a valid historical, current, or future contractual start date. The start date is contractual data; activation/check-in remains a separate lifecycle command with its own readiness checks. |
 | `POL-LEASE-003` | Lease activation requires an accepted agreement, authoritative resident, authoritative room, required financial readiness, and check-in readiness. A lead, hold, or payment alone is not an active lease. |
 | `POL-LEASE-004` | Renewal requires agreement and an addendum or successor lease. A late physical arrival does not shift the contract start date automatically. |
-| `POL-PAYMENT-001` | DP is advance rent and proof of commitment. Cumulative verified DP must be at least 25% of the agreed contract value before the booking may proceed to final onboarding. DP reduces rent receivable and is not a security deposit. |
-| `POL-PAYMENT-002` | The security deposit is separate from rent and DP. Default requirement is one month of the lease tariff; configuration may increase it to at most two months. At the initial tariff the default is Rp1.800.000. |
+| `POL-PAYMENT-001` | DP is advance rent and proof of commitment. The system pre-fills a 25% recommended initial-rent credit, but an authorized admin may record a lower agreed amount. Verified DP and an eligible Booking Fee reduce rent; neither is a security deposit. |
+| `POL-PAYMENT-002` | The security deposit is separate from rent, DP, and Booking Fee. It is an optional, freely entered refundable liability with no minimum amount. A value of Rp0 is valid. An amount recorded for a lease must remain separately traceable until documented refund or deduction at checkout. |
+| `POL-PAYMENT-009` | Booking Fee is optional: either Rp0 or at least Rp1.000.000. It is an advance rent credit that reduces the remaining contract rent and may contribute to the required 25% initial rent credit. It never funds, reduces, or substitutes for the security-deposit liability. |
 | `POL-PAYMENT-003` | Bank transfer is the primary payment method. Cash is an audited operational exception and requires an authorized recorder and a generated receipt. |
 | `POL-PAYMENT-004` | Every payment must be recorded. Transfer proof is mandatory; cash proof is optional because the system-generated receipt and recorder audit are the evidence. |
 | `POL-PAYMENT-005` | One verified payment may settle multiple invoices through explicit allocations. A payment total and its allocation total must reconcile exactly. |
 | `POL-PAYMENT-006` | Security deposit money is a liability, not rental income. Deposit deductions require itemized evidence; the remainder is refundable no later than seven working days after checkout settlement. |
-| `POL-PAYMENT-007` | Rent, DP, deposit, refund, expense, and other payment are distinct accounting purposes. A generic note must not be the only classification. |
+| `POL-PAYMENT-007` | Rent, Booking Fee, DP, deposit, refund, expense, and other payment are distinct accounting purposes. A generic note must not be the only classification. |
 | `POL-PAYMENT-008` | All receipts, invoices, transfer evidence, reversals, deposit deductions, and refunds must be retained as operational records. |
 
 ### 3.3 Resident, Check-In, House Rules, and Check-Out
@@ -150,8 +151,8 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 | `DEC-RESIDENT-003` | Resident detail is a full page with identity, current room/lease, mandatory rent-and-payment summary, invoice/payment tabs, vehicles, complaints, and a unified activity timeline. |
 | `DEC-RESIDENT-004` | Resident actions are Detail, Edit, and contextual commands such as Pindah Kamar or Nonaktifkan. Permanent delete is limited to a mistaken draft with no history or linkage. |
 | `DEC-RESIDENT-005` | Penghuni account provisioning occurs atomically when a financially complete onboarding is committed into an `awaiting_activation` lease. It creates/reuses normalized identity, assigns resident scope, links a `pending_activation` resident, issues a temporary credential once, and requires password change on first login. Physical occupancy and full resident context remain unavailable until the separate lease-activation command succeeds on or after the contractual start date. |
-| `DEC-LEASE-001` | Direct onboarding is a full-page two-stage flow: `Penghuni & Penyewaan` and `Pilih Kamar Kost`. Room choices are vacant, gender-compatible, category-filterable, and single-select. |
-| `DEC-LEASE-002` | Lead-based onboarding preloads trusted lead fields, selected category/gender, verified DP, and Admin-selected room; incomplete identity and lease fields remain mandatory. |
+| `DEC-LEASE-001` | Direct onboarding is a full-page two-stage flow: `Penghuni & Penyewaan` and `Pilih Kamar Kost`. Room choices are vacant, gender-compatible, category-filterable, and single-select. Step one accepts a valid historical/current/future start date and a 3–120-month term. |
+| `DEC-LEASE-002` | Lead-based onboarding preloads trusted lead fields, selected category/gender, payment commitment, and Admin-selected room; incomplete identity and lease fields remain mandatory. Before Commit Onboarding, Admin may revise the start date and 3–120-month duration. The server recalculates the final commercial quote, but the recorded Booking Fee/DP/full-settlement commitment is immutable; its rent credit must not exceed the revised contract rent. |
 | `DEC-LEASE-003` | Room transfer uses a dedicated command from resident detail, records reason/effective date, and preserves resident history. Normal transfer is end-of-period; emergency same-day transfer is an explicit exception. |
 | `DEC-LEASE-004` | A room transfer with unchanged commercial contract uses a lease addendum and retains the active lease. A transfer with changed commercial terms supersedes the old lease with a linked successor lease. |
 
@@ -159,7 +160,7 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 
 | ID | Binding decision |
 | --- | --- |
-| `DEC-BILLING-001` | Lease activation creates an authoritative billing schedule from the annual contract and the selected full-annual or two-month installment plan. |
+| `DEC-BILLING-001` | Lease activation creates an authoritative billing schedule from the 3–120-month contract snapshot. Monthly rent applies to ordinary terms; an exact 12-month multiple may use the annual category rate. |
 | `DEC-BILLING-002` | The resident detail always shows `Ringkasan Penyewaan dan Pembayaran`: unpaid amount, paid amount, contract total, start/end dates, remaining time, plan, and next due date. |
 | `DEC-PAYMENT-001` | Payment gateway, automatic settlement, and provider-driven checkout are disabled for this overhaul. Penghuni sees manual transfer/cash instructions and can submit transfer proof when that flow is enabled. |
 | `DEC-PAYMENT-002` | Admin payment recording supports cash or bank transfer, payment date, proof, note, and selection of one or more unpaid invoices. Verified allocations update invoices atomically. |
@@ -208,7 +209,7 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 | `INV-BILLING-001` | Invoice totals derive from an immutable lease commercial snapshot and explicit adjustments. Category price edits never mutate historical invoice amounts. |
 | `INV-BILLING-002` | Invoice balance equals charges plus valid adjustments minus verified allocations and valid credits; no UI-local total is authoritative. |
 | `INV-PAYMENT-001` | Payment amount equals the sum of its allocations plus any explicit unallocated balance permitted by policy; no allocation may exceed an invoice outstanding amount. |
-| `INV-PAYMENT-002` | DP allocations reduce rent receivable. Security-deposit funding and refund never settle rent invoices or count as rent revenue. |
+| `INV-PAYMENT-002` | Booking Fee and DP allocations reduce rent receivable. Security-deposit funding, deduction, and refund never settle rent invoices or count as rent revenue. |
 | `INV-PAYMENT-003` | A verified financial record cannot be hard deleted. Correction uses rejection before verification or an append-only reversal after verification. |
 | `INV-REMINDER-001` | Reminder eligibility is derived from current lease/invoice state. Badge counts and worklists are not durable counters that can become stale. |
 | `INV-REMINDER-002` | A manual WhatsApp link does not prove delivery. Only provider callbacks may establish delivered/read status after a future integration is activated. |
@@ -258,8 +259,9 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 | **Onboarding Penghuni** | Completion of identity, agreement, financial, room, and check-in requirements. | “Tambah user” as whole lifecycle |
 | **Penyewaan / Lease** | Contractual right to occupy one room for a defined period and commercial snapshot. | Generic `sewa` status without contract |
 | **Hunian / Occupancy** | Actual active resident-to-room placement. | Using resident status as room occupancy |
-| **DP / Uang Muka Sewa** | Advance rent, at least 25% of contract value, allocated against rent. | Deposit |
-| **Deposit Jaminan** | Refundable security liability held against damage/arrears. | DP, rent income |
+| **DP / Uang Muka Sewa** | Advance rent allocated against rent. The 25% of contract-value value is a system recommendation and prefill, not a blocking minimum. | Deposit |
+| **Booking Fee** | Optional advance rent credit: Rp0 or at least Rp1.000.000. It reduces remaining rent and may contribute to the recorded DP or full settlement. | Security deposit, rental income separate from the lease |
+| **Deposit Jaminan** | Optional refundable security liability held against damage/arrears; Rp0 is valid. | Booking Fee, DP, rent income |
 | **Pindah Kamar** | Controlled transfer retaining history and using an addendum or successor lease. | Edit room ID directly |
 | **Check-In / Aktivasi Hunian** | Final command that establishes active lease/occupancy and access handover. | Lead conversion |
 | **Check-Out / Penyelesaian Hunian** | Inspection, settlement, access return, lease close, and room reconciliation. | Deactivate resident only |
@@ -331,8 +333,8 @@ The persistence value may be English snake case; UI uses the Indonesian label.
 
 | ID | Earlier statement or reference | Canonical resolution |
 | --- | --- | --- |
-| `DEC-BILLING-010` | Flexible 1, 6, or arbitrary-month lease options discussed during exploration. | Superseded by `POL-LEASE-001`: minimum twelve months. Payment may be annual or two-month installments. |
-| `DEC-PAYMENT-010` | Default security deposit Rp1.000.000. | Superseded by `POL-PAYMENT-002`: default one month of lease tariff, currently Rp1.800.000; configurable up to two months. |
+| `DEC-BILLING-010` | Flexible 1, 6, or arbitrary-month lease options discussed during exploration. | Superseded by `POL-LEASE-001` and `POL-BILLING-002`: ordinary terms are 3–120 months; 1–2 months require a future exception policy. |
+| `DEC-PAYMENT-010` | Default security deposit Rp1.000.000. | Superseded by `POL-PAYMENT-002`: security deposit is optional, freely entered, and may be Rp0; it remains a separate refundable liability when recorded. |
 | `DEC-PAYMENT-011` | DP and deposit used interchangeably in reference screens. | Superseded by `POL-PAYMENT-001` and `POL-PAYMENT-002`: DP is advance rent; security deposit is refundable liability. |
 | `DEC-PAYMENT-012` | Owner source names bank transfer only and also lists QRIS among tools. | Latest product decision permits audited cash exception and disables payment-gateway/QRIS automation. Transfer remains primary. |
 | `DEC-LEAD-010` | Third-party reference has survey and conversion stages. | Survey may be an optional activity/note; it is not a required status. Generic conversion is replaced by final `Disewa` activation. |
@@ -366,7 +368,7 @@ configurable or disabled.
 | `OWNER_CONFIRMATION_REQUIRED-008` | Security-deposit bank segregation and authorized deduction approver. | Track deposit as liability, require documented deduction, and require manager/owner approval before refund settlement. |
 | `OWNER_CONFIRMATION_REQUIRED-009` | Production WhatsApp/email providers, sender identities, consent text, and cost limits. | Manual WhatsApp only; email/provider buttons disabled with clear copy. |
 | `OWNER_CONFIRMATION_REQUIRED-010` | Automatic Smart Lock/CCTV actions after arrears or checkout. | No automatic device command. Show operational task only. |
-| `OWNER_CONFIRMATION_REQUIRED-011` | Whether a rare sub-12-month lease can be approved and by whom. | Reject sub-12-month ordinary onboarding. |
+| `OWNER_CONFIRMATION_REQUIRED-011` | Whether a rare 1–2 month lease can be approved and by whom. | Reject a term below three months in ordinary onboarding. |
 | `OWNER_CONFIRMATION_REQUIRED-012` | Exact retention periods for KTP/KK/KTM, payment proof, CCTV, and audit evidence. | Retain while operationally required with restricted access; do not implement destructive retention jobs until policy is approved. |
 
 ## 10. Decision Application Rules
@@ -387,4 +389,30 @@ configurable or disabled.
    automated verification, migration evidence where applicable, and required
    runtime evidence are recorded.
 
+### 9.1 Lead Payment Commitment Amendment
+
+- A lead must have an active compatible hold before it may be completed.
+- Completion records one Lead Payment Commitment, never a lease, occupancy, or
+  settled W06 receipt.
+- Cash records a verified commitment. Bank transfer may use optional evidence
+  and remain `pending_confirmation`; it blocks activation until verification.
+- The commitment materializes exactly once during Commit Onboarding. Booking Fee
+  is a rent credit (Rp0 or at least Rp1.000.000), while security deposit remains
+  a separately traceable refundable liability.
+
 <!-- prettier-ignore-end -->
+
+### 9.2 Contract Settlement and Arrears Amendment
+
+| ID                    | Final policy                                                                                                                                                                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POL-SETTLEMENT-001`  | Every activated lease has one contract-rent balance. Its final settlement deadline is two calendar months after activation.                                                                                                                                          |
+| `POL-SETTLEMENT-002`  | A partial rent payment is allowed through the end of D+7 after the ordinary deadline. When the one extension is granted, partial payment is allowed only until its deadline; after the applicable partial-payment window, only an exact full settlement is accepted. |
+| `POL-SETTLEMENT-003`  | One extension of at most 14 days may be granted after the original deadline, with a mandatory reason and immutable audit trail.                                                                                                                                      |
+| `POL-SETTLEMENT-004`  | Arrears never automatically end occupancy, vacate a room, or command a device. The room and lease remain active until an authorized checkout is finalized.                                                                                                           |
+| `POL-TERMINATION-001` | Only an `admin` holding `lease.manage` may start, cancel, or finalize termination for arrears.                                                                                                                                                                       |
+| `POL-DEPOSIT-010`     | During an approved termination, verified security deposit offsets rent arrears first by default; documented damage is second; the exact remainder is refunded with method, date, and evidence.                                                                       |
+
+**Glossary addition.** `Contract Settlement` is the lease-level authority that
+projects rent balance, deadline, arrears, extension, and termination eligibility.
+It is not a payment, invoice, deposit transaction, checkout, or occupancy state.

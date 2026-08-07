@@ -62,6 +62,11 @@ type ActivationReplayRow = {
   response_body: { data: LeaseActivationResponse } | null;
 };
 
+type ContractSettlementActivationRow = {
+  id: string;
+  state: 'awaiting_activation' | 'open' | 'termination_pending' | 'terminated' | 'paid';
+};
+
 type LeaseActivationResponse = {
   leaseId: string;
   leaseStatus: 'active';
@@ -175,6 +180,24 @@ export class LeaseActivationService {
           code: 'LEASE_ACTIVATION_AUTHORITY_MISMATCH',
           message: 'Lease activation authority requires reconciliation',
         });
+      const settlementResult = await client.query<ContractSettlementActivationRow>(
+        `SELECT id,state
+         FROM lease_contract_settlements
+         WHERE property_id=$1 AND lease_id=$2
+         FOR UPDATE`,
+        [propertyId, lease.id],
+      );
+      if (settlementResult.rows.length > 1)
+        throw new ConflictException({
+          code: 'LEASE_CONTRACT_SETTLEMENT_AMBIGUOUS',
+          message: 'Contract-settlement authority requires reconciliation',
+        });
+      const contractSettlement = settlementResult.rows[0] ?? null;
+      if (contractSettlement && contractSettlement.state !== 'awaiting_activation')
+        throw new ConflictException({
+          code: 'LEASE_CONTRACT_SETTLEMENT_NOT_READY',
+          message: 'Contract settlement is not awaiting activation',
+        });
       const financials = await client.query<{
         dp_verified_amount: string;
         deposit_balance: string;
@@ -208,12 +231,11 @@ export class LeaseActivationService {
       const financial = financials.rows[0];
       if (
         !financial ||
-        Number(financial.dp_verified_amount) < Number(lease.dp_required_amount) ||
         Number(financial.deposit_balance) < Number(lease.security_deposit_required_amount)
       )
         throw new ConflictException({
           code: 'LEASE_ACTIVATION_FINANCIAL_OBLIGATION_UNMET',
-          message: 'Verified DP and security-deposit ledger obligations must be satisfied',
+          message: 'Security-deposit ledger obligations must be satisfied',
         });
       if (
         !financial.first_due_date ||
@@ -224,15 +246,20 @@ export class LeaseActivationService {
           code: 'LEASE_ACTIVATION_BILLING_AUTHORITY_MISSING',
           message: 'The first contract installment must have an issued invoice',
         });
-      const dueBoundary = await client.query<{ due_is_valid: boolean }>(
-        `SELECT $1::date <= (COALESCE($2::timestamptz,now()) AT TIME ZONE 'Asia/Jakarta')::date AS due_is_valid`,
-        [financial.first_due_date, dto.activated_at ?? null],
-      );
-      if (!dueBoundary.rows[0]?.due_is_valid)
-        throw new ConflictException({
-          code: 'LEASE_ACTIVATION_FIRST_INSTALLMENT_NOT_DUE',
-          message: 'First installment must be due no later than activation',
-        });
+      // Pre-W07A leases retain their original installment-due activation rule.
+      // A new contract settlement starts its two-month deadline only after this
+      // activation succeeds, so it must not be blocked by a pre-activation date.
+      if (!contractSettlement) {
+        const dueBoundary = await client.query<{ due_is_valid: boolean }>(
+          `SELECT $1::date <= (COALESCE($2::timestamptz,now()) AT TIME ZONE 'Asia/Jakarta')::date AS due_is_valid`,
+          [financial.first_due_date, dto.activated_at ?? null],
+        );
+        if (!dueBoundary.rows[0]?.due_is_valid)
+          throw new ConflictException({
+            code: 'LEASE_ACTIVATION_FIRST_INSTALLMENT_NOT_DUE',
+            message: 'First installment must be due no later than activation',
+          });
+      }
       if (lease.room_status !== 'reserved' && lease.room_status !== 'vacant')
         throw new ConflictException({
           code: 'ROOM_NOT_AVAILABLE',
@@ -265,10 +292,13 @@ export class LeaseActivationService {
           code: 'LEASE_ACTIVATION_HOLD_MISMATCH',
           message: 'Lease activation hold authority requires reconciliation',
         });
-      if (lease.room_status === 'reserved' && (!hold || !hold.is_current))
+      // A reservation may be backed by a Booking Lead hold or directly by the
+      // committed awaiting-activation lease. The latter is the normal
+      // /tenants flow and intentionally has no Booking Lead hold.
+      if (hold && !hold.is_current)
         throw new ConflictException({
           code: 'LEASE_ACTIVATION_HOLD_REQUIRED',
-          message: 'Reserved room requires its current onboarding hold',
+          message: 'The linked onboarding hold is no longer active',
         });
       const occupancies = await client.query<{ id: string }>(
         `SELECT id
@@ -327,6 +357,31 @@ export class LeaseActivationService {
         `UPDATE leases SET lease_status='active',occupancy_id=$2,activated_at=COALESCE($3::timestamptz,now()),updated_at=now() WHERE id=$1 AND property_id=$4 AND lease_status='awaiting_activation'`,
         [leaseId, occupancy.rows[0].id, dto.activated_at ?? null, propertyId],
       );
+      if (contractSettlement) {
+        const activatedSettlement = await client.query(
+          `WITH activation AS (
+             SELECT COALESCE($3::timestamptz, now()) AS activated_at
+           )
+           UPDATE lease_contract_settlements settlement
+              SET state='open',
+                  activated_at=activation.activated_at,
+                  original_due_at=(
+                    (((activation.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '2 months'
+                      + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')
+                  ),
+                  updated_at=now()
+             FROM activation
+            WHERE settlement.id=$1
+              AND settlement.property_id=$2
+              AND settlement.state='awaiting_activation'`,
+          [contractSettlement.id, propertyId, dto.activated_at ?? null],
+        );
+        if (activatedSettlement.rowCount !== 1)
+          throw new ConflictException({
+            code: 'LEASE_CONTRACT_SETTLEMENT_ACTIVATION_FAILED',
+            message: 'Contract settlement could not be activated',
+          });
+      }
       await client.query(
         `UPDATE rooms SET room_status='occupied',updated_at=now() WHERE id=$1 AND property_id=$2`,
         [lease.room_id, propertyId],

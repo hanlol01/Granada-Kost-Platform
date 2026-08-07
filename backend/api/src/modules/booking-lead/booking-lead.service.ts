@@ -239,6 +239,7 @@ export class BookingLeadService {
         status: query.status,
         category: query.category,
         gender: query.gender,
+        source: query.source,
         dateFrom: query.dateFrom,
         dateTo: query.dateTo,
         search: query.search,
@@ -254,6 +255,7 @@ export class BookingLeadService {
       status: query.status,
       category: query.category,
       gender: query.gender,
+      source: query.source,
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
       search: query.search,
@@ -419,7 +421,7 @@ export class BookingLeadService {
       visitorMessage: dto.visitorMessage ? this.sanitizeText(dto.visitorMessage, 1000) : undefined,
       visitorUniversity: this.sanitizeText(dto.visitorUniversity, 160),
       preferredMoveInDate,
-      visitorEmail: dto.visitorEmail.trim().toLowerCase(),
+      visitorEmail: dto.visitorEmail?.trim().toLowerCase() || undefined,
       consent: true,
     };
   }
@@ -595,6 +597,7 @@ export class BookingLeadService {
       visitorUniversity: lead.visitorUniversity,
       visitorMessage: lead.visitorMessage,
       preferredMoveInDate: lead.preferredMoveInDate,
+      activeLeaseStartDate: lead.activeLeaseStartDate,
       status: lead.status,
       source: lead.source,
       createdAt: lead.createdAt,

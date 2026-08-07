@@ -22,6 +22,7 @@ type BookingLeadRow = {
   property_id: string;
   room_id: string | null;
   room_number?: string | null;
+  active_lease_start_date?: string | Date | null;
   category: BookingLeadCategory;
   gender: BookingLeadGender;
   building_code: string | null;
@@ -377,27 +378,43 @@ export class BookingLeadRepository {
     const phoneSearch = search?.replace(/\D/g, '') || null;
     const result = await this.database.client.query<BookingLeadRow>(
       `SELECT ${this.columns('booking_leads')},
-              rooms.number AS room_number
+              rooms.number AS room_number,
+              active_lease.start_date::text AS active_lease_start_date
        FROM booking_leads
-       LEFT JOIN rooms ON rooms.id = booking_leads.room_id
+       LEFT JOIN rooms
+         ON rooms.id = booking_leads.room_id
+        AND rooms.property_id = booking_leads.property_id
+       LEFT JOIN onboarding_commitments onboarding
+         ON onboarding.id = booking_leads.onboarding_commitment_id
+        AND onboarding.property_id = booking_leads.property_id
+       LEFT JOIN leases active_lease
+         ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
+        AND active_lease.property_id = booking_leads.property_id
+        AND active_lease.lease_status = 'active'
        WHERE booking_leads.property_id = ANY($1::uuid[])
          AND ($2::text IS NULL OR booking_leads.status = $2)
          AND ($3::text IS NULL OR booking_leads.category = $3)
          AND ($4::text IS NULL OR booking_leads.gender = $4)
-         AND ($5::date IS NULL OR booking_leads.created_at::date >= $5::date)
-         AND ($6::date IS NULL OR booking_leads.created_at::date <= $6::date)
+         AND ($5::text IS NULL OR booking_leads.source = $5)
+         AND ($6::date IS NULL OR booking_leads.created_at::date >= $6::date)
+         AND ($7::date IS NULL OR booking_leads.created_at::date <= $7::date)
          AND (
-           $7::text IS NULL
-           OR booking_leads.visitor_name ILIKE '%' || $7 || '%'
-           OR ($8::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $8 || '%')
+           $8::text IS NULL
+           OR booking_leads.visitor_name ILIKE '%' || $8 || '%'
+           OR booking_leads.visitor_email ILIKE '%' || $8 || '%'
+           OR booking_leads.visitor_university ILIKE '%' || $8 || '%'
+           OR booking_leads.building_code ILIKE '%' || $8 || '%'
+           OR rooms.number ILIKE '%' || $8 || '%'
+           OR ($9::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $9 || '%')
          )
        ORDER BY booking_leads.created_at DESC
-       LIMIT $9 OFFSET $10`,
+       LIMIT $10 OFFSET $11`,
       [
         propertyIds,
         filters.status ?? null,
         filters.category ?? null,
         filters.gender ?? null,
+        filters.source ?? null,
         filters.dateFrom ?? null,
         filters.dateTo ?? null,
         search,
@@ -424,6 +441,7 @@ export class BookingLeadRepository {
       filters.status ?? null,
       filters.category ?? null,
       filters.gender ?? null,
+      filters.source ?? null,
       filters.dateFrom ?? null,
       filters.dateTo ?? null,
       search,
@@ -433,30 +451,49 @@ export class BookingLeadRepository {
       AND ($2::text IS NULL OR booking_leads.status = $2)
       AND ($3::text IS NULL OR booking_leads.category = $3)
       AND ($4::text IS NULL OR booking_leads.gender = $4)
-      AND ($5::date IS NULL OR booking_leads.created_at::date >= $5::date)
-      AND ($6::date IS NULL OR booking_leads.created_at::date <= $6::date)
+      AND ($5::text IS NULL OR booking_leads.source = $5)
+      AND ($6::date IS NULL OR booking_leads.created_at::date >= $6::date)
+      AND ($7::date IS NULL OR booking_leads.created_at::date <= $7::date)
       AND (
-        $7::text IS NULL
-        OR booking_leads.visitor_name ILIKE '%' || $7 || '%'
-        OR ($8::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $8 || '%')
+        $8::text IS NULL
+        OR booking_leads.visitor_name ILIKE '%' || $8 || '%'
+        OR booking_leads.visitor_email ILIKE '%' || $8 || '%'
+        OR booking_leads.visitor_university ILIKE '%' || $8 || '%'
+        OR booking_leads.building_code ILIKE '%' || $8 || '%'
+        OR rooms.number ILIKE '%' || $8 || '%'
+        OR ($9::text IS NOT NULL AND booking_leads.visitor_phone ILIKE '%' || $9 || '%')
       )`;
 
     const client = await this.database.client.connect();
     try {
       await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const count = await client.query<{ total: number }>(
-        `SELECT COUNT(*)::int AS total FROM booking_leads WHERE ${where}`,
-        values,
-      );
-      const rows = await client.query<BookingLeadRow>(
-        `SELECT ${this.columns('booking_leads')}, rooms.number AS room_number
+        `SELECT COUNT(*)::int AS total
          FROM booking_leads
          LEFT JOIN rooms
            ON rooms.id = booking_leads.room_id
           AND rooms.property_id = booking_leads.property_id
+         WHERE ${where}`,
+        values,
+      );
+      const rows = await client.query<BookingLeadRow>(
+        `SELECT ${this.columns('booking_leads')},
+              rooms.number AS room_number,
+              active_lease.start_date::text AS active_lease_start_date
+         FROM booking_leads
+         LEFT JOIN rooms
+           ON rooms.id = booking_leads.room_id
+          AND rooms.property_id = booking_leads.property_id
+         LEFT JOIN onboarding_commitments onboarding
+           ON onboarding.id = booking_leads.onboarding_commitment_id
+          AND onboarding.property_id = booking_leads.property_id
+         LEFT JOIN leases active_lease
+           ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
+          AND active_lease.property_id = booking_leads.property_id
+          AND active_lease.lease_status = 'active'
          WHERE ${where}
          ORDER BY booking_leads.created_at DESC, booking_leads.id DESC
-         LIMIT $9 OFFSET $10`,
+         LIMIT $10 OFFSET $11`,
         [...values, limit, offset],
       );
       await client.query('COMMIT');
@@ -650,6 +687,7 @@ export class BookingLeadRepository {
       visitorUniversity: row.visitor_university,
       visitorMessage: row.visitor_message,
       preferredMoveInDate: this.dateOnly(row.preferred_move_in_date),
+      activeLeaseStartDate: this.dateOnly(row.active_lease_start_date ?? null),
       status: row.status,
       source: row.source,
       metadata: row.metadata,

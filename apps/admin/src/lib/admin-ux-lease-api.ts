@@ -401,6 +401,62 @@ export const adminUxLeaseApi = {
             q: text(input.q),
           },
         })
-        .then((envelope) => mapV2Page<LeaseRoomOption>(envelope)),
+        .then((envelope) => parseAvailableRooms(envelope, input.propertyId)),
   },
 };
+
+export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedPropertyId: string) {
+  const page = mapV2Page<Record<string, unknown>>(envelope);
+  if (
+    ![page.total, page.limit, page.offset].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    )
+  ) {
+    throw new Error("Invalid vacant-room pagination");
+  }
+  return {
+    ...page,
+    items: page.items.map((item): LeaseRoomOption => {
+      const kostType = item.kostType;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.number !== "string" ||
+        item.propertyId !== expectedPropertyId ||
+        item.status !== "vacant" ||
+        !["male", "female", "mixed"].includes(String(item.genderPolicy)) ||
+        kostType === null ||
+        typeof kostType !== "object"
+      )
+        throw new Error("Invalid vacant-room response");
+      const type = kostType as Record<string, unknown>;
+      if (
+        typeof type.id !== "string" ||
+        typeof type.name !== "string" ||
+        !["rukost", "apartkost"].includes(String(type.category)) ||
+        ![type.monthlyPrice, type.yearlyPrice, type.depositAmount].every(
+          (value) => Number.isSafeInteger(value) && Number(value) >= 0,
+        )
+      )
+        throw new Error("Invalid vacant-room commercial authority");
+      return {
+        id: item.id,
+        number: item.number,
+        genderPolicy: item.genderPolicy as LeaseRoomOption["genderPolicy"],
+        roomStatus: "vacant",
+        buildingName: typeof item.buildingName === "string" ? item.buildingName : null,
+        buildingCode: typeof item.buildingCode === "string" ? item.buildingCode : null,
+        unitCode: typeof item.unitCode === "string" ? item.unitCode : null,
+        floorLabel: typeof item.floorLabel === "string" ? item.floorLabel : null,
+        floor: typeof item.floor === "string" ? item.floor : null,
+        kostType: {
+          id: type.id,
+          name: type.name,
+          category: type.category as LeaseRoomOption["kostType"]["category"],
+          monthlyPrice: Number(type.monthlyPrice),
+          yearlyPrice: Number(type.yearlyPrice),
+          depositAmount: Number(type.depositAmount),
+        },
+      };
+    }),
+  };
+}

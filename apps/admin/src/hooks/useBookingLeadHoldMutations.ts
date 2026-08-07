@@ -15,6 +15,7 @@ type HoldMutationInput = {
   propertyId: string;
   leadId: string;
   idempotencyKey: string;
+  roomId?: string;
 };
 
 export function useCreateBookingLeadHold() {

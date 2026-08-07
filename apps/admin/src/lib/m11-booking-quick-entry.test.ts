@@ -280,6 +280,7 @@ const record = {
   visitorPhone: "6281234567890",
   visitorMessage: null,
   preferredMoveInDate: null,
+  activeLeaseStartDate: null,
   status: "new",
   source: "admin_quick_entry",
   createdAt: "2026-07-27T00:00:00.000Z",
@@ -411,11 +412,11 @@ test("payload remains the exact seven-key server-authority contract", () => {
   }
 });
 
-test("parser accepts only the exact 19-field record and copies its whitelist", () => {
+test("parser accepts only the exact 20-field record and copies its whitelist", () => {
   const parsed = parseAdminBookingLead(record);
   assert.deepEqual(parsed, record);
   assert.notEqual(parsed, record);
-  assert.equal(Object.keys(parsed).length, 19);
+  assert.equal(Object.keys(parsed).length, 20);
 });
 
 test("parser rejects missing, extra, invalid enum, and invalid nullability", async () => {
@@ -582,7 +583,7 @@ test("lead UI renders quick source and nullable admin fields without leaking roo
   const hook = source("hooks/useBookingLeads.ts");
   const route = source("routes/booking-leads.tsx");
   const detail = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
-  assert.match(hook, /admin_quick_entry:\s*"Input cepat Admin"/);
+  assert.match(hook, /admin_quick_entry:\s*"Input Cepat Admin"/);
   assert.match(route, /roomNumber/);
   assert.match(`${route}\n${detail}`, /visitorAddress/);
   assert.match(`${route}\n${detail}`, /visitorUniversity/);
@@ -698,8 +699,8 @@ test("lead source is visible on desktop and mobile while QA phone normalization 
   assert.throws(() => assertLeadSourceBadgeCoverage(moveBadgeOutsideItem(route, "md:hidden")));
 
   const labels = source("hooks/useBookingLeads.ts");
-  assert.match(labels, /public_kamar:\s*"Publik \/kamar"/u);
-  assert.match(labels, /admin_quick_entry:\s*"Input cepat Admin"/u);
+  assert.match(labels, /public_kamar:\s*"Halaman Publik"/u);
+  assert.match(labels, /admin_quick_entry:\s*"Input Cepat Admin"/u);
 });
 
 test("quick entry contains no room lifecycle mutation and leaves routeTree untouched", () => {

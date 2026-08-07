@@ -41,6 +41,7 @@ export class BookingLeadHoldService {
   async create(
     leadId: string,
     propertyId: string,
+    requestedRoomId: string | undefined,
     idempotencyKey: string | undefined,
     context: BookingLeadHoldRequestContext,
   ): Promise<BookingLeadHoldCommandResult> {
@@ -51,9 +52,11 @@ export class BookingLeadHoldService {
         'create',
         leadId,
         propertyId,
+        { room_id: requestedRoomId ?? null },
         idempotencyKey,
         context,
-        async (client) => this.createInsideTransaction(client, leadId, propertyId, context),
+        async (client) =>
+          this.createInsideTransaction(client, leadId, propertyId, requestedRoomId, context),
       );
     } catch (error) {
       this.rethrowKnownDatabaseConflict(error);
@@ -71,6 +74,7 @@ export class BookingLeadHoldService {
       'release',
       leadId,
       propertyId,
+      { room_id: null },
       idempotencyKey,
       context,
       async (client) => this.releaseInsideTransaction(client, leadId, propertyId, context),
@@ -91,6 +95,7 @@ export class BookingLeadHoldService {
     client: PoolClient,
     leadId: string,
     propertyId: string,
+    requestedRoomId: string | undefined,
     context: BookingLeadHoldRequestContext,
   ): Promise<CommandOperation> {
     await this.holds.lockPropertyLifecycle(client, propertyId);
@@ -105,7 +110,26 @@ export class BookingLeadHoldService {
       });
     }
     if (lead.propertyId !== propertyId) this.throwPropertyDenied();
-    if (!lead.roomId) {
+    if (
+      lead.source === 'admin_quick_entry' &&
+      lead.roomId &&
+      requestedRoomId &&
+      lead.roomId !== requestedRoomId
+    ) {
+      throw new ConflictException({
+        code: 'BOOKING_HOLD_ROOM_TARGET_LOCKED',
+        message: 'Quick-entry booking lead must retain its original target room',
+      });
+    }
+    if (lead.source === 'public_kamar' && !requestedRoomId) {
+      throw new ConflictException({
+        code: 'BOOKING_HOLD_ROOM_REQUIRED',
+        message: 'A public booking lead requires an administrator-selected room',
+      });
+    }
+    const roomId =
+      lead.source === 'admin_quick_entry' ? lead.roomId : (requestedRoomId ?? lead.roomId);
+    if (!roomId) {
       throw new ConflictException({
         code: 'BOOKING_HOLD_ROOM_REQUIRED',
         message: 'Booking lead must reference a room before creating a hold',
@@ -118,13 +142,25 @@ export class BookingLeadHoldService {
       });
     }
 
-    let room = await this.holds.lockRoom(client, lead.roomId);
-    this.assertRoomLink(room, propertyId, lead.roomId, lead.category);
+    let room = await this.holds.lockRoom(client, roomId);
+    this.assertRoomLink(room, propertyId, roomId, lead.category, lead.gender);
 
-    const matching = await this.holds.lockMatchingHolds(client, propertyId, leadId, lead.roomId);
+    if (
+      lead.source === 'public_kamar' &&
+      !(await this.holds.assignLeadRoom(client, lead.id, propertyId, roomId))
+    ) {
+      throw new ConflictException({
+        code: 'BOOKING_HOLD_ROOM_TARGET_LOCKED',
+        message: 'Booking lead target room changed while the hold was being created',
+      });
+    }
+
+    const matching = await this.holds.lockMatchingHolds(client, propertyId, leadId, roomId);
     const staleHolds = matching.filter((hold) => hold.stale);
     const staleRoomIds = [
-      ...new Set(staleHolds.map((hold) => hold.roomId).filter((roomId) => roomId !== lead.roomId)),
+      ...new Set(
+        staleHolds.map((hold) => hold.roomId).filter((staleRoomId) => staleRoomId !== roomId),
+      ),
     ].sort();
     for (const roomId of staleRoomIds) {
       this.assertHoldRoom(await this.holds.lockRoom(client, roomId), propertyId, roomId);
@@ -135,9 +171,9 @@ export class BookingLeadHoldService {
       await this.writeLifecycle(client, 'expire', expired, context, 'active');
     }
 
-    room = await this.holds.lockRoom(client, lead.roomId);
-    this.assertRoomLink(room, propertyId, lead.roomId, lead.category);
-    const blockers = await this.holds.roomBlockers(client, propertyId, lead.roomId);
+    room = await this.holds.lockRoom(client, roomId);
+    this.assertRoomLink(room, propertyId, roomId, lead.category, lead.gender);
+    const blockers = await this.holds.roomBlockers(client, propertyId, roomId);
     if (blockers.active_hold) {
       throw new ConflictException({
         code: 'BOOKING_HOLD_ALREADY_ACTIVE',
@@ -167,16 +203,11 @@ export class BookingLeadHoldService {
       client,
       propertyId,
       leadId,
-      lead.roomId,
+      roomId,
       context.actorUserId,
     );
     if (
-      !(await this.holds.transitionRoomToReserved(
-        client,
-        propertyId,
-        lead.roomId,
-        context.actorUserId,
-      ))
+      !(await this.holds.transitionRoomToReserved(client, propertyId, roomId, context.actorUserId))
     ) {
       throw new ConflictException({
         code: 'BOOKING_HOLD_ROOM_NOT_VACANT',
@@ -249,6 +280,7 @@ export class BookingLeadHoldService {
     action: 'create' | 'release',
     leadId: string,
     propertyId: string,
+    payload: Record<string, unknown>,
     rawKey: string | undefined,
     context: BookingLeadHoldRequestContext,
     operation: (client: PoolClient) => Promise<CommandOperation>,
@@ -260,7 +292,7 @@ export class BookingLeadHoldService {
       actor_id: context.actorUserId,
       property_id: propertyId,
       booking_lead_id: leadId,
-      payload: { property_id: propertyId },
+      payload: { property_id: propertyId, ...payload },
     });
 
     return this.holds.transaction(async (client) => {
@@ -350,6 +382,7 @@ export class BookingLeadHoldService {
     propertyId: string,
     roomId: string,
     leadCategory: string,
+    leadGender: 'male' | 'female',
   ): void {
     if (
       !room ||
@@ -359,7 +392,8 @@ export class BookingLeadHoldService {
       room.buildingPropertyId !== propertyId ||
       !room.category ||
       room.category !== leadCategory ||
-      room.buildingCategory !== room.category
+      room.buildingCategory !== room.category ||
+      (room.genderPolicy !== 'mixed' && room.genderPolicy !== leadGender)
     ) {
       throw new ConflictException({
         code: 'BOOKING_HOLD_ROOM_LINK_INVALID',

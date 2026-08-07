@@ -1,0 +1,939 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { createHash } from 'crypto';
+import type { PoolClient } from 'pg';
+import { DatabaseService } from '../../infrastructure/database/database.service';
+import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
+
+type ContextRow = {
+  lead_id: string;
+  property_id: string;
+  visitor_name: string;
+  visitor_phone: string;
+  visitor_email: string | null;
+  visitor_university: string | null;
+  category: string;
+  gender: 'male' | 'female';
+  lead_status: string;
+  hold_id: string | null;
+  hold_status: string | null;
+  expires_at: string | Date | null;
+  room_id: string | null;
+  room_number: string | null;
+  room_kost_type_id: string | null;
+  room_gender_policy: string | null;
+  building_property_id: string | null;
+  building_category: string | null;
+  kost_type_property_id: string | null;
+  kost_type_category: string | null;
+  room_status: string | null;
+  monthly_price: string | number | null;
+  yearly_price: string | number | null;
+};
+
+type CommitmentRow = {
+  id: string;
+  property_id: string;
+  booking_lead_id: string;
+  hold_id: string;
+  room_id: string;
+  payment_type: string;
+  rent_credit_amount: string | number;
+  security_deposit_amount: string | number;
+  payment_method: string;
+  verification_status: string;
+  payment_note: string | null;
+  payment_evidence_file_ids: string[];
+  start_date: string | Date;
+  term_months: number;
+  end_date: string | Date;
+  billing_cycle: string;
+  payment_plan_type: string;
+  materialized_onboarding_commitment_id: string | null;
+};
+
+type MaterializedOnboardingTargetRow = {
+  resident_id: string;
+  lease_id: string;
+};
+
+export type BookingLeadCompletionContext = {
+  lead: {
+    id: string;
+    visitor_name: string;
+    visitor_phone: string;
+    visitor_email: string | null;
+    visitor_university: string | null;
+    category: string;
+    gender: 'male' | 'female';
+  };
+  hold: { id: string; room_id: string; expires_at: string };
+  room: {
+    id: string;
+    kost_type_id: string;
+    number: string;
+    category: string;
+    gender_policy: string;
+    monthly_price: number;
+    yearly_price: number;
+  };
+  payment_commitment: LeadPaymentCommitmentResponse;
+};
+
+export type LeadPaymentCommitmentResponse = {
+  id: string;
+  property_id: string;
+  booking_lead_id: string;
+  hold_id: string;
+  room_id: string;
+  payment_type: string;
+  rent_credit_amount: number;
+  security_deposit_amount: number;
+  payment_method: string;
+  verification_status: string;
+  payment_note: string | null;
+  payment_evidence_file_ids: string[];
+  start_date: string;
+  term_months: number;
+  end_date: string;
+  billing_cycle: string;
+  payment_plan_type: string;
+  materialized_onboarding_commitment_id: string | null;
+};
+
+export type BookingLeadCompletionQuote = {
+  property_id: string;
+  start_date: string;
+  term_months: number;
+  billing_cycle: 'monthly' | 'yearly';
+  end_date: string;
+  contract_rent_amount: number;
+  suggested_dp_amount: number;
+  lead: {
+    id: string;
+    category: string;
+    gender: 'male' | 'female';
+  };
+  hold: { id: string; room_id: string; expires_at: string };
+  room: {
+    id: string;
+    kost_type_id: string;
+    number: string;
+    category: string;
+    gender_policy: string;
+    monthly_price: number;
+    yearly_price: number;
+  };
+};
+
+type ProgressRow = {
+  property_id: string;
+  lead_status: string;
+  source: string;
+  created_at: Date;
+  lease_id: string | null;
+  room_number: string | null;
+  hold_status: string | null;
+  hold_room_number: string | null;
+  hold_starts_at: Date | null;
+  hold_expires_at: Date | null;
+  hold_released_at: Date | null;
+  hold_release_reason: string | null;
+  payment_type: string | null;
+  rent_credit_amount: string | number | null;
+  security_deposit_amount: string | number | null;
+  payment_method: string | null;
+  verification_status: string | null;
+  payment_start_date: string | Date | null;
+  payment_end_date: string | Date | null;
+  payment_term_months: number | null;
+  payment_materialized_at: Date | null;
+  onboarding_status: string | null;
+  onboarding_committed_at: Date | null;
+  lease_status: string | null;
+  resident_id: string | null;
+  lease_start_date: string | Date | null;
+  lease_end_date: string | Date | null;
+  lease_term_months: number | null;
+  contract_rent_amount: string | number | null;
+  occupancy_status: string | null;
+  occupancy_started_at: string | Date | null;
+};
+
+export type BookingLeadProgressResponse = {
+  property_id: string;
+  source: string;
+  lead_status: string;
+  recorded_at: string;
+  target_room_number: string | null;
+  hold: {
+    status: string;
+    room_number: string | null;
+    starts_at: string;
+    expires_at: string;
+    released_at: string | null;
+    release_reason: string | null;
+  } | null;
+  payment_commitment: {
+    payment_type: string;
+    rent_credit_amount: number;
+    security_deposit_amount: number;
+    payment_method: string;
+    verification_status: string;
+    start_date: string;
+    end_date: string;
+    term_months: number;
+    materialized_at: string | null;
+  } | null;
+  onboarding: { status: string; committed_at: string | null } | null;
+  tenancy: {
+    resident_id: string;
+    lease_status: string;
+    start_date: string;
+    end_date: string | null;
+    term_months: number | null;
+    contract_rent_amount: number;
+    occupancy_status: string | null;
+    occupancy_started_at: string | null;
+  } | null;
+  payment_summary: {
+    verified_amount: number;
+    pending_amount: number;
+    payment_count: number;
+    security_deposit_balance: number;
+  };
+};
+
+@Injectable()
+export class BookingLeadCompletionService {
+  constructor(private readonly database: DatabaseService) {}
+
+  async complete(
+    leadId: string,
+    dto: CompleteBookingLeadDto,
+    actorUserId: string,
+    idempotencyKey: string | undefined,
+    correlationId?: string,
+  ) {
+    const key = this.idempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({ lead_id: leadId, payload: dto, actor_id: actorUserId });
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended('booking_lead_hold:' || $1::text, 0))`,
+        [dto.property_id],
+      );
+      const replay = await this.claim(
+        client,
+        dto.property_id,
+        actorUserId,
+        key,
+        fingerprint,
+        correlationId,
+      );
+      if (replay) {
+        await client.query('COMMIT');
+        return replay;
+      }
+
+      const context = await this.lockContext(client, leadId, dto.property_id);
+      this.assertEligible(context);
+      const rentTotal = this.contractRent(context, dto);
+      this.assertPayment(dto, rentTotal);
+      const endDate = await this.endDate(client, dto.start_date, dto.term_months);
+      const verificationStatus =
+        dto.payment_method === 'cash' ? 'verified' : 'pending_confirmation';
+      await this.assertPaymentEvidence(
+        client,
+        dto.payment_evidence_file_ids ?? [],
+        dto.property_id,
+        actorUserId,
+      );
+      const inserted = await client.query<CommitmentRow>(
+        `INSERT INTO booking_lead_payment_commitments(
+           property_id, booking_lead_id, hold_id, room_id, payment_type,
+           rent_credit_amount, security_deposit_amount, payment_method, verification_status,
+           payment_note, payment_evidence_file_ids, start_date, term_months, end_date,
+           billing_cycle, payment_plan_type, created_by_user_id
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::uuid[],$12::date,$13,$14::date,$15,$16,$17)
+         RETURNING *`,
+        [
+          dto.property_id,
+          leadId,
+          context.hold_id,
+          context.room_id,
+          dto.payment_type,
+          dto.rent_credit_amount,
+          dto.security_deposit_amount,
+          dto.payment_method,
+          verificationStatus,
+          dto.payment_note ?? null,
+          dto.payment_evidence_file_ids ?? [],
+          dto.start_date,
+          dto.term_months,
+          endDate,
+          dto.billing_cycle,
+          dto.payment_plan_type,
+          actorUserId,
+        ],
+      );
+      const commitment = inserted.rows[0];
+      if (!commitment)
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_PAYMENT_COMMITMENT_EXISTS',
+          message: 'Lead already has a payment commitment',
+        });
+      await client.query(
+        `UPDATE booking_leads
+         SET status='onboarding', visitor_name=COALESCE($3, visitor_name), visitor_phone=COALESCE($4, visitor_phone),
+             visitor_email=COALESCE($5, visitor_email), visitor_university=COALESCE($6, visitor_university), updated_at=now()
+         WHERE id=$1 AND property_id=$2`,
+        [
+          leadId,
+          dto.property_id,
+          dto.visitor_name ?? null,
+          dto.visitor_phone ?? null,
+          dto.visitor_email ?? null,
+          dto.visitor_university ?? null,
+        ],
+      );
+      const body = { data: this.response(commitment) };
+      await this.auditAndOutbox(
+        client,
+        dto.property_id,
+        commitment.id,
+        leadId,
+        actorUserId,
+        correlationId,
+        this.response(commitment),
+      );
+      await this.completeClaim(client, actorUserId, key, body, commitment.id);
+      await client.query('COMMIT');
+      return body;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async context(
+    leadId: string,
+    propertyId: string,
+  ): Promise<{ data: BookingLeadCompletionContext }> {
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const value = await this.lockContext(client, leadId, propertyId, false);
+      this.assertEligible(value, true);
+      const commitmentResult = await client.query<CommitmentRow>(
+        `SELECT * FROM booking_lead_payment_commitments WHERE booking_lead_id=$1 AND property_id=$2`,
+        [leadId, propertyId],
+      );
+      const commitment = commitmentResult.rows[0];
+      if (!commitment)
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_COMPLETION_UNAVAILABLE',
+          message: 'Lead has no usable rental completion context',
+        });
+      if (commitment.materialized_onboarding_commitment_id) {
+        const targetResult = await client.query<MaterializedOnboardingTargetRow>(
+          `SELECT resident_id,lease_id
+             FROM onboarding_commitments
+            WHERE id=$1 AND booking_lead_id=$2 AND property_id=$3`,
+          [commitment.materialized_onboarding_commitment_id, leadId, propertyId],
+        );
+        const target = targetResult.rows[0];
+        if (!target) {
+          throw new ConflictException({
+            code: 'BOOKING_LEAD_COMPLETION_UNAVAILABLE',
+            message: 'Lead has no usable rental completion context',
+          });
+        }
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_ALREADY_ONBOARDED',
+          message: 'Booking lead has already been converted to an onboarding commitment',
+          details: { resident_id: target.resident_id, lease_id: target.lease_id },
+        });
+      }
+      await client.query('COMMIT');
+      return {
+        data: {
+          lead: {
+            id: value.lead_id,
+            visitor_name: value.visitor_name,
+            visitor_phone: value.visitor_phone,
+            visitor_email: value.visitor_email,
+            visitor_university: value.visitor_university,
+            category: value.category,
+            gender: value.gender,
+          },
+          hold: {
+            id: value.hold_id!,
+            room_id: value.room_id!,
+            expires_at: this.iso(value.expires_at!),
+          },
+          room: {
+            id: value.room_id!,
+            kost_type_id: value.room_kost_type_id!,
+            number: value.room_number!,
+            category: value.category,
+            gender_policy: value.room_gender_policy!,
+            monthly_price: Number(value.monthly_price),
+            yearly_price: Number(value.yearly_price),
+          },
+          payment_commitment: this.response(commitment),
+        },
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async quote(
+    leadId: string,
+    propertyId: string,
+    startDate: string,
+    termMonths: number,
+  ): Promise<{ data: BookingLeadCompletionQuote }> {
+    this.assertQuoteTerms(startDate, termMonths);
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const value = await this.lockContext(client, leadId, propertyId, false, startDate);
+      // A quote is also used by /tenants after the lead has been completed to
+      // re-check its held room and commercial authority before onboarding.
+      // `complete()` remains the only command that rejects a second completion.
+      this.assertEligible(value, value.lead_status === 'onboarding');
+      const billingCycle = termMonths % 12 === 0 ? 'yearly' : 'monthly';
+      const contractRentAmount = this.contractRent(value, {
+        billing_cycle: billingCycle,
+        term_months: termMonths,
+      });
+      const endDate = await this.endDate(client, startDate, termMonths);
+      await client.query('COMMIT');
+      return {
+        data: {
+          property_id: propertyId,
+          start_date: startDate,
+          term_months: termMonths,
+          billing_cycle: billingCycle,
+          end_date: endDate,
+          contract_rent_amount: contractRentAmount,
+          suggested_dp_amount: Math.ceil(contractRentAmount * 0.25),
+          lead: {
+            id: value.lead_id,
+            category: value.category,
+            gender: value.gender,
+          },
+          hold: {
+            id: value.hold_id!,
+            room_id: value.room_id!,
+            expires_at: this.iso(value.expires_at!),
+          },
+          room: {
+            id: value.room_id!,
+            kost_type_id: value.room_kost_type_id!,
+            number: value.room_number!,
+            category: value.category,
+            gender_policy: value.room_gender_policy!,
+            monthly_price: Number(value.monthly_price),
+            yearly_price: Number(value.yearly_price),
+          },
+        },
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Read-only operational detail for the Admin booking queue.  A lead may
+   * legitimately stop at any point in this journey, so every relationship is
+   * projected independently instead of treating a lead as a lease or an
+   * occupancy by implication.
+   */
+  async progress(
+    leadId: string,
+    propertyId: string,
+  ): Promise<{ data: BookingLeadProgressResponse }> {
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const result = await client.query<ProgressRow>(
+        `SELECT lead.property_id,lead.status AS lead_status,lead.source,lead.created_at,
+                COALESCE(lead.lease_id,onboarding.lease_id) AS lease_id,
+                target_room.number AS room_number,
+                hold.hold_status,held_room.number AS hold_room_number,hold.starts_at AS hold_starts_at,
+                hold.expires_at AS hold_expires_at,hold.released_at AS hold_released_at,hold.release_reason AS hold_release_reason,
+                commitment.payment_type,commitment.rent_credit_amount,commitment.security_deposit_amount,
+                commitment.payment_method,commitment.verification_status,commitment.start_date AS payment_start_date,
+                commitment.end_date AS payment_end_date,commitment.term_months AS payment_term_months,
+                commitment.materialized_at AS payment_materialized_at,
+                onboarding.status AS onboarding_status,onboarding.committed_at AS onboarding_committed_at,
+                lease.resident_id,lease.lease_status,lease.start_date AS lease_start_date,lease.end_date AS lease_end_date,
+                lease.term_months AS lease_term_months,lease.contract_rent_amount,
+                occupancy.occupancy_status,occupancy.start_date AS occupancy_started_at
+         FROM booking_leads lead
+         LEFT JOIN rooms target_room
+           ON target_room.id=lead.room_id AND target_room.property_id=lead.property_id
+         LEFT JOIN LATERAL (
+           SELECT id,hold_status,room_id,starts_at,expires_at,released_at,release_reason
+           FROM booking_lead_holds
+           WHERE booking_lead_id=lead.id AND property_id=lead.property_id
+           ORDER BY CASE hold_status WHEN 'active' THEN 0 WHEN 'released' THEN 1 ELSE 2 END,
+                    starts_at DESC,id DESC
+           LIMIT 1
+         ) hold ON true
+         LEFT JOIN rooms held_room
+           ON held_room.id=hold.room_id AND held_room.property_id=lead.property_id
+         LEFT JOIN booking_lead_payment_commitments commitment
+           ON commitment.booking_lead_id=lead.id AND commitment.property_id=lead.property_id
+         LEFT JOIN onboarding_commitments onboarding
+           ON onboarding.id=lead.onboarding_commitment_id AND onboarding.property_id=lead.property_id
+         LEFT JOIN leases lease
+           ON lease.id=COALESCE(lead.lease_id,onboarding.lease_id)
+          AND lease.property_id=lead.property_id
+         LEFT JOIN occupancies occupancy
+           ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lead.property_id
+         WHERE lead.id=$1 AND lead.property_id=$2`,
+        [leadId, propertyId],
+      );
+      const row = result.rows[0];
+      if (!row)
+        throw new NotFoundException({
+          code: 'BOOKING_LEAD_NOT_FOUND',
+          message: 'Booking lead not found in this property',
+        });
+
+      const financial =
+        row.lease_status && row.lease_id
+          ? await client.query<{
+              verified_amount: string | number;
+              pending_amount: string | number;
+              payment_count: string | number;
+              security_deposit_balance: string | number;
+            }>(
+              `SELECT
+               COALESCE(sum(CASE WHEN payment.payment_status='verified' AND reversal.id IS NULL THEN payment.amount ELSE 0 END),0) AS verified_amount,
+               COALESCE(sum(CASE WHEN payment.payment_status='pending_confirmation' THEN payment.amount ELSE 0 END),0) AS pending_amount,
+               count(payment.id)::int AS payment_count,
+               COALESCE((SELECT sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END)
+                         FROM lease_deposit_transactions ledger
+                         WHERE ledger.property_id=$1 AND ledger.lease_id=$2),0) AS security_deposit_balance
+             FROM payments payment
+             LEFT JOIN payment_reversals reversal ON reversal.payment_id=payment.id
+             WHERE payment.property_id=$1 AND payment.lease_id=$2`,
+              [propertyId, row.lease_id],
+            )
+          : null;
+      const totals = financial?.rows[0] ?? {
+        verified_amount: 0,
+        pending_amount: 0,
+        payment_count: 0,
+        security_deposit_balance: 0,
+      };
+      await client.query('COMMIT');
+      return { data: this.progressResponse(row, totals) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private progressResponse(
+    row: ProgressRow,
+    totals: {
+      verified_amount: string | number;
+      pending_amount: string | number;
+      payment_count: string | number;
+      security_deposit_balance: string | number;
+    },
+  ): BookingLeadProgressResponse {
+    return {
+      property_id: row.property_id,
+      source: row.source,
+      lead_status: row.lead_status,
+      recorded_at: this.iso(row.created_at),
+      target_room_number: row.room_number,
+      hold: row.hold_status
+        ? {
+            status: row.hold_status,
+            room_number: row.hold_room_number,
+            starts_at: this.iso(row.hold_starts_at!),
+            expires_at: this.iso(row.hold_expires_at!),
+            released_at: row.hold_released_at ? this.iso(row.hold_released_at) : null,
+            release_reason: row.hold_release_reason,
+          }
+        : null,
+      payment_commitment: row.payment_type
+        ? {
+            payment_type: row.payment_type,
+            rent_credit_amount: Number(row.rent_credit_amount),
+            security_deposit_amount: Number(row.security_deposit_amount),
+            payment_method: row.payment_method!,
+            verification_status: row.verification_status!,
+            start_date: this.date(row.payment_start_date!),
+            end_date: this.date(row.payment_end_date!),
+            term_months: row.payment_term_months!,
+            materialized_at: row.payment_materialized_at
+              ? this.iso(row.payment_materialized_at)
+              : null,
+          }
+        : null,
+      onboarding: row.onboarding_status
+        ? {
+            status: row.onboarding_status,
+            committed_at: row.onboarding_committed_at
+              ? this.iso(row.onboarding_committed_at)
+              : null,
+          }
+        : null,
+      tenancy: row.lease_status
+        ? {
+            resident_id: row.resident_id!,
+            lease_status: row.lease_status,
+            start_date: this.date(row.lease_start_date!),
+            end_date: row.lease_end_date ? this.date(row.lease_end_date) : null,
+            term_months: row.lease_term_months,
+            contract_rent_amount: Number(row.contract_rent_amount),
+            occupancy_status: row.occupancy_status,
+            occupancy_started_at: row.occupancy_started_at
+              ? this.date(row.occupancy_started_at)
+              : null,
+          }
+        : null,
+      payment_summary: {
+        verified_amount: Number(totals.verified_amount),
+        pending_amount: Number(totals.pending_amount),
+        payment_count: Number(totals.payment_count),
+        security_deposit_balance: Number(totals.security_deposit_balance),
+      },
+    };
+  }
+
+  private async lockContext(
+    client: PoolClient,
+    leadId: string,
+    propertyId: string,
+    lock = true,
+    commercialEffectiveDate: string | null = null,
+  ): Promise<ContextRow> {
+    const result = await client.query<ContextRow>(
+      `SELECT lead.id AS lead_id, lead.property_id, lead.visitor_name, lead.visitor_phone, lead.visitor_email, lead.visitor_university, lead.category, lead.gender, lead.status AS lead_status,
+        hold.id AS hold_id, hold.hold_status, hold.expires_at, room.id AS room_id, room.number AS room_number, room.kost_type_id AS room_kost_type_id, room.gender_policy AS room_gender_policy,
+        building.property_id AS building_property_id, building.category AS building_category,
+        kost_type.property_id AS kost_type_property_id, kost_type.category AS kost_type_category,
+        room.room_status,
+        commercial.monthly_price, commercial.annual_contract_value AS yearly_price
+       FROM booking_leads lead
+       LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status='active'
+       LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=lead.property_id
+       LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=lead.property_id
+       LEFT JOIN kost_types kost_type ON kost_type.id=room.kost_type_id AND kost_type.property_id=lead.property_id
+       LEFT JOIN kost_type_commercial_versions commercial ON commercial.kost_type_id=kost_type.id AND commercial.effective_date <= COALESCE($3::date, (now() AT TIME ZONE 'Asia/Jakarta')::date)
+       WHERE lead.id=$1 AND lead.property_id=$2
+       ORDER BY commercial.effective_date DESC NULLS LAST
+       LIMIT 1${lock ? ' FOR UPDATE OF lead' : ''}`,
+      [leadId, propertyId, commercialEffectiveDate],
+    );
+    const context = result.rows[0];
+    if (!context)
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_NOT_FOUND',
+        message: 'Booking lead not found in this property',
+      });
+    if (lock && context.hold_id && context.room_id) {
+      const locked = await client.query<{ hold_id: string }>(
+        `SELECT hold.id AS hold_id
+         FROM booking_lead_holds hold
+         JOIN rooms room ON room.id=hold.room_id AND room.property_id=hold.property_id
+         WHERE hold.id=$1 AND hold.booking_lead_id=$2 AND hold.property_id=$3
+         FOR UPDATE OF hold, room`,
+        [context.hold_id, leadId, propertyId],
+      );
+      if (locked.rowCount !== 1)
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_HOLD_CONTEXT_INVALID',
+          message: 'Held room is no longer compatible with this booking lead',
+        });
+    }
+    return context;
+  }
+
+  private assertEligible(row: ContextRow, allowCompleted = false): void {
+    if (
+      !row.hold_id ||
+      row.hold_status !== 'active' ||
+      !row.expires_at ||
+      new Date(row.expires_at).getTime() <= Date.now()
+    )
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_HOLD_REQUIRED',
+        message: 'An active room hold is required before rental data can be completed',
+      });
+    if (!allowCompleted && row.lead_status === 'onboarding')
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_PAYMENT_COMMITMENT_EXISTS',
+        message: 'Lead rental data has already been completed',
+      });
+    if (
+      !allowCompleted &&
+      !['new', 'contacted', 'visit_scheduled', 'negotiating', 'awaiting_dp'].includes(
+        row.lead_status,
+      )
+    )
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_COMPLETION_UNAVAILABLE',
+        message: 'This booking lead cannot be completed in its current status',
+      });
+    if (allowCompleted && row.lead_status !== 'onboarding')
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_COMPLETION_UNAVAILABLE',
+        message: 'Lead rental data has not been completed',
+      });
+    if (
+      !row.room_id ||
+      !row.room_kost_type_id ||
+      !row.room_number ||
+      !row.monthly_price ||
+      !row.yearly_price ||
+      row.room_status !== 'reserved' ||
+      row.building_property_id !== row.property_id ||
+      row.kost_type_property_id !== row.property_id ||
+      row.building_category !== row.category ||
+      row.kost_type_category !== row.category ||
+      (row.room_gender_policy !== 'mixed' && row.room_gender_policy !== row.gender)
+    )
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_HOLD_CONTEXT_INVALID',
+        message: 'Held room is no longer compatible with this booking lead',
+      });
+  }
+
+  private contractRent(
+    row: ContextRow,
+    terms: Pick<CompleteBookingLeadDto, 'billing_cycle' | 'term_months'>,
+  ): number {
+    const monthly = Number(row.monthly_price);
+    const yearly = Number(row.yearly_price);
+    return terms.billing_cycle === 'yearly'
+      ? yearly * (terms.term_months / 12)
+      : monthly * terms.term_months;
+  }
+
+  private assertQuoteTerms(startDate: string, termMonths: number): void {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+    const parsed = match ? new Date(`${startDate}T00:00:00.000Z`) : null;
+    if (
+      !match ||
+      !parsed ||
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getUTCFullYear() !== Number(match[1]) ||
+      parsed.getUTCMonth() + 1 !== Number(match[2]) ||
+      parsed.getUTCDate() !== Number(match[3])
+    )
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_QUOTE_START_DATE_INVALID',
+        message: 'Quote requires a valid lease start date',
+      });
+    if (!Number.isSafeInteger(termMonths) || termMonths < 3 || termMonths > 120)
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_QUOTE_TERM_INVALID',
+        message: 'Quote requires a lease term between 3 and 120 months',
+      });
+  }
+
+  private assertPayment(dto: CompleteBookingLeadDto, rentTotal: number): void {
+    if (dto.payment_type === 'booking_fee' && dto.rent_credit_amount !== 1000000)
+      throw new BadRequestException({
+        code: 'BOOKING_FEE_AMOUNT_INVALID',
+        message: 'Booking Fee must be exactly Rp1.000.000',
+      });
+    if (dto.payment_type !== 'full_settlement' && dto.rent_credit_amount > rentTotal)
+      throw new BadRequestException({
+        code: 'PAYMENT_AMOUNT_EXCEEDS_CONTRACT_RENT',
+        message: 'Initial rent payment cannot exceed the contract rent',
+      });
+    if (dto.payment_type === 'full_settlement' && dto.rent_credit_amount !== rentTotal)
+      throw new BadRequestException({
+        code: 'FULL_SETTLEMENT_AMOUNT_INVALID',
+        message: 'Full settlement must equal the contract rent',
+      });
+    if (dto.payment_type === 'full_settlement' && dto.payment_plan_type !== 'annual_full')
+      throw new BadRequestException({
+        code: 'FULL_SETTLEMENT_PLAN_INVALID',
+        message: 'Full settlement requires the full-payment plan',
+      });
+  }
+
+  private async endDate(client: PoolClient, start: string, term: number): Promise<string> {
+    const result = await client.query<{ end_date: string }>(
+      `SELECT ($1::date + make_interval(months => $2))::date::text AS end_date`,
+      [start, term],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new ConflictException({
+        code: 'BOOKING_LEAD_END_DATE_INVALID',
+        message: 'Lease end date could not be calculated',
+      });
+    return row.end_date;
+  }
+
+  private async assertPaymentEvidence(
+    client: PoolClient,
+    fileIds: string[],
+    propertyId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    if (fileIds.length === 0) return;
+    const result = await client.query<{ id: string }>(
+      `SELECT id
+       FROM files
+       WHERE property_id=$1
+         AND uploader_user_id=$2
+         AND file_purpose='payment_proof'
+         AND is_deleted=false
+         AND id = ANY($3::uuid[])
+       FOR KEY SHARE`,
+      [propertyId, actorUserId, fileIds],
+    );
+    if (result.rows.length !== new Set(fileIds).size) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_PAYMENT_EVIDENCE_INVALID',
+        message: 'Payment evidence is unavailable in the active property',
+      });
+    }
+  }
+
+  private async claim(
+    client: PoolClient,
+    propertyId: string,
+    actorUserId: string,
+    key: string,
+    fingerprint: string,
+    correlationId?: string,
+  ): Promise<Record<string, unknown> | null> {
+    const route = 'POST /booking-leads/:leadId/complete';
+    const inserted = await client.query(
+      `INSERT INTO idempotency_commands(property_id,actor_user_id,route,idempotency_key,request_fingerprint,correlation_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(actor_user_id,route,idempotency_key) DO NOTHING RETURNING id`,
+      [propertyId, actorUserId, route, key, fingerprint, correlationId ?? null],
+    );
+    if (inserted.rowCount === 1) return null;
+    const existing = await client.query<{
+      request_fingerprint: string;
+      command_status: string;
+      response_body: Record<string, unknown> | null;
+    }>(
+      `SELECT request_fingerprint,command_status,response_body FROM idempotency_commands WHERE actor_user_id=$1 AND route=$2 AND idempotency_key=$3 FOR UPDATE`,
+      [actorUserId, route, key],
+    );
+    const row = existing.rows[0];
+    if (!row || row.request_fingerprint !== fingerprint)
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message: 'Idempotency key was used with another request',
+      });
+    if (row.command_status !== 'succeeded' || !row.response_body)
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+        message: 'Rental completion is still being processed',
+      });
+    return row.response_body;
+  }
+
+  private async completeClaim(
+    client: PoolClient,
+    actor: string,
+    key: string,
+    body: Record<string, unknown>,
+    resourceId: string,
+  ) {
+    await client.query(
+      `UPDATE idempotency_commands SET command_status='succeeded',response_status=201,response_body=$3::jsonb,resource_type='booking_lead_payment_commitment',resource_id=$4,completed_at=now() WHERE actor_user_id=$1 AND route='POST /booking-leads/:leadId/complete' AND idempotency_key=$2`,
+      [actor, key, JSON.stringify(body), resourceId],
+    );
+  }
+
+  private async auditAndOutbox(
+    client: PoolClient,
+    propertyId: string,
+    commitmentId: string,
+    leadId: string,
+    actor: string,
+    correlationId: string | undefined,
+    snapshot: Record<string, unknown>,
+  ) {
+    await client.query(
+      `INSERT INTO audit_logs(actor_user_id,property_id,action,resource_type,resource_id,after_data,result_status,correlation_id) VALUES($1,$2,'booking_lead.completed','booking_lead_payment_commitment',$3,$4::jsonb,'success',$5)`,
+      [actor, propertyId, commitmentId, JSON.stringify(snapshot), correlationId ?? null],
+    );
+    await client.query(
+      `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,payload,correlation_id,actor_user_id) VALUES($1,$2,'booking_lead.completed','booking_lead',$3,$4::jsonb,$5,$6) ON CONFLICT(event_key) DO NOTHING`,
+      [
+        propertyId,
+        `booking_lead.completed:${commitmentId}`,
+        leadId,
+        JSON.stringify(snapshot),
+        correlationId ?? null,
+        actor,
+      ],
+    );
+  }
+
+  response(row: CommitmentRow): LeadPaymentCommitmentResponse {
+    return {
+      id: row.id,
+      property_id: row.property_id,
+      booking_lead_id: row.booking_lead_id,
+      hold_id: row.hold_id,
+      room_id: row.room_id,
+      payment_type: row.payment_type,
+      rent_credit_amount: Number(row.rent_credit_amount),
+      security_deposit_amount: Number(row.security_deposit_amount),
+      payment_method: row.payment_method,
+      verification_status: row.verification_status,
+      payment_note: row.payment_note,
+      payment_evidence_file_ids: row.payment_evidence_file_ids ?? [],
+      start_date: this.date(row.start_date),
+      term_months: row.term_months,
+      end_date: this.date(row.end_date),
+      billing_cycle: row.billing_cycle,
+      payment_plan_type: row.payment_plan_type,
+      materialized_onboarding_commitment_id: row.materialized_onboarding_commitment_id,
+    };
+  }
+  private idempotencyKey(value: string | undefined): string {
+    const key = value?.trim();
+    if (!key || key.length < 16 || key.length > 128)
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Idempotency-Key is required',
+      });
+    return key;
+  }
+  private fingerprint(value: unknown): string {
+    return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  }
+  private iso(value: string | Date): string {
+    return new Date(value).toISOString();
+  }
+  private date(value: string | Date): string {
+    return typeof value === 'string' ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+  }
+}

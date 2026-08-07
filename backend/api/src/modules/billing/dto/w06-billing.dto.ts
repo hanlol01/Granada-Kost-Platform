@@ -111,6 +111,15 @@ export class AdminBillingWorklistQueryDto extends PaginationQueryDto {
   @IsIn(['due_date_asc', 'due_date_desc', 'resident_asc'])
   @IsOptional()
   sort?: 'due_date_asc' | 'due_date_desc' | 'resident_asc';
+  @IsIn(['issued', 'partially_paid', 'overdue'])
+  @IsOptional()
+  status?: 'issued' | 'partially_paid' | 'overdue';
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  @IsOptional()
+  due_within_days?: number;
 }
 
 export class AdminBillingScopeQueryDto {
@@ -122,6 +131,19 @@ export class AdminW06PaymentsQueryDto extends PaginationQueryDto {
   @IsIn(['pending_confirmation', 'verified', 'rejected', 'reversed'])
   @IsOptional()
   status?: 'pending_confirmation' | 'verified' | 'rejected' | 'reversed';
+  @IsString() @MaxLength(100) @IsOptional() search?: string;
+  @IsIn(['bank_transfer', 'cash'])
+  @IsOptional()
+  method?: 'bank_transfer' | 'cash';
+  @IsIn(PAYMENT_PURPOSES)
+  @IsOptional()
+  purpose?: W06PaymentPurpose;
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  @IsOptional()
+  due_within_days?: number;
 }
 
 export class AdminW06ProofsQueryDto extends PaginationQueryDto {

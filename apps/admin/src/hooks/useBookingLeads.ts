@@ -9,11 +9,14 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import {
   requestAdminBookingLeadPage,
+  requestBookingLeadProgress,
   type BookingLeadCategory,
   type BookingLeadGender,
   type BookingLeadListFilters,
   type BookingLeadRecord,
   type BookingLeadPage,
+  type BookingLeadProgress,
+  type BookingLeadSource,
   type BookingLeadStatus,
 } from "@/lib/admin-booking-lead";
 import { useProperty } from "@/lib/property";
@@ -23,6 +26,8 @@ export type {
   BookingLeadGender,
   BookingLeadRecord,
   BookingLeadStatus,
+  BookingLeadProgress,
+  BookingLeadSource,
 } from "@/lib/admin-booking-lead";
 
 export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
@@ -50,8 +55,8 @@ export const BOOKING_LEAD_GENDER_LABEL: Record<BookingLeadGender, string> = {
 };
 
 export const BOOKING_LEAD_SOURCE_LABEL: Record<string, string> = {
-  public_kamar: "Publik /kamar",
-  admin_quick_entry: "Input cepat Admin",
+  public_kamar: "Halaman Publik",
+  admin_quick_entry: "Input Cepat Admin",
 };
 
 // Mirrors the M17B backend transition rules (UX-only convenience; the backend
@@ -87,5 +92,21 @@ export function useBookingLeads(
       );
     },
     enabled: Boolean(currentPropertyId),
+  });
+}
+
+export function useBookingLeadProgress(leadId: string | null): UseQueryResult<BookingLeadProgress> {
+  const { currentPropertyId } = useProperty();
+  return useQuery<BookingLeadProgress>({
+    queryKey: ["booking-leads", "progress", { propertyId: currentPropertyId, leadId }] as const,
+    queryFn: () => {
+      if (!currentPropertyId || !leadId) throw new Error("PROPERTY_SCOPE_REQUIRED");
+      return requestBookingLeadProgress(
+        (path, options) => adminUxV2Requester.get<unknown>(path, options),
+        { propertyId: currentPropertyId, leadId },
+      );
+    },
+    enabled: Boolean(currentPropertyId && leadId),
+    retry: (attempt, error) => (error as { status?: number }).status !== 403 && attempt < 1,
   });
 }

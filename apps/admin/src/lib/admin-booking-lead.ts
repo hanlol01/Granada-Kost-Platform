@@ -29,6 +29,7 @@ export type BookingLeadRecord = {
   visitorPhone: string;
   visitorMessage: string | null;
   preferredMoveInDate: string | null;
+  activeLeaseStartDate: string | null;
   status: BookingLeadStatus;
   source: BookingLeadSource;
   createdAt: string;
@@ -61,6 +62,7 @@ export type BookingLeadListFilters = {
   status?: BookingLeadStatus;
   category?: BookingLeadCategory;
   gender?: BookingLeadGender;
+  source?: BookingLeadSource;
   dateFrom?: string;
   dateTo?: string;
   search?: string;
@@ -71,6 +73,50 @@ export type BookingLeadListFilters = {
 export type BookingLeadPage = {
   data: BookingLeadRecord[];
   meta: { limit: number; offset: number; total: number };
+};
+
+export type BookingLeadProgress = {
+  propertyId: string;
+  source: BookingLeadSource;
+  leadStatus: BookingLeadStatus;
+  recordedAt: string;
+  targetRoomNumber: string | null;
+  hold: {
+    status: "active" | "released" | "expired";
+    roomNumber: string | null;
+    startsAt: string;
+    expiresAt: string;
+    releasedAt: string | null;
+    releaseReason: string | null;
+  } | null;
+  paymentCommitment: {
+    paymentType: "booking_fee" | "down_payment" | "full_settlement";
+    rentCreditAmount: number;
+    securityDepositAmount: number;
+    paymentMethod: "cash" | "bank_transfer";
+    verificationStatus: "verified" | "pending_confirmation";
+    startDate: string;
+    endDate: string;
+    termMonths: number;
+    materializedAt: string | null;
+  } | null;
+  onboarding: { status: string; committedAt: string | null } | null;
+  tenancy: {
+    residentId: string;
+    leaseStatus: string;
+    startDate: string;
+    endDate: string | null;
+    termMonths: number | null;
+    contractRentAmount: number;
+    occupancyStatus: string | null;
+    occupancyStartedAt: string | null;
+  } | null;
+  paymentSummary: {
+    verifiedAmount: number;
+    pendingAmount: number;
+    paymentCount: number;
+    securityDepositBalance: number;
+  };
 };
 
 type BookingLeadGet = (
@@ -109,6 +155,7 @@ type QuickBookingAccess = {
 };
 
 const RESPONSE_KEYS = [
+  "activeLeaseStartDate",
   "buildingCode",
   "category",
   "createdAt",
@@ -152,6 +199,10 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/;
 const INVALID_RESPONSE = "Invalid booking lead response";
+const HOLD_STATUSES = new Set(["active", "released", "expired"]);
+const PAYMENT_TYPES = new Set(["booking_fee", "down_payment", "full_settlement"]);
+const PAYMENT_METHODS = new Set(["cash", "bank_transfer"]);
+const PAYMENT_VERIFICATION_STATUSES = new Set(["verified", "pending_confirmation"]);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -239,6 +290,36 @@ function nullableDateOnly(value: Record<string, unknown>, key: string): string |
   return current;
 }
 
+function requiredDateOnly(value: Record<string, unknown>, key: string): string {
+  const current = nullableDateOnly(value, key);
+  if (current === null) throw new Error(INVALID_RESPONSE);
+  return current;
+}
+
+function requiredNonNegativeInteger(value: Record<string, unknown>, key: string): number {
+  const current = value[key];
+  if (!Number.isSafeInteger(current) || (current as number) < 0) throw new Error(INVALID_RESPONSE);
+  return current as number;
+}
+
+function requiredPositiveInteger(value: Record<string, unknown>, key: string): number {
+  const current = requiredNonNegativeInteger(value, key);
+  if (current < 1) throw new Error(INVALID_RESPONSE);
+  return current;
+}
+
+function nullableTimestamp(value: Record<string, unknown>, key: string): string | null {
+  const current = nullableNonEmptyString(value, key);
+  if (current === null) return null;
+  return requiredTimestamp({ [key]: current }, key);
+}
+
+function exactKeysFor(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
 export function parseAdminBookingLead(value: unknown): BookingLeadRecord {
   const source = record(value);
   if (!source || !exactKeys(source)) throw new Error(INVALID_RESPONSE);
@@ -270,6 +351,7 @@ export function parseAdminBookingLead(value: unknown): BookingLeadRecord {
     visitorPhone: requiredString(source, "visitorPhone"),
     visitorMessage: nullableString(source, "visitorMessage"),
     preferredMoveInDate: nullableDateOnly(source, "preferredMoveInDate"),
+    activeLeaseStartDate: nullableDateOnly(source, "activeLeaseStartDate"),
     status,
     source: leadSource,
     createdAt: requiredTimestamp(source, "createdAt"),
@@ -317,6 +399,168 @@ export function parseAdminBookingLeadPage(value: unknown): BookingLeadPage {
   };
 }
 
+export function parseBookingLeadProgress(value: unknown, propertyId: string): BookingLeadProgress {
+  const envelope = record(value);
+  const data = envelope ? record(envelope.data) : null;
+  if (!envelope || Object.keys(envelope).join(",") !== "data" || !data) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  const progressKeys = [
+    "hold",
+    "lead_status",
+    "onboarding",
+    "payment_commitment",
+    "payment_summary",
+    "property_id",
+    "recorded_at",
+    "source",
+    "target_room_number",
+    "tenancy",
+  ] as const;
+  if (!exactKeysFor(data, progressKeys) || requiredUuid(data, "property_id") !== propertyId) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  const source = requiredString(data, "source") as BookingLeadSource;
+  const leadStatus = requiredString(data, "lead_status") as BookingLeadStatus;
+  if (!SOURCES.has(source) || !STATUSES.has(leadStatus)) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  const hold = data.hold === null ? null : record(data.hold);
+  const payment = data.payment_commitment === null ? null : record(data.payment_commitment);
+  const onboarding = data.onboarding === null ? null : record(data.onboarding);
+  const tenancy = data.tenancy === null ? null : record(data.tenancy);
+  const summary = record(data.payment_summary);
+  if (!summary) throw new Error("Invalid booking lead progress response");
+  if (
+    hold &&
+    !exactKeysFor(hold, [
+      "expires_at",
+      "released_at",
+      "release_reason",
+      "room_number",
+      "starts_at",
+      "status",
+    ])
+  ) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  if (
+    payment &&
+    !exactKeysFor(payment, [
+      "end_date",
+      "materialized_at",
+      "payment_method",
+      "payment_type",
+      "rent_credit_amount",
+      "security_deposit_amount",
+      "start_date",
+      "term_months",
+      "verification_status",
+    ])
+  ) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  if (onboarding && !exactKeysFor(onboarding, ["committed_at", "status"])) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  if (
+    tenancy &&
+    !exactKeysFor(tenancy, [
+      "contract_rent_amount",
+      "end_date",
+      "lease_status",
+      "occupancy_started_at",
+      "occupancy_status",
+      "resident_id",
+      "start_date",
+      "term_months",
+    ])
+  ) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  if (
+    !exactKeysFor(summary, [
+      "payment_count",
+      "pending_amount",
+      "security_deposit_balance",
+      "verified_amount",
+    ])
+  ) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  return {
+    propertyId,
+    source,
+    leadStatus,
+    recordedAt: requiredTimestamp(data, "recorded_at"),
+    targetRoomNumber: nullableNonEmptyString(data, "target_room_number"),
+    hold: hold
+      ? (() => {
+          const status = requiredString(hold, "status");
+          if (!HOLD_STATUSES.has(status)) throw new Error("Invalid booking lead progress response");
+          return {
+            status: status as "active" | "released" | "expired",
+            roomNumber: nullableNonEmptyString(hold, "room_number"),
+            startsAt: requiredTimestamp(hold, "starts_at"),
+            expiresAt: requiredTimestamp(hold, "expires_at"),
+            releasedAt: nullableTimestamp(hold, "released_at"),
+            releaseReason: nullableNonEmptyString(hold, "release_reason"),
+          };
+        })()
+      : null,
+    paymentCommitment: payment
+      ? (() => {
+          const paymentType = requiredString(payment, "payment_type");
+          const paymentMethod = requiredString(payment, "payment_method");
+          const verificationStatus = requiredString(payment, "verification_status");
+          if (
+            !PAYMENT_TYPES.has(paymentType) ||
+            !PAYMENT_METHODS.has(paymentMethod) ||
+            !PAYMENT_VERIFICATION_STATUSES.has(verificationStatus)
+          ) {
+            throw new Error("Invalid booking lead progress response");
+          }
+          return {
+            paymentType: paymentType as "booking_fee" | "down_payment" | "full_settlement",
+            rentCreditAmount: requiredNonNegativeInteger(payment, "rent_credit_amount"),
+            securityDepositAmount: requiredNonNegativeInteger(payment, "security_deposit_amount"),
+            paymentMethod: paymentMethod as "cash" | "bank_transfer",
+            verificationStatus: verificationStatus as "verified" | "pending_confirmation",
+            startDate: requiredDateOnly(payment, "start_date"),
+            endDate: requiredDateOnly(payment, "end_date"),
+            termMonths: requiredPositiveInteger(payment, "term_months"),
+            materializedAt: nullableTimestamp(payment, "materialized_at"),
+          };
+        })()
+      : null,
+    onboarding: onboarding
+      ? {
+          status: requiredString(onboarding, "status"),
+          committedAt: nullableTimestamp(onboarding, "committed_at"),
+        }
+      : null,
+    tenancy: tenancy
+      ? {
+          residentId: requiredUuid(tenancy, "resident_id"),
+          leaseStatus: requiredString(tenancy, "lease_status"),
+          startDate: requiredDateOnly(tenancy, "start_date"),
+          endDate: nullableDateOnly(tenancy, "end_date"),
+          termMonths:
+            tenancy.term_months === null ? null : requiredPositiveInteger(tenancy, "term_months"),
+          contractRentAmount: requiredNonNegativeInteger(tenancy, "contract_rent_amount"),
+          occupancyStatus: nullableNonEmptyString(tenancy, "occupancy_status"),
+          occupancyStartedAt: nullableDateOnly(tenancy, "occupancy_started_at"),
+        }
+      : null,
+    paymentSummary: {
+      verifiedAmount: requiredNonNegativeInteger(summary, "verified_amount"),
+      pendingAmount: requiredNonNegativeInteger(summary, "pending_amount"),
+      paymentCount: requiredNonNegativeInteger(summary, "payment_count"),
+      securityDepositBalance: requiredNonNegativeInteger(summary, "security_deposit_balance"),
+    },
+  };
+}
+
 export const bookingLeadListScopeKey = (propertyId: string) =>
   ["booking-leads", "list", { propertyId }] as const;
 
@@ -333,6 +577,7 @@ export async function requestAdminBookingLeads(
         status: filters.status,
         category: filters.category,
         gender: filters.gender,
+        source: filters.source,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
         search: filters.search,
@@ -356,6 +601,7 @@ export async function requestAdminBookingLeadPage(
         status: filters.status,
         category: filters.category,
         gender: filters.gender,
+        source: filters.source,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
         search: filters.search,
@@ -363,6 +609,19 @@ export async function requestAdminBookingLeadPage(
         offset: filters.offset ?? 0,
       },
     }),
+  );
+}
+
+export async function requestBookingLeadProgress(
+  get: BookingLeadGet,
+  input: { propertyId: string; leadId: string },
+): Promise<BookingLeadProgress> {
+  if (!input.propertyId || !input.leadId) throw new Error("INVALID_BOOKING_LEAD_PROGRESS_REQUEST");
+  return parseBookingLeadProgress(
+    await get(`/booking-leads/${input.leadId}/progress`, {
+      query: { property_id: input.propertyId },
+    }),
+    input.propertyId,
   );
 }
 

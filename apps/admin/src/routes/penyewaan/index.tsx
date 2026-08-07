@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { LeaseListPage } from "@/components/leases/LeaseListPage";
 import { normalizeLeaseListSearch } from "@/lib/admin-ux-lease-helpers";
 
@@ -28,6 +28,9 @@ function validateSearch(raw: Record<string, unknown>): RouteSearch {
 }
 
 export const Route = createFileRoute("/penyewaan/")({
+  beforeLoad: () => {
+    throw redirect({ to: "/tenants", replace: true });
+  },
   validateSearch,
   component: PenyewaanIndexRoute,
 });

@@ -187,7 +187,7 @@ function completeLedger(): LedgerRow[] {
   }));
 }
 
-void test('KMO-W01 manifest matches exact source bytes and uses strong legacy sentinels', async () => {
+void test('KMO-W01 manifest matches portable source bytes and uses strong legacy sentinels', async () => {
   const sources = await loadMigrationSources();
   assert.equal(sources.length, MANIFEST_COUNT);
   assert.deepEqual(
@@ -200,6 +200,17 @@ void test('KMO-W01 manifest matches exact source bytes and uses strong legacy se
 
   const verified = new FakeClient(completeLedger());
   assert.deepEqual(await runMigrations(verified as never, sources), {
+    applied: 0,
+    baselined: 0,
+    alreadyApplied: MANIFEST_COUNT,
+  });
+
+  const linuxArchiveSources = sources.map((source) => {
+    const sql = source.sql.replace(/\r\n/g, '\n');
+    return { ...source, sql, rawBytes: Buffer.from(sql, 'utf8') };
+  });
+  const linuxArchive = new FakeClient(completeLedger());
+  assert.deepEqual(await runMigrations(linuxArchive as never, linuxArchiveSources), {
     applied: 0,
     baselined: 0,
     alreadyApplied: MANIFEST_COUNT,

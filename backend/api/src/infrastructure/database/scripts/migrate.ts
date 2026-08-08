@@ -16,6 +16,17 @@ function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function checksumMatchesManifest(source: MigrationSource): boolean {
+  if (sha256(source.rawBytes) === source.checksumSha256) return true;
+
+  // Migrations 001-018 and 024 were originally checksummed from a Windows
+  // checkout. Git archives those text blobs with LF on Linux, while their
+  // canonical ledger checksums remain CRLF-based. Treat only that exact
+  // line-ending conversion as equivalent; any SQL/content drift still fails.
+  const canonicalCrlfBytes = Buffer.from(source.sql.replace(/\r?\n/g, '\r\n'), 'utf8');
+  return sha256(canonicalCrlfBytes) === source.checksumSha256;
+}
+
 export function executableSql(sql: string): string {
   const trimmed = sql.trim();
   const match = /^((?:\s*--[^\n]*\n|\s*\n)*)BEGIN\s*;\s*([\s\S]*?)\s*COMMIT\s*;\s*$/i.exec(trimmed);
@@ -125,7 +136,7 @@ export async function runMigrations(
       }
       if (
         !source.rawBytes.equals(Buffer.from(source.sql, 'utf8')) ||
-        sha256(source.rawBytes) !== expected.checksumSha256
+        !checksumMatchesManifest(source)
       ) {
         throw new Error(`Migration checksum drift: ${source.version}`);
       }

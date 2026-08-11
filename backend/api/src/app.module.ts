@@ -30,6 +30,7 @@ import { AdminUxMasterModule } from './modules/admin-ux-master/admin-ux-master.m
 import { LeaseModule } from './modules/lease/lease.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { OnboardingModule } from './modules/resident/onboarding.module';
+import { PropertyOwnerManagementModule } from './modules/property-owner-management/property-owner-management.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { OnboardingModule } from './modules/resident/onboarding.module';
     RbacModule,
     AuthModule,
     PropertyModule,
+    PropertyOwnerManagementModule,
     RoomModule,
     ResidentModule,
     OnboardingModule,

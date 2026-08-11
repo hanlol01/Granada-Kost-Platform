@@ -276,4 +276,41 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM role_permissions role_permission JOIN roles role ON role.id=role_permission.role_id JOIN permissions permission ON permission.id=role_permission.permission_id WHERE role.code='admin' AND permission.code='billing.manage')",
     ],
   },
+  {
+    version: '032_booking_lead_paid_hold_lifecycle.sql',
+    checksumSha256: 'f9ad6276104bcbbb8e6dc186ec2d7f7e1d6e7aebb57c2658e648e60308e844f9',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_lead_holds_status_check' AND pg_get_constraintdef(oid) LIKE '%committed%')",
+      "to_regclass('public.uq_booking_lead_holds_active_room') IS NOT NULL",
+      "to_regclass('public.booking_lead_payment_commitment_refunds') IS NOT NULL",
+    ],
+  },
+  {
+    version: '033_booking_lead_refund_evidence.sql',
+    checksumSha256: '0f81146c6818a8c1cdb0b97b436c2d44493a256f41c29b93df60c3bd53c4a57e',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitment_refunds' AND column_name='refund_evidence_file_ids')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_lead_payment_commitment_refunds_evidence_limit_check' AND pg_get_constraintdef(oid) LIKE '%cardinality(refund_evidence_file_ids) <= 3%')",
+    ],
+  },
+  {
+    version: '034_booking_lead_terminal_archive.sql',
+    checksumSha256: '9c5a773679a23dc974b79cd92d88d01dc7cead0125abea751417f1486a15df4d',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_leads' AND column_name='archived_at')",
+      "to_regclass('public.idx_booking_leads_property_archived_created') IS NOT NULL",
+    ],
+  },
+  {
+    version: '035_property_owner_management.sql',
+    checksumSha256: '8ae51b9fe00df83f4c111cc4a8673b2ecbdfa9723a7a41b0976bc1c3ec1d476c',
+    sentinels: [
+      "to_regclass('public.property_owner_profiles') IS NOT NULL",
+      "to_regclass('public.building_owner_assignments') IS NOT NULL",
+      "to_regclass('public.room_owner_assignments') IS NOT NULL",
+      "to_regclass('public.property_owner_commercial_policies') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM roles WHERE code='property_owner')",
+      "EXISTS (SELECT 1 FROM permissions WHERE code='property_owner.asset.read')",
+    ],
+  },
 ] as const;

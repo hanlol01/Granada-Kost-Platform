@@ -1,10 +1,10 @@
 # KOSTATION Kost Management Ecosystem Overhaul
 
-Status: **APPROVED TARGET — KMO-W00 THROUGH KMO-W06 DELIVERED; W07+ PLANNED**
+Status: **APPROVED TARGET — KMO-W00 THROUGH KMO-W06 DELIVERED; W10 PROPERTY OWNER PRIORITIZED FOR THE NEXT PLANNING SLICE**
 
 Program code: `KMO`
 
-Last policy alignment: 2026-08-03 (Asia/Jakarta)
+Last policy alignment: 2026-08-11 (Asia/Jakarta)
 
 This directory is the canonical implementation plan for the post-M19 KOSTATION
 functional overhaul. It turns the owner's operating policy, the product owner's
@@ -62,19 +62,21 @@ implement.
     public catalog and authenticated Penghuni application.
 11. [`PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md`](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
     — investor ownership and building-scoped read-only access.
-12. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
+12. [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
+    — the bounded, prioritized W10 ownership delivery sequence; planning only.
+13. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
     transaction, idempotency, audit, file, cache, and adapter contracts.
-13. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
+14. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
     — detailed money, reminder, notification, expense, and report behavior.
-14. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
+15. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
     vertical slices.
-15. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
+16. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
     required automated, migration, runtime, and release evidence.
-16. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
+17. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
     and implementation status.
-17. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
+18. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
     and review protocol.
-18. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
+19. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
     derived from third-party screenshots and rejected reference behavior.
 
 The architecture set has four distinct jobs: visual relationships live in

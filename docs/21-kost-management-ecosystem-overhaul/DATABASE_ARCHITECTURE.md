@@ -208,9 +208,11 @@ Lifecycle meaning:
   active states must reconcile, with explicit legacy exceptions only.
 - The 163-room inventory is fixed. Buildings and categories classify existing
   rooms; routine room creation is not an operational authority.
-- Building ownership is a future effective-dated assignment. Until KMO-W10,
-  room detail uses the documented KOSTATION policy default with reconciliation
-  required, not a synthetic investor.
+- Building ownership is a future effective-dated assignment. It is prioritized
+  as the next W10 planning slice, but remains unimplemented until source,
+  migration, reconciliation, and runtime evidence are separately recorded.
+  Until then, room detail uses the documented KOSTATION policy default with
+  reconciliation required, not a synthetic investor.
 
 ## 4. Billing and Finance
 

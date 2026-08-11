@@ -8,6 +8,12 @@ Surface: restricted read-only mode in the Admin web application
 
 Audience: building investors with the `property_owner` role
 
+> **Delivery priority (2026-08-11):** this contract remains `APPROVED` planning.
+> Its ownership and read-only workspace portions are the next prioritized W10
+> slice; reporting/export breadth remains deferred until that authority is
+> established. See
+> [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md).
+
 ## 1. Purpose
 
 KOSTATION may assign one whole physical building to an investor. The investor

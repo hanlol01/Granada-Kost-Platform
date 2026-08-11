@@ -692,6 +692,21 @@ Exit evidence:
 
 Class: Program Ship; split into `KMO-W10A`–`KMO-W10C`
 
+### Priority decision — Property Owner first
+
+W10 does **not** begin as one large report-and-portal release. The next planned
+slice is the bounded Property Owner path:
+
+1. `KMO-W10B` — authoritative whole-building ownership and Owner account
+   provisioning;
+2. `KMO-W10C` — read-only Owner workspace over that authority; then
+3. `KMO-W10A` — broad reports and exports, after the ownership scope exists.
+
+This is a planning priority only. It does not claim that W10 source, migration,
+canonical database, or runtime evidence exists. The executable boundary,
+acceptance criteria, and explicit deferrals are in
+[`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md).
+
 ### KMO-W10A — Authoritative Reports
 
 Requirements:

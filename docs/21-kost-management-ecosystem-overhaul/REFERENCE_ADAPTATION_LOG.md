@@ -457,15 +457,20 @@ KOSTATION visual implementation follows [`DESIGN.md`](../../DESIGN.md).
 No supplied screenshot is authority for investor behavior. The product-owner
 description is adopted as:
 
-- one investor may own one or more complete buildings;
-- default owner is KOSTATION;
-- investor receives a `property_owner` login;
-- access is read-only and limited to owned buildings;
-- dashboards and operational records are reduced to that scope;
+- one Owner may own multiple whole Rumah Kost buildings and multiple individual
+  Apart Kost rooms;
+- an unassigned asset is operationally `Kostation-owned`;
+- the Owner receives a distinct `property_owner` login;
+- access is read-only and limited by asset and effective ownership period;
+- dashboards, operational records, reports, and financial summaries are reduced
+  to that scope;
 - sensitive identity and credentials are excluded.
 
 Property-wide legacy ownership assignment must be migrated to explicit
-building-ownership history.
+mixed-asset ownership history without automatic property-wide backfill. The
+standard economic reference is Rp1.800.000 earned rent per occupied room-month,
+split into Rp1.500.000 Owner entitlement and Rp300.000 Kostation management fee;
+security deposit and vacancy are excluded.
 
 ## 21. Terminology Replacement Table
 

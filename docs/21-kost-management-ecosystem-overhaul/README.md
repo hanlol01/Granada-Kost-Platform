@@ -61,7 +61,7 @@ implement.
 10. [`PUBLIC_AND_PENGHUNI_EXPERIENCE.md`](PUBLIC_AND_PENGHUNI_EXPERIENCE.md) —
     public catalog and authenticated Penghuni application.
 11. [`PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md`](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
-    — investor ownership and building-scoped read-only access.
+    — mixed-asset ownership, read-only Owner access, and settlement authority.
 12. [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
     — the bounded, prioritized W10 ownership delivery sequence; planning only.
 13. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
@@ -126,7 +126,7 @@ the final slice.
 ## Binding Program Boundaries
 
 - The overhaul includes Admin, public `/kamar`, the authenticated Penghuni app,
-  and the building-scoped Property Owner experience.
+  and the asset- and ownership-period-scoped Property Owner experience.
 - The overhaul covers every current sidebar surface, including facilities,
   gallery, terms, payments, vehicles and parking, complaints, notifications,
   reports, settings, Smart Lock, CCTV, and access history.

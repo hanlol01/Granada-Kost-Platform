@@ -60,7 +60,7 @@ W00 Truth baseline and route integrity
   │    └─ W07 Resident/room 360, transfer, renewal, and checkout
   ├─ W08 Reminder and notification operations
   ├─ W09 Vehicles, complaints, maintenance, and expenses
-  ├─ W10 Reports and Property Owner building scope
+  ├─ W10 Property Owner mixed-asset authority, settlement, and reports
   ├─ W11 Penghuni application completion
   └─ W12 Integrated acceptance, reconciliation, and release closure
 ```
@@ -688,74 +688,66 @@ Exit evidence:
 - lifecycle and financial correction paths;
 - no cross-property or resident identity leak.
 
-## KMO-W10 — Reports and Property Owner
+## KMO-W10 — Property Owner Management and Reports
 
-Class: Program Ship; split into `KMO-W10A`–`KMO-W10C`
+Class: Program Ship; split into `W10-OWNER-A`–`W10-OWNER-D`.
 
-### Priority decision — Property Owner first
-
-W10 does **not** begin as one large report-and-portal release. The next planned
-slice is the bounded Property Owner path:
-
-1. `KMO-W10B` — authoritative whole-building ownership and Owner account
-   provisioning;
-2. `KMO-W10C` — read-only Owner workspace over that authority; then
-3. `KMO-W10A` — broad reports and exports, after the ownership scope exists.
-
-This is a planning priority only. It does not claim that W10 source, migration,
-canonical database, or runtime evidence exists. The executable boundary,
-acceptance criteria, and explicit deferrals are in
+Status: `PLANNED`. This priority does not claim source, migration, canonical
+database, automated, or runtime evidence. The complete boundary is in
 [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md).
 
-### KMO-W10A — Authoritative Reports
+### W10-OWNER-A — Schema, Authority, RBAC, and API Foundation
 
-Requirements:
+- add Owner Profile and effective-dated Rumah Kost building and Apart Kost room
+  assignments;
+- prohibit category mismatch and overlapping asset periods;
+- add the distinct read-only `property_owner` role;
+- derive every Owner scope from the authenticated account and return an honest
+  empty result for an empty assignment set;
+- add effective-dated commercial split policy, earned-rent attribution, Owner
+  entitlement, settlement, adjustment, and payout authority; and
+- reconcile legacy property-wide data without automatic broad backfill.
 
-- `FR-ADM-REPORT-001` through `FR-ADM-REPORT-003`
+### W10-OWNER-B — Admin Master Data and Assignment
 
-Scope:
+- Owner list, create, detail, edit, archive, credential receipt/reset, and
+  ownership history;
+- whole-building Rumah Kost wizard and individual-room Apart Kost wizard;
+- immediate/scheduled release and transfer without rewriting history;
+- `Kostation-owned` fallback for unassigned assets; and
+- deterministic locks, idempotency, audit, and outbox in every mutation.
 
-- Lease, Payment, Expense, and Finance subpages;
-- URL-backed date/status filters;
-- authoritative summary and full filtered dataset;
-- preview, Excel, PDF;
-- operational cash flow, deposit liability, receivable, arrears, and occupancy;
-- no profit/loss label until a separate accrual-accounting authority exists.
+### W10-OWNER-C — Read-only Portal, Reports, and Settlement
 
-### KMO-W10B — Building Ownership
+- same management application with a dedicated Owner shell and zero operational
+  mutation authority;
+- asset- and ownership-period-bound occupancy, lease, maintenance, complaint,
+  notification, and safe financial summaries;
+- verified collected-and-earned rent attribution using the current standard
+  Rp1.800.000 room-month split into Rp1.500.000 Owner entitlement and Rp300.000
+  Kostation management fee, with partial collections allocated 5:1 until caps;
+- monthly settlement lifecycle `draft → ready_for_review → approved → paid`; and
+- preview/export parity with masked payout account and reduced PII.
 
-Requirements:
+### W10-OWNER-D — Reconciliation, Security Review, and Runtime QA
 
-- `FR-POW-OWNER-001`
-
-Scope:
-
-- building ownership assignment/history;
-- default KOSTATION ownership;
-- investor account provisioning and first-login password policy;
-- migration from property-wide assignment without granting broader access.
-
-### KMO-W10C — Property Owner Read-Only Experience
-
-Requirements:
-
-- `FR-POW-OWNER-002`
-- `FR-POW-OWNER-003`
-
-Scope:
-
-- building-scoped dashboard, rooms, resident summaries, lease, billing,
-  vehicles, leads, complaints, notifications, and reports;
-- read-only route and API enforcement;
-- reduced PII and no credential/document exposure.
+- disposable migration first apply/replay/constraint/rollback proof;
+- category, interval overlap, transfer boundary, empty-scope, and historical
+  period tests;
+- entitlement, fee, reversal/refund adjustment, settlement, and payout
+  reconciliation;
+- mutation denial and PII/private-proof exclusion; and
+- authenticated Admin and Property Owner browser flows after source stabilizes.
 
 Exit evidence:
 
-- report/export parity;
-- finance reconciliation;
-- building A investor receives zero building B rows;
-- all mutation attempts rejected;
-- list/detail/cache isolation.
+- Rumah Kost assignment covers exactly its building rooms and Apart Kost only
+  the selected rooms;
+- old/new Owner history changes exactly at the effective boundary;
+- reports and exports reconcile to earned service and ownership periods;
+- one asset-period never pays two Owners;
+- all Owner mutation attempts are rejected; and
+- list, detail, cache, report, and export scopes remain isolated.
 
 ## KMO-W11 — Penghuni Application Completion
 

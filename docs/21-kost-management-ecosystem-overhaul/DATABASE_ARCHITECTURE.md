@@ -54,8 +54,8 @@ State map:
   residents, Booking Leads, holds, leases, occupancies, and transfer records.
 - **Transition**: migration 022 source adds commercial versions, while bounded
   legacy lease/occupancy reconciliation remains until canonical cutover evidence.
-- **Target**: account provisioning, installment expansion, and effective building
-  ownership remain planned in KMO-W04, W06, and W10.
+- **Target**: effective Rumah Kost building ownership, Apart Kost room ownership,
+  Owner accounts, earned-rent attribution, and settlement remain planned in W10.
 
 ```mermaid
 erDiagram
@@ -86,8 +86,11 @@ erDiagram
   LEASES ||--o{ ROOM_TRANSFER_RECORDS : changes_room
   ROOMS ||--o{ ROOM_TRANSFER_RECORDS : source_or_destination
 
+  USERS o|--o| PROPERTY_OWNER_PROFILES : authenticates_owner
+  PROPERTY_OWNER_PROFILES ||--o{ BUILDING_OWNER_ASSIGNMENTS : owns_rumah_kost
+  PROPERTY_OWNER_PROFILES ||--o{ ROOM_OWNER_ASSIGNMENTS : owns_apart_room
   ROOM_BUILDINGS ||--o{ BUILDING_OWNER_ASSIGNMENTS : ownership_history
-  INVESTOR_PROFILES o|--o{ BUILDING_OWNER_ASSIGNMENTS : assigned_investor
+  ROOMS ||--o{ ROOM_OWNER_ASSIGNMENTS : ownership_history
 
   PROPERTIES {
     uuid id PK
@@ -179,14 +182,21 @@ erDiagram
     uuid to_room_id FK
     date effective_date
   }
-  INVESTOR_PROFILES {
+  PROPERTY_OWNER_PROFILES {
     uuid id PK
     uuid property_id FK
+    uuid user_id FK
     string profile_status
   }
   BUILDING_OWNER_ASSIGNMENTS {
     uuid building_id FK
     string owner_kind
+    date effective_from
+    date effective_until
+  }
+  ROOM_OWNER_ASSIGNMENTS {
+    uuid room_id FK
+    uuid property_owner_profile_id FK
     date effective_from
     date effective_until
   }
@@ -208,11 +218,14 @@ Lifecycle meaning:
   active states must reconcile, with explicit legacy exceptions only.
 - The 163-room inventory is fixed. Buildings and categories classify existing
   rooms; routine room creation is not an operational authority.
-- Building ownership is a future effective-dated assignment. It is prioritized
-  as the next W10 planning slice, but remains unimplemented until source,
-  migration, reconciliation, and runtime evidence are separately recorded.
-  Until then, room detail uses the documented KOSTATION policy default with
-  reconciliation required, not a synthetic investor.
+- Property ownership is future effective-dated authority. Rumah Kost uses a
+  whole-building assignment that covers every current and future room; Apart
+  Kost uses individual room assignments. Overlapping intervals on the same asset
+  fail closed. This remains planned until W10 source, migration, reconciliation,
+  and runtime evidence are separately recorded.
+- An unassigned asset is operationally `Kostation-owned` without a synthetic
+  Owner account. Legacy property-wide assignments are transitional evidence and
+  are never backfilled automatically into broader access.
 
 ## 4. Billing and Finance
 
@@ -248,6 +261,16 @@ erDiagram
   EXPENSES ||--o{ EXPENSE_REVERSALS : corrected_by
   FILES o|--o{ PAYMENT_PROOFS : mediates
   FILES ||--o{ EXPENSE_FILES : mediates_evidence
+
+  LEASES ||--o{ OWNER_EARNED_RENT_ATTRIBUTIONS : earns_service
+  PAYMENTS ||--o{ OWNER_EARNED_RENT_ATTRIBUTIONS : supports_collection
+  OWNER_COMMERCIAL_POLICIES ||--o{ OWNER_EARNED_RENT_ATTRIBUTIONS : snapshots_split
+  PROPERTY_OWNER_PROFILES ||--o{ OWNER_EARNED_RENT_ATTRIBUTIONS : receives_entitlement
+  PROPERTY_OWNER_PROFILES ||--o{ OWNER_SETTLEMENTS : reconciles_monthly
+  OWNER_SETTLEMENTS ||--o{ OWNER_SETTLEMENT_LINES : explains
+  OWNER_EARNED_RENT_ATTRIBUTIONS ||--o{ OWNER_SETTLEMENT_LINES : summarized_by
+  OWNER_SETTLEMENTS ||--o{ OWNER_SETTLEMENT_ADJUSTMENTS : corrected_by
+  OWNER_SETTLEMENTS ||--o| OWNER_PAYOUTS : paid_by
 
   LEASES {
     uuid id PK
@@ -345,6 +368,44 @@ erDiagram
     uuid property_id FK
     string purpose
   }
+  OWNER_COMMERCIAL_POLICIES {
+    uuid id PK
+    bigint gross_room_month
+    bigint owner_share_cap
+    bigint management_fee_cap
+    date effective_from
+  }
+  OWNER_EARNED_RENT_ATTRIBUTIONS {
+    uuid id PK
+    uuid owner_profile_id FK
+    uuid lease_id FK
+    date service_period
+    bigint owner_entitlement
+    bigint management_fee
+  }
+  OWNER_SETTLEMENTS {
+    uuid id PK
+    uuid owner_profile_id FK
+    date settlement_month
+    string status
+  }
+  OWNER_SETTLEMENT_LINES {
+    uuid settlement_id FK
+    uuid attribution_id FK
+    bigint owner_amount
+    bigint fee_amount
+  }
+  OWNER_SETTLEMENT_ADJUSTMENTS {
+    uuid settlement_id FK
+    bigint amount
+    string reason
+  }
+  OWNER_PAYOUTS {
+    uuid settlement_id FK
+    bigint amount
+    string status
+    timestamp paid_at
+  }
 ```
 
 Financial meaning:
@@ -359,6 +420,15 @@ Financial meaning:
   compensating entries, never destructive edits.
 - Reports read these ledgers and allocation authorities. A report or export is
   not a maintained financial balance.
+- Owner entitlement is recognized only from verified collection for service that
+  has been earned inside the effective ownership period. Advance Booking Fee or
+  DP is not immediately distributable merely because cash was received.
+- The current standard earned room-month is Rp1.800.000: Rp1.500.000 Owner
+  entitlement and Rp300.000 Kostation management fee. Partial earned collection
+  follows the 5:1 ratio until both monthly caps are reached.
+- A monthly Owner settlement is a review authority, and a payout is a separate
+  approved disbursement. Reversal/refund consequences append adjustments; they
+  never rewrite payment or earned-rent history.
 
 ## 5. Content, Operations, and Communication
 

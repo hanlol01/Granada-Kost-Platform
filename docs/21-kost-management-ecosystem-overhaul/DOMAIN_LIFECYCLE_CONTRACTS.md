@@ -255,11 +255,13 @@ irretrievable; reset requires a new audited command.
 `ProvisionPropertyOwner` is executed with ownership activation:
 
 - reuse/create normalized user;
-- assign `property_owner` and exact building ownership scope;
+- assign `property_owner`; effective asset scope is always resolved separately
+  from active Rumah Kost building assignments and Apart Kost room assignments;
 - issue a temporary credential only through the same dedicated, authorized,
-  non-cacheable one-time receipt contract and require first-login change;
+  non-cacheable one-time receipt contract; Property Owner is not forced to
+  change it on first login, while later recovery uses an audited reset command;
 - keep all Property Owner application actions read-only;
-- end access immediately when no active ownership assignment remains.
+- return an honest empty scope when no active ownership assignment remains.
 
 `owner` and `property_owner` are never interchangeable.
 
@@ -648,31 +650,48 @@ resident, and current room/occupancy. Duplicate active plate conflicts fail
 closed. Transfer moves/reconciles parking scope; checkout deactivates active
 parking. Permanent deletion is limited to an unreferenced erroneous draft.
 
-## 22. Building Ownership Lifecycle
+## 22. Property Owner Ownership and Settlement Lifecycle
 
 ### 22.1 States
 
 | State | Meaning |
 | --- | --- |
-| `draft` | Investor, building, documents, and effective terms are prepared. No access effect. |
-| `active` | Investor is current owner of the building for read scope. |
-| `ended` | Ownership period closed and historical access/reporting preserved. |
+| `draft` | Owner profile, eligible assets, documents, and effective terms are prepared. No access effect. |
+| `scheduled` | Assignment is approved for a future effective boundary but does not yet grant current-asset access. |
+| `active` | Owner is the current contractual/economic owner of the assigned asset for read scope and earned-rent attribution. |
+| `ended` | Ownership period closed; immutable period history and period-bound reporting remain available. |
 | `cancelled` | Draft/assignment cancelled before effect. |
 
 ### 22.2 Invariants and transition
 
-- Default owner for every building is KOSTATION.
-- Exactly one active ownership assignment exists per building.
-- An investor may own multiple buildings through separate assignments.
-- `ActivateOwnership` locks building and existing assignments, ends the prior
-  assignment at the new effective boundary, activates the new assignment,
-  provisions/reuses Property Owner account, and writes audit/outbox atomically.
-- Read scope is calculated from active building assignments, never from
-  frontend filtering alone.
+- An asset without an effective assignment is displayed as `Kostation-owned`;
+  no synthetic Owner Profile is created.
+- Rumah Kost assignment targets one complete building/unit and includes every
+  present and future room in that building.
+- Apart Kost assignment targets explicitly selected rooms and never grants the
+  entire Apart Kost building.
+- One owner may hold several Rumah Kost buildings and Apart Kost rooms, but one
+  asset cannot have overlapping ownership periods.
+- `ActivateOwnership` locks the owner, asset set, and existing intervals in a
+  deterministic order; it closes the prior interval when applicable, activates
+  or schedules the successor, provisions/reuses the Property Owner account, and
+  writes audit/outbox atomically.
+- Current read scope is calculated server-side from effective assignments;
+  historical reports intersect event/service period with ownership period.
 - Ownership transfer does not rewrite historical leases, payments, complaints,
   or reports; effective-time reporting preserves the owner at that time.
-- Commercial purchase/revenue-share settlement remains disabled until
-  `OWNER_CONFIRMATION_REQUIRED-007` is resolved.
+- Verified rent collection is not immediately owner income. Earned-rent
+  recognition requires both verified collection and elapsed service coverage.
+- For the current standard monthly tariff of Rp1.800.000 per occupied room,
+  monthly earned entitlement is capped at Rp1.500.000 for the effective owner
+  and Rp300.000 as Kostation management fee. Partial earned collection is split
+  proportionally 5:1 until those caps; security deposit and vacancy contribute
+  nothing.
+- Monthly settlement follows `draft -> ready_for_review -> approved -> paid`.
+  Payout is allowed only after Admin approval. Reversal/refund creates an
+  append-only adjustment or clawback and never rewrites a paid settlement.
+- Management fee is revenue for Kostation, not an operational expense; owner
+  expense/maintenance offsets require a separate approved policy and evidence.
 
 ## 23. Managed Content Publication Lifecycle
 
@@ -851,7 +870,7 @@ during migration.
 | Booking Lead legacy statuses | Map by history to canonical lead states; never infer `leased` without active lease evidence. |
 | Resident row without account | Preserve resident; provision account only through an authorized onboarding commitment or separately approved invitation, never through migration/lease activation and never by bulk-generating plaintext passwords. |
 | Active occupancy without active lease | Mark reconciliation anomaly; use existing compatibility checkout only, never fabricate a lease silently. |
-| Property-level Property Owner membership | Deny broad investor reads until building assignments are backfilled and verified. |
+| Property-level legacy Property Owner membership | Deny broad reads until explicit Rumah Kost building and Apart Kost room assignments are reconciled and verified; never auto-backfill property-wide ownership. |
 | Verified payment without allocations | Reconciliation task must create balanced allocations or classify unresolved; reports exclude unresolved money from invoice settlement. |
 | Hard-delete UI action | Replace with archive/reversal; do not invoke legacy delete for historical entities. |
 

@@ -978,7 +978,8 @@ It adds bounded sections or subroutes for:
 - public terms publication;
 - file limits;
 - feature/rollout visibility; and
-- investor/building ownership administration for authorized global operators.
+- Property Owner profiles, accounts, mixed-asset ownership, and settlement
+  administration for authorized Admin users.
 
 Dirty forms must survive background refetch. Property switch resets only
 property-scoped drafts; account preference remains account-scoped.
@@ -995,16 +996,32 @@ Smart Lock, access history, and CCTV pages remain conditional:
   provider evidence; and
 - external credentials and raw provider responses are never displayed.
 
-### FR-ADM-OWNER-101 — Investor administration entry
+### FR-ADM-OWNER-101 — Master Data Owner Property
 
-Authorized global operators manage building ownership from the building/room
-context or a Settings subpage. They can view current owner, ownership history,
-assign or transfer ownership, and provision a Property Owner account.
+Authorized Admin users manage Property Owner profiles from a dedicated Master
+Data route. The list exposes name, phone, account state, active and scheduled
+Rumah Kost building counts, active and scheduled Apart Kost room counts, and
+bounded actions for detail, edit, archive, credential reset, and ownership
+management.
 
-The operation is full-page or a route-backed workflow with effective date,
-investor identity, building selection, agreement reference, credential
-provisioning, impact preview, and confirmation. It never assigns ownership at a
-single-room level.
+The route-backed assignment wizard must branch by asset category:
+
+- Rumah Kost selects one or more whole buildings; every current and future room
+  in the selected building follows that building ownership interval;
+- Apart Kost selects one or more individual rooms and never grants the whole
+  Apart Kost building; and
+- unassigned assets display `Kostation` as operational owner without creating a
+  synthetic Owner account.
+
+Assignment and transfer capture effective dates, agreement/evidence references,
+reason, impact preview, and confirmation. Editing closes or schedules an old
+interval and opens a new one; it never overwrites ownership history. Archive is
+blocked while active or scheduled assignment exists.
+
+One Owner Profile has at most one `property_owner` account. Admin sets the
+initial password and receives it once; ordinary detail never retrieves it and
+offers reset only. Owner accounts have no forced first-login password-change
+requirement.
 
 ## 16. Cross-page Operational Flows
 
@@ -1114,8 +1131,8 @@ The Admin experience is not complete until:
 7. payments and history use reversal/archive rather than unsafe hard delete;
 8. reminder and notification responsibilities remain separate;
 9. report preview/export matches filters and full authoritative totals;
-10. `property_owner` sees only building-scoped read-only content defined in its
-    separate contract;
+10. `property_owner` sees only read-only content for currently assigned Rumah
+    Kost buildings and Apart Kost rooms, constrained by each ownership period;
 11. all pages satisfy loading, empty, denied, error, stale-scope, responsive,
     dark/light, and keyboard behavior; and
 12. implementation evidence advances each referenced requirement from APPROVED

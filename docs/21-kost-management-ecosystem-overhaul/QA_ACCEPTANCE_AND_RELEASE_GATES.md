@@ -401,7 +401,8 @@ For each:
 - Active room and parking assignment match resident.
 - Documents and validity persist.
 - Resident and room quick links point to the same authority.
-- Property Owner receives reduced read-only data for owned buildings only.
+- Property Owner receives reduced read-only data only for assigned Rumah Kost
+  buildings and Apart Kost rooms within the effective ownership period.
 
 ## 5.10 Complaints and Maintenance
 
@@ -456,17 +457,33 @@ For Lease, Payment, Expense, and Finance:
 
 ## 5.13 Property Owner
 
-`QA-OWNER-001`
+`QA-OWNER-001` through `QA-OWNER-004`
 
-- Default building owner is KOSTATION.
-- Ownership assignment has effective history and atomic account provisioning.
-- Investor A sees only owned building A across dashboard, rooms, resident
-  summaries, leases, billing, vehicles, leads, complaints, notifications, and
-  reports.
-- Investor receives no KTP, credential, full sensitive identity, or private
-  payment-proof data.
+- An unassigned asset is labelled `Kostation`; no synthetic Owner account exists.
+- Rumah Kost assignment covers exactly all rooms in its selected building,
+  including later rooms; Apart Kost assignment covers only selected rooms.
+- Cross-category and overlapping active/scheduled assignments fail closed.
+- Transfer changes the visible Owner exactly at its effective boundary and keeps
+  prior history immutable.
+- Account provisioning and assignment are atomic; plaintext initial password is
+  returned only once, replay never reveals it, and subsequent detail offers reset
+  only. No first-login password change is required for `property_owner`.
+- Owner A receives zero rows belonging solely to Owner B across dashboard,
+  rooms, resident summaries, leases, billing, vehicles, leads, complaints,
+  maintenance, notifications, reports, and exports.
+- Former and future Owners see only the allowed ownership periods; empty
+  ownership returns an honest empty scope, never property-wide data.
+- Owner receives no NIK, KTP, private address, emergency contact, credentials,
+  raw proof, storage path, or raw audit data.
 - All create/update/delete/approve/dispatch commands return forbidden.
-- Empty ownership returns an honest empty scope, never property-wide data.
+- Archive is rejected while active or scheduled assignments exist.
+- For each earned occupied room-month under the standard policy, verified
+  collection and elapsed service reconcile to Rp1.500.000 Owner entitlement and
+  Rp300.000 Kostation management fee; partial collection follows 5:1 until caps.
+- Vacancy and security deposit produce no Owner entitlement. Refund/reversal is
+  an append-only adjustment, never destructive history.
+- Settlement advances only `draft → ready_for_review → approved → paid`; payout
+  requires Admin approval and masked/encrypted payout-account handling.
 
 ## 5.14 Penghuni
 

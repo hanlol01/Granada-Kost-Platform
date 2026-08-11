@@ -578,7 +578,7 @@ Internal notifications may be created from:
 - notification polling/refetch must update header count after domain
   invalidation;
 - stale count stored in local storage is prohibited;
-- Property Owner sees only building-scoped events and no mutation actions;
+- Property Owner sees only events for effectively owned Rumah Kost buildings and Apart Kost rooms, and receives no mutation actions;
 - Penghuni sees only self-context events.
 
 ### 10.3 Data minimization
@@ -779,18 +779,56 @@ Excel:
 
 ## 12. Property Owner Financial Scope
 
-Property Owner reports are read-only and building-scoped.
+Property Owner reports are read-only and asset/ownership-period scoped.
 
-- Current operational pages use active building assignments.
-- Historical report rows are visible only when the row's snapshot building and
-  economic date fall within the assignment effective period.
+- Current operational pages use active Rumah Kost building assignments plus
+  active Apart Kost room assignments.
+- Historical report rows are visible only when the row's asset and earned
+  service date intersect the assignment effective period.
 - Data before ownership effective date is not exposed by default.
-- Property-wide expenses without a building are excluded unless an approved
-  allocation rule attributes a share to the owned building.
-- Security deposits and rent are shown for owned building leases only.
+- Property-wide expenses without an asset are excluded unless an approved,
+  evidenced allocation rule attributes a share to the owned asset.
+- Security deposits remain liabilities and never owner income.
 - Other investors' residents, rooms, payments, expenses, complaints, vehicles,
   and report totals are neither returned nor counted.
-- Export repeats the same scope and records the building assignment checksum.
+- Export repeats the same scope and records the resolved assignment-set
+  checksum.
+
+### 12.1 Earned-rent and fee policy
+
+The current commercial baseline is Rp1.800.000 rent per occupied room per
+earned month:
+
+- owner earned entitlement: Rp1.500.000;
+- Kostation management fee: Rp300.000;
+- security deposit: excluded;
+- vacant/unserved period: zero entitlement and zero management fee.
+
+Booking Fee and DP are advance-rent credits. They become distributable only as
+verified collection is matched to elapsed rental service. A partial earned
+collection is split 5:1 between owner and Kostation until the monthly caps are
+reached. This policy is effective-dated and snapshotted so a later tariff or fee
+change cannot rewrite historical settlements.
+
+### 12.2 Settlement and payout
+
+`Payment`, `Earned Rent`, `Owner Entitlement`, and `Owner Payout` are distinct
+authorities. Monthly settlement uses:
+
+```text
+draft -> ready_for_review -> approved -> paid
+```
+
+- Draft is recomputable from verified collection, allocation, service coverage,
+  ownership interval, and snapshotted commercial policy.
+- Ready for Review freezes the candidate lines for Admin examination.
+- Approved is an Admin decision with audit and outbox.
+- Paid requires payout amount, method/account snapshot, reference, and timestamp.
+- Reversal/refund after approval or payment appends an adjustment/clawback; it
+  never deletes or rewrites prior settlement history.
+- Owner bank-account data is encrypted at rest and masked in ordinary reads.
+- Management fee is Kostation revenue, not an expense. Maintenance or other
+  owner deductions require a separately approved policy and evidence.
 
 ## 13. UI Labels and Actions
 

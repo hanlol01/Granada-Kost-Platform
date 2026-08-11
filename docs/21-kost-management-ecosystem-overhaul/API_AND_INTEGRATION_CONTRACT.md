@@ -21,7 +21,7 @@ parallel controllers with duplicate routes are prohibited.
 | ID                 | Contract                                                                                                                                                        |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `INV-PROPERTY-001` | A record from one property/building scope cannot be read, counted, cached, exported, mutated, or linked through another scope.                                  |
-| `INV-OWNER-001`    | Property Owner reads intersect only active building assignments at the record's effective time.                                                                 |
+| `INV-OWNER-001`    | Property Owner reads intersect only effective Rumah Kost building or Apart Kost room assignments derived from the authenticated Owner Profile.                  |
 | `INV-RESIDENT-001` | One person has one canonical resident identity per property context; duplicate email, phone, or NIK conflicts fail closed.                                      |
 | `INV-LEASE-001`    | Final activation uses the committed account authority and is atomic across resident, lease, room, occupancy, billing, lead/hold, audit, and outbox authorities. |
 | `INV-BILLING-001`  | Invoice totals derive from an immutable lease commercial snapshot; category price edits never rewrite history.                                                  |
@@ -165,7 +165,7 @@ Every protected command must execute:
 2. verify exact role;
 3. verify all required permissions;
 4. resolve active property or resident context;
-5. resolve Property Owner active building assignments when applicable;
+5. resolve Property Owner effective Rumah Kost building and Apart Kost room assignments when applicable;
 6. reject empty/cross-scope access;
 7. verify feature rollout for commands gated by rollout;
 8. claim idempotency;
@@ -182,11 +182,12 @@ change concurrently.
 - `manager`: assigned-property operational authority.
 - `admin`: assigned operational authority limited by explicit permissions.
 - `resident`: authenticated self-service only.
-- `property_owner`: investor experience, read-only and building-scoped.
+- `property_owner`: asset-owner experience, read-only and effective mixed-asset scoped.
 
 `property_owner` must not inherit global `owner` behavior. The backend filters
-room, resident summary, lease, payment summary, vehicle, complaint, notification,
-and report reads by active building ownership.
+room, safe resident/lease summaries, financial summaries, complaint, maintenance,
+notification, and report reads by effective whole-building Rumah Kost ownership
+or individual-room Apart Kost ownership.
 
 ### 5.3 Account provisioning
 
@@ -198,8 +199,8 @@ are provisioned by their domain commands, not generic public user creation.
   **Commit Onboarding**, after conflict checks. A future-start resident remains
   `pending_activation` with an `awaiting_activation` lease and no occupancy
   until **Activate Lease** succeeds.
-- A Property Owner account is created or linked atomically during building
-  assignment.
+- A Property Owner account is created/linked through the Owner Profile command;
+  ownership assignment is a separate atomic, effective-dated command.
 - Temporary passwords are generated server-side and returned once only in a
   dedicated authorized receipt envelope with `Cache-Control: no-store` and
   `Pragma: no-cache`. The receipt is never replayable. Plaintext is never stored,
@@ -308,7 +309,9 @@ Domain audit actions use stable dotted names, for example:
 - `security_deposit.collected`, `security_deposit.refunded`;
 - `expense.approved`, `expense.paid`, `expense.reversed`;
 - `reminder.whatsapp_opened`, `reminder.sent_manually`;
-- `building_owner.assigned`, `building_owner.ended`.
+- `building_owner.assigned`, `building_owner.ended`, `room_owner.assigned`,
+  `room_owner.ended`, `owner_settlement.ready`, `owner_settlement.approved`,
+  `owner_payout.paid`.
 
 Audit snapshots contain IDs, state, safe amount/date/status fields, and reason
 codes only. They exclude full resident form data, phone/email, NIK, file path,
@@ -499,20 +502,29 @@ change resident/lease/room lifecycle.
 
 ### 8.10 Property Owner
 
-Property Owner reads use `/property-owner/*` route families but resolve active
-building assignments first. Required query families:
+Property Owner reads use `/property-owner/*` route families but derive owner
+identity and effective asset scope exclusively from authentication. Browser-sent
+owner/profile IDs are filters at most, never authorization authority. Required
+query families:
 
 - dashboard summary;
-- buildings/rooms;
+- owned assets (Rumah Kost buildings and Apart Kost rooms);
 - resident and lease summaries;
-- invoice/payment summaries;
+- earned-rent, entitlement, management-fee, settlement, adjustment, and payout
+  summaries;
 - vehicles/parking;
 - complaints/work orders;
 - internal notifications;
 - lease/payment/expense/cash-flow reports.
 
-Every response includes only rows whose current or historical snapshot building
-belongs to the authorized assignment period. All mutation methods return `403`.
+Every response includes only rows whose authoritative asset and service period
+intersect the authorized ownership interval. Empty scope returns empty data and
+zero totals. All operational mutation methods return `403`.
+
+Admin-only Owner Property routes provide profile create/edit/archive/reset,
+building/room assignment, scheduled release/transfer, settlement review/approve,
+and payout recording. These commands authorize before lookup, lock deterministically,
+use idempotency, and write audit/outbox in the same transaction.
 
 ### 8.11 Reports and exports
 
@@ -529,8 +541,8 @@ belongs to the authorized assignment period. All mutation methods return `403`.
 Export request body contains exact canonical filters and format only. Server
 recomputes authorization and stores the normalized filter/scope checksum.
 Admin/manager preview and export are property-scoped. `property_owner` preview
-and export additionally intersect rows with the actor's effective
-building-assignment interval, including historical snapshot building where
+and export additionally intersect rows with the actor's effective mixed-asset
+assignment interval, including historical asset snapshots where
 applicable. UI pagination never narrows the exported dataset.
 
 ## 9. File Mediation
@@ -627,7 +639,7 @@ Every Admin domain key includes:
 `domain + property_id + normalized filters`
 
 Property Owner keys also include a stable authorization-scope version or
-building-set checksum returned by auth context. Penghuni keys include account
+asset-set checksum returned by auth context. Penghuni keys include account
 ID, not resident/room IDs from client input.
 
 Filters:
@@ -711,7 +723,7 @@ Requirements:
 | `QA-OPS-001`         | V2 media dispatch reaches the one live controller; legacy behavior remains compatible.                                               |
 | `QA-OPS-002`         | Exact envelope, pagination boundaries, out-of-range page, strict validation, and safe errors.                                        |
 | `QA-OPS-003`         | Idempotency same-key replay, reused-key conflict, in-flight conflict, rollback, and safe response snapshot.                          |
-| `QA-PROPERTY-001`    | Property Owner cannot read or infer data outside active building assignments.                                                        |
+| `QA-PROPERTY-001`    | Property Owner cannot read or infer data outside effective Rumah Kost building and Apart Kost room assignments.                      |
 | `QA-LEASE-001`       | Onboarding commitment and lease activation are separately atomic; transfer locks and mutates only its defined lifecycle authorities. |
 | `QA-PAYMENT-001`     | Payment verification/reversal uses one transaction client for proof, allocation, invoice, receipt, audit, and outbox.                |
 | `QA-REMINDER-001`    | Manual WhatsApp claims only opened/manual-sent; email disabled never claims delivery.                                                |

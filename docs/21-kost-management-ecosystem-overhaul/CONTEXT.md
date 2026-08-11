@@ -1,25 +1,66 @@
-# KMO Ubiquitous Language
+# KMO Context and Canonical Terms
 
-Status: **APPROVED GLOSSARY**
+Status: `CURRENT AUTHORITY`
 
-This compact glossary captures the latest terms that W07 and later work packages
-must use. It intentionally contains business language only; implementation and
-evidence remain in the architecture, lifecycle, and traceability documents.
+This file is the short entry point for agents. Detailed rules live in the linked
+policy and architecture documents.
 
-| Term                         | Canonical meaning                                                                                                                                                                     | Not the same as                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Booking Lead                 | A prospective renter's recorded interest.                                                                                                                                             | Hold, lease, occupancy, resident account                 |
-| Hold                         | A temporary room reservation.                                                                                                                                                         | Tenancy or an active room placement                      |
-| Booking Fee                  | Optional advance-rent credit. It is Rp0 or at least Rp1.000.000 and reduces remaining contract rent.                                                                                  | Security deposit or separate rental revenue              |
-| DP / Uang Muka Sewa          | Advance-rent credit. The system pre-fills a 25% contract-value recommendation, but an authorized admin may record a lower amount by agreement.                                        | Security deposit                                         |
-| Security Deposit             | Optional refundable liability recorded for a lease. Rp0 is valid; any nonzero amount is reconciled at checkout through refund or documented deduction.                                | Booking Fee, DP, or rent revenue                         |
-| Lease / Penyewaan            | A contractual right to occupy one room for an agreed term and commercial snapshot.                                                                                                    | The previous idea of a separate `/penyewaan` master page |
-| Awaiting-activation lease    | A committed lease that reserves its exact room until an authorized check-in or activation.                                                                                            | An active occupancy                                      |
-| Occupancy / Hunian           | The actual active resident-to-room placement.                                                                                                                                         | Pending onboarding or an awaiting-activation lease       |
-| Initial rent credit          | The verified Booking Fee plus verified DP that reduces contract rent. The 25% figure is a recommendation, not an eligibility gate.                                                    | Security-deposit funding                                 |
-| Contract settlement deadline | One official deadline for the remaining contract rent, two months after activation. A partial payment reduces the balance but never creates a monthly invoice or moves this deadline. | A monthly rent invoice or a new lease term               |
-| Grace window                 | The seven calendar days after the official deadline during which a partial payment is still allowed. It is not a second extension or a replacement due date.                          | A payment-term extension                                 |
-| Contract start date          | A valid historical, current, or future contractual date.                                                                                                                              | The time when occupancy automatically becomes active     |
+## Product Context
 
-Normal direct onboarding accepts a term from 3 through 120 months. A one- or
-two-month term requires a future, separately approved exception policy.
+Kostation operates Rumah Kost and Apart Kost assets on behalf of asset owners.
+Residents rent rooms; Property Owners own economic rights over assigned assets;
+Kostation remains the operational manager. Ownership, operational authority,
+tenancy, occupancy, payment, and reporting are separate authorities.
+
+## Canonical Terms
+
+| Term                         | Canonical meaning                                                                                                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Property Owner**           | The contractual/economic owner of an assigned Rumah Kost building or selected Apart Kost rooms. Technical role: `property_owner`. It is not the global operational role `owner`. |
+| **Owner Profile**            | Admin-managed identity, contact, account link, payout destination, and lifecycle status for one Property Owner. One profile has at most one login account.                       |
+| **Owner Account**            | Read-only authenticated account linked to one Owner Profile. Login accepts normalized email or phone.                                                                            |
+| **Ownership Assignment**     | Effective-dated, non-overlapping record that attributes an asset to one Property Owner. It is not property membership, room authority, lease, occupancy, or payment authority.   |
+| **Building Ownership**       | Rumah Kost authority: one assignment covers one whole building and all current and future rooms within it.                                                                       |
+| **Room Ownership**           | Apart Kost authority: one assignment covers one selected room. It never implies ownership of the whole Apart Kost building.                                                      |
+| **Ownership Period**         | Half-open effective interval `[effective_from, effective_until)` used for access and financial attribution.                                                                      |
+| **Kostation-Owned**          | Display state for an asset without an effective owner assignment. No synthetic owner account is created.                                                                         |
+| **Gross Earned Rent**        | Verified rent collected for service already delivered during an occupancy period. It is not the same as cash received in advance.                                                |
+| **Owner Entitlement**        | The Property Owner share of Gross Earned Rent for an asset and ownership period. Current policy: Rp1.500.000 per occupied room per earned month at the standard tariff.          |
+| **Kostation Management Fee** | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.             |
+| **Owner Settlement**         | Monthly review artifact that reconciles earned rent, owner entitlement, management fee, adjustments, and payout.                                                                 |
+| **Owner Payout**             | Money actually disbursed after a settlement is approved. It is not created merely because rent was paid.                                                                         |
+
+## Binding Separation Rules
+
+```text
+Property Owner != global owner role
+Ownership Assignment != property membership
+Building Ownership != Room Ownership
+Room Ownership != room operational authority
+Booking Lead != Hold != Lease != Occupancy
+Payment != Earned Rent != Owner Entitlement != Owner Payout
+Management Fee != Expense
+Security Deposit != Rent Revenue
+```
+
+## Current Economics
+
+- Standard gross room tariff: Rp1.800.000 per occupied room per month.
+- Owner entitlement: Rp1.500.000 per earned occupied-room month.
+- Kostation management fee: Rp300.000 per earned occupied-room month.
+- Booking Fee and DP are advance rent credits and become earned over service
+  coverage; they are not immediately fully payable to an owner.
+- Security deposit is a refundable liability and is excluded from owner revenue.
+- Vacant or not-yet-activated rooms create neither owner entitlement nor
+  management fee.
+- Rates are effective-dated policy snapshots. These current amounts must not be
+  hardcoded as timeless constants.
+
+## Primary References
+
+- [Owner policy decisions and glossary](OWNER_POLICY_DECISIONS_AND_GLOSSARY.md)
+- [Property Owner scope and experience](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
+- [Property Owner priority implementation plan](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
+- [Data authority matrix](DATA_AUTHORITY_MATRIX.md)
+- [Data model and migration](DATA_MODEL_AND_MIGRATION.md)
+- [Billing, reminder, notification, and reporting](BILLING_REMINDER_NOTIFICATION_REPORTING.md)

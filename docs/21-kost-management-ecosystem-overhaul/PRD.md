@@ -5,7 +5,7 @@ Status: **APPROVED PLANNING — NOT IMPLEMENTED**
 Program: `KMO`
 
 Product surfaces: Admin, public `/kamar`, authenticated Penghuni, and
-building-scoped Property Owner
+mixed-asset-scoped Property Owner
 
 Last consolidated: 2026-07-30 (Asia/Jakarta)
 
@@ -55,8 +55,8 @@ the more specific contract wins.
 - A resident receives one account and can see only their canonical active
   resident context, lease, invoices, payments, complaints, vehicles, reminders,
   and notifications.
-- A building investor can monitor only owned buildings through a read-only,
-  building-scoped Property Owner experience.
+- A Property Owner can monitor only effectively owned Rumah Kost buildings and
+  Apart Kost rooms through a read-only, period-scoped experience.
 - Financial records distinguish offer, DP, rent, refundable security deposit,
   additional charge, invoice, payment, allocation, receipt, expense, liability,
   and revenue.
@@ -82,8 +82,8 @@ the more specific contract wins.
 - Hard-delete actions that erase financial or operational history.
 - Reports built from the visible table page rather than the complete filtered
   dataset.
-- Property Owner scope that is property-wide when the business relationship is
-  building ownership.
+- Property Owner scope that is property-wide, category-blind, or detached from
+  effective ownership periods.
 
 ## 4. Users and Access Intent
 
@@ -92,7 +92,7 @@ the more specific contract wins.
 | `owner`          | Operate the KOSTATION portfolio and configure policies | Full operator write within authorized properties |
 | `manager`        | Run daily boarding-house operations                    | Operational write within assigned properties     |
 | `admin`          | Execute supported operational tasks                    | Permissions and rollout decide each task         |
-| `property_owner` | Monitor owned building investment                      | Read-only, building-scoped                       |
+| `property_owner` | Monitor owned assets, earnings, and payouts            | Read-only, effective mixed-asset scope           |
 | `resident`       | Manage personal tenancy and service interactions       | Self-service for canonical resident context      |
 | `technician`     | Receive and update assigned work                       | Maintenance authority only                       |
 | Public prospect  | Discover housing and submit interest                   | Published category-level data only               |
@@ -179,7 +179,9 @@ The following decisions bind all product surfaces:
 - `DEC-REMINDER-001`: manual WhatsApp uses `wa.me` and email remains disabled
   until configured; `DEC-NOTIFICATION-001` keeps reminders separate from
   internal notifications.
-- `DEC-OWNER-001`: investor scope is building-level and read-only.
+- `DEC-OWNER-001..009`: Property Owner scope is read-only and effective-dated;
+  Rumah Kost is owned by whole building, Apart Kost by selected room, and
+  financial reporting uses collected-and-earned settlement authority.
 
 ## 7. End-to-End Journeys
 
@@ -198,6 +200,10 @@ The following decisions bind all product surfaces:
    24-hour hold.
 8. Admin creates a separate **Lead Payment Commitment** after the active hold:
    Booking Fee, DP, or full settlement; it is not yet a W06 payment-ledger row.
+   A successful commitment changes the provisional hold into a paid committed
+   hold, so its 24-hour expiry no longer runs. Admin can download a commitment
+   note immediately; the ledger receipt is issued only after onboarding
+   materializes the payment.
 9. Admin selects **Lengkapi Data Penyewaan** and completes the resident, lease,
    room, billing, and onboarding checklist in `/tenants`. Before **Commit
    Onboarding**, the contractual start date and duration may be revised; the
@@ -238,8 +244,13 @@ lead-based `Tambah Penyewaan` flow. A new lead never exposes direct onboarding.
 
 `FR-ADM-LEAD-007`: Completing a lead records exactly one Lead Payment
 Commitment. It is materialized exactly once into the W06 ledger/deposit records
-when **Commit Onboarding** succeeds; the lead commitment itself is not a payment
-receipt or settlement.
+when **Commit Onboarding** succeeds. The pre-onboarding commitment note is not
+a W06 ledger receipt or settlement.
+
+`FR-ADM-LEAD-008`: Before onboarding materializes a lease, Admin may cancel a
+paid committed hold and record its refund. This releases the room and preserves
+the lead, payment commitment, refund, audit, and event history. A lead with an
+awaiting-activation or active lease cannot use this cancellation path.
 
 ### 7.3 Direct Resident and Lease Onboarding
 
@@ -393,6 +404,11 @@ cosmetic lead status.
 `FR-ADM-LEAD-005`: Room hold requires explicit room selection, is limited to one
 active hold per lead and room, expires after 24 hours, and restores the room
 safely.
+
+`FR-ADM-LEAD-009`: The 24-hour expiry applies only to a provisional active hold.
+A hold with a successfully recorded Lead Payment Commitment is `committed` and
+continues to reserve its room until onboarding conversion or recorded
+cancellation/refund.
 
 ### 8.6 Residents and Leases
 
@@ -564,17 +580,49 @@ property scope.
 
 ## 11. Property Owner Scope
 
-`FR-POW-OWNER-001`: Property Owner onboarding must create or reuse an investor
-account and attach a dated building-ownership assignment. Default ownership is
-KOSTATION until reassigned.
+`FR-POW-OWNER-001`: Admin manages one Owner Profile and at most one login account
+per Property Owner. The initial password is chosen by Admin, exposed only in the
+one-time creation receipt, and later replaced only through Reset Password. No
+first-login password change is required.
 
-`FR-POW-OWNER-002`: Property Owner can read dashboards, rooms, active residents,
-leases, billing summaries, vehicles, Booking Leads, complaints, notifications,
-and reports only for owned buildings.
+`FR-POW-OWNER-002`: Rumah Kost ownership is assigned to a whole building and all
+its current/future rooms. Apart Kost ownership is assigned to selected individual
+rooms. One owner may hold multiple assets across both categories; an asset may
+not have overlapping owners.
 
-`FR-POW-OWNER-003`: Property Owner must not mutate operational records and must
-not receive resident credentials, KTP media, full sensitive identity, payment
-proof secrets, or data from unowned buildings.
+`FR-POW-OWNER-003`: Assignment supports immediate or scheduled effective periods.
+Release and transfer close the old interval and preserve history. An unassigned
+asset is displayed as `Kostation-owned`; legacy property-wide rows are not
+automatically promoted.
+
+`FR-POW-OWNER-004`: Property Owner can read safe dashboards, asset/occupancy and
+lease summaries, financial summaries, complaints, maintenance, notifications,
+and reports only for assets and service periods intersecting effective ownership.
+An empty scope returns a clear empty state.
+
+`FR-POW-OWNER-005`: Property Owner must not mutate operational records or receive
+NIK, KTP, private address, emergency contacts, credentials, raw payment proof,
+storage paths, raw audit, or unrelated asset data.
+
+`FR-POW-FINANCE-001`: At the current standard Rp1.800.000 monthly room tariff,
+each fully collected-and-earned occupied room-month attributes Rp1.500.000 Owner
+Entitlement and Rp300.000 Kostation Management Fee. Vacancy and Security Deposit
+produce neither. The commercial policy is effective-dated and snapshotted.
+
+`FR-POW-FINANCE-002`: Booking Fee, DP, and prepaid rent are recognized over
+service coverage. Payment, Earned Rent, Owner Entitlement, Owner Settlement, and
+Owner Payout remain separate records. Partial collection is split proportionally
+at the applicable policy ratio and bounded by monthly caps.
+
+`FR-POW-FINANCE-003`: One monthly settlement follows Draft, Ready for Review,
+Approved, and Paid. Admin approval is required before payout. Reversals, refunds,
+transfer proration, and corrections append adjustments rather than rewriting
+approved history.
+
+`FR-ADM-OWNER-101`: Admin receives a Master Data Owner Property list/detail,
+create/edit/archive/reset-password workflows, mixed-category assignment wizard,
+scheduled transfer/release, ownership history, settlement review, and payout
+recording. Archive is blocked while active or future assignments exist.
 
 ## 12. Resident Data Requirements
 
@@ -622,7 +670,10 @@ not confirmation.
 
 `FR-ADM-SETTLEMENT-001`: Detail Penghuni exposes one authoritative contract-rent
 balance with contract total, initial rent credit, allocations, remaining amount,
-effective deadline, arrears state, and contextual payment action.
+effective deadline, arrears state, and contextual payment action. One calendar
+month after activation, it also exposes a first-payment checkpoint equal to one
+monthly room rate. An earlier verified rent payment satisfies that checkpoint;
+initial DP/Booking Fee and security deposit do not.
 
 `FR-ADM-SETTLEMENT-002`: Admin may record a partial amount through the end of
 ordinary D+7 after the two-month deadline. If the single approved extension is
@@ -728,7 +779,10 @@ Success is measured by evidence, not by page count:
   reconcile for the same period and scope.
 - Reminder and notification badges clear when their underlying eligibility or
   unread state clears.
-- Property Owner queries return zero rows outside owned buildings.
+- Property Owner queries return zero rows outside effective owned Rumah Kost
+  buildings and Apart Kost rooms; empty scope never falls back to all assets.
+- Owner Entitlement plus Kostation Management Fee never exceeds recognized Gross
+  Earned Rent, and Security Deposit contributes zero.
 - Required Admin, public, Penghuni, and Property Owner happy paths pass
   automated and runtime gates defined in
   [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md).

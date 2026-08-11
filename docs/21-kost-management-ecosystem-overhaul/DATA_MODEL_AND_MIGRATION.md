@@ -60,25 +60,25 @@ Known structural gaps that this plan closes:
 
 ## 3. Cross-Domain Persistence Invariants
 
-| ID                     | Invariant                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INV-PROPERTY-001`     | A record from one property/building scope cannot be read, counted, cached, exported, mutated, or linked through another scope.                |
-| `INV-OWNER-001`        | Property Owner reads intersect only active building assignments at the record's effective time.                                               |
-| `INV-ROOM-001`         | Room status changes only through hold, lease/occupancy, transfer, checkout/inspection, maintenance, deactivation, or reconciliation commands. |
-| `INV-ROOM-002`         | At most one active occupancy, hold/reservation authority, and lease-room authority may claim the same room incompatibly.                      |
-| `INV-RESIDENT-001`     | One person has one canonical resident identity per property context; duplicate email, phone, or NIK conflicts fail closed.                    |
-| `INV-LEASE-001`        | Final activation uses committed account authority and is atomic across resident, lease, room, occupancy, billing, lead/hold, audit, outbox.   |
-| `INV-LEASE-002`        | Exactly one active occupancy corresponds to an active lease and its current room, except explicit legacy reconciliation cases.                |
-| `INV-BILLING-001`      | Invoice totals derive from an immutable lease commercial snapshot; category price edits never rewrite history.                                |
-| `INV-PAYMENT-001`      | Payment amount reconciles to explicit allocations; no allocation can exceed current invoice outstanding.                                      |
-| `INV-PAYMENT-002`      | DP allocations reduce rent receivable; security-deposit funding/refund never settles rent or counts as rent revenue.                          |
-| `INV-PAYMENT-003`      | Verified financial records are append-only; correction uses rejection, reversal, or compensating entries rather than deletion.                |
-| `INV-REMINDER-001`     | Reminder eligibility is derived from current lease/invoice truth; stale persisted counters are prohibited.                                    |
-| `INV-NOTIFICATION-001` | Reading or dismissing an in-app notification never mutates the source invoice, lease, complaint, work order, or reminder.                     |
-| `INV-EXPENSE-001`      | Expense approval, payment, reversal, and evidence form an auditable chain; reversal offsets rather than erases the original.                  |
-| `INV-REPORT-001`       | On-screen, preview, PDF, and Excel results share one server query authority, filter snapshot, record set, and totals.                         |
-| `NFR-PRIV-001`         | Credentials, token hashes, full NIK, KTP storage paths, and raw provider payloads must not enter audit/outbox/report snapshots.               |
-| `NFR-OBS-001`          | Every successful domain command writes its audit row and outbox event in the same database transaction.                                       |
+| ID                     | Invariant                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INV-PROPERTY-001`     | A record from one property/building scope cannot be read, counted, cached, exported, mutated, or linked through another scope.                 |
+| `INV-OWNER-001`        | Property Owner reads intersect only effective Rumah Kost building or Apart Kost room assignments derived from the authenticated Owner Profile. |
+| `INV-ROOM-001`         | Room status changes only through hold, lease/occupancy, transfer, checkout/inspection, maintenance, deactivation, or reconciliation commands.  |
+| `INV-ROOM-002`         | At most one active occupancy, hold/reservation authority, and lease-room authority may claim the same room incompatibly.                       |
+| `INV-RESIDENT-001`     | One person has one canonical resident identity per property context; duplicate email, phone, or NIK conflicts fail closed.                     |
+| `INV-LEASE-001`        | Final activation uses committed account authority and is atomic across resident, lease, room, occupancy, billing, lead/hold, audit, outbox.    |
+| `INV-LEASE-002`        | Exactly one active occupancy corresponds to an active lease and its current room, except explicit legacy reconciliation cases.                 |
+| `INV-BILLING-001`      | Invoice totals derive from an immutable lease commercial snapshot; category price edits never rewrite history.                                 |
+| `INV-PAYMENT-001`      | Payment amount reconciles to explicit allocations; no allocation can exceed current invoice outstanding.                                       |
+| `INV-PAYMENT-002`      | DP allocations reduce rent receivable; security-deposit funding/refund never settles rent or counts as rent revenue.                           |
+| `INV-PAYMENT-003`      | Verified financial records are append-only; correction uses rejection, reversal, or compensating entries rather than deletion.                 |
+| `INV-REMINDER-001`     | Reminder eligibility is derived from current lease/invoice truth; stale persisted counters are prohibited.                                     |
+| `INV-NOTIFICATION-001` | Reading or dismissing an in-app notification never mutates the source invoice, lease, complaint, work order, or reminder.                      |
+| `INV-EXPENSE-001`      | Expense approval, payment, reversal, and evidence form an auditable chain; reversal offsets rather than erases the original.                   |
+| `INV-REPORT-001`       | On-screen, preview, PDF, and Excel results share one server query authority, filter snapshot, record set, and totals.                          |
+| `NFR-PRIV-001`         | Credentials, token hashes, full NIK, KTP storage paths, and raw provider payloads must not enter audit/outbox/report snapshots.                |
+| `NFR-OBS-001`          | Every successful domain command writes its audit row and outbox event in the same database transaction.                                        |
 
 ## 4. Storage Conventions
 
@@ -146,49 +146,71 @@ Commercial policy is not duplicated here:
   tariff-month requirement or a hardcoded amount;
 - category-level commercial truth is never an individual-room write authority.
 
-#### `investor_profiles` — new
+#### `property_owner_profiles` — new
 
-Stores investor administration separately from login identity:
+Stores Property Owner administration separately from login identity:
 
-- `id`, `property_id`, `user_id`, `display_name`, `legal_name`;
-- bounded contact/address/tax-reference fields;
-- `profile_status` (`active|inactive`);
+- `id`, `property_id`, nullable unique `user_id`, `display_name`, `legal_name`;
+- normalized email/phone, optional address, encrypted/masked payout destination,
+  and restricted legal-evidence references;
+- `profile_status` (`draft|active|inactive|archived`);
 - creator, archive actor, and timestamps.
 
-Sensitive identity documents attach through the file domain and are omitted
-from ordinary Property Owner responses.
+One profile links to at most one account. Archive is rejected while an active or
+future assignment exists. Sensitive evidence attaches through the file domain
+and is omitted from ordinary Property Owner responses.
 
-#### `building_owner_assignments` — new
+#### `building_owner_assignments` — Rumah Kost only
 
-| Column                              | Contract                                       |
-| ----------------------------------- | ---------------------------------------------- |
-| `property_id`, `building_id`        | Same-property tuple.                           |
-| `owner_kind`                        | Exactly `kostation` or `investor`.             |
-| `investor_profile_id`               | Required for `investor`; null for `kostation`. |
-| `ownership_status`                  | `active`, `ended`, or `cancelled`.             |
-| `effective_from`, `effective_until` | Non-overlapping effective period.              |
-| `ownership_label`                   | Human-readable ownership reference.            |
-| `assigned_by_user_id`, timestamps   | Audit attribution.                             |
+| Column                              | Contract                                        |
+| ----------------------------------- | ----------------------------------------------- |
+| `property_id`, `building_id`        | Same-property tuple.                            |
+| `property_owner_profile_id`         | Same-property non-archived owner profile.       |
+| `assignment_status`                 | `scheduled`, `active`, `ended`, or `cancelled`. |
+| `effective_from`, `effective_until` | Non-overlapping effective period.               |
+| `ownership_label`                   | Human-readable ownership reference.             |
+| `assigned_by_user_id`, timestamps   | Audit attribution.                              |
 
 Constraints and indexes:
 
-- partial unique active assignment per `building_id`;
+- exclusion/overlap protection per `building_id` and effective period;
 - property/building composite FK or trigger proving aligned property;
-- check constraint requiring null `investor_profile_id` for `kostation` and a
-  non-null same-property investor profile for `investor`;
+- trigger or command proving the building category is Rumah Kost;
 - `effective_until >= effective_from`;
-- index `(investor_profile_id, ownership_status, effective_from DESC)`;
-- index `(property_id, building_id, ownership_status)`.
+- index `(property_owner_profile_id, assignment_status, effective_from DESC)`;
+- index `(property_id, building_id, assignment_status)`.
 
-`DEC-OWNER-002`: KOSTATION is the default owner authority for every building.
-Migration creates one active `owner_kind = kostation` assignment for every
-building and does not create a synthetic KOSTATION investor profile or infer an
-investor from legacy property-level assignments. Investor allocation is an
-explicit later command that atomically ends the current KOSTATION interval and
-opens the investor interval.
+The assignment covers every current and future room in the Rumah Kost building.
+Absence of an effective assignment is projected as `Kostation-owned`; migration
+does not create a synthetic Kostation Owner Profile.
 
-Legacy `property_owner_assignments` remains readable during transition, but it
-cannot authorize post-cutover operational queries.
+#### `room_owner_assignments` — Apart Kost only
+
+Uses the same effective-period and audit columns but references an exact
+`property_id + room_id` tuple. The command proves the room belongs to Apart Kost.
+Assigning an Apart building or directly assigning a Rumah Kost room is rejected.
+
+Both assignment tables use deterministic transfer locks. Release/transfer closes
+the prior interval and appends a successor; it never overwrites history.
+
+#### Owner economics and settlement — new
+
+- `owner_commercial_policy_versions`: effective-dated gross tariff, owner share,
+  management fee, recognition method, and immutable snapshot metadata;
+- `owner_earned_rent_attributions`: asset, ownership period, occupancy/service
+  coverage, verified collection allocation, Gross Earned Rent, Owner
+  Entitlement, Management Fee, and source references;
+- `owner_settlements` and `owner_settlement_lines`: owner/property/month with
+  `draft|ready_for_review|approved|paid` lifecycle and append-only adjustments;
+- `owner_payouts`: approved settlement disbursement, masked destination,
+  reference, paid time, actor, audit, and outbox relation.
+
+Payment, Earned Rent, Owner Entitlement, settlement, and payout have distinct
+identities. Security Deposit never enters earned-rent attribution. Combined
+Owner Entitlement and Management Fee cannot exceed recognized Gross Earned Rent.
+
+Legacy `property_owner_assignments` remains transitional evidence only. It cannot
+authorize post-cutover reads and is not backfilled property-wide automatically.
 
 ### 5.3 Kost type, facilities, gallery, and terms
 
@@ -661,7 +683,8 @@ until an explicit remediation package is approved. A migration must not select a
 - Existing room price columns remain synchronized snapshots until all consumers
   read `kost_types`; they are not an independent write authority.
 - Existing property-level owner routes remain available only for explicitly
-  documented legacy reads. New Property Owner data must be building-scoped.
+  documented legacy reads. New Property Owner data uses whole-building Rumah
+  Kost scope or individual-room Apart Kost scope with effective periods.
 - Existing payment-gateway tables remain dormant historical artifacts. They are
   not deleted by this overhaul and are excluded from manual-payment authority.
 - Existing notification-delivery provider rows remain history. No provider

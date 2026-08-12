@@ -84,9 +84,10 @@ export class PropertyOwnerManagementController {
     @CurrentUser() actor: UserAccessContext,
     @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
     @Body() dto: UpdatePropertyOwnerDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.owners.update(actor, ownerId, dto, auditContext(request));
+    return this.owners.update(actor, ownerId, dto, idempotencyKey, auditContext(request));
   }
 
   @Post(':ownerId/reset-password')
@@ -94,9 +95,10 @@ export class PropertyOwnerManagementController {
     @CurrentUser() actor: UserAccessContext,
     @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
     @Body() dto: ResetPropertyOwnerPasswordDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.owners.resetPassword(actor, ownerId, dto, auditContext(request));
+    return this.owners.resetPassword(actor, ownerId, dto, idempotencyKey, auditContext(request));
   }
 
   @Delete(':ownerId')
@@ -104,9 +106,16 @@ export class PropertyOwnerManagementController {
     @CurrentUser() actor: UserAccessContext,
     @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
     @Query() query: PropertyOwnerPropertyQueryDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.owners.archive(actor, ownerId, query.property_id, auditContext(request));
+    return this.owners.archive(
+      actor,
+      ownerId,
+      query.property_id,
+      idempotencyKey,
+      auditContext(request),
+    );
   }
 
   @Post(':ownerId/building-assignments')
@@ -137,6 +146,7 @@ export class PropertyOwnerManagementController {
     @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
     @Param('assignmentId', new ParseUUIDPipe({ version: '4' })) assignmentId: string,
     @Body() dto: ReleaseOwnerAssignmentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.owners.releaseAssignment(
@@ -145,6 +155,7 @@ export class PropertyOwnerManagementController {
       'building',
       assignmentId,
       dto,
+      idempotencyKey,
       auditContext(request),
     );
   }
@@ -155,6 +166,7 @@ export class PropertyOwnerManagementController {
     @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
     @Param('assignmentId', new ParseUUIDPipe({ version: '4' })) assignmentId: string,
     @Body() dto: ReleaseOwnerAssignmentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.owners.releaseAssignment(
@@ -163,6 +175,7 @@ export class PropertyOwnerManagementController {
       'room',
       assignmentId,
       dto,
+      idempotencyKey,
       auditContext(request),
     );
   }

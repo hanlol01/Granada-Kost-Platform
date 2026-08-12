@@ -384,10 +384,31 @@ export class PropertyOwnerManagementService {
     actor: UserAccessContext,
     ownerId: string,
     dto: UpdatePropertyOwnerDto,
+    idempotencyKey: string | undefined,
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, dto.property_id);
+    const route = 'PATCH /admin/property-owners/:ownerId';
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({
+      owner_id: ownerId,
+      property_id: dto.property_id,
+      full_name: dto.full_name?.trim(),
+      email: dto.email === undefined ? undefined : dto.email.trim().toLowerCase() || null,
+      phone: dto.phone === undefined ? undefined : dto.phone.trim() || null,
+      address: dto.address === undefined ? undefined : dto.address.trim() || null,
+    });
     return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        dto.property_id,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) return replay;
       const current = await this.lockOwner(client, ownerId, dto.property_id);
       const fullName = dto.full_name?.trim() ?? current.full_name;
       const phone = dto.phone === undefined ? current.phone : dto.phone.trim() || null;
@@ -441,7 +462,18 @@ export class PropertyOwnerManagementService {
         },
         client,
       );
-      return this.mapOwner(updated.rows[0]);
+      const response = this.mapOwner(updated.rows[0]);
+      await this.writeEvent(
+        client,
+        dto.property_id,
+        actor.id,
+        context,
+        'property_owner.updated',
+        ownerId,
+        { owner_profile_id: ownerId },
+      );
+      await this.completeCommand(client, actor.id, route, key, response, ownerId);
+      return response;
     });
   }
 
@@ -449,10 +481,30 @@ export class PropertyOwnerManagementService {
     actor: UserAccessContext,
     ownerId: string,
     dto: ResetPropertyOwnerPasswordDto,
+    idempotencyKey: string | undefined,
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, dto.property_id);
+    const route = 'POST /admin/property-owners/:ownerId/reset-password';
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({
+      owner_id: ownerId,
+      property_id: dto.property_id,
+      new_password: dto.new_password,
+    });
     return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        dto.property_id,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) {
+        return { ...(replay as { owner_id: string }), temporary_password: null };
+      }
       const owner = await this.lockOwner(client, ownerId, dto.property_id);
       if (owner.profile_status !== 'active') {
         throw new ConflictException({
@@ -482,7 +534,18 @@ export class PropertyOwnerManagementService {
         },
         client,
       );
-      return { owner_id: ownerId, temporary_password: dto.new_password };
+      const stored = { owner_id: ownerId, temporary_password: null };
+      await this.writeEvent(
+        client,
+        dto.property_id,
+        actor.id,
+        context,
+        'property_owner.password_reset',
+        ownerId,
+        { owner_profile_id: ownerId, sessions_revoked: true },
+      );
+      await this.completeCommand(client, actor.id, route, key, stored, ownerId);
+      return { ...stored, temporary_password: dto.new_password };
     });
   }
 
@@ -490,10 +553,24 @@ export class PropertyOwnerManagementService {
     actor: UserAccessContext,
     ownerId: string,
     propertyId: string,
+    idempotencyKey: string | undefined,
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, propertyId);
+    const route = 'DELETE /admin/property-owners/:ownerId';
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({ owner_id: ownerId, property_id: propertyId });
     return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        propertyId,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) return replay;
       const owner = await this.lockOwner(client, ownerId, propertyId);
       const buildingAssignments = await client.query(
         `SELECT id FROM building_owner_assignments
@@ -560,7 +637,9 @@ export class PropertyOwnerManagementService {
           owner_profile_id: ownerId,
         },
       );
-      return { owner_id: ownerId, status: 'archived' as const };
+      const response = { owner_id: ownerId, status: 'archived' as const };
+      await this.completeCommand(client, actor.id, route, key, response, ownerId);
+      return response;
     });
   }
 
@@ -744,11 +823,32 @@ export class PropertyOwnerManagementService {
     kind: 'building' | 'room',
     assignmentId: string,
     dto: ReleaseOwnerAssignmentDto,
+    idempotencyKey: string | undefined,
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, dto.property_id);
     const table = kind === 'building' ? 'building_owner_assignments' : 'room_owner_assignments';
+    const route = `POST /admin/property-owners/:ownerId/${kind}-assignments/:assignmentId/release`;
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({
+      owner_id: ownerId,
+      assignment_id: assignmentId,
+      ownership_kind: kind,
+      property_id: dto.property_id,
+      effective_until: dto.effective_until,
+      reason: dto.reason.trim(),
+    });
     return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        dto.property_id,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) return replay;
       await this.lockOwner(client, ownerId, dto.property_id);
       const current = await client.query<{
         id: string;
@@ -808,7 +908,13 @@ export class PropertyOwnerManagementService {
         assignmentId,
         { owner_profile_id: ownerId, ownership_kind: kind, effective_until: dto.effective_until },
       );
-      return { assignment_id: assignmentId, ownership_kind: kind, status: 'released' as const };
+      const response = {
+        assignment_id: assignmentId,
+        ownership_kind: kind,
+        status: 'released' as const,
+      };
+      await this.completeCommand(client, actor.id, route, key, response, assignmentId);
+      return response;
     });
   }
 

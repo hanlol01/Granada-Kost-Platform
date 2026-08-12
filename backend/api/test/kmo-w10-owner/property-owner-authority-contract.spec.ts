@@ -472,6 +472,13 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
           rowCount: 1,
         };
       }
+      if (normalized.startsWith('INSERT INTO idempotency_commands')) {
+        events.push('claim');
+        return {
+          rows: [{ id: '44444444-4444-4444-8444-444444444444' }],
+          rowCount: 1,
+        };
+      }
       if (normalized.startsWith('UPDATE room_owner_assignments')) {
         events.push('assignment-shorten');
         assert.match(normalized, /assignment_status = 'released'/);
@@ -479,6 +486,10 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
       }
       if (normalized.includes('INSERT INTO business_events')) {
         events.push('outbox');
+        return { rows: [], rowCount: 1 };
+      }
+      if (normalized.startsWith('UPDATE idempotency_commands')) {
+        events.push('complete');
         return { rows: [], rowCount: 1 };
       }
       throw new Error(`Unexpected W10 owner SQL: ${normalized}`);
@@ -506,6 +517,7 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
       effective_until: '2026-09-01',
       reason: 'Transfer to the new owner',
     },
+    'w10-owner-release-key-0001',
     { correlationId: 'w10-owner-release-shortening' },
   );
   assert.deepEqual(released, {
@@ -516,11 +528,13 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
   assert.deepEqual(auditClients, [sentinel]);
   assert.deepEqual(events, [
     'begin',
+    'claim',
     'owner-lock',
     'assignment-lock',
     'assignment-shorten',
     'audit',
     'outbox',
+    'complete',
     'commit',
     'release',
   ]);
@@ -536,6 +550,7 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
         effective_until: '2026-10-01',
         reason: 'Must not remove overlap protection',
       },
+      'w10-owner-release-key-0002',
       { correlationId: 'w10-owner-release-not-shortening' },
     ),
     (error) => {
@@ -546,8 +561,9 @@ test('releasing ownership shortens its protected period and rejects a non-shorte
       return true;
     },
   );
-  assert.deepEqual(events.slice(-5), [
+  assert.deepEqual(events.slice(-6), [
     'begin',
+    'claim',
     'owner-lock',
     'assignment-lock',
     'rollback',

@@ -15,6 +15,7 @@ import { Route as SyaratKetentuanRouteImport } from './routes/syarat-ketentuan'
 import { Route as SmartLockRouteImport } from './routes/smart-lock'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as PropertyOwnersRouteImport } from './routes/property-owners'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as ParkingRouteImport } from './routes/parking'
 import { Route as NotificationsRouteImport } from './routes/notifications'
@@ -68,6 +69,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PropertyOwnersRoute = PropertyOwnersRouteImport.update({
+  id: '/property-owners',
+  path: '/property-owners',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PaymentsRoute = PaymentsRouteImport.update({
@@ -206,6 +212,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
+  '/property-owners': typeof PropertyOwnersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
+  '/property-owners': typeof PropertyOwnersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -269,6 +277,7 @@ export interface FileRoutesById {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
+  '/property-owners': typeof PropertyOwnersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -303,6 +312,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/parking'
     | '/payments'
+    | '/property-owners'
     | '/reports'
     | '/settings'
     | '/smart-lock'
@@ -333,6 +343,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/parking'
     | '/payments'
+    | '/property-owners'
     | '/reports'
     | '/settings'
     | '/smart-lock'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/parking'
     | '/payments'
+    | '/property-owners'
     | '/reports'
     | '/settings'
     | '/smart-lock'
@@ -398,6 +410,7 @@ export interface RootRouteChildren {
   NotificationsRoute: typeof NotificationsRoute
   ParkingRoute: typeof ParkingRoute
   PaymentsRoute: typeof PaymentsRoute
+  PropertyOwnersRoute: typeof PropertyOwnersRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SmartLockRoute: typeof SmartLockRoute
@@ -448,6 +461,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/property-owners': {
+      id: '/property-owners'
+      path: '/property-owners'
+      fullPath: '/property-owners'
+      preLoaderRoute: typeof PropertyOwnersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/payments': {
@@ -685,6 +705,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotificationsRoute: NotificationsRoute,
   ParkingRoute: ParkingRoute,
   PaymentsRoute: PaymentsRoute,
+  PropertyOwnersRoute: PropertyOwnersRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SmartLockRoute: SmartLockRoute,

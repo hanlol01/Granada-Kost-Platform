@@ -313,4 +313,17 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM permissions WHERE code='property_owner.asset.read')",
     ],
   },
+  {
+    version: '036_property_owner_authority_hardening.sql',
+    checksumSha256: 'b7ebee7c73b86cf32c99182d5cddf327652c989e8a379ae69cd723c639cdd287',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_property_owner_earning_authority' AND tgrelid='property_owner_earnings'::regclass AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_property_owner_earnings_append_only' AND tgrelid='property_owner_earnings'::regclass AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_property_owner_settlement_authority' AND tgrelid='property_owner_settlements'::regclass AND NOT tgisinternal)",
+      "to_regclass('public.property_owner_earning_adjustments') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_property_owner_payout_destination_snapshots_append_only' AND tgrelid='property_owner_payout_destination_snapshots'::regclass AND NOT tgisinternal)",
+      "to_regclass('public.property_owner_payouts') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_settlements_owner_period_unique' AND conrelid='property_owner_settlements'::regclass)",
+    ],
+  },
 ] as const;

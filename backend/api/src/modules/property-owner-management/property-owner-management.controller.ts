@@ -183,7 +183,7 @@ export class PropertyOwnerManagementController {
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('property_owner')
-@RequirePermissions('property_owner.asset.read')
+@RequirePermissions('property_owner.finance.read')
 @Controller('my/property-owner')
 export class MyPropertyOwnerController {
   constructor(private readonly owners: PropertyOwnerManagementService) {}

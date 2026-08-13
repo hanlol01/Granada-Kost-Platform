@@ -692,9 +692,29 @@ Exit evidence:
 
 Class: Program Ship; split into `W10-OWNER-A`–`W10-OWNER-D`.
 
-Status: `PLANNED`. This priority does not claim source, migration, canonical
-database, automated, or runtime evidence. The complete boundary is in
+Status: `IN_PROGRESS`. `W10-OWNER-A`, `W10-OWNER-B`, and `W10-OWNER-C` are
+source implemented; W10-OWNER-C automated review is pending and runtime is
+deferred. `W10-OWNER-D` remains planned. This status does not claim
+canonical migration, reconciliation, or runtime evidence. The complete boundary is in
 [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md).
+
+Implementation truth (2026-08-12):
+
+- `W10-OWNER-A` commit `3b6dd0020530fe8cc883136dd4b65a97399403f8`
+  establishes migration 035, mixed-asset ownership authority, RBAC, Admin
+  mutations, owner-safe projections, and focused backend contracts. Migration
+  035 is not claimed as applied to the canonical database.
+- `W10-OWNER-B` commit `c5649f0` establishes the Admin Owner Property list,
+  detail, create/edit/archive/reset, credential receipt, assignment, release,
+  transfer, and ownership-history workspace. Browser/runtime verification is
+  deferred.
+- `W10-OWNER-C` supplies the read-only portal/report source; `W10-OWNER-D`
+  follows after automated review and portal/report reconciliation stabilize.
+- `W10-OWNER-A3` source adds migration 037 allocation-backed service-coverage
+  authority for transfer-month earnings, bounded by invoice, activated lease,
+  and occupancy service. W10-OWNER-C remains `SOURCE_IMPLEMENTED; AUTOMATED
+REVIEW PENDING; RUNTIME DEFERRED`; no canonical migration/runtime claim is
+  made.
 
 ### W10-OWNER-A — Schema, Authority, RBAC, and API Foundation
 
@@ -728,6 +748,10 @@ database, automated, or runtime evidence. The complete boundary is in
   Kostation management fee, with partial collections allocated 5:1 until caps;
 - monthly settlement lifecycle `draft → ready_for_review → approved → paid`; and
 - preview/export parity with masked payout account and reduced PII.
+- W10-OWNER-A3 adds exact half-open allocation/invoice/lease/occupancy-bound
+  earning service coverage, allocation-total reconciliation, clipped historical
+  lifecycle projections, embedded-Unicode PDF/XLSX parity, and coverage-only
+  financial notification lineage for mid-month ownership transfer.
 
 ### W10-OWNER-D — Reconciliation, Security Review, and Runtime QA
 

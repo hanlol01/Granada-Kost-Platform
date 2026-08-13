@@ -225,8 +225,8 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     order: 35,
     icon: Building2,
     access: {
-      roles: OWNER_MANAGER_ADMIN,
-      readCapabilities: ["property_owner.manage"],
+      roles: ["owner", "manager", "admin", "property_owner"],
+      anyReadCapabilities: ["property_owner.manage", "property_owner.asset.read"],
       mutationCapabilities: ["property_owner.manage"],
     },
     navigation: { sidebar: true, mobilePriority: 35 },

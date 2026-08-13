@@ -423,6 +423,20 @@ Financial meaning:
 - Owner entitlement is recognized only from verified collection for service that
   has been earned inside the effective ownership period. Advance Booking Fee or
   DP is not immediately distributable merely because cash was received.
+- W10-OWNER-A3 stores `[service_from, service_until)` and the canonical
+  `payment_allocation_id` on each new Owner earning. A verified rent payment
+  without an active rent allocation cannot create earned rent; each allocation
+  partitions only its invoice/lease/activated-occupancy service interval and
+  reconciles exactly to its allocated amount.
+- A multi-period advance payment may have distinct active allocations whose
+  partial first/last service intervals are recognized independently. Ownership
+  transfer partitions the active allocation interval into adjacent,
+  non-overlapping Owner coverage intervals and cannot be inferred from
+  month-start ownership alone.
+- Owner financial notification/read authority resolves only through authorized
+  coverage-bearing earnings. Settlement, adjustment, and payout notifications
+  are suppressed when any referenced settlement line is outside the Owner's
+  authorized coverage.
 - The current standard earned room-month is Rp1.800.000: Rp1.500.000 Owner
   entitlement and Rp300.000 Kostation management fee. Partial earned collection
   follows the 5:1 ratio until both monthly caps are reached.

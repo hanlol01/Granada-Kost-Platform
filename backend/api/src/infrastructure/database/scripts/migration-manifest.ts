@@ -326,4 +326,15 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_settlements_owner_period_unique' AND conrelid='property_owner_settlements'::regclass)",
     ],
   },
+  {
+    version: '037_property_owner_service_coverage_authority.sql',
+    checksumSha256: '70e018d46475307456914491c8b1067e96c20bcca3a69c666555deff237499a8',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_earnings' AND column_name='service_from')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_earnings' AND column_name='service_until')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_earnings' AND column_name='payment_allocation_id')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_earnings_service_coverage_no_overlap' AND conrelid='property_owner_earnings'::regclass)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_reconcile_property_owner_service_coverage' AND tgrelid='property_owner_earnings'::regclass AND NOT tgisinternal)",
+    ],
+  },
 ] as const;

@@ -923,7 +923,9 @@ export class PropertyOwnerManagementService {
       `SELECT profiles.*, users.user_status
        FROM property_owner_profiles profiles
        JOIN users ON users.id = profiles.user_id
-       WHERE profiles.user_id = $1 AND profiles.profile_status = 'active'
+       WHERE profiles.user_id = $1
+         AND profiles.profile_status = 'active'
+         AND users.user_status = 'active'
        ORDER BY profiles.id`,
       [actor.id],
     );

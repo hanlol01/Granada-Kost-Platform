@@ -793,6 +793,13 @@ Property Owner reports are read-only and asset/ownership-period scoped.
   and report totals are neither returned nor counted.
 - Export repeats the same scope and records the resolved assignment-set
   checksum.
+- Post-A3 finance rows use the earning's exact half-open service interval, not
+  `earning_month` alone. A transfer on 16 August attributes `[2026-08-01,
+2026-08-16)` only to the prior Owner and `[2026-08-16, 2026-09-01)` only to
+  the successor.
+- Owner financial notifications resolve only through authorized earnings,
+  settlements, adjustments, or payouts. A settlement with even one
+  unauthorized line has no Owner notification projection.
 
 ### 12.1 Earned-rent and fee policy
 
@@ -809,6 +816,12 @@ verified collection is matched to elapsed rental service. A partial earned
 collection is split 5:1 between owner and Kostation until the monthly caps are
 reached. This policy is effective-dated and snapshotted so a later tariff or fee
 change cannot rewrite historical settlements.
+
+Service coverage is mandatory for post-A3 earning authority. The recognized
+interval partition for one property/room/month is gap-free and non-overlapping;
+each payment's attributed rows reconcile exactly to that verified rent payment.
+Existing null-coverage earnings remain immutable historical evidence; they are
+not silently converted or used for new approval/payout authority.
 
 ### 12.2 Settlement and payout
 

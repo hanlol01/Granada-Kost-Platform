@@ -29,6 +29,8 @@ const root = resolve(__dirname, '../..');
 const migrationPath = 'src/infrastructure/database/migrations/035_property_owner_management.sql';
 const hardeningMigrationPath =
   'src/infrastructure/database/migrations/036_property_owner_authority_hardening.sql';
+const a3MigrationPath =
+  'src/infrastructure/database/migrations/037_property_owner_service_coverage_authority.sql';
 const propertyId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
 
@@ -51,7 +53,7 @@ function exceptionBody(error: unknown): unknown {
 }
 
 function databaseServiceWithClient(client: {
-  query: (sql: string, params?: unknown[]) => Promise<unknown>;
+  query: (sql: string, params?: unknown[]) => unknown;
   release: () => void;
 }): DatabaseService {
   const database = Object.create(DatabaseService.prototype) as DatabaseService;
@@ -578,6 +580,7 @@ void test('releasing ownership shortens its protected period and rejects a non-s
 void test('migration checksum, authority vocabulary, permissions, and module wiring are frozen', () => {
   const migration = readFileSync(resolve(root, migrationPath), 'utf8');
   const hardeningMigration = readFileSync(resolve(root, hardeningMigrationPath), 'utf8');
+  const a3Migration = readFileSync(resolve(root, a3MigrationPath), 'utf8');
   const manifest = MIGRATION_MANIFEST.find(
     (entry) => entry.version === '035_property_owner_management.sql',
   );
@@ -591,6 +594,11 @@ void test('migration checksum, authority vocabulary, permissions, and module wir
     createHash('sha256').update(hardeningMigration).digest('hex'),
     hardeningManifest.checksumSha256,
   );
+  const a3Manifest = MIGRATION_MANIFEST.find(
+    (entry) => entry.version === '037_property_owner_service_coverage_authority.sql',
+  );
+  assert.ok(a3Manifest);
+  assert.equal(createHash('sha256').update(a3Migration).digest('hex'), a3Manifest.checksumSha256);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS property_owner_profiles/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS building_owner_assignments/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS room_owner_assignments/);
@@ -642,6 +650,17 @@ void test('migration checksum, authority vocabulary, permissions, and module wir
   assert.match(hardeningMigration, /PROPERTY_OWNER_ADJUSTMENT_APPEND_ONLY/);
   assert.match(hardeningMigration, /PROPERTY_OWNER_PAYOUT_APPEND_ONLY/);
   assert.match(hardeningMigration, /PROPERTY_OWNER_PAYOUT_DESTINATION_SNAPSHOT_IMMUTABLE/);
+  assert.match(a3Migration, /service_from DATE/);
+  assert.match(a3Migration, /service_until DATE/);
+  assert.match(a3Migration, /payment_allocation_id UUID REFERENCES payment_allocations/);
+  assert.match(a3Migration, /property_owner_earnings_service_coverage_no_overlap/);
+  assert.match(a3Migration, /PROPERTY_OWNER_EARNING_PAYMENT_ALLOCATION_REQUIRED/);
+  assert.match(a3Migration, /PROPERTY_OWNER_EARNING_PAYMENT_ALLOCATION_UNAVAILABLE/);
+  assert.match(a3Migration, /PROPERTY_OWNER_EARNING_SERVICE_LIFECYCLE_MISMATCH/);
+  assert.match(a3Migration, /PROPERTY_OWNER_EARNING_SERVICE_COVERAGE_GAP/);
+  assert.match(a3Migration, /PROPERTY_OWNER_EARNING_SERVICE_COVERAGE_RECONCILIATION_MISMATCH/);
+  assert.match(a3Migration, /PROPERTY_OWNER_SETTLEMENT_LINE_SERVICE_COVERAGE_REQUIRED/);
+  assert.match(a3Migration, /PROPERTY_OWNER_ADJUSTMENT_SERVICE_COVERAGE_REQUIRED/);
 
   const appModule = readFileSync(resolve(root, 'src/app.module.ts'), 'utf8');
   assert.match(appModule, /PropertyOwnerManagementModule/);

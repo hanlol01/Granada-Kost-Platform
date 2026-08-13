@@ -1,6 +1,8 @@
 # Property Owner Scope and Experience
 
-Status: `PLANNED`
+Status: `IN_PROGRESS` (`W10-OWNER-A`, `W10-OWNER-B`, `W10-OWNER-A3`, and
+`W10-OWNER-C` source implemented; automated review pending; runtime deferred;
+`W10-OWNER-D` planned)
 
 Audience: Product, Design, Admin operations, Finance, Backend, Frontend, QA, and
 future agents implementing KMO-W10.
@@ -184,6 +186,15 @@ credits and are recognized only as service coverage elapses.
 If verified collected rent for an earned period is partial, the amount is split
 proportionally at 5:1 until the owner and fee monthly caps are reached. Combined
 owner entitlement and management fee must never exceed recognized gross rent.
+Post-A3 earnings additionally carry an authoritative half-open
+`[service_from, service_until)` interval and active rent
+`payment_allocation_id` inside the earning month. The interval is bounded by the
+allocated invoice service, activated lease, and authoritative occupancy, so a
+vacant/pre-activation/post-checkout room creates no entitlement. The intervals
+for one allocation are contiguous and non-overlapping; their Gross Earned Rent
+reconciles exactly to that allocation, not the raw payment. One advance payment
+may therefore have separate allocations for multiple service months without
+duplicate entitlement.
 
 ### Settlement
 
@@ -215,8 +226,16 @@ Tax and withholding automation are deferred.
 
 Income follows the asset owner for the earned service coverage, not merely the
 payment receipt date. A payment collected before transfer for service after
-transfer belongs to the new ownership period when earned. Mid-period transfer is
-prorated or adjusted explicitly and must reconcile to the same total gross rent.
+transfer belongs to the new ownership period when earned. A mid-period transfer
+is represented by adjacent service intervals split at the exact boundary, not by
+`earning_month` alone. Settlement lines, adjustments, payouts, notifications,
+preview, PDF, and XLSX use that same coverage lineage; mixed-authority
+settlements are not projected to either Owner.
+
+Historical occupancy and lease rows are period-scoped projections. Their exposed
+dates are the intersection of report period, ownership assignment, lease, and
+occupancy intervals: a former Owner cannot see post-transfer dates and a new
+Owner cannot see pre-transfer dates.
 
 ## 8. Reports and Exports
 
@@ -267,5 +286,9 @@ scope, and ownership period. A former owner cannot export current data.
 ## 11. Completion Boundary
 
 The Property Owner experience is complete only after W10-OWNER-A through
-W10-OWNER-D pass automated and runtime gates. Until then the vocabulary is
-authoritative but feature status remains `PLANNED`.
+W10-OWNER-D pass automated and runtime gates. W10-OWNER-A and W10-OWNER-B have
+committed source, while the read-only Owner portal/reporting slice is source
+implemented with automated review pending and runtime deferred. The final
+reconciliation/security/runtime slice remains planned. The vocabulary is
+authoritative, but the end-to-end feature must remain `IN_PROGRESS` until those
+remaining gates close.

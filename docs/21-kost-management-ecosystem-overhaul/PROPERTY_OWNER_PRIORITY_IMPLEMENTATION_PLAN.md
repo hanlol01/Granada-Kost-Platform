@@ -1,10 +1,20 @@
 # Property Owner Priority Implementation Plan
 
-Status: `PLANNED`
+Status: `IN_PROGRESS`
 
-This plan pulls the Property Owner part of KMO-W10 forward. It does not claim
-source implementation, migration application, automated verification, or runtime
-verification.
+Implementation truth as of 2026-08-12 (Asia/Jakarta):
+
+- `W10-OWNER-A` is `SOURCE_IMPLEMENTED`; migration 035 is committed but no
+  canonical database application or runtime verification is claimed. Source
+  commit: `3b6dd0020530fe8cc883136dd4b65a97399403f8`.
+- `W10-OWNER-B` is `SOURCE_IMPLEMENTED`; the Admin Owner Property workspace is
+  committed, with focused contract/build evidence but no browser/runtime claim.
+  Source commit: `c5649f0`.
+- `W10-OWNER-C` is `SOURCE_IMPLEMENTED`; automated review is pending and
+  runtime remains deferred. `W10-OWNER-D` remains `PLANNED`.
+
+This plan does not promote deferred canonical migration, reconciliation, or
+runtime evidence merely because source has been committed.
 
 ## 1. Objective
 
@@ -126,10 +136,24 @@ Deliver:
 - period-bound preview/export with safe watermarking;
 - clear empty state for owners without assets.
 
+W10-OWNER-A3 authority amendment:
+
+- migration `037_property_owner_service_coverage_authority.sql` requires an
+  exact half-open service interval on every new earning;
+- transfer-month revenue is partitioned between adjacent Owner intervals and
+  reconciles exactly to the verified rent payment; a month-start shortcut is
+  forbidden;
+- settlement lines, adjustments, payouts, previews, exports, and Owner finance
+  notifications use the same coverage-bearing earning lineage;
+- historical immutable earnings remain readable evidence but cannot be silently
+  backfilled or used for new coverage-required settlement approval/payout.
+
 Exit criteria:
 
 - every list, total, chart, detail, and export reconciles to the same scope and
   ownership period;
+- each post-A3 finance row reconciles to an exact service interval and a verified
+  payment without cross-Owner overlap or gap;
 - former owners cannot see current operational state;
 - new owners cannot see pre-period financial history;
 - raw payment proof, NIK, KTP, address, emergency contacts, credentials, storage

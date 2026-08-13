@@ -209,6 +209,36 @@ Payment, Earned Rent, Owner Entitlement, settlement, and payout have distinct
 identities. Security Deposit never enters earned-rent attribution. Combined
 Owner Entitlement and Management Fee cannot exceed recognized Gross Earned Rent.
 
+#### W10-OWNER-A3 service-coverage amendment
+
+Migration `037_property_owner_service_coverage_authority.sql` adds
+`service_from`, `service_until`, and `payment_allocation_id` to new
+`property_owner_earnings` authority. They form a mandatory half-open
+`[service_from, service_until)` interval for post-A3 earnings, within one
+`earning_month`, an active rent `payment_allocations` invoice allocation, the
+verified payment/lease/resident/property/room chain, the lease's activated
+occupancy service, the effective commercial policy, and the exact referenced
+owner assignment.
+
+- one room/month cannot have overlapping recognized service intervals, regardless
+  of allocation or owner; a verified but allocation-free payment creates no Owner
+  earned rent or entitlement;
+- recognized rows for one active allocation must partition exactly that allocation's
+  invoice/lease/occupancy service interval and reconcile Gross Earned Rent to the
+  allocated amount, never to the raw payment amount;
+- one advance payment can carry multiple active rent allocations for separate
+  invoice service periods; a reversed, inactive, cross-payment, cross-lease,
+  cross-property, cross-room, or reversal-linked allocation fails closed;
+- service cannot precede lease activation/occupancy start or exceed checkout,
+  lease end, or allocated invoice coverage;
+- transfer-month earnings are therefore split at the ownership boundary, not
+  attributed from `earning_month` alone;
+- settlement lines, approved adjustments, and payouts require coverage-bearing
+  earning lineage; a legacy null-coverage row cannot be silently promoted;
+- existing immutable earnings/payment rows are preserved without destructive
+  backfill. They remain legacy evidence and cannot authorize new A3 settlement
+  approval or payout.
+
 Legacy `property_owner_assignments` remains transitional evidence only. It cannot
 authorize post-cutover reads and is not backfilled property-wide automatically.
 

@@ -143,6 +143,8 @@ type ContractSettlementProjectionRow = {
   planned_checkout_date: string | null;
   monthly_rate?: string;
   first_payment_checkpoint_at?: Date | null;
+  partial_payment_deadline_at?: Date | null;
+  authoritative_now?: Date;
 };
 
 export function summarizeContractSettlementRentPayments({
@@ -1764,7 +1766,8 @@ export class W06BillingService {
             reversal.rows[0].id,
           ],
         );
-      for (const invoiceId of invoiceIds) await this.refreshInvoiceStatus(client, invoiceId);
+      for (const invoiceId of invoiceIds)
+        await this.reconcileInvoiceLifecycleInTransaction(client, dto.property_id, invoiceId);
       const result = {
         reversal_id: reversal.rows[0].id,
         payment_id: payment.id,
@@ -2245,6 +2248,11 @@ export class W06BillingService {
                 lease.snapshot_monthly_price AS monthly_rate,
                 (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month'
                   + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') AS first_payment_checkpoint_at,
+                CASE WHEN settlement.extension_due_at IS NULL
+                     THEN settlement.original_due_at + INTERVAL '7 days'
+                     ELSE settlement.extension_due_at
+                END AS partial_payment_deadline_at,
+                now() AS authoritative_now,
                 invoice.total_amount,invoice.credit_amount,
                 COALESCE(allocation.net,0) AS allocated_amount,
                 COALESCE(initial_payment.net,0) AS initial_payment_allocated,
@@ -2515,32 +2523,48 @@ export class W06BillingService {
     const firstCheckpointPaid = paymentBreakdown.additionalRentPayments;
     const firstCheckpointRemaining = Math.max(0, firstCheckpointRequired - firstCheckpointPaid);
     const firstCheckpointAt = row.first_payment_checkpoint_at ?? null;
-    const firstCheckpointTime = firstCheckpointAt ? new Date(firstCheckpointAt).getTime() : null;
+    const dueAt = row.extension_due_at ?? row.original_due_at;
+    // Resident-billing reads carry this value from the same PostgreSQL snapshot
+    // as settlement, invoice, allocation, and termination authority. The
+    // activated-at fallback keeps this pure projection deterministic for legacy
+    // unit fixtures; the production settlement query always supplies DB time.
+    const authoritativeNow = row.authoritative_now ?? row.activated_at;
+    const authoritativeNowTime = authoritativeNow?.getTime() ?? null;
+    const firstCheckpointTime = firstCheckpointAt?.getTime() ?? null;
+    const dueAtTime = dueAt?.getTime() ?? null;
+    const partialPaymentDeadlineTime = row.partial_payment_deadline_at?.getTime() ?? null;
     const firstCheckpointMet = firstCheckpointRequired === 0 || firstCheckpointRemaining === 0;
     const firstCheckpointStatus =
       firstCheckpointRequired === 0
         ? 'not_required'
         : firstCheckpointMet
-          ? firstCheckpointTime && Date.now() < firstCheckpointTime
+          ? firstCheckpointTime !== null &&
+              authoritativeNowTime !== null &&
+              authoritativeNowTime < firstCheckpointTime
             ? 'met_early'
             : 'met'
-          : firstCheckpointTime && Date.now() > firstCheckpointTime
+          : firstCheckpointTime !== null &&
+              authoritativeNowTime !== null &&
+              authoritativeNowTime > firstCheckpointTime
             ? 'overdue'
             : 'pending';
-    const dueAt = row.extension_due_at ?? row.original_due_at;
-    const now = Date.now();
-    const dueAtTime = dueAt ? new Date(dueAt).getTime() : null;
     const isPaid = outstanding === 0;
-    const overdue = Boolean(!isPaid && dueAtTime && now > dueAtTime);
-    const partialPaymentDeadlineTime = row.extension_due_at
-      ? dueAtTime
-      : dueAtTime
-        ? dueAtTime + 7 * 24 * 60 * 60 * 1000
-        : null;
-    const adminActionRequired = Boolean(
-      !isPaid && partialPaymentDeadlineTime && now > partialPaymentDeadlineTime,
+    const overdue = Boolean(
+      !isPaid &&
+        dueAtTime !== null &&
+        authoritativeNowTime !== null &&
+        authoritativeNowTime > dueAtTime,
     );
-    const daysUntilDue = dueAtTime ? Math.ceil((dueAtTime - now) / (24 * 60 * 60 * 1000)) : null;
+    const adminActionRequired = Boolean(
+      !isPaid &&
+        partialPaymentDeadlineTime !== null &&
+        authoritativeNowTime !== null &&
+        authoritativeNowTime > partialPaymentDeadlineTime,
+    );
+    const daysUntilDue =
+      dueAtTime !== null && authoritativeNowTime !== null
+        ? Math.ceil((dueAtTime - authoritativeNowTime) / (24 * 60 * 60 * 1000))
+        : null;
     const reminderStage =
       daysUntilDue === null || isPaid
         ? null
@@ -2746,7 +2770,11 @@ export class W06BillingService {
           [payment.id, invoice.id, amount, lease.id, payment.payment_purpose],
         );
         receiptAllocations.push({ invoice_id: invoice.id, amount: this.money(amount) });
-        await this.refreshInvoiceStatus(client, invoice.id);
+        await this.reconcileInvoiceLifecycleInTransaction(
+          client,
+          lease.property_id,
+          invoice.id,
+        );
       }
     }
     await this.syncOnboardingFinancialProjection(client, lease);
@@ -2767,16 +2795,27 @@ export class W06BillingService {
     );
   }
 
-  private async refreshInvoiceStatus(client: PoolClient, invoiceId: string) {
+  /**
+   * Canonical W06 invoice/installment lifecycle reconciliation. Callers must
+   * already hold the property and invoice inside their current transaction.
+   * It recalculates only stored lifecycle projections from invoice credit plus
+   * allocation authority; it never writes payments, allocations, revenue, or
+   * owner-finance records.
+   */
+  async reconcileInvoiceLifecycleInTransaction(
+    client: PoolClient,
+    propertyId: string,
+    invoiceId: string,
+  ): Promise<void> {
     await client.query(
       `UPDATE invoices i
           SET invoice_status=CASE
                 WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN 'paid'
-                WHEN COALESCE(a.net,0)>0 THEN 'partially_paid'
                 WHEN settlement.id IS NOT NULL
                   AND settlement.activated_at IS NOT NULL
                   AND COALESCE(settlement.extension_due_at,settlement.original_due_at)<now()
                   THEN 'overdue'
+                WHEN COALESCE(a.net,0)>0 THEN 'partially_paid'
                 WHEN settlement.id IS NULL
                   AND i.due_date<(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
                   THEN 'overdue'
@@ -2790,13 +2829,14 @@ export class W06BillingService {
              LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
             WHERE pa.invoice_id=$1
          ) a
-         LEFT JOIN lease_contract_settlements settlement ON settlement.invoice_id=$1
-        WHERE i.id=$1 AND i.invoice_status<>'void'`,
-      [invoiceId],
+         LEFT JOIN lease_contract_settlements settlement
+           ON settlement.invoice_id=$1 AND settlement.property_id=$2
+        WHERE i.id=$1 AND i.property_id=$2 AND i.invoice_status<>'void'`,
+      [invoiceId, propertyId],
     );
     await client.query(
-      `UPDATE lease_installments installment SET installment_status=CASE invoice.invoice_status WHEN 'paid' THEN 'paid' WHEN 'partially_paid' THEN 'partially_paid' WHEN 'void' THEN 'void' ELSE 'issued' END FROM invoices invoice WHERE invoice.id=$1 AND installment.invoice_id=invoice.id`,
-      [invoiceId],
+      `UPDATE lease_installments installment SET installment_status=CASE invoice.invoice_status WHEN 'paid' THEN 'paid' WHEN 'partially_paid' THEN 'partially_paid' WHEN 'void' THEN 'void' ELSE 'issued' END FROM invoices invoice WHERE invoice.id=$1 AND invoice.property_id=$2 AND installment.invoice_id=invoice.id`,
+      [invoiceId, propertyId],
     );
     // A normal fully paid settlement is closed automatically. A pending
     // termination deliberately remains pending until an admin records the
@@ -2805,6 +2845,7 @@ export class W06BillingService {
       `UPDATE lease_contract_settlements settlement
           SET state='paid',updated_at=now()
         WHERE settlement.invoice_id=$1
+          AND settlement.property_id=$2
           AND settlement.state='open'
           AND NOT EXISTS (
             SELECT 1 FROM invoices invoice
@@ -2816,10 +2857,10 @@ export class W06BillingService {
                   ON reversal_allocation.original_allocation_id=payment_allocation.id
                WHERE payment_allocation.invoice_id=invoice.id
             ) allocation ON true
-            WHERE invoice.id=$1
+            WHERE invoice.id=$1 AND invoice.property_id=$2
               AND GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0)>0
           )`,
-      [invoiceId],
+      [invoiceId, propertyId],
     );
   }
 

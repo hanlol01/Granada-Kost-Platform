@@ -12,6 +12,7 @@ import { DatabaseService } from '../../../infrastructure/database/database.servi
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { RequestAuditContext } from '../../property/types/property.types';
+import { W06BillingService } from './w06-billing.service';
 import {
   CancelLeaseTerminationDto,
   ExtendContractSettlementDto,
@@ -50,6 +51,7 @@ export class ContractSettlementService {
     private readonly database: DatabaseService,
     private readonly properties: PropertyService,
     private readonly audit: AuditRepository,
+    private readonly w06Billing: W06BillingService,
   ) {}
 
   async extend(
@@ -374,6 +376,11 @@ export class ContractSettlementService {
             `UPDATE invoices SET credit_amount=credit_amount+$2,updated_at=now()
               WHERE id=$1 AND property_id=$3`,
             [settlement.invoice_id, rentOffset, dto.property_id],
+          );
+          await this.w06Billing.reconcileInvoiceLifecycleInTransaction(
+            client,
+            dto.property_id,
+            settlement.invoice_id,
           );
         }
         if (dto.damage_deduction_amount > 0)

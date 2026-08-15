@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
 import { ContractSettlementService } from '../../src/modules/billing/services/contract-settlement.service';
+import { W06BillingService } from '../../src/modules/billing/services/w06-billing.service';
 
 const PROPERTY_ID = '11111111-1111-4111-8111-111111111111';
 const LEASE_ID = '22222222-2222-4222-8222-222222222222';
@@ -37,13 +38,15 @@ type HarnessOptions = {
   extensionDueAt?: Date | null;
   outstanding?: number;
   auditFailure?: Error;
+  terminationPending?: boolean;
+  depositBalance?: number;
 };
 
 function contractSettlementHarness(options: HarnessOptions = {}) {
   const events: string[] = [];
   const queries: string[] = [];
   const client = {
-    query: async (statement: string, _params: readonly unknown[] = []) => {
+    query: async (statement: string, params: readonly unknown[] = []) => {
       const normalized = statement.replace(/\s+/g, ' ').trim();
       queries.push(normalized);
       if (/SELECT id FROM properties/.test(normalized))
@@ -58,7 +61,7 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
               property_id: PROPERTY_ID,
               lease_id: LEASE_ID,
               invoice_id: INVOICE_ID,
-              state: 'open',
+              state: options.terminationPending ? 'termination_pending' : 'open',
               activated_at: new Date('2026-01-01T00:00:00.000Z'),
               original_due_at: new Date('2026-03-01T00:00:00.000Z'),
               extension_due_at: options.extensionDueAt ?? null,
@@ -83,6 +86,25 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
         return { rows: [{ extension_due_at: new Date('2026-03-15T00:00:00.000Z') }], rowCount: 1 };
       if (/INSERT INTO lease_termination_cases/.test(normalized))
         return { rows: [{ id: '88888888-8888-4888-8888-888888888888' }], rowCount: 1 };
+      if (/FROM lease_termination_cases/.test(normalized) && /FOR UPDATE/.test(normalized))
+        return {
+          rows: [
+            {
+              id: '88888888-8888-4888-8888-888888888888',
+              status: 'pending',
+              planned_checkout_date: '2026-03-20',
+            },
+          ],
+          rowCount: 1,
+        };
+      if (/FROM files WHERE/.test(normalized)) return { rows: [{ id: params[0] }], rowCount: 1 };
+      if (/FROM lease_deposit_transactions/.test(normalized) && /SELECT COALESCE\(sum/.test(normalized))
+        return {
+          rows: [{ balance: String(options.depositBalance ?? 0) }],
+          rowCount: 1,
+        };
+      if (/INSERT INTO lease_deposit_transactions/.test(normalized))
+        return { rows: [{ id: '99999999-9999-4999-8999-999999999999' }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
   };
@@ -110,6 +132,18 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
         assert.equal(transactionClient, client);
         events.push('audit');
         if (options.auditFailure) throw options.auditFailure;
+      },
+    } as never,
+    {
+      reconcileInvoiceLifecycleInTransaction: async (
+        transactionClient: unknown,
+        propertyId: string,
+        invoiceId: string,
+      ) => {
+        assert.equal(transactionClient, client);
+        assert.equal(propertyId, PROPERTY_ID);
+        assert.equal(invoiceId, INVOICE_ID);
+        events.push('w06_reconciled');
       },
     } as never,
   );
@@ -262,6 +296,125 @@ test('the partial-payment window closing starts a termination case without evict
   );
   assert.equal(
     harness.queries.some((query) => /UPDATE occupancies|UPDATE rooms|UPDATE leases/.test(query)),
+    false,
+  );
+});
+
+test('resident billing settlement projection derives checkpoint, deadline, arrears, and reminders from the PostgreSQL snapshot time', () => {
+  const service = new W06BillingService({} as never, {} as never, {} as never);
+  const project = (
+    service as unknown as {
+      projectContractSettlement: (row: Record<string, unknown>) => Record<string, unknown>;
+    }
+  ).projectContractSettlement.bind(service);
+  const settlement = {
+    id: SETTLEMENT_ID,
+    invoice_id: INVOICE_ID,
+    state: 'open',
+    activated_at: new Date('2026-01-01T00:00:00.000Z'),
+    original_due_at: new Date('2026-03-01T00:00:00.000Z'),
+    extension_due_at: null,
+    total_amount: '10800000',
+    credit_amount: '2700000',
+    allocated_amount: '0',
+    initial_payment_allocated: '2700000',
+    deposit_offset_amount: '0',
+    termination_case_id: null,
+    termination_status: null,
+    planned_checkout_date: null,
+    monthly_rate: '1800000',
+    first_payment_checkpoint_at: new Date('2026-02-01T00:00:00.000Z'),
+    partial_payment_deadline_at: new Date('2026-03-08T00:00:00.000Z'),
+  };
+  const beforeDeadline = project({
+    ...settlement,
+    authoritative_now: new Date('2026-02-20T00:00:00.000Z'),
+  });
+  const afterPartialWindow = project({
+    ...settlement,
+    authoritative_now: new Date('2026-03-09T00:00:00.000Z'),
+  });
+
+  assert.equal(beforeDeadline.status, 'open');
+  assert.equal(beforeDeadline.reminder_stage, 'H-14');
+  assert.equal(beforeDeadline.admin_action_required, false);
+  assert.equal(beforeDeadline.first_payment_checkpoint.status, 'overdue');
+  assert.equal(afterPartialWindow.status, 'admin_action_required');
+  assert.equal(afterPartialWindow.reminder_stage, 'D+7');
+  assert.equal(afterPartialWindow.admin_action_required, true);
+  assert.equal(afterPartialWindow.full_payment_required, true);
+  assert.doesNotMatch(
+    readFileSync(
+      resolve(root, 'src/modules/billing/services/w06-billing.service.ts'),
+      'utf8',
+    ),
+    /Date\.now\(\)/,
+  );
+});
+
+test('termination deposit offset reconciles only canonical W06 invoice/installment lifecycle without payment or Owner-finance writes', async () => {
+  const harness = contractSettlementHarness({
+    terminationPending: true,
+    outstanding: 8_100_000,
+    depositBalance: 1_800_000,
+  });
+  const result = await harness.service.finalizeTermination(
+    adminActor as never,
+    LEASE_ID,
+    {
+      property_id: PROPERTY_ID,
+      room_status_after_checkout: 'maintenance',
+      damage_deduction_amount: 0,
+      refund_amount: 0,
+    },
+    idempotencyKey,
+    auditContext,
+  );
+
+  assert.equal(result.data.deposit_offset_amount, 1_800_000);
+  assert.equal(harness.events.includes('w06_reconciled'), true);
+  assert.equal(
+    harness.queries.some((query) => /UPDATE invoices SET credit_amount=credit_amount\+\$2/.test(query)),
+    true,
+  );
+  assert.equal(
+    harness.queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)),
+    false,
+  );
+  assert.equal(
+    harness.queries.some((query) => /property_owner_(earnings|entitlements|settlements|payouts)/.test(query)),
+    false,
+  );
+  assert.equal(
+    harness.queries.some((query) => /UPDATE rooms SET room_status=\$3/.test(query)),
+    true,
+  );
+});
+
+test('the canonical W06 reconciliation derives invoice and installment state from credit plus allocations without payment or Owner-finance writes', async () => {
+  const queries: string[] = [];
+  const client = {
+    query: async (statement: string, params: readonly unknown[] = []) => {
+      queries.push(statement.replace(/\s+/g, ' ').trim());
+      assert.deepEqual(params, [INVOICE_ID, PROPERTY_ID]);
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const service = new W06BillingService({} as never, {} as never, {} as never);
+  await service.reconcileInvoiceLifecycleInTransaction(client as never, PROPERTY_ID, INVOICE_ID);
+
+  assert.equal(queries.length, 3);
+  assert.match(queries[0], /total_amount-i\.credit_amount-COALESCE\(a\.net,0\)/);
+  assert.match(queries[0], /invoice_status=CASE/);
+  assert.match(
+    queries[0],
+    /WHEN settlement\.id IS NOT NULL[\s\S]*THEN 'overdue' WHEN COALESCE\(a\.net,0\)>0 THEN 'partially_paid'/,
+  );
+  assert.match(queries[1], /UPDATE lease_installments/);
+  assert.match(queries[2], /lease_contract_settlements/);
+  assert.equal(queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)), false);
+  assert.equal(
+    queries.some((query) => /property_owner_(earnings|entitlements|settlements|payouts)/.test(query)),
     false,
   );
 });

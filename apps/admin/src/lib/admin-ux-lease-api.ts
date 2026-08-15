@@ -18,6 +18,8 @@ import type {
   TransferReasonCode,
   TransferResult,
   LeaseResidentOption,
+  RenewalCommand,
+  RenewalEligibility,
 } from "./admin-ux-lease-types";
 
 export type LeasePageInput = { propertyId: string; limit?: number; offset?: number };
@@ -85,6 +87,13 @@ export type RefundSettlementInput = {
   paymentMethod: PaymentMethod;
   externalReference: string;
   notes?: string;
+};
+
+export type RenewalIntentInput = { effectiveDate: string; note?: string };
+export type RenewalApprovalInput = {
+  termMonths: number;
+  billingCycle: BillingCycle;
+  paymentPlanType: "annual_full" | "two_month_installments" | "monthly_installments";
 };
 
 export type LeaseCreateResult = {
@@ -303,6 +312,18 @@ function toTransferScheduleBody(input: TransferScheduleInput): Record<string, un
   };
 }
 
+export function toRenewalIntentBody(input: RenewalIntentInput): Record<string, unknown> {
+  return { effective_date: input.effectiveDate, note: text(input.note) };
+}
+
+export function toRenewalApprovalBody(input: RenewalApprovalInput): Record<string, unknown> {
+  return {
+    term_months: input.termMonths,
+    billing_cycle: input.billingCycle,
+    payment_plan_type: input.paymentPlanType,
+  };
+}
+
 export const adminUxLeaseApi = {
   leases: {
     list: (input: LeaseListInput) =>
@@ -448,6 +469,81 @@ export const adminUxLeaseApi = {
           "/leases/" +
             encodeURIComponent(leaseId) +
             "/transfers/" +
+            encodeURIComponent(commandId) +
+            "/cancel",
+          { reason: reason.trim() },
+          { idempotencyKey },
+        ),
+      ),
+  },
+  renewal: {
+    commands: (leaseId: string) =>
+      data<{ items: RenewalCommand[] }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/renewals",
+        ),
+      ),
+    eligibility: (leaseId: string) =>
+      data<{ eligibility: RenewalEligibility }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/renewals/eligibility",
+        ),
+      ),
+    intent: (leaseId: string, input: RenewalIntentInput, idempotencyKey: string) =>
+      data<{ renewal: RenewalCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/renewals",
+          toRenewalIntentBody(input),
+          { idempotencyKey },
+        ),
+      ),
+    approve: (
+      leaseId: string,
+      commandId: string,
+      input: RenewalApprovalInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ renewal: RenewalCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/renewals/" +
+            encodeURIComponent(commandId) +
+            "/approve",
+          toRenewalApprovalBody(input),
+          { idempotencyKey },
+        ),
+      ),
+    prepareFinancials: (leaseId: string, commandId: string, idempotencyKey: string) =>
+      data<{ renewal: RenewalCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/renewals/" +
+            encodeURIComponent(commandId) +
+            "/financials",
+          {},
+          { idempotencyKey },
+        ),
+      ),
+    authorizeActivation: (leaseId: string, commandId: string, idempotencyKey: string) =>
+      data<{ renewal: RenewalCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/renewals/" +
+            encodeURIComponent(commandId) +
+            "/authorize-activation",
+          {},
+          { idempotencyKey },
+        ),
+      ),
+    cancel: (leaseId: string, commandId: string, reason: string, idempotencyKey: string) =>
+      data<{ renewal: RenewalCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/renewals/" +
             encodeURIComponent(commandId) +
             "/cancel",
           { reason: reason.trim() },

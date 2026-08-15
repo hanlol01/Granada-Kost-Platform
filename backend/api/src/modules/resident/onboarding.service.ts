@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../infrastructure/database/database.service';
@@ -17,8 +17,8 @@ import {
   calculateOnboardingCommercial,
   OnboardingCommitmentResponse,
 } from './types/onboarding.types';
-import { buildContractSchedule } from '../billing/helpers/contract-schedule.helper';
 import { W06BillingService } from '../billing/services/w06-billing.service';
+import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
 
 type RoomRow = {
   id: string;
@@ -110,6 +110,7 @@ export class OnboardingService {
     private readonly accounts: ResidentAccountService,
     private readonly audit: AuditRepository,
     private readonly w06Billing: W06BillingService,
+    private readonly contractScheduleIssuance: ContractScheduleIssuanceService,
   ) {}
 
   async commit(
@@ -643,111 +644,26 @@ export class OnboardingService {
             JSON.stringify({ source: 'resident_onboarding', lease_status: 'awaiting_activation' }),
           ],
         );
-        const schedule = buildContractSchedule({
+        // Canonical W05/W06 issuance authority: the snapshot-derived schedule,
+        // its invoices/line items, and the awaiting-activation contract
+        // settlement are all created by the shared service so onboarding keeps
+        // no duplicate invoice/installment lifecycle SQL of its own.
+        const issued = await this.contractScheduleIssuance.issueScheduleInTransaction(client, {
+          propertyId: dto.property_id,
+          leaseId: lease.rows[0].id,
           startDate: dto.start_date,
           termMonths: dto.term_months,
           paymentPlanType: contractPaymentPlan,
           contractRentAmount: contractRent,
+          billingCycle: dto.billing_cycle,
+          snapshotMonthlyPrice: room.monthly_price,
+          snapshotRoomNumber: room.room_number,
+          snapshotBuildingCode: room.building_code,
+          snapshotCategoryName: room.kost_type_name,
+          initialRentCredit,
+          actorUserId: actor.id,
         });
-        let firstRentInvoiceId: string | null = null;
-        // A payment commitment may credit more than the first installment when
-        // the final period is changed before onboarding. Issue only the future
-        // installments needed to receive that already-recorded credit; never
-        // create a synthetic balance outside the invoice ledger.
-        let remainingInitialRentCreditForSchedule = initialRentCredit;
-        for (const item of schedule) {
-          const issueNow = item.sequenceNumber === 1 || remainingInitialRentCreditForSchedule > 0;
-          const installmentStatus = issueNow ? 'issued' : 'scheduled';
-          const installmentId = randomUUID();
-          await client.query(
-            `INSERT INTO lease_installments(id,property_id,lease_id,sequence_number,coverage_start_date,coverage_end_date,due_date,scheduled_amount,installment_status)
-           VALUES($1,$2,$3,$4,$5::date,$6::date,$7::date,$8,$9)`,
-            [
-              installmentId,
-              dto.property_id,
-              lease.rows[0].id,
-              item.sequenceNumber,
-              item.coverageStartDate,
-              item.coverageEndDate,
-              item.dueDate,
-              item.scheduledAmount,
-              installmentStatus,
-            ],
-          );
-          const invoiceId = randomUUID();
-          await client.query(
-            `INSERT INTO invoices(
-             id,property_id,resident_id,room_id,occupancy_id,billing_period_id,lease_id,installment_id,
-             invoice_code,invoice_status,subtotal_amount,total_amount,due_date,issued_at,
-             snapshot_period_key,snapshot_period_start_date,snapshot_period_end_date,
-             snapshot_room_number,snapshot_resident_name,snapshot_monthly_price,
-             cycle_start_date,cycle_end_date,snapshot_billing_cycle,snapshot_rent_amount,
-             generation_source,invoice_purpose,authority_source,snapshot_building_code,
-             snapshot_category_name,snapshot_contract_rent_amount,snapshot_payment_plan_type,
-             created_by_user_id
-           ) VALUES(
-             $1,$2,$3,$4,NULL,NULL,$5,$6,$7,$8,$9,$9,$10::date,
-             CASE WHEN $8='issued' THEN now() ELSE NULL END,$11,$12::date,$13::date,$14,$15,
-             $16,$12::date,$13::date,$17,$9,'auto','rent','contract_schedule',$18,$19,$20,$21,$22
-           )`,
-            [
-              invoiceId,
-              dto.property_id,
-              residentId,
-              room.id,
-              lease.rows[0].id,
-              installmentId,
-              `RENT-${lease.rows[0].id.slice(0, 8).toUpperCase()}-${String(item.sequenceNumber).padStart(2, '0')}`,
-              installmentStatus === 'issued' ? 'issued' : 'draft',
-              item.scheduledAmount,
-              item.dueDate,
-              `LEASE-${lease.rows[0].id}-${item.sequenceNumber}`,
-              item.coverageStartDate,
-              item.coverageEndDate,
-              room.room_number,
-              existingResident?.full_name ?? dto.visitor_name.trim(),
-              room.monthly_price,
-              dto.billing_cycle,
-              room.building_code,
-              room.kost_type_name,
-              contractRent,
-              contractPaymentPlan,
-              actor.id,
-            ],
-          );
-          await client.query(
-            `INSERT INTO invoice_line_items(invoice_id,line_type,description,quantity,unit_amount,total_amount,sort_order,metadata)
-           VALUES($1,'rent',$2,1,$3,$3,0,$4::jsonb)`,
-            [
-              invoiceId,
-              `Sewa ${item.coverageStartDate} s.d. ${item.coverageEndDate}`,
-              item.scheduledAmount,
-              JSON.stringify({ lease_id: lease.rows[0].id, installment_id: installmentId }),
-            ],
-          );
-          await client.query(
-            `UPDATE lease_installments SET invoice_id=$2 WHERE id=$1 AND lease_id=$3`,
-            [installmentId, invoiceId, lease.rows[0].id],
-          );
-          if (item.sequenceNumber === 1) firstRentInvoiceId = invoiceId;
-          remainingInitialRentCreditForSchedule = Math.max(
-            0,
-            remainingInitialRentCreditForSchedule - item.scheduledAmount,
-          );
-        }
-        if (!firstRentInvoiceId)
-          throw new ConflictException({
-            code: 'ONBOARDING_FIRST_INVOICE_MISSING',
-            message: 'Initial rent invoice could not be issued',
-          });
-        // The due date is deliberately assigned only when the lease becomes
-        // active. A commitment is not an occupancy and must not start the
-        // two-month settlement clock before check-in.
-        await client.query(
-          `INSERT INTO lease_contract_settlements(property_id,lease_id,invoice_id,state)
-           VALUES($1,$2,$3,'awaiting_activation')`,
-          [dto.property_id, lease.rows[0].id, firstRentInvoiceId],
-        );
+        const firstRentInvoiceId = issued.firstInvoiceId;
         const initialPayment = await this.w06Billing.recordInitialOnboardingPaymentsInTransaction(
           client,
           {

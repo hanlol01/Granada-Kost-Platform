@@ -116,6 +116,20 @@ export class LeaseActivationService {
       );
       if (!claim.rowCount)
         return { data: await this.replay(client, actor.id, idempotencyKey, fingerprint) };
+      // W07C successors do not have W05 onboarding commitments, so this must
+      // run before the W05 tuple join below. It prevents the generic endpoint
+      // from becoming a renewal-activation bypass (including for owner/manager).
+      const renewalSuccessor = await client.query<{ id: string }>(
+        `SELECT id FROM leases
+         WHERE id=$1 AND property_id=$2 AND renewed_from_lease_id IS NOT NULL
+         FOR SHARE`,
+        [leaseId, propertyId],
+      );
+      if (renewalSuccessor.rows[0])
+        throw new ConflictException({
+          code: 'RENEWAL_ACTIVATION_REQUIRES_W07C_COMMAND',
+          message: 'Renewal successors must be activated through the authorized renewal command',
+        });
       const row = await client.query<ActivationLeaseRow>(
         `SELECT
            l.id,l.property_id,l.resident_id,l.room_id,l.lease_status,l.start_date,l.end_date,

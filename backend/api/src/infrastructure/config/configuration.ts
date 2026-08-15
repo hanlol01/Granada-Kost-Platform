@@ -6,7 +6,9 @@ export default () => ({
     host: process.env.HOST ?? '0.0.0.0',
     port: Number(process.env.PORT ?? 3000),
     publicBaseUrl: process.env.PUBLIC_BASE_URL,
-    corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:8080,http://localhost:8081')
+    corsAllowedOrigins: (
+      process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:8080,http://localhost:8081'
+    )
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
@@ -38,7 +40,9 @@ export default () => ({
   },
   lease: {
     billingSchedulerProcessEnabled: process.env.LEASE_BILLING_SCHEDULER_PROCESS_ENABLED === 'true',
-    transferSchedulerProcessEnabled: process.env.LEASE_TRANSFER_SCHEDULER_PROCESS_ENABLED === 'true',
+    transferSchedulerProcessEnabled:
+      process.env.LEASE_TRANSFER_SCHEDULER_PROCESS_ENABLED === 'true',
+    renewalSchedulerProcessEnabled: process.env.LEASE_RENEWAL_SCHEDULER_PROCESS_ENABLED === 'true',
   },
   notification: {
     brevoApiKey: process.env.BREVO_API_KEY,
@@ -51,7 +55,8 @@ export default () => ({
     storagePath: process.env.UPLOAD_STORAGE_PATH ?? './uploads',
     maxFileSizeMb: Number(process.env.UPLOAD_MAX_FILE_SIZE_MB ?? 5),
     propertyQuotaMb:
-      process.env.UPLOAD_PROPERTY_QUOTA_MB === undefined || process.env.UPLOAD_PROPERTY_QUOTA_MB === ''
+      process.env.UPLOAD_PROPERTY_QUOTA_MB === undefined ||
+      process.env.UPLOAD_PROPERTY_QUOTA_MB === ''
         ? undefined
         : Number(process.env.UPLOAD_PROPERTY_QUOTA_MB),
   },
@@ -73,10 +78,15 @@ export default () => ({
     provider: process.env.SMART_LOCK_PROVIDER ?? 'simulated',
     liveEnabled: process.env.SMART_LOCK_LIVE_ENABLED === 'true',
     commandTimeoutMs: Number(process.env.SMART_LOCK_COMMAND_TIMEOUT_MS ?? 15000),
-    commandIdempotencyTtlSeconds: Number(process.env.SMART_LOCK_COMMAND_IDEMPOTENCY_TTL_SECONDS ?? 600),
-    commandSyncStalenessMinutes: Number(process.env.SMART_LOCK_COMMAND_SYNC_STALENESS_MINUTES ?? 1440),
+    commandIdempotencyTtlSeconds: Number(
+      process.env.SMART_LOCK_COMMAND_IDEMPOTENCY_TTL_SECONDS ?? 600,
+    ),
+    commandSyncStalenessMinutes: Number(
+      process.env.SMART_LOCK_COMMAND_SYNC_STALENESS_MINUTES ?? 1440,
+    ),
     maxUnlockPerMinute:
-      process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === undefined || process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === ''
+      process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === undefined ||
+      process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE === ''
         ? undefined
         : Number(process.env.SMART_LOCK_MAX_UNLOCK_PER_MINUTE),
     maxEmergencyUnlockPerMinute:

@@ -11,7 +11,7 @@ export type LeaseListRouteSearch = {
   limit: number;
 };
 
-export type LeaseDetailPanel = "detail" | "transfer" | "checkout";
+export type LeaseDetailPanel = "detail" | "transfer" | "renewal" | "checkout";
 export type LeaseDetailTab = "ringkasan" | "invoice" | "deposit" | "riwayat";
 
 export type LeaseDetailRouteSearch = {
@@ -66,7 +66,10 @@ export function normalizeLeaseListSearch(raw: Record<string, unknown>): LeaseLis
 export function normalizeLeaseDetailSearch(raw: Record<string, unknown>): LeaseDetailRouteSearch {
   return {
     panel:
-      raw.panel === "transfer" || raw.panel === "checkout" || raw.panel === "detail"
+      raw.panel === "transfer" ||
+      raw.panel === "renewal" ||
+      raw.panel === "checkout" ||
+      raw.panel === "detail"
         ? raw.panel
         : "detail",
     tab:

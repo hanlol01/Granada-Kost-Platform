@@ -122,7 +122,17 @@ gender, hold, DP, deposit, resident, or lease activation checks.
 | Lock old/new room and active lease                  | transaction/lock authority                   | `KMO-W07B`             | `QA-OPS-004`, `QA-LEASE-002`                     |
 | Preserve history and reconcile dependent references | `INV-RESIDENT-002`, `INV-LEASE-002`          | `KMO-W07A`, `KMO-W07B` | `QA-LEASE-002`, relevant vehicle/complaint gates |
 
-### 4.5 Payment and reminder
+### 4.5 Lease renewal (W07C)
+
+| Stage                            | Authority                                                                                                                                                                                | Work package          | Gate                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------ |
+| Record H-60 intent               | Admin + `lease.manage`; property renewal flag                                                                                                                                            | `KMO-W07C`            | `QA-LEASE-012`                       |
+| Approve fresh successor snapshot | Immutable `renewed_from_lease_id`; no in-place commercial mutation                                                                                                                       | `KMO-W07C`            | `QA-LEASE-012`, `INV-LEASE-001..002` |
+| Prepare H-30 payment work        | Admin + `lease.manage` + `billing.manage`; W06 schedule/invoice authority                                                                                                                | `KMO-W07C`, `KMO-W06` | `QA-BILLING-001`, `QA-LEASE-012`     |
+| Authorize and execute cutover    | Verified W06 allocation to successor first invoice; scheduler/property process gates                                                                                                     | `KMO-W07C`            | `QA-LEASE-012`, `QA-OPS-004`         |
+| Preserve continuity/history      | Continuous physical stay through contiguous occupancy records (predecessor occupancy closed, distinct successor occupancy opened); predecessor `ended`; successor `active`; audit/outbox | `KMO-W07C`            | `INV-RESIDENT-002`, `INV-LEASE-002`  |
+
+### 4.6 Payment and reminder
 
 | Stage                                              | Authority                                         | Work package           | Gate                                                                              |
 | -------------------------------------------------- | ------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------- |

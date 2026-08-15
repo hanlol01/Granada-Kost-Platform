@@ -22,6 +22,7 @@ import { AdminBillingRepository } from './repositories/admin-billing.repository'
 import { AdminBillingService } from './services/admin-billing.service';
 import { W06BillingService } from './services/w06-billing.service';
 import { ContractSettlementService } from './services/contract-settlement.service';
+import { ContractScheduleIssuanceService } from './services/contract-schedule-issuance.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
@@ -38,6 +39,7 @@ import { ContractSettlementService } from './services/contract-settlement.servic
     AdminBillingService,
     W06BillingService,
     ContractSettlementService,
+    ContractScheduleIssuanceService,
     BillingPeriodRepository,
     InvoiceRepository,
     PaymentRepository,
@@ -49,6 +51,13 @@ import { ContractSettlementService } from './services/contract-settlement.servic
     PaymentService,
     PaymentProofService,
   ],
-  exports: [BillingService, InvoiceService, PaymentService, PaymentProofService, W06BillingService],
+  exports: [
+    BillingService,
+    InvoiceService,
+    PaymentService,
+    PaymentProofService,
+    W06BillingService,
+    ContractScheduleIssuanceService,
+  ],
 })
 export class BillingModule {}

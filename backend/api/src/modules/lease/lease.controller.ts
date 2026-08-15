@@ -22,12 +22,17 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
+  ApproveLeaseRenewalDto,
+  AuthorizeLeaseRenewalActivationDto,
+  CancelLeaseRenewalDto,
   CancelScheduledTransferDto,
   CloseLeaseDto,
   CollectDepositDto,
   CreateLeaseDto,
+  CreateLeaseRenewalIntentDto,
   ListLeaseResidentOptionsQueryDto,
   ListLeasesQueryDto,
+  PrepareLeaseRenewalFinancialsDto,
   ScheduleTransferLeaseDto,
   SettleRefundDto,
   TransferLeaseDto,
@@ -36,6 +41,7 @@ import {
   WaiveRefundDto,
 } from './lease.dto';
 import { LeaseService } from './lease.service';
+import { LeaseRenewalService } from './lease-renewal.service';
 import { LeaseTransferService } from './lease-transfer.service';
 
 function auditContext(request: RequestWithCorrelationId) {
@@ -53,6 +59,7 @@ export class LeaseController {
   constructor(
     private readonly leases: LeaseService,
     private readonly transfers: LeaseTransferService,
+    private readonly renewals: LeaseRenewalService,
   ) {}
 
   @Get()
@@ -207,10 +214,7 @@ export class LeaseController {
   @Get(':leaseId/transfers')
   @RequireRoles('admin')
   @RequirePermissions('lease.manage')
-  listTransferCommands(
-    @CurrentUser() user: UserAccessContext,
-    @Param('leaseId') leaseId: string,
-  ) {
+  listTransferCommands(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
     return this.transfers.listTransferCommands(user, leaseId);
   }
 
@@ -236,6 +240,141 @@ export class LeaseController {
       auditContext(request),
     );
     return this.commandResponse(response, result);
+  }
+
+  // W07C is intentionally separate from generic activation and checkout.
+  // Intent/approval/cancellation require Admin + lease.manage; financial work
+  // and activation authorization also require billing.manage.
+  @Post(':leaseId/renewals')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async createRenewalIntent(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: CreateLeaseRenewalIntentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.commandResponse(
+      response,
+      await this.renewals.createIntent(user, leaseId, dto, idempotencyKey, auditContext(request)),
+    );
+  }
+
+  @Get(':leaseId/renewals')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  listRenewals(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
+    return this.renewals.listRenewalCommands(user, leaseId);
+  }
+
+  @Get(':leaseId/renewals/eligibility')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  renewalEligibility(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
+    return this.renewals.renewalEligibility(user, leaseId);
+  }
+
+  @Post(':leaseId/renewals/:commandId/approve')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async approveRenewal(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: ApproveLeaseRenewalDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.commandResponse(
+      response,
+      await this.renewals.approve(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        idempotencyKey,
+        auditContext(request),
+      ),
+    );
+  }
+
+  @Post(':leaseId/renewals/:commandId/financials')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage', 'billing.manage')
+  async prepareRenewalFinancials(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: PrepareLeaseRenewalFinancialsDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.commandResponse(
+      response,
+      await this.renewals.prepareFinancials(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        idempotencyKey,
+        auditContext(request),
+      ),
+    );
+  }
+
+  @Post(':leaseId/renewals/:commandId/authorize-activation')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage', 'billing.manage')
+  async authorizeRenewalActivation(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: AuthorizeLeaseRenewalActivationDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.commandResponse(
+      response,
+      await this.renewals.authorizeActivation(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        idempotencyKey,
+        auditContext(request),
+      ),
+    );
+  }
+
+  @Post(':leaseId/renewals/:commandId/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async cancelRenewal(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: CancelLeaseRenewalDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.commandResponse(
+      response,
+      await this.renewals.cancel(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        idempotencyKey,
+        auditContext(request),
+      ),
+    );
   }
 
   @Post(':leaseId/close')

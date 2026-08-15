@@ -348,4 +348,14 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='smart_lock_access_grants_revoke_reason_check' AND conrelid=to_regclass('public.smart_lock_access_grants') AND pg_get_constraintdef(oid) ILIKE '%transfer%')",
     ],
   },
+  {
+    version: '039_lease_renewal_w07c.sql',
+    checksumSha256: 'ea599f17e3ce88dbd29a48a61ef7d05acd0a0cc7d9b0e27c5a02059adc4776e8',
+    sentinels: [
+      "to_regclass('public.lease_renewal_commands') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='renewed_from_lease_id')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_feature_flags' AND column_name='lease_renewal')",
+      "to_regclass('public.uq_lease_renewal_commands_open_predecessor') IS NOT NULL",
+    ],
+  },
 ] as const;

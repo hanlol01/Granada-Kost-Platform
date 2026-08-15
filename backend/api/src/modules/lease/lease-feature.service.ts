@@ -14,6 +14,8 @@ type FeatureFlagRow = {
   lease_write: boolean;
   lease_transfer: boolean;
   lease_billing_scheduler: boolean;
+  lease_renewal: boolean;
+  lease_renewal_scheduler: boolean;
 };
 
 /**
@@ -58,6 +60,40 @@ export class LeaseFeatureService {
     return result.rows.map((row) => row.property_id);
   }
 
+  async assertRenewalEnabled(propertyId: string, client?: QueryClient): Promise<void> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    if (!flags.admin_ux_read || !flags.lease_write || !flags.lease_renewal) {
+      throw new ForbiddenException({
+        code: 'LEASE_RENEWAL_DISABLED',
+        message: 'Lease renewal is not enabled for this property',
+      });
+    }
+  }
+
+  async renewalSchedulerEnabledPropertyIds(client?: QueryClient): Promise<string[]> {
+    const queryable: QueryClient = client ?? this.leases;
+    const result = await queryable.query<{ property_id: string }>(
+      `SELECT property_id
+       FROM property_feature_flags
+       WHERE admin_ux_read = true
+         AND lease_write = true
+         AND lease_renewal = true
+         AND lease_renewal_scheduler = true
+       ORDER BY property_id`,
+    );
+    return result.rows.map((row) => row.property_id);
+  }
+
+  async isRenewalSchedulerEnabled(propertyId: string, client?: QueryClient): Promise<boolean> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    return (
+      flags.admin_ux_read &&
+      flags.lease_write &&
+      flags.lease_renewal &&
+      flags.lease_renewal_scheduler
+    );
+  }
+
   /** W07B scheduled-transfer execution requires the transfer flag only. */
   async transferSchedulerEnabledPropertyIds(client?: QueryClient): Promise<string[]> {
     const queryable: QueryClient = client ?? this.leases;
@@ -89,7 +125,8 @@ export class LeaseFeatureService {
   ): Promise<FeatureFlagRow> {
     const queryable: QueryClient = client ?? this.leases;
     const result = await queryable.query<FeatureFlagRow>(
-      `SELECT property_id, admin_ux_read, lease_write, lease_transfer, lease_billing_scheduler
+      `SELECT property_id, admin_ux_read, lease_write, lease_transfer, lease_billing_scheduler,
+              lease_renewal, lease_renewal_scheduler
        FROM property_feature_flags
        WHERE property_id = $1${lock ? ' FOR SHARE' : ''}`,
       [propertyId],
@@ -101,6 +138,8 @@ export class LeaseFeatureService {
         lease_write: false,
         lease_transfer: false,
         lease_billing_scheduler: false,
+        lease_renewal: false,
+        lease_renewal_scheduler: false,
       }
     );
   }

@@ -222,6 +222,64 @@ export type TransferResult = {
 
 export type TransferCommandState = "scheduled" | "executed" | "cancelled" | "failed";
 
+/** W07C server-projected renewal command. Commercial values are snapshots. */
+export type RenewalCommandState = "draft" | "approved" | "activated" | "cancelled" | "failed";
+
+export type RenewalCommand = {
+  id: string;
+  predecessorLeaseId: string;
+  successorLeaseId: string | null;
+  effectiveDate: string;
+  state: RenewalCommandState;
+  termMonths: number | null;
+  billingCycle: BillingCycle | null;
+  paymentPlanType: "annual_full" | "two_month_installments" | "monthly_installments" | null;
+  contractRentAmount: number | null;
+  /** Informational prefill only. The server never treats this as a payment minimum. */
+  dpRecommendedAmount: number | null;
+  firstInvoiceId: string | null;
+  financialPreparedAt: string | null;
+  activationAuthorizedAt: string | null;
+  activatedAt: string | null;
+  cancelReason: string | null;
+  failureCode: string | null;
+  createdAt: string;
+};
+
+/**
+ * W07C query-derived, read-only lease-ending renewal eligibility. Mirrors the
+ * server projection consumed by the H-60/H-30/H-14 reminder authority. It is
+ * never a delivery record and never mutates state.
+ */
+export type RenewalReminderFact = {
+  windowOpen: boolean;
+  cleared: boolean;
+  actionRequired: boolean;
+};
+
+export type RenewalEligibility = {
+  leaseId: string;
+  propertyId: string;
+  leaseStatus: string;
+  leaseEndDate: string | null;
+  asOfDate: string;
+  daysUntilEnding: number | null;
+  renewalCommandId: string | null;
+  renewalState: RenewalCommandState | null;
+  reminders: {
+    h60: RenewalReminderFact;
+    h30: RenewalReminderFact & {
+      unresolvedWork:
+        | "financial_preparation"
+        | "activation_authorization"
+        | "activation_execution"
+        | null;
+      paymentRecorded: boolean;
+    };
+    h14: RenewalReminderFact;
+  };
+};
+
 export type TransferCommand = {
   id: string;
   transferPath: TransferPath;

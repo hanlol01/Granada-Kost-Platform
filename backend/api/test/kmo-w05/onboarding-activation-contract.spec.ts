@@ -263,6 +263,13 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
         };
       },
     } as never,
+    {
+      issueScheduleInTransaction: async (transactionClient: unknown) => {
+        assert.equal(transactionClient, client);
+        events.push('schedule');
+        return { firstInvoiceId: FIRST_RENT_INVOICE_ID, installmentCount: 3 };
+      },
+    } as never,
   );
   return { client, events, queries, service };
 }

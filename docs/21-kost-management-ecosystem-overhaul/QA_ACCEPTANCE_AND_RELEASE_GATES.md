@@ -336,7 +336,29 @@ For each:
 `QA-LEASE-012`
 
 - H-60 renewal intent, H-30 payment work, and H-14 checkout notice boundaries.
-- Renewal does not silently extend a lease.
+- Query-derived H-60/H-30/H-14 lease-ending renewal eligibility is surfaced
+  read-only for the reminder/worklist authority: H-60 clears once intent is
+  recorded, H-30 exposes unresolved approved-renewal/payment work at the boundary
+  (a recorded payment alone never clears it), and H-14 clears only when the
+  renewal is effective. No W08 delivery record is written.
+- Renewal does not silently extend a lease: it uses a distinct immutable
+  predecessor/successor link and fresh successor commercial/payment snapshots.
+- Only Admin + `lease.manage` may create/approve/cancel; only Admin +
+  `lease.manage` + `billing.manage` may prepare financials or authorize activation;
+  property owners remain read-only.
+- Activation requires an issued successor first invoice plus a real verified W06
+  rent/DP allocation to that invoice. The 25% DP is advisory only, never a
+  blocking minimum. The successor schedule/first invoice are issued through the
+  shared W05/W06 contract-schedule issuance authority (no duplicated SQL).
+- Cutover is one transaction: predecessor becomes `ended`, successor becomes
+  `active`, and the physical stay stays continuous through contiguous occupancy
+  records — the predecessor occupancy is closed and a distinct successor occupancy
+  is opened for the same resident and room, with the room continuously occupied and
+  no vacant gap. It writes audit/outbox/history but does not mutate prior W06,
+  deposit, or W10 history.
+- Scheduler execution needs both separate property and process gates; incomplete
+  financial authority is retryable with zero lifecycle mutation, while deterministic
+  conflicts are terminal and auditable.
 - Checkout blocks on unpaid balances, unreturned access, incomplete inspection,
   or missing deposit disposition.
 - Eligible deposit refund due is no later than seven business days.

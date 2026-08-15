@@ -287,6 +287,44 @@ export class CancelScheduledTransferDto {
   reason!: string;
 }
 
+/** W07C H-60 intent records no commercial term or invoice authority. */
+export class CreateLeaseRenewalIntentDto {
+  @IsDateString()
+  effective_date!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  note?: string;
+}
+
+/** Approval takes a fresh immutable commercial snapshot for the successor term. */
+export class ApproveLeaseRenewalDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(120)
+  term_months!: number;
+
+  @IsIn(['monthly', 'yearly'])
+  billing_cycle!: 'monthly' | 'yearly';
+
+  @IsIn(['annual_full', 'two_month_installments', 'monthly_installments'])
+  payment_plan_type!: 'annual_full' | 'two_month_installments' | 'monthly_installments';
+}
+
+/** Explicit body keeps all financial lifecycle commands auditable and idempotent. */
+export class PrepareLeaseRenewalFinancialsDto {}
+
+/** Explicit body keeps activation authorization distinct from mere approval/payment. */
+export class AuthorizeLeaseRenewalActivationDto {}
+
+export class CancelLeaseRenewalDto {
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
+}
+
 export class CollectDepositDto {
   @IsIn(['collection', 'top_up'])
   transaction_type!: 'collection' | 'top_up';

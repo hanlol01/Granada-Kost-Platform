@@ -552,13 +552,31 @@ Scope:
 
 ### KMO-W07C — Renewal
 
+Current source boundary: `SOURCE_IMPLEMENTED; AUTOMATED REVIEW PENDING; RUNTIME DEFERRED`.
+
 Scope:
 
-- H-60 intent;
-- approved term/rate;
-- H-30 payment work;
-- renewal amendment or new linked term;
-- no silent automatic extension.
+- H-60 intent, then a distinct Admin approval of a fresh linked successor term;
+- immutable predecessor/successor linkage via `leases.renewed_from_lease_id`;
+- H-30 actionable payment work: an Admin with `lease.manage` and `billing.manage`
+  prepares the immutable successor schedule and first invoice;
+- separate financial activation authorization, requiring an issued first invoice
+  and an actual verified W06 rent/DP allocation to that exact invoice;
+- transactional effective-boundary cutover that ends the predecessor and activates
+  the successor through contiguous occupancy records — the predecessor occupancy is
+  closed and a distinct successor occupancy is opened for the same resident and
+  room in one transaction — with the room continuously occupied and no vacant gap;
+- reuse of the shared W05/W06 contract-schedule issuance authority (no duplicated
+  invoice/installment lifecycle SQL in the renewal service);
+- query-derived H-60/H-30/H-14 lease-ending renewal eligibility surfaced read-only
+  for the reminder/worklist authority (a recorded payment alone never clears H-30);
+- no silent automatic extension, no transfer/checkout/deposit disposition, no
+  W08 reminder delivery, and no W10 owner-earnings write.
+
+The 25% DP value is a recommendation/default prefill only; it is never an
+activation minimum. Property rollout (`lease_renewal` and
+`lease_renewal_scheduler`) and the independent
+`LEASE_RENEWAL_SCHEDULER_PROCESS_ENABLED` process gate are deny-by-default.
 
 ### KMO-W07D — Checkout and Deposit Disposition
 

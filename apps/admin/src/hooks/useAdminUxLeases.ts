@@ -108,6 +108,32 @@ export function useM6TransferCommands(leaseId: string | null | undefined, enable
   });
 }
 
+/** W07C read model for an Admin-only renewal command panel. */
+export function useM6RenewalCommands(leaseId: string | null | undefined, enabled: boolean = true) {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.leases.renewalCommands(currentPropertyId ?? "", leaseId ?? ""),
+    queryFn: () => adminUxLeaseApi.renewal.commands(leaseId!),
+    enabled: Boolean(currentPropertyId && leaseId && enabled),
+  });
+}
+
+/**
+ * W07C query-derived lease-ending renewal eligibility (H-60/H-30/H-14). This is
+ * a read-only projection; it never records or delivers a reminder.
+ */
+export function useM6RenewalEligibility(
+  leaseId: string | null | undefined,
+  enabled: boolean = true,
+) {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.leases.renewalEligibility(currentPropertyId ?? "", leaseId ?? ""),
+    queryFn: () => adminUxLeaseApi.renewal.eligibility(leaseId!),
+    enabled: Boolean(currentPropertyId && leaseId && enabled),
+  });
+}
+
 export function useM6LeaseAvailableRooms(q = "") {
   const { currentPropertyId } = useProperty();
   const keyFilters = { q, status: "vacant", limit: SELECT_LIMIT };

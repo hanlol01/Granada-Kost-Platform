@@ -21,6 +21,7 @@ import {
   KeyValue,
   TransferPanel,
 } from "@/components/leases/TransferPanel";
+import { RenewalPanel } from "@/components/leases/RenewalPanel";
 import { PAYMENT_METHOD_LABEL } from "@/components/leases/transfer-shared";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +90,11 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
   const canFinancial = isFinancialLeaseActor({ roles, permissions });
   const canSettleRefund = canSettleLeaseRefund({ roles, permissions });
   const transferFlagEnabled = isAdminUxLeaseTransferEnabled();
+  // W07C remains server-gated by the property feature row. This UI switch is
+  // default-off so an older Admin bundle never exposes an unfinished surface.
+  const renewalFlagEnabled =
+    import.meta.env.VITE_FEATURE_ADMIN_UX_LEASE_ENABLED === "true" &&
+    import.meta.env.VITE_FEATURE_ADMIN_UX_LEASE_RENEWAL_ENABLED === "true";
 
   if (detail.isLoading || billing.isLoading) {
     return (
@@ -141,6 +147,11 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
                 <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
               </Button>
             ) : null}
+            {isAdmin && canManage && renewalFlagEnabled ? (
+              <Button variant="secondary" onClick={() => onSearchChange({ panel: "renewal" })}>
+                <CalendarCheck2 className="mr-2 h-4 w-4" /> Perpanjang
+              </Button>
+            ) : null}
             {canFinancial ? (
               <Button onClick={() => onSearchChange({ panel: "checkout" })}>
                 <CalendarCheck2 className="mr-2 h-4 w-4" /> Checkout
@@ -159,6 +170,16 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
             canManage={isAdmin && canManage}
             canFinancial={canRunTransferTopUp({ roles, permissions })}
             transferFlagEnabled={transferFlagEnabled}
+            onClose={() => onSearchChange({ panel: "detail" })}
+            onOpenLease={onOpenLease}
+          />
+        ) : search.panel === "renewal" ? (
+          <RenewalPanel
+            leaseId={leaseId}
+            endDate={data.lease.endDate}
+            canManage={isAdmin && canManage}
+            canFinancial={isAdmin && canManage && permissions.includes("billing.manage")}
+            renewalFlagEnabled={renewalFlagEnabled}
             onClose={() => onSearchChange({ panel: "detail" })}
             onOpenLease={onOpenLease}
           />

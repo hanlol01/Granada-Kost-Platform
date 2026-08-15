@@ -27,6 +27,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -68,6 +70,8 @@
   --accent-foreground: oklch(0.3 0.05 250);
   --destructive: oklch(0.6 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
+  --info: oklch(0.57 0.15 235);
+  --info-foreground: oklch(0.99 0.003 240);
   --success: oklch(0.65 0.16 160);
   --success-foreground: oklch(0.99 0 0);
   --warning: oklch(0.78 0.15 75);
@@ -108,6 +112,8 @@
   --accent-foreground: oklch(0.96 0.01 250);
   --destructive: oklch(0.65 0.2 25);
   --destructive-foreground: oklch(0.99 0 0);
+  --info: oklch(0.72 0.14 235);
+  --info-foreground: oklch(0.16 0.02 250);
   --success: oklch(0.7 0.16 160);
   --success-foreground: oklch(0.16 0.02 250);
   --warning: oklch(0.78 0.15 75);
@@ -153,6 +159,56 @@
 }
 .animate-fade-in {
   animation: fade-in 0.4s ease-out;
+}
+
+@keyframes notice-alert-border-sweep {
+  0% {
+    background-position: 120% 0;
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.95;
+  }
+  82% {
+    opacity: 0.75;
+  }
+  100% {
+    background-position: -120% 0;
+    opacity: 0.35;
+  }
+}
+
+.notice-alert__attention {
+  position: absolute;
+  inset: -1px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+      108deg,
+      transparent 36%,
+      color-mix(in oklab, var(--notice-alert-accent) 88%, white) 50%,
+      transparent 64%
+    )
+    120% 0 / 240% 100%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: notice-alert-border-sweep 1.5s cubic-bezier(0.16, 1, 0.3, 1) 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice-alert__attention {
+    animation: none;
+    background-position: 50% 0;
+    opacity: 0.5;
+  }
 }
 
 .app-scrollbar {

@@ -8,15 +8,16 @@ import {
   Copy,
   Download,
   Home,
+  KeyRound,
   Loader2,
+  MessageCircle,
   Search,
   UserRound,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Button } from "@/components/ui/button";
-import { FilePickerButton } from "@/components/file/FilePickerButton";
-import { FilePreview } from "@/components/file/FilePreview";
+import { FileUploadField } from "@/components/file/FileUploadField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { ImageUploadField } from "@/components/ui/image-upload-field";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/onboarding-error-notice";
 import { revealFirstValidationError } from "@/lib/validation-focus";
 import { useProperty } from "@/lib/property";
+import { normalizeWhatsAppPhone } from "@/lib/whatsapp-lead";
 import type { FileResponse } from "@granada-kost/domain";
 
 type Props = { onCreated: (leaseId: string) => void | Promise<void>; bookingLeadId?: string };
@@ -207,7 +209,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [bookingFee, setBookingFee] = useState(0);
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentEvidence, setPaymentEvidence] = useState<FileResponse | null>(null);
-  const [paymentEvidenceError, setPaymentEvidenceError] = useState<string | null>(null);
+  const [paymentEvidenceBusy, setPaymentEvidenceBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -229,8 +231,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const onboarding = useResidentOnboarding(setTemporaryPassword);
   const ktpUpload = useFileUpload({ silent: true });
   const ktpDelete = useFileDelete({ silent: true });
-  const paymentEvidenceUpload = useFileUpload({ silent: true });
-  const paymentEvidenceDelete = useFileDelete({ silent: true });
   const materializedResidentId = bookingLeadId
     ? completedBookingLeadResidentId(bookingLeadContext.error)
     : null;
@@ -282,7 +282,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setBookingFee(0);
     setPaymentNote("");
     setPaymentEvidence(null);
-    setPaymentEvidenceError(null);
+    setPaymentEvidenceBusy(false);
     setKtpDocumentError(null);
     setServerStageOneErrors({});
     setAttemptedStepOne(false);
@@ -384,6 +384,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     paymentMethodSelected &&
     creditedRentAmount >= requiredInitialRent &&
     (Boolean(bookingLeadId) || paymentMethod === "cash" || Boolean(paymentEvidence)) &&
+    !paymentEvidenceBusy &&
     confirmed;
 
   const stageTwoErrors = {
@@ -402,8 +403,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       : bookingFeeExceedsRent
         ? "Booking fee tidak boleh melebihi total sewa kontrak."
         : "",
-    paymentEvidence:
-      bookingLeadId || paymentMethod === "cash" || paymentEvidence
+    paymentEvidence: paymentEvidenceBusy
+      ? "Tunggu sampai bukti transfer selesai diproses."
+      : bookingLeadId || paymentMethod === "cash" || paymentEvidence
         ? ""
         : "Bukti transfer wajib diunggah.",
     paymentChoice: paymentChoiceSelected
@@ -527,7 +529,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
 
   const submit = async () => {
     setAttemptedSubmit(true);
-    if (!currentPropertyId || !selectedRoom || !stageTwoValid || !resident.gender) return;
+    if (
+      !currentPropertyId ||
+      !selectedRoom ||
+      !stageTwoValid ||
+      !resident.gender ||
+      paymentEvidenceBusy
+    )
+      return;
     const billingCycle = termMonths % 12 === 0 ? "yearly" : "monthly";
     const payload: OnboardingPayload = {
       property_id: currentPropertyId,
@@ -628,42 +637,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     }
   };
 
-  const uploadPaymentEvidence = async (file: File) => {
-    if (!currentPropertyId || paymentEvidenceUpload.isUploading) return;
-    setPaymentEvidenceError(null);
-    const requestPropertyId = currentPropertyId;
-    const previousFileId = paymentEvidence?.id;
-    try {
-      const uploaded = await paymentEvidenceUpload.uploadAsync({
-        file,
-        propertyId: requestPropertyId,
-        filePurpose: "payment_proof",
-      });
-      if (propertyScopeRef.current !== requestPropertyId) {
-        await paymentEvidenceDelete.mutateAsync(uploaded.id);
-        return;
-      }
-      setPaymentEvidence(uploaded);
-      if (previousFileId) await paymentEvidenceDelete.mutateAsync(previousFileId);
-    } catch {
-      setPaymentEvidenceError(
-        "Bukti transfer belum dapat diunggah. Periksa format dan ukuran file, lalu coba lagi.",
-      );
-    }
-  };
-
-  const removePaymentEvidence = async () => {
-    if (!paymentEvidence || paymentEvidenceDelete.isPending) return;
-    const fileId = paymentEvidence.id;
-    try {
-      await paymentEvidenceDelete.mutateAsync(fileId);
-      if (propertyScopeRef.current === currentPropertyId) setPaymentEvidence(null);
-    } catch {
-      // Keep the confirmed evidence visible until deletion succeeds.
-      setPaymentEvidenceError("Bukti transfer belum dapat dihapus. Coba lagi.");
-    }
-  };
-
   if (bookingLeadId && bookingLeadContext.isLoading) {
     return (
       <AppShell title={pageTitle}>
@@ -700,7 +673,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={() => void navigate({ to: "/booking-leads" })}
               >
                 Kembali ke Minat Booking
@@ -762,13 +735,37 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                 : "Transfer awal menunggu konfirmasi di workspace Pembayaran; lease belum dapat diaktifkan."}
             </p>
             {temporaryPassword ? (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 p-4">
-                <p className="font-medium">Kredensial sementara penghuni</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Sampaikan sekali saja. Password ini tidak disimpan kembali di halaman ini.
+              <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                    <KeyRound className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="font-semibold">Kredensial login sementara penghuni</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Sampaikan sekali saja. Penghuni wajib mengganti password saat pertama masuk.
+                    </p>
+                  </div>
+                </div>
+                <dl className="mt-4 grid gap-3 rounded-lg border border-warning/25 bg-background/70 p-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Email login
+                    </dt>
+                    <dd className="mt-1 break-all font-medium">{resident.email.trim()}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Nomor WhatsApp
+                    </dt>
+                    <dd className="mt-1 font-medium">{resident.phone.trim()}</dd>
+                  </div>
+                </dl>
+                <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Password sementara
                 </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <code className="rounded bg-background px-3 py-2 text-sm">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm font-semibold">
                     {temporaryPassword}
                   </code>
                   <Button
@@ -783,7 +780,36 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
-                  {copied ? <span className="text-sm text-success">Tersalin</span> : null}
+                  {copied ? (
+                    <span className="text-sm font-medium text-success">Tersalin</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="bg-[#25D366] text-black hover:bg-[#20bd5a]"
+                    onClick={() => {
+                      const phone = normalizeWhatsAppPhone(resident.phone);
+                      if (!phone) return;
+                      const message = [
+                        `Halo ${resident.fullName.trim()},`,
+                        "",
+                        "Berikut kredensial sementara aplikasi Penghuni Kostation:",
+                        `Login: ${resident.email.trim() || resident.phone.trim()}`,
+                        `Password sementara: ${temporaryPassword}`,
+                        "",
+                        "Silakan masuk dan segera ganti password saat diminta. Jangan bagikan kredensial ini kepada orang lain.",
+                      ].join("\n");
+                      window.open(
+                        `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                  >
+                    <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                    Kirim kredensial ke WhatsApp
+                  </Button>
                 </div>
               </div>
             ) : null}
@@ -912,12 +938,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             }}
             paymentNote={paymentNote}
             setPaymentNote={setPaymentNote}
+            propertyId={currentPropertyId ?? ""}
             paymentEvidence={paymentEvidence}
-            paymentEvidenceError={paymentEvidenceError}
-            paymentEvidenceUploading={paymentEvidenceUpload.isUploading}
-            paymentEvidenceDeleting={paymentEvidenceDelete.isPending}
-            onPaymentEvidenceSelected={uploadPaymentEvidence}
-            onPaymentEvidenceRemoved={() => void removePaymentEvidence()}
+            onPaymentEvidenceChange={setPaymentEvidence}
+            onPaymentEvidenceBusyChange={setPaymentEvidenceBusy}
             paidRent={paidRent}
             setPaidRent={setPaidRent}
             securityDeposit={securityDeposit}
@@ -939,7 +963,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         <div className="flex flex-wrap justify-between gap-3 border-t pt-5">
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             className="min-h-11"
             disabled={step === 1 || onboarding.isPending}
             onClick={() => setStep(1)}
@@ -963,7 +987,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             <Button
               type="button"
               className="min-h-11"
-              disabled={onboarding.isPending}
+              disabled={onboarding.isPending || paymentEvidenceBusy}
               onClick={() => void submit()}
             >
               {onboarding.isPending ? (
@@ -1360,12 +1384,10 @@ function RoomAndPaymentStep({
   setPaymentMethod,
   paymentNote,
   setPaymentNote,
+  propertyId,
   paymentEvidence,
-  paymentEvidenceError,
-  paymentEvidenceUploading,
-  paymentEvidenceDeleting,
-  onPaymentEvidenceSelected,
-  onPaymentEvidenceRemoved,
+  onPaymentEvidenceChange,
+  onPaymentEvidenceBusyChange,
   paidRent,
   setPaidRent,
   securityDeposit,
@@ -1401,12 +1423,10 @@ function RoomAndPaymentStep({
   setPaymentMethod: (value: PaymentMethod) => void;
   paymentNote: string;
   setPaymentNote: (value: string) => void;
+  propertyId: string;
   paymentEvidence: FileResponse | null;
-  paymentEvidenceError: string | null;
-  paymentEvidenceUploading: boolean;
-  paymentEvidenceDeleting: boolean;
-  onPaymentEvidenceSelected: (file: File) => void;
-  onPaymentEvidenceRemoved: () => void;
+  onPaymentEvidenceChange: (file: FileResponse | null) => void;
+  onPaymentEvidenceBusyChange: (busy: boolean) => void;
   paidRent: number;
   setPaidRent: (value: number) => void;
   securityDeposit: number;
@@ -1635,41 +1655,20 @@ function RoomAndPaymentStep({
                     </p>
                   </div>
                   {paymentMethod === "bank_transfer" && !initialPaymentLocked ? (
-                    <div className="space-y-2 rounded-xl border border-dashed p-4">
-                      <Label>Bukti transfer *</Label>
-                      {paymentEvidence ? (
-                        <div className="flex flex-wrap items-center gap-3">
-                          <FilePreview file={paymentEvidence} size={72} />
-                          <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                            {paymentEvidence.original_filename}
-                          </p>
-                          <FilePickerButton
-                            filePurpose="payment_proof"
-                            disabled={paymentEvidenceUploading || paymentEvidenceDeleting}
-                            onFilesSelected={(files) => void onPaymentEvidenceSelected(files[0])}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="min-h-11"
-                            disabled={paymentEvidenceUploading || paymentEvidenceDeleting}
-                            onClick={onPaymentEvidenceRemoved}
-                          >
-                            Hapus
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          <FilePickerButton
-                            filePurpose="payment_proof"
-                            disabled={paymentEvidenceUploading}
-                            onFilesSelected={(files) => void onPaymentEvidenceSelected(files[0])}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Bukti transfer wajib diunggah sebelum commitment disimpan.
-                          </p>
-                        </>
-                      )}
+                    <div className="space-y-2">
+                      <FileUploadField
+                        propertyId={propertyId}
+                        filePurpose="payment_proof"
+                        label="Bukti transfer"
+                        description="Wajib untuk Transfer Bank. Unggah JPG, PNG, WebP, atau PDF; foto besar dikompresi otomatis. Gunakan Lihat untuk memastikan bukti sudah benar."
+                        required
+                        value={paymentEvidence}
+                        onChange={onPaymentEvidenceChange}
+                        onBusyChange={onPaymentEvidenceBusyChange}
+                        disabled={!propertyId}
+                        capture="environment"
+                        className="rounded-xl border border-border bg-muted/20 p-4"
+                      />
                       {errors?.paymentEvidence ? (
                         <p
                           className="text-xs text-destructive"
@@ -1678,11 +1677,6 @@ function RoomAndPaymentStep({
                           tabIndex={-1}
                         >
                           {errors.paymentEvidence}
-                        </p>
-                      ) : null}
-                      {paymentEvidenceError ? (
-                        <p className="text-xs text-destructive" role="alert">
-                          {paymentEvidenceError}
                         </p>
                       ) : null}
                     </div>

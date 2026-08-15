@@ -208,7 +208,7 @@ export class ResidentService {
 
   private async assertResidentFiles(
     propertyId: string,
-    ktpFileId?: string,
+    ktpFileId?: string | null,
     profilePhotoFileId?: string,
   ): Promise<void> {
     if (ktpFileId) {

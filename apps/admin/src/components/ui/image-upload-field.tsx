@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ImagePlus, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Eye, ImagePlus, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
 import { FilePreview } from "@/components/file/FilePreview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatFileSize } from "@/lib/file-utils";
+import { useFilePreview } from "@/hooks/useFileUpload";
 import type { FileResponse } from "@granada-kost/domain";
 
 type ImageUploadFieldProps = {
@@ -45,6 +46,7 @@ export function ImageUploadField({
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const remotePreview = useFilePreview(file?.id ?? null);
 
   useEffect(() => {
     return () => {
@@ -66,15 +68,17 @@ export function ImageUploadField({
       setLocalError("Gunakan foto KTP berformat JPG atau PNG.");
       return;
     }
-    if (candidate.size > maxBytes) {
-      setLocalError(`Ukuran foto KTP maksimal ${formatFileSize(maxBytes)}.`);
+    if (!prepareFile && candidate.size > maxBytes) {
+      setLocalError(`Ukuran hasil foto maksimal ${formatFileSize(maxBytes)}.`);
       return;
     }
 
     try {
       const prepared = prepareFile ? await prepareFile(candidate) : candidate;
       if (prepared.size > maxBytes) {
-        setLocalError(`Ukuran foto KTP maksimal ${formatFileSize(maxBytes)}.`);
+        setLocalError(
+          `Foto masih lebih besar dari ${formatFileSize(maxBytes)} setelah dikompresi. Kurangi resolusi lalu pilih kembali.`,
+        );
         return;
       }
       clearLocalPreview();
@@ -212,6 +216,21 @@ export function ImageUploadField({
               {isUploading ? "Foto sedang diunggah." : "Foto siap ditautkan ke penghuni."}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
+              {file ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={!remotePreview.data || isUploading || isRemoving}
+                  onClick={() => {
+                    if (remotePreview.data) {
+                      window.open(remotePreview.data, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" /> Lihat
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"

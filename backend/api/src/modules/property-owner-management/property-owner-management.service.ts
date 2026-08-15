@@ -18,6 +18,7 @@ import {
   CreatePropertyOwnerDto,
   ListPropertyOwnersQueryDto,
   ReleaseOwnerAssignmentDto,
+  ReleaseOwnerAssignmentsDto,
   ResetPropertyOwnerPasswordDto,
   UpdatePropertyOwnerDto,
 } from './dto/property-owner-management.dto';
@@ -914,6 +915,124 @@ export class PropertyOwnerManagementService {
         status: 'released' as const,
       };
       await this.completeCommand(client, actor.id, route, key, response, assignmentId);
+      return response;
+    });
+  }
+
+  async releaseAssignments(
+    actor: UserAccessContext,
+    ownerId: string,
+    kind: 'building' | 'room',
+    dto: ReleaseOwnerAssignmentsDto,
+    idempotencyKey: string | undefined,
+    context: RequestAuditContext,
+  ) {
+    this.assertPropertyScope(actor, dto.property_id);
+    const assignmentIds = [...dto.assignment_ids].sort();
+    if (assignmentIds.length === 0 || new Set(assignmentIds).size !== assignmentIds.length) {
+      throw new BadRequestException({
+        code: 'PROPERTY_OWNER_ASSIGNMENT_BATCH_INVALID',
+        message: 'Batch ownership release must contain unique assignments',
+      });
+    }
+    const table = kind === 'building' ? 'building_owner_assignments' : 'room_owner_assignments';
+    const route = `POST /admin/property-owners/:ownerId/${kind}-assignments/release-batch`;
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({
+      owner_id: ownerId,
+      assignment_ids: assignmentIds,
+      ownership_kind: kind,
+      property_id: dto.property_id,
+      effective_until: dto.effective_until,
+      reason: dto.reason.trim(),
+    });
+    return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        dto.property_id,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) return replay;
+      await this.lockOwner(client, ownerId, dto.property_id);
+      const assignments: Array<{
+        assignment_id: string;
+        ownership_kind: 'building' | 'room';
+        status: 'released';
+      }> = [];
+      for (const assignmentId of assignmentIds) {
+        const current = await client.query<{
+          id: string;
+          effective_from: string;
+          effective_until: string | null;
+          assignment_status: string;
+        }>(
+          `SELECT id, effective_from, effective_until, assignment_status FROM ${table}
+           WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3
+           FOR UPDATE`,
+          [assignmentId, ownerId, dto.property_id],
+        );
+        if (current.rows.length !== 1 || current.rows[0].assignment_status === 'released') {
+          throw new ConflictException({
+            code: 'PROPERTY_OWNER_ASSIGNMENT_UNAVAILABLE',
+            message: 'Ownership assignment is unavailable or already released',
+          });
+        }
+        this.assertPeriod(current.rows[0].effective_from, dto.effective_until);
+        if (
+          current.rows[0].effective_until !== null &&
+          dto.effective_until >= current.rows[0].effective_until
+        ) {
+          throw new ConflictException({
+            code: 'PROPERTY_OWNER_ASSIGNMENT_RELEASE_NOT_SHORTENING',
+            message: 'Ownership release must shorten the current effective period',
+          });
+        }
+        await client.query(
+          `UPDATE ${table}
+           SET effective_until = $4::date,
+               assignment_status = 'released',
+               reason = $5,
+               released_by_user_id = $6, updated_at = now()
+           WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
+          [
+            assignmentId,
+            ownerId,
+            dto.property_id,
+            dto.effective_until,
+            dto.reason.trim(),
+            actor.id,
+          ],
+        );
+        await this.audit.write(
+          {
+            actorUserId: actor.id,
+            propertyId: dto.property_id,
+            action: 'property_owner.assignment_released',
+            resourceType: `${kind}_owner_assignment`,
+            resourceId: assignmentId,
+            afterData: { effective_until: dto.effective_until, reason: dto.reason.trim() },
+            resultStatus: 'success',
+            ...context,
+          },
+          client,
+        );
+        await this.writeEvent(
+          client,
+          dto.property_id,
+          actor.id,
+          context,
+          'property_owner.assignment_released',
+          assignmentId,
+          { owner_profile_id: ownerId, ownership_kind: kind, effective_until: dto.effective_until },
+        );
+        assignments.push({ assignment_id: assignmentId, ownership_kind: kind, status: 'released' });
+      }
+      const response = { ownership_kind: kind, assignments };
+      await this.completeCommand(client, actor.id, route, key, response, ownerId);
       return response;
     });
   }

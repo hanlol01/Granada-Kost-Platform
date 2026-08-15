@@ -34,6 +34,7 @@ export type AdminRouteId =
   | "rooms-galeri"
   | "terms"
   | "property-owners"
+  | "property-owner-detail"
   | "leases"
   | "leases-create"
   | "lease-detail"
@@ -230,6 +231,21 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       mutationCapabilities: ["property_owner.manage"],
     },
     navigation: { sidebar: true, mobilePriority: 35 },
+  },
+  {
+    id: "property-owner-detail",
+    to: "/property-owners/$ownerId",
+    label: "Detail Owner",
+    parentId: "property-owners",
+    section: "master-data",
+    order: 35.5,
+    icon: Building2,
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      anyReadCapabilities: ["property_owner.manage", "property_owner.asset.read"],
+      mutationCapabilities: ["property_owner.manage"],
+    },
+    safeLabel: () => "Detail Owner",
   },
   {
     id: "leases",

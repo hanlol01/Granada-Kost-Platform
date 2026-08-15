@@ -32,6 +32,11 @@ function residentListItem(status: string) {
     lease_end: null,
     lease_authority_count: 1,
     account_status: "not_provisioned",
+    rent_payment_status: "none",
+    contract_settlement_stage: "none",
+    contract_settlement_due_date: null,
+    contract_settlement_remaining_amount: 0,
+    contract_settlement_checkpoint_required_amount: 0,
     resident_status: status,
     created_at: timestamp,
     updated_at: timestamp,
@@ -492,6 +497,21 @@ test("operational error notices never expose API copy or correlation identifiers
     description:
       "Tanggal tagihan pertama masih setelah tanggal aktivasi. Periksa kembali tanggal mulai sewa dan jadwal tagihan sebelum mengaktifkan kamar.",
     code: "LEASE_ACTIVATION_FIRST_INSTALLMENT_NOT_DUE",
+    kind: "conflict",
+  });
+
+  const activationTooEarly = adminErrorNotice(
+    new ApiError({
+      status: 409,
+      code: "LEASE_ACTIVATION_NOT_YET_AVAILABLE",
+      message: "Lease cannot be activated before its Jakarta start date",
+    }),
+  );
+  assert.deepEqual(activationTooEarly, {
+    title: "Aktivasi kamar belum tersedia",
+    description:
+      "Kamar hanya dapat diaktifkan pada atau setelah tanggal mulai sewa. Tunggu sampai jadwal check-in tiba.",
+    code: "LEASE_ACTIVATION_NOT_YET_AVAILABLE",
     kind: "conflict",
   });
 

@@ -7,6 +7,22 @@ import { ApiError, ERROR_CODES } from "@granada-kost/domain";
  */
 export type ResidentStatus = "draft" | "pending_activation" | "active" | "inactive" | "archived";
 export type ResidentAccountStatus = "active" | "inactive" | "suspended" | "not_provisioned";
+export type RentPaymentStatus =
+  | "none"
+  | "booking_fee"
+  | "down_payment"
+  | "partial_payment"
+  | "paid_in_full";
+export type ContractSettlementStage =
+  | "none"
+  | "awaiting_activation"
+  | "checkpoint_one_pending"
+  | "checkpoint_one_met"
+  | "final_settlement_due"
+  | "overdue"
+  | "admin_action_required"
+  | "termination_pending"
+  | "paid_in_full";
 
 export type ResidentListRecord = {
   id: string;
@@ -18,12 +34,24 @@ export type ResidentListRecord = {
   leaseEnd: string | null;
   leaseAuthorityCount: number;
   accountStatus: ResidentAccountStatus;
+  rentPaymentStatus: RentPaymentStatus;
+  contractSettlementStage: ContractSettlementStage;
+  contractSettlementDueDate: string | null;
+  contractSettlementRemainingAmount: number;
+  contractSettlementCheckpointRequiredAmount: number;
   residentStatus: ResidentStatus;
   createdAt: string;
   updatedAt: string;
 };
 
-export type ResidentDetail = ResidentListRecord & {
+export type ResidentDetail = Omit<
+  ResidentListRecord,
+  | "rentPaymentStatus"
+  | "contractSettlementStage"
+  | "contractSettlementDueDate"
+  | "contractSettlementRemainingAmount"
+  | "contractSettlementCheckpointRequiredAmount"
+> & {
   userId: string | null;
   phone: string | null;
   email: string | null;
@@ -72,6 +100,17 @@ export type ResidentTenancy = {
 export type ResidentAccountReceipt = {
   status: "provisioned" | "already_linked" | "already_issued";
   temporaryPassword: string | null;
+};
+
+export type ResidentAccountSummary = {
+  status: "not_provisioned" | "active" | "inactive" | "suspended";
+  loginEmail: string | null;
+  loginPhone: string | null;
+  passwordChangeRequired: boolean;
+};
+
+export type ResidentPasswordResetReceipt = ResidentAccountSummary & {
+  temporaryPassword: string;
 };
 
 function invalid(): never {
@@ -165,6 +204,11 @@ const LIST_KEYS = [
   "lease_end",
   "lease_authority_count",
   "account_status",
+  "rent_payment_status",
+  "contract_settlement_stage",
+  "contract_settlement_due_date",
+  "contract_settlement_remaining_amount",
+  "contract_settlement_checkpoint_required_amount",
   "resident_status",
   "created_at",
   "updated_at",
@@ -188,6 +232,29 @@ function parseListRecord(value: unknown): ResidentListRecord {
       "suspended",
       "not_provisioned",
     ]),
+    rentPaymentStatus: enumValue(item.rent_payment_status, [
+      "none",
+      "booking_fee",
+      "down_payment",
+      "partial_payment",
+      "paid_in_full",
+    ]),
+    contractSettlementStage: enumValue(item.contract_settlement_stage, [
+      "none",
+      "awaiting_activation",
+      "checkpoint_one_pending",
+      "checkpoint_one_met",
+      "final_settlement_due",
+      "overdue",
+      "admin_action_required",
+      "termination_pending",
+      "paid_in_full",
+    ]),
+    contractSettlementDueDate: date(item.contract_settlement_due_date, true),
+    contractSettlementRemainingAmount: integer(item.contract_settlement_remaining_amount),
+    contractSettlementCheckpointRequiredAmount: integer(
+      item.contract_settlement_checkpoint_required_amount,
+    ),
     residentStatus: enumValue(item.resident_status, [
       "draft",
       "pending_activation",
@@ -376,4 +443,41 @@ export function parseResidentAccountReceipt(value: unknown): ResidentAccountRece
   const temporaryPassword = text(data.temporary_password, true);
   if ((status === "provisioned") !== (temporaryPassword !== null)) return invalid();
   return { status, temporaryPassword };
+}
+
+export function parseResidentAccountSummary(value: unknown): ResidentAccountSummary {
+  const envelope = record(value);
+  exact(envelope, ["data"]);
+  const data = record(envelope.data);
+  exact(data, ["status", "login_email", "login_phone", "password_change_required"]);
+  if (typeof data.password_change_required !== "boolean") return invalid();
+  return {
+    status: enumValue(data.status, ["not_provisioned", "active", "inactive", "suspended"]),
+    loginEmail: text(data.login_email, true),
+    loginPhone: text(data.login_phone, true),
+    passwordChangeRequired: data.password_change_required,
+  };
+}
+
+export function parseResidentPasswordResetReceipt(value: unknown): ResidentPasswordResetReceipt {
+  const envelope = record(value);
+  exact(envelope, ["data"]);
+  const data = record(envelope.data);
+  exact(data, [
+    "status",
+    "login_email",
+    "login_phone",
+    "password_change_required",
+    "temporary_password",
+  ]);
+  if (typeof data.password_change_required !== "boolean") return invalid();
+  const temporaryPassword = text(data.temporary_password);
+  if (temporaryPassword === null) return invalid();
+  return {
+    status: enumValue(data.status, ["active", "inactive", "suspended"]),
+    loginEmail: text(data.login_email, true),
+    loginPhone: text(data.login_phone, true),
+    passwordChangeRequired: data.password_change_required,
+    temporaryPassword,
+  };
 }

@@ -11,6 +11,7 @@ export type OwnerPortalTab =
   | "account";
 export type OwnerScopeState = "active" | "scheduled" | "historical" | "empty";
 export type Money = string;
+export type OwnerKostType = "rukost" | "apartkost";
 type RoomStatus =
   | "vacant"
   | "reserved"
@@ -58,11 +59,36 @@ export type OwnerPortal = {
   assets: Array<{
     roomCode: string;
     roomStatus: RoomStatus;
+    kostType: OwnerKostType;
     buildingCode: string | null;
     buildingName: string | null;
     leaseStatus: LeaseStatus | null;
     leaseEndDate: string | null;
   }>;
+};
+
+export type OwnerAssetDetail = {
+  roomCode: string;
+  roomStatus: RoomStatus;
+  kostType: OwnerKostType;
+  building: { code: string; name: string; floorLabel: string; unitCode: string | null };
+  genderPolicy: "male" | "female";
+  commercial: { monthlyPrice: Money; annualContractValue: Money };
+  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  resident: { displayName: string; occupancyStartDate: string } | null;
+  ownership: {
+    source: "building_assignment" | "room_assignment";
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+  };
+  issues: { openComplaints: number; openMaintenance: number };
+  updatedAt: string;
+};
+
+export type OwnerAssetFilters = {
+  query: string;
+  roomStatus: RoomStatus | "all";
+  leaseStatus: LeaseStatus | "all";
 };
 
 export type OwnerReport = {
@@ -298,6 +324,7 @@ export function parseOwnerPortal(value: unknown): OwnerPortal {
         [
           "room_code",
           "room_status",
+          "kost_type",
           "building_code",
           "building_name",
           "lease_status",
@@ -311,6 +338,11 @@ export function parseOwnerPortal(value: unknown): OwnerPortal {
           asset.room_status,
           ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
           "asset.room_status",
+        ),
+        kostType: enumValue<OwnerKostType>(
+          asset.kost_type,
+          ["rukost", "apartkost"],
+          "asset.kost_type",
         ),
         buildingCode: nullableString(asset.building_code, "asset.building_code"),
         buildingName: nullableString(asset.building_name, "asset.building_name"),
@@ -334,6 +366,168 @@ export function parseOwnerPortal(value: unknown): OwnerPortal {
           asset.lease_end_date === null ? null : date(asset.lease_end_date, "asset.lease_end_date"),
       };
     }),
+  };
+}
+
+export function filterOwnerAssets(
+  assets: OwnerPortal["assets"],
+  filters: OwnerAssetFilters,
+): OwnerPortal["assets"] {
+  const query = filters.query.trim().toLocaleLowerCase("id-ID");
+  return assets.filter((asset) => {
+    const searchable = [asset.roomCode, asset.buildingCode, asset.buildingName]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .toLocaleLowerCase("id-ID");
+    return (
+      (!query || searchable.includes(query)) &&
+      (filters.roomStatus === "all" || asset.roomStatus === filters.roomStatus) &&
+      (filters.leaseStatus === "all" || asset.leaseStatus === filters.leaseStatus)
+    );
+  });
+}
+
+export function groupOwnerAssets(assets: OwnerPortal["assets"]): Array<{
+  kostType: OwnerKostType;
+  assets: OwnerPortal["assets"];
+}> {
+  return (["rukost", "apartkost"] as const)
+    .map((kostType) => ({
+      kostType,
+      assets: assets.filter((asset) => asset.kostType === kostType),
+    }))
+    .filter((group) => group.assets.length > 0);
+}
+
+export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
+  const root = exact(
+    value,
+    [
+      "room_code",
+      "room_status",
+      "kost_type",
+      "building",
+      "gender_policy",
+      "commercial",
+      "lease",
+      "resident",
+      "ownership",
+      "issues",
+      "updated_at",
+    ],
+    "asset_detail",
+  );
+  const building = exact(
+    root.building,
+    ["code", "name", "floor_label", "unit_code"],
+    "asset_detail.building",
+  );
+  const commercial = exact(
+    root.commercial,
+    ["monthly_price", "annual_contract_value"],
+    "asset_detail.commercial",
+  );
+  const ownership = exact(
+    root.ownership,
+    ["source", "effective_from", "effective_until"],
+    "asset_detail.ownership",
+  );
+  const issues = exact(root.issues, ["open_complaints", "open_maintenance"], "asset_detail.issues");
+  const lease =
+    root.lease === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.lease,
+            ["status", "start_date", "end_date"],
+            "asset_detail.lease",
+          );
+          return {
+            status: enumValue<LeaseStatus>(
+              parsed.status,
+              [
+                "draft",
+                "awaiting_activation",
+                "active",
+                "ended",
+                "completed",
+                "cancelled",
+                "transferred",
+              ],
+              "asset_detail.lease.status",
+            ),
+            startDate: date(parsed.start_date, "asset_detail.lease.start_date"),
+            endDate:
+              parsed.end_date === null
+                ? null
+                : date(parsed.end_date, "asset_detail.lease.end_date"),
+          };
+        })();
+  const resident =
+    root.resident === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.resident,
+            ["display_name", "occupancy_start_date"],
+            "asset_detail.resident",
+          );
+          return {
+            displayName: string(parsed.display_name, "asset_detail.resident.display_name"),
+            occupancyStartDate: date(
+              parsed.occupancy_start_date,
+              "asset_detail.resident.occupancy_start_date",
+            ),
+          };
+        })();
+  return {
+    roomCode: string(root.room_code, "asset_detail.room_code"),
+    roomStatus: enumValue<RoomStatus>(
+      root.room_status,
+      ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+      "asset_detail.room_status",
+    ),
+    kostType: enumValue<OwnerKostType>(
+      root.kost_type,
+      ["rukost", "apartkost"],
+      "asset_detail.kost_type",
+    ),
+    building: {
+      code: string(building.code, "asset_detail.building.code"),
+      name: string(building.name, "asset_detail.building.name"),
+      floorLabel: string(building.floor_label, "asset_detail.building.floor_label"),
+      unitCode:
+        building.unit_code === null
+          ? null
+          : string(building.unit_code, "asset_detail.building.unit_code"),
+    },
+    genderPolicy: enumValue(root.gender_policy, ["male", "female"], "asset_detail.gender_policy"),
+    commercial: {
+      monthlyPrice: money(commercial.monthly_price, "asset_detail.commercial.monthly_price"),
+      annualContractValue: money(
+        commercial.annual_contract_value,
+        "asset_detail.commercial.annual_contract_value",
+      ),
+    },
+    lease,
+    resident,
+    ownership: {
+      source: enumValue(
+        ownership.source,
+        ["building_assignment", "room_assignment"],
+        "asset_detail.ownership.source",
+      ),
+      effectiveFrom: date(ownership.effective_from, "asset_detail.ownership.effective_from"),
+      effectiveUntil:
+        ownership.effective_until === null
+          ? null
+          : date(ownership.effective_until, "asset_detail.ownership.effective_until"),
+    },
+    issues: {
+      openComplaints: count(issues.open_complaints, "asset_detail.issues.open_complaints"),
+      openMaintenance: count(issues.open_maintenance, "asset_detail.issues.open_maintenance"),
+    },
+    updatedAt: timestamp(root.updated_at, "asset_detail.updated_at"),
   };
 }
 
@@ -671,6 +865,10 @@ export function formatOwnerMoney(value: Money): string {
 
 export const propertyOwnerPortalApi = {
   get: () => apiClient.get<unknown>("/my/property-owner/portal").then(parseOwnerPortal),
+  getAssetDetail: (roomCode: string) =>
+    apiClient
+      .get<unknown>(`/my/property-owner/assets/${encodeURIComponent(roomCode)}`)
+      .then(parseOwnerAssetDetail),
   preview: (period: string) =>
     apiClient
       .get<unknown>("/my/property-owner/reports/preview", { query: { period } })

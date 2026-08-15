@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -83,6 +85,37 @@ export class BookingLeadController {
       correlationId: request.correlationId,
     });
     return acceptsAdminUxV2(accept) ? v2Data(updated) : updated;
+  }
+
+  @Delete(':leadId')
+  @RequirePermissions('room.manage')
+  async archiveTerminal(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leadId') leadId: string,
+    @Query('property_id') propertyId: string,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('accept') accept: string | string[] | undefined,
+  ) {
+    if (!propertyId) {
+      throw new BadRequestException({
+        code: 'PROPERTY_SCOPE_REQUIRED',
+        message: 'property_id is required.',
+      });
+    }
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const archived = await this.bookingLeads.archiveTerminalLead(
+      leadId,
+      propertyId,
+      idempotencyKey,
+      {
+        actorUserId: user.id,
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+        correlationId: request.correlationId,
+      },
+    );
+    return acceptsAdminUxV2(accept) ? v2Data(archived) : archived;
   }
 
   private async scopedPropertyIds(user: UserAccessContext, propertyId?: string): Promise<string[]> {

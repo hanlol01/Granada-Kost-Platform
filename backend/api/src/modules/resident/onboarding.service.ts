@@ -208,10 +208,10 @@ export class OnboardingService {
           });
         const holdResult = await client.query<OnboardingHoldRow>(
           `SELECT id,property_id,booking_lead_id,room_id,
-                (hold_status='active' AND expires_at>now()) AS is_current
+                (hold_status='committed' OR (hold_status='active' AND expires_at>now())) AS is_current
          FROM booking_lead_holds
          WHERE property_id=$1
-           AND hold_status='active'
+           AND hold_status IN ('active','committed')
            AND (booking_lead_id=$2 OR room_id=$3)
          ORDER BY id
          FOR UPDATE`,

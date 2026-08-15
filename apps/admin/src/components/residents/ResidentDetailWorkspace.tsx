@@ -1,16 +1,21 @@
 import { Link } from "@tanstack/react-router";
+import type { FileResponse } from "@granada-kost/domain";
 import {
   ArrowLeft,
+  ArrowUpRight,
   BadgeInfo,
   Bell,
   Building2,
   CalendarCheck2,
+  CalendarClock,
   Car,
   CircleAlert,
   Clock3,
   CreditCard,
+  Download,
   FileText,
   Landmark,
+  KeyRound,
   MessageSquare,
   Pencil,
   ReceiptText,
@@ -20,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/W06PaymentsWorkspace";
+import { FileUploadField } from "@/components/file/FileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
@@ -44,10 +50,11 @@ import {
   useStartLeaseTermination,
 } from "@/hooks/useAdminW06Billing";
 import { useLeaseActivation } from "@/hooks/useLeaseActivation";
-import { useFileUpload } from "@/hooks/useFileUpload";
 import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
+import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
 import { useResidentBilling } from "@/hooks/useAdminW06Billing";
 import type { ResidentBilling } from "@/lib/admin-w06-billing";
+import { downloadAdminReceiptDocument } from "@/lib/admin-w06-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
 import { useAuth } from "@/lib/auth";
 import { newIdempotencyKey } from "@/lib/idempotency";
@@ -163,6 +170,7 @@ function ActivationAvailabilityNotice({
   return (
     <NoticeAlert
       tone={isWaitingForCheckIn ? "warning" : "success"}
+      attention="subtle"
       title={isWaitingForCheckIn ? "Kamar dipesan — menunggu aktivasi" : "Kamar siap diaktivasi"}
       description={
         <div className="space-y-1.5">
@@ -189,12 +197,143 @@ function ActivationAvailabilityNotice({
   );
 }
 
+function ActivationRoomAction({
+  startDate,
+  onActivate,
+}: {
+  startDate: string;
+  onActivate: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const availableAt = jakartaStartOfDay(startDate);
+  const isWaitingForCheckIn = Boolean(availableAt && availableAt.getTime() > now);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (isWaitingForCheckIn && availableAt) {
+    return (
+      <Button
+        className="min-h-11"
+        disabled
+        title={`Aktivasi tersedia ${formatActivationDate(availableAt)} WIB`}
+      >
+        <CalendarClock className="mr-1 h-4 w-4" /> Aktivasi belum tersedia
+      </Button>
+    );
+  }
+
+  return (
+    <Button className="min-h-11" onClick={onActivate}>
+      <CalendarCheck2 className="mr-1 h-4 w-4" /> Aktivasi kamar
+    </Button>
+  );
+}
+
 type ResidentGuidanceItem = {
   id: string;
   tone: NoticeAlertTone;
   title: string;
   description: string;
+  actionHref?: string;
+  actionLabel?: string;
 };
+
+type SettlementGuidance = Omit<ResidentGuidanceItem, "id">;
+
+function firstPaymentCheckpointGuidance(
+  settlement: NonNullable<ResidentBilling["contract_settlement"]>,
+): SettlementGuidance | null {
+  const checkpoint = settlement.first_payment_checkpoint;
+  if (checkpoint.status === "not_required" || !checkpoint.due_at) return null;
+  const dueLabel = formatResidentDetailTimestamp(checkpoint.due_at);
+
+  if (checkpoint.status === "met_early") {
+    return {
+      tone: "success",
+      title: "Checkpoint pembayaran pertama sudah terpenuhi lebih awal",
+      description: `Pembayaran sewa tambahan ${rupiah(checkpoint.additional_payment_received)} sudah memenuhi target minimal ${rupiah(checkpoint.required_additional_amount)} sebelum ${dueLabel} WIB. Tidak perlu mencatat pembayaran lagi khusus pada bulan checkpoint.`,
+    };
+  }
+  if (checkpoint.status === "met") {
+    return {
+      tone: "success",
+      title: "Checkpoint pembayaran pertama terpenuhi",
+      description: `Pembayaran sewa tambahan ${rupiah(checkpoint.additional_payment_received)} telah memenuhi target minimal ${rupiah(checkpoint.required_additional_amount)}. Sisa kontrak tetap mengikuti tenggat pelunasan akhir.`,
+    };
+  }
+  if (checkpoint.status === "overdue") {
+    return {
+      tone: "warning",
+      title: "Checkpoint pembayaran pertama terlewat",
+      description: `Target pembayaran tambahan ${rupiah(checkpoint.required_additional_amount)} seharusnya tercatat paling lambat ${dueLabel} WIB. Masih kurang ${rupiah(checkpoint.remaining_amount)}; tindak lanjuti sebelum tenggat pelunasan akhir.`,
+    };
+  }
+  return {
+    tone: "info",
+    title: "Checkpoint pembayaran pertama",
+    description: `Sebelum ${dueLabel} WIB, catat pembayaran sewa tambahan minimal ${rupiah(checkpoint.required_additional_amount)}. DP dan booking fee adalah pembayaran awal; security deposit tidak dihitung sebagai sewa.`,
+  };
+}
+
+function openSettlementGuidance(
+  settlement: NonNullable<ResidentBilling["contract_settlement"]>,
+  dueLabel: string,
+): SettlementGuidance {
+  const checkpointGuidance = firstPaymentCheckpointGuidance(settlement);
+  if (
+    checkpointGuidance &&
+    ["pending", "overdue"].includes(settlement.first_payment_checkpoint.status)
+  )
+    return checkpointGuidance;
+  const totalRentReceived = settlement.initial_rent_credit + settlement.payment_allocated;
+  const paymentProgress =
+    settlement.payment_allocated > 0
+      ? `Pembayaran tambahan sudah tercatat; total pembayaran sewa yang diterima ${rupiah(totalRentReceived)}.`
+      : `Total pembayaran sewa yang diterima saat ini ${rupiah(totalRentReceived)}.`;
+
+  if (settlement.reminder_stage === "H-30") {
+    return {
+      tone: "info",
+      title: "Pelunasan sewa tersisa 30 hari",
+      description: `${paymentProgress} Tidak ada cicilan bulanan wajib. Sisa ${rupiah(settlement.outstanding_amount)} tetap harus dilunasi paling lambat ${dueLabel} WIB.`,
+    };
+  }
+
+  if (settlement.reminder_stage === "H-14") {
+    return {
+      tone: "warning",
+      title: "Pelunasan sewa tersisa 14 hari",
+      description: `${paymentProgress} Tidak ada cicilan bulanan wajib, tetapi sisa ${rupiah(settlement.outstanding_amount)} perlu segera ditindaklanjuti sebelum ${dueLabel} WIB.`,
+    };
+  }
+
+  if (settlement.reminder_stage === "H-7") {
+    return {
+      tone: "warning",
+      title: "Pelunasan sewa tersisa 7 hari",
+      description: `Sisa ${rupiah(settlement.outstanding_amount)} belum lunas. Catat pembayaran bila penghuni membayar; tenggat akhir tetap ${dueLabel} WIB.`,
+    };
+  }
+
+  if (settlement.reminder_stage === "H-0") {
+    return {
+      tone: "warning",
+      title: "Hari ini adalah tenggat pelunasan",
+      description: `Sisa ${rupiah(settlement.outstanding_amount)} harus dilunasi sebelum ${dueLabel} WIB. Setelah tenggat, status tunggakan akan mulai dipantau.`,
+    };
+  }
+
+  return (
+    checkpointGuidance ?? {
+      tone: "info",
+      title: "Pelunasan sewa masih berjalan",
+      description: `${paymentProgress} Sisa ${rupiah(settlement.outstanding_amount)} tetap harus dilunasi paling lambat ${dueLabel} WIB.`,
+    }
+  );
+}
 
 function residentGuidanceItems(
   resident: ResidentDetail,
@@ -258,11 +397,11 @@ function residentGuidanceItems(
         description: `Sisa ${rupiah(settlement.outstanding_amount)} harus diselesaikan paling lambat ${dueLabel} WIB. Perpanjangan berikutnya tidak tersedia.`,
       });
     } else if (settlement.status === "open") {
+      const guidance = openSettlementGuidance(settlement, dueLabel);
+
       items.push({
         id: "settlement-open",
-        tone: "info",
-        title: `Sisa pelunasan ${rupiah(settlement.outstanding_amount)}`,
-        description: `Pembayaran sebagian atau pelunasan penuh dapat dicatat melalui card Tagihan. Tenggat jatuh tempo ${dueLabel} WIB.`,
+        ...guidance,
       });
     }
   }
@@ -276,6 +415,8 @@ function residentGuidanceItems(
       tone: "warning",
       title: `${pendingTransfers.length} transfer menunggu konfirmasi`,
       description: `Periksa bukti transfer senilai ${rupiah(total)}. Pembayaran belum mengurangi kewajiban sewa sampai diverifikasi.`,
+      actionHref: "/payments#pending",
+      actionLabel: "Buka verifikasi pembayaran",
     });
   }
 
@@ -299,10 +440,12 @@ function ResidentGuidanceCards({
   resident,
   tenancy,
   billing,
+  focusId,
 }: {
   resident: ResidentDetail;
   tenancy: ResidentTenancy | null;
   billing: ResidentBilling | null;
+  focusId?: string | null;
 }) {
   const [dismissed, setDismissed] = useState<string[]>([]);
   const items = residentGuidanceItems(resident, tenancy, billing).filter(
@@ -336,9 +479,27 @@ function ResidentGuidanceCards({
         {items.map((item) => (
           <NoticeAlert
             key={item.id}
+            id={item.id}
             tone={item.tone}
+            attention="subtle"
+            className={
+              focusId === item.id
+                ? "ring-2 ring-warning ring-offset-2 ring-offset-background"
+                : undefined
+            }
             title={item.title}
             description={item.description}
+            action={
+              item.actionHref ? (
+                <a
+                  href={item.actionHref}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-warning/45 bg-warning/15 px-3 text-sm font-semibold text-warning transition-colors hover:bg-warning/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {item.actionLabel}
+                  <ArrowUpRight className="size-4" aria-hidden="true" />
+                </a>
+              ) : null
+            }
             onDismiss={() => dismiss(item.id)}
             dismissLabel={`Tutup pengingat: ${item.title}`}
           />
@@ -356,7 +517,23 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const billing = useResidentBilling(currentPropertyId, tenancy.data ? residentId : null);
   const activation = useLeaseActivation();
   const [editOpen, setEditOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
+  const [guidanceFocusId, setGuidanceFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!guidanceFocusId || !billing.data) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(guidanceFocusId);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    });
+    const timer = window.setTimeout(() => setGuidanceFocusId(null), 4_500);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [billing.data, guidanceFocusId]);
 
   if (detail.error)
     return (
@@ -383,6 +560,16 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
     billing.data && settlement
       ? contractPaymentAllocationLabels(billing.data.payments, settlement)
       : new Map<string, string>();
+  const contractSettlementReceipt =
+    settlement?.status === "paid" && billing.data
+      ? ([...billing.data.payments]
+          .reverse()
+          .find(
+            (payment) =>
+              payment.receipt_id &&
+              paymentAllocationLabels.get(payment.id) === "Pelunasan penuh sewa kontrak",
+          ) ?? null)
+      : null;
 
   return (
     <AppShell
@@ -391,14 +578,24 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
       actions={
         <div className="flex flex-wrap gap-2">
           {canManage ? (
-            <Button variant="outline" className="min-h-11" onClick={() => setEditOpen(true)}>
+            <Button
+              variant="outline"
+              className="min-h-11 border-primary/40 text-primary hover:bg-primary/10"
+              onClick={() => setCredentialsOpen(true)}
+            >
+              <KeyRound className="mr-1 h-4 w-4" /> Lihat kredensial penghuni
+            </Button>
+          ) : null}
+          {canManage ? (
+            <Button variant="info" className="min-h-11" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1 h-4 w-4" /> Edit
             </Button>
           ) : null}
           {canActivate ? (
-            <Button className="min-h-11" onClick={() => setConfirmActivation(true)}>
-              <CalendarCheck2 className="mr-1 h-4 w-4" /> Aktivasi kamar
-            </Button>
+            <ActivationRoomAction
+              startDate={currentTenancy.startDate}
+              onActivate={() => setConfirmActivation(true)}
+            />
           ) : null}
         </div>
       }
@@ -419,6 +616,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         resident={resident}
         tenancy={currentTenancy}
         billing={billing.data ?? null}
+        focusId={guidanceFocusId}
       />
 
       <div className="space-y-5">
@@ -483,7 +681,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               {billing.isLoading && currentTenancy ? (
                 <Skeleton className="h-40 w-full" />
               ) : summary && settlement ? (
-                <ContractSettlementSummary settlement={settlement} summary={summary} />
+                <ContractSettlementSummary
+                  settlement={settlement}
+                  summary={summary}
+                  propertyId={currentPropertyId}
+                  finalPayment={contractSettlementReceipt}
+                />
               ) : summary ? (
                 <DefinitionGrid
                   rows={[
@@ -592,6 +795,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   canManageBilling={canManageBilling}
                   canManageTermination={canManageTermination}
                   onChanged={() => void billing.refetch()}
+                  onPaymentRecorded={(status) => {
+                    void billing.refetch();
+                    if (status === "pending_confirmation") {
+                      setGuidanceFocusId("payment-pending-confirmation");
+                    }
+                  }}
                 />
               ) : billing.data?.invoices.length ? (
                 <div className="overflow-x-auto">
@@ -661,7 +870,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                               : "Belum dicatat"}
                           </td>
                           <td className="py-3 font-medium">{payment.payment_code}</td>
-                          <td className="py-3">{paymentPurposeLabel(payment.payment_purpose)}</td>
+                          <td className="py-3">
+                            {paymentPurposeLabel(
+                              payment.payment_purpose,
+                              paymentAllocationLabels.get(payment.id),
+                            )}
+                          </td>
                           <td className="py-3">
                             {payment.payment_method === "cash" ? "Tunai" : "Transfer bank"}
                           </td>
@@ -675,7 +889,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                             )}
                           </td>
                           <td className="py-3 text-right">
-                            <PaymentDetailDialog payment={payment} />
+                            <PaymentDetailDialog
+                              payment={payment}
+                              propertyId={currentPropertyId}
+                              isContractSettled={
+                                settlement?.status === "paid" &&
+                                paymentAllocationLabels.get(payment.id) ===
+                                  "Pelunasan penuh sewa kontrak"
+                              }
+                              typeLabel={paymentPurposeLabel(
+                                payment.payment_purpose,
+                                paymentAllocationLabels.get(payment.id),
+                              )}
+                            />
                           </td>
                         </tr>
                       ))}
@@ -712,7 +938,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         </section>
       </div>
 
-      <ResidentFormDialog open={editOpen} onOpenChange={setEditOpen} initial={resident} />
+      <ResidentFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        initial={resident}
+        onSaved={() => void detail.refetch()}
+      />
+      <ResidentCredentialsDialog
+        open={credentialsOpen}
+        onOpenChange={setCredentialsOpen}
+        residentId={resident.id}
+        residentName={resident.fullName}
+        residentPhone={resident.phone}
+      />
       <ConfirmDialog
         open={confirmActivation}
         onOpenChange={setConfirmActivation}
@@ -731,6 +969,158 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         }}
       />
     </AppShell>
+  );
+}
+
+function ResidentCredentialsDialog({
+  open,
+  onOpenChange,
+  residentId,
+  residentName,
+  residentPhone,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  residentId: string;
+  residentName: string;
+  residentPhone: string | null;
+}) {
+  const account = useResidentAccountSummary(open ? residentId : null);
+  const resetPassword = useResetResidentPassword();
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setTemporaryPassword(null);
+      setCopied(false);
+    }
+  }, [open]);
+
+  const loginIdentifier = account.data?.loginEmail ?? account.data?.loginPhone ?? null;
+  const whatsAppPhone = residentPhone ? normalizeWhatsAppPhone(residentPhone) : null;
+  const sendCredentials = () => {
+    if (!whatsAppPhone || !loginIdentifier || !temporaryPassword) return;
+    const message = [
+      `Halo ${residentName}, berikut kredensial sementara akun Kostation Anda:`,
+      `Login: ${loginIdentifier}`,
+      `Password sementara: ${temporaryPassword}`,
+      "Silakan login dan segera ganti password pada akses pertama. Jangan bagikan kredensial ini kepada orang lain.",
+    ].join("\n");
+    window.open(
+      `https://wa.me/${whatsAppPhone}?text=${encodeURIComponent(message)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Kredensial Penghuni</DialogTitle>
+          <DialogDescription>
+            Identitas login dapat dilihat, tetapi password lama tidak pernah disimpan atau
+            ditampilkan kembali oleh sistem.
+          </DialogDescription>
+        </DialogHeader>
+
+        {account.isLoading ? <Skeleton className="h-40 w-full" /> : null}
+        {account.error ? (
+          <NoticeAlert
+            tone="destructive"
+            title="Kredensial belum dapat dimuat"
+            description="Periksa koneksi lalu coba kembali."
+          />
+        ) : null}
+        {account.data ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-muted-foreground">Email login</p>
+                <p className="mt-1 break-all font-medium">
+                  {account.data.loginEmail ?? "Belum tersedia"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Nomor telepon login</p>
+                <p className="mt-1 break-all font-medium">
+                  {account.data.loginPhone ?? "Belum tersedia"}
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs text-muted-foreground">Keamanan akun</p>
+                <p className="mt-1 font-medium">
+                  {account.data.passwordChangeRequired
+                    ? "Wajib mengganti password saat login berikutnya"
+                    : "Password pribadi sudah dibuat penghuni"}
+                </p>
+              </div>
+            </div>
+
+            {temporaryPassword ? (
+              <NoticeAlert
+                tone="warning"
+                title="Password sementara baru"
+                description={
+                  <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <code className="min-w-0 flex-1 rounded-lg bg-background px-3 py-2 font-semibold">
+                      {temporaryPassword}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(temporaryPassword);
+                        setCopied(true);
+                      }}
+                    >
+                      {copied ? "Tersalin" : "Salin"}
+                    </Button>
+                  </div>
+                }
+              />
+            ) : (
+              <NoticeAlert
+                tone="info"
+                title="Password tidak dapat dilihat ulang"
+                description="Gunakan reset password bila penghuni kehilangan akses. Reset akan mencabut sesi lama dan membuat password sementara baru."
+              />
+            )}
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="warning"
+                disabled={resetPassword.isPending || account.data.status === "not_provisioned"}
+                onClick={async () => {
+                  const receipt = await resetPassword.mutateAsync({ residentId });
+                  setTemporaryPassword(receipt.temporaryPassword);
+                  setCopied(false);
+                }}
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                {resetPassword.isPending ? "Mereset..." : "Reset password"}
+              </Button>
+              <Button
+                type="button"
+                className="bg-[#25D366] text-black hover:bg-[#20bd5a]"
+                disabled={!temporaryPassword || !whatsAppPhone || !loginIdentifier}
+                onClick={sendCredentials}
+              >
+                <WhatsAppIcon className="mr-2 h-4 w-4 fill-black" /> Kirim ke WhatsApp
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Tutup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -792,7 +1182,7 @@ function WhatsAppIcon({ className = "h-6 w-6" }: { className?: string }) {
     <svg
       aria-hidden="true"
       className={className}
-      fill="#25D366"
+      fill="currentColor"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -801,8 +1191,18 @@ function WhatsAppIcon({ className = "h-6 w-6" }: { className?: string }) {
   );
 }
 
-function paymentPurposeLabel(purpose: ResidentBilling["payments"][number]["payment_purpose"]) {
-  if (purpose === "rent") return "Pelunasan sewa";
+function paymentPurposeLabel(
+  purpose: ResidentBilling["payments"][number]["payment_purpose"],
+  settlementLabel?: string,
+) {
+  if (purpose === "rent") {
+    if (settlementLabel === "Pelunasan penuh sewa kontrak") return "Pelunasan Sewa";
+    if (settlementLabel?.startsWith("Bayar sebagian")) return "Pembayaran Sebagian Sewa";
+    if (settlementLabel?.startsWith("Menunggu konfirmasi")) {
+      return "Pembayaran Sewa (Menunggu Konfirmasi)";
+    }
+    return "Pembayaran Sewa";
+  }
   if (purpose === "dp") return "DP / uang muka sewa";
   if (purpose === "security_deposit") return "Security deposit";
   if (purpose === "other_charge") return "Tagihan lainnya";
@@ -916,14 +1316,20 @@ function ContractPaymentBadges({
 function ContractSettlementSummary({
   settlement,
   summary,
+  propertyId,
+  finalPayment,
 }: {
   settlement: NonNullable<ResidentBilling["contract_settlement"]>;
   summary: ResidentBilling["summary"];
+  propertyId: string | null;
+  finalPayment: ResidentBilling["payments"][number] | null;
 }) {
   const dueLabel = settlement.effective_due_at
     ? formatResidentDetailTimestamp(settlement.effective_due_at)
     : "Dihitung setelah aktivasi";
   const paidCredit = settlement.initial_rent_credit + settlement.payment_allocated;
+  const directGuidance =
+    settlement.status === "open" ? openSettlementGuidance(settlement, dueLabel) : null;
 
   return (
     <div className="space-y-4">
@@ -934,7 +1340,17 @@ function ContractSettlementSummary({
             Pelunasan kontrak dijadwalkan dua bulan sejak kamar diaktivasi.
           </p>
         </div>
-        <SettlementStatusPill status={settlement.status} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <SettlementStatusPill status={settlement.status} />
+          {finalPayment?.receipt_id && propertyId ? (
+            <ReceiptDownloadButton
+              propertyId={propertyId}
+              receiptId={finalPayment.receipt_id}
+              paymentCode={finalPayment.payment_code}
+              isContractSettled
+            />
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <SummaryMetric label="Total sewa kontrak" value={rupiah(settlement.contract_rent_amount)} />
@@ -949,7 +1365,16 @@ function ContractSettlementSummary({
         />
         <SummaryMetric label="Tenggat jatuh tempo pelunasan" value={dueLabel} />
       </div>
-      {settlement.reminder_stage ? (
+      <FirstPaymentCheckpointCard settlement={settlement} />
+      {directGuidance ? (
+        <NoticeAlert
+          density="compact"
+          tone={directGuidance.tone}
+          attention="subtle"
+          title={directGuidance.title}
+          description={directGuidance.description}
+        />
+      ) : settlement.reminder_stage ? (
         <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <span>
@@ -995,6 +1420,39 @@ function ContractSettlementSummary({
   );
 }
 
+function FirstPaymentCheckpointCard({
+  settlement,
+}: {
+  settlement: NonNullable<ResidentBilling["contract_settlement"]>;
+}) {
+  const checkpoint = settlement.first_payment_checkpoint;
+  if (checkpoint.status === "not_required" || !checkpoint.due_at) return null;
+  const complete = checkpoint.status === "met" || checkpoint.status === "met_early";
+  const late = checkpoint.status === "overdue";
+  return (
+    <div
+      className={`rounded-lg border p-3 text-xs leading-5 ${
+        late
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : complete
+            ? "border-emerald-500/35 bg-emerald-500/10"
+            : "border-primary/30 bg-primary/5"
+      }`}
+    >
+      <p className="font-semibold text-foreground">Checkpoint pembayaran pertama</p>
+      <p className="mt-1 text-muted-foreground">
+        Minimal pembayaran sewa tambahan {rupiah(checkpoint.required_additional_amount)} paling
+        lambat {formatResidentDetailTimestamp(checkpoint.due_at)} WIB.
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        {complete
+          ? `Sudah terpenuhi${checkpoint.status === "met_early" ? " lebih awal" : ""}: ${rupiah(checkpoint.additional_payment_received)} tercatat.`
+          : `Masih perlu dicatat: ${rupiah(checkpoint.remaining_amount)}. DP/booking fee tidak menggantikan pembayaran checkpoint; security deposit tidak dihitung sebagai sewa.`}
+      </p>
+    </div>
+  );
+}
+
 function SummaryMetric({
   label,
   value,
@@ -1018,12 +1476,14 @@ function ContractInvoicePanel({
   canManageBilling,
   canManageTermination,
   onChanged,
+  onPaymentRecorded,
 }: {
   data: ResidentBilling;
   propertyId: string | null;
   canManageBilling: boolean;
   canManageTermination: boolean;
   onChanged: () => void;
+  onPaymentRecorded: (status: string) => void;
 }) {
   const settlement = data.contract_settlement;
   if (!settlement) return null;
@@ -1069,6 +1529,9 @@ function ContractInvoicePanel({
             }
           />
         </div>
+        <div className="mt-3">
+          <FirstPaymentCheckpointCard settlement={settlement} />
+        </div>
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           Pembayaran awal mencakup DP dan/atau booking fee yang telah terverifikasi saat penyewaan
           dibuat. Pembayaran berikutnya tercatat setelah admin menerima uang sewa tambahan dari
@@ -1083,9 +1546,10 @@ function ContractInvoicePanel({
             data={data}
             propertyId={propertyId}
             triggerLabel="Catat Pembayaran"
-            triggerVariant="outline"
+            triggerVariant="default"
             contractSettlementInvoiceId={invoice?.id ?? null}
             contractSettlementMode="choose"
+            onRecorded={onPaymentRecorded}
           />
         ) : null}
         {canManageBilling && settlement.full_payment_required && invoice ? (
@@ -1095,6 +1559,7 @@ function ContractInvoicePanel({
             triggerLabel="Lunasi Sisa"
             contractSettlementInvoiceId={invoice.id}
             contractSettlementMode="full"
+            onRecorded={onPaymentRecorded}
           />
         ) : null}
         {canManageTermination && settlement.extension_available ? (
@@ -1186,7 +1651,7 @@ function ExtendSettlementDialog({
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button className="min-h-11" variant="outline" onClick={() => setOpen(true)}>
+      <Button className="min-h-11" variant="warning" onClick={() => setOpen(true)}>
         <Clock3 className="mr-2 h-4 w-4" /> Beri perpanjangan
       </Button>
       <DialogContent>
@@ -1225,7 +1690,7 @@ function ExtendSettlementDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button className="min-h-11" variant="outline" onClick={() => setOpen(false)}>
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
@@ -1329,7 +1794,7 @@ function StartTerminationDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button className="min-h-11" variant="outline" onClick={() => setOpen(false)}>
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
@@ -1374,7 +1839,7 @@ function CancelTerminationDialog({
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button className="min-h-11" variant="outline" onClick={() => setOpen(true)}>
+      <Button className="min-h-11" variant="warning" onClick={() => setOpen(true)}>
         Batalkan pemberhentian
       </Button>
       <DialogContent>
@@ -1399,7 +1864,7 @@ function CancelTerminationDialog({
           </p>
         ) : null}
         <DialogFooter>
-          <Button className="min-h-11" variant="outline" onClick={() => setOpen(false)}>
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
@@ -1433,14 +1898,15 @@ function FinalizeTerminationDialog({
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [damageAmount, setDamageAmount] = useState(0);
   const [damageReason, setDamageReason] = useState("");
-  const [damageEvidenceId, setDamageEvidenceId] = useState<string | null>(null);
+  const [damageEvidence, setDamageEvidence] = useState<FileResponse | null>(null);
+  const [damageEvidenceBusy, setDamageEvidenceBusy] = useState(false);
   const [refundMethod, setRefundMethod] = useState<"cash" | "bank_transfer">("bank_transfer");
   const [refundedAt, setRefundedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [refundNote, setRefundNote] = useState("");
-  const [refundEvidenceId, setRefundEvidenceId] = useState<string | null>(null);
+  const [refundEvidence, setRefundEvidence] = useState<FileResponse | null>(null);
+  const [refundEvidenceBusy, setRefundEvidenceBusy] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const mutation = useFinalizeLeaseTermination(propertyId);
-  const upload = useFileUpload({ silent: true });
   const estimatedRentOffset = Math.min(summary.deposit_balance, settlement.outstanding_amount);
   const availableAfterArrears = Math.max(0, summary.deposit_balance - estimatedRentOffset);
   const estimatedRefund = Math.max(0, availableAfterArrears - damageAmount);
@@ -1455,13 +1921,13 @@ function FinalizeTerminationDialog({
           room_status_after_checkout: roomOutcome,
           damage_deduction_amount: damageAmount,
           damage_reason: damageAmount > 0 ? damageReason : undefined,
-          damage_evidence_file_id: damageAmount > 0 ? (damageEvidenceId ?? undefined) : undefined,
+          damage_evidence_file_id: damageAmount > 0 ? (damageEvidence?.id ?? undefined) : undefined,
           refund_amount: estimatedRefund,
           refund_method: estimatedRefund > 0 ? refundMethod : undefined,
           refunded_at: estimatedRefund > 0 ? refundedAt : undefined,
           refund_note: estimatedRefund > 0 ? refundNote || undefined : undefined,
           refund_evidence_file_id:
-            estimatedRefund > 0 ? (refundEvidenceId ?? undefined) : undefined,
+            estimatedRefund > 0 ? (refundEvidence?.id ?? undefined) : undefined,
         },
         idempotencyKey,
       },
@@ -1473,11 +1939,6 @@ function FinalizeTerminationDialog({
         },
       },
     );
-  };
-  const uploadEvidence = async (file: File, assign: (id: string) => void) => {
-    if (!propertyId) return;
-    const saved = await upload.uploadAsync({ file, propertyId, filePurpose: "payment_proof" });
-    assign(saved.id);
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1544,24 +2005,18 @@ function FinalizeTerminationDialog({
                     maxLength={1000}
                   />
                 </label>
-                <label className="block text-sm font-medium">
-                  Bukti kerusakan
-                  <Input
-                    className="mt-2 min-h-11"
-                    type="file"
-                    accept="image/jpeg,image/png,application/pdf"
-                    disabled={upload.isUploading}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void uploadEvidence(file, setDamageEvidenceId);
-                    }}
+                {propertyId ? (
+                  <FileUploadField
+                    propertyId={propertyId}
+                    filePurpose="payment_proof"
+                    label="Bukti kerusakan"
+                    description="Wajib bila ada potongan kerusakan. File dapat dilihat kembali sebelum checkout diselesaikan."
+                    value={damageEvidence}
+                    onChange={setDamageEvidence}
+                    onBusyChange={setDamageEvidenceBusy}
+                    required
                   />
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {damageEvidenceId
-                      ? "Bukti siap ditautkan."
-                      : "Bukti wajib bila ada potongan kerusakan."}
-                  </span>
-                </label>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -1609,24 +2064,18 @@ function FinalizeTerminationDialog({
                   maxLength={1000}
                 />
               </label>
-              <label className="block text-sm font-medium">
-                Bukti pengembalian deposit
-                <Input
-                  className="mt-2 min-h-11"
-                  type="file"
-                  accept="image/jpeg,image/png,application/pdf"
-                  disabled={upload.isUploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void uploadEvidence(file, setRefundEvidenceId);
-                  }}
+              {propertyId ? (
+                <FileUploadField
+                  propertyId={propertyId}
+                  filePurpose="payment_proof"
+                  label="Bukti pengembalian deposit"
+                  description="Wajib sebagai bukti pengembalian kepada penghuni."
+                  value={refundEvidence}
+                  onChange={setRefundEvidence}
+                  onBusyChange={setRefundEvidenceBusy}
+                  required
                 />
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {refundEvidenceId
-                    ? "Bukti siap ditautkan."
-                    : "Bukti pengembalian wajib dilampirkan."}
-                </span>
-              </label>
+              ) : null}
             </div>
           ) : null}
           {mutation.isError ? (
@@ -1637,7 +2086,7 @@ function FinalizeTerminationDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button className="min-h-11" variant="outline" onClick={() => setOpen(false)}>
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
@@ -1645,8 +2094,10 @@ function FinalizeTerminationDialog({
             variant="destructive"
             disabled={
               mutation.isPending ||
-              (damageAmount > 0 && (!damageReason.trim() || !damageEvidenceId)) ||
-              (estimatedRefund > 0 && (!refundEvidenceId || !refundedAt))
+              damageEvidenceBusy ||
+              refundEvidenceBusy ||
+              (damageAmount > 0 && (!damageReason.trim() || !damageEvidence)) ||
+              (estimatedRefund > 0 && (!refundEvidence || !refundedAt))
             }
             onClick={submit}
           >
@@ -1658,25 +2109,38 @@ function FinalizeTerminationDialog({
   );
 }
 
-function PaymentDetailDialog({ payment }: { payment: ResidentBilling["payments"][number] }) {
+function PaymentDetailDialog({
+  payment,
+  propertyId,
+  isContractSettled,
+  typeLabel,
+}: {
+  payment: ResidentBilling["payments"][number];
+  propertyId: string | null;
+  isContractSettled: boolean;
+  typeLabel: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button className="min-h-9" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button className="min-h-9" size="sm" variant="info" onClick={() => setOpen(true)}>
         Rincian
       </Button>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rincian pembayaran</DialogTitle>
+          <DialogTitle>
+            {isContractSettled ? "Kuitansi pelunasan kontrak" : "Rincian pembayaran"}
+          </DialogTitle>
           <DialogDescription>
-            Riwayat transaksi disajikan apa adanya. Invoice cetak akan tersedia saat dokumen invoice
-            sudah diterbitkan.
+            {isContractSettled
+              ? "Pembayaran ini menyelesaikan seluruh kewajiban sewa kontrak."
+              : "Riwayat transaksi disajikan apa adanya. Kuitansi tersedia setelah dokumen diterbitkan."}
           </DialogDescription>
         </DialogHeader>
         <DefinitionGrid
           rows={[
             ["Kode pembayaran", payment.payment_code],
-            ["Jenis", paymentPurposeLabel(payment.payment_purpose)],
+            ["Jenis", typeLabel],
             ["Metode", payment.payment_method === "cash" ? "Tunai" : "Transfer bank"],
             ["Nominal", rupiah(payment.amount)],
             ["Status", paymentStatusLabel(payment.payment_status)],
@@ -1701,12 +2165,67 @@ function PaymentDetailDialog({ payment }: { payment: ResidentBilling["payments"]
           ]}
         />
         <DialogFooter>
-          <Button className="min-h-11" onClick={() => setOpen(false)}>
+          {payment.receipt_id && propertyId ? (
+            <ReceiptDownloadButton
+              propertyId={propertyId}
+              receiptId={payment.receipt_id}
+              paymentCode={payment.payment_code}
+              isContractSettled={isContractSettled}
+            />
+          ) : null}
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
             Tutup
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReceiptDownloadButton({
+  propertyId,
+  receiptId,
+  paymentCode,
+  isContractSettled,
+}: {
+  propertyId: string | null;
+  receiptId: string;
+  paymentCode: string;
+  isContractSettled: boolean;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const download = () => {
+    if (!propertyId || downloading) return;
+    setDownloading(true);
+    setError(false);
+    void downloadAdminReceiptDocument(
+      propertyId,
+      receiptId,
+      `KWT-${paymentCode}${isContractSettled ? "-LUNAS" : ""}`,
+    )
+      .catch(() => setError(true))
+      .finally(() => setDownloading(false));
+  };
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <Button
+        className="min-h-9"
+        variant="success"
+        disabled={!propertyId || downloading}
+        onClick={download}
+      >
+        <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        {downloading ? "Menyiapkan..." : isContractSettled ? "Kuitansi lunas" : "Unduh kuitansi"}
+      </Button>
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          Kuitansi belum dapat diunduh.
+        </span>
+      ) : null}
+    </span>
   );
 }
 function HonestEmpty({

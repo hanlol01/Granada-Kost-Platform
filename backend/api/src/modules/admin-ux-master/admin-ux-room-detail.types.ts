@@ -38,6 +38,7 @@ export type AdminRoomDetailProjection = {
     facilities: Array<{ id: string; name: string }>;
   };
   resident: {
+    id: string;
     display_name: string;
     account_status: string;
     university: string | null;
@@ -90,9 +91,13 @@ export type AdminRoomDetailProjection = {
     technician_name: string | null;
   }>;
   ownership: {
-    display_name: 'KOSTATION';
-    source: 'policy_default';
-    ownership_reconciliation_required: true;
+    owner_profile_id: string | null;
+    display_name: string;
+    source: 'building_assignment' | 'room_assignment' | 'kostation_default';
+    assignment_kind: 'building' | 'room' | null;
+    effective_from: string | null;
+    effective_until: string | null;
+    assignment_status: 'active' | null;
   };
   timeline: Array<{
     event_type: string;
@@ -100,7 +105,7 @@ export type AdminRoomDetailProjection = {
     occurred_at: string;
   }>;
   links: {
-    resident: null;
+    resident: string | null;
     lease: string | null;
     billing: null;
     vehicles: null;

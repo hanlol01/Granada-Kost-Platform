@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
+import { resolvePostLoginRoute } from "@/lib/auth/post-login-route";
 
 type LoginSearch = { next?: string };
 
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login, status } = useAuth();
+  const { login, status, user } = useAuth();
   const search = useSearch({ from: "/login" });
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
@@ -29,9 +30,14 @@ function LoginPage() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      void navigate({ to: search.next ?? "/" });
+      void navigate({
+        to: resolvePostLoginRoute({
+          requestedRoute: search.next,
+          roles: user?.roles ?? [],
+        }),
+      });
     }
-  }, [status, navigate, search.next]);
+  }, [status, user, navigate, search.next]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

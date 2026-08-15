@@ -1,8 +1,8 @@
 # Property Owner Scope and Experience
 
-Status: `IN_PROGRESS` (`W10-OWNER-A`, `W10-OWNER-B`, `W10-OWNER-A3`, and
-`W10-OWNER-C` source implemented; automated review pending; runtime deferred;
-`W10-OWNER-D` planned)
+Status: `IN_PROGRESS` (`W10-OWNER-A`, `W10-OWNER-B`, `W10-OWNER-A3`,
+`W10-OWNER-C`, and `W10-OWNER-D` automated verified; controlled runtime QA and
+canonical migration deferred)
 
 Audience: Product, Design, Admin operations, Finance, Backend, Frontend, QA, and
 future agents implementing KMO-W10.
@@ -285,10 +285,8 @@ scope, and ownership period. A former owner cannot export current data.
 
 ## 11. Completion Boundary
 
-The Property Owner experience is complete only after W10-OWNER-A through
-W10-OWNER-D pass automated and runtime gates. W10-OWNER-A and W10-OWNER-B have
-committed source, while the read-only Owner portal/reporting slice is source
-implemented with automated review pending and runtime deferred. The final
-reconciliation/security/runtime slice remains planned. The vocabulary is
-authoritative, but the end-to-end feature must remain `IN_PROGRESS` until those
-remaining gates close.
+W10-OWNER-A through W10-OWNER-D are source-complete and
+`AUTOMATED VERIFIED`. The controlled runtime gate remains deferred until the
+documented QA procedure has recorded the target database identity, restore
+evidence, canonical migration evidence, and authenticated browser evidence.
+Accordingly, W10 must not be described as production- or runtime-verified.

@@ -3,7 +3,6 @@ import { AdminUxMasterModule } from '../admin-ux-master/admin-ux-master.module';
 import { HunianGalleryModule } from '../hunian-gallery/hunian-gallery.module';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
-import { PropertyOwnerRoomController } from './property-owner-room.controller';
 import { PublicHunianCatalogController } from './public-hunian-catalog.controller';
 import { PublicHunianCatalogService } from './public-hunian-catalog.service';
 import { PublicRoomController } from './public-room.controller';
@@ -21,7 +20,6 @@ import { RoomService } from './room.service';
     RoomController,
     RoomTypeController,
     RoomFacilityController,
-    PropertyOwnerRoomController,
     PublicRoomController,
     PublicHunianCatalogController,
   ],

@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { HttpException } from '@nestjs/common';
 import type { UserAccessContext } from '../../src/modules/iam/types/iam.types';
@@ -11,6 +13,10 @@ import { ROLES_KEY } from '../../src/modules/rbac/decorators/roles.decorator';
 const actorId = '22222222-2222-4222-8222-222222222222';
 const propertyId = '11111111-1111-4111-8111-111111111111';
 const ownerId = '33333333-3333-4333-8333-333333333333';
+const portalServicePath = resolve(
+  __dirname,
+  '../../src/modules/property-owner-management/property-owner-portal.service.ts',
+);
 const actor = (id = actorId): UserAccessContext => ({
   id,
   email: 'owner@test',
@@ -27,6 +33,12 @@ const actor = (id = actorId): UserAccessContext => ({
   ],
   propertyIds: [],
   sessionId: 'session',
+});
+
+void test('PDF export uses a CommonJS-safe fontkit namespace import', () => {
+  const source = readFileSync(portalServicePath, 'utf8');
+
+  assert.match(source, /import \* as fontkit from '@pdf-lib\/fontkit';/);
 });
 
 const assignment = (from = '2026-08-01', until: string | null = null) => ({
@@ -149,6 +161,30 @@ const reportRow = () => ({
   ],
 });
 
+const assetDetailRow = () => ({
+  room_code: 'AK-05-03',
+  room_status: 'occupied',
+  kost_type: 'apartkost',
+  building_code: 'AK-05',
+  building_name: 'Apart Kost Unit 05',
+  floor_label: 'Unit 05',
+  unit_code: '05',
+  gender_policy: 'female',
+  monthly_price: '1800000',
+  annual_contract_value: '21600000',
+  lease_status: 'active',
+  lease_start_date: '2026-08-06',
+  lease_end_date: '2027-02-06',
+  resident_display_name: 'PUTRI',
+  occupancy_start_date: '2026-08-06',
+  effective_from: '2026-08-01',
+  effective_until: null,
+  assignment_source: 'room_assignment',
+  open_complaints: 1,
+  open_maintenance: 0,
+  updated_at: '2026-08-06T03:00:00.000Z',
+});
+
 function serviceFor(row = reportRow(), owner = ownerId, assignmentRow = assignment()) {
   const calls: Array<{ sql: string; params?: unknown[] }> = [];
   const service = new PropertyOwnerPortalService({
@@ -208,6 +244,53 @@ void test('portal has exact property_owner read authority and GET-only handlers'
       (PropertyOwnerPortalController.prototype as unknown as Record<string, unknown>)[name],
       undefined,
     );
+});
+
+void test('owner asset detail is identity-scoped, assignment-bound, and omits private payloads', async () => {
+  const calls: Array<{ sql: string; params?: unknown[] }> = [];
+  const service = new PropertyOwnerPortalService({
+    client: {
+      query: (sql: string, params?: unknown[]) => {
+        calls.push({ sql, params });
+        if (sql.includes('property_owner_profiles'))
+          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('authorized_asset')) return { rows: [assetDetailRow()] };
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    },
+  } as never);
+
+  const detail = await service.getAssetDetail(actor(), ' AK-05-03 ');
+
+  assert.deepEqual(detail, {
+    room_code: 'AK-05-03',
+    room_status: 'occupied',
+    kost_type: 'apartkost',
+    building: {
+      code: 'AK-05',
+      name: 'Apart Kost Unit 05',
+      floor_label: 'Unit 05',
+      unit_code: '05',
+    },
+    gender_policy: 'female',
+    commercial: { monthly_price: '1800000', annual_contract_value: '21600000' },
+    lease: { status: 'active', start_date: '2026-08-06', end_date: '2027-02-06' },
+    resident: { display_name: 'PUTRI', occupancy_start_date: '2026-08-06' },
+    ownership: {
+      source: 'room_assignment',
+      effective_from: '2026-08-01',
+      effective_until: null,
+    },
+    issues: { open_complaints: 1, open_maintenance: 0 },
+    updated_at: '2026-08-06T03:00:00.000Z',
+  });
+  const authorizationSql = calls[1]?.sql ?? '';
+  assert.match(authorizationSql, /building_owner_assignments/);
+  assert.match(authorizationSql, /room_owner_assignments/);
+  assert.match(authorizationSql, /assignments\.owner_profile_id = \$1/);
+  assert.match(authorizationSql, /rooms\.room_code = \$3/);
+  assert.doesNotMatch(authorizationSql, /payment_proofs|storage_path|nik|phone|email/i);
+  assert.doesNotMatch(JSON.stringify(detail), /nik|ktp|phone|email|storage|proof/i);
 });
 
 void test('missing profile is zero-safe and does not query operational scope', async () => {
@@ -281,6 +364,7 @@ void test('current portal complaints, maintenance, notifications, and leases ret
               {
                 room_code: 'RK-01-01',
                 room_status: 'occupied',
+                kost_type: 'rukost',
                 building_code: 'RK-01',
                 building_name: 'Rumah Kost',
                 lease_status: 'active',
@@ -305,6 +389,7 @@ void test('current portal complaints, maintenance, notifications, and leases ret
   );
   assert.match(summarySql, /notifications\.created_at >= authorized_scope\.scope_from/);
   assert.match(summarySql, /notifications\.created_at < authorized_scope\.scope_until/);
+  assert.match(summarySql, /GROUP BY assignment_state\.scheduled_count/);
   assert.match(calls[2], /leases\.start_date < COALESCE\(scope\.scope_until/);
   assert.match(calls[2], /COALESCE\(leases\.end_date \+ 1, 'infinity'::date\) > scope\.scope_from/);
 });

@@ -4,6 +4,9 @@ import {
   requestBookingLeadRentalContext,
   requestBookingLeadCompletionQuote,
   requestCompleteBookingLead,
+  requestCancelBookingLeadPaymentCommitment,
+  type CancelBookingLeadPaymentCommitmentInput,
+  type BookingLeadPaymentCommitmentRefund,
   type CompleteBookingLeadInput,
   type LeadPaymentCommitment,
 } from "@/lib/admin-booking-lead-completion";
@@ -15,6 +18,11 @@ import { useProperty } from "@/lib/property";
 type CompleteVariables = {
   leadId: string;
   input: CompleteBookingLeadInput;
+  idempotencyKey: string;
+};
+type CancelVariables = {
+  leadId: string;
+  input: CancelBookingLeadPaymentCommitmentInput;
   idempotencyKey: string;
 };
 
@@ -122,4 +130,39 @@ export function useCompleteBookingLead() {
     error: current ? mutation.error : null,
     reset,
   };
+}
+
+/** Cancels and records a full refund only while the lead has not become a lease. */
+export function useCancelBookingLeadPaymentCommitment() {
+  const { currentPropertyId } = useProperty();
+  const queryClient = useQueryClient();
+  const propertyRef = useRef(currentPropertyId);
+  propertyRef.current = currentPropertyId;
+  return useMutation<BookingLeadPaymentCommitmentRefund, unknown, CancelVariables>({
+    mutationFn: async ({ leadId, input, idempotencyKey }) => {
+      if (!input.propertyId || input.propertyId !== propertyRef.current) {
+        throw new Error("PROPERTY_SCOPE_CHANGED");
+      }
+      const result = await requestCancelBookingLeadPaymentCommitment(leadId, input, idempotencyKey);
+      if (input.propertyId !== propertyRef.current) throw new Error("PROPERTY_SCOPE_CHANGED");
+      return result;
+    },
+    onSuccess: async (_result, variables) => {
+      if (variables.input.propertyId !== propertyRef.current) return;
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: bookingLeadListScopeKey(variables.input.propertyId),
+        }),
+        ...bookingHoldInvalidationKeys(variables.input.propertyId).map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        ),
+      ]);
+      toastMutationSuccess("Minat booking dibatalkan dan refund telah dicatat");
+    },
+    onError: (error, variables) => {
+      if (variables.input.propertyId === propertyRef.current) {
+        toastMutationError(error, "Gagal membatalkan minat booking");
+      }
+    },
+  });
 }

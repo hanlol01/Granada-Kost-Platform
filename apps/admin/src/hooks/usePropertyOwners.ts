@@ -57,6 +57,9 @@ export function usePropertyOwnerMutations() {
       queryClient.invalidateQueries({
         queryKey: ["propertyOwnerAssetOptions", propertyId],
       }),
+      queryClient.invalidateQueries({
+        predicate: ({ queryKey }) => queryKey[0] === "roomDetail" && queryKey[2] === propertyId,
+      }),
     ]);
     if (ownerId)
       await queryClient.invalidateQueries({
@@ -259,6 +262,32 @@ export function usePropertyOwnerMutations() {
                   key,
                 ),
           "Periode kepemilikan diakhiri",
+          input.ownerId,
+        )(),
+      onError: (error) => toastMutationError(error, "Pelepasan kepemilikan belum tersimpan"),
+    }),
+    releaseBatch: useMutation({
+      mutationFn: (input: {
+        ownerId: string;
+        assignmentIds: string[];
+        kind: "building" | "room";
+        effectiveUntil: string;
+        reason: string;
+      }) =>
+        guarded(
+          `release-batch:${input.kind}:${input.ownerId}:${[...input.assignmentIds].sort().join(",")}:${input.effectiveUntil}:${input.reason.trim()}`,
+          (propertyId, key) => {
+            const body = {
+              property_id: propertyId,
+              assignment_ids: input.assignmentIds,
+              effective_until: input.effectiveUntil,
+              reason: input.reason,
+            };
+            return input.kind === "building"
+              ? propertyOwnerApi.releaseBuildingBatch(input.ownerId, body, key)
+              : propertyOwnerApi.releaseRoomBatch(input.ownerId, body, key);
+          },
+          `${input.assignmentIds.length} periode kepemilikan diakhiri`,
           input.ownerId,
         )(),
       onError: (error) => toastMutationError(error, "Pelepasan kepemilikan belum tersimpan"),

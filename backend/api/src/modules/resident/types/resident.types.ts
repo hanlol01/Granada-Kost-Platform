@@ -5,6 +5,30 @@
  */
 export type ResidentStatus = 'draft' | 'pending_activation' | 'active' | 'inactive' | 'archived';
 export type ResidentGender = 'male' | 'female' | 'other';
+/** Rent-only Admin projection; deposits and unverified transfers never qualify. */
+export type ResidentRentPaymentStatus =
+  | 'none'
+  | 'booking_fee'
+  | 'down_payment'
+  | 'partial_payment'
+  | 'paid_in_full';
+
+/**
+ * Server-owned operational projection of the contract-settlement timeline.
+ * It deliberately complements, rather than replaces, the payment status:
+ * a resident can have made a DP and still be approaching a settlement
+ * checkpoint.
+ */
+export type ResidentContractSettlementStage =
+  | 'none'
+  | 'awaiting_activation'
+  | 'checkpoint_one_pending'
+  | 'checkpoint_one_met'
+  | 'final_settlement_due'
+  | 'overdue'
+  | 'admin_action_required'
+  | 'termination_pending'
+  | 'paid_in_full';
 
 export type EmergencyContactRecord = {
   id: string;
@@ -39,6 +63,11 @@ export type ResidentRecord = {
   gender: ResidentGender | null;
   residentStatus: ResidentStatus;
   accountStatus: 'active' | 'inactive' | 'suspended' | 'not_provisioned';
+  rentPaymentStatus: ResidentRentPaymentStatus;
+  contractSettlementStage: ResidentContractSettlementStage;
+  contractSettlementDueDate: string | null;
+  contractSettlementRemainingAmount: number;
+  contractSettlementCheckpointRequiredAmount: number;
   roomNumber: string | null;
   leaseStart: string | null;
   leaseEnd: string | null;

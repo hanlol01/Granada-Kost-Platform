@@ -348,6 +348,8 @@ export class AuthService {
       permissions: user.permissions,
       propertyIds: user.propertyIds,
       property_ids: user.propertyIds,
+      passwordChangeRequired: user.passwordChangeRequired === true,
+      password_change_required: user.passwordChangeRequired === true,
     };
   }
 

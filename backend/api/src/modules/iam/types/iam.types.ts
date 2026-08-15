@@ -8,6 +8,7 @@ export type AuthUserRecord = {
   displayName: string;
   userStatus: UserStatus;
   lastLoginAt: Date | null;
+  passwordChangedAt: Date | null;
 };
 
 export type UserSessionRecord = {
@@ -27,6 +28,7 @@ export type UserAccessContext = {
   roles: string[];
   permissions: string[];
   propertyIds: string[];
+  passwordChangeRequired?: boolean;
   sessionId: string;
 };
 

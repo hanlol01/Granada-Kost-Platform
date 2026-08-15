@@ -30,6 +30,31 @@ test('completion preserves the exact payment boundary', () => {
   assert.match(service, /verificationStatus/);
 });
 
+test('a paid booking lead promotes its hold so the 24-hour expiry cannot undo a recorded payment', () => {
+  const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
+  const holds = source('src/modules/booking-lead/repositories/booking-lead-hold.repository.ts');
+  assert.match(service, /SET hold_status='committed'/);
+  assert.match(service, /hold\.hold_status IN \('active','committed'\)/);
+  assert.match(holds, /WHERE id = \$1 AND hold_status = 'active'/);
+  assert.doesNotMatch(holds, /WHERE id = \$1 AND hold_status IN \('active','committed'\)/);
+});
+
+test('a paid booking lead can be cancelled only before onboarding, with an immutable refund record', () => {
+  const controller = source('src/modules/booking-lead/booking-lead-completion.controller.ts');
+  const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
+  const migration = source(
+    'src/infrastructure/database/migrations/032_booking_lead_paid_hold_lifecycle.sql',
+  );
+  assert.match(controller, /cancel-payment-commitment/);
+  assert.match(service, /BOOKING_LEAD_REFUND_UNAVAILABLE/);
+  assert.match(service, /booking_lead_payment_commitment_refunds/);
+  assert.match(service, /commitment\.verification_status === 'verified'/);
+  assert.match(service, /hold_status='released'/);
+  assert.match(service, /status='cancelled'/);
+  assert.match(migration, /booking_lead_payment_commitment_refunds/);
+  assert.match(migration, /hold_status IN \('active', 'committed'\)/);
+});
+
 test('completion quote is a property-authorized active-hold read model', () => {
   const controller = source('src/modules/booking-lead/booking-lead-completion.controller.ts');
   const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
@@ -47,7 +72,7 @@ test('progress projection keeps a property-scoped active tenancy resident and le
   assert.match(service, /lease\.property_id=lead\.property_id/);
 });
 
-test('completion quote remains available after a lead has been completed and before onboarding materializes it', async () => {
+test('completion quote remains available after a paid hold is committed, even after its provisional 24-hour expiry', async () => {
   const queries: string[] = [];
   const client = {
     query: async (statement: string) => {
@@ -70,8 +95,8 @@ test('completion quote remains available after a lead has been completed and bef
     gender: 'male',
     lead_status: 'onboarding',
     hold_id: 'hold-1',
-    hold_status: 'active',
-    expires_at: new Date(Date.now() + 60_000),
+    hold_status: 'committed',
+    expires_at: new Date(Date.now() - 60_000),
     room_id: 'room-1',
     room_number: 'RK-01-01',
     room_kost_type_id: 'kost-type-1',

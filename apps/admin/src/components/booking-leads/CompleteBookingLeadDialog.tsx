@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2 } from "lucide-react";
-import { FilePickerButton } from "@/components/file/FilePickerButton";
-import { FilePreview } from "@/components/file/FilePreview";
+import { CheckCircle2, Download, Loader2 } from "lucide-react";
+import { FileUploadField } from "@/components/file/FileUploadField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,11 +23,11 @@ import type {
   LeadInitialPaymentType,
   LeadPaymentCommitment,
 } from "@/lib/admin-booking-lead-completion";
+import { downloadBookingLeadCommitmentNote } from "@/lib/admin-booking-lead-completion";
 import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
 import { revealFirstValidationError } from "@/lib/validation-focus";
-import { useFileDelete, useFileUpload } from "@/hooks/useFileUpload";
 import type { FileResponse } from "@granada-kost/domain";
 
 type Props = {
@@ -79,11 +78,9 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
   const [visitorPhone, setVisitorPhone] = useState("");
   const [visitorUniversity, setVisitorUniversity] = useState("");
   const [paymentEvidence, setPaymentEvidence] = useState<FileResponse | null>(null);
-  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const quote = useBookingLeadCompletionQuote(open ? lead?.id : null, startDate, termMonths);
-  const evidenceUpload = useFileUpload({ silent: true });
-  const evidenceDelete = useFileDelete({ silent: true });
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +96,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
     setVisitorPhone(lead?.visitorPhone ?? "");
     setVisitorUniversity(lead?.visitorUniversity ?? "");
     setPaymentEvidence(null);
-    setEvidenceError(null);
+    setEvidenceBusy(false);
     setSubmitAttempted(false);
     idempotencyKeyRef.current = null;
   }, [
@@ -151,7 +148,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
 
   const submit = async () => {
     setSubmitAttempted(true);
-    if (!lead || !currentPropertyId || error) return;
+    if (!lead || !currentPropertyId || error || evidenceBusy) return;
     const commitment = await mutation.mutateAsync({
       leadId: lead.id,
       idempotencyKey:
@@ -176,37 +173,11 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
     setReceipt(commitment);
   };
 
-  const uploadEvidence = async (file: File) => {
-    if (!currentPropertyId || evidenceUpload.isUploading) return;
-    setEvidenceError(null);
-    try {
-      const uploaded = await evidenceUpload.uploadAsync({
-        file,
-        propertyId: currentPropertyId,
-        filePurpose: "payment_proof",
-      });
-      if (currentPropertyId !== lead?.propertyId) {
-        await evidenceDelete.mutateAsync(uploaded.id);
-        throw new Error("PROPERTY_SCOPE_CHANGED");
-      }
-      setPaymentEvidence(uploaded);
-    } catch {
-      setEvidenceError("Bukti transfer belum dapat diunggah. Periksa format dan ukuran file.");
-    }
-  };
-
-  const removeEvidence = async () => {
-    if (!paymentEvidence || evidenceDelete.isPending) return;
-    try {
-      await evidenceDelete.mutateAsync(paymentEvidence.id);
-      setPaymentEvidence(null);
-    } catch {
-      setEvidenceError("Bukti transfer belum dapat dihapus. Coba lagi.");
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => !mutation.isPending && !evidenceBusy && onOpenChange(next)}
+    >
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
@@ -247,8 +218,8 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
               </div>
             </dl>
             <p className="mt-3 border-t border-success/20 pt-3 text-muted-foreground">
-              Ini masih komitmen pembayaran Minat Booking. Kuitansi resmi tersedia setelah data
-              penyewaan dikomit dan pembayaran dimaterialisasi ke riwayat penghuni.
+              Nota komitmen pembayaran ini dapat diunduh sekarang. Kuitansi riwayat penghuni
+              diterbitkan setelah data penyewaan dikomit.
             </p>
           </div>
         ) : lead ? (
@@ -363,7 +334,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                 <div className="grid gap-1 sm:text-right">
                   <span className="text-xs font-medium text-muted-foreground">Tarif per bulan</span>
                   <span className="font-semibold">
-                    {quote.data ? formatIDR(quote.data.room.monthlyPrice) : "â€”"}
+                    {quote.data ? formatIDR(quote.data.room.monthlyPrice) : "—"}
                   </span>
                 </div>
                 <div className="grid gap-1">
@@ -375,12 +346,12 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                     Total sewa kontrak
                   </span>
                   <span className="text-lg font-semibold text-primary">
-                    {quote.data ? formatIDR(totalRent) : "â€”"}
+                    {quote.data ? formatIDR(totalRent) : "—"}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground sm:col-span-2">
-                  Rekomendasi DP 25%: {quote.data ? formatIDR(suggestedDp) : "â€”"}. Security
-                  deposit dicatat terpisah dan tidak mengurangi total sewa.
+                  Rekomendasi DP 25%: {quote.data ? formatIDR(suggestedDp) : "—"}. Security deposit
+                  dicatat terpisah dan tidak mengurangi total sewa.
                 </p>
               </div>
               <div>
@@ -479,39 +450,18 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                 </p>
               </fieldset>
               {paymentMethod === "bank_transfer" ? (
-                <div className="space-y-2 rounded-lg border border-dashed p-3">
-                  <Label>
-                    Bukti transfer{" "}
-                    <span className="font-normal text-muted-foreground">(opsional)</span>
-                  </Label>
-                  {paymentEvidence ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <FilePreview file={paymentEvidence} size={56} />
-                      <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {paymentEvidence.original_filename}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void removeEvidence()}
-                        disabled={evidenceDelete.isPending}
-                      >
-                        Hapus
-                      </Button>
-                    </div>
-                  ) : (
-                    <FilePickerButton
-                      filePurpose="payment_proof"
-                      disabled={evidenceUpload.isUploading}
-                      onFilesSelected={(files) => void uploadEvidence(files[0]!)}
-                    />
-                  )}
-                  {evidenceError ? (
-                    <p className="text-xs text-destructive" role="alert">
-                      {evidenceError}
-                    </p>
-                  ) : null}
-                </div>
+                <FileUploadField
+                  propertyId={currentPropertyId ?? ""}
+                  filePurpose="payment_proof"
+                  label="Bukti transfer (opsional)"
+                  description="Unggah JPG, PNG, WebP, atau PDF. Foto besar dikompresi otomatis; gunakan Lihat untuk memeriksa file sebelum menyimpan."
+                  value={paymentEvidence}
+                  onChange={setPaymentEvidence}
+                  onBusyChange={setEvidenceBusy}
+                  disabled={!currentPropertyId || mutation.isPending}
+                  capture="environment"
+                  className="rounded-xl border border-border bg-muted/20 p-4"
+                />
               ) : null}
               <label className="grid gap-1.5 text-sm font-medium">
                 Catatan pembayaran{" "}
@@ -546,7 +496,22 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
         <DialogFooter>
           {receipt ? (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  currentPropertyId && lead
+                    ? void downloadBookingLeadCommitmentNote({
+                        propertyId: currentPropertyId,
+                        leadId: lead.id,
+                      })
+                    : undefined
+                }
+                disabled={!currentPropertyId || !lead}
+              >
+                <Download className="mr-2 h-4 w-4" /> Unduh{" "}
+                {receipt.verificationStatus === "verified" ? "kuitansi" : "nota pembayaran"}
+              </Button>
+              <Button variant="secondary" onClick={() => onOpenChange(false)}>
                 Tutup dan kembali ke Minat Booking
               </Button>
               <Button onClick={() => onComplete(lead!.id, receipt)}>Lengkapi Data Penyewaan</Button>
@@ -554,13 +519,13 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
           ) : (
             <>
               <Button
-                variant="outline"
+                variant="secondary"
                 onClick={() => onOpenChange(false)}
                 disabled={mutation.isPending}
               >
                 Batal
               </Button>
-              <Button onClick={() => void submit()} disabled={mutation.isPending}>
+              <Button onClick={() => void submit()} disabled={mutation.isPending || evidenceBusy}>
                 {mutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (

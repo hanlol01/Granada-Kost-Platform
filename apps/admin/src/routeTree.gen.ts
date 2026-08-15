@@ -31,6 +31,7 @@ import { Route as RoomsRouteRouteImport } from './routes/rooms/route'
 import { Route as PenyewaanRouteRouteImport } from './routes/penyewaan/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RoomsIndexRouteImport } from './routes/rooms/index'
+import { Route as PropertyOwnersIndexRouteImport } from './routes/property-owners/index'
 import { Route as PenyewaanIndexRouteImport } from './routes/penyewaan/index'
 import { Route as TenantsResidentIdRouteImport } from './routes/tenants/$residentId'
 import { Route as RoomsRumahKostRouteImport } from './routes/rooms/rumah-kost'
@@ -38,8 +39,10 @@ import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
 import { Route as RoomsFasilitasRouteImport } from './routes/rooms/fasilitas'
 import { Route as RoomsApartKostRouteImport } from './routes/rooms/apart-kost'
 import { Route as RoomsRoomNumberRouteImport } from './routes/rooms/$roomNumber'
+import { Route as PropertyOwnersOwnerIdRouteImport } from './routes/property-owners/$ownerId'
 import { Route as PenyewaanTambahRouteImport } from './routes/penyewaan/tambah'
 import { Route as PenyewaanLeaseIdRouteImport } from './routes/penyewaan/$leaseId'
+import { Route as PropertyOwnersPortalAssetsRoomCodeRouteImport } from './routes/property-owners/portal/assets/$roomCode'
 
 const VehiclesRoute = VehiclesRouteImport.update({
   id: '/vehicles',
@@ -151,6 +154,11 @@ const RoomsIndexRoute = RoomsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const PropertyOwnersIndexRoute = PropertyOwnersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PropertyOwnersRoute,
+} as any)
 const PenyewaanIndexRoute = PenyewaanIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -186,6 +194,11 @@ const RoomsRoomNumberRoute = RoomsRoomNumberRouteImport.update({
   path: '/$roomNumber',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const PropertyOwnersOwnerIdRoute = PropertyOwnersOwnerIdRouteImport.update({
+  id: '/$ownerId',
+  path: '/$ownerId',
+  getParentRoute: () => PropertyOwnersRoute,
+} as any)
 const PenyewaanTambahRoute = PenyewaanTambahRouteImport.update({
   id: '/tambah',
   path: '/tambah',
@@ -196,6 +209,12 @@ const PenyewaanLeaseIdRoute = PenyewaanLeaseIdRouteImport.update({
   path: '/$leaseId',
   getParentRoute: () => PenyewaanRouteRoute,
 } as any)
+const PropertyOwnersPortalAssetsRoomCodeRoute =
+  PropertyOwnersPortalAssetsRoomCodeRouteImport.update({
+    id: '/portal/assets/$roomCode',
+    path: '/portal/assets/$roomCode',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -212,7 +231,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
-  '/property-owners': typeof PropertyOwnersRoute
+  '/property-owners': typeof PropertyOwnersRouteWithChildren
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -221,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -228,7 +248,9 @@ export interface FileRoutesByFullPath {
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan/': typeof PenyewaanIndexRoute
+  '/property-owners/': typeof PropertyOwnersIndexRoute
   '/rooms/': typeof RoomsIndexRoute
+  '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -243,7 +265,6 @@ export interface FileRoutesByTo {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
-  '/property-owners': typeof PropertyOwnersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -252,6 +273,7 @@ export interface FileRoutesByTo {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -259,7 +281,9 @@ export interface FileRoutesByTo {
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan': typeof PenyewaanIndexRoute
+  '/property-owners': typeof PropertyOwnersIndexRoute
   '/rooms': typeof RoomsIndexRoute
+  '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -277,7 +301,7 @@ export interface FileRoutesById {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
-  '/property-owners': typeof PropertyOwnersRoute
+  '/property-owners': typeof PropertyOwnersRouteWithChildren
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
@@ -286,6 +310,7 @@ export interface FileRoutesById {
   '/vehicles': typeof VehiclesRoute
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
+  '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -293,7 +318,9 @@ export interface FileRoutesById {
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan/': typeof PenyewaanIndexRoute
+  '/property-owners/': typeof PropertyOwnersIndexRoute
   '/rooms/': typeof RoomsIndexRoute
+  '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -321,6 +348,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/property-owners/$ownerId'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -328,7 +356,9 @@ export interface FileRouteTypes {
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
     | '/penyewaan/'
+    | '/property-owners/'
     | '/rooms/'
+    | '/property-owners/portal/assets/$roomCode'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -343,7 +373,6 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/parking'
     | '/payments'
-    | '/property-owners'
     | '/reports'
     | '/settings'
     | '/smart-lock'
@@ -352,6 +381,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/property-owners/$ownerId'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -359,7 +389,9 @@ export interface FileRouteTypes {
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
     | '/penyewaan'
+    | '/property-owners'
     | '/rooms'
+    | '/property-owners/portal/assets/$roomCode'
   id:
     | '__root__'
     | '/'
@@ -385,6 +417,7 @@ export interface FileRouteTypes {
     | '/vehicles'
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
+    | '/property-owners/$ownerId'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -392,7 +425,9 @@ export interface FileRouteTypes {
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
     | '/penyewaan/'
+    | '/property-owners/'
     | '/rooms/'
+    | '/property-owners/portal/assets/$roomCode'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -410,7 +445,7 @@ export interface RootRouteChildren {
   NotificationsRoute: typeof NotificationsRoute
   ParkingRoute: typeof ParkingRoute
   PaymentsRoute: typeof PaymentsRoute
-  PropertyOwnersRoute: typeof PropertyOwnersRoute
+  PropertyOwnersRoute: typeof PropertyOwnersRouteWithChildren
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SmartLockRoute: typeof SmartLockRoute
@@ -575,6 +610,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsIndexRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/property-owners/': {
+      id: '/property-owners/'
+      path: '/'
+      fullPath: '/property-owners/'
+      preLoaderRoute: typeof PropertyOwnersIndexRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
     '/penyewaan/': {
       id: '/penyewaan/'
       path: '/'
@@ -624,6 +666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsRoomNumberRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/property-owners/$ownerId': {
+      id: '/property-owners/$ownerId'
+      path: '/$ownerId'
+      fullPath: '/property-owners/$ownerId'
+      preLoaderRoute: typeof PropertyOwnersOwnerIdRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
     '/penyewaan/tambah': {
       id: '/penyewaan/tambah'
       path: '/tambah'
@@ -637,6 +686,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/penyewaan/$leaseId'
       preLoaderRoute: typeof PenyewaanLeaseIdRouteImport
       parentRoute: typeof PenyewaanRouteRoute
+    }
+    '/property-owners/portal/assets/$roomCode': {
+      id: '/property-owners/portal/assets/$roomCode'
+      path: '/portal/assets/$roomCode'
+      fullPath: '/property-owners/portal/assets/$roomCode'
+      preLoaderRoute: typeof PropertyOwnersPortalAssetsRoomCodeRouteImport
+      parentRoute: typeof PropertyOwnersRoute
     }
   }
 }
@@ -679,6 +735,23 @@ const RoomsRouteRouteWithChildren = RoomsRouteRoute._addFileChildren(
   RoomsRouteRouteChildren,
 )
 
+interface PropertyOwnersRouteChildren {
+  PropertyOwnersOwnerIdRoute: typeof PropertyOwnersOwnerIdRoute
+  PropertyOwnersIndexRoute: typeof PropertyOwnersIndexRoute
+  PropertyOwnersPortalAssetsRoomCodeRoute: typeof PropertyOwnersPortalAssetsRoomCodeRoute
+}
+
+const PropertyOwnersRouteChildren: PropertyOwnersRouteChildren = {
+  PropertyOwnersOwnerIdRoute: PropertyOwnersOwnerIdRoute,
+  PropertyOwnersIndexRoute: PropertyOwnersIndexRoute,
+  PropertyOwnersPortalAssetsRoomCodeRoute:
+    PropertyOwnersPortalAssetsRoomCodeRoute,
+}
+
+const PropertyOwnersRouteWithChildren = PropertyOwnersRoute._addFileChildren(
+  PropertyOwnersRouteChildren,
+)
+
 interface TenantsRouteChildren {
   TenantsResidentIdRoute: typeof TenantsResidentIdRoute
 }
@@ -705,7 +778,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotificationsRoute: NotificationsRoute,
   ParkingRoute: ParkingRoute,
   PaymentsRoute: PaymentsRoute,
-  PropertyOwnersRoute: PropertyOwnersRoute,
+  PropertyOwnersRoute: PropertyOwnersRouteWithChildren,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SmartLockRoute: SmartLockRoute,

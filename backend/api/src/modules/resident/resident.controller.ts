@@ -135,6 +135,45 @@ export class ResidentController {
     });
   }
 
+  @Get(':residentId/account')
+  @RequirePermissions('resident.read')
+  async accountSummary(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId', new ParseUUIDPipe({ version: '4' })) residentId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    const account = await this.accounts.summary(user, residentId, propertyId);
+    return v2Data({
+      status: account.status,
+      login_email: account.loginEmail,
+      login_phone: account.loginPhone,
+      password_change_required: account.passwordChangeRequired,
+    });
+  }
+
+  @Post(':residentId/account/reset-password')
+  @RequirePermissions('resident.manage')
+  async resetAccountPassword(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId', new ParseUUIDPipe({ version: '4' })) residentId: string,
+    @Body() dto: ProvisionResidentAccountDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const account = await this.accounts.resetPassword(
+      user,
+      residentId,
+      dto.property_id,
+      this.contextFromRequest(request),
+    );
+    return v2Data({
+      status: account.status,
+      login_email: account.loginEmail,
+      login_phone: account.loginPhone,
+      password_change_required: account.passwordChangeRequired,
+      temporary_password: account.temporaryPassword,
+    });
+  }
+
   @Get(':residentId')
   @RequirePermissions('resident.read')
   async get(
@@ -188,6 +227,12 @@ export class ResidentController {
         lease_end: resident.leaseEnd,
         lease_authority_count: resident.leaseAuthorityCount,
         account_status: resident.accountStatus,
+        rent_payment_status: resident.rentPaymentStatus,
+        contract_settlement_stage: resident.contractSettlementStage,
+        contract_settlement_due_date: resident.contractSettlementDueDate,
+        contract_settlement_remaining_amount: resident.contractSettlementRemainingAmount,
+        contract_settlement_checkpoint_required_amount:
+          resident.contractSettlementCheckpointRequiredAmount,
         resident_status: resident.residentStatus,
         created_at: resident.createdAt,
         updated_at: resident.updatedAt,

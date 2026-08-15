@@ -5,7 +5,6 @@ import { CheckInController } from './check-in.controller';
 import { CheckOutController } from './check-out.controller';
 import { OccupancyController } from './occupancy.controller';
 import { RoomOccupancyController } from './room-occupancy.controller';
-import { PropertyOwnerOccupancyController } from './property-owner-occupancy.controller';
 import { OccupancyService } from './occupancy.service';
 import { OccupancyRepository } from './repositories/occupancy.repository';
 
@@ -16,7 +15,6 @@ import { OccupancyRepository } from './repositories/occupancy.repository';
     RoomOccupancyController,
     CheckInController,
     CheckOutController,
-    PropertyOwnerOccupancyController,
   ],
   providers: [OccupancyRepository, OccupancyService],
 })

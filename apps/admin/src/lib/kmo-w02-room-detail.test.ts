@@ -17,6 +17,8 @@ const TYPE_ID = "44444444-4444-4444-8444-444444444444";
 const FACILITY_ID = "55555555-5555-4555-8555-555555555555";
 const LEASE_ID = "66666666-6666-4666-8666-666666666666";
 const PHOTO_ID = "77777777-7777-4777-8777-777777777777";
+const OWNER_ID = "88888888-8888-4888-8888-888888888888";
+const RESIDENT_ID = "99999999-9999-4999-8999-999999999999";
 const ADMIN_SRC = fileURLToPath(new URL("../", import.meta.url));
 
 const source = (relativePath: string): string =>
@@ -48,12 +50,13 @@ function detailWire() {
         monthly_price: 1_800_000,
         annual_contract_value: 21_600_000,
         minimum_dp_amount: 5_400_000,
-        minimum_dp_label: "Minimum 25% dari nilai kontrak tahunan",
+        minimum_dp_label: "Rekomendasi 25% dari nilai kontrak tahunan",
         security_deposit_required: 1_800_000,
         payment_plan_description: "Tahunan penuh atau angsuran per dua bulan",
         facilities: [{ id: FACILITY_ID, name: "Kasur" }],
       },
       resident: {
+        id: RESIDENT_ID,
         display_name: "Penghuni Aktif",
         account_status: "active",
         university: null,
@@ -107,9 +110,13 @@ function detailWire() {
         },
       ],
       ownership: {
-        display_name: "KOSTATION",
-        source: "policy_default",
-        ownership_reconciliation_required: true,
+        owner_profile_id: OWNER_ID,
+        display_name: "Hans",
+        source: "room_assignment",
+        assignment_kind: "room",
+        effective_from: "2026-08-14",
+        effective_until: null,
+        assignment_status: "active",
       },
       timeline: [
         {
@@ -119,7 +126,7 @@ function detailWire() {
         },
       ],
       links: {
-        resident: null,
+        resident: `/tenants/${RESIDENT_ID}`,
         lease: `/penyewaan/${LEASE_ID}`,
         billing: null,
         vehicles: null,
@@ -136,7 +143,28 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
   assert.equal(detail.number, "RK-01-01");
   assert.equal(detail.commercial.minimumDpAmount, 5_400_000);
   assert.equal(detail.commercial.securityDepositRequired, 1_800_000);
-  assert.equal(detail.ownership.source, "policy_default");
+  assert.equal(detail.ownership.displayName, "Hans");
+  assert.equal(detail.ownership.ownerProfileId, OWNER_ID);
+  assert.equal(detail.ownership.source, "room_assignment");
+  assert.equal(detail.resident?.id, RESIDENT_ID);
+  assert.equal(detail.links.resident, `/tenants/${RESIDENT_ID}`);
+  const kostationOwned = parseRoomDetailEnvelope({
+    ...detailWire(),
+    data: {
+      ...detailWire().data,
+      ownership: {
+        owner_profile_id: null,
+        display_name: "KOSTATION",
+        source: "kostation_default",
+        assignment_kind: null,
+        effective_from: null,
+        effective_until: null,
+        assignment_status: null,
+      },
+    },
+  });
+  assert.equal(kostationOwned.ownership.displayName, "KOSTATION");
+  assert.equal(kostationOwned.ownership.assignmentStatus, null);
   assert.equal(detail.links.lease, `/penyewaan/${LEASE_ID}`);
   assert.equal(detail.billing.verifiedInvoiceAllocated, 5_400_000);
   assert.equal(assertRoomDetailScope(detail, PROPERTY_ID, " RK-01-01 "), detail);
@@ -173,9 +201,8 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
       data: {
         ...detailWire().data,
         ownership: {
-          display_name: "Investor Sintetis",
+          ...detailWire().data.ownership,
           source: "policy_default",
-          ownership_reconciliation_required: true,
         },
       },
     }),
@@ -191,6 +218,15 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
             label: "Label dari payload mentah",
           },
         ],
+      },
+    }),
+  );
+  assert.throws(() =>
+    parseRoomDetailEnvelope({
+      ...detailWire(),
+      data: {
+        ...detailWire().data,
+        ownership: { ...detailWire().data.ownership, phone: "0857979541137" },
       },
     }),
   );
@@ -315,6 +351,9 @@ test("production route, table navigation, and registry expose one full-page deta
   assert.match(routeTree, /rooms\/\$roomNumber/);
   assert.match(page, /Breadcrumb detail kamar/);
   assert.match(page, /KOST_TYPE_LABEL\[detail\.category\.code\]/);
+  assert.match(page, /ownershipSourceLabel\(detail\.ownership\.source\)/);
+  assert.match(page, /ownershipPeriodLabel\(/);
+  assert.doesNotMatch(page, /ownershipReconciliationRequired|KMO-W10|Kebijakan default/);
 });
 
 test("full page keeps every operational section, terminal state, and honest quick-link policy", () => {
@@ -353,6 +392,42 @@ test("full page keeps every operational section, terminal state, and honest quic
     '<a href="/payments?room_id=opaque">Tagihan</a>',
   );
   assert.match(fakeLink, /room_id=opaque/);
+});
+
+test("room detail keeps semantic status badges and aligned high-contrast data cards", () => {
+  const page = source("components/rooms/RoomDetailPage.tsx");
+
+  assert.match(page, /roomStatusBadgeClass\(detail\.physical\.status\)/);
+  assert.match(page, /bg-success\/10/);
+  assert.match(page, /border-foreground\/15/);
+  assert.match(page, /className="min-w-0 h-full"/);
+  assert.match(page, /className="h-full min-w-0/);
+});
+
+test("room detail keeps operational spacing and owner-scoped navigation", () => {
+  const page = source("components/rooms/RoomDetailPage.tsx");
+
+  assert.match(page, /\["Unit", detail\.physical\.floorLabel\]/);
+  assert.match(page, /\["DP rekomendasi", detail\.commercial\.minimumDpLabel\]/);
+  assert.match(page, /px-6 pb-6 pt-5/);
+  assert.match(page, /gap-x-8 gap-y-5/);
+  assert.match(page, /to="\/property-owners\/\$ownerId"/);
+  assert.match(page, /params=\{\{ ownerId: detail\.ownership\.ownerProfileId \}\}/);
+  assert.match(page, /Buka detail owner/);
+  assert.match(
+    page,
+    /Pembayaran owner belum tersedia sebagai rute admin yang terikat ke pemilik dan\s+periode\./,
+  );
+  assert.doesNotMatch(page, /<Link to="\/payments">/);
+});
+
+test("room tenancy action routes to the active resident, not lease detail", () => {
+  const page = source("components/rooms/RoomDetailPage.tsx");
+
+  assert.match(page, /href=\{detail\.links\.resident\}/);
+  assert.match(page, /enabledLabel="Buka detail penghuni"/);
+  assert.doesNotMatch(page, /href=\{detail\.links\.lease\}/);
+  assert.doesNotMatch(page, /enabledLabel="Buka detail penyewaan"/);
 });
 
 test("safe editor is update-only, lifecycle-aware, and refreshes old and new detail keys", () => {

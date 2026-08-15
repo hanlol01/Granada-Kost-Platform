@@ -232,7 +232,7 @@ function GaleriRoute() {
           file,
           propertyId: scope.propertyId,
           filePurpose: "hunian_gallery",
-          compress: false,
+          compress: true,
         });
         uploadedIds.push(source.id);
         if (!scopeIsCurrent()) throw new Error("PROPERTY_SCOPE_CHANGED");

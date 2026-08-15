@@ -1,5 +1,7 @@
 import { ApiError } from "@granada-kost/domain";
+import { getAccessToken } from "@/lib/api";
 import { adminUxV2Requester } from "./admin-ux-api";
+import { env } from "./env";
 
 export type LeadInitialPaymentType = "booking_fee" | "down_payment" | "full_settlement";
 export type LeadPaymentCommitment = {
@@ -76,6 +78,70 @@ export type CompleteBookingLeadInput = {
   visitorPhone?: string;
   visitorUniversity?: string;
 };
+
+export type CancelBookingLeadPaymentCommitmentInput = {
+  propertyId: string;
+  refundMethod: "cash" | "bank_transfer";
+  refundNote?: string;
+  refundEvidenceFileIds?: string[];
+};
+
+export type BookingLeadPaymentCommitmentRefund = {
+  refundId: string;
+  commitmentId: string;
+  refundAmount: number;
+  refundMethod: "cash" | "bank_transfer";
+  refundedAt: string;
+};
+
+async function openAndDownloadBookingLeadPdf(path: string, filename: string): Promise<void> {
+  // Open synchronously so browser popup protection does not block the document preview.
+  const previewTab = window.open("about:blank", "_blank");
+  if (previewTab) previewTab.opener = null;
+  const token = getAccessToken();
+  const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: {
+      Accept: "application/pdf",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    previewTab?.close();
+    throw new Error("Dokumen kuitansi belum dapat dimuat. Coba lagi.");
+  }
+  const url = URL.createObjectURL(await response.blob());
+  if (previewTab) previewTab.location.replace(url);
+  else window.location.assign(url);
+
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function downloadBookingLeadCommitmentNote(input: {
+  propertyId: string;
+  leadId: string;
+}): Promise<void> {
+  return openAndDownloadBookingLeadPdf(
+    `/booking-leads/${encodeURIComponent(input.leadId)}/payment-commitment-receipt/document?property_id=${encodeURIComponent(input.propertyId)}`,
+    "kuitansi-pembayaran-awal.pdf",
+  );
+}
+
+export function downloadBookingLeadCancellationReceipt(input: {
+  propertyId: string;
+  leadId: string;
+}): Promise<void> {
+  return openAndDownloadBookingLeadPdf(
+    `/booking-leads/${encodeURIComponent(input.leadId)}/cancellation-receipt/document?property_id=${encodeURIComponent(input.propertyId)}`,
+    "kuitansi-refund-minat-booking.pdf",
+  );
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -295,6 +361,38 @@ export async function requestCompleteBookingLead(
     { idempotencyKey },
   );
   return commitment(object(response).data);
+}
+
+function parseBookingLeadPaymentCommitmentRefund(
+  value: unknown,
+): BookingLeadPaymentCommitmentRefund {
+  const row = object(object(value).data);
+  return {
+    refundId: id(row.refund_id),
+    commitmentId: id(row.commitment_id),
+    refundAmount: money(row.refund_amount),
+    refundMethod: oneOf(row.refund_method, ["cash", "bank_transfer"] as const),
+    refundedAt: text(row.refunded_at),
+  };
+}
+
+export async function requestCancelBookingLeadPaymentCommitment(
+  leadId: string,
+  input: CancelBookingLeadPaymentCommitmentInput,
+  idempotencyKey: string,
+): Promise<BookingLeadPaymentCommitmentRefund> {
+  return parseBookingLeadPaymentCommitmentRefund(
+    await adminUxV2Requester.post<unknown>(
+      `/booking-leads/${encodeURIComponent(leadId)}/cancel-payment-commitment`,
+      {
+        property_id: input.propertyId,
+        refund_method: input.refundMethod,
+        refund_note: input.refundNote?.trim() || undefined,
+        refund_evidence_file_ids: input.refundEvidenceFileIds,
+      },
+      { idempotencyKey },
+    ),
+  );
 }
 export async function requestBookingLeadRentalContext(leadId: string, propertyId: string) {
   return parseBookingLeadRentalContext(

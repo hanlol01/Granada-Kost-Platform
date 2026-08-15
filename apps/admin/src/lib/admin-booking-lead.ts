@@ -82,7 +82,7 @@ export type BookingLeadProgress = {
   recordedAt: string;
   targetRoomNumber: string | null;
   hold: {
-    status: "active" | "released" | "expired";
+    status: "active" | "committed" | "released" | "expired";
     roomNumber: string | null;
     startsAt: string;
     expiresAt: string;
@@ -90,6 +90,7 @@ export type BookingLeadProgress = {
     releaseReason: string | null;
   } | null;
   paymentCommitment: {
+    id: string;
     paymentType: "booking_fee" | "down_payment" | "full_settlement";
     rentCreditAmount: number;
     securityDepositAmount: number;
@@ -99,6 +100,14 @@ export type BookingLeadProgress = {
     endDate: string;
     termMonths: number;
     materializedAt: string | null;
+  } | null;
+  cancellation: {
+    id: string;
+    refundAmount: number;
+    refundMethod: "cash" | "bank_transfer";
+    refundNote: string | null;
+    refundEvidenceFileIds: string[];
+    refundedAt: string;
   } | null;
   onboarding: { status: string; committedAt: string | null } | null;
   tenancy: {
@@ -139,6 +148,13 @@ type BookingLeadPatch = (
   path: string,
   body: { property_id: string; status: BookingLeadStatus },
   options: { idempotencyKey: string },
+) => Promise<unknown>;
+type BookingLeadDelete = (
+  path: string,
+  options?: {
+    query?: Record<string, string | number | boolean | undefined | null>;
+    idempotencyKey?: string;
+  },
 ) => Promise<unknown>;
 
 type QuickBookingRoom = {
@@ -199,7 +215,7 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})$/;
 const INVALID_RESPONSE = "Invalid booking lead response";
-const HOLD_STATUSES = new Set(["active", "released", "expired"]);
+const HOLD_STATUSES = new Set(["active", "committed", "released", "expired"]);
 const PAYMENT_TYPES = new Set(["booking_fee", "down_payment", "full_settlement"]);
 const PAYMENT_METHODS = new Set(["cash", "bank_transfer"]);
 const PAYMENT_VERIFICATION_STATUSES = new Set(["verified", "pending_confirmation"]);
@@ -407,6 +423,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
   }
   const progressKeys = [
     "hold",
+    "cancellation",
     "lead_status",
     "onboarding",
     "payment_commitment",
@@ -426,6 +443,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
     throw new Error("Invalid booking lead progress response");
   }
   const hold = data.hold === null ? null : record(data.hold);
+  const cancellation = data.cancellation === null ? null : record(data.cancellation);
   const payment = data.payment_commitment === null ? null : record(data.payment_commitment);
   const onboarding = data.onboarding === null ? null : record(data.onboarding);
   const tenancy = data.tenancy === null ? null : record(data.tenancy);
@@ -448,6 +466,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
     payment &&
     !exactKeysFor(payment, [
       "end_date",
+      "id",
       "materialized_at",
       "payment_method",
       "payment_type",
@@ -456,6 +475,19 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
       "start_date",
       "term_months",
       "verification_status",
+    ])
+  ) {
+    throw new Error("Invalid booking lead progress response");
+  }
+  if (
+    cancellation &&
+    !exactKeysFor(cancellation, [
+      "id",
+      "refund_amount",
+      "refund_evidence_file_ids",
+      "refund_method",
+      "refund_note",
+      "refunded_at",
     ])
   ) {
     throw new Error("Invalid booking lead progress response");
@@ -499,7 +531,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
           const status = requiredString(hold, "status");
           if (!HOLD_STATUSES.has(status)) throw new Error("Invalid booking lead progress response");
           return {
-            status: status as "active" | "released" | "expired",
+            status: status as "active" | "committed" | "released" | "expired",
             roomNumber: nullableNonEmptyString(hold, "room_number"),
             startsAt: requiredTimestamp(hold, "starts_at"),
             expiresAt: requiredTimestamp(hold, "expires_at"),
@@ -521,6 +553,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
             throw new Error("Invalid booking lead progress response");
           }
           return {
+            id: requiredUuid(payment, "id"),
             paymentType: paymentType as "booking_fee" | "down_payment" | "full_settlement",
             rentCreditAmount: requiredNonNegativeInteger(payment, "rent_credit_amount"),
             securityDepositAmount: requiredNonNegativeInteger(payment, "security_deposit_amount"),
@@ -530,6 +563,30 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
             endDate: requiredDateOnly(payment, "end_date"),
             termMonths: requiredPositiveInteger(payment, "term_months"),
             materializedAt: nullableTimestamp(payment, "materialized_at"),
+          };
+        })()
+      : null,
+    cancellation: cancellation
+      ? (() => {
+          const refundMethod = requiredString(cancellation, "refund_method");
+          if (!PAYMENT_METHODS.has(refundMethod)) {
+            throw new Error("Invalid booking lead progress response");
+          }
+          const evidence = cancellation.refund_evidence_file_ids;
+          if (!Array.isArray(evidence) || !evidence.every((value) => typeof value === "string")) {
+            throw new Error("Invalid booking lead progress response");
+          }
+          return {
+            id: requiredUuid(cancellation, "id"),
+            refundAmount: requiredNonNegativeInteger(cancellation, "refund_amount"),
+            refundMethod: refundMethod as "cash" | "bank_transfer",
+            refundNote: nullableNonEmptyString(cancellation, "refund_note"),
+            refundEvidenceFileIds: evidence.map((value) => {
+              if (!UUID_PATTERN.test(value))
+                throw new Error("Invalid booking lead progress response");
+              return value;
+            }),
+            refundedAt: requiredTimestamp(cancellation, "refunded_at"),
           };
         })()
       : null,
@@ -682,6 +739,27 @@ export async function requestUpdateAdminBookingLeadStatusCommand(
     throw new Error(INVALID_RESPONSE);
   }
   return parseAdminBookingLead(envelope.data);
+}
+
+export async function requestArchiveAdminBookingLead(
+  del: BookingLeadDelete,
+  input: { propertyId: string; leadId: string; idempotencyKey: string },
+): Promise<{ archived: true }> {
+  if (!input.propertyId || !input.leadId || !input.idempotencyKey) {
+    throw new Error("INVALID_BOOKING_LEAD_ARCHIVE_REQUEST");
+  }
+  const envelope = record(
+    await del(`/booking-leads/${input.leadId}`, {
+      query: { property_id: input.propertyId },
+      idempotencyKey: input.idempotencyKey,
+    }),
+  );
+  if (!envelope || Object.keys(envelope).join(",") !== "data") {
+    throw new Error(INVALID_RESPONSE);
+  }
+  const data = record(envelope.data);
+  if (!data || data.archived !== true) throw new Error(INVALID_RESPONSE);
+  return { archived: true };
 }
 
 export function canCreateAdminBookingLead(access: QuickBookingAccess): boolean {

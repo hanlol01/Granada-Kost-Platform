@@ -44,6 +44,8 @@ export const w06BillingKeys = {
     status: string,
     sort: string,
     dueWithinDays: number | null,
+    dateFrom: string | null,
+    dateTo: string | null,
   ) =>
     [
       ...w06BillingKeys.root(propertyId),
@@ -54,6 +56,8 @@ export const w06BillingKeys = {
       status,
       sort,
       dueWithinDays,
+      dateFrom,
+      dateTo,
     ] as const,
   resident: (propertyId: string, residentId: string) =>
     [...w06BillingKeys.root(propertyId), "resident", residentId] as const,
@@ -65,6 +69,8 @@ export const w06BillingKeys = {
     method: string,
     purpose: string,
     dueWithinDays: number | null,
+    dateFrom: string | null,
+    dateTo: string | null,
   ) =>
     [
       ...w06BillingKeys.root(propertyId),
@@ -75,6 +81,8 @@ export const w06BillingKeys = {
       method,
       purpose,
       dueWithinDays,
+      dateFrom,
+      dateTo,
     ] as const,
   proofs: (propertyId: string, status: string, offset: number) =>
     [...w06BillingKeys.root(propertyId), "proofs", status, offset] as const,
@@ -121,6 +129,8 @@ export function useBillingWorklist(
     status?: Exclude<W06InvoiceStatus, "draft" | "paid" | "void">;
     sort?: "due_date_asc" | "due_date_desc" | "resident_asc";
     dueWithinDays?: number;
+    dateFrom?: string;
+    dateTo?: string;
   },
 ) {
   return useQuery({
@@ -132,6 +142,8 @@ export function useBillingWorklist(
       input.status ?? "all",
       input.sort ?? "due_date_asc",
       input.dueWithinDays ?? null,
+      input.dateFrom ?? null,
+      input.dateTo ?? null,
     ),
     queryFn: ({ signal }) =>
       getBillingWorklist(
@@ -143,6 +155,8 @@ export function useBillingWorklist(
           status: input.status,
           sort: input.sort,
           dueWithinDays: input.dueWithinDays,
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
         },
         signal,
       ),
@@ -167,6 +181,8 @@ export function useBillingPayments(
     method?: W06PaymentMethod;
     purpose?: W06PaymentPurpose;
     dueWithinDays?: number;
+    dateFrom?: string;
+    dateTo?: string;
   } = {},
 ) {
   const offset = input.offset ?? 0;
@@ -179,6 +195,8 @@ export function useBillingPayments(
       input.method ?? "all",
       input.purpose ?? "all",
       input.dueWithinDays ?? null,
+      input.dateFrom ?? null,
+      input.dateTo ?? null,
     ),
     queryFn: ({ signal }) =>
       getBillingPayments(
@@ -190,6 +208,8 @@ export function useBillingPayments(
           method: input.method,
           purpose: input.purpose,
           dueWithinDays: input.dueWithinDays,
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
         },
         signal,
       ),

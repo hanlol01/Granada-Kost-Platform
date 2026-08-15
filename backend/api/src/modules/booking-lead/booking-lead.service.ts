@@ -27,6 +27,7 @@ const TERMINAL_STATUSES: BookingLeadStatus[] = [
   'leased',
   'cancelled',
 ];
+const ARCHIVABLE_STATUSES: BookingLeadStatus[] = ['rejected', 'expired', 'cancelled'];
 const ALLOWED_TRANSITIONS: Record<BookingLeadStatus, BookingLeadStatus[]> = {
   new: ['contacted', 'rejected', 'expired'],
   contacted: ['rejected', 'expired'],
@@ -290,6 +291,91 @@ export class BookingLeadService {
       });
     }
     return lead;
+  }
+
+  async archiveTerminalLead(
+    leadId: string,
+    propertyId: string,
+    rawIdempotencyKey: string | undefined,
+    context: BookingLeadRequestContext & { actorUserId: string },
+  ) {
+    const idempotencyKey = this.requireIdempotencyKey(rawIdempotencyKey);
+    const route = 'DELETE /booking-leads/:leadId';
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          actor_id: context.actorUserId,
+          booking_lead_id: leadId,
+          property_id: propertyId,
+          action: 'archive',
+        }),
+      )
+      .digest('hex');
+
+    return this.leads.transaction(async (client) => {
+      const claim = await this.leads.claimStatusCommand(client, {
+        propertyId,
+        actorUserId: context.actorUserId,
+        route,
+        idempotencyKey,
+        fingerprint,
+        correlationId: context.correlationId,
+      });
+      if (claim) return this.replayStatusCommand(claim, fingerprint);
+
+      const locked = await this.leads.findForProperty(leadId, propertyId, client, true);
+      if (!locked) {
+        throw new NotFoundException({
+          code: 'BOOKING_LEAD_NOT_FOUND',
+          message: 'Booking lead not found',
+        });
+      }
+      if (!ARCHIVABLE_STATUSES.includes(locked.status)) {
+        throw new BadRequestException({
+          code: 'BOOKING_LEAD_ARCHIVE_NOT_ALLOWED',
+          message: 'Only rejected, expired, or cancelled leads can be removed from the queue.',
+        });
+      }
+
+      const archived = await this.leads.archiveForProperty(client, leadId, propertyId);
+      if (!archived) {
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_ARCHIVE_CONFLICT',
+          message: 'Booking lead was changed before it could be removed.',
+        });
+      }
+
+      const response = {
+        archived: true,
+        id: leadId,
+        propertyId,
+        status: locked.status,
+      };
+      await this.audit.write(
+        {
+          actorUserId: context.actorUserId,
+          propertyId,
+          action: 'booking_lead.archive_terminal',
+          resourceType: 'booking_lead',
+          resourceId: leadId,
+          beforeData: { id: leadId, status: locked.status },
+          afterData: { id: leadId, status: locked.status, archived: true },
+          resultStatus: 'success',
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+          correlationId: context.correlationId,
+        },
+        client,
+      );
+      await this.leads.completeStatusCommand(client, {
+        actorUserId: context.actorUserId,
+        route,
+        idempotencyKey,
+        body: response,
+        resourceId: leadId,
+      });
+      return response;
+    });
   }
 
   async updateStatusCommand(

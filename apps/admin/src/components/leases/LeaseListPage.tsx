@@ -4,6 +4,7 @@ import {
   CircleDollarSign,
   DoorOpen,
   Plus,
+  RotateCcw,
   Search,
   TriangleAlert,
 } from "lucide-react";
@@ -227,7 +228,7 @@ function LeaseFilters({ search, onSearchChange }: Props) {
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant="destructive"
           onClick={() =>
             onSearchChange({
               q: "",
@@ -240,7 +241,7 @@ function LeaseFilters({ search, onSearchChange }: Props) {
             })
           }
         >
-          Reset
+          <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
         </Button>
         <div className="grid gap-3 md:col-span-4 md:grid-cols-3">
           <div className="space-y-2">

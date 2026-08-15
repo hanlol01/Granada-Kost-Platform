@@ -1,15 +1,19 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   CircleDollarSign,
+  CircleX,
+  ExternalLink,
   Globe2,
   House,
   Loader2,
   LockKeyhole,
   MonitorSmartphone,
   ReceiptText,
+  Trash2,
   UserRoundCheck,
 } from "lucide-react";
+import { Download, FileCheck2 } from "lucide-react";
 import { BookingLeadStatusBadge } from "@/components/booking-leads/BookingLeadStatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +34,11 @@ import {
   type BookingLeadProgress,
 } from "@/hooks/useBookingLeads";
 import { formatDate } from "@/lib/format";
+import {
+  downloadBookingLeadCancellationReceipt,
+  downloadBookingLeadCommitmentNote,
+} from "@/lib/admin-booking-lead-completion";
+import { fetchFileBlob } from "@/lib/file-utils";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -38,6 +47,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onViewResident?: (residentId: string) => void;
   onViewRoom?: (roomNumber: string) => void;
+  onArchive?: (lead: BookingLeadRecord) => Promise<void> | void;
+  archivePending?: boolean;
 };
 
 const rupiah = new Intl.NumberFormat("id-ID", {
@@ -77,6 +88,7 @@ function SourceBadge({ source }: { source: BookingLeadRecord["source"] }) {
 
 function HoldLabel(progress: BookingLeadProgress | undefined) {
   if (!progress?.hold) return "Belum ada kamar yang ditahan";
+  if (progress.hold.status === "committed") return "Kamar dipesan dan pembayaran awal dicatat";
   if (progress.hold.status === "active") return "Kamar ditahan";
   if (progress.hold.status === "expired") return "Tahan kamar kedaluwarsa";
   return "Tahan kamar dilepaskan";
@@ -100,6 +112,8 @@ function PaymentMethodLabel(
 
 function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
   const occupied = progress.tenancy?.occupancyStatus === "active";
+  const cancelled = progress.leadStatus === "cancelled";
+  const cancellation = progress.cancellation;
   const steps = [
     {
       icon: CalendarClock,
@@ -114,11 +128,13 @@ function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
         ? `${progress.hold.roomNumber ?? "Kamar"} · ${
             progress.hold.status === "active"
               ? `berlaku hingga ${formatDate(progress.hold.expiresAt)}`
-              : formatDate(progress.hold.releasedAt ?? progress.hold.expiresAt)
+              : progress.hold.status === "committed"
+                ? "Tidak lagi menggunakan batas waktu 24 jam."
+                : formatDate(progress.hold.releasedAt ?? progress.hold.expiresAt)
           }`
         : "Admin perlu menahan kamar sebelum proses berikutnya.",
       done: Boolean(progress.hold),
-      current: progress.hold?.status === "active",
+      current: progress.hold?.status === "active" || progress.hold?.status === "committed",
     },
     {
       icon: ReceiptText,
@@ -137,32 +153,51 @@ function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
       done: Boolean(progress.paymentCommitment),
       current: Boolean(progress.paymentCommitment && !progress.paymentCommitment.materializedAt),
     },
-    {
-      icon: UserRoundCheck,
-      title: progress.onboarding ? "Data penyewaan dikomit" : "Data penyewaan belum dilengkapi",
-      detail: progress.onboarding
-        ? progress.onboarding.committedAt
-          ? `Dikomit ${formatDate(progress.onboarding.committedAt)}`
-          : "Sedang diproses"
-        : "Lengkapi data penyewaan setelah pembayaran awal dicatat.",
-      done: Boolean(progress.onboarding),
-      current: Boolean(progress.onboarding && !progress.tenancy),
-    },
-    {
-      icon: House,
-      title: occupied
-        ? "Sudah dihuni"
-        : progress.tenancy
-          ? "Menunggu aktivasi kamar"
-          : "Kamar belum dihuni",
-      detail: occupied
-        ? `Aktif sejak ${formatDate(progress.tenancy?.occupancyStartedAt ?? progress.tenancy!.startDate)}`
-        : progress.tenancy
-          ? "Aktivasi kamar adalah perintah terpisah setelah kewajiban terverifikasi."
-          : "Occupancy belum dibuat.",
-      done: occupied,
-      current: Boolean(progress.tenancy && !occupied),
-    },
+    ...(cancelled
+      ? [
+          {
+            icon: CircleX,
+            title: "Minat booking dibatalkan",
+            detail: cancellation
+              ? `Refund ${rupiah.format(cancellation.refundAmount)} melalui ${
+                  cancellation.refundMethod === "cash" ? "Tunai" : "Transfer Bank"
+                } pada ${formatDate(cancellation.refundedAt)}`
+              : "Tahanan kamar dan proses minat booking telah dibatalkan.",
+            done: true,
+            current: false,
+            cancelled: true,
+          },
+        ]
+      : [
+          {
+            icon: UserRoundCheck,
+            title: progress.onboarding
+              ? "Data penyewaan dikomit"
+              : "Data penyewaan belum dilengkapi",
+            detail: progress.onboarding
+              ? progress.onboarding.committedAt
+                ? `Dikomit ${formatDate(progress.onboarding.committedAt)}`
+                : "Sedang diproses"
+              : "Lengkapi data penyewaan setelah pembayaran awal dicatat.",
+            done: Boolean(progress.onboarding),
+            current: Boolean(progress.onboarding && !progress.tenancy),
+          },
+          {
+            icon: House,
+            title: occupied
+              ? "Sudah dihuni"
+              : progress.tenancy
+                ? "Menunggu aktivasi kamar"
+                : "Kamar belum dihuni",
+            detail: occupied
+              ? `Aktif sejak ${formatDate(progress.tenancy?.occupancyStartedAt ?? progress.tenancy!.startDate)}`
+              : progress.tenancy
+                ? "Aktivasi kamar adalah perintah terpisah setelah kewajiban terverifikasi."
+                : "Occupancy belum dibuat.",
+            done: occupied,
+            current: Boolean(progress.tenancy && !occupied),
+          },
+        ]),
   ];
   return (
     <ol className="space-y-3">
@@ -180,7 +215,9 @@ function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
               className={cn(
                 "relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
                 step.done
-                  ? "border-success/40 bg-success/15 text-success"
+                  ? step.cancelled
+                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                    : "border-success/40 bg-success/15 text-success"
                   : step.current
                     ? "border-primary/40 bg-primary/15 text-primary"
                     : "border-border bg-muted/40 text-muted-foreground",
@@ -199,15 +236,37 @@ function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
   );
 }
 
+async function openEvidenceFile(fileId: string) {
+  const previewTab = window.open("about:blank", "_blank");
+  if (previewTab) previewTab.opener = null;
+
+  try {
+    const objectUrl = await fetchFileBlob(fileId);
+    if (previewTab) {
+      previewTab.location.replace(objectUrl);
+    } else {
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch {
+    previewTab?.close();
+  }
+}
+
 export function BookingLeadDetailsDialog({
   lead,
   open,
   onOpenChange,
   onViewResident,
   onViewRoom,
+  onArchive,
+  archivePending = false,
 }: Props) {
+  const [archiveConfirmation, setArchiveConfirmation] = useState(false);
   const progressQuery = useBookingLeadProgress(open ? (lead?.id ?? null) : null);
   const progress = progressQuery.data;
+  const cancellation = progress?.cancellation ?? null;
+  const cancellationPropertyId = cancellation ? (progress?.propertyId ?? null) : null;
   const roomTarget = lead?.roomNumber
     ? [lead.roomNumber, lead.buildingCode, lead.floorCode ? `Lantai ${lead.floorCode}` : null]
         .filter(Boolean)
@@ -215,9 +274,19 @@ export function BookingLeadDetailsDialog({
     : "Belum dipilih";
   const activeTenancy = progress?.tenancy?.occupancyStatus === "active";
   const activeRoomNumber = progress?.targetRoomNumber ?? lead?.roomNumber ?? null;
+  const canArchive = lead
+    ? lead.status === "rejected" || lead.status === "expired" || lead.status === "cancelled"
+    : false;
+
+  useEffect(() => {
+    setArchiveConfirmation(false);
+  }, [lead?.id, open]);
 
   const leadJourney = useMemo(() => {
     if (!progress) return "Memuat progres minat, pembayaran, dan tenancy terkait.";
+    if (progress.leadStatus === "cancelled") {
+      return "Minat booking ini telah dibatalkan. Tahanan kamar sudah dilepas dan tidak ada penyewaan atau occupancy yang dibuat.";
+    }
     if (progress.tenancy?.occupancyStatus === "active") {
       return "Data ini telah melewati proses minat booking dan penghuni sudah menempati kamar.";
     }
@@ -244,6 +313,108 @@ export function BookingLeadDetailsDialog({
         </div>
 
         <div className="space-y-6 px-6 py-5">
+          {cancellation ? (
+            <section
+              aria-label="Informasi pembatalan minat booking"
+              className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-destructive">
+                    <CircleX className="h-5 w-5" aria-hidden="true" />
+                    <h2 className="text-base font-semibold">Minat booking telah dibatalkan</h2>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {rupiah.format(cancellation.refundAmount)} sudah dikembalikan melalui{" "}
+                    {cancellation.refundMethod === "cash" ? "Tunai" : "Transfer Bank"} pada{" "}
+                    {formatDate(cancellation.refundedAt)}. Kamar yang sebelumnya ditahan telah
+                    dilepas.
+                  </p>
+                  {cancellation.refundNote ? (
+                    <p className="mt-2 rounded-lg border border-border bg-background/70 p-3 text-sm text-foreground">
+                      {cancellation.refundNote}
+                    </p>
+                  ) : null}
+                  {cancellation.refundEvidenceFileIds.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Bukti refund tersimpan ({cancellation.refundEvidenceFileIds.length} file).
+                      </p>
+                      {cancellation.refundEvidenceFileIds.map((fileId, index) => (
+                        <Button
+                          key={fileId}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="min-h-9"
+                          onClick={() => void openEvidenceFile(fileId)}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Lihat bukti refund{" "}
+                          {cancellation.refundEvidenceFileIds.length > 1 ? index + 1 : ""}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs font-medium text-muted-foreground">
+                      Tidak ada bukti file refund yang diunggah.
+                    </p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="min-h-10 shrink-0"
+                  onClick={() =>
+                    cancellationPropertyId
+                      ? void downloadBookingLeadCancellationReceipt({
+                          propertyId: cancellationPropertyId,
+                          leadId: lead.id,
+                        })
+                      : undefined
+                  }
+                  disabled={!cancellationPropertyId}
+                >
+                  <Download className="h-4 w-4" /> Unduh kuitansi refund
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {progress?.paymentCommitment ? (
+            <section
+              aria-label="Dokumen pembayaran awal"
+              className="flex flex-col gap-3 rounded-xl border border-success/35 bg-success/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-success">
+                  <FileCheck2 className="h-5 w-5" aria-hidden="true" />
+                  <h2 className="text-base font-semibold">Dokumen pembayaran awal</h2>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Unduh dokumen resmi {PaymentTypeLabel(progress.paymentCommitment.paymentType)}{" "}
+                  untuk minat booking ini.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="success"
+                className="min-h-10 shrink-0"
+                onClick={() =>
+                  void downloadBookingLeadCommitmentNote({
+                    propertyId: progress.propertyId,
+                    leadId: lead.id,
+                  })
+                }
+              >
+                <Download className="h-4 w-4" /> Unduh{" "}
+                {progress.paymentCommitment.verificationStatus === "verified"
+                  ? "kuitansi pembayaran awal"
+                  : "nota pembayaran awal"}
+              </Button>
+            </section>
+          ) : null}
+
           {activeTenancy ? (
             <section
               aria-label="Aksi cepat penyewa aktif"
@@ -260,19 +431,19 @@ export function BookingLeadDetailsDialog({
                 <Button
                   className="min-h-11"
                   type="button"
-                  variant="outline"
+                  variant="info"
                   disabled={!progress?.tenancy?.residentId}
                   onClick={() =>
                     progress?.tenancy?.residentId && onViewResident?.(progress.tenancy.residentId)
                   }
                 >
-                  <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" /> Lihat Detail
-                  Penghuni Penghuni
+                  <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <span>Lihat Detail Penghuni</span>
                 </Button>
                 <Button
                   className="min-h-11"
                   type="button"
-                  variant="outline"
+                  variant="info"
                   disabled={!activeRoomNumber}
                   onClick={() => activeRoomNumber && onViewRoom?.(activeRoomNumber)}
                 >
@@ -453,10 +624,73 @@ export function BookingLeadDetailsDialog({
               </div>
             </dl>
           </section>
+
+          {canArchive ? (
+            <section
+              aria-label="Pembersihan data minat booking terminal"
+              className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
+            >
+              {!archiveConfirmation ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
+                      <h2 className="text-sm font-semibold">Hapus dari daftar</h2>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Lead {BOOKING_LEAD_STATUS_LABEL[lead.status].toLowerCase()} dapat
+                      disembunyikan dari antrean. Riwayat audit, pembayaran, refund, dan hold tetap
+                      dipertahankan.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="min-h-10 shrink-0"
+                    onClick={() => setArchiveConfirmation(true)}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" /> Hapus dari daftar
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm leading-6 text-foreground">
+                    Hapus lead terminal ini dari daftar? Data akan diarsipkan dan tidak muncul lagi
+                    di antrean operasional. Riwayat transaksi dan audit tidak dihapus.
+                  </p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-10"
+                      disabled={archivePending}
+                      onClick={() => setArchiveConfirmation(false)}
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="min-h-10"
+                      disabled={archivePending}
+                      onClick={() => void onArchive?.(lead)}
+                    >
+                      {archivePending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      Hapus sekarang
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : null}
         </div>
 
         <DialogFooter className="border-t border-border px-6 py-4">
-          <Button className="min-h-11" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button className="min-h-11" variant="secondary" onClick={() => onOpenChange(false)}>
             Tutup
           </Button>
         </DialogFooter>

@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RoomGenderPolicy } from "@/lib/admin-ux-master-api";
 import {
   bookingLeadListScopeKey,
+  requestArchiveAdminBookingLead,
   requestCreateAdminBookingLead,
   requestUpdateAdminBookingLeadStatusCommand,
   type BookingLeadRecord,
@@ -15,6 +16,42 @@ import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property";
 import { BOOKING_LEAD_STATUS_LABEL, type BookingLeadStatus } from "./useBookingLeads";
+
+export function useArchiveBookingLead() {
+  const queryClient = useQueryClient();
+  const { currentPropertyId } = useProperty();
+
+  return useMutation<
+    { archived: true },
+    unknown,
+    { propertyId: string; leadId: string; idempotencyKey: string }
+  >({
+    mutationFn: async (input) => {
+      if (!currentPropertyId || input.propertyId !== currentPropertyId) {
+        throw new Error("PROPERTY_SCOPE_CHANGED");
+      }
+      return requestArchiveAdminBookingLead(
+        (path, options) => adminUxV2Requester.delete<unknown>(path, options),
+        input,
+      );
+    },
+    onSuccess: (_, input) => {
+      if (currentPropertyId !== input.propertyId) return;
+      void queryClient.invalidateQueries({
+        queryKey: bookingLeadListScopeKey(input.propertyId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: [
+          "booking-leads",
+          "progress",
+          { propertyId: input.propertyId, leadId: input.leadId },
+        ],
+      });
+      toastMutationSuccess("Minat booking dihapus dari daftar");
+    },
+    onError: (error) => toastMutationError(error, "Gagal menghapus minat booking"),
+  });
+}
 
 export function useCreateAdminBookingLead() {
   const queryClient = useQueryClient();

@@ -141,6 +141,8 @@ type ContractSettlementProjectionRow = {
   termination_case_id: string | null;
   termination_status: 'pending' | 'cancelled' | 'checked_out' | null;
   planned_checkout_date: string | null;
+  monthly_rate?: string;
+  first_payment_checkpoint_at?: Date | null;
 };
 
 export function summarizeContractSettlementRentPayments({
@@ -206,6 +208,7 @@ type ReceiptDocumentRow = {
   paid_at: Date | null;
   resident_name: string;
   room_number: string;
+  settles_rent_contract: boolean;
   allocations: Array<{ invoice_code: string; amount: string | number }>;
 };
 type ReplayRow = {
@@ -280,6 +283,8 @@ export class W06BillingService {
       query.search?.trim() || null,
       query.status ?? null,
       query.due_within_days ?? null,
+      query.date_from ?? null,
+      query.date_to ?? null,
       limit,
       offset,
     ];
@@ -309,11 +314,13 @@ export class W06BillingService {
         AND ($5::int IS NULL OR (
           i.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
           AND i.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $5::int)
-        ))`;
+        ))
+        AND ($6::date IS NULL OR i.due_date >= $6::date)
+        AND ($7::date IS NULL OR i.due_date <= $7::date)`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
-        values.slice(0, 5),
+        values.slice(0, 7),
       ),
       this.database.client.query<{
         id: string;
@@ -335,7 +342,7 @@ export class W06BillingService {
                 COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
                 i.due_date::text,i.invoice_status,i.total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
-         ${common} ORDER BY ${order} LIMIT $6 OFFSET $7`,
+         ${common} ORDER BY ${order} LIMIT $8 OFFSET $9`,
         values,
       ),
     ]);
@@ -393,6 +400,8 @@ export class W06BillingService {
       query.method ?? null,
       query.purpose ?? null,
       query.due_within_days ?? null,
+      query.date_from ?? null,
+      query.date_to ?? null,
       limit,
       offset,
     ];
@@ -423,11 +432,13 @@ export class W06BillingService {
                 AND deadline_invoice.authority_source='contract_schedule'
                 AND deadline_invoice.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
                 AND deadline_invoice.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $6::int)
-            ))`;
+            ))
+            AND ($7::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date >= $7::date)
+            AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
-        values.slice(0, 6),
+        values.slice(0, 8),
       ),
       this.database.client.query<PaymentWorkspaceRow>(
         `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,p.reference_number,
@@ -515,8 +526,10 @@ export class W06BillingService {
                 AND deadline_invoice.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
                 AND deadline_invoice.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $6::int)
             ))
+            AND ($7::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date >= $7::date)
+            AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)
           ORDER BY p.paid_at DESC,p.id DESC
-          LIMIT $7 OFFSET $8`,
+          LIMIT $9 OFFSET $10`,
         values,
       ),
     ]);
@@ -2093,6 +2106,7 @@ export class W06BillingService {
       `SELECT receipt.receipt_code,receipt.amount,receipt.issued_at,
               payment.payment_code,payment.payment_method,payment.payment_purpose,payment.paid_at,
               resident.full_name AS resident_name,room.number AS room_number,
+              (COALESCE(rent_contract.fully_paid,false) AND latest_rent_payment.id=payment.id) AS settles_rent_contract,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'invoice_code',invoice.invoice_code,'amount',allocation.allocated_amount
               ) ORDER BY invoice.invoice_code) FILTER(WHERE allocation.id IS NOT NULL),'[]'::jsonb) AS allocations
@@ -2103,8 +2117,37 @@ export class W06BillingService {
        JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
        LEFT JOIN payment_allocations allocation ON allocation.payment_id=payment.id
        LEFT JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=payment.property_id
+       LEFT JOIN LATERAL (
+         SELECT count(*)>0 AND bool_and(
+           GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(invoice_allocation.net,0),0)=0
+         ) AS fully_paid
+         FROM invoices invoice
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(allocation.allocated_amount),0)-COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+           FROM payment_allocations allocation
+           LEFT JOIN payment_reversal_allocations reversal_allocation
+             ON reversal_allocation.original_allocation_id=allocation.id
+           WHERE allocation.invoice_id=invoice.id
+         ) invoice_allocation ON true
+         WHERE invoice.property_id=payment.property_id AND invoice.lease_id=payment.lease_id
+           AND invoice.invoice_purpose='rent' AND invoice.invoice_status<>'void'
+       ) rent_contract ON true
+       LEFT JOIN LATERAL (
+         SELECT candidate.id
+         FROM payments candidate
+         JOIN payment_allocations candidate_allocation ON candidate_allocation.payment_id=candidate.id
+         JOIN invoices candidate_invoice ON candidate_invoice.id=candidate_allocation.invoice_id
+           AND candidate_invoice.property_id=candidate.property_id
+           AND candidate_invoice.lease_id=candidate.lease_id
+           AND candidate_invoice.invoice_purpose='rent'
+         LEFT JOIN payment_reversals candidate_reversal ON candidate_reversal.payment_id=candidate.id
+         WHERE candidate.property_id=payment.property_id AND candidate.lease_id=payment.lease_id
+           AND candidate.payment_status='verified' AND candidate_reversal.id IS NULL
+         ORDER BY candidate.verified_at DESC NULLS LAST,candidate.paid_at DESC,candidate.id DESC
+         LIMIT 1
+       ) latest_rent_payment ON true
        WHERE receipt.id=$1 AND receipt.property_id=$2 AND receipt.receipt_kind='payment'
-       GROUP BY receipt.id,payment.id,resident.id,room.id`,
+       GROUP BY receipt.id,payment.id,resident.id,room.id,rent_contract.fully_paid,latest_rent_payment.id`,
       [receiptId, propertyId],
     );
     const row = result.rows[0];
@@ -2127,6 +2170,7 @@ export class W06BillingService {
         invoiceCode: allocation.invoice_code,
         amount: this.money(allocation.amount),
       })),
+      contractSettled: row.settles_rent_contract === true,
     });
   }
 
@@ -2198,6 +2242,9 @@ export class W06BillingService {
           `SELECT settlement.id,settlement.state,settlement.invoice_id,
                 settlement.activated_at,settlement.original_due_at,
                 settlement.extension_due_at,settlement.extension_reason,
+                lease.snapshot_monthly_price AS monthly_rate,
+                (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month'
+                  + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') AS first_payment_checkpoint_at,
                 invoice.total_amount,invoice.credit_amount,
                 COALESCE(allocation.net,0) AS allocated_amount,
                 COALESCE(initial_payment.net,0) AS initial_payment_allocated,
@@ -2206,6 +2253,7 @@ export class W06BillingService {
                 termination.planned_checkout_date::text AS planned_checkout_date
            FROM lease_contract_settlements settlement
            JOIN invoices invoice ON invoice.id=settlement.invoice_id
+           JOIN leases lease ON lease.id=settlement.lease_id AND lease.property_id=settlement.property_id
            LEFT JOIN LATERAL (
              SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
                       - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
@@ -2252,6 +2300,8 @@ export class W06BillingService {
         ...(view === 'admin'
           ? { resident_id: lease.resident_id }
           : { property_id: lease.property_id }),
+        resident_name: lease.resident_name,
+        room_number: lease.snapshot_room_number,
         status: lease.lease_status,
         start_date: lease.start_date,
         end_date: lease.end_date,
@@ -2454,6 +2504,29 @@ export class W06BillingService {
     });
     const depositOffset = this.money(row.deposit_offset_amount);
     const outstanding = Math.max(0, total - credit - allocated);
+    const monthlyRate = Math.max(0, this.money(row.monthly_rate ?? '0'));
+    // The first checkpoint is a separate operational obligation: DP/Booking Fee
+    // starts the contract, while a later rent payment equal to one monthly rate
+    // confirms the resident's progress toward the final two-month settlement.
+    const firstCheckpointRequired = Math.min(
+      monthlyRate,
+      Math.max(0, total - paymentBreakdown.initialRentCredit),
+    );
+    const firstCheckpointPaid = paymentBreakdown.additionalRentPayments;
+    const firstCheckpointRemaining = Math.max(0, firstCheckpointRequired - firstCheckpointPaid);
+    const firstCheckpointAt = row.first_payment_checkpoint_at ?? null;
+    const firstCheckpointTime = firstCheckpointAt ? new Date(firstCheckpointAt).getTime() : null;
+    const firstCheckpointMet = firstCheckpointRequired === 0 || firstCheckpointRemaining === 0;
+    const firstCheckpointStatus =
+      firstCheckpointRequired === 0
+        ? 'not_required'
+        : firstCheckpointMet
+          ? firstCheckpointTime && Date.now() < firstCheckpointTime
+            ? 'met_early'
+            : 'met'
+          : firstCheckpointTime && Date.now() > firstCheckpointTime
+            ? 'overdue'
+            : 'pending';
     const dueAt = row.extension_due_at ?? row.original_due_at;
     const now = Date.now();
     const dueAtTime = dueAt ? new Date(dueAt).getTime() : null;
@@ -2508,6 +2581,13 @@ export class W06BillingService {
       contract_rent_amount: total,
       initial_rent_credit: paymentBreakdown.initialRentCredit,
       payment_allocated: paymentBreakdown.additionalRentPayments,
+      first_payment_checkpoint: {
+        due_at: firstCheckpointAt?.toISOString() ?? null,
+        required_additional_amount: firstCheckpointRequired,
+        additional_payment_received: firstCheckpointPaid,
+        remaining_amount: firstCheckpointRemaining,
+        status: firstCheckpointStatus,
+      },
       deposit_offset_amount: depositOffset,
       outstanding_amount: outstanding,
       reminder_stage: reminderStage,

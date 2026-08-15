@@ -2,6 +2,7 @@ import type { UserAccessContext, UserSessionRecord } from '../../iam/types/iam.t
 
 export type AuthUserResponse = Omit<UserAccessContext, 'sessionId'> & {
   property_ids: string[];
+  password_change_required: boolean;
 };
 
 export type AuthPropertyRolloutResponse = {

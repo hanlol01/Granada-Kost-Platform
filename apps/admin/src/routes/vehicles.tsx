@@ -238,6 +238,32 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
   const activeFilterCount =
     Number(Boolean(q.trim())) + Number(status !== "all") + Number(type !== "all");
   const filterSignature = `${q}:${status}:${type}`;
+  const filterCriteria = [
+    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    status !== "all"
+      ? `status kendaraan: ${
+          {
+            pending_approval: "Menunggu approval",
+            active: "Aktif",
+            suspended: "Suspended",
+            rejected: "Ditolak",
+            transfer_pending: "Transfer",
+            inactive: "Tidak aktif",
+          }[status]
+        }`
+      : "",
+    type !== "all"
+      ? `jenis kendaraan: ${
+          {
+            motorcycle: "Motor",
+            car: "Mobil",
+            bicycle: "Sepeda",
+            electric_scooter: "Skuter listrik",
+            other: "Lainnya",
+          }[type]
+        }`
+      : "",
+  ].filter(Boolean);
   const pendingApprovalCount =
     data?.filter((vehicle) => vehicle.vehicleStatus === "pending_approval").length ?? 0;
   const mutationPending =
@@ -383,6 +409,7 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
           resultCount={filtered.length}
           activeFilterCount={activeFilterCount}
           searchTerm={q}
+          criteria={filterCriteria}
         />
       ) : null}
 

@@ -1,0 +1,27 @@
+{
+  "mode": "dry-run",
+  "timestamp": "2026-08-05T22:35:59.900Z",
+  "propertyId": "20000000-0000-4000-8000-000000000001",
+  "workbookSha256": "e1d8848fbf30d5197368b3e47881fde8dde36fc8af7b461607f695b553d0dad1",
+  "before": {
+    "booking_leads": 0,
+    "booking_lead_holds": 0,
+    "booking_lead_payment_commitments": 0,
+    "onboarding_commitments": 0,
+    "leases": 0,
+    "occupancies": 0,
+    "invoices": 0,
+    "payments": 0,
+    "residents": 0,
+    "rooms": 163,
+    "room_buildings": 18
+  },
+  "expected": {
+    "rooms": 163,
+    "buildings": 18,
+    "rukost": 123,
+    "apartkost": 40,
+    "male": 112,
+    "female": 51
+  }
+}

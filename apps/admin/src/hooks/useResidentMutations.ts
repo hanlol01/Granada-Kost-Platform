@@ -4,13 +4,17 @@
 //   PATCH  /residents/:residentId/status
 // Required permission: resident.manage.
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import {
   parseResidentAccountReceipt,
+  parseResidentAccountSummary,
+  parseResidentPasswordResetReceipt,
   type ResidentAccountReceipt,
+  type ResidentAccountSummary,
+  type ResidentPasswordResetReceipt,
   type ResidentDetail,
 } from "@/lib/admin-resident";
 import { useProperty } from "@/lib/property";
@@ -31,6 +35,7 @@ export type CreateResidentInput = {
   phone?: string | null;
   email?: string | null;
   ktpNumber?: string | null;
+  ktpFileId?: string | null;
   dateOfBirth?: string | null;
   placeOfBirth?: string | null;
   address?: string | null;
@@ -65,6 +70,7 @@ function toCreateBody(propertyId: string, input: CreateResidentInput) {
     phone: input.phone ?? undefined,
     email: input.email ?? undefined,
     ktp_number: input.ktpNumber ?? undefined,
+    ktp_file_id: input.ktpFileId ?? undefined,
     date_of_birth: input.dateOfBirth ?? undefined,
     place_of_birth: input.placeOfBirth ?? undefined,
     address: input.address ?? undefined,
@@ -83,11 +89,13 @@ function toCreateBody(propertyId: string, input: CreateResidentInput) {
 }
 
 function toUpdateBody(input: UpdateResidentInput) {
+  const includesKtpFile = Object.prototype.hasOwnProperty.call(input, "ktpFileId");
   return {
     full_name: input.fullName,
     phone: input.phone ?? undefined,
     email: input.email ?? undefined,
     ktp_number: input.ktpNumber ?? undefined,
+    ktp_file_id: includesKtpFile ? (input.ktpFileId ?? null) : undefined,
     date_of_birth: input.dateOfBirth ?? undefined,
     place_of_birth: input.placeOfBirth ?? undefined,
     address: input.address ?? undefined,
@@ -226,6 +234,71 @@ export function useProvisionResidentAccount() {
         return receipt;
       } catch (error) {
         toastMutationError(error, "Gagal menyiapkan akun Penghuni");
+        throw error;
+      } finally {
+        pendingRef.current = false;
+        setIsPending(false);
+      }
+    },
+    [qc],
+  );
+
+  return { mutateAsync, isPending };
+}
+
+export function useResidentAccountSummary(residentId: string | null) {
+  const { currentPropertyId } = useProperty();
+  return useQuery<ResidentAccountSummary>({
+    queryKey: [
+      "residents",
+      "account",
+      { propertyId: currentPropertyId ?? "none", residentId: residentId ?? "none" },
+    ],
+    queryFn: async ({ signal }) => {
+      if (!currentPropertyId || !residentId) throw new Error("Property scope belum aktif.");
+      return parseResidentAccountSummary(
+        await adminUxV2Requester.get(`/residents/${encodeURIComponent(residentId)}/account`, {
+          query: { property_id: currentPropertyId },
+          signal,
+        }),
+      );
+    },
+    enabled: Boolean(currentPropertyId && residentId),
+  });
+}
+
+export function useResetResidentPassword() {
+  const qc = useQueryClient();
+  const { currentPropertyId } = useProperty();
+  const propertyRef = useRef(currentPropertyId);
+  const pendingRef = useRef(false);
+  const [isPending, setIsPending] = useState(false);
+  propertyRef.current = currentPropertyId;
+
+  const mutateAsync = useCallback(
+    async ({ residentId }: { residentId: string }): Promise<ResidentPasswordResetReceipt> => {
+      const propertyId = propertyRef.current;
+      if (!propertyId) throw new Error("Property scope belum aktif.");
+      if (pendingRef.current) throw new Error("Reset password sedang berjalan.");
+      pendingRef.current = true;
+      setIsPending(true);
+      try {
+        const receipt = parseResidentPasswordResetReceipt(
+          await adminUxV2Requester.post(
+            `/residents/${encodeURIComponent(residentId)}/account/reset-password`,
+            { property_id: propertyId },
+          ),
+        );
+        if (propertyRef.current !== propertyId) {
+          throw new Error("Property scope berubah sebelum reset password selesai.");
+        }
+        await qc.invalidateQueries({
+          queryKey: ["residents", "account", { propertyId, residentId }],
+        });
+        toastMutationSuccess("Password sementara berhasil direset");
+        return receipt;
+      } catch (error) {
+        toastMutationError(error, "Gagal mereset password Penghuni");
         throw error;
       } finally {
         pendingRef.current = false;

@@ -31,6 +31,11 @@ function nullableText(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function operationalRoomNotes(value: unknown): string | null {
+  const note = nullableText(value);
+  return note?.startsWith('Workbook SHA-256') ? null : note;
+}
+
 function money(value: unknown): number {
   const parsed = Number(value ?? 0);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -124,7 +129,7 @@ export class AdminUxRoomDetailService {
     const propertyId = text(room.property_id);
     const roomId = text(room.id);
 
-    const [facilitiesResult, occupancyResult, leaseResult] = await Promise.all([
+    const [facilitiesResult, occupancyResult, leaseResult, ownershipResult] = await Promise.all([
       client.query<Row>(
         `SELECT facility.id, facility.label AS name
            FROM kost_type_content_facilities facility
@@ -163,10 +168,12 @@ export class AdminUxRoomDetailService {
            ORDER BY lease.start_date, lease.id`,
         [propertyId, roomId],
       ),
+      this.currentOwnershipAssignment(client, room),
     ]);
 
     if (occupancyResult.rows.length > 1) this.throwAmbiguous('ROOM_ACTIVE_OCCUPANCY_AMBIGUOUS');
     if (leaseResult.rows.length > 1) this.throwAmbiguous('ROOM_ACTIVE_LEASE_AMBIGUOUS');
+    if (ownershipResult.rows.length > 1) this.throwAmbiguous('ROOM_ACTIVE_OWNERSHIP_AMBIGUOUS');
 
     const occupancy = occupancyResult.rows[0] ?? null;
     const lease = leaseResult.rows[0] ?? null;
@@ -358,8 +365,51 @@ export class AdminUxRoomDetailService {
       vehiclesResult.rows,
       complaintResult.rows,
       timelineResult.rows,
+      ownershipResult.rows[0] ?? null,
     );
     return v2Data(projection);
+  }
+
+  private currentOwnershipAssignment(client: PoolClient, room: Row) {
+    const propertyId = text(room.property_id);
+    const today = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date`;
+    if (text(room.category) === 'apartkost') {
+      return client.query<Row>(
+        `SELECT profile.id AS owner_profile_id, profile.full_name,
+                assignment.effective_from, assignment.effective_until,
+                'room'::text AS assignment_kind, 'active'::text AS assignment_status
+           FROM room_owner_assignments assignment
+           JOIN property_owner_profiles profile
+             ON profile.id = assignment.owner_profile_id
+            AND profile.property_id = assignment.property_id
+            AND profile.profile_status = 'active'
+          WHERE assignment.property_id = $1
+            AND assignment.room_id = $2
+            AND assignment.assignment_status IN ('active', 'scheduled')
+            AND assignment.effective_from <= ${today}
+            AND (assignment.effective_until IS NULL OR ${today} < assignment.effective_until)
+          ORDER BY assignment.effective_from DESC, assignment.id DESC`,
+        [propertyId, text(room.id)],
+      );
+    }
+
+    return client.query<Row>(
+      `SELECT profile.id AS owner_profile_id, profile.full_name,
+              assignment.effective_from, assignment.effective_until,
+              'building'::text AS assignment_kind, 'active'::text AS assignment_status
+         FROM building_owner_assignments assignment
+         JOIN property_owner_profiles profile
+           ON profile.id = assignment.owner_profile_id
+          AND profile.property_id = assignment.property_id
+          AND profile.profile_status = 'active'
+        WHERE assignment.property_id = $1
+          AND assignment.building_id = $2
+          AND assignment.assignment_status IN ('active', 'scheduled')
+          AND assignment.effective_from <= ${today}
+          AND (assignment.effective_until IS NULL OR ${today} < assignment.effective_until)
+        ORDER BY assignment.effective_from DESC, assignment.id DESC`,
+      [propertyId, text(room.building_id)],
+    );
   }
 
   private async roomIdentity(
@@ -386,7 +436,7 @@ export class AdminUxRoomDetailService {
                 SELECT 1 FROM booking_lead_holds active_hold
                 WHERE active_hold.property_id = room.property_id
                   AND active_hold.room_id = room.id
-                  AND active_hold.hold_status = 'active'
+                  AND active_hold.hold_status IN ('active','committed')
               ) AS active_hold_exists,
               EXISTS (
                 SELECT 1 FROM maintenance_work_orders active_work_order
@@ -442,6 +492,7 @@ export class AdminUxRoomDetailService {
     vehicles: Row[],
     complaints: Row[],
     timeline: Row[],
+    ownership: Row | null,
   ): AdminRoomDetailProjection {
     const annual = money(room.yearly_price);
     const monthly = money(room.monthly_price);
@@ -491,7 +542,7 @@ export class AdminUxRoomDetailService {
         gender_policy: text(room.gender_policy) as 'male' | 'female',
         status,
         public_visible: Boolean(room.public_visible),
-        notes: nullableText(room.import_notes),
+        notes: operationalRoomNotes(room.import_notes),
         structural_edit_locked:
           ['reserved', 'occupied', 'maintenance', 'requires_review'].includes(status) ||
           Boolean(occupancy || lease) ||
@@ -504,13 +555,14 @@ export class AdminUxRoomDetailService {
         monthly_price: monthly,
         annual_contract_value: annual,
         minimum_dp_amount: minimumDp,
-        minimum_dp_label: `Minimum ${minimumDpPercent}% dari nilai kontrak tahunan`,
+        minimum_dp_label: `Rekomendasi ${minimumDpPercent}% dari nilai kontrak tahunan`,
         security_deposit_required: money(room.deposit_amount),
         payment_plan_description: paymentPlanDescription,
         facilities: facilities.map((item) => ({ id: text(item.id), name: text(item.name) })),
       },
       resident: occupancy
         ? {
+            id: text(occupancy.resident_id),
             display_name: text(occupancy.full_name),
             account_status: text(occupancy.account_status),
             university: null,
@@ -570,18 +622,35 @@ export class AdminUxRoomDetailService {
         work_order_status: nullableText(complaint.work_order_status),
         technician_name: nullableText(complaint.technician_name),
       })),
-      ownership: {
-        display_name: 'KOSTATION',
-        source: 'policy_default',
-        ownership_reconciliation_required: true,
-      },
+      ownership: ownership
+        ? {
+            owner_profile_id: text(ownership.owner_profile_id),
+            display_name: text(ownership.full_name),
+            source:
+              text(ownership.assignment_kind) === 'room'
+                ? 'room_assignment'
+                : 'building_assignment',
+            assignment_kind: text(ownership.assignment_kind) as 'building' | 'room',
+            effective_from: iso(ownership.effective_from),
+            effective_until: ownership.effective_until ? iso(ownership.effective_until) : null,
+            assignment_status: 'active',
+          }
+        : {
+            owner_profile_id: null,
+            display_name: 'KOSTATION',
+            source: 'kostation_default',
+            assignment_kind: null,
+            effective_from: null,
+            effective_until: null,
+            assignment_status: null,
+          },
       timeline: timeline.flatMap((item) => {
         const eventType = text(item.event_type);
         const label = TIMELINE_LABELS[eventType];
         return label ? [{ event_type: eventType, label, occurred_at: iso(item.occurred_at) }] : [];
       }),
       links: {
-        resident: null,
+        resident: occupancy ? `/tenants/${encodeURIComponent(text(occupancy.resident_id))}` : null,
         lease: lease ? `/penyewaan/${encodeURIComponent(text(lease.id))}` : null,
         billing: null,
         vehicles: null,

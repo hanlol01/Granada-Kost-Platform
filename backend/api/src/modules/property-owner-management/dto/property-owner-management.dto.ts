@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsDateString,
   IsEmail,
@@ -184,4 +185,13 @@ export class ReleaseOwnerAssignmentDto {
   @MinLength(3)
   @MaxLength(500)
   reason!: string;
+}
+
+export class ReleaseOwnerAssignmentsDto extends ReleaseOwnerAssignmentDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  assignment_ids!: string[];
 }

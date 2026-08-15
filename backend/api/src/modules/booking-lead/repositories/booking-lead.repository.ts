@@ -209,6 +209,7 @@ export class BookingLeadRepository {
          AND gender = $4
          AND COALESCE(public_group_key, '') = COALESCE($5::text, '')
          AND source = 'public_kamar'
+         AND archived_at IS NULL
          AND created_at >= now() - ($6::int * interval '1 minute')
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -235,6 +236,7 @@ export class BookingLeadRepository {
        WHERE property_id = $1
          AND source = 'public_kamar'
          AND metadata->>'idempotencyKey' = $2
+         AND archived_at IS NULL
        ORDER BY created_at DESC
        LIMIT 1`,
       [propertyId, key],
@@ -324,6 +326,7 @@ export class BookingLeadRepository {
            AND room_id = $2
            AND visitor_phone = $3
            AND source = 'admin_quick_entry'
+           AND archived_at IS NULL
            AND created_at >= now() - ($4::int * interval '1 minute')
          ORDER BY created_at DESC
          LIMIT 1`,
@@ -392,6 +395,7 @@ export class BookingLeadRepository {
         AND active_lease.property_id = booking_leads.property_id
         AND active_lease.lease_status = 'active'
        WHERE booking_leads.property_id = ANY($1::uuid[])
+         AND booking_leads.archived_at IS NULL
          AND ($2::text IS NULL OR booking_leads.status = $2)
          AND ($3::text IS NULL OR booking_leads.category = $3)
          AND ($4::text IS NULL OR booking_leads.gender = $4)
@@ -448,6 +452,7 @@ export class BookingLeadRepository {
       phoneSearch,
     ];
     const where = `booking_leads.property_id = ANY($1::uuid[])
+      AND booking_leads.archived_at IS NULL
       AND ($2::text IS NULL OR booking_leads.status = $2)
       AND ($3::text IS NULL OR booking_leads.category = $3)
       AND ($4::text IS NULL OR booking_leads.gender = $4)
@@ -517,7 +522,8 @@ export class BookingLeadRepository {
               rooms.number AS room_number
        FROM booking_leads
        LEFT JOIN rooms ON rooms.id = booking_leads.room_id
-       WHERE booking_leads.id = $1`,
+       WHERE booking_leads.id = $1
+         AND booking_leads.archived_at IS NULL`,
       [id],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
@@ -537,7 +543,8 @@ export class BookingLeadRepository {
         AND rooms.property_id = booking_leads.property_id
        WHERE booking_leads.id = $1
          AND booking_leads.property_id = $2
-       ${forUpdate ? 'FOR UPDATE OF booking_leads' : ''}`,
+         AND booking_leads.archived_at IS NULL
+         ${forUpdate ? 'FOR UPDATE OF booking_leads' : ''}`,
       [id, propertyId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
@@ -638,6 +645,18 @@ export class BookingLeadRepository {
       [id, propertyId, status],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async archiveForProperty(client: PoolClient, id: string, propertyId: string): Promise<boolean> {
+    const result = await client.query(
+      `UPDATE booking_leads
+       SET archived_at = now(), updated_at = now()
+       WHERE id = $1
+         AND property_id = $2
+         AND archived_at IS NULL`,
+      [id, propertyId],
+    );
+    return result.rowCount === 1;
   }
 
   async updateStatus(id: string, status: BookingLeadStatus): Promise<BookingLeadRecord | null> {

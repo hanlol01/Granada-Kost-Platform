@@ -145,7 +145,7 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
         active ? (
           <div className="flex flex-wrap gap-2">
             {canTransfer ? (
-              <Button variant="outline" onClick={() => onSearchChange({ panel: "transfer" })}>
+              <Button variant="info" onClick={() => onSearchChange({ panel: "transfer" })}>
                 <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
               </Button>
             ) : null}
@@ -544,14 +544,14 @@ function DepositTab({
                         <div className="flex justify-end gap-2">
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="success"
                             onClick={() => setRefundAction({ entry, type: "settle" })}
                           >
                             Settle
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="warning"
                             onClick={() => setRefundAction({ entry, type: "waive" })}
                           >
                             Waive
@@ -789,7 +789,7 @@ function TransferPanel({
           <Button type="button" disabled={!targetRoomId} onClick={() => void previewTransfer()}>
             <FileText className="mr-2 h-4 w-4" /> Buat Preview Server
           </Button>
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
         </div>
@@ -1036,7 +1036,7 @@ function CheckoutPanel({ leaseId, onClose }: { leaseId: string; onClose: () => v
           </p>
         </Field>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={close.isPending}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={close.isPending}>
             Batal
           </Button>
           <Button
@@ -1183,7 +1183,7 @@ function DepositCollectDialog({
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             disabled={collect.isPending}
             onClick={() => onOpenChange(false)}
           >
@@ -1315,7 +1315,7 @@ function RefundActionDialog({
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             disabled={pending}
             onClick={() => onOpenChange(false)}
           >
@@ -1362,7 +1362,7 @@ function TransferResultCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => onOpenLease(result.targetLease.id)}>Buka Lease Target</Button>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Kembali ke Detail
           </Button>
         </div>
@@ -1386,7 +1386,7 @@ function FeatureOffPanel({
         <ShieldAlert className="h-8 w-8 text-slate-400" />
         <p className="font-semibold text-slate-100">{title}</p>
         <p className="max-w-md text-sm text-slate-400">{description}</p>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           Kembali ke detail
         </Button>
       </CardContent>

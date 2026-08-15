@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, MoreHorizontal, Building2 } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   getVisibleRoutes,
@@ -34,11 +41,13 @@ function RouteLink({
   route,
   pathname,
   nested = false,
+  compact = false,
   onNavigate,
 }: {
   route: AdminRouteMetadata;
   pathname: string;
   nested?: boolean;
+  compact?: boolean;
   onNavigate?: () => void;
 }) {
   const Icon = route.icon;
@@ -49,9 +58,12 @@ function RouteLink({
       to={route.to as never}
       search={route.search as never}
       onClick={onNavigate}
+      aria-label={compact ? route.label : undefined}
+      title={compact ? route.label : undefined}
       className={cn(
         "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
         nested && "ml-3 py-2 text-[13px]",
+        compact && "justify-center px-2",
         active
           ? "bg-primary-soft font-medium text-sidebar-accent-foreground"
           : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -59,7 +71,7 @@ function RouteLink({
     >
       {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" /> : null}
       <Icon className={cn("h-4 w-4 shrink-0", nested && "h-3.5 w-3.5")} />
-      <span className="truncate">{route.label}</span>
+      {!compact ? <span className="truncate">{route.label}</span> : null}
     </Link>
   );
 }
@@ -68,10 +80,12 @@ function NavSection({
   section,
   routes,
   pathname,
+  compact = false,
 }: {
   section: AdminNavSection;
   routes: readonly AdminRouteMetadata[];
   pathname: string;
+  compact?: boolean;
 }) {
   const { user } = useAuth();
   const { currentPropertyId } = useProperty();
@@ -112,12 +126,16 @@ function NavSection({
 
   return (
     <section className="space-y-1">
-      <span className="mb-2 block px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {navSectionLabels[section]}
-      </span>
+      {compact ? (
+        <span className="sr-only">{navSectionLabels[section]}</span>
+      ) : (
+        <span className="mb-2 block px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {navSectionLabels[section]}
+        </span>
+      )}
       {roots.map((route) => {
         if (route.id !== "rooms") {
-          return <RouteLink key={route.id} route={route} pathname={pathname} />;
+          return <RouteLink key={route.id} route={route} pathname={pathname} compact={compact} />;
         }
 
         const Icon = route.icon;
@@ -127,8 +145,11 @@ function NavSection({
               <Link
                 to={route.to as never}
                 search={route.search as never}
+                aria-label={compact ? route.label : undefined}
+                title={compact ? route.label : undefined}
                 className={cn(
                   "relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-in-out",
+                  compact && "justify-center px-2",
                   roomActive
                     ? "bg-primary-soft font-medium text-sidebar-accent-foreground"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -138,23 +159,25 @@ function NavSection({
                   <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" />
                 ) : null}
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{route.label}</span>
+                {!compact ? <span className="truncate">{route.label}</span> : null}
               </Link>
-              <button
-                type="button"
-                className="mr-1 rounded-md p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                aria-label={roomsOpen ? "Tutup menu Kamar" : "Buka menu Kamar"}
-                aria-expanded={roomsOpen}
-                onClick={toggleRooms}
-              >
-                {roomsOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </button>
+              {!compact ? (
+                <button
+                  type="button"
+                  className="mr-1 rounded-md p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  aria-label={roomsOpen ? "Tutup menu Kamar" : "Buka menu Kamar"}
+                  aria-expanded={roomsOpen}
+                  onClick={toggleRooms}
+                >
+                  {roomsOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+              ) : null}
             </div>
-            {roomsOpen ? (
+            {roomsOpen && !compact ? (
               <div className="mt-1 space-y-0.5 border-l border-sidebar-border">
                 {roomChildren.map((child) => (
                   <RouteLink key={child.id} route={child} pathname={pathname} nested />
@@ -210,25 +233,67 @@ export function RegistrySidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const access = useRouteAccess();
   const routes = getVisibleRoutes(access);
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const expanded = hovered || pinned;
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-      <div className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6">
+    <aside
+      className={cn(
+        "sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-out lg:flex",
+        expanded ? "w-72" : "w-[4.75rem]",
+      )}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setHovered(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(false);
+      }}
+    >
+      <div
+        className={cn(
+          "flex items-center border-b border-sidebar-border py-6",
+          expanded ? "gap-3 px-6" : "justify-center px-3",
+        )}
+      >
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
           <Building2 className="h-5 w-5" />
         </div>
-        <div>
-          <p className="text-sm font-semibold text-sidebar-foreground">Kos Management</p>
-          <p className="text-xs text-muted-foreground">Sistem Pengelolaan</p>
-        </div>
+        {expanded ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-sidebar-foreground">Kos Management</p>
+            <p className="truncate text-xs text-muted-foreground">Sistem Pengelolaan</p>
+          </div>
+        ) : null}
+        {expanded ? (
+          <button
+            type="button"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            aria-label={pinned ? "Minimalkan sidebar" : "Pin sidebar tetap terbuka"}
+            title={pinned ? "Minimalkan sidebar" : "Pin sidebar tetap terbuka"}
+            onClick={() => setPinned((value) => !value)}
+          >
+            {pinned ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4" />
+            )}
+          </button>
+        ) : null}
       </div>
-      <nav className="app-scrollbar flex-1 space-y-6 overflow-y-auto px-3 py-5">
+      <nav
+        className={cn(
+          "app-scrollbar flex-1 overflow-y-auto py-5",
+          expanded ? "space-y-6 px-3" : "space-y-3 px-2",
+        )}
+      >
         {SECTION_ORDER.map((section) => (
           <NavSection
             key={section}
             section={section}
             routes={routes.filter((route) => route.section === section)}
             pathname={pathname}
+            compact={!expanded}
           />
         ))}
       </nav>

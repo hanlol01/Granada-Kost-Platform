@@ -137,7 +137,10 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     },
     maxFilesPerEntity: 1,
     label: "KTP",
-    compressImages: false,
+    // KTP photos commonly come straight from a phone camera. Compress image
+    // uploads client-side while keeping PDFs untouched so the document remains
+    // readable and stays within the five-megabyte policy.
+    compressImages: true,
   },
   profile_photo: {
     purpose: "profile_photo",

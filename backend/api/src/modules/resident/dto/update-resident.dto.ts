@@ -102,7 +102,7 @@ export class UpdateResidentDto {
   @IsOptional()
   @Transform(rawValue)
   @IsUUID()
-  ktp_file_id?: string;
+  ktp_file_id?: string | null;
 
   @IsOptional()
   @Transform(rawValue)

@@ -163,14 +163,36 @@ test("shared discovery controls and canonical columns are wired on all room surf
   assert.match(source("routes/rooms/apart-kost.tsx"), /category="apartkost"/);
 });
 
-test("search is explicit-submit and every filter resets the server offset", () => {
+test("room discovery surfaces use theme-aware cards, controls, and table contrast", () => {
+  const page = source("components/rooms/KostTypeInventoryPage.tsx");
+  const controls = section(
+    page,
+    "export function RoomDiscoveryFilters",
+    "export function Pagination",
+  );
+  const table = section(page, "export function RoomInventoryTable", "function draftForKostType");
+
+  for (const candidate of [controls, table]) {
+    assert.doesNotMatch(candidate, /(?:border|bg|text|divide)-slate-/);
+  }
+  assert.match(controls, /border-border bg-card shadow-sm/);
+  assert.match(controls, /border-input bg-background/);
+  assert.match(table, /border-border bg-card shadow-sm/);
+  assert.match(table, /bg-muted\/75/);
+  assert.match(table, /divide-y divide-border/);
+  assert.match(table, /hover:bg-muted\/60/);
+});
+
+test("search is automatic and every filter resets the server offset", () => {
   const page = source("components/rooms/KostTypeInventoryPage.tsx");
   const controls = page.slice(
     page.indexOf("export function RoomDiscoveryFilters"),
     page.indexOf("export function Pagination"),
   );
   assert.match(controls, /onSubmit=\{applySearch\}/);
-  assert.doesNotMatch(controls, /waitForTimeout|setTimeout/);
+  assert.match(controls, /window\.setTimeout/);
+  assert.match(controls, /onSearchChange\(\{ q: nextQuery, offset: 0 \}\)/);
+  assert.doesNotMatch(controls, />Cari</);
   for (const anchor of [
     "value={search.buildingId",
     "value={search.status",

@@ -4,11 +4,13 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Eye,
   Hammer,
   Info,
   Loader2,
   MessageCircle,
   Plus,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
@@ -511,26 +513,45 @@ function CreateComplaintSheet({ onClose }: { onClose: () => void }) {
             <div>
               <span className="text-xs font-medium text-foreground">Lampiran foto (opsional)</span>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Maksimum {MAX_COMPLAINT_ATTACHMENTS} foto (JPEG/PNG, maks. 2 MB per foto). Foto
-                dapat membantu memperjelas laporan.
+                Maksimum {MAX_COMPLAINT_ATTACHMENTS} foto. JPG, PNG, atau WebP berukuran besar
+                dikompresi otomatis hingga memenuhi batas unggahan.
               </p>
 
               {attachments.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-3">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {attachments.map((file) => (
-                    <div key={file.id} className="relative">
+                    <div
+                      key={file.id}
+                      className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-muted/30 p-3"
+                    >
                       <FilePreview file={file} size={64} onClick={() => setPreviewFile(file)} />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAttachments((prev) => prev.filter((f) => f.id !== file.id))
-                        }
-                        disabled={createComplaint.isPending}
-                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow"
-                        aria-label={`Hapus lampiran ${file.original_filename}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-foreground">
+                          {file.original_filename}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewFile(file)}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Lihat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachments((prev) => prev.filter((f) => f.id !== file.id))
+                            }
+                            disabled={createComplaint.isPending}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-destructive/35 bg-destructive/10 px-3 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                            aria-label={`Hapus lampiran ${file.original_filename}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

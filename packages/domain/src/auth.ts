@@ -32,6 +32,8 @@ export type AuthMe = {
   propertyRollouts?: PropertyRollout[];
   resident_id?: string | null;
   session_id?: string;
+  passwordChangeRequired?: boolean;
+  password_change_required?: boolean;
 };
 
 export type AuthSession = {

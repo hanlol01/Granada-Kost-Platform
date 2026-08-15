@@ -120,6 +120,12 @@ export class AdminBillingWorklistQueryDto extends PaginationQueryDto {
   @Max(365)
   @IsOptional()
   due_within_days?: number;
+  @IsDateString()
+  @IsOptional()
+  date_from?: string;
+  @IsDateString()
+  @IsOptional()
+  date_to?: string;
 }
 
 export class AdminBillingScopeQueryDto {
@@ -144,6 +150,12 @@ export class AdminW06PaymentsQueryDto extends PaginationQueryDto {
   @Max(365)
   @IsOptional()
   due_within_days?: number;
+  @IsDateString()
+  @IsOptional()
+  date_from?: string;
+  @IsDateString()
+  @IsOptional()
+  date_to?: string;
 }
 
 export class AdminW06ProofsQueryDto extends PaginationQueryDto {

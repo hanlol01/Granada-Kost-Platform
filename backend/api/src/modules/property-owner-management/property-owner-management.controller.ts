@@ -27,6 +27,7 @@ import {
   PropertyOwnerAssetOptionsQueryDto,
   PropertyOwnerPropertyQueryDto,
   ReleaseOwnerAssignmentDto,
+  ReleaseOwnerAssignmentsDto,
   ResetPropertyOwnerPasswordDto,
   UpdatePropertyOwnerDto,
 } from './dto/property-owner-management.dto';
@@ -174,6 +175,42 @@ export class PropertyOwnerManagementController {
       ownerId,
       'room',
       assignmentId,
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+  }
+
+  @Post(':ownerId/building-assignments/release-batch')
+  releaseBuildingBatch(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: ReleaseOwnerAssignmentsDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.owners.releaseAssignments(
+      actor,
+      ownerId,
+      'building',
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+  }
+
+  @Post(':ownerId/room-assignments/release-batch')
+  releaseRoomBatch(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: ReleaseOwnerAssignmentsDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.owners.releaseAssignments(
+      actor,
+      ownerId,
+      'room',
       dto,
       idempotencyKey,
       auditContext(request),

@@ -298,17 +298,17 @@ test("M6 lease selectors use safe property-scoped options and reset pagination",
   assert.doesNotMatch(source, /useResidents|\/residents/);
 });
 
-test("M6 C1 lease detail route guards UUIDs and preserves partial search", async () => {
+test("M6 C1 former lease detail route safely redirects to the linked resident", async () => {
   const source = await readFile(
     new URL("../routes/penyewaan/$leaseId.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(source, /isLeaseUuid\(params\.leaseId\)/);
-  assert.match(source, /normalizeLeaseDetailSearch\(raw\)/);
-  assert.match(source, /search: \(current\) => \(\{ \.\.\.current, \.\.\.next \}\)/);
-  assert.match(source, /search: \{ panel: "detail", tab: "ringkasan" \}/);
-  assert.match(source, /LeaseDetailPage/);
+  assert.match(source, /useM6Lease\(leaseId\)/);
+  assert.match(source, /to="\/tenants\/\$residentId"/);
+  assert.match(source, /params=\{\{ residentId: detail\.lease\.resident\.id \}\}/);
+  assert.doesNotMatch(source, /LeaseDetailPage/);
   assert.doesNotMatch(source, /RouteFoundationPage/);
 });
 

@@ -9,11 +9,11 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError } from "@granada-kost/api-client";
-import { FILE_PURPOSE_POLICIES, type FilePurpose, type FileResponse } from "@granada-kost/domain";
+import { type FilePurpose, type FileResponse } from "@granada-kost/domain";
 import { apiClient } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
-import { compressImage, fetchFileBlob, validateFileForPurpose } from "@/lib/file-utils";
+import { FilePreparationError, fetchFileBlob, prepareFileForUpload } from "@/lib/file-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +31,8 @@ export type FileUploadInput = {
 };
 
 export type FileUploadHookOptions = {
+  /** Suppress generic mutation toasts when a domain workflow owns feedback. */
+  silent?: boolean;
   /** Called after a successful upload with the server response. */
   onUploadSuccess?: (response: FileResponse) => void;
   /** Called after an upload error. */
@@ -44,41 +46,35 @@ export type FileUploadHookOptions = {
 export function useFileUpload(options?: FileUploadHookOptions) {
   const mutation = useMutation<FileResponse, unknown, FileUploadInput>({
     mutationFn: async (input) => {
-      // 1. Client-side validation (UX only — backend is authoritative).
-      const validation = validateFileForPurpose(input.file, input.filePurpose);
-      if (!validation.valid) {
+      let prepared;
+      try {
+        prepared = await prepareFileForUpload(input.file, input.filePurpose, {
+          compress: input.compress,
+        });
+      } catch (error) {
+        if (!(error instanceof FilePreparationError)) throw error;
         throw new ApiError({
-          code: validation.code,
-          message: validation.message,
+          code: error.code,
+          message: error.message,
           status: 0,
         });
       }
 
-      // 2. Optional image compression.
-      const policy = FILE_PURPOSE_POLICIES[input.filePurpose];
-      const shouldCompress = input.compress ?? policy.compressImages;
-      let fileToUpload: File | Blob = input.file;
-      if (shouldCompress && input.file.type.startsWith("image/")) {
-        fileToUpload = await compressImage(input.file);
-      }
-
-      // 3. Build FormData.
       const formData = new FormData();
-      formData.append("file", fileToUpload, input.file.name);
+      formData.append("file", prepared.file);
       formData.append("property_id", input.propertyId);
       formData.append("file_purpose", input.filePurpose);
 
-      // 4. Upload via API client (multipart/form-data).
       return apiClient.post<FileResponse>("/files", formData, {
         idempotencyKey: newIdempotencyKey(),
       });
     },
     onSuccess: (data) => {
-      toastMutationSuccess("File berhasil diupload");
+      if (!options?.silent) toastMutationSuccess("File berhasil diunggah");
       options?.onUploadSuccess?.(data);
     },
     onError: (err) => {
-      toastMutationError(err, "Gagal mengupload file");
+      if (!options?.silent) toastMutationError(err, "File belum dapat diunggah");
       options?.onUploadError?.(err);
     },
   });
@@ -131,15 +127,15 @@ export function useFilePreview(fileId: string | null) {
 // useFileDelete
 // ---------------------------------------------------------------------------
 
-export function useFileDelete() {
+export function useFileDelete(options?: { silent?: boolean }) {
   return useMutation<{ success: boolean; file: FileResponse }, unknown, string>({
     mutationFn: async (fileId: string) =>
       apiClient.delete<{ success: boolean; file: FileResponse }>(`/files/${fileId}`),
     onSuccess: () => {
-      toastMutationSuccess("File berhasil dihapus");
+      if (!options?.silent) toastMutationSuccess("File berhasil dihapus");
     },
     onError: (err) => {
-      toastMutationError(err, "Gagal menghapus file");
+      if (!options?.silent) toastMutationError(err, "Gagal menghapus file");
     },
   });
 }

@@ -5,22 +5,33 @@ import {
   parseResidentDetail,
   parseResidentPage,
   parseResidentTenancy,
-  type ResidentAccountStatus,
   type ResidentDetail,
   type ResidentPage,
+  type ContractSettlementStage,
+  type RentPaymentStatus,
   type ResidentStatus,
   type ResidentTenancy,
 } from "@/lib/admin-resident";
 import { useProperty } from "@/lib/property";
 
-export type { ResidentDetail, ResidentListRecord, ResidentStatus } from "@/lib/admin-resident";
+export type {
+  ResidentDetail,
+  ResidentListRecord,
+  RentPaymentStatus,
+  ContractSettlementStage,
+  ResidentStatus,
+} from "@/lib/admin-resident";
 export type ResidentRecord = ResidentDetail;
 
 export type UseResidentsFilters = {
   status?: ResidentStatus;
-  accountStatus?: ResidentAccountStatus;
+  rentPaymentStatus?: Exclude<RentPaymentStatus, "none">;
   gender?: "male" | "female" | "other";
   tenancyStatus?: "awaiting_activation" | "active" | "none";
+  settlementStage?: Exclude<ContractSettlementStage, "none">;
+  settlementDueWithinDays?: number;
+  createdFrom?: string;
+  createdTo?: string;
   q?: string;
   limit?: number;
   offset?: number;
@@ -37,9 +48,13 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
           query: {
             property_id: currentPropertyId,
             status: filters.status,
-            account_status: filters.accountStatus,
+            rent_payment_status: filters.rentPaymentStatus,
             gender: filters.gender,
             tenancy_status: filters.tenancyStatus,
+            contract_settlement_stage: filters.settlementStage,
+            settlement_due_within_days: filters.settlementDueWithinDays,
+            created_from: filters.createdFrom,
+            created_to: filters.createdTo,
             q: filters.q?.trim() || undefined,
             limit: filters.limit ?? 20,
             offset: filters.offset ?? 0,

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { FileResponse } from "@granada-kost/domain";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { FileUploadField } from "@/components/file/FileUploadField";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useFileUpload } from "@/hooks/useFileUpload";
 import {
   useMyW06Billing,
   useMyW06Receipt,
@@ -406,9 +407,8 @@ function ProofDialog({
   const [purpose, setPurpose] = useState<W06PaymentPurpose>("rent");
   const [amount, setAmount] = useState(0);
   const [notes, setNotes] = useState("");
-  const [fileId, setFileId] = useState<string | null>(null);
-  const [filename, setFilename] = useState<string | null>(null);
-  const upload = useFileUpload();
+  const [evidenceFile, setEvidenceFile] = useState<FileResponse | null>(null);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const submit = useSubmitMyW06Proof();
   const normalizedPurpose = invoice?.invoice_purpose === "other_charge" ? "other_charge" : purpose;
   const fingerprint = JSON.stringify({
@@ -416,7 +416,7 @@ function ProofDialog({
     normalizedPurpose,
     amount,
     notes,
-    fileId,
+    fileId: evidenceFile?.id ?? null,
   });
   const key = useLogicalKey(fingerprint);
   const totalRentOutstanding = billing.invoices
@@ -434,14 +434,13 @@ function ProofDialog({
         : (invoice?.outstanding_amount ?? 0);
 
   function close() {
-    if (submit.isPending || upload.isUploading) return;
+    if (submit.isPending || evidenceBusy) return;
     setPurpose("rent");
     setAmount(0);
     setNotes("");
-    setFileId(null);
-    setFilename(null);
+    setEvidenceFile(null);
+    setEvidenceBusy(false);
     submit.reset();
-    upload.reset();
     onClose();
   }
 
@@ -490,29 +489,16 @@ function ProofDialog({
                 Maksimum yang dapat diklaim: {idr(maximum)}
               </p>
             </Field>
-            <Field label="File bukti (JPEG, PNG, atau PDF; maks. 5 MB)">
-              <Input
-                type="file"
-                accept="image/jpeg,image/png,application/pdf"
-                disabled={upload.isUploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  setFileId(null);
-                  setFilename(file.name);
-                  void upload
-                    .uploadAsync({
-                      file,
-                      propertyId: billing.lease.property_id,
-                      filePurpose: "payment_proof",
-                    })
-                    .then((record) => setFileId(record.id));
-                }}
-              />
-              {fileId ? (
-                <p className="text-xs font-normal text-success">{filename} siap dikirim.</p>
-              ) : null}
-            </Field>
+            <FileUploadField
+              propertyId={billing.lease.property_id}
+              filePurpose="payment_proof"
+              label="Bukti transfer"
+              description="Wajib untuk proses verifikasi. File dapat dilihat, diganti, atau dihapus sebelum dikirim."
+              value={evidenceFile}
+              onChange={setEvidenceFile}
+              onBusyChange={setEvidenceBusy}
+              required
+            />
             <Field label="Catatan (opsional)">
               <textarea
                 className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
@@ -521,7 +507,7 @@ function ProofDialog({
                 onChange={(event) => setNotes(event.target.value)}
               />
             </Field>
-            {submit.isError || upload.uploadError ? (
+            {submit.isError ? (
               <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
                 Bukti belum terkirim. Periksa nominal dan file, lalu coba lagi dengan data yang
                 sama.
@@ -538,13 +524,13 @@ function ProofDialog({
             disabled={
               !invoice ||
               submit.isPending ||
-              upload.isUploading ||
-              !fileId ||
+              evidenceBusy ||
+              !evidenceFile ||
               amount <= 0 ||
               amount > maximum
             }
             onClick={() => {
-              if (!invoice || !fileId) return;
+              if (!invoice || !evidenceFile) return;
               submit.mutate(
                 {
                   input: {
@@ -553,7 +539,7 @@ function ProofDialog({
                     payment_method: "bank_transfer",
                     payment_purpose: normalizedPurpose,
                     notes: notes.trim() || undefined,
-                    file_ids: [fileId],
+                    file_ids: [evidenceFile.id],
                   },
                   idempotencyKey: key.current.key,
                 },

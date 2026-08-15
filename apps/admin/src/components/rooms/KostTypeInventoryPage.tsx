@@ -12,6 +12,7 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
+  RotateCcw,
   Search,
   ShieldAlert,
   Users,
@@ -205,6 +206,26 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     activeOccupancy: search.activeOccupancy,
     reconciliationState: search.reconciliationState,
   });
+  const selectedBuilding = buildings.find((building) => building.id === search.buildingId);
+  const filterCriteria = [
+    search.q?.trim() ? `pencarian "${search.q.trim()}"` : "",
+    selectedBuilding ? `bangunan: ${selectedBuilding.label}` : "",
+    search.floorCode ? `lantai: ${search.floorCode}` : "",
+    search.status ? `status kamar: ${ROOM_STATUS_LABEL[search.status]}` : "",
+    search.genderPolicy
+      ? `jenis kelamin: ${search.genderPolicy === "male" ? "Putra" : "Putri"}`
+      : "",
+    search.activeOccupancy === true
+      ? "hunian: ada penghuni aktif"
+      : search.activeOccupancy === false
+        ? "hunian: tanpa penghuni aktif"
+        : "",
+    search.reconciliationState === "normal"
+      ? "rekonsiliasi: normal"
+      : search.reconciliationState === "requires_review"
+        ? "rekonsiliasi: perlu ditinjau"
+        : "",
+  ].filter(Boolean);
 
   useEffect(() => {
     setStatusRoom(null);
@@ -311,6 +332,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
             resultCount={roomQuery.data?.total ?? 0}
             activeFilterCount={activeFilterCount}
             searchTerm={search.q}
+            criteria={filterCriteria}
           />
         ) : null}
         <RoomInventoryTable
@@ -448,25 +470,34 @@ export function RoomDiscoveryFilters({
 }) {
   const [searchText, setSearchText] = useState(search.q);
   useEffect(() => setSearchText(search.q), [search.q]);
+  useEffect(() => {
+    const nextQuery = searchText.trim();
+    if (nextQuery === search.q) return;
+
+    const searchTimer = window.setTimeout(() => {
+      onSearchChange({ q: nextQuery, offset: 0 });
+    }, 300);
+    return () => window.clearTimeout(searchTimer);
+  }, [onSearchChange, search.q, searchText]);
+
   const applySearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     onSearchChange({ q: searchText.trim(), offset: 0 });
   };
   return (
-    <Card className="border-slate-800 bg-slate-900/80">
+    <Card className="border-border bg-card shadow-sm">
       <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-        <form className="flex gap-2 md:col-span-2" onSubmit={applySearch}>
+        <form className="md:col-span-2" role="search" onSubmit={applySearch}>
           <div className="relative min-w-0 flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="border-slate-700 bg-slate-950 pl-9 text-slate-100"
+              className="border-input bg-background pl-9 text-foreground placeholder:text-muted-foreground"
               aria-label="Cari kamar"
               placeholder={`Cari ${category ? KOST_TYPE_LABEL[category].toLowerCase() : "kamar, bangunan, tipe, atau penghuni"}...`}
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
             />
           </div>
-          <Button type="submit">Cari</Button>
         </form>
         <Select
           value={search.buildingId ?? "all"}
@@ -477,7 +508,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua bangunan" />
           </SelectTrigger>
           <SelectContent>
@@ -498,7 +529,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua status" />
           </SelectTrigger>
           <SelectContent>
@@ -519,7 +550,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua lantai" />
           </SelectTrigger>
           <SelectContent>
@@ -538,7 +569,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua gender" />
           </SelectTrigger>
           <SelectContent>
@@ -562,7 +593,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua hunian" />
           </SelectTrigger>
           <SelectContent>
@@ -583,7 +614,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Semua rekonsiliasi" />
           </SelectTrigger>
           <SelectContent>
@@ -598,7 +629,7 @@ export function RoomDiscoveryFilters({
             onSearchChange({ sort: sort as RoomRouteSearch["sort"], offset: 0 })
           }
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Urutkan" />
           </SelectTrigger>
           <SelectContent>
@@ -615,7 +646,7 @@ export function RoomDiscoveryFilters({
           value={search.order ?? "asc"}
           onValueChange={(order) => onSearchChange({ order: order as "asc" | "desc", offset: 0 })}
         >
-          <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-100">
+          <SelectTrigger className="border-input bg-background text-foreground shadow-sm">
             <SelectValue placeholder="Arah urutan" />
           </SelectTrigger>
           <SelectContent>
@@ -624,7 +655,7 @@ export function RoomDiscoveryFilters({
           </SelectContent>
         </Select>
         <Button
-          variant="outline"
+          variant="destructive"
           onClick={() =>
             onSearchChange({
               q: "",
@@ -641,7 +672,7 @@ export function RoomDiscoveryFilters({
             })
           }
         >
-          Reset
+          <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
         </Button>
       </CardContent>
     </Card>
@@ -716,7 +747,7 @@ export function RoomInventoryTable({
 
   if (!rooms.length) {
     return (
-      <Card className="border-slate-800 bg-slate-900/80">
+      <Card className="border-border bg-card shadow-sm">
         <CardContent className="p-6">
           <EmptyState
             icon={<BedDouble className="h-5 w-5" />}
@@ -729,10 +760,10 @@ export function RoomInventoryTable({
   }
   return (
     <>
-      <Card className="overflow-hidden border-slate-800 bg-slate-900/80">
+      <Card className="overflow-hidden border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-slate-950/70 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-muted/75 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Kamar</th>
                 <th className="px-4 py-3">Bangunan</th>
@@ -743,7 +774,7 @@ export function RoomInventoryTable({
                 <th className="px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-border">
               {rooms.map((room) => {
                 const managedStatus = allowedRoomStatusTargets(room.status).length > 0;
                 const residentName =
@@ -751,31 +782,33 @@ export function RoomInventoryTable({
                 return (
                   <tr
                     key={room.id}
-                    className="cursor-pointer transition-colors hover:bg-slate-800/60"
+                    className="cursor-pointer transition-colors hover:bg-muted/60"
                     onClick={() => void openDetail(room)}
                   >
                     <td className="px-4 py-3">
                       <Link
-                        className="inline-flex min-h-11 flex-col justify-center rounded-sm font-semibold text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="inline-flex min-h-11 flex-col justify-center rounded-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         to="/rooms/$roomNumber"
                         params={{ roomNumber: room.number }}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <span>{roomLabel(room)}</span>
                         {room.roomCode && room.roomCode !== room.number ? (
-                          <span className="text-xs font-normal text-slate-500">{room.number}</span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {room.number}
+                          </span>
                         ) : null}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-slate-300">
+                    <td className="px-4 py-3 text-foreground/80">
                       {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
                     </td>
                     {showCategory ? (
-                      <td className="px-4 py-3 text-slate-300">
+                      <td className="px-4 py-3 text-foreground/80">
                         {KOST_TYPE_LABEL[room.kostType.category]}
                       </td>
                     ) : null}
-                    <td className="px-4 py-3 text-slate-300">
+                    <td className="px-4 py-3 text-foreground/80">
                       {room.genderPolicy === "male" ? "Putra" : "Putri"}
                     </td>
                     <td className="px-4 py-3">
@@ -791,13 +824,13 @@ export function RoomInventoryTable({
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-300">
+                    <td className="px-4 py-3 text-foreground/80">
                       {residentName ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <Users className="h-3.5 w-3.5 text-slate-500" /> {residentName}
+                          <Users className="h-3.5 w-3.5 text-muted-foreground" /> {residentName}
                         </span>
                       ) : (
-                        <span className="text-slate-500">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td

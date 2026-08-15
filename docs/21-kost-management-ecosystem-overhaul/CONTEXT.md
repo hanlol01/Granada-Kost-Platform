@@ -14,21 +14,22 @@ tenancy, occupancy, payment, and reporting are separate authorities.
 
 ## Canonical Terms
 
-| Term                         | Canonical meaning                                                                                                                                                                |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Property Owner**           | The contractual/economic owner of an assigned Rumah Kost building or selected Apart Kost rooms. Technical role: `property_owner`. It is not the global operational role `owner`. |
-| **Owner Profile**            | Admin-managed identity, contact, account link, payout destination, and lifecycle status for one Property Owner. One profile has at most one login account.                       |
-| **Owner Account**            | Read-only authenticated account linked to one Owner Profile. Login accepts normalized email or phone.                                                                            |
-| **Ownership Assignment**     | Effective-dated, non-overlapping record that attributes an asset to one Property Owner. It is not property membership, room authority, lease, occupancy, or payment authority.   |
-| **Building Ownership**       | Rumah Kost authority: one assignment covers one whole building and all current and future rooms within it.                                                                       |
-| **Room Ownership**           | Apart Kost authority: one assignment covers one selected room. It never implies ownership of the whole Apart Kost building.                                                      |
-| **Ownership Period**         | Half-open effective interval `[effective_from, effective_until)` used for access and financial attribution.                                                                      |
-| **Kostation-Owned**          | Display state for an asset without an effective owner assignment. No synthetic owner account is created.                                                                         |
-| **Gross Earned Rent**        | Verified rent collected for service already delivered during an occupancy period. It is not the same as cash received in advance.                                                |
-| **Owner Entitlement**        | The Property Owner share of Gross Earned Rent for an asset and ownership period. Current policy: Rp1.500.000 per occupied room per earned month at the standard tariff.          |
-| **Kostation Management Fee** | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.             |
-| **Owner Settlement**         | Monthly review artifact that reconciles earned rent, owner entitlement, management fee, adjustments, and payout.                                                                 |
-| **Owner Payout**             | Money actually disbursed after a settlement is approved. It is not created merely because rent was paid.                                                                         |
+| Term                               | Canonical meaning                                                                                                                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Property Owner**                 | The contractual/economic owner of an assigned Rumah Kost building or selected Apart Kost rooms. Technical role: `property_owner`. It is not the global operational role `owner`.          |
+| **Owner Profile**                  | Admin-managed identity, contact, account link, payout destination, and lifecycle status for one Property Owner. One profile has at most one login account.                                |
+| **Owner Account**                  | Read-only authenticated account linked to one Owner Profile. Login accepts normalized email or phone.                                                                                     |
+| **Ownership Assignment**           | Effective-dated, non-overlapping record that attributes an asset to one Property Owner. It is not property membership, room authority, lease, occupancy, or payment authority.            |
+| **Building Ownership**             | Rumah Kost authority: one assignment covers one whole building and all current and future rooms within it.                                                                                |
+| **Room Ownership**                 | Apart Kost authority: one assignment covers one selected room. It never implies ownership of the whole Apart Kost building.                                                               |
+| **Ownership Period**               | Half-open effective interval `[effective_from, effective_until)` used for access and financial attribution.                                                                               |
+| **Batch Ownership Period Closure** | Admin command that closes multiple selected assignments of one ownership kind at one effective end date. It is atomic, idempotent, audited, and never deletes asset or ownership history. |
+| **Kostation-Owned**                | Display state for an asset without an effective owner assignment. No synthetic owner account is created.                                                                                  |
+| **Gross Earned Rent**              | Verified rent collected for service already delivered during an occupancy period. It is not the same as cash received in advance.                                                         |
+| **Owner Entitlement**              | The Property Owner share of Gross Earned Rent for an asset and ownership period. Current policy: Rp1.500.000 per occupied room per earned month at the standard tariff.                   |
+| **Kostation Management Fee**       | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.                      |
+| **Owner Settlement**               | Monthly review artifact that reconciles earned rent, owner entitlement, management fee, adjustments, and payout.                                                                          |
+| **Owner Payout**                   | Money actually disbursed after a settlement is approved. It is not created merely because rent was paid.                                                                                  |
 
 ## Binding Separation Rules
 

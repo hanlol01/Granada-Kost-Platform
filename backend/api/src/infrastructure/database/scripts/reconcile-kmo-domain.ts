@@ -41,7 +41,8 @@ export const RECONCILIATION_CHECKS: readonly {
             EXISTS (SELECT 1 FROM occupancies o WHERE o.room_id = r.id AND o.occupancy_status = 'active')
             OR EXISTS (SELECT 1 FROM leases l WHERE l.room_id = r.id AND l.lease_status = 'active')
           ) OR (r.room_status = 'reserved') <> EXISTS (
-            SELECT 1 FROM booking_lead_holds h WHERE h.room_id = r.id AND h.hold_status = 'active'
+            SELECT 1 FROM booking_lead_holds h
+            WHERE h.room_id = r.id AND h.hold_status IN ('active', 'committed')
           ) OR EXISTS (
             SELECT 1 FROM occupancies o WHERE o.room_id = r.id AND o.property_id <> r.property_id
           ) OR EXISTS (

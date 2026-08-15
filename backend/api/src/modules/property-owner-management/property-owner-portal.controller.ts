@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
@@ -25,6 +25,11 @@ export class PropertyOwnerPortalController {
   @Get('portal')
   getPortal(@CurrentUser() actor: UserAccessContext) {
     return this.portal.getPortal(actor);
+  }
+
+  @Get('assets/:roomCode')
+  getAssetDetail(@CurrentUser() actor: UserAccessContext, @Param('roomCode') roomCode: string) {
+    return this.portal.getAssetDetail(actor, roomCode);
   }
 
   @Get('reports/preview')

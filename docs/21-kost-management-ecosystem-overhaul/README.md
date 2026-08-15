@@ -1,10 +1,10 @@
 # KOSTATION Kost Management Ecosystem Overhaul
 
-Status: **APPROVED TARGET — KMO-W00 THROUGH KMO-W06 DELIVERED; W10 PROPERTY OWNER PRIORITIZED FOR THE NEXT PLANNING SLICE**
+Status: **APPROVED TARGET — KMO-W00 THROUGH KMO-W06 DELIVERED; W10-OWNER-A THROUGH W10-OWNER-D AUTOMATED VERIFIED; RUNTIME DEFERRED**
 
 Program code: `KMO`
 
-Last policy alignment: 2026-08-11 (Asia/Jakarta)
+Last implementation alignment: 2026-08-12 (Asia/Jakarta)
 
 This directory is the canonical implementation plan for the post-M19 KOSTATION
 functional overhaul. It turns the owner's operating policy, the product owner's
@@ -19,6 +19,16 @@ after evidence is recorded against its traceability entry.
 The latest direct-onboarding form amendment is recorded as
 `SOURCE_IMPLEMENTED` until it has completed its own focused review and commit.
 It does not retroactively change the delivered status of W05/W06 or advance W07.
+
+Property Owner implementation truth is tracked separately: W10-OWNER-A is
+committed at `3b6dd0020530fe8cc883136dd4b65a97399403f8`, W10-OWNER-B is committed at
+`c5649f0`, W10-OWNER-A3 adds source-only migration 037 allocation-backed exact
+service-coverage authority, and W10-OWNER-C/D have automated reconciliation and
+security evidence with runtime deferred. The controlled runtime and rollback
+procedure is recorded in
+[`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md).
+Migrations 035–037 are not claimed as applied to the canonical database, and no
+Owner portal browser/runtime verification is claimed yet.
 
 ## Authority Order
 
@@ -64,19 +74,21 @@ implement.
     — mixed-asset ownership, read-only Owner access, and settlement authority.
 12. [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
     — the bounded, prioritized W10 ownership delivery sequence; planning only.
-13. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
+13. [`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md)
+    — W10-D reconciliation boundary, controlled runtime QA, rollback, and release evidence.
+14. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
     transaction, idempotency, audit, file, cache, and adapter contracts.
-14. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
+15. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
     — detailed money, reminder, notification, expense, and report behavior.
-15. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
+16. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
     vertical slices.
-16. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
+17. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
     required automated, migration, runtime, and release evidence.
-17. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
+18. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
     and implementation status.
-18. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
+19. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
     and review protocol.
-19. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
+20. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
     derived from third-party screenshots and rejected reference behavior.
 
 The architecture set has four distinct jobs: visual relationships live in

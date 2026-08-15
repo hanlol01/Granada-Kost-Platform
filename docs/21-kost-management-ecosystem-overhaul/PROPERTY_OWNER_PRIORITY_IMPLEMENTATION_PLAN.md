@@ -10,8 +10,10 @@ Implementation truth as of 2026-08-12 (Asia/Jakarta):
 - `W10-OWNER-B` is `SOURCE_IMPLEMENTED`; the Admin Owner Property workspace is
   committed, with focused contract/build evidence but no browser/runtime claim.
   Source commit: `c5649f0`.
-- `W10-OWNER-C` is `SOURCE_IMPLEMENTED`; automated review is pending and
-  runtime remains deferred. `W10-OWNER-D` remains `PLANNED`.
+- `W10-OWNER-C` and `W10-OWNER-D` are `AUTOMATED_VERIFIED`; controlled runtime
+  QA and canonical migration remain deferred. The evidence boundary and runtime
+  procedure are recorded in
+  [`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md).
 
 This plan does not promote deferred canonical migration, reconciliation, or
 runtime evidence merely because source has been committed.
@@ -176,6 +178,12 @@ Exit criteria:
 - ownership, financial, and export totals reconcile;
 - runtime and migration status are recorded using the approved vocabulary;
 - canonical migration remains deferred until an explicit deployment instruction.
+
+Automated exit evidence is complete: disposable PostgreSQL proofs cover
+allocation-to-earning, adjustment, settlement-line, and payout reconciliation,
+scope/PII/mutation denial is covered by focused contracts, and the controlled
+runtime/rollback procedure is recorded in the W10-D runbook. Runtime remains
+deferred until that procedure is performed on an identified QA target.
 
 ## 4. Transaction Boundaries
 

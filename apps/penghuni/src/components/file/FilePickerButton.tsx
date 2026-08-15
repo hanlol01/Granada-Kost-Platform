@@ -79,7 +79,9 @@ export function FilePickerButton({
 
     // Validate each file.
     for (const file of files) {
-      const result = validateFileForPurpose(file, filePurpose);
+      const result = validateFileForPurpose(file, filePurpose, {
+        skipSize: policy.compressImages && file.type.startsWith("image/"),
+      });
       if (!result.valid) {
         setValidationError(result.message);
         onValidationError?.(result);
@@ -127,7 +129,9 @@ export function FilePickerButton({
         <span className="truncate">Pilih {policy.label.toLowerCase()}</span>
       </Button>
 
-      <p className="mt-1 text-[11px] text-muted-foreground">{maxSizes}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {maxSizes}. Foto besar dikompresi otomatis.
+      </p>
 
       {validationError && (
         <div className="mt-1.5 flex items-start gap-1.5 text-xs text-destructive">

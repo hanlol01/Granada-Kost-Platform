@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
-import fontkit from '@pdf-lib/fontkit';
+import * as fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, type PDFFont, rgb } from 'pdf-lib';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { UserAccessContext } from '../iam/types/iam.types';
@@ -205,7 +205,11 @@ export class PropertyOwnerPortalService {
          assignment_state.*
        FROM current_scope scope
        JOIN rooms ON rooms.id = scope.room_id
-       CROSS JOIN assignment_state`,
+       CROSS JOIN assignment_state
+       GROUP BY assignment_state.scheduled_count,
+                assignment_state.next_scheduled_date,
+                assignment_state.expired_count,
+                assignment_state.latest_historical_period`,
       [owner.id, owner.property_id, actor.id],
     );
     const row = this.singleRow(summary.rows, 'portal.summary');
@@ -223,11 +227,16 @@ export class PropertyOwnerPortalService {
            AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
            AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
        )
-       SELECT rooms.room_code, rooms.room_status, buildings.building_code, buildings.building_name,
-              leases.lease_status, leases.end_date::text AS lease_end_date
-       FROM current_scope scope
-       JOIN rooms ON rooms.id = scope.room_id
-       LEFT JOIN room_buildings buildings ON buildings.id = rooms.building_id
+       SELECT rooms.room_code, rooms.room_status, kost_types.category AS kost_type,
+              buildings.building_code, buildings.building_name,
+               leases.lease_status, leases.end_date::text AS lease_end_date
+        FROM current_scope scope
+        JOIN rooms ON rooms.id = scope.room_id
+        LEFT JOIN room_buildings buildings ON buildings.id = rooms.building_id
+        JOIN kost_types ON kost_types.id = rooms.kost_type_id
+          AND kost_types.property_id = rooms.property_id
+          AND kost_types.category = rooms.category
+          AND kost_types.deleted_at IS NULL
        LEFT JOIN leases ON leases.room_id = rooms.id AND leases.lease_status = 'active'
          AND leases.start_date < COALESCE(scope.scope_until, 'infinity'::date)
          AND COALESCE(leases.end_date + 1, 'infinity'::date) > scope.scope_from
@@ -275,6 +284,11 @@ export class PropertyOwnerPortalService {
       assets: assets.rows.map((asset, index) => ({
         room_code: this.text(asset.room_code, `assets.${index}.room_code`),
         room_status: this.enumValue(asset.room_status, roomStatuses, `assets.${index}.room_status`),
+        kost_type: this.enumValue(
+          asset.kost_type,
+          ['rukost', 'apartkost'],
+          `assets.${index}.kost_type`,
+        ),
         building_code: this.nullableText(asset.building_code, `assets.${index}.building_code`),
         building_name: this.nullableText(asset.building_name, `assets.${index}.building_name`),
         lease_status:
@@ -283,6 +297,150 @@ export class PropertyOwnerPortalService {
             : this.enumValue(asset.lease_status, leaseStatuses, `assets.${index}.lease_status`),
         lease_end_date: this.nullableDate(asset.lease_end_date, `assets.${index}.lease_end_date`),
       })),
+    };
+  }
+
+  async getAssetDetail(actor: UserAccessContext, rawRoomCode: string) {
+    const roomCode = this.normalizeRoomCode(rawRoomCode);
+    const owner = await this.resolveOwner(actor);
+    if (!owner) return this.assetUnavailable();
+
+    const result = await this.database.client.query(
+      `WITH authorized_asset AS (
+         SELECT rooms.id AS room_id, assignments.effective_from, assignments.effective_until,
+                'building_assignment'::text AS assignment_source
+         FROM building_owner_assignments assignments
+         JOIN rooms ON rooms.building_id = assignments.building_id
+           AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND rooms.room_code = $3
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+         UNION ALL
+         SELECT rooms.id, assignments.effective_from, assignments.effective_until,
+                'room_assignment'::text
+         FROM room_owner_assignments assignments
+         JOIN rooms ON rooms.id = assignments.room_id
+           AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND rooms.room_code = $3
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+       )
+       SELECT rooms.room_code, rooms.room_status, kost_types.category AS kost_type,
+              buildings.building_code, buildings.building_name, rooms.floor_label, rooms.unit_code,
+              rooms.gender_policy, commercial.monthly_price::text AS monthly_price,
+              commercial.annual_contract_value::text AS annual_contract_value,
+              lease.lease_status, lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+              resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
+              authorized_asset.effective_from::text, authorized_asset.effective_until::text,
+              authorized_asset.assignment_source,
+              (SELECT COUNT(*)::int FROM complaints
+                 WHERE complaints.property_id = $2 AND complaints.room_id = rooms.id
+                   AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
+                   AND complaints.created_at >= authorized_asset.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
+                   AND (authorized_asset.effective_until IS NULL OR complaints.created_at < authorized_asset.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_complaints,
+              (SELECT COUNT(*)::int FROM maintenance_work_orders
+                 WHERE maintenance_work_orders.property_id = $2 AND maintenance_work_orders.room_id = rooms.id
+                   AND maintenance_work_orders.work_order_status NOT IN ('verified', 'cancelled')
+                   AND maintenance_work_orders.created_at >= authorized_asset.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
+                   AND (authorized_asset.effective_until IS NULL OR maintenance_work_orders.created_at < authorized_asset.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_maintenance,
+              rooms.updated_at::text AS updated_at
+       FROM authorized_asset
+       JOIN rooms ON rooms.id = authorized_asset.room_id AND rooms.property_id = $2
+       JOIN room_buildings buildings ON buildings.id = rooms.building_id
+         AND buildings.property_id = rooms.property_id
+       JOIN kost_types ON kost_types.id = rooms.kost_type_id
+         AND kost_types.property_id = rooms.property_id
+         AND kost_types.category = rooms.category
+         AND kost_types.deleted_at IS NULL
+       JOIN LATERAL (
+         SELECT monthly_price, annual_contract_value
+         FROM kost_type_commercial_versions
+         WHERE kost_type_id = kost_types.id AND effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+         ORDER BY effective_date DESC, id DESC
+         LIMIT 1
+       ) commercial ON true
+       LEFT JOIN LATERAL (
+         SELECT lease_status, start_date, end_date, resident_id, occupancy_id
+         FROM leases
+         WHERE property_id = $2 AND room_id = rooms.id AND lease_status = 'active'
+           AND start_date < COALESCE(authorized_asset.effective_until, 'infinity'::date)
+           AND COALESCE(end_date + 1, 'infinity'::date) > authorized_asset.effective_from
+         ORDER BY start_date, id
+         LIMIT 1
+       ) lease ON true
+       LEFT JOIN LATERAL (
+         SELECT occupancy.resident_id, occupancy.start_date
+         FROM occupancies occupancy
+         WHERE occupancy.property_id = $2 AND occupancy.room_id = rooms.id AND occupancy.occupancy_status = 'active'
+           AND occupancy.start_date < COALESCE(authorized_asset.effective_until, 'infinity'::date)
+           AND COALESCE(occupancy.end_date + 1, 'infinity'::date) > authorized_asset.effective_from
+         ORDER BY occupancy.start_date, occupancy.id
+         LIMIT 1
+       ) occupancy ON true
+       LEFT JOIN residents resident ON resident.id = occupancy.resident_id
+         AND resident.property_id = rooms.property_id
+       ORDER BY authorized_asset.effective_from DESC, rooms.id`,
+      [owner.id, owner.property_id, roomCode],
+    );
+    if (result.rows.length === 0) return this.assetUnavailable();
+    const row = this.singleRow(result.rows, 'owner_asset.detail');
+    const leaseStatus =
+      row.lease_status === null
+        ? null
+        : this.enumValue(row.lease_status, leaseStatuses, 'asset.lease_status');
+    const residentName = this.nullableText(
+      row.resident_display_name,
+      'asset.resident_display_name',
+    );
+    const occupancyStart = this.nullableDate(
+      row.occupancy_start_date,
+      'asset.occupancy_start_date',
+    );
+    if ((residentName === null) !== (occupancyStart === null))
+      return this.invalid('asset.resident');
+    return {
+      room_code: this.text(row.room_code, 'asset.room_code'),
+      room_status: this.enumValue(row.room_status, roomStatuses, 'asset.room_status'),
+      kost_type: this.enumValue(row.kost_type, ['rukost', 'apartkost'], 'asset.kost_type'),
+      building: {
+        code: this.text(row.building_code, 'asset.building_code'),
+        name: this.text(row.building_name, 'asset.building_name'),
+        floor_label: this.text(row.floor_label, 'asset.floor_label'),
+        unit_code: this.nullableText(row.unit_code, 'asset.unit_code'),
+      },
+      gender_policy: this.enumValue(row.gender_policy, ['male', 'female'], 'asset.gender_policy'),
+      commercial: {
+        monthly_price: this.money(row.monthly_price, 'asset.monthly_price'),
+        annual_contract_value: this.money(row.annual_contract_value, 'asset.annual_contract_value'),
+      },
+      lease:
+        leaseStatus === null
+          ? null
+          : {
+              status: leaseStatus,
+              start_date: this.date(row.lease_start_date, 'asset.lease_start_date'),
+              end_date: this.nullableDate(row.lease_end_date, 'asset.lease_end_date'),
+            },
+      resident:
+        residentName === null || occupancyStart === null
+          ? null
+          : { display_name: residentName, occupancy_start_date: occupancyStart },
+      ownership: {
+        source: this.enumValue(
+          row.assignment_source,
+          ['building_assignment', 'room_assignment'],
+          'asset.assignment_source',
+        ),
+        effective_from: this.date(row.effective_from, 'asset.effective_from'),
+        effective_until: this.nullableDate(row.effective_until, 'asset.effective_until'),
+      },
+      issues: {
+        open_complaints: this.count(row.open_complaints, 'asset.open_complaints'),
+        open_maintenance: this.count(row.open_maintenance, 'asset.open_maintenance'),
+      },
+      updated_at: this.timestamp(row.updated_at, 'asset.updated_at'),
     };
   }
 
@@ -741,6 +899,26 @@ export class PropertyOwnerPortalService {
       code: 'OWNER_REPORT_DATA_INVALID',
       message: `Owner report data is invalid: ${field}`,
     });
+  }
+  private assetUnavailable(): never {
+    throw new ForbiddenException({
+      code: 'OWNER_ASSET_UNAVAILABLE',
+      message: 'Asset unavailable for the current owner scope',
+    });
+  }
+  private normalizeRoomCode(value: string): string {
+    const parsed = value.trim();
+    if (
+      !parsed ||
+      parsed.length > 80 ||
+      Array.from(parsed).some((character) => character.charCodeAt(0) < 32)
+    ) {
+      throw new BadRequestException({
+        code: 'OWNER_ASSET_CODE_INVALID',
+        message: 'Room code is invalid',
+      });
+    }
+    return parsed;
   }
   private singleRow(rows: unknown, field: string): Record<string, unknown> {
     if (

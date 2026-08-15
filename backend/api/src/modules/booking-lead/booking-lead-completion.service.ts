@@ -7,7 +7,12 @@ import {
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../infrastructure/database/database.service';
+import {
+  createBillingReceiptPdf,
+  type BillingReceiptDocument,
+} from '../billing/helpers/billing-document.helper';
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
+import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
 
 type ContextRow = {
   lead_id: string;
@@ -143,6 +148,7 @@ type ProgressRow = {
   hold_expires_at: Date | null;
   hold_released_at: Date | null;
   hold_release_reason: string | null;
+  payment_commitment_id: string | null;
   payment_type: string | null;
   rent_credit_amount: string | number | null;
   security_deposit_amount: string | number | null;
@@ -152,6 +158,12 @@ type ProgressRow = {
   payment_end_date: string | Date | null;
   payment_term_months: number | null;
   payment_materialized_at: Date | null;
+  refund_id: string | null;
+  refund_amount: string | number | null;
+  refund_method: string | null;
+  refund_note: string | null;
+  refund_evidence_file_ids: string[] | null;
+  refunded_at: Date | null;
   onboarding_status: string | null;
   onboarding_committed_at: Date | null;
   lease_status: string | null;
@@ -179,6 +191,7 @@ export type BookingLeadProgressResponse = {
     release_reason: string | null;
   } | null;
   payment_commitment: {
+    id: string;
     payment_type: string;
     rent_credit_amount: number;
     security_deposit_amount: number;
@@ -188,6 +201,14 @@ export type BookingLeadProgressResponse = {
     end_date: string;
     term_months: number;
     materialized_at: string | null;
+  } | null;
+  cancellation: {
+    id: string;
+    refund_amount: number;
+    refund_method: 'cash' | 'bank_transfer';
+    refund_note: string | null;
+    refund_evidence_file_ids: string[];
+    refunded_at: string;
   } | null;
   onboarding: { status: string; committed_at: string | null } | null;
   tenancy: {
@@ -288,6 +309,20 @@ export class BookingLeadCompletionService {
           code: 'BOOKING_LEAD_PAYMENT_COMMITMENT_EXISTS',
           message: 'Lead already has a payment commitment',
         });
+      const promotedHold = await client.query(
+        `UPDATE booking_lead_holds
+            SET hold_status='committed', updated_at=now()
+          WHERE id=$1 AND property_id=$2 AND booking_lead_id=$3 AND room_id=$4
+            AND hold_status='active'
+          RETURNING id`,
+        [context.hold_id, dto.property_id, leadId, context.room_id],
+      );
+      if (promotedHold.rowCount !== 1) {
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_HOLD_REQUIRED',
+          message: 'Booking lead hold changed before the payment commitment was recorded',
+        });
+      }
       await client.query(
         `UPDATE booking_leads
          SET status='onboarding', visitor_name=COALESCE($3, visitor_name), visitor_phone=COALESCE($4, visitor_phone),
@@ -313,6 +348,193 @@ export class BookingLeadCompletionService {
         this.response(commitment),
       );
       await this.completeClaim(client, actorUserId, key, body, commitment.id);
+      await client.query('COMMIT');
+      return body;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * A committed lead still has no lease or occupancy.  Its original payment
+   * commitment is immutable; cancellation creates a refund record, releases
+   * the room, and moves the lead to its terminal cancelled state atomically.
+   */
+  async cancelPaymentCommitment(
+    leadId: string,
+    dto: CancelBookingLeadPaymentCommitmentDto,
+    actorUserId: string,
+    idempotencyKey: string | undefined,
+    correlationId?: string,
+  ) {
+    const key = this.idempotencyKey(idempotencyKey);
+    const route = 'POST /booking-leads/:leadId/cancel-payment-commitment';
+    const fingerprint = this.fingerprint({ lead_id: leadId, payload: dto, actor_id: actorUserId });
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended('booking_lead_hold:' || $1::text, 0))`,
+        [dto.property_id],
+      );
+      const replay = await this.claim(
+        client,
+        dto.property_id,
+        actorUserId,
+        key,
+        fingerprint,
+        correlationId,
+        route,
+      );
+      if (replay) {
+        await client.query('COMMIT');
+        return replay;
+      }
+
+      const context = await this.lockContext(client, leadId, dto.property_id);
+      if (context.lead_status !== 'onboarding' || context.hold_status !== 'committed') {
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+          message: 'Only a paid booking lead that has not become a lease can be cancelled',
+        });
+      }
+      const commitmentResult = await client.query<CommitmentRow>(
+        `SELECT * FROM booking_lead_payment_commitments
+         WHERE property_id=$1 AND booking_lead_id=$2
+         FOR UPDATE`,
+        [dto.property_id, leadId],
+      );
+      const commitment = commitmentResult.rows[0];
+      if (!commitment || commitment.materialized_onboarding_commitment_id) {
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+          message: 'A lease commitment already exists or the booking payment is unavailable',
+        });
+      }
+      const lifecycle = await client.query<{ exists: boolean }>(
+        `SELECT EXISTS(
+           SELECT 1 FROM leases
+           WHERE property_id=$1 AND booking_lead_id=$2
+             AND lease_status IN ('awaiting_activation','active')
+         ) AS exists`,
+        [dto.property_id, leadId],
+      );
+      if (lifecycle.rows[0]?.exists) {
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+          message: 'A booking lead cannot be cancelled after its lease has started',
+        });
+      }
+      // A pending bank transfer is not money received yet. The lead may still
+      // be cancelled, but it must never create a financial refund for an
+      // unverified amount.
+      const refundAmount =
+        commitment.verification_status === 'verified'
+          ? Number(commitment.rent_credit_amount) + Number(commitment.security_deposit_amount)
+          : 0;
+      const refundEvidenceFileIds = dto.refund_evidence_file_ids ?? [];
+      if (
+        refundAmount > 0 &&
+        dto.refund_method === 'bank_transfer' &&
+        refundEvidenceFileIds.length === 0
+      ) {
+        throw new BadRequestException({
+          code: 'BOOKING_LEAD_REFUND_EVIDENCE_REQUIRED',
+          message: 'Bank-transfer refunds require a refund proof',
+        });
+      }
+      await this.assertPaymentEvidence(client, refundEvidenceFileIds, dto.property_id, actorUserId);
+      const inserted = await client.query<{ id: string; refunded_at: string | Date }>(
+        `INSERT INTO booking_lead_payment_commitment_refunds(
+           property_id,booking_lead_id,commitment_id,hold_id,refund_amount,refund_method,refund_note,refund_evidence_file_ids,refunded_by_user_id
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id,refunded_at`,
+        [
+          dto.property_id,
+          leadId,
+          commitment.id,
+          context.hold_id,
+          refundAmount,
+          dto.refund_method,
+          dto.refund_note ?? null,
+          refundEvidenceFileIds,
+          actorUserId,
+        ],
+      );
+      const refund = inserted.rows[0];
+      if (!refund)
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+          message: 'Refund could not be recorded',
+        });
+      const released = await client.query(
+        `UPDATE booking_lead_holds SET hold_status='released',released_at=now(),released_by_user_id=$2,updated_at=now()
+         WHERE id=$1 AND property_id=$3 AND hold_status='committed'
+         RETURNING room_id`,
+        [context.hold_id, actorUserId, dto.property_id],
+      );
+      if (released.rowCount !== 1)
+        throw new ConflictException({
+          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+          message: 'The paid room hold changed before cancellation',
+        });
+      await client.query(
+        `UPDATE rooms room SET room_status='vacant', updated_at=now()
+         WHERE room.id=$1 AND room.property_id=$2 AND room.room_status='reserved'
+           AND NOT EXISTS (
+             SELECT 1 FROM booking_lead_holds hold
+             WHERE hold.room_id=room.id AND hold.property_id=room.property_id
+               AND hold.hold_status IN ('active','committed')
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM occupancies occupancy
+             WHERE occupancy.room_id=room.id AND occupancy.property_id=room.property_id AND occupancy.occupancy_status='active'
+           )`,
+        [context.room_id, dto.property_id],
+      );
+      await client.query(
+        `UPDATE booking_leads SET status='cancelled',updated_at=now() WHERE id=$1 AND property_id=$2 AND status='onboarding'`,
+        [leadId, dto.property_id],
+      );
+      const snapshot = {
+        refund_id: refund.id,
+        commitment_id: commitment.id,
+        refund_amount: refundAmount,
+        refund_method: dto.refund_method,
+        refund_evidence_file_ids: refundEvidenceFileIds,
+        refunded_at: this.iso(refund.refunded_at),
+      };
+      await client.query(
+        `INSERT INTO audit_logs(actor_user_id,property_id,action,resource_type,resource_id,after_data,result_status,correlation_id)
+         VALUES($1,$2,'booking_lead.payment_commitment_refunded','booking_lead_payment_commitment_refund',$3,$4::jsonb,'success',$5)`,
+        [actorUserId, dto.property_id, refund.id, JSON.stringify(snapshot), correlationId ?? null],
+      );
+      await client.query(
+        `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,payload,correlation_id,actor_user_id)
+         VALUES($1,$2,'booking_lead.payment_commitment_refunded','booking_lead',$3,$4::jsonb,$5,$6)
+         ON CONFLICT(event_key) DO NOTHING`,
+        [
+          dto.property_id,
+          `booking_lead.payment_commitment_refunded:${refund.id}`,
+          leadId,
+          JSON.stringify(snapshot),
+          correlationId ?? null,
+          actorUserId,
+        ],
+      );
+      const body = { data: snapshot };
+      await this.completeClaim(
+        client,
+        actorUserId,
+        key,
+        body,
+        refund.id,
+        route,
+        'booking_lead_payment_commitment_refund',
+      );
       await client.query('COMMIT');
       return body;
     } catch (error) {
@@ -460,6 +682,108 @@ export class BookingLeadCompletionService {
   }
 
   /**
+   * The booking stage has no payment_receipt row yet, but its document must
+   * look and behave exactly like the established billing receipt once it is
+   * downloaded.  The immutable commitment id supplies the stable document
+   * number until the payment is materialized into the ledger.
+   */
+  async paymentCommitmentReceiptDocument(
+    leadId: string,
+    propertyId: string,
+  ): Promise<BillingReceiptDocument> {
+    const result = await this.database.client.query<{
+      commitment_id: string;
+      payment_type: string;
+      payment_method: string;
+      verification_status: string;
+      rent_credit_amount: string | number;
+      created_at: Date;
+      visitor_name: string;
+      room_number: string;
+    }>(
+      `SELECT commitment.id AS commitment_id,commitment.payment_type,commitment.payment_method,
+              commitment.verification_status,commitment.rent_credit_amount,commitment.created_at,
+              lead.visitor_name,room.number AS room_number
+         FROM booking_lead_payment_commitments commitment
+         JOIN booking_leads lead ON lead.id=commitment.booking_lead_id
+           AND lead.property_id=commitment.property_id
+         JOIN rooms room ON room.id=commitment.room_id AND room.property_id=commitment.property_id
+        WHERE commitment.booking_lead_id=$1 AND commitment.property_id=$2`,
+      [leadId, propertyId],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_RECEIPT_NOT_FOUND',
+        message: 'Initial booking payment document is unavailable',
+      });
+    const verified = row.verification_status === 'verified';
+    return createBillingReceiptPdf({
+      receiptCode: `RCT-BKG-${this.documentSuffix(row.commitment_id)}`,
+      paymentCode: `BKG-${this.documentSuffix(row.commitment_id)}`,
+      paymentMethod: row.payment_method,
+      paymentPurpose: row.payment_type,
+      residentName: row.visitor_name,
+      roomNumber: row.room_number,
+      amount: Number(row.rent_credit_amount),
+      paidAt: verified ? row.created_at : null,
+      issuedAt: row.created_at,
+      allocations: [],
+      documentTitle: verified ? 'KUITANSI PEMBAYARAN AWAL' : 'NOTA PEMBAYARAN AWAL',
+      documentFootnote: verified
+        ? 'Kuitansi ini membuktikan penerimaan pembayaran awal sebelum data penyewaan dikomit.'
+        : 'Nota ini belum membuktikan penerimaan dana sampai transfer diverifikasi admin.',
+    });
+  }
+
+  async cancellationReceiptDocument(
+    leadId: string,
+    propertyId: string,
+  ): Promise<BillingReceiptDocument> {
+    const result = await this.database.client.query<{
+      refund_id: string;
+      refund_amount: string | number;
+      refund_method: string;
+      refund_note: string | null;
+      refunded_at: Date;
+      visitor_name: string;
+      room_number: string | null;
+    }>(
+      `SELECT refund.id AS refund_id,refund.refund_amount,refund.refund_method,refund.refund_note,
+              refund.refunded_at,lead.visitor_name,room.number AS room_number
+         FROM booking_lead_payment_commitment_refunds refund
+         JOIN booking_leads lead ON lead.id=refund.booking_lead_id
+           AND lead.property_id=refund.property_id
+         JOIN booking_lead_holds hold ON hold.id=refund.hold_id AND hold.property_id=refund.property_id
+         LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=refund.property_id
+        WHERE refund.booking_lead_id=$1 AND refund.property_id=$2`,
+      [leadId, propertyId],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new NotFoundException({
+        code: 'BOOKING_LEAD_CANCELLATION_DOCUMENT_NOT_FOUND',
+        message: 'Cancellation document is unavailable',
+      });
+    return createBillingReceiptPdf({
+      receiptCode: `RCT-CNL-${this.documentSuffix(row.refund_id)}`,
+      paymentCode: `CNL-${this.documentSuffix(row.refund_id)}`,
+      paymentMethod: row.refund_method,
+      paymentPurpose: 'payment_commitment_refund',
+      residentName: row.visitor_name,
+      roomNumber: row.room_number ?? 'Kamar tahanan dibatalkan',
+      amount: Number(row.refund_amount),
+      paidAt: row.refunded_at,
+      issuedAt: row.refunded_at,
+      allocations: [],
+      documentTitle: 'KUITANSI REFUND PEMBATALAN',
+      documentFootnote:
+        row.refund_note ??
+        'Dokumen ini mencatat pengembalian pembayaran awal setelah minat booking dibatalkan.',
+    });
+  }
+
+  /**
    * Read-only operational detail for the Admin booking queue.  A lead may
    * legitimately stop at any point in this journey, so every relationship is
    * projected independently instead of treating a lead as a lease or an
@@ -478,10 +802,13 @@ export class BookingLeadCompletionService {
                 target_room.number AS room_number,
                 hold.hold_status,held_room.number AS hold_room_number,hold.starts_at AS hold_starts_at,
                 hold.expires_at AS hold_expires_at,hold.released_at AS hold_released_at,hold.release_reason AS hold_release_reason,
+                commitment.id AS payment_commitment_id,
                 commitment.payment_type,commitment.rent_credit_amount,commitment.security_deposit_amount,
                 commitment.payment_method,commitment.verification_status,commitment.start_date AS payment_start_date,
                 commitment.end_date AS payment_end_date,commitment.term_months AS payment_term_months,
                 commitment.materialized_at AS payment_materialized_at,
+                refund.id AS refund_id,refund.refund_amount,refund.refund_method,refund.refund_note,
+                refund.refund_evidence_file_ids,refund.refunded_at,
                 onboarding.status AS onboarding_status,onboarding.committed_at AS onboarding_committed_at,
                 lease.resident_id,lease.lease_status,lease.start_date AS lease_start_date,lease.end_date AS lease_end_date,
                 lease.term_months AS lease_term_months,lease.contract_rent_amount,
@@ -493,7 +820,7 @@ export class BookingLeadCompletionService {
            SELECT id,hold_status,room_id,starts_at,expires_at,released_at,release_reason
            FROM booking_lead_holds
            WHERE booking_lead_id=lead.id AND property_id=lead.property_id
-           ORDER BY CASE hold_status WHEN 'active' THEN 0 WHEN 'released' THEN 1 ELSE 2 END,
+           ORDER BY CASE hold_status WHEN 'committed' THEN 0 WHEN 'active' THEN 1 WHEN 'released' THEN 2 ELSE 3 END,
                     starts_at DESC,id DESC
            LIMIT 1
          ) hold ON true
@@ -501,6 +828,8 @@ export class BookingLeadCompletionService {
            ON held_room.id=hold.room_id AND held_room.property_id=lead.property_id
          LEFT JOIN booking_lead_payment_commitments commitment
            ON commitment.booking_lead_id=lead.id AND commitment.property_id=lead.property_id
+         LEFT JOIN booking_lead_payment_commitment_refunds refund
+           ON refund.booking_lead_id=lead.id AND refund.property_id=lead.property_id
          LEFT JOIN onboarding_commitments onboarding
            ON onboarding.id=lead.onboarding_commitment_id AND onboarding.property_id=lead.property_id
          LEFT JOIN leases lease
@@ -582,6 +911,7 @@ export class BookingLeadCompletionService {
         : null,
       payment_commitment: row.payment_type
         ? {
+            id: row.payment_commitment_id!,
             payment_type: row.payment_type,
             rent_credit_amount: Number(row.rent_credit_amount),
             security_deposit_amount: Number(row.security_deposit_amount),
@@ -593,6 +923,16 @@ export class BookingLeadCompletionService {
             materialized_at: row.payment_materialized_at
               ? this.iso(row.payment_materialized_at)
               : null,
+          }
+        : null,
+      cancellation: row.refund_id
+        ? {
+            id: row.refund_id,
+            refund_amount: Number(row.refund_amount),
+            refund_method: row.refund_method as 'cash' | 'bank_transfer',
+            refund_note: row.refund_note,
+            refund_evidence_file_ids: row.refund_evidence_file_ids ?? [],
+            refunded_at: this.iso(row.refunded_at!),
           }
         : null,
       onboarding: row.onboarding_status
@@ -641,7 +981,7 @@ export class BookingLeadCompletionService {
         room.room_status,
         commercial.monthly_price, commercial.annual_contract_value AS yearly_price
        FROM booking_leads lead
-       LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status='active'
+         LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status IN ('active','committed')
        LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=lead.property_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=lead.property_id
        LEFT JOIN kost_types kost_type ON kost_type.id=room.kost_type_id AND kost_type.property_id=lead.property_id
@@ -676,12 +1016,7 @@ export class BookingLeadCompletionService {
   }
 
   private assertEligible(row: ContextRow, allowCompleted = false): void {
-    if (
-      !row.hold_id ||
-      row.hold_status !== 'active' ||
-      !row.expires_at ||
-      new Date(row.expires_at).getTime() <= Date.now()
-    )
+    if (!row.hold_id || !this.hasUsableHold(row, allowCompleted))
       throw new ConflictException({
         code: 'BOOKING_LEAD_HOLD_REQUIRED',
         message: 'An active room hold is required before rental data can be completed',
@@ -723,6 +1058,16 @@ export class BookingLeadCompletionService {
         code: 'BOOKING_LEAD_HOLD_CONTEXT_INVALID',
         message: 'Held room is no longer compatible with this booking lead',
       });
+  }
+
+  private hasUsableHold(row: ContextRow, allowCompleted: boolean): boolean {
+    if (!row.hold_id || !row.hold_status) return false;
+    if (allowCompleted && row.hold_status === 'committed') return true;
+    return (
+      row.hold_status === 'active' &&
+      !!row.expires_at &&
+      new Date(row.expires_at).getTime() > Date.now()
+    );
   }
 
   private contractRent(
@@ -828,8 +1173,8 @@ export class BookingLeadCompletionService {
     key: string,
     fingerprint: string,
     correlationId?: string,
+    route = 'POST /booking-leads/:leadId/complete',
   ): Promise<Record<string, unknown> | null> {
-    const route = 'POST /booking-leads/:leadId/complete';
     const inserted = await client.query(
       `INSERT INTO idempotency_commands(property_id,actor_user_id,route,idempotency_key,request_fingerprint,correlation_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(actor_user_id,route,idempotency_key) DO NOTHING RETURNING id`,
       [propertyId, actorUserId, route, key, fingerprint, correlationId ?? null],
@@ -863,10 +1208,12 @@ export class BookingLeadCompletionService {
     key: string,
     body: Record<string, unknown>,
     resourceId: string,
+    route = 'POST /booking-leads/:leadId/complete',
+    resourceType = 'booking_lead_payment_commitment',
   ) {
     await client.query(
-      `UPDATE idempotency_commands SET command_status='succeeded',response_status=201,response_body=$3::jsonb,resource_type='booking_lead_payment_commitment',resource_id=$4,completed_at=now() WHERE actor_user_id=$1 AND route='POST /booking-leads/:leadId/complete' AND idempotency_key=$2`,
-      [actor, key, JSON.stringify(body), resourceId],
+      `UPDATE idempotency_commands SET command_status='succeeded',response_status=201,response_body=$3::jsonb,resource_type=$4,resource_id=$5,completed_at=now() WHERE actor_user_id=$1 AND route=$6 AND idempotency_key=$2`,
+      [actor, key, JSON.stringify(body), resourceType, resourceId, route],
     );
   }
 
@@ -929,6 +1276,9 @@ export class BookingLeadCompletionService {
   }
   private fingerprint(value: unknown): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  }
+  private documentSuffix(id: string): string {
+    return id.replace(/-/g, '').slice(0, 16).toUpperCase();
   }
   private iso(value: string | Date): string {
     return new Date(value).toISOString();

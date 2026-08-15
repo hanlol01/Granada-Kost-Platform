@@ -121,6 +121,7 @@ function NotificationsPage() {
             entityLabel="notifikasi"
             resultCount={0}
             activeFilterCount={Number(status !== "all")}
+            criteria={status !== "all" ? [`status: ${STATUS_LABELS[status]}`] : []}
           />
           <EmptyState
             icon={<Bell className="h-5 w-5" />}
@@ -155,6 +156,7 @@ function NotificationsPage() {
               entityLabel="notifikasi"
               resultCount={query.data.data.length}
               activeFilterCount={Number(status !== "all")}
+              criteria={status !== "all" ? [`status: ${STATUS_LABELS[status]}`] : []}
             />
           ) : null}
           <Card>

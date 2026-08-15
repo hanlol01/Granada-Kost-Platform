@@ -629,7 +629,7 @@ test('mutation proof rejects identity writes, missing membership/property/role p
     },
     {
       ...sources,
-      residentRepository: sources.residentRepository.replace('LIMIT 2', 'LIMIT 1'),
+      residentRepository: sources.residentRepository.replaceAll('LIMIT 2', 'LIMIT 1'),
     },
     {
       ...sources,

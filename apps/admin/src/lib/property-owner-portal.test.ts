@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  filterOwnerAssets,
   formatOwnerMoney,
+  groupOwnerAssets,
   getOwnerPortalViewState,
   ownerPortalNavigation,
+  parseOwnerAssetDetail,
   parseOwnerPortal,
   parseOwnerReport,
 } from "./property-owner-portal";
+
+const source = (relativePath: string): string =>
+  readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
 const portal = () => ({
   owner: { display_name: "Owner Demo" },
@@ -25,12 +32,36 @@ const portal = () => ({
     {
       room_code: "RK-01-01",
       room_status: "occupied",
+      kost_type: "rukost",
       building_code: "RK-01",
       building_name: "Rumah Kost",
       lease_status: "active",
       lease_end_date: "2026-12-31",
     },
   ],
+});
+
+const assetDetail = () => ({
+  room_code: "AK-05-03",
+  room_status: "occupied",
+  kost_type: "apartkost",
+  building: {
+    code: "AK-05",
+    name: "Apart Kost Unit 05",
+    floor_label: "Unit 05",
+    unit_code: "05",
+  },
+  gender_policy: "female",
+  commercial: { monthly_price: "1800000", annual_contract_value: "21600000" },
+  lease: { status: "active", start_date: "2026-08-06", end_date: "2027-02-06" },
+  resident: { display_name: "PUTRI", occupancy_start_date: "2026-08-06" },
+  ownership: {
+    source: "room_assignment",
+    effective_from: "2026-08-01",
+    effective_until: null,
+  },
+  issues: { open_complaints: 1, open_maintenance: 0 },
+  updated_at: "2026-08-06T03:00:00.000Z",
 });
 const report = () => ({
   period: { period: "2026-08", start: "2026-08-01", end: "2026-08-31" },
@@ -105,6 +136,70 @@ void test("owner portal navigation is an exact read-only allowlist", () => {
     false,
   );
 });
+
+void test("owner asset filters and groups only authoritative Rumah and Apart rooms", () => {
+  const parsed = parseOwnerPortal({
+    ...portal(),
+    assets: [
+      portal().assets[0],
+      {
+        ...portal().assets[0],
+        room_code: "AK-05-03",
+        kost_type: "apartkost",
+        building_code: "AK-05",
+        building_name: "Apart Kost Unit 05",
+        room_status: "vacant",
+      },
+    ],
+  });
+  const grouped = groupOwnerAssets(parsed.assets);
+
+  assert.deepEqual(
+    grouped.map((group) => group.kostType),
+    ["rukost", "apartkost"],
+  );
+  assert.deepEqual(
+    filterOwnerAssets(parsed.assets, { query: "ak-05", roomStatus: "all", leaseStatus: "all" }).map(
+      (asset) => asset.roomCode,
+    ),
+    ["AK-05-03"],
+  );
+});
+
+void test("owner asset detail parser accepts safe detail and rejects tenant PII", () => {
+  assert.equal(parseOwnerAssetDetail(assetDetail()).roomCode, "AK-05-03");
+  const unsafe = assetDetail() as ReturnType<typeof assetDetail> & {
+    resident: Record<string, unknown>;
+  };
+  unsafe.resident.nik = "3174";
+  assert.throws(() => parseOwnerAssetDetail(unsafe));
+});
+
+void test("owner portal has an Admin-aligned read-only application shell", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /bg-sidebar/);
+  assert.match(portalComponent, /backdrop-blur/);
+  assert.match(portalComponent, /aria-current/);
+  assert.match(portalComponent, /Akses hanya baca/);
+  assert.match(portalComponent, /OwnerPortalBoundary/);
+  assert.match(
+    portalComponent,
+    /initialPeriod=\{historical \? portal\.data\.scope\.latestHistoricalPeriod : null\}/,
+  );
+  assert.doesNotMatch(
+    portalComponent,
+    /useMutation|propertyOwnerApi\.(?:create|update|archive|assign|release)/,
+  );
+});
+
+void test("owner portal exposes the shared authenticated account menu, including logout", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /import \{ UserMenu \} from "@\/components\/layout\/user-menu"/);
+  assert.match(portalComponent, /<UserMenu\s*\/>/);
+});
+
 void test("strict portal parser rejects unknown fields, unsafe statuses, dates, and counts", () => {
   assert.equal(parseOwnerPortal(portal()).assets[0]?.roomCode, "RK-01-01");
   type UnsafePortal = ReturnType<typeof portal> & {

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   parseAdminBookingLeadPage,
+  requestArchiveAdminBookingLead,
   requestAdminBookingLeadPage,
   type BookingLeadRecord,
 } from "./admin-booking-lead";
@@ -36,6 +37,11 @@ const lead: BookingLeadRecord = {
 
 const source = (relativePath: string): string =>
   readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), "utf8");
+const backendSource = (relativePath: string): string =>
+  readFileSync(
+    fileURLToPath(new URL(`../../../../backend/${relativePath}`, import.meta.url)),
+    "utf8",
+  );
 
 test("V2 booking lead page parser preserves exact authoritative metadata", () => {
   const page = parseAdminBookingLeadPage({
@@ -125,4 +131,46 @@ test("status mutation keeps property scope and one stable key per logical action
   assert.match(contract, /property_id:\s*input\.propertyId/);
   assert.match(mutations, /idempotencyKey:\s*input\.idempotencyKey/);
   assert.doesNotMatch(mutations, /newIdempotencyKey\(\)/);
+});
+
+test("terminal lead archive requester stays property-scoped and requires an archived response", async () => {
+  let captured: unknown;
+  const result = await requestArchiveAdminBookingLead(
+    async (path, options) => {
+      captured = { path, options };
+      return { data: { archived: true } };
+    },
+    { propertyId: PROPERTY_ID, leadId: LEAD_ID, idempotencyKey: "archive-command-001" },
+  );
+
+  assert.deepEqual(result, { archived: true });
+  assert.deepEqual(captured, {
+    path: `/booking-leads/${LEAD_ID}`,
+    options: {
+      query: { property_id: PROPERTY_ID },
+      idempotencyKey: "archive-command-001",
+    },
+  });
+  await assert.rejects(
+    requestArchiveAdminBookingLead(async () => ({ data: { archived: false } }), {
+      propertyId: PROPERTY_ID,
+      leadId: LEAD_ID,
+      idempotencyKey: "archive-command-002",
+    }),
+  );
+});
+
+test("terminal cleanup is explicit and cannot be offered as a normal lead action", () => {
+  const dialog = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
+  const service = backendSource("api/src/modules/booking-lead/booking-lead.service.ts");
+  assert.match(
+    dialog,
+    /lead\.status === "rejected" \|\| lead\.status === "expired" \|\| lead\.status === "cancelled"/,
+  );
+  assert.match(dialog, /Hapus dari daftar/);
+  assert.match(
+    service,
+    /ARCHIVABLE_STATUSES: BookingLeadStatus\[\] = \['rejected', 'expired', 'cancelled'\]/,
+  );
+  assert.match(service, /archived: true/);
 });

@@ -484,6 +484,10 @@ For Lease, Payment, Expense, and Finance:
   an append-only adjustment, never destructive history.
 - Settlement advances only `draft → ready_for_review → approved → paid`; payout
   requires Admin approval and masked/encrypted payout-account handling.
+- The disposable Owner reconciliation proof demonstrates allocation-to-earning,
+  adjustment/settlement-line, and paid-payout balance without a property-wide
+  fallback. The controlled browser/QA-database procedure remains in
+  [`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md).
 
 ## 5.14 Penghuni
 

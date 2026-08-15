@@ -6,25 +6,30 @@ export function FilterResultNotice({
   resultCount,
   activeFilterCount,
   searchTerm,
+  criteria,
   className,
 }: {
   entityLabel: string;
   resultCount: number;
   activeFilterCount: number;
   searchTerm?: string;
+  criteria?: readonly string[];
   className?: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
 
   if (activeFilterCount === 0 || dismissed) return null;
 
+  const explicitCriteria = criteria?.map((criterion) => criterion.trim()).filter(Boolean) ?? [];
   const normalizedSearch = searchTerm?.trim();
   const additionalFilterCount = activeFilterCount - (normalizedSearch ? 1 : 0);
-  const criteriaDescription = normalizedSearch
+  const fallbackCriteriaDescription = normalizedSearch
     ? `pencarian “${normalizedSearch}”${
         additionalFilterCount > 0 ? ` dan ${additionalFilterCount} filter tambahan` : ""
       }`
     : `${activeFilterCount} filter aktif`;
+  const criteriaDescription =
+    explicitCriteria.length > 0 ? explicitCriteria.join(" • ") : fallbackCriteriaDescription;
 
   return (
     <NoticeAlert
@@ -37,7 +42,7 @@ export function FilterResultNotice({
       }
       description={
         resultCount > 0
-          ? `Hasil telah diperbarui berdasarkan ${criteriaDescription}.`
+          ? `Sesuai filter: ${criteriaDescription}.`
           : `Belum ditemukan hasil untuk ${criteriaDescription}. Ubah atau reset filter untuk mencoba lagi.`
       }
       onDismiss={() => setDismissed(true)}

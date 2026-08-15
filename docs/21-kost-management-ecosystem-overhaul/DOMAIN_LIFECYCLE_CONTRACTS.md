@@ -438,8 +438,9 @@ quoted → pending_confirmation → verified → allocated_to_rent
 ```
 
 Lead progression uses cumulative verified, non-reversed Booking Fee and DP
-rent credits against the immutable contract quote. They must meet 25% before
-onboarding may progress. Neither credit funds the security-deposit ledger.
+rent credits against the immutable contract quote. The 25% contract-value figure
+is a recommendation and prefill, not a blocking minimum. Neither credit funds
+the security-deposit ledger.
 
 ### 13.4 Receipt and invoice artifacts
 
@@ -768,7 +769,8 @@ Under locks, verify:
 - contract duration is 3–120 months unless a future exception authority is
   explicitly approved;
 - commercial snapshot and accepted terms are present;
-- verified non-reversed initial rent credit is at least 25%;
+- verified non-reversed initial rent credit is recorded against the immutable
+  contract quote; the 25% contract-value figure remains a recommendation only;
 - an optional recorded security deposit is represented as a separate liability;
 - billing schedule reconciles to contract value;
 - contractual start date has been reached using database time;

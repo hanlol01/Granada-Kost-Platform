@@ -77,6 +77,7 @@ export class AdminUxRoomV2Service {
     const scope = await this.scope(user, query.property_id);
     const { limit, offset } = normalizePagination(query);
     const search = this.escapeSearchPattern(query.q);
+    const normalizedRoomNumberSearch = this.normalizeRoomNumberSearch(query.q);
     const filters: Array<string | string[] | boolean | null> = [
       scope,
       query.property_id ?? null,
@@ -86,6 +87,7 @@ export class AdminUxRoomV2Service {
       query.floor_code ?? null,
       query.status ?? null,
       search,
+      normalizedRoomNumberSearch,
     ];
     const optionalFilters: string[] = [];
     if (query.gender_policy !== undefined) {
@@ -170,6 +172,12 @@ export class AdminUxRoomV2Service {
          AND ($8::text IS NULL OR
            room.number ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            room.room_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           ($9::text IS NOT NULL AND
+             regexp_replace(room.number, '[^[:alnum:]]', '', 'g')
+               ILIKE '%' || $9 || '%' ESCAPE E'\\\\') OR
+           ($9::text IS NOT NULL AND
+             regexp_replace(COALESCE(room.room_code, ''), '[^[:alnum:]]', '', 'g')
+               ILIKE '%' || $9 || '%' ESCAPE E'\\\\') OR
            building.building_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            building.building_name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            kost_type.name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
@@ -1014,7 +1022,7 @@ export class AdminUxRoomV2Service {
     const propertyId = String(room.property_id);
     const hold = await client.query<{ id: string }>(
       `SELECT id FROM booking_lead_holds
-       WHERE property_id = $1 AND room_id = $2 AND hold_status = 'active'
+       WHERE property_id = $1 AND room_id = $2 AND hold_status IN ('active','committed')
        ORDER BY id FOR UPDATE`,
       [propertyId, roomId],
     );
@@ -1144,6 +1152,11 @@ export class AdminUxRoomV2Service {
 
   private escapeSearchPattern(value?: string): string | null {
     return value ? value.replace(/[\\%_]/g, '\\$&') : null;
+  }
+
+  private normalizeRoomNumberSearch(value?: string): string | null {
+    const normalized = value?.replace(/[^a-zA-Z0-9]/g, '');
+    return normalized ? this.escapeSearchPattern(normalized) : null;
   }
 
   private roomOrderBy(

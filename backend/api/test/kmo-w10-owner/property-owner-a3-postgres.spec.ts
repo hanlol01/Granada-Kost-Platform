@@ -59,7 +59,7 @@ function ownerReportErrorCode(error: unknown): string | undefined {
 }
 
 void test(
-  'migration 037 applies, replays, enforces exact service coverage, rolls back, and cleans a disposable PostgreSQL cluster',
+  'migration 037 applies, replays, reconciles owner authority, rolls back, and cleans a disposable PostgreSQL cluster',
   { skip: !process.env.KOSTATION_POSTGRES_BIN },
   async () => {
     const bin = process.env.KOSTATION_POSTGRES_BIN!;
@@ -486,6 +486,84 @@ void test(
       assert.deepEqual(sameInvoicePartialPayments.rows, [
         { allocation_id: '50505050-5050-4050-8050-505050505050', gross: '3100' },
         { allocation_id: '67676767-6767-4767-8767-676767676767', gross: '900' },
+      ]);
+
+      const authorityReconciliation = await replayPool.query<{
+        allocation_coverage_is_exact: boolean;
+        settlement_lines_reconcile: boolean;
+        payout_reconciles: boolean;
+      }>(`
+        WITH allocation_coverage AS (
+          SELECT
+            allocations.id,
+            allocations.allocated_amount::bigint AS allocated_amount,
+            COALESCE(SUM(earnings.gross_collected_amount), 0)::bigint AS recognized_amount
+          FROM payment_allocations allocations
+          LEFT JOIN property_owner_earnings earnings
+            ON earnings.payment_allocation_id = allocations.id
+          WHERE allocations.id IN (
+            '50505050-5050-4050-8050-505050505050',
+            '51515151-5151-4151-8151-515151515151',
+            '52525252-5252-4252-8252-525252525252',
+            '53535353-5353-4353-8353-535353535353',
+            '54545454-5454-4454-8454-545454545454',
+            '67676767-6767-4767-8767-676767676767'
+          )
+          GROUP BY allocations.id, allocations.allocated_amount
+        ),
+        settlement_authority AS (
+          SELECT
+            settlements.id,
+            settlements.owner_amount::bigint,
+            COALESCE((
+              SELECT SUM(earnings.owner_earned_amount)::bigint
+              FROM property_owner_settlement_lines lines
+              JOIN property_owner_earnings earnings ON earnings.id = lines.earning_id
+              WHERE lines.settlement_id = settlements.id
+            ), 0)::bigint
+            + COALESCE((
+              SELECT SUM(adjustments.owner_amount_delta)::bigint
+              FROM property_owner_earning_adjustments adjustments
+              JOIN property_owner_settlement_lines lines
+                ON lines.earning_id = adjustments.earning_id
+              WHERE lines.settlement_id = settlements.id
+            ), 0)::bigint AS reconciled_owner_amount,
+            COALESCE((
+              SELECT SUM(
+                CASE payouts.payout_kind
+                  WHEN 'payout' THEN payouts.payout_amount
+                  WHEN 'reversal' THEN -payouts.payout_amount
+                END
+              )::bigint
+              FROM property_owner_payouts payouts
+              WHERE payouts.settlement_id = settlements.id
+            ), 0)::bigint AS paid_owner_amount
+          FROM property_owner_settlements settlements
+          WHERE settlements.id = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+        )
+        SELECT
+          NOT EXISTS (
+            SELECT 1
+            FROM allocation_coverage
+            WHERE allocated_amount <> recognized_amount
+          ) AS allocation_coverage_is_exact,
+          EXISTS (
+            SELECT 1
+            FROM settlement_authority
+            WHERE owner_amount = reconciled_owner_amount
+          ) AS settlement_lines_reconcile,
+          EXISTS (
+            SELECT 1
+            FROM settlement_authority
+            WHERE owner_amount = paid_owner_amount
+          ) AS payout_reconciles
+      `);
+      assert.deepEqual(authorityReconciliation.rows, [
+        {
+          allocation_coverage_is_exact: true,
+          settlement_lines_reconcile: true,
+          payout_reconciles: true,
+        },
       ]);
       await assert.rejects(
         service.preview(actor(ownerAUserId), '2026-07'),

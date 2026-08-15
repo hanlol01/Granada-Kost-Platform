@@ -115,6 +115,8 @@ export type ResidentBilling = {
   lease: {
     id: string;
     resident_id: string;
+    resident_name: string;
+    room_number: string;
     status: "awaiting_activation" | "active";
     start_date: string;
     end_date: string;
@@ -158,6 +160,13 @@ export type ResidentBilling = {
     contract_rent_amount: number;
     initial_rent_credit: number;
     payment_allocated: number;
+    first_payment_checkpoint: {
+      due_at: string | null;
+      required_additional_amount: number;
+      additional_payment_received: number;
+      remaining_amount: number;
+      status: "not_required" | "pending" | "met_early" | "met" | "overdue";
+    };
     deposit_offset_amount: number;
     outstanding_amount: number;
     reminder_stage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
@@ -551,6 +560,8 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     [
       "id",
       "resident_id",
+      "resident_name",
+      "room_number",
       "status",
       "start_date",
       "end_date",
@@ -597,6 +608,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         "contract_rent_amount",
         "initial_rent_credit",
         "payment_allocated",
+        "first_payment_checkpoint",
         "deposit_offset_amount",
         "outstanding_amount",
         "reminder_stage",
@@ -628,6 +640,17 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       if (typeof value !== "boolean") throw new Error(`${label} tidak valid.`);
       return value;
     };
+    const checkpoint = object(
+      record.first_payment_checkpoint,
+      [
+        "due_at",
+        "required_additional_amount",
+        "additional_payment_received",
+        "remaining_amount",
+        "status",
+      ],
+      "checkpoint pembayaran pertama",
+    );
     return {
       id: uuid(record.id, "ID pelunasan kontrak"),
       invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
@@ -661,6 +684,25 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       contract_rent_amount: integer(record.contract_rent_amount, "Total sewa kontrak"),
       initial_rent_credit: integer(record.initial_rent_credit, "Kredit sewa awal"),
       payment_allocated: integer(record.payment_allocated, "Pembayaran sewa"),
+      first_payment_checkpoint: {
+        due_at: nullable(checkpoint.due_at, (value) =>
+          timestamp(value, "Tenggat checkpoint pertama"),
+        ),
+        required_additional_amount: integer(
+          checkpoint.required_additional_amount,
+          "Minimum pembayaran checkpoint pertama",
+        ),
+        additional_payment_received: integer(
+          checkpoint.additional_payment_received,
+          "Pembayaran untuk checkpoint pertama",
+        ),
+        remaining_amount: integer(checkpoint.remaining_amount, "Sisa checkpoint pertama"),
+        status: oneOf(
+          checkpoint.status,
+          ["not_required", "pending", "met_early", "met", "overdue"] as const,
+          "Status checkpoint pembayaran pertama",
+        ),
+      },
       deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit sewa"),
       outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
       reminder_stage: nullable(record.reminder_stage, (value) =>
@@ -677,6 +719,8 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     lease: {
       id: uuid(lease.id, "ID sewa"),
       resident_id: uuid(lease.resident_id, "ID penghuni"),
+      resident_name: text(lease.resident_name, "Nama penghuni"),
+      room_number: text(lease.room_number, "Nomor kamar"),
       status: oneOf(lease.status, ["awaiting_activation", "active"] as const, "Status sewa"),
       start_date: date(lease.start_date, "Tanggal mulai"),
       end_date: date(lease.end_date, "Tanggal selesai"),
@@ -906,6 +950,8 @@ export async function getBillingWorklist(
     status?: Exclude<W06InvoiceStatus, "draft" | "paid" | "void">;
     sort?: "due_date_asc" | "due_date_desc" | "resident_asc";
     dueWithinDays?: number;
+    dateFrom?: string;
+    dateTo?: string;
   },
   signal?: AbortSignal,
   requester: Requester = adminUxV2Requester,
@@ -921,6 +967,8 @@ export async function getBillingWorklist(
         ...(input.status ? { status: input.status } : {}),
         ...(input.sort ? { sort: input.sort } : {}),
         ...(input.dueWithinDays !== undefined ? { due_within_days: input.dueWithinDays } : {}),
+        ...(input.dateFrom ? { date_from: input.dateFrom } : {}),
+        ...(input.dateTo ? { date_to: input.dateTo } : {}),
       },
       signal,
     }),
@@ -949,6 +997,8 @@ export async function getBillingPayments(
     method?: W06PaymentMethod;
     purpose?: W06PaymentPurpose;
     dueWithinDays?: number;
+    dateFrom?: string;
+    dateTo?: string;
   },
   signal?: AbortSignal,
   requester: Requester = adminUxV2Requester,
@@ -964,6 +1014,8 @@ export async function getBillingPayments(
         ...(input.method ? { method: input.method } : {}),
         ...(input.purpose ? { purpose: input.purpose } : {}),
         ...(input.dueWithinDays !== undefined ? { due_within_days: input.dueWithinDays } : {}),
+        ...(input.dateFrom ? { date_from: input.dateFrom } : {}),
+        ...(input.dateTo ? { date_to: input.dateTo } : {}),
       },
       signal,
     }),

@@ -13,7 +13,10 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 import { CreateResidentDto } from '../../src/modules/resident/dto/create-resident.dto';
 import { ProvisionResidentAccountDto } from '../../src/modules/resident/dto/provision-resident-account.dto';
 import { UpdateResidentDto } from '../../src/modules/resident/dto/update-resident.dto';
-import { ResidentAccountService } from '../../src/modules/resident/resident-account.service';
+import {
+  RESIDENT_TEMPORARY_PASSWORD,
+  ResidentAccountService,
+} from '../../src/modules/resident/resident-account.service';
 import { ResidentRepository } from '../../src/modules/resident/repositories/resident.repository';
 import { ResidentController } from '../../src/modules/resident/resident.controller';
 import { ResidentService } from '../../src/modules/resident/resident.service';
@@ -250,7 +253,8 @@ test('new account is linked atomically with one resident membership and no lifec
     correlationId: 'cid',
   });
   assert.equal(result.status, 'provisioned');
-  assert.ok(result.temporaryPassword && result.temporaryPassword.length >= 24);
+  assert.equal(RESIDENT_TEMPORARY_PASSWORD, 'Kostation2026');
+  assert.equal(result.temporaryPassword, RESIDENT_TEMPORARY_PASSWORD);
   assert.equal(auditCalls.length, 1);
   assert.equal(auditCalls[0][1], client);
 
@@ -273,6 +277,99 @@ test('new account is linked atomically with one resident membership and no lifec
     false,
   );
   assert.equal(JSON.stringify(auditCalls).includes(result.temporaryPassword as string), false);
+});
+
+test('password reset is property-scoped, revokes sessions and exposes the default only in its transient receipt', async () => {
+  const events: string[] = [];
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const auditCalls: unknown[][] = [];
+  const client = {
+    query: async (sql: string, params: unknown[] = []) => {
+      queries.push({ sql, params });
+      if (/FROM residents[\s\S]*JOIN users[\s\S]*FOR UPDATE OF residents, users/.test(sql)) {
+        events.push('lock');
+        return {
+          rows: [
+            {
+              user_id: USER_ID,
+              email: 'resident@example.test',
+              phone: '628111111111',
+              user_status: 'active',
+              password_changed_at: new Date('2026-08-01T00:00:00.000Z'),
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (/UPDATE users[\s\S]*password_changed_at = NULL/.test(sql)) {
+        events.push('password');
+        assert.equal(params[0], USER_ID);
+        assert.equal(params[1] === RESIDENT_TEMPORARY_PASSWORD, false);
+        assert.match(String(params[1]), /^\$argon2/);
+        return { rows: [], rowCount: 1 };
+      }
+      if (/UPDATE user_sessions[\s\S]*revoked_at/.test(sql)) {
+        events.push('sessions');
+        assert.deepEqual(params, [USER_ID]);
+        return { rows: [], rowCount: 2 };
+      }
+      throw new Error(`unexpected reset query: ${sql}`);
+    },
+  };
+  const service = new ResidentAccountService(
+    {
+      transaction: async (operation: (value: typeof client) => Promise<unknown>) => {
+        events.push('begin');
+        const result = await operation(client);
+        events.push('commit');
+        return result;
+      },
+    } as never,
+    {} as never,
+    {
+      assertCanReadProperty: async (_actor: unknown, propertyId: string) => {
+        assert.equal(propertyId, PROPERTY_ID);
+        events.push('authorize');
+      },
+    } as never,
+    {
+      write: async (...args: unknown[]) => {
+        events.push('audit');
+        auditCalls.push(args);
+      },
+    } as never,
+  );
+
+  const result = await service.resetPassword(actor(), RESIDENT_ID, PROPERTY_ID, {
+    correlationId: 'reset-cid',
+  });
+
+  assert.deepEqual(events, [
+    'authorize',
+    'begin',
+    'lock',
+    'password',
+    'sessions',
+    'audit',
+    'commit',
+  ]);
+  assert.deepEqual(result, {
+    status: 'active',
+    loginEmail: 'resident@example.test',
+    loginPhone: '628111111111',
+    passwordChangeRequired: true,
+    temporaryPassword: 'Kostation2026',
+  });
+  assert.equal(auditCalls.length, 1);
+  assert.equal(auditCalls[0][1], client);
+  assert.deepEqual((auditCalls[0][0] as { afterData: unknown }).afterData, {
+    password_change_required: true,
+  });
+  assert.equal(JSON.stringify(auditCalls).includes(RESIDENT_TEMPORARY_PASSWORD), false);
+  assert.equal(
+    queries.some((query) => query.params.includes(RESIDENT_TEMPORARY_PASSWORD)),
+    false,
+  );
 });
 
 test('successful replay returns null credential and rejects changed payload without mutation', async () => {
@@ -556,7 +653,13 @@ test('migration and source freeze identity uniqueness, one-time receipt and W05 
   assert.match(service, /temporaryPassword: null/);
   assert.match(service, /response_body = \$4::jsonb/);
   assert.match(service, /resident\.account_provision/);
+  assert.match(service, /RESIDENT_TEMPORARY_PASSWORD = 'Kostation2026'/);
+  assert.match(service, /password_changed_at = NULL/);
+  assert.match(service, /UPDATE user_sessions[\s\S]*revoked_at/);
+  assert.match(service, /resident\.account_password_reset/);
   assert.match(controller, /@Post\(':residentId\/account'\)/);
+  assert.match(controller, /@Get\(':residentId\/account'\)/);
+  assert.match(controller, /@Post\(':residentId\/account\/reset-password'\)/);
   assert.doesNotMatch(
     service,
     /(INSERT|UPDATE|DELETE)\s+(leases|occupancies|rooms|invoices|payments|booking_leads)/i,

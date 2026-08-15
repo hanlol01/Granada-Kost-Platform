@@ -260,6 +260,12 @@ function ComplaintsPage() {
   const slaBreachedCount = items.filter((item) => item.resolutionSlaBreached).length;
   const activeFilterCount = Number(Boolean(q.trim())) + Number(tab !== "all");
   const filterSignature = `${q}:${tab}`;
+  const filterCriteria = [
+    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    tab !== "all"
+      ? `status: ${{ open: "Menunggu", in_progress: "Diproses", resolved: "Selesai", closed: "Ditutup" }[tab]}`
+      : "",
+  ].filter(Boolean);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -524,6 +530,7 @@ function ComplaintsPage() {
               resultCount={filtered.length}
               activeFilterCount={activeFilterCount}
               searchTerm={q}
+              criteria={filterCriteria}
             />
           ) : null}
 

@@ -29,6 +29,10 @@ export type BillingReceiptDocumentData = {
   paidAt: Date | null;
   issuedAt: Date;
   allocations: Array<{ invoiceCode: string; amount: number }>;
+  contractSettled?: boolean;
+  /** Optional domain-specific wording while retaining the standard receipt layout. */
+  documentTitle?: string;
+  documentFootnote?: string;
 };
 
 export type BillingReceiptDocument = {
@@ -126,18 +130,27 @@ export function createBillingReceiptPdf(data: BillingReceiptDocumentData): Billi
     dp: 'DP / uang muka sewa',
     security_deposit: 'Security deposit',
     other_charge: 'Tagihan lainnya',
+    booking_fee: 'Booking fee / tahan kamar',
+    booking_fee_refund: 'Refund booking fee',
+    payment_commitment_refund: 'Refund pembayaran awal',
   };
   const body: Array<[string, string]> = [
     ['Nomor kuitansi', data.receiptCode],
     ['Kode pembayaran', data.paymentCode],
     ['Penghuni', data.residentName],
     ['Kamar', data.roomNumber],
-    ['Jenis pembayaran', purpose[data.paymentPurpose] ?? label(data.paymentPurpose)],
+    [
+      'Jenis pembayaran',
+      data.contractSettled
+        ? 'Pelunasan kontrak sewa'
+        : (purpose[data.paymentPurpose] ?? label(data.paymentPurpose)),
+    ],
     ['Metode', method],
     ['Nominal diterima', idr(data.amount)],
     ['Waktu pembayaran', data.paidAt?.toISOString() ?? 'Tidak tersedia'],
     ['Kuitansi diterbitkan', data.issuedAt.toISOString()],
   ];
+  if (data.contractSettled) body.push(['Status kontrak', 'LUNAS']);
   data.allocations.forEach((allocation, index) => {
     body.push([
       `Dialokasikan ke tagihan ${index + 1}`,
@@ -147,7 +160,7 @@ export function createBillingReceiptPdf(data: BillingReceiptDocumentData): Billi
 
   const commands = [
     'q 0.02 0.48 0.38 rg 36 744 523 72 re f Q',
-    'BT /F1 22 Tf 1 1 1 rg 52 786 Td (KUITANSI PEMBAYARAN) Tj ET',
+    `BT /F1 22 Tf 1 1 1 rg 52 786 Td (${ascii(data.documentTitle ?? (data.contractSettled ? 'KUITANSI PELUNASAN KONTRAK' : 'KUITANSI PEMBAYARAN'))}) Tj ET`,
     `BT /F1 10 Tf 0.88 1 0.96 rg 52 765 Td (${ascii(data.receiptCode)}) Tj ET`,
     'BT /F1 11 Tf 0.13 0.16 0.20 rg',
   ];
@@ -162,7 +175,7 @@ export function createBillingReceiptPdf(data: BillingReceiptDocumentData): Billi
     `q 0.86 0.88 0.91 RG 52 ${Math.max(254, y - 2)} m 543 ${Math.max(254, y - 2)} l S Q`,
   );
   commands.push(
-    `BT /F1 9 Tf 0.35 0.39 0.45 rg 52 ${Math.max(230, y - 26)} Td (Kuitansi ini membuktikan penerimaan pembayaran, bukan tagihan baru.) Tj ET`,
+    `BT /F1 9 Tf 0.35 0.39 0.45 rg 52 ${Math.max(230, y - 26)} Td (${ascii(data.documentFootnote ?? (data.contractSettled ? 'Pembayaran ini menyatakan seluruh kontrak sewa telah lunas.' : 'Kuitansi ini membuktikan penerimaan pembayaran, bukan tagihan baru.'))}) Tj ET`,
   );
   commands.push(
     `BT /F1 9 Tf 0.35 0.39 0.45 rg 52 ${Math.max(212, y - 44)} Td (Dokumen resmi dimediasi server - waktu Asia/Jakarta.) Tj ET`,

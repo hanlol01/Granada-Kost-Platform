@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { createHash, randomBytes } from 'crypto';
+import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../infrastructure/database/database.service';
@@ -16,6 +16,19 @@ import { ResidentRepository } from './repositories/resident.repository';
 
 export type ResidentAccountProvisionResult = {
   status: 'provisioned' | 'already_linked' | 'already_issued';
+  temporaryPassword: string | null;
+};
+
+export const RESIDENT_TEMPORARY_PASSWORD = 'Kostation2026';
+
+export type ResidentAccountSummary = {
+  status: 'not_provisioned' | 'active' | 'inactive' | 'suspended';
+  loginEmail: string | null;
+  loginPhone: string | null;
+  passwordChangeRequired: boolean;
+};
+
+export type ResidentPasswordResetResult = ResidentAccountSummary & {
   temporaryPassword: string | null;
 };
 
@@ -39,6 +52,14 @@ type UserMatchRow = {
   phone: string | null;
 };
 
+type ResidentAccountRow = {
+  user_id: string | null;
+  email: string | null;
+  phone: string | null;
+  user_status: 'active' | 'inactive' | 'suspended' | null;
+  password_changed_at: Date | null;
+};
+
 @Injectable()
 export class ResidentAccountService {
   private readonly route = '/residents/:residentId/account';
@@ -49,6 +70,103 @@ export class ResidentAccountService {
     private readonly properties: PropertyService,
     private readonly audit: AuditRepository,
   ) {}
+
+  async summary(
+    actor: UserAccessContext,
+    residentId: string,
+    propertyId: string,
+  ): Promise<ResidentAccountSummary> {
+    await this.properties.assertCanReadProperty(actor, propertyId);
+    const result = await this.database.client.query<ResidentAccountRow>(
+      `SELECT residents.user_id,
+              users.email,
+              users.phone,
+              users.user_status,
+              users.password_changed_at
+       FROM residents
+       LEFT JOIN users ON users.id = residents.user_id
+       WHERE residents.id = $1
+         AND residents.property_id = $2`,
+      [residentId, propertyId],
+    );
+    if (result.rows.length !== 1) {
+      throw new ConflictException({
+        code: 'RESIDENT_NOT_FOUND',
+        message: 'Resident account is unavailable in this property',
+      });
+    }
+    return this.toSummary(result.rows[0]);
+  }
+
+  async resetPassword(
+    actor: UserAccessContext,
+    residentId: string,
+    propertyId: string,
+    context: RequestAuditContext,
+  ): Promise<ResidentPasswordResetResult> {
+    await this.properties.assertCanReadProperty(actor, propertyId);
+    return this.database.transaction(async (client) => {
+      const result = await client.query<ResidentAccountRow>(
+        `SELECT residents.user_id,
+                users.email,
+                users.phone,
+                users.user_status,
+                users.password_changed_at
+         FROM residents
+         JOIN users ON users.id = residents.user_id
+         JOIN user_property_roles
+           ON user_property_roles.user_id = users.id
+          AND user_property_roles.property_id = residents.property_id
+          AND user_property_roles.revoked_at IS NULL
+         JOIN roles
+           ON roles.id = user_property_roles.role_id
+          AND roles.code = 'resident'
+         WHERE residents.id = $1
+           AND residents.property_id = $2
+         ORDER BY users.id
+         FOR UPDATE OF residents, users`,
+        [residentId, propertyId],
+      );
+      if (result.rows.length !== 1 || !result.rows[0].user_id) {
+        throw new ConflictException({
+          code: 'RESIDENT_ACCOUNT_UNAVAILABLE',
+          message: 'Resident account is unavailable or ambiguous',
+        });
+      }
+      const account = result.rows[0];
+      await client.query(
+        `UPDATE users
+         SET password_hash = $2,
+             password_changed_at = NULL,
+             updated_at = now()
+         WHERE id = $1`,
+        [account.user_id, await argon2.hash(RESIDENT_TEMPORARY_PASSWORD)],
+      );
+      await client.query(
+        `UPDATE user_sessions
+         SET revoked_at = COALESCE(revoked_at, now())
+         WHERE user_id = $1 AND revoked_at IS NULL`,
+        [account.user_id],
+      );
+      await this.audit.write(
+        {
+          actorUserId: actor.id,
+          propertyId,
+          action: 'resident.account_password_reset',
+          resourceType: 'resident',
+          resourceId: residentId,
+          afterData: { password_change_required: true },
+          resultStatus: 'success',
+          ...context,
+        },
+        client,
+      );
+      return {
+        ...this.toSummary({ ...account, password_changed_at: null }),
+        temporaryPassword: RESIDENT_TEMPORARY_PASSWORD,
+      };
+    });
+  }
 
   async provision(
     actor: UserAccessContext,
@@ -280,7 +398,7 @@ export class ResidentAccountService {
 
     if (!userId && matchedUser) userId = matchedUser.id;
     if (!userId) {
-      temporaryPassword = randomBytes(24).toString('base64url');
+      temporaryPassword = RESIDENT_TEMPORARY_PASSWORD;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO users (
            email, phone, password_hash, display_name, user_status, password_changed_at
@@ -381,5 +499,22 @@ export class ResidentAccountService {
       });
     }
     return normalized;
+  }
+
+  private toSummary(account: ResidentAccountRow): ResidentAccountSummary {
+    if (!account.user_id || !account.user_status) {
+      return {
+        status: 'not_provisioned',
+        loginEmail: null,
+        loginPhone: null,
+        passwordChangeRequired: false,
+      };
+    }
+    return {
+      status: account.user_status,
+      loginEmail: account.email,
+      loginPhone: account.phone,
+      passwordChangeRequired: account.password_changed_at === null,
+    };
   }
 }

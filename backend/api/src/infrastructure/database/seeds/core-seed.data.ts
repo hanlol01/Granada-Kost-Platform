@@ -422,7 +422,46 @@ export const PERMISSIONS = [
   ['notification.manage', 'Manage Notification', 'Manage announcements and notification content.'],
   ['report.view', 'View Report', 'View operational reports.'],
   ['report.export', 'Export Report', 'Export operational reports.'],
-  ['property_owner.report.view', 'View Property Owner Report', 'Read-only property owner reports.'],
+  [
+    'property_owner.manage',
+    'Manage property owners',
+    'Create owner accounts and manage effective-dated ownership',
+  ],
+  [
+    'property_owner.settlement.manage',
+    'Manage owner settlements',
+    'Prepare, approve, and record owner settlements',
+  ],
+  [
+    'property_owner.asset.read',
+    'Read owned assets',
+    'Read safe operational data for assets currently owned',
+  ],
+  [
+    'property_owner.finance.read',
+    'Read owner finance',
+    'Read period-bound safe earning and settlement summaries',
+  ],
+  [
+    'property_owner.complaint.read',
+    'Read owned asset complaints',
+    'Read safe complaint summaries for owned assets',
+  ],
+  [
+    'property_owner.maintenance.read',
+    'Read owned asset maintenance',
+    'Read safe maintenance summaries for owned assets',
+  ],
+  [
+    'property_owner.notification.read',
+    'Read owner notifications',
+    'Read notifications scoped to owned assets',
+  ],
+  [
+    'property_owner.report.view',
+    'View property owner reports',
+    'Read period-bound safe reports for owned assets',
+  ],
 ] as const;
 
 const allPermissionCodes = PERMISSIONS.map(([code]) => code);
@@ -454,16 +493,19 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
     'cctv.view',
     'notification.manage',
     'report.view',
+    'property_owner.manage',
+    'property_owner.settlement.manage',
   ].map((permissionCode) => ['admin', permissionCode] as const),
   ['technician', 'complaint.manage'],
   ['technician', 'maintenance.manage'],
   ['resident', 'property.read'],
   ['resident', 'room.read'],
   ['resident', 'billing.self.read'],
-  ['property_owner', 'property.read'],
-  ['property_owner', 'room.read'],
-  ['property_owner', 'resident.read'],
-  ['property_owner', 'billing.read'],
+  ['property_owner', 'property_owner.asset.read'],
+  ['property_owner', 'property_owner.finance.read'],
+  ['property_owner', 'property_owner.complaint.read'],
+  ['property_owner', 'property_owner.maintenance.read'],
+  ['property_owner', 'property_owner.notification.read'],
   ['property_owner', 'property_owner.report.view'],
 ];
 

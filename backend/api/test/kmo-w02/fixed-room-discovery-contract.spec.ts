@@ -155,7 +155,8 @@ test('V2 discovery validates combined filters, strict booleans, UUIDs, and unkno
   assert.deepEqual(page, { data: [], meta: { limit: 20, offset: 200, total: 0 } });
   assert.equal(current.calls.query, 1);
   assert.equal(current.queries[0].values[7], 'RK\\_01\\%');
-  assert.equal(current.queries[0].values[9], false);
+  assert.equal(current.queries[0].values[8], 'RK01');
+  assert.equal(current.queries[0].values[10], false);
   assert.match(current.queries[0].sql, /building\.building_code ILIKE/);
   assert.match(current.queries[0].sql, /building\.building_name ILIKE/);
   assert.match(current.queries[0].sql, /WHEN 'rukost' THEN 'Rumah Kost'/);
@@ -199,6 +200,8 @@ test('list source shares one predicate, escapes literal search, and maps sort wi
   assert.match(list, /active_resident\.full_name/);
   assert.match(list, /building\.building_code/);
   assert.match(list, /building\.building_name/);
+  assert.match(list, /normalizeRoomNumberSearch/);
+  assert.match(list, /regexp_replace\(room\.number, '\[\^\[:alnum:\]\]', '', 'g'\)/);
   assert.match(list, /WHEN 'rukost' THEN 'Rumah Kost'/);
   assert.match(list, /WHEN 'apartkost' THEN 'Apart Kost'/);
   assert.match(list, /kost_type\.property_id = room\.property_id/);

@@ -6,7 +6,6 @@ import { RbacModule } from '../rbac/rbac.module';
 import { ComplaintCategoryController } from './controllers/complaint-category.controller';
 import { ComplaintController } from './controllers/complaint.controller';
 import { MyComplaintController } from './controllers/my-complaint.controller';
-import { PropertyOwnerComplaintController } from './controllers/property-owner-complaint.controller';
 import { ComplaintCategoryRepository } from './repositories/complaint-category.repository';
 import { ComplaintFileRepository } from './repositories/complaint-file.repository';
 import { ComplaintHistoryRepository } from './repositories/complaint-history.repository';
@@ -16,12 +15,7 @@ import { ComplaintService } from './services/complaint.service';
 
 @Module({
   imports: [FileModule, MaintenanceModule, PropertyModule, RbacModule],
-  controllers: [
-    ComplaintController,
-    ComplaintCategoryController,
-    MyComplaintController,
-    PropertyOwnerComplaintController,
-  ],
+  controllers: [ComplaintController, ComplaintCategoryController, MyComplaintController],
   providers: [
     ComplaintCategoryRepository,
     ComplaintRepository,

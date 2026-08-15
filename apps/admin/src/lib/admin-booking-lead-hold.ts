@@ -4,7 +4,7 @@ import { bookingLeadListScopeKey } from "./admin-booking-lead";
 import { adminUxQueryKeys } from "./admin-ux-query-keys";
 import { isBookingHoldWriteEnabledForProperty } from "./admin-ux-dashboard";
 
-export type BookingLeadHoldStatus = "active" | "released" | "expired";
+export type BookingLeadHoldStatus = "active" | "committed" | "released" | "expired";
 
 export type BookingLeadHoldRecord = {
   id: string;
@@ -63,7 +63,12 @@ const HOLD_RESPONSE_KEYS = [
   "room_id",
   "starts_at",
 ] as const;
-const HOLD_STATUSES = new Set<BookingLeadHoldStatus>(["active", "released", "expired"]);
+const HOLD_STATUSES = new Set<BookingLeadHoldStatus>([
+  "active",
+  "committed",
+  "released",
+  "expired",
+]);
 const ELIGIBLE_LEAD_STATUSES = new Set(["new", "contacted", "visit_scheduled"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_TIMESTAMP_PATTERN =
@@ -303,7 +308,7 @@ export function canCreateBookingLeadHold(
   }
   return !coverage.data.some(
     (hold) =>
-      hold.holdStatus === "active" &&
+      (hold.holdStatus === "active" || hold.holdStatus === "committed") &&
       (hold.bookingLeadId === lead.id || (lead.roomId !== null && hold.roomId === lead.roomId)),
   );
 }
@@ -331,8 +336,11 @@ export function activeBookingLeadHold(
   if (!coverage || coverage.complete !== true || coverage.propertyId !== lead.propertyId)
     return null;
   return (
-    coverage.data.find((hold) => hold.holdStatus === "active" && hold.bookingLeadId === lead.id) ??
-    null
+    coverage.data.find(
+      (hold) =>
+        (hold.holdStatus === "active" || hold.holdStatus === "committed") &&
+        hold.bookingLeadId === lead.id,
+    ) ?? null
   );
 }
 

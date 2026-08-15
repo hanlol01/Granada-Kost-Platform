@@ -15,6 +15,7 @@ type UserRow = {
   display_name: string;
   user_status: AuthUserRecord['userStatus'];
   last_login_at: Date | null;
+  password_changed_at: Date | null;
 };
 
 type SessionRow = {
@@ -34,6 +35,7 @@ type AccessRow = {
   roles: string[] | null;
   permissions: string[] | null;
   property_ids: string[] | null;
+  password_changed_at: Date | null;
 };
 
 type AdminUxReadPropertyRolloutRow = {
@@ -54,7 +56,8 @@ export class IamRepository {
 
   async findUserByIdentifier(identifier: string): Promise<AuthUserRecord | null> {
     const result = await this.database.client.query<UserRow>(
-      `SELECT id, email, phone, password_hash, display_name, user_status, last_login_at
+      `SELECT id, email, phone, password_hash, display_name, user_status, last_login_at,
+              password_changed_at
        FROM users
        WHERE lower(email) = lower($1) OR phone = $1
        LIMIT 1`,
@@ -66,7 +69,8 @@ export class IamRepository {
 
   async findUserById(userId: string): Promise<AuthUserRecord | null> {
     const result = await this.database.client.query<UserRow>(
-      `SELECT id, email, phone, password_hash, display_name, user_status, last_login_at
+      `SELECT id, email, phone, password_hash, display_name, user_status, last_login_at,
+              password_changed_at
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -199,6 +203,7 @@ export class IamRepository {
          users.email,
          users.phone,
          users.display_name,
+         users.password_changed_at,
          ARRAY_REMOVE(ARRAY_AGG(DISTINCT roles.code), NULL) AS roles,
          ARRAY_REMOVE(ARRAY_AGG(DISTINCT permissions.code), NULL) AS permissions,
          ARRAY_REMOVE(ARRAY_AGG(DISTINCT user_property_roles.property_id::text), NULL) AS property_ids
@@ -228,6 +233,7 @@ export class IamRepository {
       roles: row.roles ?? [],
       permissions: row.permissions ?? [],
       propertyIds: row.property_ids ?? [],
+      passwordChangeRequired: row.password_changed_at === null,
       sessionId,
     };
   }
@@ -299,6 +305,7 @@ export class IamRepository {
       displayName: row.display_name,
       userStatus: row.user_status,
       lastLoginAt: row.last_login_at,
+      passwordChangedAt: row.password_changed_at,
     };
   }
 

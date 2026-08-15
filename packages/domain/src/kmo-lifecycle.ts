@@ -14,7 +14,7 @@ export const KMO_LIFECYCLE_STATUSES = {
     "expired",
     "cancelled",
   ],
-  hold: ["active", "released", "expired"],
+  hold: ["active", "committed", "released", "expired"],
   onboarding: [
     "draft",
     "awaiting_documents",
@@ -166,7 +166,12 @@ export type KmoCompatibilityReasonCode =
 const EXACT_COMPATIBILITY_MAP: Partial<
   Record<KmoLifecycleDomain, Readonly<Record<string, string>>>
 > = {
-  hold: { active: "active", released: "released", expired: "expired" },
+  hold: {
+    active: "active",
+    committed: "committed",
+    released: "released",
+    expired: "expired",
+  },
   account: { active: "active", suspended: "suspended" },
   resident: { active: "active", inactive: "inactive" },
   lease: {

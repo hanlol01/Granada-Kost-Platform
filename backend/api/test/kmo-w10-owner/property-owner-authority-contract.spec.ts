@@ -16,6 +16,7 @@ import {
   AssignOwnerBuildingDto,
   AssignOwnerRoomsDto,
   CreatePropertyOwnerDto,
+  ReleaseOwnerAssignmentsDto,
 } from '../../src/modules/property-owner-management/dto/property-owner-management.dto';
 import {
   MyPropertyOwnerController,
@@ -84,6 +85,16 @@ void test('controllers freeze separate Admin mutation and exact property_owner r
     (MyPropertyOwnerController.prototype as unknown as Record<string, unknown>).create,
     undefined,
   );
+  assert.equal(
+    typeof (PropertyOwnerManagementController.prototype as unknown as Record<string, unknown>)
+      .releaseBuildingBatch,
+    'function',
+  );
+  assert.equal(
+    typeof (PropertyOwnerManagementController.prototype as unknown as Record<string, unknown>)
+      .releaseRoomBatch,
+    'function',
+  );
 });
 
 void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost selections', async () => {
@@ -127,6 +138,31 @@ void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost sel
     reason: 'Initial assignment',
   });
   assert.ok((await validate(timestampPeriod)).some((error) => error.property === 'effective_from'));
+
+  const emptyBatchRelease = plainToInstance(ReleaseOwnerAssignmentsDto, {
+    property_id: propertyId,
+    assignment_ids: [],
+    effective_until: '2026-08-11',
+    reason: 'Batch release',
+  });
+  assert.ok(
+    (await validate(emptyBatchRelease)).some((error) => error.property === 'assignment_ids'),
+    'a batch release must contain at least one assignment',
+  );
+
+  const duplicateBatchRelease = plainToInstance(ReleaseOwnerAssignmentsDto, {
+    property_id: propertyId,
+    assignment_ids: [
+      '44444444-4444-4444-8444-444444444444',
+      '44444444-4444-4444-8444-444444444444',
+    ],
+    effective_until: '2026-08-11',
+    reason: 'Batch release',
+  });
+  assert.ok(
+    (await validate(duplicateBatchRelease)).some((error) => error.property === 'assignment_ids'),
+    'a batch release must reject duplicate assignment ids',
+  );
 });
 
 void test('empty or foreign property scope fails before query, transaction, or password hashing', async () => {
@@ -575,6 +611,164 @@ void test('releasing ownership shortens its protected period and rejects a non-s
     'release',
   ]);
   assert.equal(releases, 2);
+});
+
+void test('batch ownership release locks, audits, and closes every selected period in one command', async () => {
+  const ownerId = '55555555-5555-4555-8555-555555555555';
+  const firstAssignmentId = '77777777-7777-4777-8777-777777777777';
+  const secondAssignmentId = '88888888-8888-4888-8888-888888888888';
+  const unavailableAssignmentId = '99999999-9999-4999-8999-999999999999';
+  const events: string[] = [];
+  const sentinel = {
+    query: (sql: string, params?: unknown[]) => {
+      const normalized = sql.replace(/\s+/g, ' ').trim();
+      if (normalized === 'BEGIN' || normalized === 'ROLLBACK' || normalized === 'COMMIT') {
+        events.push(normalized.toLowerCase());
+        return { rows: [], rowCount: 0 };
+      }
+      if (normalized.includes('FROM property_owner_profiles profiles JOIN users')) {
+        events.push('owner-lock');
+        return {
+          rows: [
+            {
+              id: ownerId,
+              property_id: propertyId,
+              user_id: '33333333-3333-4333-8333-333333333333',
+              full_name: 'Owner Demo',
+              phone: null,
+              email: 'owner@example.test',
+              address: null,
+              profile_status: 'active',
+              user_status: 'active',
+              created_at: new Date(),
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (normalized.startsWith('INSERT INTO idempotency_commands')) {
+        events.push('claim');
+        return { rows: [{ id: '44444444-4444-4444-8444-444444444444' }], rowCount: 1 };
+      }
+      if (
+        normalized.startsWith(
+          'SELECT id, effective_from, effective_until, assignment_status FROM room_owner_assignments',
+        )
+      ) {
+        const assignmentId = String(params?.[0]);
+        events.push(`assignment-lock:${assignmentId}`);
+        if (assignmentId === unavailableAssignmentId) return { rows: [], rowCount: 0 };
+        return {
+          rows: [
+            {
+              id: assignmentId,
+              effective_from: '2026-08-01',
+              effective_until: null,
+              assignment_status: 'active',
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (normalized.startsWith('UPDATE room_owner_assignments')) {
+        events.push(`assignment-shorten:${String(params?.[0])}`);
+        return { rows: [], rowCount: 1 };
+      }
+      if (normalized.includes('INSERT INTO business_events')) {
+        events.push(`outbox:${String(params?.[3])}`);
+        return { rows: [], rowCount: 1 };
+      }
+      if (normalized.startsWith('UPDATE idempotency_commands')) {
+        events.push('complete');
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`Unexpected W10 owner batch SQL: ${normalized}`);
+    },
+    release: () => events.push('release'),
+  };
+  const auditedAssignments: string[] = [];
+  const service = new PropertyOwnerManagementService(databaseServiceWithClient(sentinel), {
+    write: (entry: { resourceId: string }, client: unknown) => {
+      assert.equal(client, sentinel);
+      auditedAssignments.push(entry.resourceId);
+      events.push(`audit:${entry.resourceId}`);
+    },
+  } as never);
+
+  const released = await service.releaseAssignments(
+    actor(),
+    ownerId,
+    'room',
+    {
+      property_id: propertyId,
+      assignment_ids: [secondAssignmentId, firstAssignmentId],
+      effective_until: '2026-09-01',
+      reason: 'Transfer portfolio ownership',
+    },
+    'w10-owner-batch-release-key-0001',
+    { correlationId: 'w10-owner-batch-release' },
+  );
+
+  assert.deepEqual(released, {
+    ownership_kind: 'room',
+    assignments: [
+      { assignment_id: firstAssignmentId, ownership_kind: 'room', status: 'released' },
+      { assignment_id: secondAssignmentId, ownership_kind: 'room', status: 'released' },
+    ],
+  });
+  assert.deepEqual(auditedAssignments, [firstAssignmentId, secondAssignmentId]);
+  assert.deepEqual(events, [
+    'begin',
+    'claim',
+    'owner-lock',
+    `assignment-lock:${firstAssignmentId}`,
+    `assignment-shorten:${firstAssignmentId}`,
+    `audit:${firstAssignmentId}`,
+    `outbox:${firstAssignmentId}`,
+    `assignment-lock:${secondAssignmentId}`,
+    `assignment-shorten:${secondAssignmentId}`,
+    `audit:${secondAssignmentId}`,
+    `outbox:${secondAssignmentId}`,
+    'complete',
+    'commit',
+    'release',
+  ]);
+
+  const failedBatchStart = events.length;
+  await assert.rejects(
+    service.releaseAssignments(
+      actor(),
+      ownerId,
+      'room',
+      {
+        property_id: propertyId,
+        assignment_ids: [unavailableAssignmentId, firstAssignmentId],
+        effective_until: '2026-09-01',
+        reason: 'Must remain atomic',
+      },
+      'w10-owner-batch-release-key-0002',
+      { correlationId: 'w10-owner-batch-release-rollback' },
+    ),
+    (error) => {
+      assert.deepEqual(exceptionBody(error), {
+        code: 'PROPERTY_OWNER_ASSIGNMENT_UNAVAILABLE',
+        message: 'Ownership assignment is unavailable or already released',
+      });
+      return true;
+    },
+  );
+  assert.deepEqual(events.slice(failedBatchStart), [
+    'begin',
+    'claim',
+    'owner-lock',
+    `assignment-lock:${firstAssignmentId}`,
+    `assignment-shorten:${firstAssignmentId}`,
+    `audit:${firstAssignmentId}`,
+    `outbox:${firstAssignmentId}`,
+    `assignment-lock:${unavailableAssignmentId}`,
+    'rollback',
+    'release',
+  ]);
 });
 
 void test('migration checksum, authority vocabulary, permissions, and module wiring are frozen', () => {

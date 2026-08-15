@@ -223,7 +223,9 @@ function assertHoldDialogSubmission(text: string): void {
     "propertyId !== currentPropertyId",
     "lead.id !== leadAtOpen.current",
     "submitting.current",
-    "mutation.isPending",
+    "create.isPending",
+    "release.isPending",
+    "cancel.isPending",
   ]) {
     if (!new RegExp(guard.replace(".", "\\.")).test(submit)) {
       throw new Error("dialog submission guard missing");
@@ -231,15 +233,19 @@ function assertHoldDialogSubmission(text: string): void {
   }
   const guardIndex = submit.indexOf("submitting.current = true");
   const keyIndex = submit.indexOf("submissionKey.current ?? newIdempotencyKey()");
-  const requestIndex = submit.indexOf("mutation.mutateAsync");
-  const clearIndex = submit.indexOf("submissionKey.current = null", requestIndex);
-  const closeIndex = submit.indexOf("onOpenChange(false)", requestIndex);
+  const requestIndexes = ["create", "release", "cancel"].map((name) =>
+    submit.indexOf(`${name}.mutateAsync`),
+  );
+  const firstRequestIndex = Math.min(...requestIndexes);
+  const lastRequestIndex = Math.max(...requestIndexes);
+  const clearIndex = submit.indexOf("submissionKey.current = null", lastRequestIndex);
+  const closeIndex = submit.indexOf("onOpenChange(false)", lastRequestIndex);
   const releaseGuardIndex = submit.lastIndexOf("submitting.current = false");
   if (
     guardIndex < 0 ||
     !(guardIndex < keyIndex) ||
-    !(keyIndex < requestIndex) ||
-    !(requestIndex < clearIndex) ||
+    requestIndexes.some((index) => index < 0 || index <= keyIndex) ||
+    !(lastRequestIndex < clearIndex) ||
     !(clearIndex < closeIndex) ||
     !(closeIndex < releaseGuardIndex)
   ) {

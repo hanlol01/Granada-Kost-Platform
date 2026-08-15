@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   Param,
   ParseIntPipe,
@@ -9,6 +10,7 @@ import {
   Post,
   Query,
   Req,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
@@ -20,6 +22,7 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
+import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
 import { BookingLeadCompletionService } from './booking-lead-completion.service';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -42,6 +45,25 @@ export class BookingLeadCompletionController {
   ) {
     await this.properties.assertCanReadProperty(user, dto.property_id);
     return this.completions.complete(leadId, dto, user.id, key, request.correlationId);
+  }
+
+  @Post(':leadId/cancel-payment-commitment')
+  @RequirePermissions('room.manage')
+  async cancelPaymentCommitment(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leadId', new ParseUUIDPipe({ version: '4' })) leadId: string,
+    @Body() dto: CancelBookingLeadPaymentCommitmentDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    await this.properties.assertCanReadProperty(user, dto.property_id);
+    return this.completions.cancelPaymentCommitment(
+      leadId,
+      dto,
+      user.id,
+      key,
+      request.correlationId,
+    );
   }
 
   @Get(':leadId/rental-context')
@@ -77,5 +99,39 @@ export class BookingLeadCompletionController {
   ) {
     await this.properties.assertCanReadProperty(user, propertyId);
     return this.completions.quote(leadId, propertyId, startDate, termMonths);
+  }
+
+  @Get(':leadId/payment-commitment-receipt/document')
+  @RequirePermissions('room.read')
+  @Header('Cache-Control', 'private, no-store')
+  async paymentCommitmentReceiptDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leadId', new ParseUUIDPipe({ version: '4' })) leadId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const document = await this.completions.paymentCommitmentReceiptDocument(leadId, propertyId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
+  @Get(':leadId/cancellation-receipt/document')
+  @RequirePermissions('room.read')
+  @Header('Cache-Control', 'private, no-store')
+  async cancellationReceiptDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leadId', new ParseUUIDPipe({ version: '4' })) leadId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const document = await this.completions.cancellationReceiptDocument(leadId, propertyId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
   }
 }

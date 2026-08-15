@@ -12,6 +12,7 @@ const TYPE_ID = '44444444-4444-4444-8444-444444444444';
 const OCCUPANCY_ID = '55555555-5555-4555-8555-555555555555';
 const RESIDENT_ID = '66666666-6666-4666-8666-666666666666';
 const LEASE_ID = '77777777-7777-4777-8777-777777777777';
+const OWNER_ID = '99999999-9999-4999-8999-999999999999';
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
@@ -29,7 +30,15 @@ function fixture(
     leases?: number;
     activeHold?: boolean;
     activeMaintenance?: boolean;
+    importNotes?: string | null;
     timeline?: Array<{ event_type: string; occurred_at: string }>;
+    category?: 'rukost' | 'apartkost';
+    ownership?: {
+      owner_full_name: string;
+      effective_from: string;
+      effective_until: string | null;
+      assignment_status: 'active' | 'scheduled';
+    } | null;
   } = {},
 ) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
@@ -47,12 +56,12 @@ function fixture(
     size_label: '3 x 4 m',
     room_status: 'occupied',
     public_visible: true,
-    import_notes: null,
+    import_notes: options.importNotes ?? null,
     updated_at: '2026-07-31T00:00:00.000Z',
     building_code: 'RK-01',
     building_name: 'RuKost 01',
-    category: 'rukost',
-    kost_type_name: 'Rumah Kost',
+    category: options.category ?? 'rukost',
+    kost_type_name: options.category === 'apartkost' ? 'Apart Kost' : 'Rumah Kost',
     monthly_price: 1_800_000,
     yearly_price: 21_600_000,
     deposit_amount: 1_800_000,
@@ -88,6 +97,7 @@ function fixture(
     deposit_deduction_amount: 0,
   };
   const query = async (sql: string, values: unknown[] = []) => {
+    await Promise.resolve();
     calls.push({ sql: sql.replace(/\s+/g, ' ').trim(), values });
     if (sql.startsWith('SET TRANSACTION')) return { rows: [] };
     if (sql.includes('FROM rooms room')) return { rows: [identity] };
@@ -99,6 +109,36 @@ function fixture(
     }
     if (sql.includes('FROM leases lease')) {
       return { rows: Array.from({ length: options.leases ?? 1 }, () => lease) };
+    }
+    if (sql.includes('FROM building_owner_assignments assignment')) {
+      return {
+        rows:
+          options.category !== 'apartkost' && options.ownership
+            ? [
+                {
+                  ...options.ownership,
+                  owner_profile_id: OWNER_ID,
+                  full_name: options.ownership.owner_full_name,
+                  assignment_kind: 'building',
+                },
+              ]
+            : [],
+      };
+    }
+    if (sql.includes('FROM room_owner_assignments assignment')) {
+      return {
+        rows:
+          options.category === 'apartkost' && options.ownership
+            ? [
+                {
+                  ...options.ownership,
+                  owner_profile_id: OWNER_ID,
+                  full_name: options.ownership.owner_full_name,
+                  assignment_kind: 'room',
+                },
+              ]
+            : [],
+      };
     }
     if (sql.includes('FROM invoices invoice')) {
       return {
@@ -129,6 +169,7 @@ function fixture(
   };
   const properties = {
     assertCanReadProperty: async (_user: unknown, propertyId: string) => {
+      await Promise.resolve();
       if (propertyId !== PROPERTY_ID) throw new Error('PROPERTY_SCOPE_DENIED');
     },
   };
@@ -145,7 +186,7 @@ const user = {
   propertyIds: [PROPERTY_ID],
 };
 
-test('live by-number detail returns exact envelope and safe section projection', async () => {
+void test('live by-number detail returns exact envelope and safe section projection', async () => {
   const current = fixture();
   const response = await current.service.getByNumber(user as never, ' RK-01-01 ', {
     property_id: PROPERTY_ID,
@@ -153,16 +194,28 @@ test('live by-number detail returns exact envelope and safe section projection',
   assert.deepEqual(Object.keys(response), ['data']);
   assert.equal(response.data.number, 'RK-01-01');
   assert.equal(response.data.commercial.minimum_dp_amount, 5_400_000);
+  assert.equal(
+    response.data.commercial.minimum_dp_label,
+    'Rekomendasi 25% dari nilai kontrak tahunan',
+  );
   assert.equal(response.data.billing.minimum_dp_amount, 5_400_000);
   assert.equal(response.data.billing.verified_invoice_allocated, 5_400_000);
   assert.equal(response.data.lease?.duration_months, 12);
   assert.equal(response.data.billing.security_deposit_required, 1_800_000);
   assert.equal(response.data.billing.dp_verified_amount, null);
   assert.equal(response.data.ownership.display_name, 'KOSTATION');
-  assert.equal(response.data.ownership.source, 'policy_default');
-  assert.equal(response.data.ownership.ownership_reconciliation_required, true);
+  assert.deepEqual(response.data.ownership, {
+    owner_profile_id: null,
+    display_name: 'KOSTATION',
+    source: 'kostation_default',
+    assignment_kind: null,
+    effective_from: null,
+    effective_until: null,
+    assignment_status: null,
+  });
   assert.equal(response.data.links.lease, `/penyewaan/${LEASE_ID}`);
-  assert.equal(response.data.links.resident, null);
+  assert.equal(response.data.resident?.id, RESIDENT_ID);
+  assert.equal(response.data.links.resident, `/tenants/${RESIDENT_ID}`);
   assert.equal(JSON.stringify(response).includes('password'), false);
   assert.equal(JSON.stringify(response).includes('ktp'), false);
   assert.equal(JSON.stringify(response).includes('phone'), false);
@@ -173,11 +226,79 @@ test('live by-number detail returns exact envelope and safe section projection',
   );
   assert.equal(current.calls[0]?.sql, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const projectionCalls = current.calls.filter((call) => call.sql.startsWith('SELECT'));
-  assert.equal(projectionCalls.length, 8);
+  assert.equal(projectionCalls.length, 9);
   assert.ok(projectionCalls.every((call) => call.values.includes(PROPERTY_ID)));
 });
 
-test('active hold, maintenance, and reconciliation independently lock structural edits', async () => {
+void test('Apart Kost room detail reads the effective room owner assignment', async () => {
+  const current = fixture({
+    category: 'apartkost',
+    ownership: {
+      owner_full_name: 'Hans',
+      effective_from: '2026-08-14',
+      effective_until: null,
+      assignment_status: 'active',
+    },
+  });
+  const response = await current.service.getByNumber(user as never, 'AK-05-01', {
+    property_id: PROPERTY_ID,
+  });
+
+  assert.deepEqual(response.data.ownership, {
+    owner_profile_id: OWNER_ID,
+    display_name: 'Hans',
+    source: 'room_assignment',
+    assignment_kind: 'room',
+    effective_from: '2026-08-14',
+    effective_until: null,
+    assignment_status: 'active',
+  });
+  const assignmentCall = current.calls.find((call) =>
+    call.sql.includes('FROM room_owner_assignments assignment'),
+  );
+  assert.ok(assignmentCall);
+  assert.deepEqual(assignmentCall.values, [PROPERTY_ID, ROOM_ID]);
+});
+
+void test('Rumah Kost room detail inherits the effective building owner assignment', async () => {
+  const current = fixture({
+    ownership: {
+      owner_full_name: 'Hans',
+      effective_from: '2026-08-14',
+      effective_until: null,
+      assignment_status: 'active',
+    },
+  });
+  const response = await current.service.getByNumber(user as never, 'RK-01-01', {
+    property_id: PROPERTY_ID,
+  });
+
+  assert.deepEqual(response.data.ownership, {
+    owner_profile_id: OWNER_ID,
+    display_name: 'Hans',
+    source: 'building_assignment',
+    assignment_kind: 'building',
+    effective_from: '2026-08-14',
+    effective_until: null,
+    assignment_status: 'active',
+  });
+  const assignmentCall = current.calls.find((call) =>
+    call.sql.includes('FROM building_owner_assignments assignment'),
+  );
+  assert.ok(assignmentCall);
+  assert.deepEqual(assignmentCall.values, [PROPERTY_ID, BUILDING_ID]);
+});
+
+void test('room detail keeps import provenance out of operational notes', async () => {
+  const response = await fixture({
+    importNotes:
+      'Workbook SHA-256 1ed8848fbf30d5197368b3e47881fde8dde36fc8af7b461607f695b553d0dad1',
+  }).service.getByNumber(user as never, 'RK-01-01', { property_id: PROPERTY_ID });
+
+  assert.equal(response.data.physical.notes, null);
+});
+
+void test('active hold, maintenance, and reconciliation independently lock structural edits', async () => {
   const hold = await fixture({ activeHold: true }).service.getByNumber(user as never, 'RK-01-01', {
     property_id: PROPERTY_ID,
   });
@@ -198,7 +319,7 @@ test('active hold, maintenance, and reconciliation independently lock structural
   assert.equal(reconciliation.data.physical.structural_edit_locked, true);
 });
 
-test('timeline emits only bounded whitelisted events with server-owned labels', async () => {
+void test('timeline emits only bounded whitelisted events with server-owned labels', async () => {
   const response = await fixture({
     timeline: [
       { event_type: 'room_updated', occurred_at: '2026-07-31T00:00:00.000Z' },
@@ -214,7 +335,7 @@ test('timeline emits only bounded whitelisted events with server-owned labels', 
   ]);
 });
 
-test('zero lease preserves resident and declares legacy reconciliation', async () => {
+void test('zero lease preserves resident and declares legacy reconciliation', async () => {
   const current = fixture({ leases: 0 });
   const response = await current.service.getByNumber(user as never, 'RK-01-01', {
     property_id: PROPERTY_ID,
@@ -224,7 +345,7 @@ test('zero lease preserves resident and declares legacy reconciliation', async (
   assert.equal(response.data.reconciliation.state, 'lease_reconciliation_required');
 });
 
-test('active lease without active occupancy remains explicit reconciliation', async () => {
+void test('active lease without active occupancy remains explicit reconciliation', async () => {
   const current = fixture({ occupancies: 0 });
   const response = await current.service.getByNumber(user as never, 'RK-01-01', {
     property_id: PROPERTY_ID,
@@ -234,7 +355,7 @@ test('active lease without active occupancy remains explicit reconciliation', as
   assert.equal(response.data.reconciliation.state, 'lease_reconciliation_required');
 });
 
-test('multiple active occupancy and lease authorities fail closed', async () => {
+void test('multiple active occupancy and lease authorities fail closed', async () => {
   await assert.rejects(
     () =>
       fixture({ occupancies: 2 }).service.getByNumber(user as never, 'RK-01-01', {
@@ -251,7 +372,7 @@ test('multiple active occupancy and lease authorities fail closed', async () => 
   );
 });
 
-test('role and property authorization happen before section expansion', async () => {
+void test('role and property authorization happen before section expansion', async () => {
   const denied = fixture();
   await assert.rejects(
     () =>
@@ -285,7 +406,10 @@ function assertSourceContract(candidate: string) {
   assert.equal((candidate.match(/allocation\.target_type = 'invoice'/g) ?? []).length, 2);
   assert.match(candidate, /deposit_collected_amount/);
   assert.match(candidate, /dp_verified_amount: null/);
-  assert.match(candidate, /source: 'policy_default'/);
+  assert.match(candidate, /FROM building_owner_assignments assignment/);
+  assert.match(candidate, /FROM room_owner_assignments assignment/);
+  assert.match(candidate, /CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date/);
+  assert.match(candidate, /source: 'kostation_default'/);
   assert.match(candidate, /audit\.occurred_at/);
   assert.match(candidate, /TIMELINE_LABELS\[eventType\]/);
   assert.doesNotMatch(candidate, /resident\.phone/);
@@ -293,7 +417,7 @@ function assertSourceContract(candidate: string) {
   assert.doesNotMatch(candidate, /INSERT INTO|UPDATE rooms|DELETE FROM/);
 }
 
-test('source contract is mutation-sensitive for property scope, ambiguity, money, ownership, and timeline', () => {
+void test('source contract is mutation-sensitive for property scope, ambiguity, money, ownership, and timeline', () => {
   const detail = source('backend/api/src/modules/admin-ux-master/admin-ux-room-detail.service.ts');
   assertSourceContract(detail);
   for (const mutation of [
@@ -305,7 +429,7 @@ test('source contract is mutation-sensitive for property scope, ambiguity, money
     detail.replace('Boolean(room.active_maintenance_exists)', 'false'),
     detail.replace('ORDER BY room.id', 'ORDER BY room.id LIMIT 1'),
     detail.replaceAll("allocation.target_type = 'invoice'", "allocation.target_type = 'deposit'"),
-    detail.replace("source: 'policy_default'", "source: 'investor'"),
+    detail.replace("source: 'kostation_default'", "source: 'investor'"),
     detail.replace('audit.occurred_at', 'audit.after_data'),
     detail.replace('TIMELINE_LABELS[eventType]', 'eventType'),
   ]) {
@@ -313,7 +437,7 @@ test('source contract is mutation-sensitive for property scope, ambiguity, money
   }
 });
 
-test('live controller registers by-number before UUID detail and keeps legacy UUID path', () => {
+void test('live controller registers by-number before UUID detail and keeps legacy UUID path', () => {
   const controller = source('backend/api/src/modules/room/room.controller.ts');
   const byNumber = controller.indexOf("@Get('by-number/:roomNumber')");
   const byId = controller.indexOf("@Get(':roomId')");

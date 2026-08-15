@@ -155,6 +155,15 @@ export class LeaseActivationService {
           code: 'LEASE_NOT_READY',
           message: 'Lease is not awaiting activation',
         });
+      const activationWindow = await client.query<{ activation_is_available: boolean }>(
+        `SELECT $1::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date AS activation_is_available`,
+        [lease.start_date],
+      );
+      if (!activationWindow.rows[0]?.activation_is_available)
+        throw new ConflictException({
+          code: 'LEASE_ACTIVATION_NOT_YET_AVAILABLE',
+          message: 'Lease cannot be activated before its Jakarta start date',
+        });
       const tupleMatches =
         lease.onboarding_commitment_id === lease.commitment_id &&
         lease.commitment_lease_id === lease.id &&
@@ -267,10 +276,10 @@ export class LeaseActivationService {
         });
       const holds = await client.query<ActivationHoldRow>(
         `SELECT id,property_id,room_id,onboarding_commitment_id,
-                (hold_status='active' AND expires_at>now()) AS is_current
+                (hold_status='committed' OR (hold_status='active' AND expires_at>now())) AS is_current
          FROM booking_lead_holds
          WHERE property_id=$1
-           AND hold_status='active'
+           AND hold_status IN ('active','committed')
            AND (onboarding_commitment_id=$2 OR room_id=$3)
          ORDER BY id
          FOR UPDATE`,
@@ -395,7 +404,7 @@ export class LeaseActivationService {
         [lease.onboarding_commitment_id, propertyId, lease.id],
       );
       await client.query(
-        `UPDATE booking_lead_holds SET hold_status='released',released_at=now(),released_by_user_id=$2,release_reason='lease_activated',updated_at=now() WHERE onboarding_commitment_id=$1 AND property_id=$3 AND room_id=$4 AND hold_status='active'`,
+        `UPDATE booking_lead_holds SET hold_status='released',released_at=now(),released_by_user_id=$2,release_reason='lease_activated',updated_at=now() WHERE onboarding_commitment_id=$1 AND property_id=$3 AND room_id=$4 AND hold_status IN ('active','committed')`,
         [lease.onboarding_commitment_id, actor.id, propertyId, lease.room_id],
       );
       await client.query(

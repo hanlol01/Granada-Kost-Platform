@@ -359,4 +359,16 @@ export const propertyOwnerApi = {
       body,
       { idempotencyKey },
     ),
+  releaseBuildingBatch: (ownerId: string, body: Record<string, unknown>, idempotencyKey: string) =>
+    adminUxV2Requester.post(
+      `/admin/property-owners/${encodeURIComponent(ownerId)}/building-assignments/release-batch`,
+      body,
+      { idempotencyKey },
+    ),
+  releaseRoomBatch: (ownerId: string, body: Record<string, unknown>, idempotencyKey: string) =>
+    adminUxV2Requester.post(
+      `/admin/property-owners/${encodeURIComponent(ownerId)}/room-assignments/release-batch`,
+      body,
+      { idempotencyKey },
+    ),
 };

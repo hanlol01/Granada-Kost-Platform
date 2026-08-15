@@ -209,6 +209,27 @@ function RoomsPage() {
     search.activeOccupancy,
     search.reconciliationState,
   ].join("|");
+  const selectedBuilding = buildings.find((building) => building.id === search.buildingId);
+  const filterCriteria = [
+    search.q.trim() ? `pencarian \"${search.q.trim()}\"` : "",
+    search.category ? `kategori: ${KOST_TYPE_LABEL[search.category]}` : "",
+    selectedBuilding ? `bangunan: ${selectedBuilding.label}` : "",
+    search.floorCode ? `lantai: ${search.floorCode}` : "",
+    search.status ? `status kamar: ${ROOM_STATUS_LABEL[search.status]}` : "",
+    search.genderPolicy
+      ? `jenis kelamin: ${search.genderPolicy === "male" ? "Putra" : "Putri"}`
+      : "",
+    search.activeOccupancy === true
+      ? "hunian: ada penghuni aktif"
+      : search.activeOccupancy === false
+        ? "hunian: tanpa penghuni aktif"
+        : "",
+    search.reconciliationState === "normal"
+      ? "rekonsiliasi: normal"
+      : search.reconciliationState === "requires_review"
+        ? "rekonsiliasi: perlu ditinjau"
+        : "",
+  ].filter(Boolean);
 
   return (
     <AppShell
@@ -326,6 +347,7 @@ function RoomsPage() {
             resultCount={roomsQuery.data?.total ?? 0}
             activeFilterCount={activeFilterCount}
             searchTerm={search.q}
+            criteria={filterCriteria}
           />
         ) : null}
         <RoomInventoryTable

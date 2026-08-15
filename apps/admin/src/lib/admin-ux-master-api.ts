@@ -169,6 +169,7 @@ export type RoomDetail = {
     facilities: Array<{ id: string; name: string }>;
   };
   resident: {
+    id: string;
     displayName: string;
     accountStatus: string;
     university: string | null;
@@ -221,13 +222,17 @@ export type RoomDetail = {
     technicianName: string | null;
   }>;
   ownership: {
-    displayName: "KOSTATION";
-    source: "policy_default";
-    ownershipReconciliationRequired: true;
+    ownerProfileId: string | null;
+    displayName: string;
+    source: "building_assignment" | "room_assignment" | "kostation_default";
+    assignmentKind: "building" | "room" | null;
+    effectiveFrom: string | null;
+    effectiveUntil: string | null;
+    assignmentStatus: "active" | null;
   };
   timeline: Array<{ eventType: string; label: string; occurredAt: string }>;
   links: {
-    resident: null;
+    resident: string | null;
     lease: string | null;
     billing: null;
     vehicles: null;
@@ -1687,7 +1692,7 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
       ? null
       : exactRecord(
           data.resident,
-          ["display_name", "account_status", "university", "occupancy_start"],
+          ["id", "display_name", "account_status", "university", "occupancy_start"],
           "resident",
         );
   const lease =
@@ -1725,6 +1730,8 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     throw new Error("Invalid room detail reconciliation.");
   }
   const relationshipMismatch = Boolean(resident) !== Boolean(lease);
+  const residentId = resident ? (isUuidV4(resident.id) ? resident.id : null) : null;
+  if (resident && !residentId) throw new Error("Invalid room detail resident.");
   const reconciliationRequired = reconciliation.state === "lease_reconciliation_required";
   if (
     relationshipMismatch !== reconciliationRequired ||
@@ -1805,15 +1812,54 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
       })();
   const ownership = exactRecord(
     data.ownership,
-    ["display_name", "source", "ownership_reconciliation_required"],
+    [
+      "owner_profile_id",
+      "display_name",
+      "source",
+      "assignment_kind",
+      "effective_from",
+      "effective_until",
+      "assignment_status",
+    ],
     "ownership",
   );
+  const ownershipIsDefault = ownership.source === "kostation_default";
+  const ownershipIsRoom = ownership.source === "room_assignment";
+  const ownershipIsBuilding = ownership.source === "building_assignment";
   if (
-    ownership.display_name !== "KOSTATION" ||
-    ownership.source !== "policy_default" ||
-    ownership.ownership_reconciliation_required !== true
+    (!ownershipIsDefault && !ownershipIsRoom && !ownershipIsBuilding) ||
+    !isNonEmptyString(ownership.display_name) ||
+    (ownershipIsDefault &&
+      (ownership.owner_profile_id !== null ||
+        ownership.display_name !== "KOSTATION" ||
+        ownership.assignment_kind !== null ||
+        ownership.effective_from !== null ||
+        ownership.effective_until !== null ||
+        ownership.assignment_status !== null)) ||
+    (!ownershipIsDefault &&
+      (!isUuidV4(ownership.owner_profile_id) ||
+        (ownershipIsRoom && ownership.assignment_kind !== "room") ||
+        (ownershipIsBuilding && ownership.assignment_kind !== "building") ||
+        ownership.assignment_status !== "active" ||
+        !isNonEmptyString(ownership.effective_from) ||
+        (ownership.effective_until !== null && !isNonEmptyString(ownership.effective_until))))
   ) {
     throw new Error("Invalid room detail ownership.");
+  }
+  const ownershipEffectiveFrom =
+    ownership.effective_from === null
+      ? null
+      : dateLike(ownership.effective_from, "ownership effective from");
+  const ownershipEffectiveUntil =
+    ownership.effective_until === null
+      ? null
+      : dateLike(ownership.effective_until, "ownership effective until");
+  if (
+    ownershipEffectiveFrom !== null &&
+    ownershipEffectiveUntil !== null &&
+    ownershipEffectiveUntil <= ownershipEffectiveFrom
+  ) {
+    throw new Error("Invalid room detail ownership period.");
   }
   const timeline = Array.isArray(data.timeline)
     ? data.timeline.map((value) => {
@@ -1838,9 +1884,10 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     ["resident", "lease", "billing", "vehicles", "complaints"],
     "links",
   );
+  const expectedResidentLink = residentId ? `/tenants/${residentId}` : null;
   const expectedLeaseLink = leaseId ? `/penyewaan/${leaseId}` : null;
   if (
-    links.resident !== null ||
+    links.resident !== expectedResidentLink ||
     links.billing !== null ||
     links.vehicles !== null ||
     links.complaints !== null ||
@@ -1890,6 +1937,7 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     },
     resident: resident
       ? {
+          id: residentId!,
           displayName: requiredString(resident.display_name, "resident name"),
           accountStatus: exactEnum(resident.account_status, ACCOUNT_STATUSES, "account status"),
           university:
@@ -1961,13 +2009,20 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     vehicles,
     complaints,
     ownership: {
-      displayName: "KOSTATION",
-      source: "policy_default",
-      ownershipReconciliationRequired: true,
+      ownerProfileId:
+        ownership.owner_profile_id === null
+          ? null
+          : requiredString(ownership.owner_profile_id, "owner profile id"),
+      displayName: requiredString(ownership.display_name, "ownership display name"),
+      source: ownership.source as RoomDetail["ownership"]["source"],
+      assignmentKind: ownership.assignment_kind as RoomDetail["ownership"]["assignmentKind"],
+      effectiveFrom: ownershipEffectiveFrom,
+      effectiveUntil: ownershipEffectiveUntil,
+      assignmentStatus: ownership.assignment_status as RoomDetail["ownership"]["assignmentStatus"],
     },
     timeline,
     links: {
-      resident: null,
+      resident: expectedResidentLink,
       lease: links.lease as string | null,
       billing: null,
       vehicles: null,

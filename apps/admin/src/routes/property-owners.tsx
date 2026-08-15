@@ -1,11 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PropertyOwnerWorkspace } from "@/components/property-owners/PropertyOwnerWorkspace";
-import { PropertyOwnerPortal } from "@/components/property-owner-portal/PropertyOwnerPortal";
-import { useAuth } from "@/lib/auth";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/property-owners")({ component: PropertyOwnersRoute });
+export const Route = createFileRoute("/property-owners")({
+  component: PropertyOwnersRouteLayout,
+});
 
-function PropertyOwnersRoute() {
-  const { hasRole } = useAuth();
-  return hasRole("property_owner") ? <PropertyOwnerPortal /> : <PropertyOwnerWorkspace />;
+function PropertyOwnersRouteLayout() {
+  return <Outlet />;
 }

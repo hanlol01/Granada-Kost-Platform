@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
+  ArrowLeft,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -13,7 +15,6 @@ import {
   ShieldCheck,
   Trash2,
   UserRound,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -36,14 +38,12 @@ import {
   usePropertyOwners,
 } from "@/hooks/usePropertyOwners";
 import type { AssignmentStatus, OwnerAssetOption, PropertyOwner } from "@/lib/admin-property-owner";
+import { validateOwnerAssignment } from "@/lib/property-owner-assignment-validation";
+import { displayOwnerDate } from "@/lib/property-owner-date";
 import { cn } from "@/lib/utils";
 
 const today = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
-const displayDate = (value: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date(`${value}T00:00:00`))
-    : "Tanpa batas akhir";
 const accountLabel = (status: string) =>
   status === "active"
     ? "Akun aktif"
@@ -59,9 +59,28 @@ const assignmentStatusLabel = (status: AssignmentStatus) =>
       : status === "ended"
         ? "Berakhir"
         : "Dilepas";
+function roomGenderLabel(genderPolicy: string | null): string | null {
+  if (genderPolicy === "male") return "Putra";
+  if (genderPolicy === "female") return "Putri";
+  if (genderPolicy === "mixed") return "Campuran";
+  return null;
+}
 const PAGE_SIZE = 20;
 
-type Modal = "create" | "edit" | "assign" | "reset" | "release" | null;
+type Modal = "create" | "edit" | "assign" | "reset" | "release" | "release-batch" | null;
+type ReleaseTarget = {
+  id: string;
+  kind: "building" | "room";
+  label: string;
+};
+type BatchReleaseItem = ReleaseTarget & {
+  description: string;
+  effectiveFrom: string;
+};
+type BatchReleaseTarget = {
+  kind: "building" | "room";
+  items: BatchReleaseItem[];
+};
 type OwnerDraft = {
   fullName: string;
   phone: string;
@@ -143,11 +162,12 @@ function AssetSelection({
   );
 }
 
-export function PropertyOwnerWorkspace() {
+export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | "active" | "archived">("");
   const [offset, setOffset] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(ownerId ?? null);
   const [modal, setModal] = useState<Modal>(null);
   const [draft, setDraft] = useState<OwnerDraft>(emptyDraft);
   const [passwordReceipt, setPasswordReceipt] = useState<{
@@ -160,13 +180,16 @@ export function PropertyOwnerWorkspace() {
   const [effectiveFrom, setEffectiveFrom] = useState(today);
   const [effectiveUntil, setEffectiveUntil] = useState("");
   const [assignmentReason, setAssignmentReason] = useState("");
+  const [assignmentSubmitAttempted, setAssignmentSubmitAttempted] = useState(false);
   const [buildingId, setBuildingId] = useState("");
   const [roomIds, setRoomIds] = useState<string[]>([]);
-  const [releaseTarget, setReleaseTarget] = useState<{
-    id: string;
+  const [releaseTarget, setReleaseTarget] = useState<ReleaseTarget | null>(null);
+  const [batchReleaseTarget, setBatchReleaseTarget] = useState<BatchReleaseTarget | null>(null);
+  const [assetSelection, setAssetSelection] = useState<{
     kind: "building" | "room";
-    label: string;
+    ids: string[];
   } | null>(null);
+  const [batchReleaseSubmitAttempted, setBatchReleaseSubmitAttempted] = useState(false);
   const owners = usePropertyOwners({
     q: search.trim() || undefined,
     status: status || undefined,
@@ -174,14 +197,41 @@ export function PropertyOwnerWorkspace() {
     limit: PAGE_SIZE,
   });
   const detail = usePropertyOwnerDetail(selectedId);
-  const assets = useOwnerAssetOptions(effectiveFrom);
+  const assets = useOwnerAssetOptions(effectiveFrom || undefined);
   const mutations = usePropertyOwnerMutations();
   const selectedOwner =
     detail.data ?? owners.data?.data.find((owner) => owner.id === selectedId) ?? null;
   const loading = owners.isLoading;
   const error = owners.isError;
   const hasLoginIdentifier = Boolean(draft.email.trim() || draft.phone.trim());
+  const assignmentErrors = useMemo(
+    () =>
+      validateOwnerAssignment({
+        kind: assignmentKind,
+        effectiveFrom,
+        effectiveUntil,
+        reason: assignmentReason,
+        buildingId,
+        roomIds,
+      }),
+    [assignmentKind, assignmentReason, buildingId, effectiveFrom, effectiveUntil, roomIds],
+  );
+  const batchReleaseErrors = useMemo(() => {
+    const errors: { effectiveUntil?: string; reason?: string } = {};
+    if (!effectiveUntil) errors.effectiveUntil = "Tanggal berakhir wajib diisi.";
+    else if (
+      batchReleaseTarget?.items.some((item) => effectiveUntil <= item.effectiveFrom.slice(0, 10))
+    )
+      errors.effectiveUntil =
+        "Tanggal berakhir harus setelah tanggal mulai berlaku dari seluruh aset yang dipilih.";
+    if (!assignmentReason.trim()) errors.reason = "Alasan pelepasan wajib diisi.";
+    return errors;
+  }, [assignmentReason, batchReleaseTarget, effectiveUntil]);
   useEffect(() => setOffset(0), [search, status]);
+  useEffect(() => {
+    setSelectedId(ownerId ?? null);
+    setModal(null);
+  }, [ownerId]);
   useEffect(() => {
     setBuildingId("");
     setRoomIds([]);
@@ -190,14 +240,21 @@ export function PropertyOwnerWorkspace() {
     setModal(null);
     setDraft(emptyDraft());
     setAssignmentReason("");
+    setAssignmentSubmitAttempted(false);
     setEffectiveUntil("");
     setRoomIds([]);
     setBuildingId("");
     setReleaseTarget(null);
+    setBatchReleaseTarget(null);
+    setAssetSelection(null);
+    setBatchReleaseSubmitAttempted(false);
   };
   const openCreate = () => {
     setDraft(emptyDraft());
     setModal("create");
+  };
+  const openDetail = (id: string) => {
+    void navigate({ to: "/property-owners/$ownerId", params: { ownerId: id } });
   };
   const openEdit = (owner: PropertyOwner) => {
     setSelectedId(owner.id);
@@ -235,13 +292,8 @@ export function PropertyOwnerWorkspace() {
     }
   };
   const submitAssignment = async () => {
-    if (
-      !selectedId ||
-      !assignmentReason.trim() ||
-      (assignmentKind === "building" && !buildingId) ||
-      (assignmentKind === "room" && roomIds.length === 0)
-    )
-      return;
+    setAssignmentSubmitAttempted(true);
+    if (!selectedId || Object.keys(assignmentErrors).length > 0) return;
     if (assignmentKind === "building")
       await mutations.assignBuildings.mutateAsync({
         ownerId: selectedId,
@@ -271,28 +323,37 @@ export function PropertyOwnerWorkspace() {
     });
     clearModal();
   };
+  const submitBatchRelease = async () => {
+    setBatchReleaseSubmitAttempted(true);
+    if (!selectedId || !batchReleaseTarget || Object.keys(batchReleaseErrors).length > 0) return;
+    await mutations.releaseBatch.mutateAsync({
+      ownerId: selectedId,
+      assignmentIds: batchReleaseTarget.items.map((item) => item.id),
+      kind: batchReleaseTarget.kind,
+      effectiveUntil,
+      reason: assignmentReason,
+    });
+    clearModal();
+  };
   const resultCopy = useMemo(
     () =>
       `${owners.data?.meta.total ?? 0} Owner Property${search || status ? " sesuai filter" : " terdaftar"}`,
     [owners.data?.meta.total, search, status],
   );
   return (
-    <main className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-primary">Master Data</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Owner Property</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Kelola pemilik aset Rumah Kost dan Apart Kost. Aset tanpa assignment tetap tercatat
-            sebagai milik Kostation.
-          </p>
-        </div>
+    <div className="mx-auto w-full max-w-[1440px] space-y-6">
+      <div className={cn("flex justify-end", ownerId && "hidden")}>
         <Button onClick={openCreate} className="gap-2">
           <Plus className="size-4" />
           Tambah Owner
         </Button>
-      </header>
-      <section className="grid gap-3 rounded-2xl border border-sky-500/35 bg-sky-500/5 p-4 md:grid-cols-[auto_1fr]">
+      </div>
+      <section
+        className={cn(
+          "grid gap-3 rounded-2xl border border-sky-500/35 bg-sky-500/5 p-4 md:grid-cols-[auto_1fr]",
+          ownerId && "hidden",
+        )}
+      >
         <div className="flex size-10 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300">
           <ShieldCheck className="size-5" />
         </div>
@@ -304,7 +365,7 @@ export function PropertyOwnerWorkspace() {
           </p>
         </div>
       </section>
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
+      <section className={cn("rounded-2xl border bg-card p-4 shadow-sm", ownerId && "hidden")}>
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
@@ -330,13 +391,18 @@ export function PropertyOwnerWorkspace() {
         </p>
       </section>
       {loading ? (
-        <div className="grid gap-3">
+        <div className={cn("grid gap-3", ownerId && "hidden")}>
           <Skeleton className="h-16" />
           <Skeleton className="h-16" />
           <Skeleton className="h-16" />
         </div>
       ) : error ? (
-        <section className="rounded-2xl border border-destructive/45 bg-destructive/5 p-8 text-center">
+        <section
+          className={cn(
+            "rounded-2xl border border-destructive/45 bg-destructive/5 p-8 text-center",
+            ownerId && "hidden",
+          )}
+        >
           <h2 className="font-semibold">Owner Property belum dapat dimuat</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Periksa koneksi server lalu coba lagi.
@@ -346,7 +412,12 @@ export function PropertyOwnerWorkspace() {
           </Button>
         </section>
       ) : (
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <section
+          className={cn(
+            "overflow-hidden rounded-2xl border bg-card shadow-sm",
+            ownerId && "hidden",
+          )}
+        >
           <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[900px] text-sm">
               <thead className="bg-muted/55 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -399,21 +470,10 @@ export function PropertyOwnerWorkspace() {
                           size="sm"
                           variant="info"
                           className="gap-1.5"
-                          onClick={() => {
-                            setSelectedId(owner.id);
-                            setModal(null);
-                          }}
+                          onClick={() => openDetail(owner.id)}
                         >
                           <Eye className="size-3.5" />
                           Detail
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(owner)}
-                          aria-label={`Edit ${owner.fullName}`}
-                        >
-                          <Pencil className="size-3.5" />
                         </Button>
                       </div>
                     </td>
@@ -453,10 +513,7 @@ export function PropertyOwnerWorkspace() {
                 <Button
                   className="mt-4 w-full gap-2"
                   variant="info"
-                  onClick={() => {
-                    setSelectedId(owner.id);
-                    setModal(null);
-                  }}
+                  onClick={() => openDetail(owner.id)}
                 >
                   <Eye className="size-4" />
                   Lihat detail
@@ -507,30 +564,44 @@ export function PropertyOwnerWorkspace() {
           )}
         </section>
       )}
-      <OwnerDetailDialog
-        owner={selectedOwner}
-        isLoading={detail.isLoading}
-        onClose={() => setSelectedId(null)}
-        onEdit={() => selectedOwner && openEdit(selectedOwner)}
-        onAssign={() => {
-          setAssignmentKind("building");
-          setEffectiveFrom(today());
-          setModal("assign");
-        }}
-        onReset={() => setModal("reset")}
-        onArchive={() =>
-          selectedOwner &&
-          void mutations.archive
-            .mutateAsync(selectedOwner.id)
-            .then(() => setSelectedId(null))
-            .catch(() => undefined)
-        }
-        onRelease={(target) => {
-          setReleaseTarget(target);
-          setEffectiveUntil(today());
-          setModal("release");
-        }}
-      />
+      {ownerId ? (
+        <OwnerDetailPageContent
+          owner={selectedOwner}
+          isLoading={detail.isLoading}
+          onBack={() => void navigate({ to: "/property-owners" })}
+          onEdit={() => selectedOwner && openEdit(selectedOwner)}
+          onAssign={() => {
+            setAssignmentKind("building");
+            setEffectiveFrom(today());
+            setAssignmentSubmitAttempted(false);
+            setModal("assign");
+          }}
+          onReset={() => setModal("reset")}
+          onArchive={() =>
+            selectedOwner &&
+            void mutations.archive
+              .mutateAsync(selectedOwner.id)
+              .then(() => void navigate({ to: "/property-owners" }))
+              .catch(() => undefined)
+          }
+          onRelease={(target) => {
+            setReleaseTarget(target);
+            setAssignmentReason("");
+            setEffectiveUntil(today());
+            setModal("release");
+          }}
+          onBulkRelease={(target) => {
+            setBatchReleaseTarget(target);
+            setAssetSelection(null);
+            setAssignmentReason("");
+            setEffectiveUntil(today());
+            setBatchReleaseSubmitAttempted(false);
+            setModal("release-batch");
+          }}
+          assetSelection={assetSelection}
+          onAssetSelectionChange={setAssetSelection}
+        />
+      ) : null}
       <Dialog
         open={modal === "create" || modal === "edit"}
         onOpenChange={(open) => !open && clearModal()}
@@ -638,22 +709,33 @@ export function PropertyOwnerWorkspace() {
             </Button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Mulai berlaku" required>
-              <Input
-                type="date"
-                value={effectiveFrom}
-                onChange={(event) => setEffectiveFrom(event.target.value)}
-              />
-            </Field>
-            <Field label="Berakhir pada (opsional)">
-              <Input
-                type="date"
-                min={effectiveFrom}
-                value={effectiveUntil}
-                onChange={(event) => setEffectiveUntil(event.target.value)}
-              />
-            </Field>
-            <Field label="Alasan assignment" required className="sm:col-span-2">
+            <HeroUiDatePicker
+              id="owner-assignment-effective-from"
+              label="Mulai berlaku"
+              ariaLabel="Tanggal mulai berlaku"
+              required
+              value={effectiveFrom || undefined}
+              error={assignmentSubmitAttempted ? assignmentErrors.effectiveFrom : undefined}
+              onChange={(value) => {
+                setEffectiveFrom(value ?? "");
+                if (value && effectiveUntil && effectiveUntil < value) setEffectiveUntil("");
+              }}
+            />
+            <HeroUiDatePicker
+              id="owner-assignment-effective-until"
+              label="Berakhir pada (opsional)"
+              ariaLabel="Tanggal berakhir ownership"
+              value={effectiveUntil || undefined}
+              minDate={effectiveFrom || undefined}
+              error={assignmentSubmitAttempted ? assignmentErrors.effectiveUntil : undefined}
+              onChange={(value) => setEffectiveUntil(value ?? "")}
+            />
+            <Field
+              label="Alasan assignment"
+              required
+              className="sm:col-span-2"
+              error={assignmentSubmitAttempted ? assignmentErrors.reason : undefined}
+            >
               <Textarea
                 value={assignmentReason}
                 onChange={(event) => setAssignmentReason(event.target.value)}
@@ -692,6 +774,11 @@ export function PropertyOwnerWorkspace() {
                   ))}
             </div>
           )}
+          {assignmentSubmitAttempted && assignmentErrors.asset ? (
+            <p className="text-sm text-destructive" role="alert">
+              {assignmentErrors.asset}
+            </p>
+          ) : null}
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
             {assignmentKind === "building"
               ? "Bangunan Rumah Kost yang dipilih otomatis mencakup seluruh kamar di dalamnya."
@@ -703,12 +790,7 @@ export function PropertyOwnerWorkspace() {
             </Button>
             <Button
               onClick={() => void submitAssignment().catch(() => undefined)}
-              disabled={
-                mutations.assignBuildings.isPending ||
-                mutations.assignRooms.isPending ||
-                !assignmentReason.trim() ||
-                (assignmentKind === "building" ? !buildingId : roomIds.length === 0)
-              }
+              disabled={mutations.assignBuildings.isPending || mutations.assignRooms.isPending}
             >
               Simpan assignment
             </Button>
@@ -776,13 +858,14 @@ export function PropertyOwnerWorkspace() {
               setelah tanggal ini.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Tanggal berakhir" required>
-            <Input
-              type="date"
-              value={effectiveUntil}
-              onChange={(event) => setEffectiveUntil(event.target.value)}
-            />
-          </Field>
+          <HeroUiDatePicker
+            id="owner-release-effective-until"
+            label="Tanggal berakhir"
+            ariaLabel="Tanggal berakhir ownership"
+            required
+            value={effectiveUntil || undefined}
+            onChange={(value) => setEffectiveUntil(value ?? "")}
+          />
           <Field label="Alasan pelepasan" required>
             <Textarea
               value={assignmentReason}
@@ -799,6 +882,68 @@ export function PropertyOwnerWorkspace() {
               onClick={() => void submitRelease().catch(() => undefined)}
             >
               Akhiri ownership
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={modal === "release-batch"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Akhiri periode kepemilikan terpilih</DialogTitle>
+            <DialogDescription>
+              {batchReleaseTarget?.items.length ?? 0} aset akan diakhiri pada tanggal yang sama.
+              Riwayat kepemilikan tetap tersimpan dan aset dapat dialihkan setelah tanggal ini.
+            </DialogDescription>
+          </DialogHeader>
+          <section className="rounded-xl border border-slate-300 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-muted/20">
+            <p className="text-sm font-medium">Aset yang dipilih</p>
+            <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto pr-1">
+              {batchReleaseTarget?.items.map((item) => (
+                <li
+                  key={item.id}
+                  className="rounded-lg border border-slate-200 bg-background px-3 py-2 text-sm dark:border-slate-800"
+                >
+                  <p className="font-medium">{item.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <HeroUiDatePicker
+            id="owner-batch-release-effective-until"
+            label="Tanggal berakhir"
+            ariaLabel="Tanggal berakhir ownership terpilih"
+            required
+            value={effectiveUntil || undefined}
+            onChange={(value) => setEffectiveUntil(value ?? "")}
+          />
+          {batchReleaseSubmitAttempted && batchReleaseErrors.effectiveUntil ? (
+            <p className="text-sm text-destructive" role="alert">
+              {batchReleaseErrors.effectiveUntil}
+            </p>
+          ) : null}
+          <Field label="Alasan pelepasan" required>
+            <Textarea
+              value={assignmentReason}
+              aria-invalid={Boolean(batchReleaseSubmitAttempted && batchReleaseErrors.reason)}
+              onChange={(event) => setAssignmentReason(event.target.value)}
+            />
+          </Field>
+          {batchReleaseSubmitAttempted && batchReleaseErrors.reason ? (
+            <p className="-mt-3 text-sm text-destructive" role="alert">
+              {batchReleaseErrors.reason}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={clearModal}>
+              Batal
+            </Button>
+            <Button
+              variant="warning"
+              disabled={mutations.releaseBatch.isPending}
+              onClick={() => void submitBatchRelease().catch(() => undefined)}
+            >
+              Akhiri {batchReleaseTarget?.items.length ?? 0} periode
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -834,7 +979,7 @@ export function PropertyOwnerWorkspace() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }
 
@@ -842,12 +987,14 @@ function Field({
   label,
   required,
   hint,
+  error,
   className,
   children,
 }: {
   label: string;
   required?: boolean;
   hint?: string;
+  error?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -859,53 +1006,71 @@ function Field({
       </Label>
       {children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function OwnerDetailDialog({
+function OwnerDetailPageContent({
   owner,
   isLoading,
-  onClose,
+  onBack,
   onEdit,
   onAssign,
   onReset,
   onArchive,
   onRelease,
+  onBulkRelease,
+  assetSelection,
+  onAssetSelectionChange,
 }: {
   owner: import("@/lib/admin-property-owner").PropertyOwnerDetail | PropertyOwner | null;
   isLoading: boolean;
-  onClose: () => void;
+  onBack: () => void;
   onEdit: () => void;
   onAssign: () => void;
   onReset: () => void;
   onArchive: () => void;
-  onRelease: (target: { id: string; kind: "building" | "room"; label: string }) => void;
+  onRelease: (target: ReleaseTarget) => void;
+  onBulkRelease: (target: BatchReleaseTarget) => void;
+  assetSelection: { kind: "building" | "room"; ids: string[] } | null;
+  onAssetSelectionChange: (selection: { kind: "building" | "room"; ids: string[] } | null) => void;
 }) {
   const detail = owner && "assets" in owner ? owner : null;
   return (
-    <Dialog open={Boolean(owner)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <UserRound className="size-4" />
-            </span>
-            {owner?.fullName ?? "Detail owner"}
-          </DialogTitle>
-          <DialogDescription>
-            Profil, kredensial aman, dan riwayat kepemilikan aset.
-          </DialogDescription>
-        </DialogHeader>
-        {isLoading && (
+    <section className="mx-auto w-full max-w-6xl space-y-6 pb-8">
+      <div className="flex items-center">
+        <Button onClick={onBack}>
+          <ArrowLeft className="mr-2 size-4" />
+          Kembali ke Owner Property
+        </Button>
+      </div>
+      <div className="space-y-6">
+        <header className="rounded-2xl border border-slate-300/90 bg-card p-5 shadow-sm dark:border-slate-700">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <UserRound className="size-4" />
+              </span>
+              <span className="truncate">{owner?.fullName ?? "Detail owner"}</span>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Profil, kredensial aman, dan riwayat kepemilikan aset.
+            </p>
+          </div>
+        </header>
+        {isLoading ? (
           <div className="grid gap-3">
             <Skeleton className="h-28" />
             <Skeleton className="h-40" />
           </div>
-        )}
-        {detail && (
+        ) : detail ? (
           <div className="space-y-5">
-            <section className="grid gap-3 rounded-2xl border bg-muted/25 p-4 sm:grid-cols-2">
+            <section className="grid gap-3 rounded-2xl border border-slate-300/90 bg-slate-50/80 p-4 shadow-sm dark:border-slate-700 dark:bg-muted/25 sm:grid-cols-2">
               <Info label="Nomor telepon profil" value={detail.phone ?? "Belum diisi"} />
               <Info
                 label="Email untuk login"
@@ -952,11 +1117,16 @@ function OwnerDetailDialog({
                 id: asset.id,
                 title: asset.buildingCode,
                 description: `${asset.buildingName ?? "Bangunan"} · mencakup ${asset.coveredRoomCount} kamar`,
-                period: `${displayDate(asset.effectiveFrom)} — ${displayDate(asset.effectiveUntil)}`,
+                period: `${displayOwnerDate(asset.effectiveFrom)} — ${displayOwnerDate(asset.effectiveUntil)}`,
+                effectiveFrom: asset.effectiveFrom,
                 status: asset.assignmentStatus,
                 kind: "building" as const,
               }))}
               onRelease={onRelease}
+              onBulkRelease={onBulkRelease}
+              selection={assetSelection}
+              onSelectionChange={onAssetSelectionChange}
+              kind="building"
             />
             <AssetBlock
               title="Kamar Apart Kost aktif / terjadwal"
@@ -965,21 +1135,28 @@ function OwnerDetailDialog({
               items={detail.assets.apartKostRooms.map((asset) => ({
                 id: asset.id,
                 title: asset.roomCode,
-                description: `${asset.buildingCode ?? "Bangunan"}${asset.genderPolicy ? ` · ${asset.genderPolicy}` : ""}`,
-                period: `${displayDate(asset.effectiveFrom)} — ${displayDate(asset.effectiveUntil)}`,
+                description: [asset.buildingCode ?? "Bangunan", roomGenderLabel(asset.genderPolicy)]
+                  .filter(Boolean)
+                  .join(" · "),
+                period: `${displayOwnerDate(asset.effectiveFrom)} — ${displayOwnerDate(asset.effectiveUntil)}`,
+                effectiveFrom: asset.effectiveFrom,
                 status: asset.assignmentStatus,
                 kind: "room" as const,
               }))}
               onRelease={onRelease}
+              onBulkRelease={onBulkRelease}
+              selection={assetSelection}
+              onSelectionChange={onAssetSelectionChange}
+              kind="room"
             />
             <section>
               <h3 className="mb-3 flex items-center gap-2 font-semibold">
                 <CalendarClock className="size-4 text-primary" />
                 Riwayat ownership
               </h3>
-              <div className="overflow-x-auto rounded-xl border">
+              <div className="overflow-x-auto rounded-xl border border-slate-300 bg-card shadow-sm dark:border-slate-700">
                 <table className="w-full min-w-[620px] text-sm">
-                  <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+                  <thead className="bg-slate-100/80 text-left text-xs text-muted-foreground dark:bg-muted/50">
                     <tr>
                       <th className="p-3">Aset</th>
                       <th className="p-3">Jenis</th>
@@ -990,13 +1167,17 @@ function OwnerDetailDialog({
                   </thead>
                   <tbody>
                     {detail.ownershipHistory.map((entry) => (
-                      <tr key={`${entry.ownershipKind}-${entry.id}`} className="border-t">
+                      <tr
+                        key={`${entry.ownershipKind}-${entry.id}`}
+                        className="border-t border-slate-200 dark:border-slate-800"
+                      >
                         <td className="p-3 font-semibold">{entry.assetCode}</td>
                         <td className="p-3">
                           {entry.ownershipKind === "building" ? "Rumah Kost" : "Apart Kost"}
                         </td>
                         <td className="p-3">
-                          {displayDate(entry.effectiveFrom)} — {displayDate(entry.effectiveUntil)}
+                          {displayOwnerDate(entry.effectiveFrom)} —{" "}
+                          {displayOwnerDate(entry.effectiveUntil)}
                         </td>
                         <td className="p-3">
                           <StatusBadge
@@ -1019,20 +1200,26 @@ function OwnerDetailDialog({
               </div>
             </section>
           </div>
+        ) : (
+          <section className="rounded-2xl border border-destructive/45 bg-destructive/5 p-8 text-center">
+            <h2 className="font-semibold">Owner Property tidak ditemukan</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Data ini tidak tersedia pada properti aktif saat ini.
+            </p>
+          </section>
         )}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            <X className="mr-2 size-4" />
-            Tutup
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </section>
   );
 }
 function Info({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
-    <div className={cn("rounded-xl border bg-background/65 p-3", className)}>
+    <div
+      className={cn(
+        "rounded-xl border border-slate-200 bg-background p-3 shadow-sm dark:border-slate-800",
+        className,
+      )}
+    >
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 break-words font-medium">{value}</p>
     </div>
@@ -1043,7 +1230,11 @@ function AssetBlock({
   icon,
   empty,
   items,
+  kind,
   onRelease,
+  onBulkRelease,
+  selection,
+  onSelectionChange,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -1053,53 +1244,133 @@ function AssetBlock({
     title: string;
     description: string;
     period: string;
+    effectiveFrom: string;
     status: AssignmentStatus;
     kind: "building" | "room";
   }[];
-  onRelease: (target: { id: string; kind: "building" | "room"; label: string }) => void;
+  kind: "building" | "room";
+  onRelease: (target: ReleaseTarget) => void;
+  onBulkRelease: (target: BatchReleaseTarget) => void;
+  selection: { kind: "building" | "room"; ids: string[] } | null;
+  onSelectionChange: (selection: { kind: "building" | "room"; ids: string[] } | null) => void;
 }) {
+  const selectableItems = items.filter((item) => ["active", "scheduled"].includes(item.status));
+  const isSelecting = selection?.kind === kind;
+  const selectedItems = isSelecting
+    ? selectableItems.filter((item) => selection.ids.includes(item.id))
+    : [];
+  const toggleSelection = (id: string, checked: boolean) => {
+    const ids = checked
+      ? [...(selection?.ids ?? []), id]
+      : (selection?.ids ?? []).filter((selectedId) => selectedId !== id);
+    onSelectionChange({ kind, ids });
+  };
   return (
-    <section>
-      <h3 className="mb-3 flex items-center gap-2 font-semibold">
-        {icon}
-        {title}
-      </h3>
+    <section className="rounded-2xl border border-slate-300/90 bg-slate-50/55 p-4 shadow-sm dark:border-slate-700 dark:bg-muted/15">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 font-semibold">
+          {icon}
+          {title}
+        </h3>
+        {selectableItems.length > 0 ? (
+          isSelecting ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">{selectedItems.length} dipilih</span>
+              <Button size="sm" variant="destructive" onClick={() => onSelectionChange(null)}>
+                Batal
+              </Button>
+              <Button
+                size="sm"
+                variant="warning"
+                disabled={selectedItems.length === 0}
+                onClick={() =>
+                  onBulkRelease({
+                    kind,
+                    items: selectedItems.map((item) => ({
+                      id: item.id,
+                      kind: item.kind,
+                      label: item.title,
+                      description: item.description,
+                      effectiveFrom: item.effectiveFrom,
+                    })),
+                  })
+                }
+              >
+                Akhiri {selectedItems.length} periode
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => onSelectionChange({ kind, ids: [] })}
+            >
+              Pilih beberapa
+            </Button>
+          )
+        ) : null}
+      </div>
       {items.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{empty}</p>
+        <p className="rounded-xl border border-dashed border-slate-300 bg-background/80 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-background/35">
+          {empty}
+        </p>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {items.map((item) => (
-            <article key={item.id} className="rounded-xl border p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="font-semibold">{item.title}</h4>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {items.map((item) => {
+            const canSelect = isSelecting && ["active", "scheduled"].includes(item.status);
+            const Card = canSelect ? "label" : "article";
+            return (
+              <Card
+                key={item.id}
+                className={cn(
+                  "block rounded-xl border border-slate-300 bg-card p-4 shadow-sm dark:border-slate-700",
+                  canSelect &&
+                    "cursor-pointer transition-colors hover:border-primary/65 hover:bg-primary/5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25",
+                  isSelecting && selection?.ids.includes(item.id) && "border-primary bg-primary/5",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {canSelect ? (
+                        <input
+                          aria-label={`Pilih ${item.title}`}
+                          type="checkbox"
+                          checked={selection?.ids.includes(item.id) ?? false}
+                          onChange={(event) => toggleSelection(item.id, event.target.checked)}
+                          className="size-4 accent-primary"
+                        />
+                      ) : null}
+                      <h4 className="font-semibold">{item.title}</h4>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+                  </div>
+                  <StatusBadge
+                    tone={
+                      item.status === "active"
+                        ? "green"
+                        : item.status === "scheduled"
+                          ? "blue"
+                          : "slate"
+                    }
+                  >
+                    {assignmentStatusLabel(item.status)}
+                  </StatusBadge>
                 </div>
-                <StatusBadge
-                  tone={
-                    item.status === "active"
-                      ? "green"
-                      : item.status === "scheduled"
-                        ? "blue"
-                        : "slate"
-                  }
-                >
-                  {assignmentStatusLabel(item.status)}
-                </StatusBadge>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">{item.period}</p>
-              {["active", "scheduled"].includes(item.status) && (
-                <Button
-                  className="mt-3"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onRelease({ id: item.id, kind: item.kind, label: item.title })}
-                >
-                  Akhiri periode
-                </Button>
-              )}
-            </article>
-          ))}
+                <p className="mt-3 text-xs text-muted-foreground">{item.period}</p>
+                {!isSelecting && ["active", "scheduled"].includes(item.status) && (
+                  <Button
+                    className="mt-4"
+                    size="sm"
+                    variant="warning"
+                    onClick={() => onRelease({ id: item.id, kind: item.kind, label: item.title })}
+                  >
+                    Akhiri periode
+                  </Button>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
     </section>

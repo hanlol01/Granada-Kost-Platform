@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   parseResidentAccountReceipt,
+  parseResidentAccountSummary,
   parseResidentDetail,
   parseResidentPage,
+  parseResidentPasswordResetReceipt,
 } from "./admin-resident";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -24,6 +26,11 @@ function listItem() {
     lease_end: null,
     lease_authority_count: 0,
     account_status: "not_provisioned",
+    rent_payment_status: "none",
+    contract_settlement_stage: "none",
+    contract_settlement_due_date: null,
+    contract_settlement_remaining_amount: 0,
+    contract_settlement_checkpoint_required_amount: 0,
     resident_status: "active",
     created_at: "2026-07-31T00:00:00.000Z",
     updated_at: "2026-07-31T00:00:00.000Z",
@@ -77,6 +84,7 @@ test("resident list parser preserves exact property-scoped pagination without li
   assert.equal("phone" in parsed.data[0], false);
   assert.equal("email" in parsed.data[0], false);
   assert.equal("ktpNumber" in parsed.data[0], false);
+  assert.equal(parsed.data[0].rentPaymentStatus, "none");
 
   for (const invalid of [
     { data: [listItem()], meta: { limit: 20, offset: 0 } },
@@ -86,6 +94,14 @@ test("resident list parser preserves exact property-scoped pagination without li
     },
     {
       data: [{ ...listItem(), lease_authority_count: -1 }],
+      meta: { limit: 20, offset: 0, total: 1 },
+    },
+    {
+      data: [{ ...listItem(), rent_payment_status: "security_deposit" }],
+      meta: { limit: 20, offset: 0, total: 1 },
+    },
+    {
+      data: [{ ...listItem(), contract_settlement_stage: "unrecognized" }],
       meta: { limit: 20, offset: 0, total: 1 },
     },
   ]) {
@@ -151,16 +167,82 @@ test("one-time account receipt requires exact whitelist and never replays creden
   );
 });
 
+test("resident credential parsers expose login identity without accepting stored secrets", () => {
+  assert.deepEqual(
+    parseResidentAccountSummary({
+      data: {
+        status: "active",
+        login_email: "resident@example.test",
+        login_phone: "6281111111111",
+        password_change_required: true,
+      },
+    }),
+    {
+      status: "active",
+      loginEmail: "resident@example.test",
+      loginPhone: "6281111111111",
+      passwordChangeRequired: true,
+    },
+  );
+
+  assert.deepEqual(
+    parseResidentPasswordResetReceipt({
+      data: {
+        status: "active",
+        login_email: "resident@example.test",
+        login_phone: "6281111111111",
+        password_change_required: true,
+        temporary_password: "Kostation2026",
+      },
+    }),
+    {
+      status: "active",
+      loginEmail: "resident@example.test",
+      loginPhone: "6281111111111",
+      passwordChangeRequired: true,
+      temporaryPassword: "Kostation2026",
+    },
+  );
+
+  assert.throws(() =>
+    parseResidentAccountSummary({
+      data: {
+        status: "active",
+        login_email: "resident@example.test",
+        login_phone: null,
+        password_change_required: false,
+        password: "must-not-pass",
+      },
+    }),
+  );
+  assert.throws(() =>
+    parseResidentPasswordResetReceipt({
+      data: {
+        status: "active",
+        login_email: "resident@example.test",
+        login_phone: null,
+        password_change_required: true,
+        temporary_password: null,
+      },
+    }),
+  );
+});
+
 test("Admin workspace freezes operational columns, scoped pagination, and the resident lease hub boundary", () => {
   const route = readFileSync(resolve(root, "routes/tenants.tsx"), "utf8");
   const listHook = readFileSync(resolve(root, "hooks/useResidents.ts"), "utf8");
   const mutationHook = readFileSync(resolve(root, "hooks/useResidentMutations.ts"), "utf8");
+  const detailWorkspace = readFileSync(
+    resolve(root, "components/residents/ResidentDetailWorkspace.tsx"),
+    "utf8",
+  );
   for (const label of [
     "Nama Penghuni",
     "No Unit",
     "Universitas",
     "Durasi Sewa",
-    "Status Akun",
+    "Status Pembayaran",
+    "Tahap Pelunasan",
     "Status Penghuni",
     "Aksi",
   ]) {
@@ -169,6 +251,13 @@ test("Admin workspace freezes operational columns, scoped pagination, and the re
   assert.match(listHook, /property_id: currentPropertyId/);
   assert.match(listHook, /limit: filters\.limit \?\? 20/);
   assert.match(listHook, /offset: filters\.offset \?\? 0/);
+  assert.match(listHook, /rent_payment_status: filters\.rentPaymentStatus/);
+  assert.match(listHook, /contract_settlement_stage: filters\.settlementStage/);
+  assert.match(listHook, /settlement_due_within_days: filters\.settlementDueWithinDays/);
+  assert.match(route, /Booking fee/);
+  assert.match(route, /DP \/ uang muka/);
+  assert.match(route, /Bayar sebagian/);
+  assert.match(route, /Lunas/);
   assert.match(route, /createFileRoute\("\/tenants"\)/);
   assert.match(route, /routeId === "\/tenants\/\$residentId"/);
   assert.match(route, /<Outlet \/>/);
@@ -181,15 +270,37 @@ test("Admin workspace freezes operational columns, scoped pagination, and the re
   assert.match(accountRegion, /propertyRef\.current !== propertyId/);
   assert.match(accountRegion, /pendingRef\.current/);
   assert.match(accountRegion, /\["residents", "detail", \{ propertyId, residentId \}\]/);
+  assert.match(mutationHook, /export function useResidentAccountSummary/);
+  assert.match(mutationHook, /export function useResetResidentPassword/);
+  assert.match(detailWorkspace, /Lihat kredensial penghuni/);
+  assert.match(detailWorkspace, /Reset password/);
+  assert.match(detailWorkspace, /Kirim ke WhatsApp/);
+  assert.match(detailWorkspace, /setTemporaryPassword\(null\)/);
   assert.doesNotMatch(route, /password_hash|access_token|userId\}/);
+  assert.doesNotMatch(detailWorkspace, /password_hash|access_token/);
 });
 
 test("Penghuni keeps resident-only shell and canonical self-context authority", () => {
   const rootRoute = readFileSync(resolve(root, "../../penghuni/src/routes/__root.tsx"), "utf8");
   const context = readFileSync(resolve(root, "../../penghuni/src/lib/resident-context.ts"), "utf8");
+  const authGuard = readFileSync(
+    resolve(root, "../../penghuni/src/lib/auth/AuthGuard.tsx"),
+    "utf8",
+  );
+  const passwordChange = readFileSync(
+    resolve(root, "../../penghuni/src/lib/auth/FirstLoginPasswordChange.tsx"),
+    "utf8",
+  );
   assert.match(rootRoute, /roles=\{\["resident"\]\}/);
   assert.match(rootRoute, /new Set<string>\(\["\/login", "\/kamar"\]\)/);
   assert.match(context, /RESIDENT_CONTEXT_PATH = "\/my\/resident-context"/);
   assert.match(context, /qk\.penghuni\.residentContext\(accountId\)/);
   assert.doesNotMatch(context, /invoice.*fallback|LIMIT 1/i);
+  assert.match(authGuard, /user\?\.passwordChangeRequired === true/);
+  assert.match(authGuard, /user\?\.password_change_required === true/);
+  assert.match(authGuard, /<FirstLoginPasswordChange \/>/);
+  assert.match(passwordChange, /useChangePassword/);
+  assert.match(passwordChange, /logout\(\)/);
+  assert.match(passwordChange, /window\.location\.assign\("\/login"\)/);
+  assert.doesNotMatch(passwordChange, /Kostation2026/);
 });

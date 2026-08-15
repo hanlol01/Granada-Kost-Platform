@@ -1,0 +1,39 @@
+{
+  "mode": "apply",
+  "timestamp": "2026-08-05T22:35:39.989Z",
+  "propertyId": "20000000-0000-4000-8000-000000000001",
+  "workbookSha256": "e1d8848fbf30d5197368b3e47881fde8dde36fc8af7b461607f695b553d0dad1",
+  "backupPath": "D:\\PROJECT CODING\\KOSTATION\\artifacts\\reset-backups\\kostation-before-room-reset-20260806-013949.dump",
+  "ledgerMaintenanceOverride": true,
+  "before": {
+    "booking_leads": 23,
+    "booking_lead_holds": 24,
+    "booking_lead_payment_commitments": 7,
+    "onboarding_commitments": 12,
+    "leases": 12,
+    "occupancies": 10,
+    "invoices": 29,
+    "payments": 17,
+    "residents": 24,
+    "rooms": 163,
+    "room_buildings": 26
+  },
+  "after": {
+    "rooms": 163,
+    "buildings": 18,
+    "rukost": 123,
+    "apartkost": 40,
+    "male": 112,
+    "female": 51,
+    "vacant": 163,
+    "room_codes": 163
+  },
+  "expected": {
+    "rooms": 163,
+    "buildings": 18,
+    "rukost": 123,
+    "apartkost": 40,
+    "male": 112,
+    "female": 51
+  }
+}

@@ -63,6 +63,51 @@ test('contract settlement separates verified onboarding payment from later rent 
   );
 });
 
+test('first-payment checkpoint requires one monthly rate after activation and accepts rent paid early', () => {
+  const harness = paymentHarness();
+  const project = (
+    harness.service as unknown as {
+      projectContractSettlement: (row: Record<string, unknown>) => {
+        first_payment_checkpoint: {
+          required_additional_amount: number;
+          additional_payment_received: number;
+          remaining_amount: number;
+          status: string;
+        };
+      };
+    }
+  ).projectContractSettlement.bind(harness.service);
+
+  const base = {
+    total_amount: '10800000',
+    credit_amount: '2700000',
+    allocated_amount: '0',
+    initial_payment_allocated: '0',
+    monthly_rate: '1800000',
+    activated_at: new Date('2026-08-09T00:00:00.000Z'),
+    original_due_at: new Date('2026-10-09T16:59:59.999Z'),
+    extension_due_at: null,
+    termination_status: null,
+    deposit_offset_amount: '0',
+    first_payment_checkpoint_at: new Date('2026-09-09T16:59:59.999Z'),
+  };
+
+  assert.deepEqual(project(base).first_payment_checkpoint, {
+    due_at: '2026-09-09T16:59:59.999Z',
+    required_additional_amount: 1_800_000,
+    additional_payment_received: 0,
+    remaining_amount: 1_800_000,
+    status: 'pending',
+  });
+  assert.deepEqual(project({ ...base, allocated_amount: '3000000' }).first_payment_checkpoint, {
+    due_at: '2026-09-09T16:59:59.999Z',
+    required_additional_amount: 1_800_000,
+    additional_payment_received: 3_000_000,
+    remaining_amount: 0,
+    status: 'met_early',
+  });
+});
+
 async function reserveLocalPort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolvePromise, reject) => {
@@ -274,6 +319,8 @@ function paymentHarness(options: HarnessOptions = {}) {
               extension_due_at: settlement.extensionDueAt ?? null,
               extension_reason: null,
               total_amount: '10800000',
+              monthly_rate: '1800000',
+              first_payment_checkpoint_at: new Date('2026-02-01T23:59:59.999Z'),
               credit_amount: '2700000',
               allocated_amount: String(8_100_000 - (settlement.outstanding ?? 8_100_000)),
               initial_payment_allocated: String(settlement.initialPaymentAllocated ?? 0),

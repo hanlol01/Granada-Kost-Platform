@@ -69,6 +69,7 @@ const onboardingDto = {
 };
 
 type HarnessOptions = {
+  activationAvailable?: boolean;
   auditFailure?: Error;
   occupancyRows?: string[];
   leaseRows?: string[];
@@ -336,6 +337,11 @@ function createActivationHarness(options: HarnessOptions = {}) {
         };
       if (/FROM leases l/.test(normalized))
         return { rows: [activationLease(options.roomOverrides)], rowCount: 1 };
+      if (/AS activation_is_available/.test(normalized))
+        return {
+          rows: [{ activation_is_available: options.activationAvailable ?? true }],
+          rowCount: 1,
+        };
       if (/AS dp_verified_amount/.test(normalized))
         return {
           rows: [
@@ -1029,6 +1035,46 @@ test('activation rechecks the full tuple and creates occupancy only after all lo
     })
     .filter(Boolean);
   assert.deepEqual(lockOrder, ['tuple', 'hold', 'occupancy', 'lease', 'mutation']);
+});
+
+test('activation rejects a lease before its Jakarta start date without lifecycle mutation', async () => {
+  const startDate = '2026-08-11';
+  const harness = createActivationHarness({
+    activationAvailable: false,
+    roomOverrides: { start_date: startDate },
+  });
+
+  await assert.rejects(
+    harness.service.activate(
+      actor as never,
+      LEASE_ID,
+      { property_id: PROPERTY_ID },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'LEASE_ACTIVATION_NOT_YET_AVAILABLE',
+  );
+  assert.deepEqual(harness.events, ['authorized', 'begin', 'rollback', 'release']);
+  assert.equal(
+    harness.queries.some(({ sql }) =>
+      /INSERT INTO occupancies|UPDATE rooms|INSERT INTO occupancy_history|INSERT INTO lease_history|INSERT INTO business_events|UPDATE idempotency_commands/.test(
+        sql,
+      ),
+    ),
+    false,
+  );
+  const activationWindow = harness.queries.find(({ sql }) =>
+    /AS activation_is_available/.test(sql),
+  );
+  assert.ok(
+    activationWindow,
+    'activation availability must be checked by the database business date',
+  );
+  assert.deepEqual(activationWindow.params, [startDate]);
 });
 
 test('activation replay is exact and performs no tuple lookup or lifecycle mutation', async () => {

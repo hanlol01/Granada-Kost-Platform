@@ -1,4 +1,4 @@
-export type BookingLeadHoldStatus = 'active' | 'released' | 'expired';
+export type BookingLeadHoldStatus = 'active' | 'committed' | 'released' | 'expired';
 
 export type BookingLeadHoldRecord = {
   id: string;

@@ -692,11 +692,13 @@ Exit evidence:
 
 Class: Program Ship; split into `W10-OWNER-A`–`W10-OWNER-D`.
 
-Status: `IN_PROGRESS`. `W10-OWNER-A`, `W10-OWNER-B`, and `W10-OWNER-C` are
-source implemented; W10-OWNER-C automated review is pending and runtime is
-deferred. `W10-OWNER-D` remains planned. This status does not claim
-canonical migration, reconciliation, or runtime evidence. The complete boundary is in
-[`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md).
+Status: `IN_PROGRESS`. `W10-OWNER-A` through `W10-OWNER-D` are
+`AUTOMATED_VERIFIED`; controlled runtime QA and canonical migration remain
+deferred. This status does not claim a canonical migration or production runtime
+exercise. The complete boundary is in
+[`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
+and the controlled procedure is in
+[`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md).
 
 Implementation truth (2026-08-12):
 
@@ -709,12 +711,12 @@ Implementation truth (2026-08-12):
   transfer, and ownership-history workspace. Browser/runtime verification is
   deferred.
 - `W10-OWNER-C` supplies the read-only portal/report source; `W10-OWNER-D`
-  follows after automated review and portal/report reconciliation stabilize.
+  closes automated reconciliation, security evidence, and the runtime/rollback
+  runbook without claiming a canonical deployment.
 - `W10-OWNER-A3` source adds migration 037 allocation-backed service-coverage
   authority for transfer-month earnings, bounded by invoice, activated lease,
-  and occupancy service. W10-OWNER-C remains `SOURCE_IMPLEMENTED; AUTOMATED
-REVIEW PENDING; RUNTIME DEFERRED`; no canonical migration/runtime claim is
-  made.
+  and occupancy service. W10-OWNER-C/D are `AUTOMATED_VERIFIED;
+RUNTIME_DEFERRED`; no canonical migration/runtime claim is made.
 
 ### W10-OWNER-A — Schema, Authority, RBAC, and API Foundation
 
@@ -762,6 +764,10 @@ REVIEW PENDING; RUNTIME DEFERRED`; no canonical migration/runtime claim is
   reconciliation;
 - mutation denial and PII/private-proof exclusion; and
 - authenticated Admin and Property Owner browser flows after source stabilizes.
+
+Automated evidence for this slice is complete. Browser flows and any database
+mutation remain deferred until the W10-D runbook is executed against an
+identified QA target with restore evidence.
 
 Exit evidence:
 

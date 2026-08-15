@@ -14,7 +14,6 @@ import { MyBillingController } from './controllers/my-billing.controller';
 import { PaymentAccountController } from './controllers/payment-account.controller';
 import { PaymentController } from './controllers/payment.controller';
 import { PaymentProofController } from './controllers/payment-proof.controller';
-import { PropertyOwnerBillingController } from './controllers/property-owner-billing.controller';
 import { InvoiceService } from './services/invoice.service';
 import { PaymentProofService } from './services/payment-proof.service';
 import { PaymentService } from './services/payment.service';
@@ -33,7 +32,6 @@ import { ContractSettlementService } from './services/contract-settlement.servic
     PaymentProofController,
     PaymentAccountController,
     MyBillingController,
-    PropertyOwnerBillingController,
   ],
   providers: [
     AdminBillingRepository,

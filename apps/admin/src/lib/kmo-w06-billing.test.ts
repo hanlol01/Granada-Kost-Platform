@@ -370,9 +370,19 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /pending_confirmation/);
   assert.match(workspace, /useVerifyPayment/);
   assert.match(workspace, /useRejectPayment/);
+  assert.match(workspace, /Penghuni/);
+  assert.match(workspace, /data\.lease\.resident_name/);
+  assert.match(workspace, /Kamar/);
+  assert.match(workspace, /data\.lease\.room_number/);
+  assert.match(workspace, /Durasi sewa/);
+  assert.match(workspace, /aria-label="Konteks kontrak penghuni"/);
+  assert.match(workspace, /sm:grid-cols-3/);
+  assert.match(workspace, /variant="destructive"[\s\S]{0,160}Tutup detail/);
   const apiSource = readFileSync(new URL("./admin-w06-billing.ts", import.meta.url), "utf8");
   assert.match(apiSource, /billing\/invoices\/.*\/document/);
   assert.match(apiSource, /billing\/receipts\/.*\/document/);
+  assert.match(apiSource, /resident_name/);
+  assert.match(apiSource, /room_number/);
 });
 
 test("W07 settlement UI uses operational copy, contextual payment controls, and stacked payment history", () => {
@@ -402,6 +412,7 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /Pembayaran awal sewa \(DP\)/);
   assert.match(residentDetail, /Pembayaran untuk sewa kontrak/);
   assert.match(residentDetail, /Bayar sebagian untuk pelunasan sewa kontrak/);
+  assert.match(residentDetail, /Pembayaran Sebagian Sewa/);
   assert.match(residentDetail, /Bukan tagihan sewa bulanan/);
   assert.match(residentDetail, /Skema pelunasan/);
   assert.match(residentDetail, /Pelunasan penuh sebelum tenggat/);
@@ -409,11 +420,24 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /Bayar sebagian/);
   assert.match(residentDetail, /Yang perlu diperhatikan/);
   assert.match(residentDetail, /Pelunasan sewa selesai/);
+  assert.match(residentDetail, /Checkpoint pembayaran pertama/);
+  assert.match(residentDetail, /Pembayaran sewa tambahan/);
+  assert.match(residentDetail, /first_payment_checkpoint/);
+  assert.match(residentDetail, /FirstPaymentCheckpointCard/);
+  assert.match(residentDetail, /Pelunasan sewa tersisa 30 hari/);
+  assert.match(residentDetail, /density="compact"/);
+  assert.match(residentDetail, /attention="subtle"/);
+  assert.match(residentDetail, /openSettlementGuidance/);
   assert.match(residentDetail, /Tindakan admin diperlukan/);
   assert.match(residentDetail, /transfer menunggu konfirmasi/);
   assert.match(residentDetail, /Tutup pengingat:/);
   assert.match(noticeAlert, /onDismiss/);
   assert.match(noticeAlert, /Tutup pemberitahuan/);
+  assert.match(noticeAlert, /NoticeAlertDensity/);
+  assert.match(noticeAlert, /NoticeAlertAttention/);
+  assert.match(noticeAlert, /notice-alert__attention/);
+  assert.match(noticeAlert, /border-info\/45 bg-info\/10/);
+  assert.match(noticeAlert, /max-w-\[72ch\]/);
   assert.doesNotMatch(
     residentDetail,
     /<SummaryMetric label="Kredit awal"|<SummaryMetric label="Pembayaran ledger"|<SummaryMetric label="Saldo sewa"/,

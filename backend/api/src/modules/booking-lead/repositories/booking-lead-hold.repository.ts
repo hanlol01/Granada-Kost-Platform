@@ -281,7 +281,7 @@ export class BookingLeadHoldRepository {
       `SELECT ${this.holdColumns()}, expires_at <= now() AS stale
        FROM booking_lead_holds
        WHERE property_id = $1
-         AND hold_status = 'active'
+         AND hold_status IN ('active', 'committed')
          AND (booking_lead_id = $2 OR room_id = $3)
        ORDER BY id
        FOR UPDATE`,
@@ -298,7 +298,7 @@ export class BookingLeadHoldRepository {
       `SELECT ${this.holdColumns()}, expires_at <= now() AS stale
        FROM booking_lead_holds
        WHERE booking_lead_id = $1
-       ORDER BY (hold_status = 'active') DESC, starts_at DESC, id DESC
+       ORDER BY CASE hold_status WHEN 'committed' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, starts_at DESC, id DESC
        LIMIT 1
        FOR UPDATE`,
       [leadId],
@@ -316,7 +316,7 @@ export class BookingLeadHoldRepository {
       `SELECT
          EXISTS (
            SELECT 1 FROM booking_lead_holds
-           WHERE property_id = $1 AND room_id = $2 AND hold_status = 'active'
+           WHERE property_id = $1 AND room_id = $2 AND hold_status IN ('active', 'committed')
          ) AS active_hold,
          EXISTS (
            SELECT 1 FROM occupancies
@@ -427,7 +427,7 @@ export class BookingLeadHoldRepository {
          AND room_status = 'reserved'
          AND NOT EXISTS (
            SELECT 1 FROM booking_lead_holds hold
-           WHERE hold.property_id = $2 AND hold.room_id = $1 AND hold.hold_status = 'active'
+           WHERE hold.property_id = $2 AND hold.room_id = $1 AND hold.hold_status IN ('active', 'committed')
          )
          AND NOT EXISTS (
            SELECT 1 FROM occupancies occupancy

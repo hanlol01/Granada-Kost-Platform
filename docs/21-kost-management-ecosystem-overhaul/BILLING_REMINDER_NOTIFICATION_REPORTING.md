@@ -78,13 +78,13 @@ must not be used interchangeably in API fields or UI copy.
 The active `kost_type` for Rumah Kost or Apart Kost is the source for new lease
 pricing. Initial values for both categories:
 
-| Item                |        Initial value |
-| ------------------- | -------------------: |
-| Monthly rent        |          Rp1,800,000 |
-| Annual rent         |         Rp21,600,000 |
-| Security deposit    |  optional; Rp0 valid |
-| Minimum term        |             3 months |
-| Initial rent credit | 25% of contract rent |
+| Item                |                                                                   Initial value |
+| ------------------- | ------------------------------------------------------------------------------: |
+| Monthly rent        |                                                                     Rp1,800,000 |
+| Annual rent         |                                                                    Rp21,600,000 |
+| Security deposit    |                                                             optional; Rp0 valid |
+| Minimum term        |                                                                        3 months |
+| Initial rent credit | Recorded verified Booking Fee and/or DP; 25% is the recommended starting amount |
 
 Admin can edit category pricing for future agreements. Existing lease,
 installment, invoice, payment, and receipt snapshots never change after a price
@@ -111,17 +111,20 @@ edit.
 - An exact multiple of 12 months may use the category annual price; another
   ordinary term uses the category monthly price.
 - No overlapping or missing coverage range is permitted.
-- The first invoice must be issued before activation; a verified initial rent
-  credit of at least 25% is required, while the first invoice need not be fully
+- The first invoice must be issued before activation. A verified initial rent
+  credit is required; 25% of contract rent is the recommended default and may
+  be recorded below that recommendation. The first invoice need not be fully
   settled unless a later policy says otherwise.
 
-### 4.4 Initial rent-credit calculation
+### 4.4 Initial rent-credit recommendation
 
 ```text
-minimum_initial_rent_credit = ceil(contract_rent_amount × 25 / 100)
+recommended_initial_rent_credit = ceil(contract_rent_amount × 25 / 100)
 ```
 
-At Rp21,600,000 contract rent, the minimum initial rent credit is Rp5,400,000.
+At Rp21,600,000 contract rent, the recommended initial rent credit is
+Rp5,400,000. It is not a blocking minimum; the server still records and
+validates the actual verified initial credit against the contract quote.
 
 Booking Fee/DP allocation order:
 
@@ -166,7 +169,7 @@ Security deposit:
 - complete mandatory resident identity;
 - account provisioning/link;
 - gender-compatible reserved/vacant room;
-- verified initial rent credit at least the minimum;
+- verified initial rent credit recorded against the immutable contract quote;
 - optional security deposit recorded when applicable;
 - start date reached;
 - active occupancy created and room `occupied`.
@@ -902,21 +905,21 @@ Owner cache additionally binds to building-scope version.
 
 ## 15. Failure Modes
 
-| Condition                                   | Required outcome                                                                                                |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Price changes after agreement               | Existing lease/installment/invoice snapshots unchanged.                                                         |
-| Initial rent credit below 25%               | Lease remains awaiting activation; safe outstanding message.                                                    |
-| Security deposit Rp0 / not agreed           | Does not block activation; no refundable-liability balance is recorded.                                         |
-| Transfer proof missing                      | Bank-transfer payment rejected before claim/write.                                                              |
-| Invoice paid/void while payment dialog open | Locked verification rejects stale allocation and refreshes authority.                                           |
-| Two Admins verify same payment              | One commits; other receives replay/conflict, no duplicate receipt.                                              |
-| Reversal after report opened                | Report refresh/export recomputes from ledger; stale export remains identified by generation timestamp/checksum. |
-| Reminder invoice settled before send        | Message creation fails stale eligibility; preview refresh required.                                             |
-| WhatsApp window opened then abandoned       | History says opened only, never sent/delivered.                                                                 |
-| Email clicked while disabled                | Safe disabled result; no external request.                                                                      |
-| Expense over threshold approved by manager  | Denied before state mutation.                                                                                   |
-| Property Owner requests unowned building    | Empty/denied without row existence disclosure.                                                                  |
-| File unavailable                            | Financial record remains; UI shows evidence unavailable, never raw path.                                        |
+| Condition                                        | Required outcome                                                                                                |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Price changes after agreement                    | Existing lease/installment/invoice snapshots unchanged.                                                         |
+| Initial rent credit below the 25% recommendation | The value may be recorded; show a safe outstanding message without treating the recommendation as a blocker.    |
+| Security deposit Rp0 / not agreed                | Does not block activation; no refundable-liability balance is recorded.                                         |
+| Transfer proof missing                           | Bank-transfer payment rejected before claim/write.                                                              |
+| Invoice paid/void while payment dialog open      | Locked verification rejects stale allocation and refreshes authority.                                           |
+| Two Admins verify same payment                   | One commits; other receives replay/conflict, no duplicate receipt.                                              |
+| Reversal after report opened                     | Report refresh/export recomputes from ledger; stale export remains identified by generation timestamp/checksum. |
+| Reminder invoice settled before send             | Message creation fails stale eligibility; preview refresh required.                                             |
+| WhatsApp window opened then abandoned            | History says opened only, never sent/delivered.                                                                 |
+| Email clicked while disabled                     | Safe disabled result; no external request.                                                                      |
+| Expense over threshold approved by manager       | Denied before state mutation.                                                                                   |
+| Property Owner requests unowned building         | Empty/denied without row existence disclosure.                                                                  |
+| File unavailable                                 | Financial record remains; UI shows evidence unavailable, never raw path.                                        |
 
 ## 16. Acceptance Matrix
 

@@ -45,10 +45,52 @@ const CODE_NOTICES: Readonly<Record<string, Pick<AdminErrorNotice, "title" | "de
     description:
       "Tanggal tagihan pertama masih setelah tanggal aktivasi. Periksa kembali tanggal mulai sewa dan jadwal tagihan sebelum mengaktifkan kamar.",
   },
+  LEASE_ACTIVATION_NOT_YET_AVAILABLE: {
+    title: "Aktivasi kamar belum tersedia",
+    description:
+      "Kamar hanya dapat diaktifkan pada atau setelah tanggal mulai sewa. Tunggu sampai jadwal check-in tiba.",
+  },
   BOOKING_LEAD_PAYMENT_COMMITMENT_EXISTS: {
     title: "Minat booking sudah diselesaikan",
     description:
       "Komitmen pembayaran calon penghuni ini sudah tercatat. Buka data Minat Booking lalu pilih Lengkapi Data Penyewaan.",
+  },
+  FILE_EXTENSION_MISMATCH: {
+    title: "Format file tidak sesuai",
+    description:
+      "Nama file tidak cocok dengan isi sebenarnya. Simpan atau ekspor ulang sebagai JPG, PNG, atau PDF lalu pilih kembali.",
+  },
+  FILE_MIME_MISMATCH: {
+    title: "Format file tidak sesuai",
+    description:
+      "Isi file berbeda dari format yang dilaporkan perangkat. Simpan ulang gambar sebagai JPG atau PNG lalu coba lagi.",
+  },
+  FILE_TOO_LARGE: {
+    title: "Ukuran file terlalu besar",
+    description:
+      "Foto akan dikompresi otomatis. Jika tetap gagal, kurangi resolusi gambar; untuk PDF gunakan file maksimal 5 MB.",
+  },
+  FILE_TOO_LARGE_FOR_PURPOSE: {
+    title: "Ukuran file terlalu besar",
+    description:
+      "Ukuran hasil file melewati batas untuk dokumen ini. Kurangi resolusi atau pilih file lain.",
+  },
+  CLIENT_FILE_TOO_LARGE_AFTER_COMPRESSION: {
+    title: "Foto masih terlalu besar",
+    description: "Kompresi otomatis belum cukup. Kurangi resolusi foto lalu pilih kembali.",
+  },
+  CLIENT_SOURCE_IMAGE_TOO_LARGE: {
+    title: "Foto terlalu besar untuk diproses",
+    description:
+      "Gunakan foto sumber maksimal 25 MB agar perangkat dapat mengompresnya dengan aman.",
+  },
+  CLIENT_IMAGE_DECODE_FAILED: {
+    title: "Foto tidak dapat dibaca",
+    description: "Ekspor ulang foto sebagai JPG atau PNG standar, lalu pilih kembali.",
+  },
+  CLIENT_FILE_CONTENT_UNSUPPORTED: {
+    title: "Isi file tidak didukung",
+    description: "Pilih file JPG, PNG, WebP, atau PDF asli—bukan file yang hanya diganti namanya.",
   },
 };
 

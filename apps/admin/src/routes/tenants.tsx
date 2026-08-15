@@ -1,5 +1,13 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { CalendarPlus, Eye, Search, SlidersHorizontal, Users, X } from "lucide-react";
+import {
+  CalendarPlus,
+  Clock3,
+  Eye,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Users,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { LeaseCreatePage } from "@/components/leases/LeaseCreatePage";
@@ -8,6 +16,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -17,7 +26,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useResidents, type ResidentListRecord, type ResidentStatus } from "@/hooks/useResidents";
+import {
+  useResidents,
+  type ContractSettlementStage,
+  type RentPaymentStatus,
+  type ResidentListRecord,
+  type ResidentStatus,
+} from "@/hooks/useResidents";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseEnabled } from "@/lib/features";
 import { useProperty } from "@/lib/property";
@@ -81,6 +96,66 @@ export function AccountStatusPill({ status }: { status: ResidentListRecord["acco
   );
 }
 
+export function RentPaymentStatusPill({
+  status,
+}: {
+  status: ResidentListRecord["rentPaymentStatus"];
+}) {
+  const presentation: Record<RentPaymentStatus, { label: string; className: string }> = {
+    none: { label: "Belum ada pembayaran", className: "bg-muted text-muted-foreground" },
+    booking_fee: {
+      label: "Booking fee",
+      className: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+    },
+    down_payment: { label: "DP / uang muka", className: "bg-primary-soft text-primary" },
+    partial_payment: { label: "Bayar sebagian", className: "bg-warning/15 text-warning" },
+    paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+  };
+  const current = presentation[status];
+  return (
+    <span
+      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
+    >
+      {current.label}
+    </span>
+  );
+}
+
+export function SettlementStagePill({
+  stage,
+}: {
+  stage: ResidentListRecord["contractSettlementStage"];
+}) {
+  const presentation: Record<ContractSettlementStage, { label: string; className: string }> = {
+    none: { label: "Belum ada penyewaan", className: "bg-muted text-muted-foreground" },
+    awaiting_activation: { label: "Menunggu aktivasi", className: "bg-warning/15 text-warning" },
+    checkpoint_one_pending: { label: "Checkpoint 1", className: "bg-primary-soft text-primary" },
+    checkpoint_one_met: {
+      label: "Checkpoint 1 terpenuhi",
+      className: "bg-success/15 text-success",
+    },
+    final_settlement_due: { label: "Pelunasan akhir", className: "bg-warning/15 text-warning" },
+    overdue: { label: "Tunggakan", className: "bg-destructive/15 text-destructive" },
+    admin_action_required: {
+      label: "Tindakan admin diperlukan",
+      className: "bg-destructive/15 text-destructive",
+    },
+    termination_pending: {
+      label: "Proses pemberhentian",
+      className: "bg-destructive/15 text-destructive",
+    },
+    paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+  };
+  const current = presentation[stage];
+  return (
+    <span
+      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
+    >
+      {current.label}
+    </span>
+  );
+}
+
 export function formatResidentDate(value: string): string {
   return new Date(`${value}T00:00:00Z`).toLocaleDateString("id-ID", {
     day: "2-digit",
@@ -107,13 +182,19 @@ function TenantsPage() {
   const navigate = Route.useNavigate();
   const [q, setQ] = useState("");
   const [residentStatus, setResidentStatus] = useState<ResidentStatus | "all">("all");
-  const [accountStatus, setAccountStatus] = useState<ResidentListRecord["accountStatus"] | "all">(
-    "all",
-  );
+  const [rentPaymentStatus, setRentPaymentStatus] = useState<
+    Exclude<RentPaymentStatus, "none"> | "all"
+  >("all");
   const [gender, setGender] = useState<"male" | "female" | "other" | "all">("all");
   const [tenancyStatus, setTenancyStatus] = useState<
     "awaiting_activation" | "active" | "none" | "all"
   >("all");
+  const [settlementStage, setSettlementStage] = useState<
+    Exclude<ContractSettlementStage, "none"> | "all"
+  >("all");
+  const [settlementDueWithinDays, setSettlementDueWithinDays] = useState("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const [offset, setOffset] = useState(0);
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
@@ -126,9 +207,14 @@ function TenantsPage() {
   const residents = useResidents({
     q,
     status: residentStatus === "all" ? undefined : residentStatus,
-    accountStatus: accountStatus === "all" ? undefined : accountStatus,
+    rentPaymentStatus: rentPaymentStatus === "all" ? undefined : rentPaymentStatus,
     gender: gender === "all" ? undefined : gender,
     tenancyStatus: tenancyStatus === "all" ? undefined : tenancyStatus,
+    settlementStage: settlementStage === "all" ? undefined : settlementStage,
+    settlementDueWithinDays:
+      settlementDueWithinDays === "" ? undefined : Number(settlementDueWithinDays),
+    createdFrom: createdFrom || undefined,
+    createdTo: createdTo || undefined,
     limit: PAGE_SIZE,
     offset,
   });
@@ -137,18 +223,93 @@ function TenantsPage() {
   const hasFilter =
     q.trim() !== "" ||
     residentStatus !== "all" ||
-    accountStatus !== "all" ||
+    rentPaymentStatus !== "all" ||
     gender !== "all" ||
-    tenancyStatus !== "all";
+    tenancyStatus !== "all" ||
+    settlementStage !== "all" ||
+    settlementDueWithinDays !== "" ||
+    Boolean(createdFrom) ||
+    Boolean(createdTo);
   const activeFilterCount =
     Number(q.trim() !== "") +
     Number(residentStatus !== "all") +
-    Number(accountStatus !== "all") +
+    Number(rentPaymentStatus !== "all") +
     Number(gender !== "all") +
-    Number(tenancyStatus !== "all");
-  const filterSignature = [q.trim(), residentStatus, accountStatus, gender, tenancyStatus].join(
-    "|",
-  );
+    Number(tenancyStatus !== "all") +
+    Number(settlementStage !== "all") +
+    Number(settlementDueWithinDays !== "") +
+    Number(Boolean(createdFrom)) +
+    Number(Boolean(createdTo));
+  const filterSignature = [
+    q.trim(),
+    residentStatus,
+    rentPaymentStatus,
+    gender,
+    tenancyStatus,
+    settlementStage,
+    settlementDueWithinDays,
+    createdFrom,
+    createdTo,
+  ].join("|");
+  const filterCriteria = [
+    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    residentStatus !== "all"
+      ? `status penghuni: ${
+          {
+            draft: "Draf",
+            pending_activation: "Menunggu aktivasi",
+            active: "Aktif",
+            inactive: "Nonaktif",
+            archived: "Diarsipkan",
+          }[residentStatus]
+        }`
+      : "",
+    rentPaymentStatus !== "all"
+      ? `status pembayaran: ${
+          {
+            booking_fee: "Booking fee",
+            down_payment: "DP / uang muka",
+            partial_payment: "Bayar sebagian",
+            paid_in_full: "Lunas",
+          }[rentPaymentStatus]
+        }`
+      : "",
+    gender !== "all"
+      ? `jenis kelamin: ${{ male: "Putra", female: "Putri", other: "Lainnya" }[gender]}`
+      : "",
+    tenancyStatus !== "all"
+      ? `status penyewaan: ${
+          {
+            awaiting_activation: "Menunggu aktivasi kamar",
+            active: "Penyewaan aktif",
+            none: "Belum ada penyewaan",
+          }[tenancyStatus]
+        }`
+      : "",
+    settlementStage !== "all"
+      ? `tahap pelunasan: ${
+          {
+            awaiting_activation: "Menunggu aktivasi",
+            checkpoint_one_pending: "Checkpoint 1",
+            checkpoint_one_met: "Checkpoint 1 terpenuhi",
+            final_settlement_due: "Pelunasan akhir",
+            overdue: "Tunggakan",
+            admin_action_required: "Tindakan admin diperlukan",
+            termination_pending: "Dalam proses pemberhentian",
+            paid_in_full: "Lunas",
+            none: "Belum ada penyewaan",
+          }[settlementStage]
+        }`
+      : "",
+    settlementDueWithinDays !== "" ? `tenggat dalam ${settlementDueWithinDays} hari` : "",
+    createdFrom && createdTo
+      ? `dibuat ${formatResidentDate(createdFrom)} sampai ${formatResidentDate(createdTo)}`
+      : createdFrom
+        ? `dibuat mulai ${formatResidentDate(createdFrom)}`
+        : createdTo
+          ? `dibuat sampai ${formatResidentDate(createdTo)}`
+          : "",
+  ].filter(Boolean);
 
   useEffect(() => {
     setOffset(0);
@@ -157,9 +318,13 @@ function TenantsPage() {
   const resetFilters = () => {
     setQ("");
     setResidentStatus("all");
-    setAccountStatus("all");
+    setRentPaymentStatus("all");
     setGender("all");
     setTenancyStatus("all");
+    setSettlementStage("all");
+    setSettlementDueWithinDays("");
+    setCreatedFrom("");
+    setCreatedTo("");
     setOffset(0);
   };
 
@@ -194,8 +359,8 @@ function TenantsPage() {
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <SlidersHorizontal className="h-4 w-4 text-primary" /> Filter penghuni
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(18rem,1.8fr)_repeat(4,minmax(9rem,1fr))_auto]">
-            <div className="relative md:col-span-2 xl:col-span-1">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="relative md:col-span-2 xl:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={q}
@@ -227,22 +392,54 @@ function TenantsPage() {
                 <SelectItem value="archived">Diarsipkan</SelectItem>
               </SelectContent>
             </Select>
+            <div className="md:col-span-2 xl:col-span-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_1.25rem_minmax(0,1fr)] items-center gap-2">
+                <HeroUiDatePicker
+                  ariaLabel="Tanggal pendaftaran awal"
+                  id="resident-created-from"
+                  maxDate={createdTo || undefined}
+                  onChange={(value) => {
+                    setCreatedFrom(value ?? "");
+                    setOffset(0);
+                  }}
+                  placeholder="dd/mm/yyyy"
+                  value={createdFrom}
+                />
+                <span
+                  aria-hidden="true"
+                  className="text-center text-base font-semibold text-muted-foreground"
+                >
+                  -
+                </span>
+                <HeroUiDatePicker
+                  ariaLabel="Tanggal pendaftaran akhir"
+                  id="resident-created-to"
+                  minDate={createdFrom || undefined}
+                  onChange={(value) => {
+                    setCreatedTo(value ?? "");
+                    setOffset(0);
+                  }}
+                  placeholder="dd/mm/yyyy"
+                  value={createdTo}
+                />
+              </div>
+            </div>
             <Select
-              value={accountStatus}
+              value={rentPaymentStatus}
               onValueChange={(value) => {
-                setAccountStatus(value as ResidentListRecord["accountStatus"] | "all");
+                setRentPaymentStatus(value as Exclude<RentPaymentStatus, "none"> | "all");
                 setOffset(0);
               }}
             >
-              <SelectTrigger className="min-h-11" aria-label="Filter status akun">
-                <SelectValue placeholder="Status akun" />
+              <SelectTrigger className="min-h-11" aria-label="Filter status pembayaran sewa">
+                <SelectValue placeholder="Status pembayaran sewa" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua status akun</SelectItem>
-                <SelectItem value="active">Akun aktif</SelectItem>
-                <SelectItem value="inactive">Akun nonaktif</SelectItem>
-                <SelectItem value="suspended">Akun ditangguhkan</SelectItem>
-                <SelectItem value="not_provisioned">Belum memiliki akun</SelectItem>
+                <SelectItem value="all">Semua status pembayaran</SelectItem>
+                <SelectItem value="booking_fee">Booking fee</SelectItem>
+                <SelectItem value="down_payment">DP / uang muka</SelectItem>
+                <SelectItem value="partial_payment">Bayar sebagian</SelectItem>
+                <SelectItem value="paid_in_full">Lunas</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -279,14 +476,69 @@ function TenantsPage() {
                 <SelectItem value="none">Belum ada penyewaan</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={settlementStage}
+              onValueChange={(value) => {
+                setSettlementStage(value as Exclude<ContractSettlementStage, "none"> | "all");
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter tahap pelunasan">
+                <SelectValue placeholder="Tahap pelunasan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua tahap pelunasan</SelectItem>
+                <SelectItem value="awaiting_activation">Menunggu aktivasi</SelectItem>
+                <SelectItem value="checkpoint_one_pending">Checkpoint 1</SelectItem>
+                <SelectItem value="checkpoint_one_met">Checkpoint 1 terpenuhi</SelectItem>
+                <SelectItem value="final_settlement_due">Pelunasan akhir</SelectItem>
+                <SelectItem value="overdue">Tunggakan</SelectItem>
+                <SelectItem value="admin_action_required">Tindakan admin diperlukan</SelectItem>
+                <SelectItem value="termination_pending">Dalam proses pemberhentian</SelectItem>
+                <SelectItem value="paid_in_full">Lunas</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="grid grid-cols-2 gap-2 xl:col-span-2">
+              <div className="relative">
+                <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="number"
+                  min="0"
+                  max="3650"
+                  inputMode="numeric"
+                  value={settlementDueWithinDays}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (next === "" || (/^\d+$/.test(next) && Number(next) <= 3650)) {
+                      setSettlementDueWithinDays(next);
+                      setOffset(0);
+                    }
+                  }}
+                  placeholder="Tenggat ≤ hari"
+                  className="min-h-11 pl-9"
+                  aria-label="Tenggat pelunasan dalam hari"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 border-primary/40 text-primary hover:bg-primary-soft"
+                onClick={() => {
+                  setSettlementDueWithinDays("30");
+                  setOffset(0);
+                }}
+              >
+                Cek 30 Hari Lagi
+              </Button>
+            </div>
             <Button
               type="button"
-              variant="outline"
+              variant="destructive"
               className="min-h-11"
               disabled={!hasFilter}
               onClick={resetFilters}
             >
-              <X className="mr-1 h-4 w-4" /> Reset
+              <RotateCcw className="mr-1 h-4 w-4" /> Reset Filter
             </Button>
           </div>
         </CardContent>
@@ -300,6 +552,7 @@ function TenantsPage() {
           resultCount={total}
           activeFilterCount={activeFilterCount}
           searchTerm={q}
+          criteria={filterCriteria}
         />
       ) : null}
 
@@ -351,7 +604,8 @@ function TenantsPage() {
                     <th className="px-4 py-3 font-medium">No Unit Kamar</th>
                     <th className="px-4 py-3 font-medium">Universitas</th>
                     <th className="px-4 py-3 font-medium">Durasi Sewa</th>
-                    <th className="px-4 py-3 font-medium">Status Akun</th>
+                    <th className="px-4 py-3 font-medium">Status Pembayaran</th>
+                    <th className="px-4 py-3 font-medium">Tahap Pelunasan</th>
                     <th className="px-4 py-3 font-medium">Status Penghuni</th>
                     <th className="px-4 py-3 text-right font-medium">Aksi</th>
                   </tr>
@@ -368,13 +622,23 @@ function TenantsPage() {
                       <td className="px-4 py-3">{resident.university ?? "Belum diisi"}</td>
                       <td className="px-4 py-3">{leaseDuration(resident)}</td>
                       <td className="px-4 py-3">
-                        <AccountStatusPill status={resident.accountStatus} />
+                        <RentPaymentStatusPill status={resident.rentPaymentStatus} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-1.5">
+                          <SettlementStagePill stage={resident.contractSettlementStage} />
+                          {resident.contractSettlementDueDate ? (
+                            <p className="text-xs text-muted-foreground">
+                              Tenggat: {formatResidentDate(resident.contractSettlementDueDate)}
+                            </p>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <ResidentStatusPill status={resident.residentStatus} />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button asChild variant="ghost" size="sm" className="min-h-11">
+                        <Button asChild variant="info" size="sm" className="min-h-11">
                           <Link
                             to="/tenants/$residentId"
                             params={{ residentId: resident.id }}
@@ -406,7 +670,8 @@ function TenantsPage() {
                       {resident.roomNumber ?? "Belum ditempatkan"} · {leaseDuration(resident)}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <AccountStatusPill status={resident.accountStatus} />
+                      <RentPaymentStatusPill status={resident.rentPaymentStatus} />
+                      <SettlementStagePill stage={resident.contractSettlementStage} />
                       <ResidentStatusPill status={resident.residentStatus} />
                     </div>
                   </div>

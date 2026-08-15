@@ -196,6 +196,13 @@ void test('KMO-W01 manifest matches portable source bytes and uses strong legacy
   );
   for (const entry of MIGRATION_MANIFEST.filter((entry) => entry.version !== LEDGER_VERSION)) {
     assert.ok(entry.sentinels.length >= 2, `${entry.version} must not use a single weak sentinel`);
+    for (const sentinel of entry.sentinels) {
+      assert.doesNotMatch(
+        sentinel,
+        /'[^']+'::regclass/,
+        `${entry.version} must use null-safe to_regclass checks before first apply`,
+      );
+    }
   }
 
   const verified = new FakeClient(completeLedger());

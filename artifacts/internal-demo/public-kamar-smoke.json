@@ -1,0 +1,98 @@
+{
+  "desktop": {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "page": {
+      "title": "Ruang nyaman untuk hidup, belajar, dan bertumbuh.",
+      "categoryHeadings": [
+        "Apart Kost",
+        "Rumah Kost"
+      ],
+      "availabilityVisible": true,
+      "termsVisible": true,
+      "bookingCtas": 2,
+      "galleryImages": [
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": ""
+        },
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": "Kamar Apart Kost Granada Student House"
+        },
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": "Kamar Apart Kost Granada Student House"
+        }
+      ],
+      "horizontalOverflow": 0,
+      "undersized": [],
+      "fatal": []
+    },
+    "dialog": {
+      "visible": true,
+      "hasName": true,
+      "hasContact": true,
+      "hasConsent": true,
+      "selectedCategory": true
+    }
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "page": {
+      "title": "Ruang nyaman untuk hidup, belajar, dan bertumbuh.",
+      "categoryHeadings": [
+        "Apart Kost",
+        "Rumah Kost"
+      ],
+      "availabilityVisible": true,
+      "termsVisible": true,
+      "bookingCtas": 2,
+      "galleryImages": [
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": ""
+        },
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": "Kamar Apart Kost Granada Student House"
+        },
+        {
+          "loaded": true,
+          "width": 715,
+          "alt": "Kamar Rumah Kost Granada Student House"
+        },
+        {
+          "loaded": true,
+          "width": 1280,
+          "alt": "Kamar Apart Kost Granada Student House"
+        },
+        {
+          "loaded": true,
+          "width": 715,
+          "alt": "Kamar Rumah Kost Granada Student House"
+        }
+      ],
+      "horizontalOverflow": 0,
+      "undersized": [],
+      "fatal": []
+    },
+    "dialog": {
+      "visible": true,
+      "hasName": true,
+      "hasContact": true,
+      "hasConsent": true,
+      "selectedCategory": true
+    }
+  }
+}

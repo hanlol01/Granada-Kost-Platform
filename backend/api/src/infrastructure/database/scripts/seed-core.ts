@@ -372,11 +372,11 @@ async function seedLayer5(client: PoolClient): Promise<void> {
 
     await client.query(
       `INSERT INTO rooms (
-         property_id, room_type_id, category, kost_type_id, building_id, number, unit_code,
+         property_id, room_type_id, category, kost_type_id, building_id, number, unit_code, room_code,
          gender_policy, monthly_price, yearly_price, deposit_amount, room_status,
          created_by_user_id, updated_by_user_id
        )
-       SELECT $1::uuid, room_types.id, building.category, kost_types.id, building.id, $2, $3,
+       SELECT $1::uuid, room_types.id, building.category, kost_types.id, building.id, $2, $3, $2,
               building.gender_policy,
               kost_types.monthly_price::integer, kost_types.yearly_price::integer,
               kost_types.deposit_amount::integer, 'vacant', $5::uuid, $5::uuid
@@ -398,9 +398,10 @@ async function seedLayer5(client: PoolClient): Promise<void> {
        SET room_type_id = EXCLUDED.room_type_id,
            building_id = EXCLUDED.building_id,
            category = EXCLUDED.category,
-           kost_type_id = EXCLUDED.kost_type_id,
-           unit_code = EXCLUDED.unit_code,
-           gender_policy = EXCLUDED.gender_policy,
+            kost_type_id = EXCLUDED.kost_type_id,
+            unit_code = EXCLUDED.unit_code,
+            room_code = EXCLUDED.room_code,
+            gender_policy = EXCLUDED.gender_policy,
            monthly_price = EXCLUDED.monthly_price,
            yearly_price = EXCLUDED.yearly_price,
            deposit_amount = EXCLUDED.deposit_amount,

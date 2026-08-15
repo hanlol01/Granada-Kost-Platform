@@ -40,6 +40,30 @@ import { useProperty } from "@/lib/property";
 
 const EMPTY_TEXT = "Belum ada data pada sumber operasional saat ini.";
 
+function ownershipSourceLabel(
+  source: "building_assignment" | "room_assignment" | "kostation_default",
+) {
+  if (source === "room_assignment") return "Penugasan kamar Apart Kost";
+  if (source === "building_assignment") return "Penugasan bangunan Rumah Kost";
+  return "Belum ada assignment Owner Property";
+}
+
+function ownershipPeriodLabel(effectiveFrom: string | null, effectiveUntil: string | null) {
+  if (!effectiveFrom) return "Tidak ada periode assignment";
+  return `${formatDate(effectiveFrom)} — ${effectiveUntil ? formatDate(effectiveUntil) : "Tanpa batas akhir"}`;
+}
+
+function roomStatusBadgeClass(status: string): string {
+  const base = "border text-foreground shadow-sm";
+  if (status === "occupied") return `${base} border-success/45 bg-success/10`;
+  if (status === "reserved") return `${base} border-warning/50 bg-warning/15`;
+  if (status === "maintenance" || status === "requires_review") {
+    return `${base} border-warning/55 bg-warning/20`;
+  }
+  if (status === "inactive") return `${base} border-destructive/45 bg-destructive/10`;
+  return `${base} border-foreground/15 bg-muted/70`;
+}
+
 export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
@@ -121,7 +145,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
       subtitle={`${detail.building.name} · ${KOST_TYPE_LABEL[detail.category.code]}`}
       actions={
         <>
-          <Button variant="outline" className="min-h-11" asChild>
+          <Button variant="secondary" className="min-h-11" asChild>
             <Link to={categoryPath} search={{ q: "", offset: 0, limit: 20 }}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Kembali
@@ -146,7 +170,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
       }
     >
       <div className="mx-auto max-w-7xl space-y-5 overflow-x-hidden pb-24 lg:pb-8">
-        <nav aria-label="Breadcrumb detail kamar" className="text-sm text-muted-foreground">
+        <nav aria-label="Breadcrumb detail kamar" className="text-sm text-foreground/70">
           <ol className="flex min-w-0 flex-wrap items-center gap-2">
             <li>
               <Link
@@ -174,35 +198,44 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
           </ol>
         </nav>
 
-        <header className="rounded-xl border border-border bg-card p-5">
+        <header className="rounded-xl border border-foreground/15 bg-card p-5 shadow-sm">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{ROOM_STATUS_LABEL[detail.physical.status]}</Badge>
-                <Badge variant="secondary">
+                <Badge variant="outline" className={roomStatusBadgeClass(detail.physical.status)}>
+                  {ROOM_STATUS_LABEL[detail.physical.status]}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="border-info/45 bg-info/10 text-foreground shadow-sm"
+                >
                   {detail.physical.genderPolicy === "male" ? "Putra" : "Putri"}
                 </Badge>
-                <Badge variant="secondary">{KOST_TYPE_LABEL[detail.category.code]}</Badge>
+                <Badge
+                  variant="outline"
+                  className="border-primary/45 bg-primary/10 text-foreground shadow-sm"
+                >
+                  {KOST_TYPE_LABEL[detail.category.code]}
+                </Badge>
               </div>
               <p className="mt-3 break-words text-2xl font-semibold tracking-tight text-foreground">
                 Kamar {detail.number}
               </p>
-              <p className="mt-1 break-words text-sm text-muted-foreground">
+              <p className="mt-1 break-words text-sm text-foreground/70">
                 {detail.building.name} · {detail.physical.floorLabel}
               </p>
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-foreground/70">
               Diperbarui {formatDate(detail.updatedAt)}
             </div>
           </div>
         </header>
 
-        {detail.reconciliation.state !== "normal" ||
-        detail.ownership.ownershipReconciliationRequired ? (
+        {detail.reconciliation.state !== "normal" ? (
           <section
             aria-labelledby="room-attention-title"
             role="alert"
-            className="rounded-xl border border-warning/40 bg-warning/10 p-4"
+            className="rounded-xl border border-warning/55 bg-warning/10 p-4"
           >
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
@@ -210,23 +243,17 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                 <h2 id="room-attention-title" className="font-semibold text-foreground">
                   Perlu perhatian operasional
                 </h2>
-                <ul className="mt-1 space-y-1 text-sm text-muted-foreground">
+                <ul className="mt-1 space-y-1 text-sm text-foreground/75">
                   {detail.reconciliation.messages.map((message) => (
                     <li key={message}>{message}</li>
                   ))}
-                  {detail.ownership.ownershipReconciliationRequired ? (
-                    <li>
-                      Penugasan pemilik bangunan belum representable; kebijakan default KOSTATION
-                      tetap berlaku sampai KMO-W10.
-                    </li>
-                  ) : null}
                 </ul>
               </div>
             </div>
           </section>
         ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-3">
+        <div className="grid items-stretch gap-5 xl:grid-cols-3">
           <DetailSection title="Inventori fisik" icon={BedDouble}>
             <DefinitionGrid
               items={[
@@ -234,23 +261,23 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                 ["Kode kamar", detail.roomCode ?? "Belum ditetapkan"],
                 ["Bangunan", `${detail.building.code} · ${detail.building.name}`],
                 ["Kategori", detail.category.name],
-                ["Lantai", detail.physical.floorLabel],
+                ["Unit", detail.physical.floorLabel],
                 ["Ukuran", detail.physical.sizeLabel ?? "Belum dicatat"],
                 ["Visibilitas", detail.physical.publicVisible ? "Tampil di katalog" : "Internal"],
-                ["Catatan", detail.physical.notes ?? "Tidak ada catatan"],
+                ["Catatan operasional", detail.physical.notes ?? "Tidak ada catatan operasional"],
               ]}
             />
           </DetailSection>
 
           <DetailSection title="Sumber komersial kategori" icon={CreditCard}>
-            <p className="mb-4 text-sm text-muted-foreground">
+            <p className="mb-4 text-sm leading-6 text-foreground/75">
               Nilai ini berasal dari tipe kost aktif dan tidak dapat diedit dari inventori kamar.
             </p>
             <DefinitionGrid
               items={[
                 ["Harga bulanan", formatIDR(detail.commercial.monthlyPrice)],
                 ["Nilai kontrak tahunan", formatIDR(detail.commercial.annualContractValue)],
-                ["Minimum DP", detail.commercial.minimumDpLabel],
+                ["DP rekomendasi", detail.commercial.minimumDpLabel],
                 ["Deposit keamanan", formatIDR(detail.commercial.securityDepositRequired)],
                 ["Rencana pembayaran", detail.commercial.paymentPlanDescription],
               ]}
@@ -262,7 +289,11 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
               {detail.commercial.facilities.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {detail.commercial.facilities.map((facility) => (
-                    <Badge key={facility.id} variant="secondary">
+                    <Badge
+                      key={facility.id}
+                      variant="outline"
+                      className="border-primary/30 bg-primary/10 text-foreground shadow-sm"
+                    >
                       {facility.name}
                     </Badge>
                   ))}
@@ -277,19 +308,41 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             <DefinitionGrid
               items={[
                 ["Otoritas saat ini", detail.ownership.displayName],
-                ["Sumber", "Kebijakan default"],
+                ["Sumber", ownershipSourceLabel(detail.ownership.source)],
+                [
+                  "Periode efektif",
+                  ownershipPeriodLabel(
+                    detail.ownership.effectiveFrom,
+                    detail.ownership.effectiveUntil,
+                  ),
+                ],
                 [
                   "Status",
-                  detail.ownership.ownershipReconciliationRequired
-                    ? "Menunggu authority penugasan KMO-W10"
-                    : "Terekonsiliasi",
+                  detail.ownership.assignmentStatus === "active" ? "Aktif" : "Milik Kostation",
                 ],
               ]}
             />
+            {detail.ownership.ownerProfileId ? (
+              <div className="mt-5 flex flex-wrap gap-3 border-t border-foreground/10 pt-4">
+                <Button variant="outline" className="min-h-11" asChild>
+                  <Link
+                    to="/property-owners/$ownerId"
+                    params={{ ownerId: detail.ownership.ownerProfileId }}
+                  >
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Buka detail owner
+                  </Link>
+                </Button>
+                <p className="basis-full text-xs leading-5 text-muted-foreground">
+                  Pembayaran owner belum tersedia sebagai rute admin yang terikat ke pemilik dan
+                  periode.
+                </p>
+              </div>
+            ) : null}
           </DetailSection>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid items-stretch gap-5 xl:grid-cols-2">
           <DetailSection title="Penghuni aktif" icon={UserRound}>
             {detail.resident ? (
               <>
@@ -331,10 +384,10 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                   ]}
                 />
                 <SafeAction
-                  href={detail.links.lease}
-                  enabledLabel="Buka detail penyewaan"
-                  unavailableLabel="Detail penyewaan belum tersedia"
-                  icon={FileText}
+                  href={detail.links.resident}
+                  enabledLabel="Buka detail penghuni"
+                  unavailableLabel="Detail penghuni belum tersedia"
+                  icon={UserRound}
                 />
               </>
             ) : (
@@ -375,20 +428,20 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
               value={`${formatIDR(detail.billing.depositRefunded)} / ${formatIDR(detail.billing.depositDeducted)}`}
             />
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">{detail.billing.dpProgressLabel}</p>
+          <p className="mt-3 text-sm text-foreground/75">{detail.billing.dpProgressLabel}</p>
           <UnavailableLink label="Tagihan belum menerima filter kamar aman pada KMO-W02A." />
         </DetailSection>
 
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid items-stretch gap-5 xl:grid-cols-2">
           <DetailSection title="Kendaraan dan parkir" icon={Car}>
             {detail.vehicles.length ? (
-              <ul className="divide-y divide-border">
+              <ul className="divide-y divide-foreground/15">
                 {detail.vehicles.map((vehicle) => (
                   <li key={vehicle.code} className="py-3 first:pt-0 last:pb-0">
                     <p className="break-words font-medium text-foreground">
                       {vehicle.code} · {vehicle.plateNumber}
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-foreground/70">
                       {operationalLabel(vehicle.vehicleType)} ·{" "}
                       {vehicle.parkingState
                         ? operationalLabel(vehicle.parkingState)
@@ -405,7 +458,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
 
           <DetailSection title="Komplain dan work order" icon={MessageSquareWarning}>
             {detail.complaints.length ? (
-              <ul className="divide-y divide-border">
+              <ul className="divide-y divide-foreground/15">
                 {detail.complaints.map((complaint) => (
                   <li
                     key={`${complaint.code}:${complaint.workOrderCode ?? "none"}`}
@@ -414,12 +467,12 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                     <p className="break-words font-medium text-foreground">
                       {complaint.code} · {complaint.category}
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-foreground/70">
                       {operationalLabel(complaint.status)} · Prioritas{" "}
                       {operationalLabel(complaint.priority)}
                     </p>
                     {complaint.workOrderCode ? (
-                      <p className="mt-1 text-sm text-muted-foreground">
+                      <p className="mt-1 text-sm text-foreground/70">
                         {complaint.workOrderCode} ·{" "}
                         {complaint.workOrderStatus
                           ? operationalLabel(complaint.workOrderStatus)
@@ -445,10 +498,10 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                   key={`${event.eventType}:${event.occurredAt}:${index}`}
                   className="flex items-start gap-3"
                 >
-                  <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-foreground/65" />
                   <div className="min-w-0">
                     <p className="break-words text-sm font-medium text-foreground">{event.label}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(event.occurredAt)}</p>
+                    <p className="text-xs text-foreground/70">{formatDate(event.occurredAt)}</p>
                   </div>
                 </li>
               ))}
@@ -493,15 +546,15 @@ function DetailSection({
 }) {
   const titleId = useId();
   return (
-    <section aria-labelledby={titleId} className="min-w-0">
-      <Card className="min-w-0 border-border bg-card">
-        <CardHeader className="pb-3">
+    <section aria-labelledby={titleId} className="min-w-0 h-full">
+      <Card className="h-full min-w-0 border-foreground/15 bg-card shadow-sm">
+        <CardHeader className="border-b border-foreground/10 px-6 py-5">
           <h2 id={titleId} className="flex items-center gap-2 text-base font-semibold">
             <Icon className="h-4 w-4 shrink-0 text-primary" />
             {title}
           </h2>
         </CardHeader>
-        <CardContent className="min-w-0">{children}</CardContent>
+        <CardContent className="min-w-0 px-6 pb-6 pt-5">{children}</CardContent>
       </Card>
     </section>
   );
@@ -509,13 +562,15 @@ function DetailSection({
 
 function DefinitionGrid({ items }: { items: Array<[string, string]> }) {
   return (
-    <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+    <dl className="grid min-w-0 gap-x-8 gap-y-5 sm:grid-cols-2">
       {items.map(([label, value]) => (
         <div key={label} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
             {label}
           </dt>
-          <dd className="mt-1 break-words text-sm text-foreground">{value}</dd>
+          <dd className="mt-1 break-words text-sm font-medium leading-6 text-foreground">
+            {value}
+          </dd>
         </div>
       ))}
     </dl>
@@ -524,20 +579,20 @@ function DefinitionGrid({ items }: { items: Array<[string, string]> }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-muted/40 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="min-w-0 rounded-lg border border-foreground/15 bg-muted/65 p-3">
+      <p className="text-xs font-medium text-foreground/70">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
 }
 
 function EmptySectionCopy({ text = EMPTY_TEXT }: { text?: string }) {
-  return <p className="text-sm text-muted-foreground">{text}</p>;
+  return <p className="text-sm leading-6 text-foreground/70">{text}</p>;
 }
 
 function UnavailableLink({ label }: { label: string }) {
   return (
-    <p className="mt-4 rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+    <p className="mt-4 rounded-lg border border-dashed border-foreground/20 bg-muted/45 p-3 text-sm leading-6 text-foreground/70">
       {label}
     </p>
   );
@@ -556,7 +611,7 @@ function SafeAction({
 }) {
   if (!href) return <UnavailableLink label={unavailableLabel} />;
   return (
-    <Button variant="outline" className="mt-4 min-h-11 max-w-full" asChild>
+    <Button variant="info" className="mt-4 min-h-11 max-w-full" asChild>
       <a href={href}>
         <Icon className="mr-2 h-4 w-4" />
         {enabledLabel}

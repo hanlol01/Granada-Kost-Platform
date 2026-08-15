@@ -186,7 +186,9 @@ function HunianGalleryPage() {
         toast.error("Maksimal 10 foto per hunian tercapai.");
         break;
       }
-      const validation = validateFileForPurpose(file, "hunian_gallery");
+      const validation = validateFileForPurpose(file, "hunian_gallery", {
+        skipSize: file.type.startsWith("image/"),
+      });
       if (!validation.valid) {
         toast.error(`${file.name}: ${validation.message}`);
         continue;
@@ -236,10 +238,9 @@ function HunianGalleryPage() {
           file: item.file,
           propertyId: currentPropertyId,
           filePurpose: "hunian_gallery",
-          // Only JPEG is compressed client-side. PNG/WebP are uploaded as-is:
-          // the canvas compressor re-encodes to JPEG, which would no longer
-          // match the original filename/extension for backend content checks.
-          compress: item.file.type === "image/jpeg",
+          // Compression also normalizes MIME and filename extension, so all
+          // supported image formats remain valid for backend content checks.
+          compress: true,
         });
         setItem({ status: "attaching" });
         await attachMut.mutateAsync({

@@ -9,11 +9,11 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError } from "@granada-kost/api-client";
-import { FILE_PURPOSE_POLICIES, type FilePurpose, type FileResponse } from "@granada-kost/domain";
+import { type FilePurpose, type FileResponse } from "@granada-kost/domain";
 import { apiClient } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
-import { compressImage, fetchFileBlob, validateFileForPurpose } from "@/lib/file-utils";
+import { FilePreparationError, fetchFileBlob, prepareFileForUpload } from "@/lib/file-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,31 +86,27 @@ export async function createPublicGalleryDerivative(file: File): Promise<File> {
 export function useFileUpload(options?: FileUploadHookOptions) {
   const mutation = useMutation<FileResponse, unknown, FileUploadInput>({
     mutationFn: async (input) => {
-      // 1. Client-side validation (UX only — backend is authoritative).
-      const validation = validateFileForPurpose(input.file, input.filePurpose);
-      if (!validation.valid) {
+      let prepared;
+      try {
+        prepared = await prepareFileForUpload(input.file, input.filePurpose, {
+          compress: input.compress,
+        });
+      } catch (error) {
+        if (!(error instanceof FilePreparationError)) throw error;
         throw new ApiError({
-          code: validation.code,
-          message: validation.message,
+          code: error.code,
+          message: error.message,
           status: 0,
         });
       }
 
-      // 2. Optional image compression.
-      const policy = FILE_PURPOSE_POLICIES[input.filePurpose];
-      const shouldCompress = input.compress ?? policy.compressImages;
-      let fileToUpload: File | Blob = input.file;
-      if (shouldCompress && input.file.type.startsWith("image/")) {
-        fileToUpload = await compressImage(input.file);
-      }
-
-      // 3. Build FormData.
+      // The prepared File always carries a filename extension matching its
+      // normalized MIME/content. Never pair a JPEG blob with the old .png name.
       const formData = new FormData();
-      formData.append("file", fileToUpload, input.file.name);
+      formData.append("file", prepared.file);
       formData.append("property_id", input.propertyId);
       formData.append("file_purpose", input.filePurpose);
 
-      // 4. Upload via API client (multipart/form-data).
       return apiClient.post<FileResponse>("/files", formData, {
         idempotencyKey: newIdempotencyKey(),
       });

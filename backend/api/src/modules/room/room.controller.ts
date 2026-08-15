@@ -9,10 +9,13 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
 import type { ValidationError } from 'class-validator';
+import type { Response } from 'express';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
 import { acceptsAdminUxV2, v2Data } from '../../shared/admin-ux-v2';
 import { UserAccessContext } from '../iam/types/iam.types';
@@ -39,6 +42,17 @@ function flattenValidationErrors(errors: ValidationError[], parent = ''): Record
     }
     return details;
   }, {});
+}
+
+/** W07B: smallest authorized inspection-resolution boundary (decision 5). */
+export class ResolveRoomInspectionDto {
+  @IsIn(['pass', 'fail'])
+  outcome!: 'pass' | 'fail';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  notes?: string;
 }
 
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -193,6 +207,34 @@ export class RoomController {
       );
     }
     return this.rooms.updateRoomStatus(user, roomId, dto, this.contextFromRequest(request));
+  }
+
+  /**
+   * W07B decision 5 (revision 4): the only authorized exit from
+   * inspection_required. Pass -> vacant, Fail -> maintenance. Admin-only,
+   * property-scoped, transactional, replay-safe (Idempotency-Key required),
+   * audited, and outbox-backed.
+   */
+  @Post(':roomId/inspection-resolution')
+  @RequireRoles('admin')
+  @RequirePermissions('room.manage')
+  async resolveRoomInspection(
+    @CurrentUser() user: UserAccessContext,
+    @Param('roomId') roomId: string,
+    @Body() dto: ResolveRoomInspectionDto,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.rooms.resolveRoomInspection(
+      user,
+      roomId,
+      { outcome: dto.outcome, notes: dto.notes },
+      this.idempotencyKeyFromRequest(request),
+      this.contextFromRequest(request),
+    );
+    if (result.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    response.status(result.status);
+    return result.body;
   }
 
   private contextFromRequest(request: RequestWithCorrelationId) {

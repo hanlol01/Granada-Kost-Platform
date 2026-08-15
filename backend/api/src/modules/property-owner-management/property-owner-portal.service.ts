@@ -186,7 +186,7 @@ export class PropertyOwnerPortalService {
          COUNT(DISTINCT scope.room_id)::int AS room_count,
          COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'occupied')::int AS occupied_count,
          COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'reserved')::int AS reserved_count,
-         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status IN ('maintenance', 'requires_review'))::int AS maintenance_count,
+         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status IN ('maintenance', 'requires_review', 'inspection_required'))::int AS maintenance_count,
          COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'vacant')::int AS vacant_count,
          (SELECT COUNT(DISTINCT complaints.id)::int FROM complaints JOIN current_scope authorized_scope ON authorized_scope.room_id = complaints.room_id
            WHERE complaints.property_id = $2 AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
@@ -227,7 +227,9 @@ export class PropertyOwnerPortalService {
            AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
            AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
        )
-       SELECT rooms.room_code, rooms.room_status, kost_types.category AS kost_type,
+       SELECT rooms.room_code,
+              CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
+              kost_types.category AS kost_type,
               buildings.building_code, buildings.building_name,
                leases.lease_status, leases.end_date::text AS lease_end_date
         FROM current_scope scope
@@ -327,7 +329,9 @@ export class PropertyOwnerPortalService {
            AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
            AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
        )
-       SELECT rooms.room_code, rooms.room_status, kost_types.category AS kost_type,
+       SELECT rooms.room_code,
+              CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
+              kost_types.category AS kost_type,
               buildings.building_code, buildings.building_name, rooms.floor_label, rooms.unit_code,
               rooms.gender_policy, commercial.monthly_price::text AS monthly_price,
               commercial.annual_contract_value::text AS annual_contract_value,

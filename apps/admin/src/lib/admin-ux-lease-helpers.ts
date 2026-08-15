@@ -159,6 +159,52 @@ export function canRunNonFinancialTransfer(input: {
   );
 }
 
+export const TRANSFER_REASON_LABEL: Record<string, string> = {
+  resident_request: "Permintaan penghuni",
+  room_issue: "Masalah kamar",
+  property_operation: "Operasional properti",
+  eligibility_correction: "Koreksi kelayakan",
+  commercial_adjustment: "Penyesuaian komersial",
+  other: "Lainnya",
+};
+
+export const TRANSFER_COMMAND_STATE_LABEL: Record<string, string> = {
+  scheduled: "Terjadwal",
+  executed: "Dieksekusi",
+  cancelled: "Dibatalkan",
+  failed: "Gagal",
+};
+
+/**
+ * W07B: every transfer mutation (preview included) is admin-only with
+ * lease.manage. The same-day exception additionally requires billing.manage
+ * whenever a deposit top-up is involved.
+ */
+export function canRunAdminTransfer(input: {
+  roles: readonly string[];
+  permissions: readonly string[];
+  leaseStatus: LeaseStatus;
+  transferFlagEnabled: boolean;
+}): boolean {
+  return (
+    input.transferFlagEnabled &&
+    input.roles.includes("admin") &&
+    input.permissions.includes("lease.manage") &&
+    input.leaseStatus === "active"
+  );
+}
+
+export function canRunTransferTopUp(input: {
+  roles: readonly string[];
+  permissions: readonly string[];
+}): boolean {
+  return (
+    input.roles.includes("admin") &&
+    input.permissions.includes("lease.manage") &&
+    input.permissions.includes("billing.manage")
+  );
+}
+
 export function leaseHistoryLabel(eventType: string): string {
   const labels: Record<string, string> = {
     created: "Penyewaan dibuat",
@@ -170,6 +216,9 @@ export function leaseHistoryLabel(eventType: string): string {
     closed: "Penyewaan di-checkout",
     transferred_out: "Dipindahkan dari kamar",
     transferred_in: "Dipindahkan ke kamar",
+    transfer_scheduled: "Transfer terjadwal dicatat",
+    transfer_cancelled: "Transfer terjadwal dibatalkan",
+    transfer_failed: "Transfer terjadwal gagal dieksekusi",
   };
   return labels[eventType] ?? "Aktivitas penyewaan";
 }

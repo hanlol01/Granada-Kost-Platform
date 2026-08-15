@@ -35,7 +35,7 @@ test('M6 migration is reentrant, deny-by-default, and has no legacy lifecycle ba
   assert.doesNotMatch(migration, /UPDATE\s+invoices/i);
 });
 
-test('M6 transfer preserves non-financial admin access while financial top-up stays owner/manager only', async () => {
+test('W07B transfer mutations are Admin-only and top-ups require lease.manage plus billing.manage', async () => {
   const controller = await readFile(resolve(root, 'src/modules/lease/lease.controller.ts'), 'utf8');
   const transfer = await readFile(
     resolve(root, 'src/modules/lease/lease-transfer.service.ts'),
@@ -44,7 +44,7 @@ test('M6 transfer preserves non-financial admin access while financial top-up st
   assert.match(controller, /@RequireRoles\('owner', 'manager', 'admin'\)/);
   assert.match(
     controller,
-    /@Post\(':leaseId\/transfer'\)[\s\S]*?@RequirePermissions\('lease.manage'\)/,
+    /@Post\(':leaseId\/transfer'\)[\s\S]*?@RequireRoles\('admin'\)[\s\S]*?@RequirePermissions\('lease.manage'\)/,
   );
   assert.doesNotMatch(
     controller,
@@ -52,6 +52,10 @@ test('M6 transfer preserves non-financial admin access while financial top-up st
   );
   assert.match(transfer, /if \(dto\.top_up\) this\.assertFinancialActor\(user\)/);
   assert.match(
+    transfer,
+    /Only an admin with lease\.manage and billing\.manage may perform a W07B transfer deposit top-up/,
+  );
+  assert.doesNotMatch(
     transfer,
     /Only an owner or manager with billing\.manage may perform a financial transfer top-up/,
   );

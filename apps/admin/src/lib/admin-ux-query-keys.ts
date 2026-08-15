@@ -142,6 +142,8 @@ export const adminUxQueryKeys = {
       scoped("leaseOverdue", propertyId, normalizePagination(filters)),
     residentOptions: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("leaseResidentOptions", propertyId, normalizePagination(filters)),
+    transferCommands: (propertyId: string, leaseId: string) =>
+      scoped("leaseTransferCommands", propertyId, leaseId),
   },
   residents: {
     all: (propertyId: string) => scoped("residents", propertyId),
@@ -225,6 +227,8 @@ export type AdminUxMutation =
   | "lease-deposit"
   | "lease-close"
   | "lease-transfer"
+  | "lease-transfer-schedule"
+  | "lease-transfer-cancel"
   | "resident"
   | "invoice-payment"
   | "vehicle-parking"
@@ -287,6 +291,7 @@ export function invalidationKeysFor(
         adminUxQueryKeys.leases.all(propertyId),
         ["lease", propertyId],
         ["leaseBillingSummary", propertyId],
+        ["leaseTransferCommands", propertyId],
         adminUxQueryKeys.rooms.all(propertyId),
         ["roomAvailability", propertyId],
         adminUxQueryKeys.residents.all(propertyId),
@@ -294,6 +299,14 @@ export function invalidationKeysFor(
         adminUxQueryKeys.payments.list(propertyId),
         adminUxQueryKeys.dashboard.summary(propertyId),
         ["notificationUnreadCount", propertyId],
+      ];
+    case "lease-transfer-schedule":
+    case "lease-transfer-cancel":
+      return [
+        adminUxQueryKeys.leases.all(propertyId),
+        ["lease", propertyId],
+        ["leaseTransferCommands", propertyId],
+        adminUxQueryKeys.dashboard.summary(propertyId),
       ];
     case "resident":
       return [

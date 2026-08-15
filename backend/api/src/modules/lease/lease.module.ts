@@ -5,6 +5,7 @@ import { LeaseRepository } from './lease.repository';
 import { LeaseBillingScheduler } from './lease-billing.scheduler';
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseService } from './lease.service';
+import { LeaseTransferScheduler } from './lease-transfer.scheduler';
 import { LeaseTransferService } from './lease-transfer.service';
 
 @Module({
@@ -16,7 +17,8 @@ import { LeaseTransferService } from './lease-transfer.service';
     LeaseService,
     LeaseTransferService,
     LeaseBillingScheduler,
+    LeaseTransferScheduler,
   ],
-  exports: [LeaseService, LeaseTransferService, LeaseBillingScheduler],
+  exports: [LeaseService, LeaseTransferService, LeaseBillingScheduler, LeaseTransferScheduler],
 })
 export class LeaseModule {}

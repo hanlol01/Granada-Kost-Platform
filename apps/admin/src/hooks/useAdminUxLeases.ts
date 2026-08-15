@@ -98,6 +98,16 @@ export function useM6LeaseBillingSummary(leaseId: string | null | undefined) {
   });
 }
 
+/** W07B: scheduled transfer commands for a lease, server-ordered newest first. */
+export function useM6TransferCommands(leaseId: string | null | undefined, enabled: boolean = true) {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: adminUxQueryKeys.leases.transferCommands(currentPropertyId ?? "", leaseId ?? ""),
+    queryFn: () => adminUxLeaseApi.transfer.commands(leaseId!),
+    enabled: Boolean(currentPropertyId && leaseId && enabled),
+  });
+}
+
 export function useM6LeaseAvailableRooms(q = "") {
   const { currentPropertyId } = useProperty();
   const keyFilters = { q, status: "vacant", limit: SELECT_LIMIT };

@@ -12,7 +12,10 @@ import type {
   LeaseStatus,
   LeaseSummary,
   PaymentMethod,
+  TransferCommand,
+  TransferPath,
   TransferPreview,
+  TransferReasonCode,
   TransferResult,
   LeaseResidentOption,
 } from "./admin-ux-lease-types";
@@ -53,14 +56,30 @@ export type DepositCollectInput = {
   overrideReason?: string;
 };
 
-export type TransferPreviewInput = { targetRoomId: string; effectiveDate: string };
-export type TransferInput = TransferPreviewInput & {
-  reason: string;
-  topUp?: {
-    amount: number;
-    payment: { paymentMethod: PaymentMethod; paymentCode?: string; referenceNumber?: string };
-  };
+export type TransferPreviewInput = {
+  targetRoomId: string;
+  effectiveDate: string;
+  transferPath?: TransferPath;
 };
+
+/** W07B decision 4: fixed reason taxonomy; same-day exceptions need a reason. */
+export type TransferReasonFields = {
+  reasonCode: TransferReasonCode;
+  reasonDetail?: string;
+};
+
+export type TransferInput = TransferPreviewInput &
+  TransferReasonFields & {
+    exceptionReason: string;
+    topUp?: {
+      amount: number;
+      payment: { paymentMethod: PaymentMethod; paymentCode?: string; referenceNumber?: string };
+    };
+  };
+
+/** W07B normal path: no top-up and no immediate lifecycle change. */
+export type TransferScheduleInput = Omit<TransferPreviewInput, "transferPath"> &
+  TransferReasonFields;
 
 export type RefundSettlementInput = {
   paymentMethod: PaymentMethod;
@@ -202,6 +221,10 @@ export function sanitizeTransferResult(value: TransferResult): TransferResult {
       carriedDepositAmount: value.transferRecord.carriedDepositAmount,
       requiredTargetDepositAmount: value.transferRecord.requiredTargetDepositAmount,
       topUpAmount: value.transferRecord.topUpAmount,
+      transferCommandId: value.transferRecord.transferCommandId ?? null,
+      transferPath: value.transferRecord.transferPath ?? "same_day_exception",
+      reasonCode: value.transferRecord.reasonCode ?? "other",
+      executedLate: value.transferRecord.executedLate ?? false,
     },
     deposit: {
       requiredAmount: value.deposit.requiredAmount,
@@ -262,10 +285,21 @@ function toTransferBody(input: TransferInput): Record<string, unknown> {
   return {
     target_room_id: input.targetRoomId,
     effective_date: input.effectiveDate,
-    reason: input.reason.trim(),
+    reason_code: input.reasonCode,
+    reason_detail: text(input.reasonDetail),
+    exception_reason: input.exceptionReason.trim(),
     top_up: input.topUp
       ? { amount: input.topUp.amount, payment: toPaymentBody(input.topUp.payment) }
       : undefined,
+  };
+}
+
+function toTransferScheduleBody(input: TransferScheduleInput): Record<string, unknown> {
+  return {
+    target_room_id: input.targetRoomId,
+    effective_date: input.effectiveDate,
+    reason_code: input.reasonCode,
+    reason_detail: text(input.reasonDetail),
   };
 }
 
@@ -376,7 +410,11 @@ export const adminUxLeaseApi = {
       data<TransferPreview>(
         adminUxV2Requester.post<V2DataEnvelope<unknown>>(
           "/leases/" + encodeURIComponent(leaseId) + "/transfer/preview",
-          { target_room_id: input.targetRoomId, effective_date: input.effectiveDate },
+          {
+            target_room_id: input.targetRoomId,
+            effective_date: input.effectiveDate,
+            transfer_path: input.transferPath,
+          },
         ),
       ),
     command: async (leaseId: string, input: TransferInput, idempotencyKey: string) =>
@@ -387,6 +425,33 @@ export const adminUxLeaseApi = {
             toTransferBody(input),
             { idempotencyKey },
           ),
+        ),
+      ),
+    /** W07B normal path: persists a command executed only at the billing boundary. */
+    schedule: (leaseId: string, input: TransferScheduleInput, idempotencyKey: string) =>
+      data<{ scheduledTransfer: TransferCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/transfer/schedule",
+          toTransferScheduleBody(input),
+          { idempotencyKey },
+        ),
+      ),
+    commands: (leaseId: string) =>
+      data<{ items: TransferCommand[] }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/transfers",
+        ),
+      ),
+    cancel: (leaseId: string, commandId: string, reason: string, idempotencyKey: string) =>
+      data<{ scheduledTransfer: TransferCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/transfers/" +
+            encodeURIComponent(commandId) +
+            "/cancel",
+          { reason: reason.trim() },
+          { idempotencyKey },
         ),
       ),
   },

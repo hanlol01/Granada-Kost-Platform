@@ -38,6 +38,7 @@ export default () => ({
   },
   lease: {
     billingSchedulerProcessEnabled: process.env.LEASE_BILLING_SCHEDULER_PROCESS_ENABLED === 'true',
+    transferSchedulerProcessEnabled: process.env.LEASE_TRANSFER_SCHEDULER_PROCESS_ENABLED === 'true',
   },
   notification: {
     brevoApiKey: process.env.BREVO_API_KEY,

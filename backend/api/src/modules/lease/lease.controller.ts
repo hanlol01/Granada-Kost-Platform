@@ -22,11 +22,13 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
+  CancelScheduledTransferDto,
   CloseLeaseDto,
   CollectDepositDto,
   CreateLeaseDto,
   ListLeaseResidentOptionsQueryDto,
   ListLeasesQueryDto,
+  ScheduleTransferLeaseDto,
   SettleRefundDto,
   TransferLeaseDto,
   TransferLeasePreviewDto,
@@ -145,7 +147,10 @@ export class LeaseController {
     return this.commandResponse(response, result);
   }
 
+  // W07B transfer authority is Admin-only (lead decision 3). Property owners
+  // keep read-only access through the owner portal; they never mutate transfers.
   @Post(':leaseId/transfer/preview')
+  @RequireRoles('admin')
   @RequirePermissions('lease.manage')
   previewTransfer(
     @CurrentUser() user: UserAccessContext,
@@ -155,7 +160,9 @@ export class LeaseController {
     return this.transfers.preview(user, leaseId, dto);
   }
 
+  /** W07B same-day exception path. Requires exception_reason in the body. */
   @Post(':leaseId/transfer')
+  @RequireRoles('admin')
   @RequirePermissions('lease.manage')
   async transfer(
     @CurrentUser() user: UserAccessContext,
@@ -168,6 +175,62 @@ export class LeaseController {
     const result = await this.transfers.transfer(
       user,
       leaseId,
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+    return this.commandResponse(response, result);
+  }
+
+  /** W07B normal path: persists a command executed only at the billing boundary. */
+  @Post(':leaseId/transfer/schedule')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async scheduleTransfer(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: ScheduleTransferLeaseDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.transfers.schedule(
+      user,
+      leaseId,
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+    return this.commandResponse(response, result);
+  }
+
+  @Get(':leaseId/transfers')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  listTransferCommands(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+  ) {
+    return this.transfers.listTransferCommands(user, leaseId);
+  }
+
+  @Post(':leaseId/transfers/:commandId/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async cancelScheduledTransfer(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: CancelScheduledTransferDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.transfers.cancelScheduledTransfer(
+      user,
+      leaseId,
+      commandId,
       dto,
       idempotencyKey,
       auditContext(request),

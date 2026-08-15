@@ -151,13 +151,29 @@ export type TransferLeaseSnapshot = {
   };
 };
 
+export type TransferPath = "end_period" | "same_day_exception";
+
+export const TRANSFER_REASON_CODES = [
+  "resident_request",
+  "room_issue",
+  "property_operation",
+  "eligibility_correction",
+  "commercial_adjustment",
+  "other",
+] as const;
+
+export type TransferReasonCode = (typeof TRANSFER_REASON_CODES)[number];
+
 export type TransferPreview = {
+  transferPath: TransferPath;
   effectiveDate: string;
+  validEffectiveDates: string[];
   sourceLease: TransferLeaseSnapshot;
   targetRoom: {
     id: string;
     number: string;
     kostType: { id: string; name: string };
+    genderCompatible: boolean;
   };
   deposit: {
     carriedAmount: number;
@@ -171,6 +187,7 @@ export type TransferPreview = {
     targetInvoiceWillBeIssued: boolean;
     targetNextBillingDate: string;
     dueDay: number;
+    contractualEndDate: string | null;
   };
   oldOutstandingAmount: number;
 };
@@ -193,8 +210,35 @@ export type TransferResult = {
     carriedDepositAmount: number;
     requiredTargetDepositAmount: number;
     topUpAmount: number;
+    transferCommandId: string | null;
+    transferPath: TransferPath;
+    reasonCode: TransferReasonCode;
+    executedLate: boolean;
   };
   deposit: DepositSummary;
   targetInvoice: TransferTargetInvoice | null;
   oldOutstandingAmount: number;
+};
+
+export type TransferCommandState = "scheduled" | "executed" | "cancelled" | "failed";
+
+export type TransferCommand = {
+  id: string;
+  transferPath: TransferPath;
+  effectiveDate: string;
+  fromRoomId: string;
+  toRoomId: string;
+  state: TransferCommandState;
+  reasonCode: TransferReasonCode;
+  reasonDetail: string | null;
+  exceptionReason: string | null;
+  failureCode: string | null;
+  cancelReason: string | null;
+  transferRecordId: string | null;
+  executedLate: boolean;
+  sourceEndDate: string | null;
+  createdAt: string;
+  executedAt: string | null;
+  cancelledAt: string | null;
+  failedAt: string | null;
 };

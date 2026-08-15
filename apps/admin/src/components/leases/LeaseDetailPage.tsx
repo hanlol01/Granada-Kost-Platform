@@ -10,11 +10,18 @@ import {
   History,
   Loader2,
   ReceiptText,
-  ShieldAlert,
   WalletCards,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { AppShell } from "@/components/layout/app-shell";
+import {
+  ActionDeniedPanel,
+  FeatureOffPanel,
+  Field,
+  KeyValue,
+  TransferPanel,
+} from "@/components/leases/TransferPanel";
+import { PAYMENT_METHOD_LABEL } from "@/components/leases/transfer-shared";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,35 +46,25 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  useM6Lease,
-  useM6LeaseAvailableRooms,
-  useM6LeaseBillingSummary,
-  useM6LeaseMutation,
-} from "@/hooks/useAdminUxLeases";
+import { useM6Lease, useM6LeaseBillingSummary, useM6LeaseMutation } from "@/hooks/useAdminUxLeases";
 import {
   adminUxLeaseApi,
   type DepositCollectInput,
   type LeaseCloseInput,
   type RefundSettlementInput,
-  type TransferInput,
 } from "@/lib/admin-ux-lease-api";
 import {
   BILLING_CYCLE_LABEL,
+  canRunAdminTransfer,
+  canRunTransferTopUp,
   canSettleLeaseRefund,
-  canRunNonFinancialTransfer,
   hasRequiredLeasePaymentReference,
   isFinancialLeaseActor,
   jakartaToday,
   leaseHistoryLabel,
   type LeaseDetailRouteSearch,
 } from "@/lib/admin-ux-lease-helpers";
-import type {
-  DepositLedgerEntry,
-  PaymentMethod,
-  TransferPreview,
-  TransferResult,
-} from "@/lib/admin-ux-lease-types";
+import type { DepositLedgerEntry, PaymentMethod } from "@/lib/admin-ux-lease-types";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
 import { formatIDR } from "@/lib/format";
@@ -81,20 +78,13 @@ type Props = {
   onOpenLease: (leaseId: string) => void;
 };
 
-const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
-  cash: "Tunai",
-  bank_transfer: "Transfer bank",
-  qris: "QRIS",
-  ewallet: "E-wallet",
-  other: "Lainnya",
-};
-
 export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }: Props) {
   const detail = useM6Lease(leaseId);
   const billing = useM6LeaseBillingSummary(leaseId);
   const { user, hasPermission } = useAuth();
   const roles = user?.roles ?? [];
   const permissions = user?.permissions ?? [];
+  const isAdmin = roles.includes("admin");
   const canManage = hasPermission("lease.manage");
   const canFinancial = isFinancialLeaseActor({ roles, permissions });
   const canSettleRefund = canSettleLeaseRefund({ roles, permissions });
@@ -125,7 +115,9 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
 
   const data = detail.data;
   const active = data.lease.leaseStatus === "active";
-  const canTransfer = canRunNonFinancialTransfer({
+  // W07B: every transfer mutation is admin-only with lease.manage.
+  const canTransfer = canRunAdminTransfer({
+    roles,
     permissions,
     leaseStatus: data.lease.leaseStatus,
     transferFlagEnabled,
@@ -164,8 +156,8 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
           <TransferPanel
             leaseId={leaseId}
             leaseStatus={data.lease.leaseStatus}
-            canManage={canManage}
-            canFinancial={canFinancial}
+            canManage={isAdmin && canManage}
+            canFinancial={canRunTransferTopUp({ roles, permissions })}
             transferFlagEnabled={transferFlagEnabled}
             onClose={() => onSearchChange({ panel: "detail" })}
             onOpenLease={onOpenLease}
@@ -370,15 +362,6 @@ function SummaryTab({
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function KeyValue({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-100">{value}</span>
     </div>
   );
 }
@@ -626,293 +609,6 @@ function HistoryTab({
           </div>
         ))}
       </CardContent>
-    </Card>
-  );
-}
-
-function TransferPanel({
-  leaseId,
-  leaseStatus,
-  canManage,
-  canFinancial,
-  transferFlagEnabled,
-  onClose,
-  onOpenLease,
-}: {
-  leaseId: string;
-  leaseStatus: "active" | "ended" | "cancelled" | "transferred";
-  canManage: boolean;
-  canFinancial: boolean;
-  transferFlagEnabled: boolean;
-  onClose: () => void;
-  onOpenLease: (leaseId: string) => void;
-}) {
-  const rooms = useM6LeaseAvailableRooms();
-  const [topUpReferenceNumber, setTopUpReferenceNumber] = useState("");
-  const [targetRoomId, setTargetRoomId] = useState("");
-  const [reason, setReason] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank_transfer");
-  const [preview, setPreview] = useState<TransferPreview | null>(null);
-  const [previewError, setPreviewError] = useState<unknown>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [result, setResult] = useState<TransferResult | null>(null);
-  const intentKey = useRef<string | null>(null);
-  const transfer = useM6LeaseMutation(
-    "lease-transfer",
-    "Transfer kamar berhasil diproses",
-    (_propertyId, input: TransferInput & { idempotencyKey: string }) =>
-      adminUxLeaseApi.transfer.command(leaseId, input, input.idempotencyKey),
-  );
-  const selectedRoom = rooms.data?.items.find((room) => room.id === targetRoomId);
-  const allowed = canRunNonFinancialTransfer({
-    permissions: canManage ? ["lease.manage"] : [],
-    leaseStatus,
-    transferFlagEnabled,
-  });
-  const topUpRequiredAmount = preview?.deposit.topUpRequiredAmount ?? 0;
-  const topUpPaymentValid =
-    topUpRequiredAmount === 0 ||
-    hasRequiredLeasePaymentReference(topUpRequiredAmount, topUpReferenceNumber);
-  const today = useMemo(() => jakartaToday(), []);
-
-  const previewTransfer = async () => {
-    if (!targetRoomId || !allowed) return;
-    setPreviewError(null);
-    setResult(null);
-    try {
-      setPreview(
-        await adminUxLeaseApi.transfer.preview(leaseId, { targetRoomId, effectiveDate: today }),
-      );
-    } catch (error) {
-      setPreviewError(error);
-      setPreview(null);
-    }
-  };
-  const submit = async () => {
-    if (!preview || !reason.trim()) return;
-    const needsTopUp = topUpRequiredAmount > 0;
-    if (needsTopUp && (!canFinancial || !topUpPaymentValid)) return;
-    const idempotencyKey = intentKey.current ?? newIdempotencyKey();
-    intentKey.current = idempotencyKey;
-    try {
-      const response = await transfer.mutateAsync({
-        targetRoomId,
-        effectiveDate: today,
-        reason: reason.trim(),
-        topUp: needsTopUp
-          ? {
-              amount: topUpRequiredAmount,
-              payment: {
-                paymentMethod,
-                referenceNumber: topUpReferenceNumber.trim(),
-              },
-            }
-          : undefined,
-        idempotencyKey,
-      });
-      intentKey.current = null;
-      setResult(response);
-      setConfirmOpen(false);
-    } catch {
-      /* safe toast from mutation; key remains available for a retry */
-    }
-  };
-
-  if (!transferFlagEnabled)
-    return (
-      <FeatureOffPanel
-        title="Transfer belum diaktifkan"
-        description="Flag transfer frontend tetap default-off hingga rollout property dan capability backend siap."
-        onClose={onClose}
-      />
-    );
-  if (!canManage || leaseStatus !== "active")
-    return (
-      <ActionDeniedPanel
-        title="Transfer tidak tersedia"
-        description="Transfer hanya untuk lease aktif dengan capability lease.manage."
-      />
-    );
-  if (rooms.isLoading) return <LoadingState label="Memuat kamar tujuan..." />;
-  if (rooms.error)
-    return (
-      <ErrorState
-        error={rooms.error}
-        title="Gagal memuat kamar tujuan"
-        onRetry={() => void rooms.refetch()}
-      />
-    );
-  if (result)
-    return <TransferResultCard result={result} onOpenLease={onOpenLease} onClose={onClose} />;
-
-  return (
-    <Card className="border-slate-800 bg-slate-900/80">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-100">
-          <ArrowLeftRight className="h-5 w-5 text-blue-300" /> Transfer kamar
-        </CardTitle>
-        <p className="text-sm text-slate-400">
-          Preview berasal dari server. Tidak ada proration atau perhitungan saldo di browser.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tanggal efektif">
-            <Input value={today} readOnly aria-readonly="true" />
-            <p className="text-xs text-slate-500">Hanya hari ini Asia/Jakarta.</p>
-          </Field>
-          <Field label="Kamar tujuan" required>
-            <Select
-              value={targetRoomId || "none"}
-              onValueChange={(value) => {
-                setTopUpReferenceNumber("");
-                setTargetRoomId(value === "none" ? "" : value);
-                setPreview(null);
-                intentKey.current = null;
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih kamar kosong" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pilih kamar kosong</SelectItem>
-                {(rooms.data?.items ?? []).map((room) => (
-                  <SelectItem key={room.id} value={room.id}>
-                    {room.number} · {room.kostType.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={!targetRoomId} onClick={() => void previewTransfer()}>
-            <FileText className="mr-2 h-4 w-4" /> Buat Preview Server
-          </Button>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Batal
-          </Button>
-        </div>
-        {previewError ? (
-          <ErrorState
-            error={previewError}
-            title="Preview transfer tidak tersedia"
-            onRetry={() => void previewTransfer()}
-          />
-        ) : null}
-        {preview ? (
-          <div className="space-y-4 rounded-lg border border-blue-500/25 bg-blue-500/10 p-4">
-            <p className="font-semibold text-blue-100">Konsekuensi transfer</p>
-            <div className="grid gap-3 text-sm sm:grid-cols-2">
-              <KeyValue
-                label="Kamar tujuan"
-                value={preview.targetRoom.number + " · " + preview.targetRoom.kostType.name}
-              />
-              <KeyValue label="Deposit dibawa" value={formatIDR(preview.deposit.carriedAmount)} />
-              <KeyValue
-                label="Deposit tujuan"
-                value={formatIDR(preview.deposit.targetRequiredAmount)}
-              />
-              <KeyValue label="Tunggakan lama" value={formatIDR(preview.oldOutstandingAmount)} />
-              <KeyValue
-                label="Tagihan target"
-                value={
-                  preview.billing.targetInvoiceWillBeIssued
-                    ? "Diterbitkan sesuai hasil server"
-                    : "Mulai siklus berikutnya"
-                }
-              />
-              <KeyValue label="Anchor tagihan" value={String(preview.billing.billingAnchorDay)} />
-            </div>
-            <p className="text-xs text-blue-100">
-              Lease sumber berakhir transferred dan lease target mulai pada tanggal yang sama dalam
-              interval half-open. Invoice lama tetap pada lease sumber.
-            </p>
-            {preview.deposit.topUpRequiredAmount > 0 ? (
-              canFinancial ? (
-                <div className="space-y-3 border-t border-blue-500/20 pt-4">
-                  <p className="text-sm font-medium text-blue-100">
-                    Top-up deposit diperlukan: {formatIDR(preview.deposit.topUpRequiredAmount)}
-                  </p>
-                  <Field label="Metode pembayaran top-up" required>
-                    <Select
-                      value={paymentMethod}
-                      onValueChange={(value) => {
-                        setPaymentMethod(value as PaymentMethod);
-                        intentKey.current = null;
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Referensi pembayaran top-up" required>
-                    <Input
-                      value={topUpReferenceNumber}
-                      maxLength={256}
-                      onChange={(event) => {
-                        setTopUpReferenceNumber(event.target.value);
-                        intentKey.current = null;
-                      }}
-                      placeholder="Referensi pembayaran terverifikasi"
-                    />
-                  </Field>
-                </div>
-              ) : (
-                <ActionDeniedPanel
-                  title="Top-up memerlukan otorisasi finansial"
-                  description="Anda dapat melihat preview, tetapi transfer dengan top-up hanya dapat dijalankan owner atau manager dengan billing.manage."
-                />
-              )
-            ) : null}
-            <Field label="Alasan transfer" required>
-              <Textarea
-                value={reason}
-                maxLength={2000}
-                rows={3}
-                onChange={(event) => {
-                  setReason(event.target.value);
-                  intentKey.current = null;
-                }}
-                placeholder="Alasan operasional transfer"
-              />
-            </Field>
-            <Button
-              type="button"
-              disabled={
-                !reason.trim() ||
-                transfer.isPending ||
-                (topUpRequiredAmount > 0 && (!canFinancial || !topUpPaymentValid))
-              }
-              onClick={() => setConfirmOpen(true)}
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Konfirmasi Transfer
-            </Button>
-          </div>
-        ) : null}
-      </CardContent>
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Konfirmasi transfer kamar"
-        description={
-          <span>
-            Server akan menutup lease sumber dan membuat lease target pada hari ini. Tunggakan lama
-            tidak dipindahkan.
-          </span>
-        }
-        confirmLabel="Proses Transfer"
-        pending={transfer.isPending}
-        onConfirm={submit}
-      />
     </Card>
   );
 }
@@ -1328,101 +1024,6 @@ function RefundActionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TransferResultCard({
-  result,
-  onOpenLease,
-  onClose,
-}: {
-  result: TransferResult;
-  onOpenLease: (leaseId: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Card className="border-emerald-500/30 bg-emerald-500/10">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-emerald-100">
-          <CheckCircle2 className="h-5 w-5" /> Transfer berhasil
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm text-emerald-50">
-        <p>
-          Lease sumber {result.sourceLease.leaseCode} telah dipindahkan ke kamar{" "}
-          {result.targetLease.room.number}. Carry-forward dan invoice diputuskan server.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <KeyValue
-            label="Deposit dibawa"
-            value={formatIDR(result.transferRecord.carriedDepositAmount)}
-          />
-          <KeyValue label="Top-up" value={formatIDR(result.transferRecord.topUpAmount)} />
-          <KeyValue label="Tunggakan lama" value={formatIDR(result.oldOutstandingAmount)} />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => onOpenLease(result.targetLease.id)}>Buka Lease Target</Button>
-          <Button variant="secondary" onClick={onClose}>
-            Kembali ke Detail
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function FeatureOffPanel({
-  title,
-  description,
-  onClose,
-}: {
-  title: string;
-  description: string;
-  onClose: () => void;
-}) {
-  return (
-    <Card className="border-slate-800 bg-slate-900/80">
-      <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-8 w-8 text-slate-400" />
-        <p className="font-semibold text-slate-100">{title}</p>
-        <p className="max-w-md text-sm text-slate-400">{description}</p>
-        <Button variant="secondary" onClick={onClose}>
-          Kembali ke detail
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ActionDeniedPanel({ title, description }: { title: string; description: string }) {
-  return (
-    <Card className="border-amber-500/25 bg-amber-500/10">
-      <CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
-        <ShieldAlert className="h-7 w-7 text-amber-300" />
-        <p className="font-semibold text-amber-100">{title}</p>
-        <p className="max-w-md text-sm text-amber-100/80">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-slate-200">
-        {label}
-        {required ? <span className="ml-1 text-rose-300">*</span> : null}
-      </Label>
-      {children}
-    </div>
   );
 }
 

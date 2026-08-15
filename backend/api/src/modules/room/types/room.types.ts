@@ -4,7 +4,8 @@ export type RoomStatus =
   | 'occupied'
   | 'maintenance'
   | 'inactive'
-  | 'requires_review';
+  | 'requires_review'
+  | 'inspection_required';
 export type MasterStatus = 'active' | 'inactive';
 export type RoomGenderPolicy = 'male' | 'female' | 'mixed';
 export type PublicRoomGenderPolicy = Exclude<RoomGenderPolicy, 'mixed'>;

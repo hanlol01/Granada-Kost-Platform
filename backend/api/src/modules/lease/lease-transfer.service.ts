@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -9,7 +10,14 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { UserAccessContext } from '../iam/types/iam.types';
-import { DepositPaymentDto, TransferLeaseDto, TransferLeasePreviewDto } from './lease.dto';
+import {
+  CancelScheduledTransferDto,
+  DepositPaymentDto,
+  ScheduleTransferLeaseDto,
+  TransferLeaseDto,
+  TransferLeasePreviewDto,
+  TransferReasonCode,
+} from './lease.dto';
 import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
@@ -51,6 +59,8 @@ type RoomRow = {
   number: string;
   room_status: string;
   kost_type_id: string | null;
+  room_gender_policy: string;
+  building_gender_policy: string;
 };
 
 type ResidentRow = {
@@ -58,6 +68,7 @@ type ResidentRow = {
   property_id: string;
   full_name: string;
   resident_status: string;
+  gender: string;
 };
 
 type OccupancyRow = {
@@ -116,6 +127,56 @@ type CommandOutput<T> = {
   data: T;
 };
 
+type TransferPath = 'end_period' | 'same_day_exception';
+
+type TransferCommandRow = {
+  id: string;
+  property_id: string;
+  resident_id: string;
+  from_lease_id: string;
+  from_room_id: string;
+  to_room_id: string;
+  transfer_path: TransferPath;
+  effective_date: string;
+  reason_code: TransferReasonCode;
+  reason_detail: string | null;
+  exception_reason: string | null;
+  state: 'scheduled' | 'executed' | 'cancelled' | 'failed';
+  failure_code: string | null;
+  cancel_reason: string | null;
+  commercial_snapshot: Record<string, unknown>;
+  transfer_record_id: string | null;
+  executed_late: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  executed_at: string | null;
+  cancelled_at: string | null;
+  failed_at: string | null;
+};
+
+type CutoverInput = {
+  user: UserAccessContext;
+  context: LeaseAuditContext;
+  propertyId: string;
+  leaseId: string;
+  targetRoomId: string;
+  transferPath: TransferPath;
+  reasonCode: TransferReasonCode;
+  reasonDetail: string | null;
+  exceptionReason: string | null;
+  commandId: string | null;
+  lateExecution: boolean;
+  /**
+   * The source lease's contractual end date snapshotted at schedule time.
+   * Present only for scheduled commands; validated again at cutover so the
+   * successor lease always inherits the surviving contractual term.
+   */
+  expectedSourceEndDate?: string | null;
+  topUp?: { amount: number; payment: DepositPaymentDto };
+};
+
+const BOUNDARY_SEARCH_HORIZON = 24;
+
 @Injectable()
 export class LeaseTransferService {
   constructor(
@@ -135,7 +196,6 @@ export class LeaseTransferService {
 
     return this.leases.transaction(async (client) => {
       const today = await this.jakartaToday(client);
-      this.assertEffectiveDate(dto.effective_date, today);
       const property = await this.lockProperty(client, scope.property_id);
       await this.features.assertTransferEnabled(scope.property_id, client);
       const source = await this.lockLease(client, leaseId, 'FOR SHARE');
@@ -146,6 +206,8 @@ export class LeaseTransferService {
           message: 'Transfer target must differ from the source room',
         });
       }
+      const transferPath = this.resolveTransferPath(dto, today);
+      this.assertEffectiveDateForPath(transferPath, dto.effective_date, today, source);
 
       const rooms = await this.lockRooms(client, [source.room_id, dto.target_room_id], 'FOR SHARE');
       const sourceRoom = rooms.get(source.room_id);
@@ -160,6 +222,8 @@ export class LeaseTransferService {
         today,
       );
       this.assertTargetKostType(scope.property_id, targetKostType);
+      const resident = await this.readResident(client, source.resident_id);
+      this.assertGenderCompatibility(resident, targetRoom);
 
       const invoices = await this.readLeaseInvoices(client, source.id, 'FOR SHARE');
       const ledger = await this.readLedger(client, source.id, 'FOR SHARE');
@@ -180,12 +244,14 @@ export class LeaseTransferService {
 
       return {
         data: {
-          effective_date: today,
+          transfer_path: transferPath,
+          effective_date: dto.effective_date,
           source_lease: this.safeLease(source, sourceRoom.number, source.snapshot_kost_type_name),
           target_room: {
             id: targetRoom.id,
             number: targetRoom.number,
             kost_type: { id: targetKostType.id, name: targetKostType.name },
+            gender_compatible: true,
           },
           deposit: {
             carried_amount: carriedDeposit,
@@ -201,7 +267,13 @@ export class LeaseTransferService {
               ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
               : source.next_billing_date,
             due_day: property.default_due_day ?? 25,
+            // The successor lease inherits the source contractual end date.
+            contractual_end_date: source.end_date,
           },
+          valid_effective_dates:
+            transferPath === 'end_period'
+              ? this.futureBillingBoundaries(source, today).slice(0, 6)
+              : [today],
           old_outstanding_amount: await this.outstandingAmount(
             client,
             invoices.map((invoice) => invoice.id),
@@ -211,6 +283,10 @@ export class LeaseTransferService {
     });
   }
 
+  /**
+   * W07B same-day exception path. Admin-only (enforced by controller RBAC).
+   * Executes the full cutover immediately and requires an exception reason.
+   */
   async transfer(
     user: UserAccessContext,
     leaseId: string,
@@ -232,14 +308,53 @@ export class LeaseTransferService {
       context,
       201,
       async (client, today) => {
-        this.assertEffectiveDate(dto.effective_date, today);
+        this.assertSameDayExceptionDate(dto.effective_date, today);
+        return this.runCutover(client, today, {
+          user,
+          context,
+          propertyId: scope.property_id,
+          leaseId,
+          targetRoomId: dto.target_room_id,
+          transferPath: 'same_day_exception',
+          reasonCode: dto.reason_code,
+          reasonDetail: dto.reason_detail?.trim() || null,
+          exceptionReason: dto.exception_reason.trim(),
+          commandId: null,
+          lateExecution: false,
+          topUp: dto.top_up
+            ? { amount: dto.top_up.amount, payment: dto.top_up.payment }
+            : undefined,
+        });
+      },
+    );
+  }
 
-        // Keep M6 lifecycle lock order stable: property, source lease, sorted
-        // room ids, resident, occupancy, invoices, then ledger. The target
-        // kost type is a shared master read after its room is locked.
-        const property = await this.lockProperty(client, scope.property_id);
-        await this.features.assertTransferEnabled(scope.property_id, client);
-        const source = await this.lockLease(client, leaseId, 'FOR UPDATE');
+  /**
+   * W07B normal path. Persists a scheduled command that executes only at the
+   * effective billing-period boundary via LeaseTransferScheduler. No occupancy,
+   * room, lease, or billing lifecycle mutation happens here.
+   */
+  async schedule(
+    user: UserAccessContext,
+    leaseId: string,
+    dto: ScheduleTransferLeaseDto,
+    idempotencyKey: string | undefined,
+    context: LeaseAuditContext,
+  ): Promise<IdempotentResult<Record<string, unknown>>> {
+    const scope = await this.lookupLeaseScope(leaseId);
+    this.assertPropertyScope(user, scope.property_id);
+    await this.features.assertTransferEnabled(scope.property_id);
+
+    return this.executeCommand(
+      user,
+      scope.property_id,
+      `POST /leases/${leaseId}/transfer/schedule`,
+      idempotencyKey,
+      dto,
+      context,
+      201,
+      async (client, today) => {
+        const source = await this.lockLease(client, leaseId, 'FOR SHARE');
         this.assertTransferableLease(source, today);
         if (source.room_id === dto.target_room_id) {
           throw new UnprocessableEntityException({
@@ -247,11 +362,12 @@ export class LeaseTransferService {
             message: 'Transfer target must differ from the source room',
           });
         }
+        this.assertFutureBoundaryDate(dto.effective_date, today, source);
 
         const rooms = await this.lockRooms(
           client,
           [source.room_id, dto.target_room_id],
-          'FOR UPDATE',
+          'FOR SHARE',
         );
         const sourceRoom = rooms.get(source.room_id);
         const targetRoom = rooms.get(dto.target_room_id);
@@ -265,7 +381,6 @@ export class LeaseTransferService {
           today,
         );
         this.assertTargetKostType(scope.property_id, targetKostType);
-
         const resident = await this.lockResident(client, source.resident_id);
         if (resident.property_id !== scope.property_id || resident.resident_status !== 'active') {
           throw new ConflictException({
@@ -273,25 +388,34 @@ export class LeaseTransferService {
             message: 'Source resident is not active in this property',
           });
         }
-        const occupancy = await this.lockOccupancy(client, source.occupancy_id);
-        if (
-          occupancy.property_id !== scope.property_id ||
-          occupancy.room_id !== source.room_id ||
-          occupancy.resident_id !== source.resident_id ||
-          occupancy.occupancy_status !== 'active'
-        ) {
+        this.assertGenderCompatibility(resident, targetRoom);
+
+        // W07B revision 3: a scheduled command must never be created when it
+        // is already known to fail at execution. Deposit top-ups stay on the
+        // authorized same-day exception path only (admin + lease.manage +
+        // billing.manage), so any shortfall fails fast with a deterministic
+        // error instead of producing a doomed scheduled command.
+        const ledger = await this.readLedger(client, source.id, 'FOR SHARE');
+        const carriedDeposit = this.ledgerBalance(ledger);
+        if (carriedDeposit < 0) {
           throw new ConflictException({
-            code: 'LEASE_STATE_CONFLICT',
-            message: 'Source lease occupancy is no longer active',
+            code: 'DEPOSIT_BALANCE_INVALID',
+            message: 'Source lease has an invalid negative deposit balance',
           });
         }
-        const invoices = await this.readLeaseInvoices(client, source.id, 'FOR UPDATE');
-        const ledger = await this.readLedger(client, source.id, 'FOR UPDATE');
+        const requiredTargetDeposit = Number(targetKostType.deposit_amount);
+        if (requiredTargetDeposit > carriedDeposit) {
+          throw new UnprocessableEntityException({
+            code: 'TRANSFER_SCHEDULE_TOP_UP_REQUIRED',
+            message:
+              'Scheduled transfers cannot collect a deposit top-up; settle the deposit gap through the authorized same-day exception path before scheduling',
+          });
+        }
 
         const competing = await client.query<{ id: string }>(
           `SELECT id FROM leases
            WHERE room_id = $1 AND lease_status = 'active'
-           FOR UPDATE`,
+           FOR SHARE`,
           [targetRoom.id],
         );
         if (competing.rows[0]) {
@@ -301,357 +425,863 @@ export class LeaseTransferService {
           });
         }
 
-        const carriedDeposit = this.ledgerBalance(ledger);
-        if (carriedDeposit < 0) {
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM lease_transfer_commands
+           WHERE from_lease_id = $1 AND state = 'scheduled'`,
+          [leaseId],
+        );
+        if (existing.rows[0]) {
           throw new ConflictException({
-            code: 'DEPOSIT_BALANCE_INVALID',
-            message: 'Source lease has an invalid negative deposit balance',
+            code: 'TRANSFER_ALREADY_SCHEDULED',
+            message: 'This lease already has a scheduled transfer command',
           });
         }
-        const requiredTargetDeposit = Number(targetKostType.deposit_amount);
-        const requiredTopUp = Math.max(0, requiredTargetDeposit - carriedDeposit);
-        this.assertTopUp(dto, requiredTopUp);
-        if (dto.top_up) this.assertFinancialActor(user);
 
-        const sourceCurrentCycleInvoiceExists = invoices.some(
-          (invoice) => invoice.cycle_start_date === today,
-        );
-        const issueTargetInvoice =
-          source.next_billing_date === today && !sourceCurrentCycleInvoiceExists;
-        const targetNextBillingDate =
-          source.next_billing_date === today
-            ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
-            : source.next_billing_date;
-        const outstandingAmount = await this.outstandingAmount(
-          client,
-          invoices.map((invoice) => invoice.id),
-          true,
-        );
-
-        // The old active rows are ended before target active rows are inserted,
-        // preserving partial-unique resident and room invariants in one tx.
-        await client.query(
-          `UPDATE occupancies
-           SET occupancy_status = 'transferred', end_date = $2::date,
-               closed_by_user_id = $3, updated_at = now()
-           WHERE id = $1`,
-          [source.occupancy_id, today, user.id],
-        );
-        const transferredSourceResult = await client.query<LeaseRow>(
-          `UPDATE leases
-           SET lease_status = 'transferred', end_date = $2::date, closed_at = now(),
-               closed_by_user_id = $3, close_reason = $4, updated_by_user_id = $3, updated_at = now()
-           WHERE id = $1
-           RETURNING ${this.leaseColumns()}`,
-          [source.id, today, user.id, dto.reason.trim()],
-        );
-        const transferredSource = transferredSourceResult.rows[0];
-
-        const targetOccupancyResult = await client.query<{ id: string }>(
-          `INSERT INTO occupancies (
-             property_id, room_id, resident_id, start_date, occupancy_status, created_by_user_id
-           ) VALUES ($1, $2, $3, $4::date, 'active', $5)
-           RETURNING id`,
-          [scope.property_id, targetRoom.id, resident.id, today, user.id],
-        );
-        const targetOccupancyId = targetOccupancyResult.rows[0].id;
-        const targetLeaseCode = this.newLeaseCode(today);
-        const targetLeaseResult = await client.query<LeaseRow>(
-          `INSERT INTO leases (
-             property_id, lease_code, resident_id, room_id, occupancy_id, kost_type_id,
-             lease_status, start_date, billing_cycle, billing_anchor_day, next_billing_date,
-             snapshot_monthly_price, snapshot_yearly_price, snapshot_deposit_amount,
-             snapshot_room_number, snapshot_kost_type_name, notes, transferred_from_lease_id,
-             created_by_user_id, updated_by_user_id
-           ) VALUES (
-             $1, $2, $3, $4, $5, $6, 'active', $7::date, $8, $9, $10::date,
-             $11, $12, $13, $14, $15, $16, $17, $18, $18
-           )
-           RETURNING ${this.leaseColumns()}`,
-          [
-            scope.property_id,
-            targetLeaseCode,
-            resident.id,
-            targetRoom.id,
-            targetOccupancyId,
-            targetKostType.id,
-            today,
-            source.billing_cycle,
-            source.billing_anchor_day,
-            targetNextBillingDate,
-            targetKostType.monthly_price,
-            targetKostType.yearly_price,
-            targetKostType.deposit_amount,
-            targetRoom.number,
-            targetKostType.name,
-            source.notes,
-            source.id,
-            user.id,
-          ],
-        );
-        const targetLease = targetLeaseResult.rows[0];
-
-        const transferRecordResult = await client.query<TransferRecordRow>(
-          `INSERT INTO room_transfer_records (
-             property_id, resident_id, from_lease_id, to_lease_id, from_room_id, to_room_id,
-             effective_date, reason, carried_deposit_amount, required_target_deposit_amount,
-             top_up_amount, created_by_user_id
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12)
-           RETURNING id, effective_date::text, carried_deposit_amount, required_target_deposit_amount,
-                     top_up_amount`,
+        const commercialSnapshot = {
+          billing_cycle: source.billing_cycle,
+          billing_anchor_day: source.billing_anchor_day,
+          next_billing_date: source.next_billing_date,
+          snapshot_monthly_price: source.snapshot_monthly_price,
+          snapshot_yearly_price: source.snapshot_yearly_price,
+          snapshot_deposit_amount: source.snapshot_deposit_amount,
+          // W07B revision 2: the original contractual end date travels with
+          // the command and is validated again at cutover.
+          source_end_date: source.end_date,
+          carried_deposit_amount: carriedDeposit,
+          required_target_deposit_amount: requiredTargetDeposit,
+        };
+        const commandResult = await client.query<TransferCommandRow>(
+          `INSERT INTO lease_transfer_commands (
+             property_id, resident_id, from_lease_id, from_room_id, to_room_id,
+             transfer_path, effective_date, reason_code, reason_detail, exception_reason,
+             state, commercial_snapshot, created_by_user_id
+           ) VALUES ($1, $2, $3, $4, $5, 'end_period', $6::date, $7, $8, NULL, 'scheduled', $9::jsonb, $10)
+           RETURNING ${this.transferCommandColumns()}`,
           [
             scope.property_id,
             resident.id,
             source.id,
-            targetLease.id,
             sourceRoom.id,
             targetRoom.id,
-            today,
-            dto.reason.trim(),
-            carriedDeposit,
-            requiredTargetDeposit,
-            requiredTopUp,
+            dto.effective_date,
+            dto.reason_code,
+            dto.reason_detail?.trim() || null,
+            JSON.stringify(commercialSnapshot),
             user.id,
           ],
         );
-        const transferRecord = transferRecordResult.rows[0];
+        const command = commandResult.rows[0];
 
-        await this.insertLedger(client, {
-          propertyId: scope.property_id,
-          leaseId: source.id,
-          transactionType: 'carry_forward',
-          direction: 'debit',
-          amount: carriedDeposit,
-          transferRecordId: transferRecord.id,
-          reasonType: 'transfer',
-          reason: 'Lease transfer carry-forward',
-          metadata: { counterpart_lease_id: targetLease.id },
-          actorUserId: user.id,
-        });
-        await this.insertLedger(client, {
-          propertyId: scope.property_id,
-          leaseId: targetLease.id,
-          transactionType: 'carry_forward',
-          direction: 'credit',
-          amount: carriedDeposit,
-          transferRecordId: transferRecord.id,
-          reasonType: 'transfer',
-          reason: 'Lease transfer carry-forward',
-          metadata: { counterpart_lease_id: source.id },
-          actorUserId: user.id,
-        });
-
-        let topUpPayment: PaymentRow | null = null;
-        if (dto.top_up) {
-          topUpPayment = await this.createVerifiedDepositPayment(
-            client,
-            scope.property_id,
-            resident.id,
-            dto.top_up.amount,
-            dto.top_up.payment,
-            user.id,
-          );
-          await client.query(
-            `INSERT INTO payment_allocations (payment_id, target_type, target_id, allocated_amount)
-             VALUES ($1, 'deposit', $2, $3)`,
-            [topUpPayment.id, targetLease.id, dto.top_up.amount],
-          );
-          await this.insertLedger(client, {
-            propertyId: scope.property_id,
-            leaseId: targetLease.id,
-            transactionType: 'top_up',
-            direction: 'credit',
-            amount: dto.top_up.amount,
-            paymentId: topUpPayment.id,
-            reasonType: 'verified_payment',
-            metadata: {
-              payment_code: topUpPayment.payment_code,
-              transfer_record_id: transferRecord.id,
-            },
-            actorUserId: user.id,
-          });
-        }
-
-        await this.refreshDepositCache(client, source.id, user.id);
-        const targetDeposit = await this.refreshDepositCache(client, targetLease.id, user.id);
-
-        await client.query(
-          `UPDATE rooms
-           SET room_status = CASE WHEN id = $1 THEN 'vacant' ELSE 'occupied' END,
-               updated_by_user_id = $3, updated_at = now()
-           WHERE id = ANY($2::uuid[])`,
-          [sourceRoom.id, [sourceRoom.id, targetRoom.id], user.id],
-        );
-        await this.insertOccupancyHistory(
-          client,
-          source.occupancy_id,
-          scope.property_id,
-          sourceRoom.id,
-          resident.id,
-          'transfer_out',
-          'active',
-          'transferred',
-          today,
-          user.id,
-          { transfer_record_id: transferRecord.id },
-        );
-        await this.insertOccupancyHistory(
-          client,
-          targetOccupancyId,
-          scope.property_id,
-          targetRoom.id,
-          resident.id,
-          'transfer_in',
-          null,
-          'active',
-          today,
-          user.id,
-          { transfer_record_id: transferRecord.id },
-        );
         await this.insertHistory(
           client,
           scope.property_id,
           source.id,
-          'transferred_out',
+          'transfer_scheduled',
           user.id,
           today,
           {
-            transfer_record_id: transferRecord.id,
-            to_lease_id: targetLease.id,
+            transfer_command_id: command.id,
             to_room_id: targetRoom.id,
-            carried_deposit_amount: carriedDeposit,
+            effective_date: dto.effective_date,
+            reason_code: dto.reason_code,
           },
         );
-        await this.insertHistory(
-          client,
-          scope.property_id,
-          targetLease.id,
-          'transferred_in',
-          user.id,
-          today,
-          {
-            transfer_record_id: transferRecord.id,
-            from_lease_id: source.id,
-            from_room_id: sourceRoom.id,
-            carried_deposit_amount: carriedDeposit,
-            top_up_amount: requiredTopUp,
-          },
-        );
-
-        let targetInvoice: {
-          id: string;
-          invoice_code: string;
-          due_date: string;
-          total_amount: number;
-        } | null = null;
-        if (issueTargetInvoice) {
-          targetInvoice = await this.issueTargetCycleInvoice(
-            client,
-            property,
-            targetLease,
-            resident,
-            targetOccupancyId,
-            today,
-            user.id,
-          );
-          await this.insertHistory(
-            client,
-            scope.property_id,
-            targetLease.id,
-            'invoice_generated',
-            user.id,
-            today,
-            { invoice_id: targetInvoice.id, amount: targetInvoice.total_amount },
-          );
-          await this.writeOutbox(client, {
-            propertyId: scope.property_id,
-            eventKey: `billing.invoice_issued:${targetInvoice.id}`,
-            eventType: 'billing.invoice_issued',
-            aggregateType: 'invoice',
-            aggregateId: targetInvoice.id,
-            actorUserId: user.id,
-            correlationId: context.correlationId,
-            payload: {
-              invoice_id: targetInvoice.id,
-              lease_id: targetLease.id,
-              amount: targetInvoice.total_amount,
-            },
-          });
-        }
-
         await this.writeAudit(
           client,
           user.id,
           scope.property_id,
-          'lease.transfer',
-          'room_transfer',
-          transferRecord.id,
+          'lease.transfer.schedule',
+          'lease_transfer_command',
+          command.id,
+          { state: null },
           {
-            source_lease_id: source.id,
-            source_room_id: sourceRoom.id,
-            source_status: 'active',
-          },
-          {
-            target_lease_id: targetLease.id,
-            target_room_id: targetRoom.id,
-            carried_deposit_amount: carriedDeposit,
-            top_up_amount: requiredTopUp,
-            reason_present: true,
+            from_lease_id: source.id,
+            from_room_id: sourceRoom.id,
+            to_room_id: targetRoom.id,
+            effective_date: dto.effective_date,
+            reason_code: dto.reason_code,
+            state: 'scheduled',
           },
           context,
         );
         await this.writeOutbox(client, {
           propertyId: scope.property_id,
-          eventKey: `lease.transferred:${transferRecord.id}`,
-          eventType: 'lease.transferred',
-          aggregateType: 'room_transfer',
-          aggregateId: transferRecord.id,
+          eventKey: `lease.transfer_scheduled:${command.id}`,
+          eventType: 'lease.transfer_scheduled',
+          aggregateType: 'lease_transfer_command',
+          aggregateId: command.id,
           actorUserId: user.id,
           correlationId: context.correlationId,
           payload: {
-            transfer_record_id: transferRecord.id,
+            transfer_command_id: command.id,
             source_lease_id: source.id,
-            target_lease_id: targetLease.id,
-            source_room_id: sourceRoom.id,
             target_room_id: targetRoom.id,
-            carried_deposit_amount: carriedDeposit,
-            top_up_amount: requiredTopUp,
+            effective_date: dto.effective_date,
+            reason_code: dto.reason_code,
+            transfer_path: 'end_period',
           },
         });
 
         return {
-          resourceType: 'room_transfer',
-          resourceId: transferRecord.id,
-          data: {
-            source_lease: this.safeLease(
-              transferredSource,
-              sourceRoom.number,
-              source.snapshot_kost_type_name,
-            ),
-            target_lease: this.safeLease(targetLease, targetRoom.number, targetKostType.name),
-            transfer_record: {
-              id: transferRecord.id,
-              effective_date: transferRecord.effective_date,
-              from_room_id: sourceRoom.id,
-              to_room_id: targetRoom.id,
-              carried_deposit_amount: Number(transferRecord.carried_deposit_amount),
-              required_target_deposit_amount: Number(transferRecord.required_target_deposit_amount),
-              top_up_amount: Number(transferRecord.top_up_amount),
-            },
-            deposit: targetDeposit,
-            top_up_payment: topUpPayment
-              ? {
-                  id: topUpPayment.id,
-                  payment_code: topUpPayment.payment_code,
-                  payment_status: 'verified',
-                }
-              : null,
-            target_invoice: targetInvoice,
-            old_outstanding_amount: outstandingAmount,
-          },
+          resourceType: 'lease_transfer_command',
+          resourceId: command.id,
+          data: { scheduled_transfer: this.safeCommand(command) },
         };
       },
     );
+  }
+
+  /** Cancels a still-scheduled command. Never touches lease/room/occupancy/billing state. */
+  async cancelScheduledTransfer(
+    user: UserAccessContext,
+    leaseId: string,
+    commandId: string,
+    dto: CancelScheduledTransferDto,
+    idempotencyKey: string | undefined,
+    context: LeaseAuditContext,
+  ): Promise<IdempotentResult<Record<string, unknown>>> {
+    const scope = await this.lookupLeaseScope(leaseId);
+    this.assertPropertyScope(user, scope.property_id);
+    await this.features.assertTransferEnabled(scope.property_id);
+
+    return this.executeCommand(
+      user,
+      scope.property_id,
+      `POST /leases/${leaseId}/transfers/${commandId}/cancel`,
+      idempotencyKey,
+      dto,
+      context,
+      200,
+      async (client, today) => {
+        await this.features.assertTransferEnabled(scope.property_id, client);
+        const command = await this.lockTransferCommand(client, commandId);
+        if (command.from_lease_id !== leaseId || command.property_id !== scope.property_id) {
+          throw new NotFoundException({
+            code: 'TRANSFER_COMMAND_NOT_FOUND',
+            message: 'Transfer command not found for this lease',
+          });
+        }
+        if (command.state !== 'scheduled') {
+          throw new ConflictException({
+            code: 'TRANSFER_COMMAND_NOT_CANCELLABLE',
+            message: `Transfer command is already ${command.state}`,
+          });
+        }
+
+        const cancelledResult = await client.query<TransferCommandRow>(
+          `UPDATE lease_transfer_commands
+           SET state = 'cancelled', cancel_reason = $2, cancelled_by_user_id = $3, cancelled_at = now()
+           WHERE id = $1 AND state = 'scheduled'
+           RETURNING ${this.transferCommandColumns()}`,
+          [commandId, dto.reason.trim(), user.id],
+        );
+        const cancelled = cancelledResult.rows[0];
+
+        await this.insertHistory(
+          client,
+          scope.property_id,
+          command.from_lease_id,
+          'transfer_cancelled',
+          user.id,
+          today,
+          { transfer_command_id: command.id, cancel_reason: dto.reason.trim() },
+        );
+        await this.writeAudit(
+          client,
+          user.id,
+          scope.property_id,
+          'lease.transfer.cancel',
+          'lease_transfer_command',
+          command.id,
+          { state: 'scheduled' },
+          { state: 'cancelled', cancel_reason: dto.reason.trim() },
+          context,
+        );
+        await this.writeOutbox(client, {
+          propertyId: scope.property_id,
+          eventKey: `lease.transfer_cancelled:${command.id}`,
+          eventType: 'lease.transfer_cancelled',
+          aggregateType: 'lease_transfer_command',
+          aggregateId: command.id,
+          actorUserId: user.id,
+          correlationId: context.correlationId,
+          payload: {
+            transfer_command_id: command.id,
+            source_lease_id: command.from_lease_id,
+            target_room_id: command.to_room_id,
+            effective_date: command.effective_date,
+            cancel_reason: dto.reason.trim(),
+          },
+        });
+
+        return {
+          resourceType: 'lease_transfer_command',
+          resourceId: command.id,
+          data: { scheduled_transfer: this.safeCommand(cancelled) },
+        };
+      },
+    );
+  }
+
+  /** Read-only command listing for the lease detail transfer panel. */
+  async listTransferCommands(
+    user: UserAccessContext,
+    leaseId: string,
+  ): Promise<{ data: { items: Record<string, unknown>[] } }> {
+    const scope = await this.lookupLeaseScope(leaseId);
+    this.assertPropertyScope(user, scope.property_id);
+    await this.features.assertTransferEnabled(scope.property_id);
+
+    const result = await this.leases.query<TransferCommandRow>(
+      `SELECT ${this.transferCommandColumns()}
+       FROM lease_transfer_commands
+       WHERE from_lease_id = $1
+       ORDER BY created_at DESC, id
+       LIMIT 50`,
+      [leaseId],
+    );
+    return { data: { items: result.rows.map((row) => this.safeCommand(row)) } };
+  }
+
+  /**
+   * Scheduler-only execution entry (LeaseTransferScheduler). Runs the full
+   * cutover for a due command inside one transaction. If cutover preconditions
+   * no longer hold, the command is marked failed (terminal, manual review).
+   * If the due date already passed, execution proceeds with an explicit
+   * late-execution marker (lead ruling B3).
+   */
+  async executeScheduledTransfer(
+    commandId: string,
+    runId: string,
+  ): Promise<{ state: 'executed' | 'skipped' | 'failed'; late: boolean; failure_code?: string }> {
+    let late = false;
+    try {
+      const outcome = await this.leases.transaction(async (client) => {
+        const command = await this.lockTransferCommand(client, commandId);
+        if (command.state !== 'scheduled') return { state: 'skipped' as const };
+        const enabledPropertyIds = await this.features.transferSchedulerEnabledPropertyIds(client);
+        if (!enabledPropertyIds.includes(command.property_id)) {
+          return { state: 'skipped' as const };
+        }
+        const today = await this.jakartaToday(client);
+        late = command.effective_date < today;
+        const snapshot = command.commercial_snapshot ?? {};
+        const actor = await this.buildSchedulerActor(
+          client,
+          command.created_by_user_id,
+          command.property_id,
+        );
+        await this.runCutover(client, today, {
+          user: actor,
+          context: { correlationId: runId },
+          propertyId: command.property_id,
+          leaseId: command.from_lease_id,
+          targetRoomId: command.to_room_id,
+          transferPath: command.transfer_path,
+          reasonCode: command.reason_code,
+          reasonDetail: command.reason_detail,
+          exceptionReason: command.exception_reason,
+          commandId: command.id,
+          lateExecution: late,
+          expectedSourceEndDate:
+            'source_end_date' in snapshot
+              ? ((snapshot as { source_end_date: string | null }).source_end_date ?? null)
+              : undefined,
+        });
+        return { state: 'executed' as const };
+      });
+      return outcome.state === 'executed'
+        ? { state: 'executed', late }
+        : { state: 'skipped', late };
+    } catch (error) {
+      const terminalCode = this.classifyTerminalFailure(error);
+      if (terminalCode === null) {
+        // A genuine infrastructure failure (connection loss, restart, deadlock,
+        // serialization failure) or an unknown error. The cutover transaction
+        // already rolled back, so no partial lifecycle writes exist. The command
+        // deliberately stays scheduled so the next run retries it.
+        throw error;
+      }
+      await this.markCommandFailed(commandId, terminalCode, error, runId, late);
+      return { state: 'failed', late, failure_code: terminalCode };
+    }
+  }
+
+  /**
+   * Decides whether a failed cutover is terminal (deterministic business or
+   * integrity-constraint conflict) or should stay scheduled for retry.
+   *
+   * Returns a stable failure_code for terminal failures, or null when the error
+   * is a transient/unknown infrastructure failure that must be retried.
+   */
+  private classifyTerminalFailure(error: unknown): string | null {
+    // Business rule violations already surface as HttpExceptions and are terminal.
+    if (error instanceof HttpException) {
+      return this.extractFailureCode(error);
+    }
+    // Reuse the shared PostgreSQL conflict translation so a recognised
+    // constraint (resident/room) yields the same stable code as the synchronous
+    // transfer path instead of a duplicated mapping.
+    const translated = this.translateKnownDatabaseConflict(error);
+    if (translated) {
+      return this.extractFailureCode(translated);
+    }
+    // Any remaining integrity-constraint violation (SQLSTATE class 23, notably
+    // 23505 unique_violation) is deterministic: retrying cannot succeed, so it
+    // becomes a terminal failure with a stable code. Concurrency failures such
+    // as deadlock (40P01) and serialization (40001), connection loss (class 08),
+    // and shutdown (class 57) are NOT in class 23 and therefore stay retryable.
+    const sqlState = this.databaseErrorCode(error);
+    if (sqlState !== null && sqlState.startsWith('23')) {
+      return 'TRANSFER_CONSTRAINT_CONFLICT';
+    }
+    return null;
+  }
+
+  /**
+   * Runs the error through the existing conflict translator, capturing the
+   * HttpException it raises for recognised constraints. Returns null when the
+   * helper rethrows the original (unrecognised) error.
+   */
+  private translateKnownDatabaseConflict(error: unknown): HttpException | null {
+    try {
+      this.rethrowKnownDatabaseConflict(error);
+    } catch (translated) {
+      if (translated instanceof HttpException) return translated;
+    }
+    return null;
+  }
+
+  private databaseErrorCode(error: unknown): string | null {
+    if (error instanceof Error && 'code' in error) {
+      const code = (error as Error & { code?: unknown }).code;
+      if (typeof code === 'string' && code.length > 0) return code;
+    }
+    return null;
+  }
+
+  /**
+   * Shared cutover used by both transfer paths. Lock order stays M6-stable:
+   * property, source lease, sorted room ids, resident, occupancy, invoices,
+   * then ledger. Scheduled execution locks its command row before this call.
+   */
+  private async runCutover(
+    client: PoolClient,
+    today: string,
+    input: CutoverInput,
+  ): Promise<CommandOutput<Record<string, unknown>>> {
+    const property = await this.lockProperty(client, input.propertyId);
+    await this.features.assertTransferEnabled(input.propertyId, client);
+    const source = await this.lockLease(client, input.leaseId, 'FOR UPDATE');
+    this.assertTransferableLease(source, today);
+    // W07B revision 2: the contractual end date snapshotted when the command
+    // was scheduled must still hold at cutover; otherwise the command fails
+    // for manual review instead of inheriting a stale term.
+    if (
+      input.expectedSourceEndDate !== undefined &&
+      input.expectedSourceEndDate !== source.end_date
+    ) {
+      throw new ConflictException({
+        code: 'TRANSFER_SOURCE_END_DATE_CHANGED',
+        message: 'The source lease contractual end date changed after the transfer was scheduled',
+      });
+    }
+    if (source.room_id === input.targetRoomId) {
+      throw new UnprocessableEntityException({
+        code: 'TRANSFER_TARGET_ROOM_INVALID',
+        message: 'Transfer target must differ from the source room',
+      });
+    }
+
+    const rooms = await this.lockRooms(client, [source.room_id, input.targetRoomId], 'FOR UPDATE');
+    const sourceRoom = rooms.get(source.room_id);
+    const targetRoom = rooms.get(input.targetRoomId);
+    if (!sourceRoom || !targetRoom) {
+      throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found' });
+    }
+    this.assertTargetRoom(input.propertyId, sourceRoom, targetRoom);
+    const targetKostType = await this.lockKostType(
+      client,
+      targetRoom.kost_type_id as string,
+      today,
+    );
+    this.assertTargetKostType(input.propertyId, targetKostType);
+
+    const resident = await this.lockResident(client, source.resident_id);
+    if (resident.property_id !== input.propertyId || resident.resident_status !== 'active') {
+      throw new ConflictException({
+        code: 'LEASE_RESIDENT_CONFLICT',
+        message: 'Source resident is not active in this property',
+      });
+    }
+    this.assertGenderCompatibility(resident, targetRoom);
+
+    const occupancy = await this.lockOccupancy(client, source.occupancy_id);
+    if (
+      occupancy.property_id !== input.propertyId ||
+      occupancy.room_id !== source.room_id ||
+      occupancy.resident_id !== source.resident_id ||
+      occupancy.occupancy_status !== 'active'
+    ) {
+      throw new ConflictException({
+        code: 'LEASE_STATE_CONFLICT',
+        message: 'Source lease occupancy is no longer active',
+      });
+    }
+    const invoices = await this.readLeaseInvoices(client, source.id, 'FOR UPDATE');
+    const ledger = await this.readLedger(client, source.id, 'FOR UPDATE');
+
+    const competing = await client.query<{ id: string }>(
+      `SELECT id FROM leases
+       WHERE room_id = $1 AND lease_status = 'active'
+       FOR UPDATE`,
+      [targetRoom.id],
+    );
+    if (competing.rows[0]) {
+      throw new ConflictException({
+        code: 'LEASE_ROOM_CONFLICT',
+        message: 'Target room already has an active lease',
+      });
+    }
+
+    const carriedDeposit = this.ledgerBalance(ledger);
+    if (carriedDeposit < 0) {
+      throw new ConflictException({
+        code: 'DEPOSIT_BALANCE_INVALID',
+        message: 'Source lease has an invalid negative deposit balance',
+      });
+    }
+    const requiredTargetDeposit = Number(targetKostType.deposit_amount);
+    const requiredTopUp = Math.max(0, requiredTargetDeposit - carriedDeposit);
+    this.assertTopUpAmount(input.topUp, requiredTopUp);
+    if (input.topUp) this.assertFinancialActor(input.user);
+
+    const sourceCurrentCycleInvoiceExists = invoices.some(
+      (invoice) => invoice.cycle_start_date === today,
+    );
+    const issueTargetInvoice =
+      source.next_billing_date === today && !sourceCurrentCycleInvoiceExists;
+    const targetNextBillingDate =
+      source.next_billing_date === today
+        ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
+        : source.next_billing_date;
+    const outstandingAmount = await this.outstandingAmount(
+      client,
+      invoices.map((invoice) => invoice.id),
+      true,
+    );
+
+    // The old active rows are ended before target active rows are inserted,
+    // preserving partial-unique resident and room invariants in one tx.
+    await client.query(
+      `UPDATE occupancies
+       SET occupancy_status = 'transferred', end_date = $2::date,
+           closed_by_user_id = $3, updated_at = now()
+       WHERE id = $1`,
+      [source.occupancy_id, today, input.user.id],
+    );
+    const transferredSourceResult = await client.query<LeaseRow>(
+      `UPDATE leases
+       SET lease_status = 'transferred', end_date = $2::date, closed_at = now(),
+           closed_by_user_id = $3, close_reason = $4, updated_by_user_id = $3, updated_at = now()
+       WHERE id = $1
+       RETURNING ${this.leaseColumns()}`,
+      [source.id, today, input.user.id, this.transferCloseReason(input)],
+    );
+    const transferredSource = transferredSourceResult.rows[0];
+
+    const targetOccupancyResult = await client.query<{ id: string }>(
+      `INSERT INTO occupancies (
+         property_id, room_id, resident_id, start_date, occupancy_status, created_by_user_id
+       ) VALUES ($1, $2, $3, $4::date, 'active', $5)
+       RETURNING id`,
+      [input.propertyId, targetRoom.id, resident.id, today, input.user.id],
+    );
+    const targetOccupancyId = targetOccupancyResult.rows[0].id;
+    const targetLeaseCode = this.newLeaseCode(today);
+    const targetLeaseResult = await client.query<LeaseRow>(
+      `INSERT INTO leases (
+         property_id, lease_code, resident_id, room_id, occupancy_id, kost_type_id,
+         lease_status, start_date, end_date, billing_cycle, billing_anchor_day, next_billing_date,
+         snapshot_monthly_price, snapshot_yearly_price, snapshot_deposit_amount,
+         snapshot_room_number, snapshot_kost_type_name, notes, transferred_from_lease_id,
+         created_by_user_id, updated_by_user_id
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, 'active', $7::date, $8::date, $9, $10, $11::date,
+         $12, $13, $14, $15, $16, $17, $18, $19, $19
+       )
+       RETURNING ${this.leaseColumns()}`,
+      [
+        input.propertyId,
+        targetLeaseCode,
+        resident.id,
+        targetRoom.id,
+        targetOccupancyId,
+        targetKostType.id,
+        today,
+        // W07B revision 2: the successor lease inherits the source lease's
+        // original contractual end date; the source closes at the transfer
+        // date while the contractual term survives on the successor.
+        source.end_date,
+        source.billing_cycle,
+        source.billing_anchor_day,
+        targetNextBillingDate,
+        targetKostType.monthly_price,
+        targetKostType.yearly_price,
+        targetKostType.deposit_amount,
+        targetRoom.number,
+        targetKostType.name,
+        source.notes,
+        source.id,
+        input.user.id,
+      ],
+    );
+    const targetLease = targetLeaseResult.rows[0];
+
+    const transferRecordResult = await client.query<TransferRecordRow>(
+      `INSERT INTO room_transfer_records (
+         property_id, resident_id, from_lease_id, to_lease_id, from_room_id, to_room_id,
+         effective_date, reason, carried_deposit_amount, required_target_deposit_amount,
+         top_up_amount, created_by_user_id, transfer_command_id, transfer_path, reason_code,
+         reason_detail, exception_reason, metadata
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb)
+       RETURNING id, effective_date::text, carried_deposit_amount, required_target_deposit_amount,
+                 top_up_amount`,
+      [
+        input.propertyId,
+        resident.id,
+        source.id,
+        targetLease.id,
+        sourceRoom.id,
+        targetRoom.id,
+        today,
+        this.transferCloseReason(input),
+        carriedDeposit,
+        requiredTargetDeposit,
+        requiredTopUp,
+        input.user.id,
+        input.commandId,
+        input.transferPath,
+        input.reasonCode,
+        input.reasonDetail,
+        input.exceptionReason,
+        JSON.stringify({
+          late_execution: input.lateExecution,
+          source_end_date: source.end_date,
+        }),
+      ],
+    );
+    const transferRecord = transferRecordResult.rows[0];
+
+    if (input.commandId) {
+      await client.query(
+        `UPDATE lease_transfer_commands
+         SET state = 'executed', executed_at = now(), transfer_record_id = $1, executed_late = $2
+         WHERE id = $3 AND state = 'scheduled'`,
+        [transferRecord.id, input.lateExecution, input.commandId],
+      );
+    }
+
+    // W07B decision 6: revoke active resident smart-lock grants scoped to the
+    // old room at cutover. New-room access is issued only through the existing
+    // canonical smart-lock access policy, never by the transfer itself.
+    const revokedGrants = await client.query<{ id: string }>(
+      `UPDATE smart_lock_access_grants
+       SET grant_status = 'revoked', revoked_at = now(), revoke_reason = 'transfer', updated_at = now()
+       WHERE resident_id = $1
+         AND grant_type = 'resident'
+         AND grant_status = 'active'
+         AND smart_lock_device_id IN (SELECT id FROM smart_lock_devices WHERE room_id = $2)
+       RETURNING id`,
+      [resident.id, sourceRoom.id],
+    );
+    for (const revoked of revokedGrants.rows) {
+      await this.writeAudit(
+        client,
+        input.user.id,
+        input.propertyId,
+        'smart_lock.grant_revoke',
+        'smart_lock_access_grant',
+        revoked.id,
+        { grant_status: 'active', room_id: sourceRoom.id },
+        { grant_status: 'revoked', revoke_reason: 'transfer' },
+        input.context,
+      );
+    }
+    if (revokedGrants.rows.length > 0) {
+      await this.writeOutbox(client, {
+        propertyId: input.propertyId,
+        eventKey: `smart_lock.grants_revoked_for_transfer:${transferRecord.id}`,
+        eventType: 'smart_lock.grants_revoked_for_transfer',
+        aggregateType: 'room_transfer',
+        aggregateId: transferRecord.id,
+        actorUserId: input.user.id,
+        correlationId: input.context.correlationId,
+        payload: {
+          transfer_record_id: transferRecord.id,
+          resident_id: resident.id,
+          room_id: sourceRoom.id,
+          revoked_grant_ids: revokedGrants.rows.map((row) => row.id),
+        },
+      });
+    }
+
+    await this.insertLedger(client, {
+      propertyId: input.propertyId,
+      leaseId: source.id,
+      transactionType: 'carry_forward',
+      direction: 'debit',
+      amount: carriedDeposit,
+      transferRecordId: transferRecord.id,
+      reasonType: 'transfer',
+      reason: 'Lease transfer carry-forward',
+      metadata: { counterpart_lease_id: targetLease.id },
+      actorUserId: input.user.id,
+    });
+    await this.insertLedger(client, {
+      propertyId: input.propertyId,
+      leaseId: targetLease.id,
+      transactionType: 'carry_forward',
+      direction: 'credit',
+      amount: carriedDeposit,
+      transferRecordId: transferRecord.id,
+      reasonType: 'transfer',
+      reason: 'Lease transfer carry-forward',
+      metadata: { counterpart_lease_id: source.id },
+      actorUserId: input.user.id,
+    });
+
+    let topUpPayment: PaymentRow | null = null;
+    if (input.topUp) {
+      topUpPayment = await this.createVerifiedDepositPayment(
+        client,
+        input.propertyId,
+        resident.id,
+        input.topUp.amount,
+        input.topUp.payment,
+        input.user.id,
+      );
+      await client.query(
+        `INSERT INTO payment_allocations (payment_id, target_type, target_id, allocated_amount)
+         VALUES ($1, 'deposit', $2, $3)`,
+        [topUpPayment.id, targetLease.id, input.topUp.amount],
+      );
+      await this.insertLedger(client, {
+        propertyId: input.propertyId,
+        leaseId: targetLease.id,
+        transactionType: 'top_up',
+        direction: 'credit',
+        amount: input.topUp.amount,
+        paymentId: topUpPayment.id,
+        reasonType: 'verified_payment',
+        metadata: {
+          payment_code: topUpPayment.payment_code,
+          transfer_record_id: transferRecord.id,
+        },
+        actorUserId: input.user.id,
+      });
+    }
+
+    await this.refreshDepositCache(client, source.id, input.user.id);
+    const targetDeposit = await this.refreshDepositCache(client, targetLease.id, input.user.id);
+
+    // W07B decision 5: the old room enters inspection_required at cutover. It
+    // can only leave that state through the authorized inspection-resolution
+    // command, never through a direct status patch.
+    await client.query(
+      `UPDATE rooms
+       SET room_status = CASE WHEN id = $1 THEN 'inspection_required' ELSE 'occupied' END,
+           updated_by_user_id = $3, updated_at = now()
+       WHERE id = ANY($2::uuid[])`,
+      [sourceRoom.id, [sourceRoom.id, targetRoom.id], input.user.id],
+    );
+    await this.insertOccupancyHistory(
+      client,
+      source.occupancy_id,
+      input.propertyId,
+      sourceRoom.id,
+      resident.id,
+      'transfer_out',
+      'active',
+      'transferred',
+      today,
+      input.user.id,
+      { transfer_record_id: transferRecord.id },
+    );
+    await this.insertOccupancyHistory(
+      client,
+      targetOccupancyId,
+      input.propertyId,
+      targetRoom.id,
+      resident.id,
+      'transfer_in',
+      null,
+      'active',
+      today,
+      input.user.id,
+      { transfer_record_id: transferRecord.id },
+    );
+    await this.insertHistory(
+      client,
+      input.propertyId,
+      source.id,
+      'transferred_out',
+      input.user.id,
+      today,
+      {
+        transfer_record_id: transferRecord.id,
+        to_lease_id: targetLease.id,
+        to_room_id: targetRoom.id,
+        carried_deposit_amount: carriedDeposit,
+        transfer_path: input.transferPath,
+        late_execution: input.lateExecution,
+        reason_code: input.reasonCode,
+      },
+    );
+    await this.insertHistory(
+      client,
+      input.propertyId,
+      targetLease.id,
+      'transferred_in',
+      input.user.id,
+      today,
+      {
+        transfer_record_id: transferRecord.id,
+        from_lease_id: source.id,
+        from_room_id: sourceRoom.id,
+        carried_deposit_amount: carriedDeposit,
+        top_up_amount: requiredTopUp,
+        transfer_path: input.transferPath,
+        late_execution: input.lateExecution,
+      },
+    );
+
+    let targetInvoice: {
+      id: string;
+      invoice_code: string;
+      due_date: string;
+      total_amount: number;
+    } | null = null;
+    if (issueTargetInvoice) {
+      targetInvoice = await this.issueTargetCycleInvoice(
+        client,
+        property,
+        targetLease,
+        resident,
+        targetOccupancyId,
+        today,
+        input.user.id,
+      );
+      await this.insertHistory(
+        client,
+        input.propertyId,
+        targetLease.id,
+        'invoice_generated',
+        input.user.id,
+        today,
+        { invoice_id: targetInvoice.id, amount: targetInvoice.total_amount },
+      );
+      await this.writeOutbox(client, {
+        propertyId: input.propertyId,
+        eventKey: `billing.invoice_issued:${targetInvoice.id}`,
+        eventType: 'billing.invoice_issued',
+        aggregateType: 'invoice',
+        aggregateId: targetInvoice.id,
+        actorUserId: input.user.id,
+        correlationId: input.context.correlationId,
+        payload: {
+          invoice_id: targetInvoice.id,
+          lease_id: targetLease.id,
+          amount: targetInvoice.total_amount,
+        },
+      });
+    }
+
+    await this.writeAudit(
+      client,
+      input.user.id,
+      input.propertyId,
+      'lease.transfer',
+      'room_transfer',
+      transferRecord.id,
+      {
+        source_lease_id: source.id,
+        source_room_id: sourceRoom.id,
+        source_status: 'active',
+      },
+      {
+        target_lease_id: targetLease.id,
+        target_room_id: targetRoom.id,
+        carried_deposit_amount: carriedDeposit,
+        top_up_amount: requiredTopUp,
+        reason_code: input.reasonCode,
+        transfer_path: input.transferPath,
+        late_execution: input.lateExecution,
+        revoked_smart_lock_grant_count: revokedGrants.rows.length,
+      },
+      input.context,
+    );
+    await this.writeOutbox(client, {
+      propertyId: input.propertyId,
+      eventKey: `lease.transferred:${transferRecord.id}`,
+      eventType: 'lease.transferred',
+      aggregateType: 'room_transfer',
+      aggregateId: transferRecord.id,
+      actorUserId: input.user.id,
+      correlationId: input.context.correlationId,
+      payload: {
+        transfer_record_id: transferRecord.id,
+        source_lease_id: source.id,
+        target_lease_id: targetLease.id,
+        source_room_id: sourceRoom.id,
+        target_room_id: targetRoom.id,
+        carried_deposit_amount: carriedDeposit,
+        top_up_amount: requiredTopUp,
+        reason_code: input.reasonCode,
+        transfer_path: input.transferPath,
+        late_execution: input.lateExecution,
+      },
+    });
+
+    return {
+      resourceType: 'room_transfer',
+      resourceId: transferRecord.id,
+      data: {
+        transfer_command_id: input.commandId,
+        transfer_path: input.transferPath,
+        executed_late: input.lateExecution,
+        source_lease: this.safeLease(
+          transferredSource,
+          sourceRoom.number,
+          source.snapshot_kost_type_name,
+        ),
+        target_lease: this.safeLease(targetLease, targetRoom.number, targetKostType.name),
+        transfer_record: {
+          id: transferRecord.id,
+          effective_date: transferRecord.effective_date,
+          from_room_id: sourceRoom.id,
+          to_room_id: targetRoom.id,
+          carried_deposit_amount: Number(transferRecord.carried_deposit_amount),
+          required_target_deposit_amount: Number(transferRecord.required_target_deposit_amount),
+          top_up_amount: Number(transferRecord.top_up_amount),
+        },
+        deposit: targetDeposit,
+        top_up_payment: topUpPayment
+          ? {
+              id: topUpPayment.id,
+              payment_code: topUpPayment.payment_code,
+              payment_status: 'verified',
+            }
+          : null,
+        target_invoice: targetInvoice,
+        smart_lock_revocation: {
+          revoked_grant_count: revokedGrants.rows.length,
+          revoked_grant_ids: revokedGrants.rows.map((row) => row.id),
+        },
+        contractual_end_date: targetLease.end_date,
+        old_outstanding_amount: outstandingAmount,
+      },
+    };
   }
 
   private async executeCommand<T>(
@@ -808,10 +1438,13 @@ export class LeaseTransferService {
   ): Promise<Map<string, RoomRow>> {
     const uniqueSortedIds = [...new Set(roomIds)].sort();
     const result = await client.query<RoomRow>(
-      `SELECT id, property_id, number, room_status, kost_type_id
+      `SELECT rooms.id, rooms.property_id, rooms.number, rooms.room_status, rooms.kost_type_id,
+              rooms.gender_policy AS room_gender_policy,
+              room_buildings.gender_policy AS building_gender_policy
        FROM rooms
-       WHERE id = ANY($1::uuid[])
-       ORDER BY id
+       JOIN room_buildings ON room_buildings.id = rooms.building_id
+       WHERE rooms.id = ANY($1::uuid[])
+       ORDER BY rooms.id
        ${lock}`,
       [uniqueSortedIds],
     );
@@ -852,7 +1485,20 @@ export class LeaseTransferService {
 
   private async lockResident(client: PoolClient, residentId: string): Promise<ResidentRow> {
     const result = await client.query<ResidentRow>(
-      `SELECT id, property_id, full_name, resident_status FROM residents WHERE id = $1 FOR UPDATE`,
+      `SELECT id, property_id, full_name, resident_status, gender
+       FROM residents WHERE id = $1 FOR UPDATE`,
+      [residentId],
+    );
+    if (!result.rows[0]) {
+      throw new NotFoundException({ code: 'RESIDENT_NOT_FOUND', message: 'Resident not found' });
+    }
+    return result.rows[0];
+  }
+
+  private async readResident(client: PoolClient, residentId: string): Promise<ResidentRow> {
+    const result = await client.query<ResidentRow>(
+      `SELECT id, property_id, full_name, resident_status, gender
+       FROM residents WHERE id = $1 FOR SHARE`,
       [residentId],
     );
     if (!result.rows[0]) {
@@ -1161,8 +1807,14 @@ export class LeaseTransferService {
     client: PoolClient,
     propertyId: string,
     leaseId: string,
-    eventType: 'transferred_out' | 'transferred_in' | 'invoice_generated',
-    actorUserId: string,
+    eventType:
+      | 'transferred_out'
+      | 'transferred_in'
+      | 'invoice_generated'
+      | 'transfer_scheduled'
+      | 'transfer_cancelled'
+      | 'transfer_failed',
+    actorUserId: string | null,
     eventDate: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
@@ -1291,20 +1943,23 @@ export class LeaseTransferService {
     }
   }
 
-  private assertTopUp(dto: TransferLeaseDto, requiredTopUp: number): void {
-    if (requiredTopUp === 0 && dto.top_up) {
+  private assertTopUpAmount(
+    topUp: { amount: number; payment: DepositPaymentDto } | undefined,
+    requiredTopUp: number,
+  ): void {
+    if (requiredTopUp === 0 && topUp) {
       throw new UnprocessableEntityException({
         code: 'TRANSFER_DEPOSIT_TOP_UP_UNEXPECTED',
         message: 'A deposit top-up is not required for this transfer',
       });
     }
-    if (requiredTopUp > 0 && !dto.top_up) {
+    if (requiredTopUp > 0 && !topUp) {
       throw new UnprocessableEntityException({
         code: 'TRANSFER_DEPOSIT_TOP_UP_REQUIRED',
         message: 'Target deposit requires a verified top-up',
       });
     }
-    if (dto.top_up && dto.top_up.amount !== requiredTopUp) {
+    if (topUp && topUp.amount !== requiredTopUp) {
       throw new UnprocessableEntityException({
         code: 'TRANSFER_DEPOSIT_TOP_UP_AMOUNT_INVALID',
         message: 'Deposit top-up must exactly cover the target deposit gap',
@@ -1312,13 +1967,60 @@ export class LeaseTransferService {
     }
   }
 
-  private assertEffectiveDate(value: string, today: string): void {
+  private resolveTransferPath(dto: TransferLeasePreviewDto, today: string): TransferPath {
+    if (dto.transfer_path) return dto.transfer_path;
+    return dto.effective_date === today ? 'same_day_exception' : 'end_period';
+  }
+
+  private assertEffectiveDateForPath(
+    path: TransferPath,
+    value: string,
+    today: string,
+    source: LeaseRow,
+  ): void {
+    if (path === 'same_day_exception') {
+      this.assertSameDayExceptionDate(value, today);
+      return;
+    }
+    this.assertFutureBoundaryDate(value, today, source);
+  }
+
+  private assertSameDayExceptionDate(value: string, today: string): void {
     if (value !== today) {
       throw new UnprocessableEntityException({
         code: 'TRANSFER_EFFECTIVE_DATE_MUST_BE_TODAY',
-        message: 'V1 transfers may only be effective on the current Asia/Jakarta business date',
+        message:
+          'Same-day exception transfers may only be effective on the current Asia/Jakarta business date',
       });
     }
+  }
+
+  /** W07B ruling B2: any strictly future billing-cycle boundary is allowed. */
+  private assertFutureBoundaryDate(value: string, today: string, source: LeaseRow): void {
+    if (value <= today) {
+      throw new UnprocessableEntityException({
+        code: 'TRANSFER_EFFECTIVE_DATE_MUST_BE_FUTURE',
+        message:
+          'Scheduled transfers must take effect on a strictly future billing-period boundary; use the same-day exception path for today',
+      });
+    }
+    if (!this.futureBillingBoundaries(source, today).includes(value)) {
+      throw new UnprocessableEntityException({
+        code: 'TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY',
+        message:
+          'Scheduled transfer effective date must be a future billing-cycle boundary of the source lease',
+      });
+    }
+  }
+
+  private futureBillingBoundaries(source: LeaseRow, today: string): string[] {
+    const boundaries: string[] = [];
+    let cursor = source.next_billing_date;
+    for (let index = 0; index < BOUNDARY_SEARCH_HORIZON; index += 1) {
+      if (cursor > today) boundaries.push(cursor);
+      cursor = nextBillingStart(cursor, source.billing_cycle, source.billing_anchor_day);
+    }
+    return boundaries;
   }
 
   private assertPropertyScope(user: UserAccessContext, propertyId: string): void {
@@ -1329,16 +2031,216 @@ export class LeaseTransferService {
     });
   }
 
+  /** W07B ruling B1: transfer top-ups are admin-only (lease.manage + billing.manage). */
   private assertFinancialActor(user: UserAccessContext): void {
-    if (
-      !user.roles.some((role) => role === 'owner' || role === 'manager') ||
-      !user.permissions.includes('billing.manage')
-    ) {
+    const allowed =
+      user.roles.includes('admin') &&
+      user.permissions.includes('lease.manage') &&
+      user.permissions.includes('billing.manage');
+    if (!allowed) {
       throw new ForbiddenException({
-        code: 'FORBIDDEN',
+        code: 'TRANSFER_FINANCIAL_ACTOR_INVALID',
         message:
-          'Only an owner or manager with billing.manage may perform a financial transfer top-up',
+          'Only an admin with lease.manage and billing.manage may perform a W07B transfer deposit top-up',
       });
+    }
+  }
+
+  /** Mirrors W05 activation gender eligibility: building must match, room may be mixed. */
+  private assertGenderCompatibility(resident: ResidentRow, targetRoom: RoomRow): void {
+    const roomCompatible =
+      targetRoom.room_gender_policy === 'mixed' ||
+      targetRoom.room_gender_policy === resident.gender;
+    const buildingCompatible = targetRoom.building_gender_policy === resident.gender;
+    if (!roomCompatible || !buildingCompatible) {
+      throw new UnprocessableEntityException({
+        code: 'TRANSFER_TARGET_ROOM_GENDER_INCOMPATIBLE',
+        message: 'Target room or building gender policy is incompatible with the resident',
+      });
+    }
+  }
+
+  private transferCloseReason(input: CutoverInput): string {
+    const detail = input.reasonDetail ? ` ${input.reasonDetail}` : '';
+    const exception = input.exceptionReason ? ` | exception: ${input.exceptionReason}` : '';
+    return `[${input.reasonCode}]${detail}${exception}`.slice(0, 500);
+  }
+
+  private transferCommandColumns(): string {
+    return `
+      id, property_id, resident_id, from_lease_id, from_room_id, to_room_id,
+      transfer_path, effective_date::text, reason_code, reason_detail, exception_reason,
+      state, failure_code, cancel_reason, commercial_snapshot, transfer_record_id,
+      executed_late, created_by_user_id, created_at, executed_at, cancelled_at, failed_at`;
+  }
+
+  private safeCommand(command: TransferCommandRow): Record<string, unknown> {
+    const snapshot = command.commercial_snapshot ?? {};
+    return {
+      id: command.id,
+      property_id: command.property_id,
+      resident_id: command.resident_id,
+      from_lease_id: command.from_lease_id,
+      from_room_id: command.from_room_id,
+      to_room_id: command.to_room_id,
+      transfer_path: command.transfer_path,
+      effective_date: command.effective_date,
+      reason_code: command.reason_code,
+      reason_detail: command.reason_detail,
+      exception_reason: command.exception_reason,
+      state: command.state,
+      failure_code: command.failure_code,
+      cancel_reason: command.cancel_reason,
+      transfer_record_id: command.transfer_record_id,
+      executed_late: command.executed_late,
+      source_end_date: 'source_end_date' in snapshot ? (snapshot.source_end_date ?? null) : null,
+      created_by_user_id: command.created_by_user_id,
+      created_at: command.created_at,
+      executed_at: command.executed_at,
+      cancelled_at: command.cancelled_at,
+      failed_at: command.failed_at,
+    };
+  }
+
+  private async lockTransferCommand(
+    client: PoolClient,
+    commandId: string,
+  ): Promise<TransferCommandRow> {
+    const result = await client.query<TransferCommandRow>(
+      `SELECT ${this.transferCommandColumns()}
+       FROM lease_transfer_commands
+       WHERE id = $1
+       FOR UPDATE`,
+      [commandId],
+    );
+    if (!result.rows[0]) {
+      throw new NotFoundException({
+        code: 'TRANSFER_COMMAND_NOT_FOUND',
+        message: 'Transfer command not found',
+      });
+    }
+    return result.rows[0];
+  }
+
+  private async buildSchedulerActor(
+    client: PoolClient,
+    userId: string | null,
+    propertyId: string,
+  ): Promise<UserAccessContext> {
+    if (!userId) {
+      throw new ConflictException({
+        code: 'TRANSFER_COMMAND_ACTOR_INVALID',
+        message: 'Scheduled transfer command has no creating user',
+      });
+    }
+    const result = await client.query<{
+      id: string;
+      email: string | null;
+      phone: string | null;
+      display_name: string;
+      user_status: string;
+    }>(`SELECT id, email, phone, display_name, user_status FROM users WHERE id = $1`, [userId]);
+    const row = result.rows[0];
+    if (!row || row.user_status !== 'active') {
+      throw new ConflictException({
+        code: 'TRANSFER_COMMAND_ACTOR_INVALID',
+        message: 'Scheduled transfer command creator is no longer an active user',
+      });
+    }
+    return {
+      id: row.id,
+      email: row.email,
+      phone: row.phone,
+      displayName: row.display_name,
+      roles: ['admin'],
+      permissions: ['lease.manage', 'billing.manage'],
+      propertyIds: [propertyId],
+      sessionId: 'system:w07b-transfer-scheduler',
+    };
+  }
+
+  private extractFailureCode(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      const code =
+        typeof response === 'object' && response !== null
+          ? (response as { code?: unknown }).code
+          : undefined;
+      if (typeof code === 'string' && code.length > 0) return code;
+    }
+    return 'TRANSFER_EXECUTION_FAILED';
+  }
+
+  /** Marks a scheduled command failed (terminal). Runs in its own transaction. */
+  private async markCommandFailed(
+    commandId: string,
+    failureCode: string,
+    error: unknown,
+    runId: string,
+    lateExecution: boolean,
+  ): Promise<void> {
+    const failureDetail = {
+      message: error instanceof Error ? error.message : String(error),
+      run_id: runId,
+      late_execution: lateExecution,
+    };
+    try {
+      await this.leases.transaction(async (client) => {
+        const updated = await client.query<TransferCommandRow>(
+          `UPDATE lease_transfer_commands
+           SET state = 'failed', failure_code = $2, failure_detail = $3::jsonb, failed_at = now()
+           WHERE id = $1 AND state = 'scheduled'
+           RETURNING ${this.transferCommandColumns()}`,
+          [commandId, failureCode, JSON.stringify(failureDetail)],
+        );
+        const command = updated.rows[0];
+        if (!command) return;
+        const today = await this.jakartaToday(client);
+        await this.insertHistory(
+          client,
+          command.property_id,
+          command.from_lease_id,
+          'transfer_failed',
+          command.created_by_user_id,
+          today,
+          {
+            transfer_command_id: command.id,
+            failure_code: failureCode,
+            late_execution: lateExecution,
+          },
+        );
+        await this.writeAudit(
+          client,
+          command.created_by_user_id as string,
+          command.property_id,
+          'lease.transfer.failed',
+          'lease_transfer_command',
+          command.id,
+          { state: 'scheduled' },
+          { state: 'failed', failure_code: failureCode, failure_detail: failureDetail },
+          { correlationId: runId },
+        );
+        await this.writeOutbox(client, {
+          propertyId: command.property_id,
+          eventKey: `lease.transfer_failed:${command.id}`,
+          eventType: 'lease.transfer_failed',
+          aggregateType: 'lease_transfer_command',
+          aggregateId: command.id,
+          actorUserId: command.created_by_user_id,
+          correlationId: runId,
+          payload: {
+            transfer_command_id: command.id,
+            source_lease_id: command.from_lease_id,
+            target_room_id: command.to_room_id,
+            effective_date: command.effective_date,
+            failure_code: failureCode,
+            late_execution: lateExecution,
+          },
+        });
+      });
+    } catch {
+      // The command stays scheduled if failure bookkeeping itself fails; the
+      // scheduler will pick it up again on the next run.
     }
   }
 

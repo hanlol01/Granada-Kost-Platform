@@ -58,6 +58,20 @@ export class LeaseFeatureService {
     return result.rows.map((row) => row.property_id);
   }
 
+  /** W07B scheduled-transfer execution requires the transfer flag only. */
+  async transferSchedulerEnabledPropertyIds(client?: QueryClient): Promise<string[]> {
+    const queryable: QueryClient = client ?? this.leases;
+    const result = await queryable.query<{ property_id: string }>(
+      `SELECT property_id
+       FROM property_feature_flags
+       WHERE admin_ux_read = true
+         AND lease_write = true
+         AND lease_transfer = true
+       ORDER BY property_id`,
+    );
+    return result.rows.map((row) => row.property_id);
+  }
+
   async isSchedulerEnabled(propertyId: string, client?: QueryClient): Promise<boolean> {
     const flags = await this.readFlags(propertyId, client, Boolean(client));
     return (

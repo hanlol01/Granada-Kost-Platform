@@ -337,4 +337,15 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_reconcile_property_owner_service_coverage' AND tgrelid=to_regclass('public.property_owner_earnings') AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '038_room_transfer_w07b.sql',
+    checksumSha256: '443b95b3d4fa64109436298b2bf0b7fdd222a0728f2076b527919ae184ca8149',
+    sentinels: [
+      "to_regclass('public.lease_transfer_commands') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='rooms_status_check' AND conrelid=to_regclass('public.rooms') AND pg_get_constraintdef(oid) ILIKE '%inspection_required%')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='room_transfer_records' AND column_name='reason_code')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_history_event_type_check' AND conrelid=to_regclass('public.lease_history') AND pg_get_constraintdef(oid) ILIKE '%transfer_scheduled%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='smart_lock_access_grants_revoke_reason_check' AND conrelid=to_regclass('public.smart_lock_access_grants') AND pg_get_constraintdef(oid) ILIKE '%transfer%')",
+    ],
+  },
 ] as const;

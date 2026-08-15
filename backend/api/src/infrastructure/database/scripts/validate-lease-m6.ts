@@ -51,7 +51,7 @@ function actor(id: string, role: 'owner' | 'admin', propertyId: string): UserAcc
     permissions:
       role === 'owner'
         ? ['lease.read', 'lease.manage', 'billing.manage']
-        : ['lease.read', 'lease.manage'],
+        : ['lease.read', 'lease.manage', 'billing.manage'],
     propertyIds: [propertyId],
     sessionId: randomUUID(),
   };
@@ -270,7 +270,9 @@ async function main(): Promise<void> {
     const transferDto = {
       target_room_id: data.rooms[1],
       effective_date: jakartaToday(),
-      reason: 'Synthetic mid-cycle room change',
+      reason_code: 'property_operation' as const,
+      reason_detail: 'Synthetic mid-cycle room change',
+      exception_reason: 'Synthetic same-day validation run',
     };
     const replayKey = `m6-transfer-${randomUUID()}`;
     const transferred = await transfers.transfer(
@@ -353,12 +355,14 @@ async function main(): Promise<void> {
     await expectReject(
       () =>
         transfers.transfer(
-          data.owner,
+          data.admin,
           premiumLeaseId,
           {
             target_room_id: data.rooms[2],
             effective_date: jakartaToday(),
-            reason: 'Invalid synthetic top-up',
+            reason_code: 'commercial_adjustment',
+            reason_detail: 'Invalid synthetic top-up',
+            exception_reason: 'Synthetic same-day validation run',
             top_up: {
               amount: 1,
               payment: { payment_method: 'cash', reference_number: `m6-invalid-${randomUUID()}` },
@@ -380,12 +384,14 @@ async function main(): Promise<void> {
     await expectReject(
       () =>
         transfers.transfer(
-          data.admin,
+          data.owner,
           premiumLeaseId,
           {
             target_room_id: data.rooms[2],
             effective_date: jakartaToday(),
-            reason: 'Admin financial transfer denial',
+            reason_code: 'commercial_adjustment',
+            reason_detail: 'Owner financial transfer denial',
+            exception_reason: 'Synthetic same-day validation run',
             top_up: {
               amount: PREMIUM_DEPOSIT - STANDARD_DEPOSIT,
               payment: { payment_method: 'cash', reference_number: `m6-admin-${randomUUID()}` },
@@ -394,7 +400,7 @@ async function main(): Promise<void> {
           `m6-admin-topup-${randomUUID()}`,
           context(),
         ),
-      'FORBIDDEN',
+      'TRANSFER_FINANCIAL_ACTOR_INVALID',
     );
 
     const concurrentOne = await createLease(
@@ -422,7 +428,9 @@ async function main(): Promise<void> {
         {
           target_room_id: data.rooms[6],
           effective_date: jakartaToday(),
-          reason: 'Concurrent synthetic transfer one',
+          reason_code: 'resident_request',
+          reason_detail: 'Concurrent synthetic transfer one',
+          exception_reason: 'Synthetic same-day validation run',
         },
         `m6-contention-a-${randomUUID()}`,
         context(),
@@ -433,7 +441,9 @@ async function main(): Promise<void> {
         {
           target_room_id: data.rooms[6],
           effective_date: jakartaToday(),
-          reason: 'Concurrent synthetic transfer two',
+          reason_code: 'resident_request',
+          reason_detail: 'Concurrent synthetic transfer two',
+          exception_reason: 'Synthetic same-day validation run',
         },
         `m6-contention-b-${randomUUID()}`,
         context(),

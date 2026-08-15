@@ -460,6 +460,15 @@ export class AdminUxRoomV2Service {
   ) {
     const before = await this.requireRoom(roomId);
     await this.assertCanMutate(user, String(before.property_id));
+    // W07B decision 5: fail closed. Rooms awaiting transfer inspection can only
+    // be resolved through POST /rooms/:roomId/inspection-resolution.
+    if (String(before.room_status) === 'inspection_required') {
+      throw new ConflictException({
+        code: 'ROOM_INSPECTION_LOCKED',
+        message:
+          'Room is awaiting transfer inspection; use POST /rooms/:roomId/inspection-resolution to resolve it',
+      });
+    }
     if (!['maintenance', 'inactive', 'requires_review', 'vacant'].includes(dto.status)) {
       throw new UnprocessableEntityException({
         code: 'ROOM_STATUS_MANAGED_BY_LEASE',

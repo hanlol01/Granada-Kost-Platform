@@ -1,7 +1,8 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { FileResponse } from "@granada-kost/domain";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   BadgeInfo,
   Bell,
@@ -29,6 +30,7 @@ import { FileUploadField } from "@/components/file/FileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
+import { TransferPanel } from "@/components/leases/TransferPanel";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,7 +58,9 @@ import { useResidentBilling } from "@/hooks/useAdminW06Billing";
 import type { ResidentBilling } from "@/lib/admin-w06-billing";
 import { downloadAdminReceiptDocument } from "@/lib/admin-w06-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
+import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
 import { useAuth } from "@/lib/auth";
+import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp-lead";
@@ -511,7 +515,8 @@ function ResidentGuidanceCards({
 
 export function ResidentDetailWorkspace({ residentId }: Props) {
   const { currentPropertyId } = useProperty();
-  const { hasPermission, hasRole } = useAuth();
+  const { user, hasPermission, hasRole } = useAuth();
+  const navigate = useNavigate();
   const detail = useResidentDetail(residentId);
   const tenancy = useResidentTenancy(residentId);
   const billing = useResidentBilling(currentPropertyId, tenancy.data ? residentId : null);
@@ -519,6 +524,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
+  // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
+  const [transferOpen, setTransferOpen] = useState(false);
   const [guidanceFocusId, setGuidanceFocusId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -556,6 +563,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const settlement = billing.data?.contract_settlement ?? null;
   const canManageBilling = hasPermission("billing.manage");
   const canManageTermination = hasRole("admin") && hasPermission("lease.manage");
+  const transferFlagEnabled = isAdminUxLeaseTransferEnabled();
+  const canTransferEntry =
+    transferFlagEnabled &&
+    hasRole("admin") &&
+    hasPermission("lease.manage") &&
+    currentTenancy?.leaseStatus === "active";
   const paymentAllocationLabels =
     billing.data && settlement
       ? contractPaymentAllocationLabels(billing.data.payments, settlement)
@@ -597,6 +610,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               onActivate={() => setConfirmActivation(true)}
             />
           ) : null}
+          {canTransferEntry && currentTenancy ? (
+            <Button
+              variant="info"
+              className="min-h-11"
+              onClick={() => setTransferOpen((open) => !open)}
+            >
+              <ArrowLeftRight className="mr-1 h-4 w-4" /> Transfer kamar
+            </Button>
+          ) : null}
         </div>
       }
     >
@@ -618,6 +640,23 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         billing={billing.data ?? null}
         focusId={guidanceFocusId}
       />
+
+      {transferOpen && currentTenancy?.leaseStatus === "active" ? (
+        <TransferPanel
+          leaseId={currentTenancy.leaseId}
+          leaseStatus="active"
+          canManage={hasRole("admin") && hasPermission("lease.manage")}
+          canFinancial={canRunTransferTopUp({
+            roles: user?.roles ?? [],
+            permissions: user?.permissions ?? [],
+          })}
+          transferFlagEnabled={transferFlagEnabled}
+          onClose={() => setTransferOpen(false)}
+          onOpenLease={(leaseId) =>
+            void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })
+          }
+        />
+      ) : null}
 
       <div className="space-y-5">
         <Card>

@@ -14,6 +14,7 @@ import {
   Length,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -207,12 +208,28 @@ export class DepositPaymentDto {
   notes?: string;
 }
 
+/** W07B standardized transfer reason taxonomy. `other` requires reason_detail. */
+export const TRANSFER_REASON_CODES = [
+  'resident_request',
+  'room_issue',
+  'property_operation',
+  'eligibility_correction',
+  'commercial_adjustment',
+  'other',
+] as const;
+
+export type TransferReasonCode = (typeof TRANSFER_REASON_CODES)[number];
+
 export class TransferLeasePreviewDto {
   @IsUUID('4')
   target_room_id!: string;
 
   @IsDateString()
   effective_date!: string;
+
+  @IsOptional()
+  @IsIn(['end_period', 'same_day_exception'])
+  transfer_path?: 'end_period' | 'same_day_exception';
 }
 
 export class TransferDepositTopUpDto {
@@ -227,15 +244,47 @@ export class TransferDepositTopUpDto {
   payment!: DepositPaymentDto;
 }
 
-export class TransferLeaseDto extends TransferLeasePreviewDto {
+export class TransferReasonFieldsDto {
+  @IsIn(TRANSFER_REASON_CODES)
+  reason_code!: TransferReasonCode;
+
+  @ValidateIf((dto: TransferReasonFieldsDto) => dto.reason_code === 'other')
   @IsString()
   @Length(1, 2000)
-  reason!: string;
+  reason_detail?: string;
+}
+
+/** Normal transfer: persisted as a scheduled command, executed at the boundary. */
+export class ScheduleTransferLeaseDto extends TransferReasonFieldsDto {
+  @IsUUID('4')
+  target_room_id!: string;
+
+  @IsDateString()
+  effective_date!: string;
+}
+
+/** Same-day transfer: distinct Admin-only exception path. */
+export class TransferLeaseDto extends TransferReasonFieldsDto {
+  @IsUUID('4')
+  target_room_id!: string;
+
+  @IsDateString()
+  effective_date!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  exception_reason!: string;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => TransferDepositTopUpDto)
   top_up?: TransferDepositTopUpDto;
+}
+
+export class CancelScheduledTransferDto {
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
 }
 
 export class CollectDepositDto {

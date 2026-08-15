@@ -90,7 +90,7 @@ export class DashboardRepository {
                 count(*) FILTER (WHERE room_status = 'vacant')::integer AS rooms_vacant,
                 count(*) FILTER (WHERE room_status = 'occupied')::integer AS rooms_occupied,
                 count(*) FILTER (
-                  WHERE room_status IN ('maintenance', 'requires_review')
+                  WHERE room_status IN ('maintenance', 'requires_review', 'inspection_required')
                 )::integer AS rooms_maintenance
          FROM rooms
          WHERE $2::boolean AND property_id = $1::uuid

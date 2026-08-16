@@ -20,6 +20,7 @@ import type {
   LeaseResidentOption,
   RenewalCommand,
   RenewalEligibility,
+  CheckoutCommand,
 } from "./admin-ux-lease-types";
 
 export type LeasePageInput = { propertyId: string; limit?: number; offset?: number };
@@ -49,6 +50,31 @@ export type LeaseCloseInput = {
   reason: string;
   damageDeductions?: { amount: number; reason: string }[];
   refund?: { amount?: number; reason?: string };
+};
+
+export type CheckoutNoticeInput = {
+  effectiveDate: string;
+  reason: string;
+  noticeExceptionReason?: string;
+};
+export type CheckoutHandoverInput = {
+  keyAccessConfirmed: boolean;
+  inventoryConfirmed: boolean;
+  parkingConfirmed: boolean;
+  keyAccessFileIds?: string[];
+  inventoryFileIds?: string[];
+  parkingFileIds?: string[];
+  notes?: string;
+};
+export type CheckoutInspectionInput = {
+  roomStatusAfter: "inspection_required" | "maintenance";
+  inspectionFileIds?: string[];
+  notes?: string;
+};
+export type CheckoutCompleteInput = {
+  roomStatusAfter: "inspection_required" | "maintenance";
+  damageDeductions?: { amount: number; reason: string; evidenceFileId: string }[];
+  refundReason?: string;
 };
 
 export type DepositCollectInput = {
@@ -421,6 +447,121 @@ export const adminUxLeaseApi = {
             "/refunds/" +
             encodeURIComponent(refundId) +
             "/waive",
+          { reason: reason.trim() },
+          { idempotencyKey },
+        ),
+      ),
+  },
+  checkout: {
+    list: (leaseId: string) =>
+      data<{ commands: CheckoutCommand[] }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/checkout",
+        ),
+      ),
+    notice: (leaseId: string, input: CheckoutNoticeInput, idempotencyKey: string) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/checkout",
+          {
+            effective_date: input.effectiveDate,
+            reason: input.reason.trim(),
+            notice_exception_reason: text(input.noticeExceptionReason),
+          },
+          { idempotencyKey },
+        ),
+      ),
+    schedule: (leaseId: string, commandId: string, idempotencyKey: string) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/schedule",
+          {},
+          { idempotencyKey },
+        ),
+      ),
+    handover: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutHandoverInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/handover",
+          {
+            key_access_confirmed: input.keyAccessConfirmed,
+            inventory_confirmed: input.inventoryConfirmed,
+            parking_confirmed: input.parkingConfirmed,
+            key_access_file_ids: input.keyAccessFileIds,
+            inventory_file_ids: input.inventoryFileIds,
+            parking_file_ids: input.parkingFileIds,
+            notes: text(input.notes),
+          },
+          { idempotencyKey },
+        ),
+      ),
+    inspection: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutInspectionInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/inspection",
+          {
+            room_status_after: input.roomStatusAfter,
+            inspection_file_ids: input.inspectionFileIds,
+            notes: text(input.notes),
+          },
+          { idempotencyKey },
+        ),
+      ),
+    complete: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutCompleteInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand; refundDueDate: string | null }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/complete",
+          {
+            room_status_after: input.roomStatusAfter,
+            damage_deductions: input.damageDeductions?.map((item) => ({
+              amount: item.amount,
+              reason: item.reason,
+              evidence_file_id: item.evidenceFileId,
+            })),
+            refund_reason: text(input.refundReason),
+          },
+          { idempotencyKey },
+        ),
+      ),
+    cancel: (leaseId: string, commandId: string, reason: string, idempotencyKey: string) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/cancel",
           { reason: reason.trim() },
           { idempotencyKey },
         ),

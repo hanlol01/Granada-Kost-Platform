@@ -808,7 +808,7 @@ test('scheduler onModuleInit stays disabled when the explicit process gate is fa
 
 // -------------------- inspection resolution replay proofs --------------------
 
-type RoomOptions = { roomStatus?: string };
+type RoomOptions = { roomStatus?: string; activeOccupancy?: boolean };
 
 function roomHarness(options: RoomOptions = {}) {
   const events: string[] = [];
@@ -826,6 +826,12 @@ function roomHarness(options: RoomOptions = {}) {
           rows: [{ id: SOURCE_ROOM_ID, property_id: PROPERTY_ID, room_status: roomState.status }],
           rowCount: 1,
         };
+      if (/FROM occupancies WHERE property_id = \$1 AND room_id = \$2/.test(q))
+        return options.activeOccupancy
+          ? { rows: [{ id: 'active-occupancy' }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      if (/SELECT to_regclass\('public\.lease_checkout_commands'\)/.test(q))
+        return { rows: [{ checkout_commands: null }], rowCount: 1 };
       if (/UPDATE rooms SET room_status = \$2/.test(q)) {
         roomState.status = params[1] as string;
         record();
@@ -1005,6 +1011,21 @@ test('inspection resolution fails closed when the room is not awaiting inspectio
       roomContext as never,
     ),
     (error) => errorCode(error) === 'ROOM_INSPECTION_NOT_PENDING',
+  );
+  assert.equal(committedMatching(harness.committed, /UPDATE rooms/).length, 0);
+});
+
+test('inspection resolution cannot make an actively occupied room available', async () => {
+  const harness = roomHarness({ activeOccupancy: true });
+  await assert.rejects(
+    harness.service.resolveRoomInspection(
+      adminRoomActor as never,
+      SOURCE_ROOM_ID,
+      { outcome: 'pass' },
+      roomKey,
+      roomContext as never,
+    ),
+    (error) => errorCode(error) === 'ROOM_ACTIVE_OCCUPANCY_CONFLICT',
   );
   assert.equal(committedMatching(harness.committed, /UPDATE rooms/).length, 0);
 });

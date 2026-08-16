@@ -359,9 +359,25 @@ For each:
 - Scheduler execution needs both separate property and process gates; incomplete
   financial authority is retryable with zero lifecycle mutation, while deterministic
   conflicts are terminal and auditable.
-- Checkout blocks on unpaid balances, unreturned access, incomplete inspection,
-  or missing deposit disposition.
-- Eligible deposit refund due is no later than seven business days.
+- W07D checkout is explicit Admin-only/property-scoped and deny-by-default. It
+  requires a 14-day Jakarta notice or audited exception, normalized keys/access,
+  inventory, parking, and inspection evidence, and one non-terminal command per
+  lease. Handover/inspection records alone never close the lease or occupancy.
+- Only `CompleteCheckout` atomically locks/reconciles checkout, lease, occupancy,
+  room, W06 invoices/installments, append-only deposit ledger, resident vehicles,
+  and parking slots; it emits audit/history/outbox/idempotency evidence, releases
+  the resident's property parking slots without deleting vehicles, and emits only
+  an access-reconciliation task (never a direct Smart Lock command).
+- Checkout invoice offsets have W07D-specific immutable credit evidence and call
+  W06 reconciliation; deposit is never a payment allocation, revenue, owner
+  earning, entitlement, settlement, or payout. W07A termination remains separate.
+- Completion ends the lease/occupancy and yields only `inspection_required` or
+  `maintenance`; the existing inspection-resolution authority alone may make the
+  room vacant. Legacy close/refund mutations fail closed when `lease_checkout` is
+  enabled; anomaly-only occupancy checkout remains untouched.
+- Eligible pending refunds have a derived seven-Jakarta-weekday due date
+  (Saturday/Sunday excluded, no holiday calendar). A late settlement is auditable
+  and permitted; no stale breach boolean is authoritative.
 
 ## 5.7 Billing, Payments, and Deposits
 

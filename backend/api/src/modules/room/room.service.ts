@@ -212,9 +212,11 @@ export class RoomService {
   }
 
   /**
-   * W07B smallest authorized inspection-resolution boundary (lead decision 5).
-   * Pass -> vacant, Fail -> maintenance, matching the documented room
-   * lifecycle. Full W07D inspection/disposition policy is out of scope.
+   * W07B/W07D authorized inspection-resolution boundary. Pass -> vacant,
+   * Fail -> maintenance, but only after the room no longer has an active
+   * physical occupancy. W07D completes its occupancy closure atomically
+   * before it leaves a room in inspection_required; this guard prevents any
+   * direct/manual status path from bypassing that lifecycle boundary.
    *
    * W07B revision 4: the command is property-scoped, transactional,
    * replay-safe, audited, and outbox-backed. Idempotency-Key is mandatory;
@@ -272,6 +274,20 @@ export class RoomService {
         throw new ConflictException({
           code: 'ROOM_INSPECTION_NOT_PENDING',
           message: 'Room is not awaiting transfer inspection',
+        });
+      }
+      const activeOccupancy = await client.query<{ id: string }>(
+        `SELECT id
+         FROM occupancies
+         WHERE property_id = $1 AND room_id = $2 AND occupancy_status = 'active'
+         LIMIT 1
+         FOR SHARE`,
+        [room.property_id, room.id],
+      );
+      if (activeOccupancy.rows[0]) {
+        throw new ConflictException({
+          code: 'ROOM_ACTIVE_OCCUPANCY_CONFLICT',
+          message: 'Room inspection cannot resolve while its occupancy remains active',
         });
       }
       const nextStatus = input.outcome === 'pass' ? 'vacant' : 'maintenance';

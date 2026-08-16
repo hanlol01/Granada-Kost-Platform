@@ -99,6 +99,25 @@ export type LeaseDetailResponse = {
   kostTypeFacilities: { id: string; name: string }[];
 };
 
+export type CheckoutState =
+  | "notice_received"
+  | "scheduled"
+  | "inspection_required"
+  | "settlement_pending"
+  | "completed"
+  | "cancelled";
+
+export type CheckoutCommand = {
+  id: string;
+  propertyId: string;
+  leaseId: string;
+  state: CheckoutState;
+  effectiveDate: string;
+  noticeRecordedDate: string;
+  noticeReason: string;
+  noticeExceptionReason: string | null;
+};
+
 export type LeaseBillingSummary = {
   leaseId: string;
   invoices: LeaseInvoice[];

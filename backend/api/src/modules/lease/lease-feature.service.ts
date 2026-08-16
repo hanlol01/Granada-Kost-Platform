@@ -16,6 +16,7 @@ type FeatureFlagRow = {
   lease_billing_scheduler: boolean;
   lease_renewal: boolean;
   lease_renewal_scheduler: boolean;
+  lease_checkout: boolean;
 };
 
 /**
@@ -44,6 +45,21 @@ export class LeaseFeatureService {
         message: 'Lease transfer is not enabled for this property',
       });
     }
+  }
+
+  async assertCheckoutEnabled(propertyId: string, client?: QueryClient): Promise<void> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    if (!flags.admin_ux_read || !flags.lease_write || !flags.lease_checkout) {
+      throw new ForbiddenException({
+        code: 'LEASE_CHECKOUT_DISABLED',
+        message: 'Lease checkout is not enabled for this property',
+      });
+    }
+  }
+
+  async isCheckoutEnabled(propertyId: string, client?: QueryClient): Promise<boolean> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    return flags.admin_ux_read && flags.lease_write && flags.lease_checkout;
   }
 
   async schedulerEnabledPropertyIds(client?: QueryClient): Promise<string[]> {
@@ -126,7 +142,7 @@ export class LeaseFeatureService {
     const queryable: QueryClient = client ?? this.leases;
     const result = await queryable.query<FeatureFlagRow>(
       `SELECT property_id, admin_ux_read, lease_write, lease_transfer, lease_billing_scheduler,
-              lease_renewal, lease_renewal_scheduler
+              lease_renewal, lease_renewal_scheduler, lease_checkout
        FROM property_feature_flags
        WHERE property_id = $1${lock ? ' FOR SHARE' : ''}`,
       [propertyId],
@@ -140,6 +156,7 @@ export class LeaseFeatureService {
         lease_billing_scheduler: false,
         lease_renewal: false,
         lease_renewal_scheduler: false,
+        lease_checkout: false,
       }
     );
   }

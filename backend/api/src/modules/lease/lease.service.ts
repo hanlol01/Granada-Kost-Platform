@@ -910,6 +910,7 @@ export class LeaseService {
     this.assertFinancialActor(user);
     const scope = await this.lookupLeaseScope(leaseId);
     this.assertPropertyScope(user, scope.property_id);
+    await this.assertLegacyCheckoutEnabled(scope.property_id);
     return this.executeCommand(
       user,
       scope.property_id,
@@ -1160,6 +1161,7 @@ export class LeaseService {
     this.assertFinancialActor(user);
     const scope = await this.lookupLeaseScope(leaseId);
     this.assertPropertyScope(user, scope.property_id);
+    await this.assertLegacyCheckoutEnabled(scope.property_id);
     return this.executeRefundSettlement(
       user,
       scope.property_id,
@@ -1183,6 +1185,7 @@ export class LeaseService {
     this.assertFinancialActor(user);
     const scope = await this.lookupLeaseScope(leaseId);
     this.assertPropertyScope(user, scope.property_id);
+    await this.assertLegacyCheckoutEnabled(scope.property_id);
     return this.executeRefundSettlement(
       user,
       scope.property_id,
@@ -2041,6 +2044,15 @@ export class LeaseService {
       .filter(Boolean)
       .map((part) => `${part[0] ?? ''}${'*'.repeat(Math.max(0, part.length - 1))}`)
       .join(' ');
+  }
+
+  private async assertLegacyCheckoutEnabled(propertyId: string): Promise<void> {
+    if (await this.features.isCheckoutEnabled(propertyId)) {
+      throw new ConflictException({
+        code: 'LEGACY_CHECKOUT_DISABLED',
+        message: 'Legacy close and refund mutations are disabled while W07D checkout is enabled',
+      });
+    }
   }
 
   private assertPropertyScope(user: UserAccessContext, propertyId: string): void {

@@ -358,4 +358,16 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.uq_lease_renewal_commands_open_predecessor') IS NOT NULL",
     ],
   },
+  {
+    version: '040_lease_checkout_w07d.sql',
+    checksumSha256: '455389048a4511d942fd075164919236353bf622127e33a8c140f5ecd92d51cc',
+    sentinels: [
+      "to_regclass('public.lease_checkout_commands') IS NOT NULL",
+      "to_regclass('public.lease_checkout_evidence') IS NOT NULL",
+      "to_regclass('public.lease_checkout_invoice_credits') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_deposit_transactions' AND column_name='refund_due_date')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_feature_flags' AND column_name='lease_checkout')",
+      "to_regclass('public.uq_lease_checkout_commands_open_lease') IS NOT NULL",
+    ],
+  },
 ] as const;

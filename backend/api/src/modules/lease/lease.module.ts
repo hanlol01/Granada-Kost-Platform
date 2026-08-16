@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { LeaseCheckoutController } from './lease-checkout.controller';
+import { LeaseCheckoutService } from './lease-checkout.service';
 import { LeaseController } from './lease.controller';
 import { LeaseRepository } from './lease.repository';
 import { LeaseBillingScheduler } from './lease-billing.scheduler';
@@ -13,11 +15,12 @@ import { LeaseTransferService } from './lease-transfer.service';
 
 @Module({
   imports: [RbacModule, BillingModule],
-  controllers: [LeaseController],
+  controllers: [LeaseController, LeaseCheckoutController],
   providers: [
     LeaseRepository,
     LeaseFeatureService,
     LeaseService,
+    LeaseCheckoutService,
     LeaseTransferService,
     LeaseRenewalService,
     LeaseBillingScheduler,
@@ -26,6 +29,7 @@ import { LeaseTransferService } from './lease-transfer.service';
   ],
   exports: [
     LeaseService,
+    LeaseCheckoutService,
     LeaseTransferService,
     LeaseRenewalService,
     LeaseBillingScheduler,

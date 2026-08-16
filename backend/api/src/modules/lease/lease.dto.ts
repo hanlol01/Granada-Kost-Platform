@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsDefined,
   IsEmail,
@@ -395,6 +396,102 @@ export class CloseLeaseDto {
   @ValidateNested()
   @Type(() => CloseRefundDto)
   refund?: CloseRefundDto;
+}
+
+export class CreateLeaseCheckoutNoticeDto {
+  @IsDateString()
+  effective_date!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  notice_exception_reason?: string;
+}
+
+export class RecordLeaseCheckoutHandoverDto {
+  @IsBoolean()
+  key_access_confirmed!: boolean;
+
+  @IsBoolean()
+  inventory_confirmed!: boolean;
+
+  @IsBoolean()
+  parking_confirmed!: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  key_access_file_ids?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  inventory_file_ids?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  parking_file_ids?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  notes?: string;
+}
+
+export class RecordLeaseCheckoutInspectionDto {
+  @IsIn(['inspection_required', 'maintenance'])
+  room_status_after!: 'inspection_required' | 'maintenance';
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  inspection_file_ids?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  notes?: string;
+}
+
+export class CheckoutDamageDeductionDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
+
+  @IsUUID('4')
+  evidence_file_id!: string;
+}
+
+export class CompleteLeaseCheckoutDto {
+  @IsIn(['inspection_required', 'maintenance'])
+  room_status_after!: 'inspection_required' | 'maintenance';
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CheckoutDamageDeductionDto)
+  damage_deductions?: CheckoutDamageDeductionDto[];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  refund_reason?: string;
+}
+
+export class CancelLeaseCheckoutDto {
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
 }
 
 export class SettleRefundDto {

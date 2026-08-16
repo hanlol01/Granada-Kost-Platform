@@ -22,6 +22,7 @@ import {
   TransferPanel,
 } from "@/components/leases/TransferPanel";
 import { RenewalPanel } from "@/components/leases/RenewalPanel";
+import { CheckoutPanel } from "@/components/leases/CheckoutPanel";
 import { PAYMENT_METHOD_LABEL } from "@/components/leases/transfer-shared";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +52,6 @@ import { useM6Lease, useM6LeaseBillingSummary, useM6LeaseMutation } from "@/hook
 import {
   adminUxLeaseApi,
   type DepositCollectInput,
-  type LeaseCloseInput,
   type RefundSettlementInput,
 } from "@/lib/admin-ux-lease-api";
 import {
@@ -61,7 +61,6 @@ import {
   canSettleLeaseRefund,
   hasRequiredLeasePaymentReference,
   isFinancialLeaseActor,
-  jakartaToday,
   leaseHistoryLabel,
   type LeaseDetailRouteSearch,
 } from "@/lib/admin-ux-lease-helpers";
@@ -152,7 +151,7 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
                 <CalendarCheck2 className="mr-2 h-4 w-4" /> Perpanjang
               </Button>
             ) : null}
-            {canFinancial ? (
+            {isAdmin && canManage ? (
               <Button onClick={() => onSearchChange({ panel: "checkout" })}>
                 <CalendarCheck2 className="mr-2 h-4 w-4" /> Checkout
               </Button>
@@ -184,12 +183,12 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
             onOpenLease={onOpenLease}
           />
         ) : search.panel === "checkout" ? (
-          canFinancial ? (
+          isAdmin && canManage ? (
             <CheckoutPanel leaseId={leaseId} onClose={() => onSearchChange({ panel: "detail" })} />
           ) : (
             <ActionDeniedPanel
-              title="Checkout memerlukan otorisasi finansial"
-              description="Aksi checkout, refund, dan potongan deposit hanya tersedia untuk owner atau manager dengan billing.manage."
+              title="Checkout memerlukan Admin"
+              description="Checkout W07D hanya tersedia untuk Admin dalam properti dengan lease.manage."
             />
           )
         ) : (
@@ -630,151 +629,6 @@ function HistoryTab({
           </div>
         ))}
       </CardContent>
-    </Card>
-  );
-}
-
-function CheckoutPanel({ leaseId, onClose }: { leaseId: string; onClose: () => void }) {
-  const [roomStatusAfter, setRoomStatusAfter] = useState<"vacant" | "maintenance">("vacant");
-  const [reason, setReason] = useState("");
-  const [damageAmount, setDamageAmount] = useState(0);
-  const [damageReason, setDamageReason] = useState("");
-  const [refundAmount, setRefundAmount] = useState(0);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const intentKey = useRef<string | null>(null);
-  const close = useM6LeaseMutation(
-    "lease-close",
-    "Checkout penyewaan berhasil diproses",
-    (_propertyId, input: LeaseCloseInput & { idempotencyKey: string }) =>
-      adminUxLeaseApi.leases.close(leaseId, input, input.idempotencyKey),
-  );
-  const today = useMemo(() => jakartaToday(), []);
-  const valid = Boolean(reason.trim()) && (damageAmount === 0 || Boolean(damageReason.trim()));
-  const submit = async () => {
-    if (!valid) return;
-    const idempotencyKey = intentKey.current ?? newIdempotencyKey();
-    intentKey.current = idempotencyKey;
-    try {
-      await close.mutateAsync({
-        endDate: today,
-        roomStatusAfter,
-        reason: reason.trim(),
-        damageDeductions:
-          damageAmount > 0 ? [{ amount: damageAmount, reason: damageReason.trim() }] : undefined,
-        refund: refundAmount > 0 ? { amount: refundAmount } : undefined,
-        idempotencyKey,
-      });
-      intentKey.current = null;
-      setConfirmOpen(false);
-      onClose();
-    } catch {
-      /* safe toast and key retained */
-    }
-  };
-  return (
-    <Card className="border-slate-800 bg-slate-900/80">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-100">
-          <CalendarCheck2 className="h-5 w-5 text-blue-300" /> Checkout penyewaan
-        </CardTitle>
-        <p className="text-sm text-slate-400">
-          Outstanding, deduction, dan refund final dihitung server. Invoice tidak ditandai lunas
-          oleh form ini.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tanggal checkout">
-            <Input value={today} readOnly aria-readonly="true" />
-          </Field>
-          <Field label="Status kamar setelah checkout" required>
-            <Select
-              value={roomStatusAfter}
-              onValueChange={(value) => {
-                setRoomStatusAfter(value as "vacant" | "maintenance");
-                intentKey.current = null;
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vacant">Kosong</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-        <Field label="Alasan checkout" required>
-          <Textarea
-            value={reason}
-            maxLength={2000}
-            rows={3}
-            onChange={(event) => {
-              setReason(event.target.value);
-              intentKey.current = null;
-            }}
-            placeholder="Alasan checkout"
-          />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Potongan kerusakan (opsional)">
-            <CurrencyInput
-              value={damageAmount}
-              onValueChange={(value) => {
-                setDamageAmount(value);
-                intentKey.current = null;
-              }}
-            />
-          </Field>
-          <Field label="Alasan potongan">
-            <Input
-              value={damageReason}
-              maxLength={2000}
-              disabled={damageAmount === 0}
-              onChange={(event) => {
-                setDamageReason(event.target.value);
-                intentKey.current = null;
-              }}
-            />
-          </Field>
-        </div>
-        <Field label="Permintaan nominal refund (opsional)">
-          <CurrencyInput
-            value={refundAmount}
-            onValueChange={(value) => {
-              setRefundAmount(value);
-              intentKey.current = null;
-            }}
-          />
-          <p className="text-xs text-slate-500">
-            Kosongkan sebagai Rp0 agar server menghitung sisa deposit. Refund dapat berstatus
-            pending.
-          </p>
-        </Field>
-        <div className="flex gap-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={close.isPending}>
-            Batal
-          </Button>
-          <Button
-            type="button"
-            disabled={!valid || close.isPending}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {close.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Tinjau
-            Checkout
-          </Button>
-        </div>
-      </CardContent>
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Konfirmasi checkout"
-        description="Lease akan ditutup hari ini. Potongan dan refund final akan dihitung server."
-        confirmLabel="Checkout Lease"
-        pending={close.isPending}
-        onConfirm={submit}
-      />
     </Card>
   );
 }

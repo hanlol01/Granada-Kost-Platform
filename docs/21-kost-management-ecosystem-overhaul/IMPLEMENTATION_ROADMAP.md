@@ -586,19 +586,32 @@ Requirements:
 
 Scope:
 
-- minimum 14-day notice or recorded exception;
-- balances, keys/access, inspection, inventory, damages;
-- deposit refund/deduction;
-- room vacant/maintenance result;
-- final audit and resident account post-lease policy.
+- explicit Admin-only, property-scoped `lease_checkout_commands` authority with a
+  partial unique open-command guard, normalized handover/inspection evidence, and
+  14-day Jakarta notice or auditable exception;
+- handover and inspection evidence are recorded before completion and never end a
+  lease/occupancy on their own;
+- `CompleteCheckout` locks checkout, lease, occupancy, room, invoices, deposit
+  ledger, resident vehicles, and parking slots; it atomically reconciles invoice
+  credit, releases resident parking slots, closes occupancy/lease, and produces
+  audit/history/outbox/idempotency evidence;
+- general checkout invoice offsets use W07D-specific immutable evidence plus W06
+  invoice/installment reconciliation; deposit remains an append-only liability,
+  never a payment allocation, revenue, owner earning, or payout;
+- eligible pending refund receives a seven-Jakarta-weekday due date (Saturday and
+  Sunday excluded; no holiday calendar); late settlement remains allowed;
+- room ends `inspection_required` or `maintenance`; only the existing room
+  inspection resolution can subsequently make it vacant;
+- legacy lease close/refund writes fail closed when `lease_checkout` is enabled;
+  W07A termination and anomaly-only occupancy checkout remain separate.
 
 Exit evidence:
 
-- transfer concurrency and rollback;
-- old/new room counters and statuses;
-- renewal boundary dates;
-- checkout blocks on unresolved requirements;
-- deposit refund due within seven business days when eligible.
+- notice/exception, state, RBAC/property-scope, evidence, idempotency, rollback,
+  parking-release, and no-direct-vacancy contracts;
+- W06 invoice reconciliation and W07D-only deposit-credit evidence;
+- first-apply/replay/rollback proof on disposable PostgreSQL;
+- eligible deposit refund due within seven business days when eligible.
 
 ## KMO-W08 — Reminder and Notification Operations
 

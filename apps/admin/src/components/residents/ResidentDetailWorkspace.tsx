@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   WalletCards,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/W06PaymentsWorkspace";
@@ -612,11 +613,16 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           ) : null}
           {canTransferEntry && currentTenancy ? (
             <Button
-              variant="info"
+              variant={transferOpen ? "destructive" : "info"}
               className="min-h-11"
               onClick={() => setTransferOpen((open) => !open)}
             >
-              <ArrowLeftRight className="mr-1 h-4 w-4" /> Transfer kamar
+              {transferOpen ? (
+                <XCircle className="mr-1 h-4 w-4" />
+              ) : (
+                <ArrowLeftRight className="mr-1 h-4 w-4" />
+              )}
+              {transferOpen ? "Batal Pindah Kamar" : "Pindah Kamar"}
             </Button>
           ) : null}
         </div>
@@ -651,6 +657,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             permissions: user?.permissions ?? [],
           })}
           transferFlagEnabled={transferFlagEnabled}
+          residentGender={resident.gender ?? undefined}
           onClose={() => setTransferOpen(false)}
           onOpenLease={(leaseId) =>
             void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })

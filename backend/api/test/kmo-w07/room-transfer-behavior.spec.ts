@@ -470,6 +470,25 @@ const adminActor = {
 };
 const idempotencyKey = 'w07b-transfer-behaviour-0001';
 
+test('preview recommends the first valid billing boundary when no date is supplied', async () => {
+  const harness = transferHarness({
+    today: '2026-09-10',
+    nextBillingDate: '2026-09-10',
+  });
+
+  const response = await harness.service.preview(adminActor as never, LEASE_ID, {
+    target_room_id: TARGET_ROOM_ID,
+    transfer_path: 'end_period',
+  });
+  const preview = response.data as {
+    effective_date: string;
+    valid_effective_dates: string[];
+  };
+
+  assert.equal(preview.effective_date, '2026-10-10');
+  assert.equal(preview.valid_effective_dates[0], '2026-10-10');
+});
+
 test('a due scheduled command executes at its boundary and inherits the contractual end date', async () => {
   const harness = transferHarness({
     commandEffectiveDate: '2026-09-10',

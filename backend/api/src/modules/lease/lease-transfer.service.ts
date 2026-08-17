@@ -207,7 +207,18 @@ export class LeaseTransferService {
         });
       }
       const transferPath = this.resolveTransferPath(dto, today);
-      this.assertEffectiveDateForPath(transferPath, dto.effective_date, today, source);
+      const validEffectiveDates =
+        transferPath === 'end_period'
+          ? this.futureBillingBoundaries(source, today).slice(0, 6)
+          : [today];
+      const effectiveDate = dto.effective_date ?? validEffectiveDates[0];
+      if (!effectiveDate) {
+        throw new UnprocessableEntityException({
+          code: 'TRANSFER_EFFECTIVE_DATE_UNAVAILABLE',
+          message: 'No valid transfer date is available for this lease',
+        });
+      }
+      this.assertEffectiveDateForPath(transferPath, effectiveDate, today, source);
 
       const rooms = await this.lockRooms(client, [source.room_id, dto.target_room_id], 'FOR SHARE');
       const sourceRoom = rooms.get(source.room_id);
@@ -245,7 +256,7 @@ export class LeaseTransferService {
       return {
         data: {
           transfer_path: transferPath,
-          effective_date: dto.effective_date,
+          effective_date: effectiveDate,
           source_lease: this.safeLease(source, sourceRoom.number, source.snapshot_kost_type_name),
           target_room: {
             id: targetRoom.id,
@@ -270,10 +281,7 @@ export class LeaseTransferService {
             // The successor lease inherits the source contractual end date.
             contractual_end_date: source.end_date,
           },
-          valid_effective_dates:
-            transferPath === 'end_period'
-              ? this.futureBillingBoundaries(source, today).slice(0, 6)
-              : [today],
+          valid_effective_dates: validEffectiveDates,
           old_outstanding_amount: await this.outstandingAmount(
             client,
             invoices.map((invoice) => invoice.id),

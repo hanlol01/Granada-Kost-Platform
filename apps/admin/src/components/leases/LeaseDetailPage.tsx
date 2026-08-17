@@ -11,6 +11,7 @@ import {
   Loader2,
   ReceiptText,
   WalletCards,
+  XCircle,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { AppShell } from "@/components/layout/app-shell";
@@ -127,6 +128,7 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
     leaseStatus: data.lease.leaseStatus,
     transferFlagEnabled,
   });
+  const transferPanelOpen = search.panel === "transfer";
 
   return (
     <AppShell
@@ -142,8 +144,16 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
         active ? (
           <div className="flex flex-wrap gap-2">
             {canTransfer ? (
-              <Button variant="info" onClick={() => onSearchChange({ panel: "transfer" })}>
-                <ArrowLeftRight className="mr-2 h-4 w-4" /> Transfer
+              <Button
+                variant={transferPanelOpen ? "destructive" : "info"}
+                onClick={() => onSearchChange({ panel: transferPanelOpen ? "detail" : "transfer" })}
+              >
+                {transferPanelOpen ? (
+                  <XCircle className="mr-2 h-4 w-4" />
+                ) : (
+                  <ArrowLeftRight className="mr-2 h-4 w-4" />
+                )}
+                {transferPanelOpen ? "Batal Pindah Kamar" : "Pindah Kamar"}
               </Button>
             ) : null}
             {isAdmin && canManage && renewalFlagEnabled ? (

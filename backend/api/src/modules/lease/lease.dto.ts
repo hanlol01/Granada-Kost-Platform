@@ -225,8 +225,9 @@ export class TransferLeasePreviewDto {
   @IsUUID('4')
   target_room_id!: string;
 
+  @IsOptional()
   @IsDateString()
-  effective_date!: string;
+  effective_date?: string;
 
   @IsOptional()
   @IsIn(['end_period', 'same_day_exception'])

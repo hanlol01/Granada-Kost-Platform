@@ -12,6 +12,11 @@ import {
   TRANSFER_REASON_LABEL,
 } from "./admin-ux-lease-helpers";
 import { TRANSFER_REASON_CODES } from "./admin-ux-lease-types";
+import {
+  genderPolicyLabel,
+  isTransferRoomGenderCompatible,
+  normalizeRoomSearch,
+} from "../components/leases/transfer-shared";
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(path, import.meta.url), "utf8");
@@ -34,6 +39,15 @@ test("W07B reason taxonomy is the fixed six-value set with labels", () => {
     assert.ok(TRANSFER_REASON_LABEL[code].length > 0);
   }
   assert.equal(TRANSFER_COMMAND_STATE_LABEL.scheduled, "Terjadwal");
+});
+
+test("W07B room picker normalizes room codes and keeps gender-compatible rooms", () => {
+  assert.equal(normalizeRoomSearch("AK-18-02"), "ak1802");
+  assert.equal(normalizeRoomSearch(" ak 18 02 "), "ak1802");
+  assert.equal(isTransferRoomGenderCompatible("female", "female"), true);
+  assert.equal(isTransferRoomGenderCompatible("mixed", "female"), true);
+  assert.equal(isTransferRoomGenderCompatible("male", "female"), false);
+  assert.equal(genderPolicyLabel("female"), "Putri");
 });
 
 test("W07B transfer entry is admin-only and top-up needs lease.manage plus billing.manage", () => {
@@ -183,6 +197,7 @@ test("W07B API client exposes schedule/list/cancel and sends the reason taxonomy
   assert.match(api, /\/cancel/);
   assert.match(api, /reason_code: input\.reasonCode/);
   assert.match(api, /exception_reason: input\.exceptionReason\.trim\(\)/);
+  assert.match(api, /effectiveDate\?: string/);
   // The free-form reason field from M6 is gone from transfer bodies
   // (checkout bodies keep their own reason by design).
   const transferBodyRegion = api.slice(
@@ -200,21 +215,34 @@ test("W07B API client exposes schedule/list/cancel and sends the reason taxonomy
 
 test("W07B TransferPanel keeps one authority for both paths and one entry per surface", async () => {
   const panel = await source("../components/leases/TransferPanel.tsx");
+  assert.match(panel, /Pindah Kamar/);
   assert.match(panel, /Batas periode tagihan/);
   assert.match(panel, /Pengecualian hari yang sama/);
+  assert.match(panel, /HeroUiDatePicker/);
+  assert.match(panel, /CommandInput/);
+  assert.match(panel, /Tinjau Perpindahan/);
+  assert.match(panel, /Jadwalkan Pindah Kamar/);
+  assert.match(panel, /Tanggal pindah yang direkomendasikan/);
+  assert.match(panel, /TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY/);
+  assert.match(
+    panel,
+    /Tanggal alternatif hanya dapat dipilih dari daftar tanggal yang disahkan sistem/,
+  );
   assert.match(panel, /TRANSFER_REASON_LABEL/);
   assert.match(panel, /Alasan pengecualian hari yang sama/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.schedule/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.cancel/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.command/);
   assert.match(panel, /useM6TransferCommands/);
-  assert.match(panel, /inspection_required/);
   // Revision 3: the scheduled path refuses a deposit top-up up front.
-  assert.match(panel, /Transfer terjadwal tidak dapat menagih top-up deposit/);
+  assert.match(panel, /Security deposit kamar tujuan belum terpenuhi/);
   assert.match(panel, /topUpRequiredAmount > 0/);
   // Revision 2: the surviving contractual end date is shown to the operator.
-  assert.match(panel, /Batas akhir kontrak \(diwariskan\)/);
+  assert.match(panel, /Sewa tetap berakhir/);
   assert.match(panel, /contractualEndDate/);
+  assert.doesNotMatch(panel, /Preview berasal dari server/);
+  assert.doesNotMatch(panel, /interval half-open/);
+  assert.doesNotMatch(panel, /inspection_required/);
   // Scheduled path never sends a top-up from the browser.
   const submitSchedule = panel.slice(
     panel.indexOf("const submitSchedule"),
@@ -228,12 +256,14 @@ test("W07B TransferPanel keeps one authority for both paths and one entry per su
   assert.match(leaseDetail, /canRunTransferTopUp\(/);
   assert.doesNotMatch(leaseDetail, /function TransferPanel\(/);
   assert.doesNotMatch(leaseDetail, /adminUxLeaseApi\.transfer\.command/);
+  assert.match(leaseDetail, /Batal Pindah Kamar/);
 
   const resident = await source("../components/residents/ResidentDetailWorkspace.tsx");
   assert.match(resident, /import \{ TransferPanel \} from "@\/components\/leases\/TransferPanel"/);
   assert.match(resident, /canManage=\{hasRole\("admin"\) && hasPermission\("lease\.manage"\)\}/);
   assert.match(resident, /canRunTransferTopUp\(/);
   assert.match(resident, /currentTenancy\.leaseId/);
+  assert.match(resident, /Batal Pindah Kamar/);
   assert.doesNotMatch(resident, /adminUxLeaseApi\.transfer\./);
 });
 

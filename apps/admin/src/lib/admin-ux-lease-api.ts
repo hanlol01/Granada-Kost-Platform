@@ -86,7 +86,7 @@ export type DepositCollectInput = {
 
 export type TransferPreviewInput = {
   targetRoomId: string;
-  effectiveDate: string;
+  effectiveDate?: string;
   transferPath?: TransferPath;
 };
 
@@ -96,8 +96,9 @@ export type TransferReasonFields = {
   reasonDetail?: string;
 };
 
-export type TransferInput = TransferPreviewInput &
+export type TransferInput = Omit<TransferPreviewInput, "effectiveDate"> &
   TransferReasonFields & {
+    effectiveDate: string;
     exceptionReason: string;
     topUp?: {
       amount: number;
@@ -106,8 +107,8 @@ export type TransferInput = TransferPreviewInput &
   };
 
 /** W07B normal path: no top-up and no immediate lifecycle change. */
-export type TransferScheduleInput = Omit<TransferPreviewInput, "transferPath"> &
-  TransferReasonFields;
+export type TransferScheduleInput = Omit<TransferPreviewInput, "effectiveDate" | "transferPath"> &
+  TransferReasonFields & { effectiveDate: string };
 
 export type RefundSettlementInput = {
   paymentMethod: PaymentMethod;

@@ -133,7 +133,7 @@ function ReminderHistoryPage() {
           variant="outline"
           className="border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
         >
-          <History className="mr-1 h-3.5 w-3.5" /> W08C
+          <History className="mr-1 h-3.5 w-3.5" /> Riwayat tersimpan
         </Badge>
       }
     >

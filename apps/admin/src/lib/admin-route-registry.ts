@@ -3,6 +3,7 @@ import {
   BarChart3,
   BedDouble,
   Bell,
+  BellRing,
   Bike,
   Building2,
   CalendarCheck,
@@ -48,6 +49,8 @@ export type AdminRouteId =
   | "complaints"
   | "reports"
   | "notifications"
+  | "reminder-workspace"
+  | "reminder-history"
   | "settings"
   | "smart-lock"
   | "access-history"
@@ -415,6 +418,27 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       readCapabilities: ["notification.manage"],
     },
     navigation: { sidebar: true, mobilePriority: 100 },
+  },
+  {
+    id: "reminder-workspace",
+    to: "/reminders/h-30",
+    label: "Pusat Pengingat",
+    section: "lainnya",
+    order: 145,
+    icon: BellRing,
+    access: { roles: OWNER_MANAGER_ADMIN, readCapabilities: ["billing.read"] },
+    navigation: { sidebar: true, mobilePriority: 105 },
+  },
+  {
+    id: "reminder-history",
+    to: "/reminders/history",
+    label: "Riwayat Pengingat",
+    parentId: "reminder-workspace",
+    section: "lainnya",
+    order: 146,
+    icon: History,
+    access: { roles: OWNER_MANAGER_ADMIN, readCapabilities: ["billing.read"] },
+    navigation: { sidebar: false },
   },
   {
     id: "settings",

@@ -619,6 +619,8 @@ Class: Program Ship; split into `KMO-W08A`–`KMO-W08D`
 
 ### KMO-W08A — Templates and Composer
 
+Status: `AUTOMATED_VERIFIED`; `RUNTIME_DEFERRED`.
+
 Scope:
 
 - versioned templates with protected variables;
@@ -628,7 +630,15 @@ Scope:
 - secure invoice links;
 - WhatsApp `wa.me` handoff and email disabled state.
 
+Implementation boundary: the composer is Admin-only and property-scoped. It
+uses server-resolved invoice/resident values, opaque seven-day invoice share
+links (token hash only), a rate-limited public document route, audit/outbox
+evidence, and no external delivery claim. A preview or WhatsApp handoff is not
+an immutable delivery attempt; that evidence belongs to W08C.
+
 ### KMO-W08B — Reminder Work Workspace
+
+Status: `AUTOMATED_VERIFIED`; `RUNTIME_DEFERRED`.
 
 Scope:
 
@@ -640,7 +650,15 @@ Scope:
 - derived eligibility and badge count;
 - work disappears when underlying condition resolves.
 
+Implementation evidence: the property-scoped Admin workspace is served by
+`GET /admin/reminders/workspace` and exposed at `/reminders/h-30`. It derives
+H-60 (31–60 days), H-30 (15–30 days), and H-14 (0–14 days) groups from the
+authoritative Jakarta date, combines the W06 current-month billing worklist,
+and exposes one badge count. Reminder delivery history remains W08C scope.
+
 ### KMO-W08C — Reminder History
+
+Status: `AUTOMATED_VERIFIED`; `RUNTIME_DEFERRED`.
 
 Scope:
 
@@ -649,7 +667,16 @@ Scope:
 - external-open/manual-sent status for MVP;
 - archive rather than hard delete.
 
+Implementation evidence:
+
+- migration `042_reminder_history_w08c.sql` adds property-scoped immutable attempt/outcome snapshots with archive-only mutation;
+- Admin history list, preview, WhatsApp handoff, manual-sent confirmation, and archive action use server authority and idempotency;
+- focused W08C behavior tests, backend/Admin typecheck/build, and migration 001–042 disposable apply/replay proof passed;
+- canonical migration and runtime/browser delivery evidence remain deferred.
+
 ### KMO-W08D — Notification Center
+
+Status: `SOURCE_IMPLEMENTED`; `AUTOMATED_REVIEW_PENDING`; `RUNTIME_DEFERRED`.
 
 Scope:
 

@@ -370,4 +370,21 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.uq_lease_checkout_commands_open_lease') IS NOT NULL",
     ],
   },
+  {
+    version: '041_reminder_composer_w08a.sql',
+    checksumSha256: '1a62c0f32517742e15f3d825379d9eb50cb7154bbf9119899a849b178fcef5d4',
+    sentinels: [
+      "to_regclass('public.reminder_templates') IS NOT NULL",
+      "to_regclass('public.reminder_invoice_share_links') IS NOT NULL",
+      "to_regclass('public.uq_reminder_templates_active_key') IS NOT NULL",
+    ],
+  },
+  {
+    version: '042_reminder_history_w08c.sql',
+    checksumSha256: '5eccc9139c19c248a5e9240cfadf805eb631ea6c6139777b47030dfd9e8ed57e',
+    sentinels: [
+      "to_regclass('public.reminder_attempts') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_reminder_attempt_append_only' AND tgrelid=to_regclass('public.reminder_attempts'))",
+    ],
+  },
 ] as const;

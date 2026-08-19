@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -24,6 +25,18 @@ import { CancelComplaintDto } from '../dto/cancel-complaint.dto';
 import { ListComplaintsQueryDto } from '../dto/list-complaints-query.dto';
 import { ComplaintService } from '../services/complaint.service';
 import { auditContext, scopedPropertyIds } from './complaint-controller.util';
+
+function requiredIdempotencyKey(request: RequestWithCorrelationId): string {
+  const raw = request.headers['idempotency-key'];
+  const key = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+  if (!key) {
+    throw new BadRequestException({
+      code: 'IDEMPOTENCY_KEY_REQUIRED',
+      message: 'Idempotency-Key header is required for complaint lifecycle changes',
+    });
+  }
+  return key;
+}
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -72,7 +85,10 @@ export class ComplaintController {
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.acknowledge(complaintId, auditContext(user, request));
+    return this.complaints.acknowledge(complaintId, auditContext(user, request), {
+      authorizedPropertyId: complaint.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':complaintId/assign')
@@ -107,7 +123,10 @@ export class ComplaintController {
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.resolve(complaintId, auditContext(user, request));
+    return this.complaints.resolve(complaintId, auditContext(user, request), {
+      authorizedPropertyId: complaint.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':complaintId/close')
@@ -118,7 +137,10 @@ export class ComplaintController {
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.close(complaintId, auditContext(user, request));
+    return this.complaints.close(complaintId, auditContext(user, request), {
+      authorizedPropertyId: complaint.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':complaintId/reopen')
@@ -129,7 +151,10 @@ export class ComplaintController {
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.reopen(complaintId, auditContext(user, request));
+    return this.complaints.reopen(complaintId, auditContext(user, request), {
+      authorizedPropertyId: complaint.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':complaintId/cancel')
@@ -141,6 +166,9 @@ export class ComplaintController {
   ) {
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
-    return this.complaints.cancel(complaintId, dto.reason, auditContext(user, request));
+    return this.complaints.cancel(complaintId, dto.reason, auditContext(user, request), {
+      authorizedPropertyId: complaint.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 }

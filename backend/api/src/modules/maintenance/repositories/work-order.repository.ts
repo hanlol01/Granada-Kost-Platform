@@ -120,6 +120,17 @@ export class WorkOrderRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  async findByIdForUpdate(id: string, client: PoolClient): Promise<WorkOrderRecord | null> {
+    const result = await client.query<WorkOrderRow>(
+      `SELECT ${this.columns()}
+       FROM maintenance_work_orders
+       WHERE id = $1
+       FOR UPDATE`,
+      [id],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
   async findByIdAssigned(id: string, userId: string): Promise<WorkOrderRecord | null> {
     const result = await this.database.client.query<WorkOrderRow>(
       `SELECT ${this.columns()}

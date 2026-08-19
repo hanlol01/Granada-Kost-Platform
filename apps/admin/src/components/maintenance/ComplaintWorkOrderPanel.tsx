@@ -7,6 +7,7 @@ import {
   type TechnicianReference,
 } from "@/lib/admin-maintenance";
 import { cn } from "@/lib/utils";
+import { WorkOrderLifecyclePanel } from "./WorkOrderLifecyclePanel";
 
 type ComplaintWorkOrderPanelProps = {
   authority: ComplaintWorkOrderAuthority;
@@ -15,6 +16,8 @@ type ComplaintWorkOrderPanelProps = {
   isLoading: boolean;
   error: unknown;
   onRetry: () => void;
+  propertyId?: string;
+  canManage?: boolean;
 };
 
 function relevantTimestamp(
@@ -43,6 +46,8 @@ export function ComplaintWorkOrderPanel({
   isLoading,
   error,
   onRetry,
+  propertyId,
+  canManage = false,
 }: ComplaintWorkOrderPanelProps) {
   const workOrder = authority.workOrder;
 
@@ -125,6 +130,11 @@ export function ComplaintWorkOrderPanel({
             <dt className="text-xs text-muted-foreground">Pembaruan terakhir</dt>
             <dd className="font-medium">{formatTimestamp(relevantTimestamp(workOrder))}</dd>
           </div>
+          {canManage && propertyId ? (
+            <div className="min-w-0 sm:col-span-2">
+              <WorkOrderLifecyclePanel workOrder={workOrder} propertyId={propertyId} />
+            </div>
+          ) : null}
         </dl>
       )}
     </section>

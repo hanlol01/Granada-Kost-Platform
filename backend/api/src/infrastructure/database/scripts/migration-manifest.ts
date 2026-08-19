@@ -387,4 +387,13 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_reminder_attempt_append_only' AND tgrelid=to_regclass('public.reminder_attempts'))",
     ],
   },
+  {
+    version: '044_complaint_maintenance_w09b.sql',
+    checksumSha256: '1c9eddc6539b51f89b24ade83cea792c9110fcbbdae8b8106fe2c2b316f9c8fc',
+    sentinels: [
+      "to_regclass('public.uq_maintenance_work_orders_actionable_complaint') IS NOT NULL",
+      "to_regclass('public.idx_w09b_business_events_aggregate') IS NOT NULL",
+      "to_regclass('public.idx_complaint_status_history_actor') IS NOT NULL",
+    ],
+  },
 ] as const;

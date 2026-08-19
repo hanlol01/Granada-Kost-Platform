@@ -724,6 +724,14 @@ Scope:
 - severity/SLA, attachments, dispatch, work order, evidence, cost, resolution;
 - preserve M16 atomic authority.
 
+Delivery status: `SOURCE_IMPLEMENTED`; `AUTOMATED_REVIEW_PENDING`;
+`RUNTIME_DEFERRED`.
+
+The W09B source boundary now protects complaint and work-order lifecycle
+mutations with property-scoped transactions, idempotency, audit history, and
+outbox events. The existing M16 dispatch authority remains the sole dispatch
+seam. Canonical migration and authenticated runtime/browser evidence remain
+deferred; W09C expenses is still planned.
 ### KMO-W09C — Expenses
 
 Requirements:

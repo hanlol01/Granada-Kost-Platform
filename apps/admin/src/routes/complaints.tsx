@@ -662,6 +662,8 @@ function ComplaintsPage() {
                     isLoading={workOrdersQuery.isLoading}
                     error={workOrdersQuery.error}
                     onRetry={() => void workOrdersQuery.refetch()}
+                    propertyId={selected.propertyId}
+                    canManage={canManage && hasPermission("maintenance.manage")}
                   />
                 ) : null}
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-border">

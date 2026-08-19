@@ -43,6 +43,11 @@ type DispatchOptions = {
   idempotencyKey?: string;
 };
 
+type TransitionCommandOptions = {
+  authorizedPropertyId?: string;
+  idempotencyKey?: string;
+};
+
 type IdempotencyRow = {
   request_fingerprint: string;
   command_status: 'pending' | 'succeeded' | 'failed';
@@ -230,7 +235,11 @@ export class ComplaintService {
     return ComplaintCodeGenerator.format(propertyCode, date.getFullYear(), sequence);
   }
 
-  acknowledge(complaintId: string, context: AuditActorContext = {}): Promise<ComplaintRecord> {
+  acknowledge(
+    complaintId: string,
+    context: AuditActorContext = {},
+    mutation: TransitionCommandOptions = {},
+  ): Promise<ComplaintRecord> {
     return this.transition(
       complaintId,
       'acknowledged',
@@ -238,6 +247,7 @@ export class ComplaintService {
       context,
       {
         label: 'Complaint acknowledged',
+        ...mutation,
       },
     );
   }
@@ -460,21 +470,36 @@ export class ComplaintService {
     });
   }
 
-  resolve(complaintId: string, context: AuditActorContext = {}): Promise<ComplaintRecord> {
+  resolve(
+    complaintId: string,
+    context: AuditActorContext = {},
+    mutation: TransitionCommandOptions = {},
+  ): Promise<ComplaintRecord> {
     return this.transition(complaintId, 'resolved', COMPLAINT_AUDIT_ACTIONS.resolve, context, {
       label: 'Complaint resolved',
+      ...mutation,
     });
   }
 
-  close(complaintId: string, context: AuditActorContext = {}): Promise<ComplaintRecord> {
+  close(
+    complaintId: string,
+    context: AuditActorContext = {},
+    mutation: TransitionCommandOptions = {},
+  ): Promise<ComplaintRecord> {
     return this.transition(complaintId, 'closed', COMPLAINT_AUDIT_ACTIONS.close, context, {
       label: 'Complaint closed',
+      ...mutation,
     });
   }
 
-  reopen(complaintId: string, context: AuditActorContext = {}): Promise<ComplaintRecord> {
+  reopen(
+    complaintId: string,
+    context: AuditActorContext = {},
+    mutation: TransitionCommandOptions = {},
+  ): Promise<ComplaintRecord> {
     return this.transition(complaintId, 'reopened', COMPLAINT_AUDIT_ACTIONS.reopen, context, {
       label: 'Complaint reopened',
+      ...mutation,
     });
   }
 
@@ -482,11 +507,13 @@ export class ComplaintService {
     complaintId: string,
     reason: string,
     context: AuditActorContext = {},
+    mutation: TransitionCommandOptions = {},
   ): Promise<ComplaintRecord> {
     return this.transition(complaintId, 'cancelled', COMPLAINT_AUDIT_ACTIONS.cancel, context, {
       cancelReason: reason,
       label: 'Complaint cancelled',
       notes: reason,
+      ...mutation,
     });
   }
 
@@ -541,34 +568,130 @@ export class ComplaintService {
     options: {
       assignedToUserId?: string;
       cancelReason?: string;
+      authorizedPropertyId?: string;
+      idempotencyKey?: string;
       label?: string;
       notes?: string;
     } = {},
   ): Promise<ComplaintRecord> {
-    const current = await this.get(complaintId);
-    ComplaintStatusTransitionHelper.assertCanTransition(current.complaintStatus, toStatus);
+    if (!options.idempotencyKey) {
+      const current = await this.get(complaintId);
+      ComplaintStatusTransitionHelper.assertCanTransition(current.complaintStatus, toStatus);
 
-    const updated = await this.complaints.transitionStatus(current.id, toStatus, {
-      assignedToUserId: options.assignedToUserId,
-      cancelReason: options.cancelReason,
-    });
-    if (!updated) {
-      throw new BadRequestException({
-        code: 'COMPLAINT_TRANSITION_FAILED',
-        message: 'Complaint transition failed',
+      const updated = await this.complaints.transitionStatus(current.id, toStatus, {
+        assignedToUserId: options.assignedToUserId,
+        cancelReason: options.cancelReason,
       });
+      if (!updated) {
+        throw new BadRequestException({
+          code: 'COMPLAINT_TRANSITION_FAILED',
+          message: 'Complaint transition failed',
+        });
+      }
+
+      await this.histories.record({
+        complaintId: updated.id,
+        fromStatus: current.complaintStatus,
+        toStatus,
+        actorUserId: context.actorUserId,
+        label: options.label,
+        notes: options.notes,
+      });
+      await this.writeComplaintAudit(auditAction, updated, context, current);
+      return updated;
     }
 
-    await this.histories.record({
-      complaintId: updated.id,
-      fromStatus: current.complaintStatus,
-      toStatus,
-      actorUserId: context.actorUserId,
-      label: options.label,
-      notes: options.notes,
+    const actorUserId = context.actorUserId;
+    if (!actorUserId) {
+      throw new ForbiddenException({
+        code: 'COMPLAINT_ACTOR_REQUIRED',
+        message: 'Authenticated actor is required',
+      });
+    }
+    const idempotencyKey = this.requireIdempotencyKey(options.idempotencyKey);
+    const action = auditAction.replace(/^complaint\./, '');
+    const route = `/api/v1/complaints/:complaintId/${action}`;
+    const fingerprint = this.requestFingerprint({
+      complaint_id: complaintId,
+      property_id: options.authorizedPropertyId,
+      actor_user_id: actorUserId,
+      to_status: toStatus,
+      cancel_reason: options.cancelReason ?? null,
     });
-    await this.writeComplaintAudit(auditAction, updated, context, current);
-    return updated;
+
+    return this.database.transaction(async (client) => {
+      const current = await this.complaints.findByIdForUpdate(complaintId, client);
+      if (!current) {
+        throw new NotFoundException({
+          code: 'COMPLAINT_NOT_FOUND',
+          message: 'Complaint not found',
+        });
+      }
+      if (options.authorizedPropertyId && current.propertyId !== options.authorizedPropertyId) {
+        throw new ForbiddenException({
+          code: 'PROPERTY_SCOPE_DENIED',
+          message: 'Property scope denied',
+        });
+      }
+      const replay = await this.claimCommand(
+        client,
+        current.propertyId,
+        actorUserId,
+        route,
+        idempotencyKey,
+        fingerprint,
+        context.correlationId,
+      );
+      if (replay) {
+        return (replay as { data: ComplaintRecord }).data;
+      }
+
+      ComplaintStatusTransitionHelper.assertCanTransition(current.complaintStatus, toStatus);
+      const updated = await this.complaints.transitionStatus(
+        current.id,
+        toStatus,
+        {
+          assignedToUserId: options.assignedToUserId,
+          cancelReason: options.cancelReason,
+        },
+        client,
+      );
+      if (!updated) {
+        throw new BadRequestException({
+          code: 'COMPLAINT_TRANSITION_FAILED',
+          message: 'Complaint transition failed',
+        });
+      }
+      await this.histories.record(
+        {
+          complaintId: updated.id,
+          fromStatus: current.complaintStatus,
+          toStatus,
+          actorUserId,
+          label: options.label,
+          notes: options.notes,
+        },
+        client,
+      );
+      await this.writeComplaintAudit(auditAction, updated, context, current, {}, client);
+      await this.writeOutbox(client, {
+        propertyId: updated.propertyId,
+        eventKey: `complaint.status_changed:${updated.id}:${idempotencyKey}`,
+        eventType: 'complaint.status_changed',
+        aggregateId: updated.id,
+        payload: {
+          complaint_id: updated.id,
+          from_status: current.complaintStatus,
+          to_status: updated.complaintStatus,
+          priority: updated.priority,
+          room_id: updated.roomId,
+        },
+        correlationId: context.correlationId,
+        actorUserId,
+      });
+      await this.completeTransitionCommand(client, actorUserId, route, idempotencyKey, updated);
+      return updated;
+    });
   }
 
   private async writeComplaintAudit(
@@ -660,6 +783,52 @@ export class ComplaintService {
            resource_type = 'maintenance_work_order', resource_id = $5, completed_at = now()
        WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3`,
       [actorUserId, route, idempotencyKey, JSON.stringify(body), workOrderId],
+    );
+  }
+
+  private async completeTransitionCommand(
+    client: PoolClient,
+    actorUserId: string,
+    route: string,
+    idempotencyKey: string,
+    complaint: ComplaintRecord,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE idempotency_commands
+       SET command_status = 'succeeded', response_status = 200, response_body = $4::jsonb,
+           resource_type = 'complaint', resource_id = $5, completed_at = now()
+       WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3`,
+      [actorUserId, route, idempotencyKey, JSON.stringify({ data: complaint }), complaint.id],
+    );
+  }
+
+  private async writeOutbox(
+    client: PoolClient,
+    input: {
+      propertyId: string;
+      eventKey: string;
+      eventType: string;
+      aggregateId: string;
+      payload: Record<string, unknown>;
+      correlationId?: string;
+      actorUserId?: string;
+    },
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO business_events (
+         property_id, event_key, event_type, aggregate_type, aggregate_id,
+         payload, correlation_id, actor_user_id
+       ) VALUES ($1, $2, $3, 'complaint', $4, $5::jsonb, $6, $7)
+       ON CONFLICT (event_key) DO NOTHING`,
+      [
+        input.propertyId,
+        input.eventKey,
+        input.eventType,
+        input.aggregateId,
+        JSON.stringify(input.payload),
+        input.correlationId ?? null,
+        input.actorUserId ?? null,
+      ],
     );
   }
 

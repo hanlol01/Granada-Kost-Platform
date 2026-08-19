@@ -284,4 +284,11 @@ runtime/browser proof remains deferred. W10-OWNER-A3–D has focused automated a
 disposable PostgreSQL evidence; authenticated browser evidence and canonical
 migration remain deferred under the controlled runtime runbook. W07A remains
 `SOURCE_IMPLEMENTED; AUTOMATED REVIEW PENDING; RUNTIME DEFERRED`; W07B–D, W08,
-W09, W11, and W12 are still planned and are not advanced by these delivery rows.
+W09C, W11, and W12 remain planned. W09A/B are advanced only to the bounded
+source-implemented status documented in the W09A/B delivery amendment below;
+this does not claim canonical migration or runtime/browser evidence.
+
+### W09A/B delivery amendment
+
+W09A vehicle/parking and W09B complaint/maintenance are
+`SOURCE_IMPLEMENTED; AUTOMATED_REVIEW_PENDING; RUNTIME_DEFERRED`.

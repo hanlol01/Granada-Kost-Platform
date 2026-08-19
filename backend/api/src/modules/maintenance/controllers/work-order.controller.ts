@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { acceptsAdminUxV2 } from '../../../shared/admin-ux-v2';
 import { UserAccessContext } from '../../iam/types/iam.types';
@@ -18,6 +28,18 @@ import { CreateWorkOrderDto } from '../dto/create-work-order.dto';
 import { ListWorkOrdersQueryDto } from '../dto/list-work-orders-query.dto';
 import { ReworkWorkOrderDto } from '../dto/rework-work-order.dto';
 import { WorkOrderService } from '../services/work-order.service';
+
+function requiredIdempotencyKey(request: RequestWithCorrelationId): string {
+  const raw = request.headers['idempotency-key'];
+  const key = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+  if (!key) {
+    throw new BadRequestException({
+      code: 'IDEMPOTENCY_KEY_REQUIRED',
+      message: 'Idempotency-Key header is required for work-order lifecycle changes',
+    });
+  }
+  return key;
+}
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -100,7 +122,39 @@ export class WorkOrderController {
       workOrderId,
       dto.assigned_to_user_id,
       auditContext(user, request),
+      {
+        authorizedPropertyId: workOrder.propertyId,
+        idempotencyKey: requiredIdempotencyKey(request),
+      },
     );
+  }
+
+  @Post(':workOrderId/start')
+  async start(
+    @CurrentUser() user: UserAccessContext,
+    @Param('workOrderId') workOrderId: string,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const workOrder = await this.workOrders.get(workOrderId);
+    await this.properties.assertCanReadProperty(user, workOrder.propertyId);
+    return this.workOrders.start(workOrderId, auditContext(user, request), {
+      authorizedPropertyId: workOrder.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
+  }
+
+  @Post(':workOrderId/complete')
+  async complete(
+    @CurrentUser() user: UserAccessContext,
+    @Param('workOrderId') workOrderId: string,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const workOrder = await this.workOrders.get(workOrderId);
+    await this.properties.assertCanReadProperty(user, workOrder.propertyId);
+    return this.workOrders.complete(workOrderId, auditContext(user, request), {
+      authorizedPropertyId: workOrder.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':workOrderId/verify')
@@ -111,7 +165,10 @@ export class WorkOrderController {
   ) {
     const workOrder = await this.workOrders.get(workOrderId);
     await this.properties.assertCanReadProperty(user, workOrder.propertyId);
-    return this.workOrders.verify(workOrderId, auditContext(user, request));
+    return this.workOrders.verify(workOrderId, auditContext(user, request), {
+      authorizedPropertyId: workOrder.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':workOrderId/rework')
@@ -123,7 +180,10 @@ export class WorkOrderController {
   ) {
     const workOrder = await this.workOrders.get(workOrderId);
     await this.properties.assertCanReadProperty(user, workOrder.propertyId);
-    return this.workOrders.rework(workOrderId, dto.reason, auditContext(user, request));
+    return this.workOrders.rework(workOrderId, dto.reason, auditContext(user, request), {
+      authorizedPropertyId: workOrder.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 
   @Post(':workOrderId/cancel')
@@ -135,6 +195,9 @@ export class WorkOrderController {
   ) {
     const workOrder = await this.workOrders.get(workOrderId);
     await this.properties.assertCanReadProperty(user, workOrder.propertyId);
-    return this.workOrders.cancel(workOrderId, dto.reason, auditContext(user, request));
+    return this.workOrders.cancel(workOrderId, dto.reason, auditContext(user, request), {
+      authorizedPropertyId: workOrder.propertyId,
+      idempotencyKey: requiredIdempotencyKey(request),
+    });
   }
 }

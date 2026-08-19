@@ -1,14 +1,11 @@
 import { apiClient, getAccessToken } from "@/lib/api";
 import { env } from "@/lib/env";
+import {
+  ownerPortalRouteRegistry,
+  type OwnerPortalRouteId,
+} from "@/lib/property-owner-route-registry";
 
-export type OwnerPortalTab =
-  | "dashboard"
-  | "assets"
-  | "finance"
-  | "reports"
-  | "issues"
-  | "notifications"
-  | "account";
+export type OwnerPortalTab = OwnerPortalRouteId;
 export type OwnerScopeState = "active" | "scheduled" | "historical" | "empty";
 export type Money = string;
 export type OwnerKostType = "rukost" | "apartkost";
@@ -28,15 +25,8 @@ type LeaseStatus =
   | "cancelled"
   | "transferred";
 
-export const ownerPortalNavigation: ReadonlyArray<{ id: OwnerPortalTab; label: string }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "assets", label: "Aset Saya" },
-  { id: "finance", label: "Pendapatan & Settlement" },
-  { id: "reports", label: "Laporan" },
-  { id: "issues", label: "Komplain & Maintenance" },
-  { id: "notifications", label: "Notifikasi" },
-  { id: "account", label: "Profil Akun" },
-];
+export const ownerPortalNavigation: ReadonlyArray<{ id: OwnerPortalTab; label: string }> =
+  ownerPortalRouteRegistry.map(({ id, label }) => ({ id, label }));
 
 export type OwnerPortal = {
   owner: { displayName: string } | null;
@@ -76,6 +66,12 @@ export type OwnerAssetDetail = {
   commercial: { monthlyPrice: Money; annualContractValue: Money };
   lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
   resident: { displayName: string; occupancyStartDate: string } | null;
+  billing: { state: "current" | "partially_paid" | "overdue" | "settled" | "not_available" };
+  lifecycle: {
+    transferState: string | null;
+    renewalState: string | null;
+    checkoutState: string | null;
+  };
   ownership: {
     source: "building_assignment" | "room_assignment";
     effectiveFrom: string;
@@ -89,6 +85,39 @@ export type OwnerAssetFilters = {
   query: string;
   roomStatus: RoomStatus | "all";
   leaseStatus: LeaseStatus | "all";
+};
+
+export type OwnerResource = {
+  roomCode: string;
+  roomStatus: RoomStatus;
+  kostType: OwnerKostType;
+  buildingCode: string | null;
+  buildingName: string | null;
+  genderPolicy: "male" | "female";
+  ownership: {
+    source: "building_assignment" | "room_assignment";
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+  };
+  occupancyStatus: "active" | "ended" | "transferred" | null;
+  occupancyStartDate: string | null;
+  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  resident: { displayName: string } | null;
+  billingState: "current" | "partially_paid" | "overdue" | "settled" | "not_available";
+  endingSoon: boolean;
+  transferState: string | null;
+  renewalState: string | null;
+  checkoutState: string | null;
+  openComplaints: number;
+  openMaintenance: number;
+  updatedAt: string;
+};
+
+export type OwnerResourcePage = {
+  items: OwnerResource[];
+  total: number;
+  offset: number;
+  limit: number;
 };
 
 export type OwnerReport = {
@@ -172,6 +201,9 @@ export type OwnerReport = {
       | "cancelled";
     priority: "low" | "medium" | "high" | "urgent";
     createdAt: string;
+    roomCode: string;
+    buildingCode: string;
+    buildingName: string;
   }>;
   maintenance: Array<{
     workOrderId: string;
@@ -187,6 +219,9 @@ export type OwnerReport = {
       | "cancelled";
     priority: "low" | "medium" | "high" | "urgent";
     createdAt: string;
+    roomCode: string;
+    buildingCode: string;
+    buildingName: string;
   }>;
   notifications: Array<{
     notificationId: string;
@@ -197,6 +232,60 @@ export type OwnerReport = {
     sourceEventType: string;
     sourceResourceId: string;
     createdAt: string;
+    roomCode: string;
+    buildingCode: string;
+    buildingName: string;
+  }>;
+};
+
+export type OwnerFinance = {
+  period: { period: string; start: string; end: string };
+  scopeChecksum: string;
+  summary: {
+    grossEarnedRent: Money;
+    ownerEntitlement: Money;
+    managementFee: Money;
+    ownerAdjustments: Money;
+    adjustedOwnerEntitlement: Money;
+    paidOut: Money;
+    settlementState: "unavailable" | "requires_review" | "awaiting_payout" | "reconciled";
+    settlementCounts: {
+      draft: number;
+      readyForReview: number;
+      approved: number;
+      paid: number;
+      void: number;
+    };
+  };
+  earnings: Array<{
+    roomCode: string;
+    earningMonth: string;
+    serviceFrom: string;
+    serviceUntil: string;
+    earningStatus: "recognized" | "reversed";
+    grossEarnedRent: Money;
+    ownerEntitlement: Money;
+    managementFee: Money;
+  }>;
+  adjustments: Array<{
+    effectiveMonth: string;
+    adjustmentKind: "reversal" | "refund" | "transfer_proration" | "clawback";
+    grossAmountDelta: Money;
+    ownerAmountDelta: Money;
+    operatorFeeAmountDelta: Money;
+  }>;
+  settlements: Array<{
+    periodStart: string;
+    periodEnd: string;
+    settlementStatus: "draft" | "ready_for_review" | "approved" | "paid" | "void";
+    grossAmount: Money;
+    ownerAmount: Money;
+    operatorFeeAmount: Money;
+  }>;
+  payouts: Array<{
+    recordedAt: string;
+    payoutKind: "payout" | "reversal";
+    payoutAmount: Money;
   }>;
 };
 
@@ -411,6 +500,8 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
       "commercial",
       "lease",
       "resident",
+      "billing",
+      "lifecycle",
       "ownership",
       "issues",
       "updated_at",
@@ -433,6 +524,12 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
     "asset_detail.ownership",
   );
   const issues = exact(root.issues, ["open_complaints", "open_maintenance"], "asset_detail.issues");
+  const billing = exact(root.billing, ["state"], "asset_detail.billing");
+  const lifecycle = exact(
+    root.lifecycle,
+    ["transfer_state", "renewal_state", "checkout_state"],
+    "asset_detail.lifecycle",
+  );
   const lease =
     root.lease === null
       ? null
@@ -511,6 +608,24 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
     },
     lease,
     resident,
+    billing: {
+      state: enumValue(
+        billing.state,
+        ["current", "partially_paid", "overdue", "settled", "not_available"],
+        "asset_detail.billing.state",
+      ),
+    },
+    lifecycle: {
+      transferState: nullableString(
+        lifecycle.transfer_state,
+        "asset_detail.lifecycle.transfer_state",
+      ),
+      renewalState: nullableString(lifecycle.renewal_state, "asset_detail.lifecycle.renewal_state"),
+      checkoutState: nullableString(
+        lifecycle.checkout_state,
+        "asset_detail.lifecycle.checkout_state",
+      ),
+    },
     ownership: {
       source: enumValue(
         ownership.source,
@@ -528,6 +643,300 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
       openMaintenance: count(issues.open_maintenance, "asset_detail.issues.open_maintenance"),
     },
     updatedAt: timestamp(root.updated_at, "asset_detail.updated_at"),
+  };
+}
+
+export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
+  const root = exact(value, ["items", "total", "offset", "limit"], "resource_page");
+  const parseResource = (item: unknown): OwnerResource => {
+    const row = exact(
+      item,
+      [
+        "room_code",
+        "room_status",
+        "kost_type",
+        "building_code",
+        "building_name",
+        "gender_policy",
+        "ownership",
+        "occupancy_status",
+        "occupancy_start_date",
+        "lease",
+        "resident",
+        "billing_state",
+        "ending_soon",
+        "transfer_state",
+        "renewal_state",
+        "checkout_state",
+        "open_complaints",
+        "open_maintenance",
+        "updated_at",
+      ],
+      "resource",
+    );
+    const ownership = exact(
+      row.ownership,
+      ["source", "effective_from", "effective_until"],
+      "resource.ownership",
+    );
+    const lease =
+      row.lease === null
+        ? null
+        : exact(row.lease, ["status", "start_date", "end_date"], "resource.lease");
+    const resident =
+      row.resident === null ? null : exact(row.resident, ["display_name"], "resource.resident");
+    if (typeof row.ending_soon !== "boolean")
+      throw new Error("Owner portal response is invalid: resource.ending_soon.");
+    return {
+      roomCode: string(row.room_code, "resource.room_code"),
+      roomStatus: enumValue<RoomStatus>(
+        row.room_status,
+        ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+        "resource.room_status",
+      ),
+      kostType: enumValue<OwnerKostType>(
+        row.kost_type,
+        ["rukost", "apartkost"],
+        "resource.kost_type",
+      ),
+      buildingCode: nullableString(row.building_code, "resource.building_code"),
+      buildingName: nullableString(row.building_name, "resource.building_name"),
+      genderPolicy: enumValue(row.gender_policy, ["male", "female"], "resource.gender_policy"),
+      ownership: {
+        source: enumValue(
+          ownership.source,
+          ["building_assignment", "room_assignment"],
+          "resource.ownership.source",
+        ),
+        effectiveFrom: date(ownership.effective_from, "resource.ownership.effective_from"),
+        effectiveUntil:
+          ownership.effective_until === null
+            ? null
+            : date(ownership.effective_until, "resource.ownership.effective_until"),
+      },
+      occupancyStatus:
+        row.occupancy_status === null
+          ? null
+          : enumValue<"active" | "ended" | "transferred">(
+              row.occupancy_status,
+              ["active", "ended", "transferred"],
+              "resource.occupancy_status",
+            ),
+      occupancyStartDate:
+        row.occupancy_start_date === null
+          ? null
+          : date(row.occupancy_start_date, "resource.occupancy_start_date"),
+      lease:
+        lease === null
+          ? null
+          : {
+              status: enumValue<LeaseStatus>(
+                lease.status,
+                [
+                  "draft",
+                  "awaiting_activation",
+                  "active",
+                  "ended",
+                  "completed",
+                  "cancelled",
+                  "transferred",
+                ],
+                "resource.lease.status",
+              ),
+              startDate: date(lease.start_date, "resource.lease.start_date"),
+              endDate:
+                lease.end_date === null ? null : date(lease.end_date, "resource.lease.end_date"),
+            },
+      resident:
+        resident === null
+          ? null
+          : { displayName: string(resident.display_name, "resource.resident.display_name") },
+      billingState: enumValue(
+        row.billing_state,
+        ["current", "partially_paid", "overdue", "settled", "not_available"],
+        "resource.billing_state",
+      ),
+      endingSoon: row.ending_soon,
+      transferState: nullableString(row.transfer_state, "resource.transfer_state"),
+      renewalState: nullableString(row.renewal_state, "resource.renewal_state"),
+      checkoutState: nullableString(row.checkout_state, "resource.checkout_state"),
+      openComplaints: count(row.open_complaints, "resource.open_complaints"),
+      openMaintenance: count(row.open_maintenance, "resource.open_maintenance"),
+      updatedAt: timestamp(row.updated_at, "resource.updated_at"),
+    };
+  };
+  return {
+    items: list(root.items, "resource_page.items", parseResource),
+    total: count(root.total, "resource_page.total"),
+    offset: count(root.offset, "resource_page.offset"),
+    limit: count(root.limit, "resource_page.limit"),
+  };
+}
+
+export function parseOwnerFinance(value: unknown): OwnerFinance {
+  const root = exact(
+    value,
+    ["period", "scope_checksum", "summary", "earnings", "adjustments", "settlements", "payouts"],
+    "finance",
+  );
+  const period = exact(root.period, ["period", "start", "end"], "finance.period");
+  const summary = exact(
+    root.summary,
+    [
+      "gross_earned_rent",
+      "owner_entitlement",
+      "management_fee",
+      "owner_adjustments",
+      "adjusted_owner_entitlement",
+      "paid_out",
+      "settlement_state",
+      "settlement_counts",
+    ],
+    "finance.summary",
+  );
+  const settlementCounts = exact(
+    summary.settlement_counts,
+    ["draft", "ready_for_review", "approved", "paid", "void"],
+    "finance.summary.settlement_counts",
+  );
+  return {
+    period: {
+      period: string(period.period, "finance.period.period"),
+      start: date(period.start, "finance.period.start"),
+      end: date(period.end, "finance.period.end"),
+    },
+    scopeChecksum: string(root.scope_checksum, "finance.scope_checksum"),
+    summary: {
+      grossEarnedRent: money(summary.gross_earned_rent, "finance.summary.gross_earned_rent"),
+      ownerEntitlement: money(summary.owner_entitlement, "finance.summary.owner_entitlement"),
+      managementFee: money(summary.management_fee, "finance.summary.management_fee"),
+      ownerAdjustments: money(summary.owner_adjustments, "finance.summary.owner_adjustments", true),
+      adjustedOwnerEntitlement: money(
+        summary.adjusted_owner_entitlement,
+        "finance.summary.adjusted_owner_entitlement",
+        true,
+      ),
+      paidOut: money(summary.paid_out, "finance.summary.paid_out", true),
+      settlementState: enumValue(
+        summary.settlement_state,
+        ["unavailable", "requires_review", "awaiting_payout", "reconciled"],
+        "finance.summary.settlement_state",
+      ),
+      settlementCounts: {
+        draft: count(settlementCounts.draft, "finance.summary.settlement_counts.draft"),
+        readyForReview: count(
+          settlementCounts.ready_for_review,
+          "finance.summary.settlement_counts.ready_for_review",
+        ),
+        approved: count(settlementCounts.approved, "finance.summary.settlement_counts.approved"),
+        paid: count(settlementCounts.paid, "finance.summary.settlement_counts.paid"),
+        void: count(settlementCounts.void, "finance.summary.settlement_counts.void"),
+      },
+    },
+    earnings: list(root.earnings, "finance.earnings", (item) => {
+      const row = exact(
+        item,
+        [
+          "room_code",
+          "earning_month",
+          "service_from",
+          "service_until",
+          "earning_status",
+          "gross_earned_rent",
+          "owner_entitlement",
+          "management_fee",
+        ],
+        "finance.earning",
+      );
+      return {
+        roomCode: string(row.room_code, "finance.earning.room_code"),
+        earningMonth: date(row.earning_month, "finance.earning.earning_month"),
+        serviceFrom: date(row.service_from, "finance.earning.service_from"),
+        serviceUntil: date(row.service_until, "finance.earning.service_until"),
+        earningStatus: enumValue(
+          row.earning_status,
+          ["recognized", "reversed"],
+          "finance.earning.earning_status",
+        ),
+        grossEarnedRent: money(row.gross_earned_rent, "finance.earning.gross_earned_rent"),
+        ownerEntitlement: money(row.owner_entitlement, "finance.earning.owner_entitlement"),
+        managementFee: money(row.management_fee, "finance.earning.management_fee"),
+      };
+    }),
+    adjustments: list(root.adjustments, "finance.adjustments", (item) => {
+      const row = exact(
+        item,
+        [
+          "effective_month",
+          "adjustment_kind",
+          "gross_amount_delta",
+          "owner_amount_delta",
+          "operator_fee_amount_delta",
+        ],
+        "finance.adjustment",
+      );
+      return {
+        effectiveMonth: date(row.effective_month, "finance.adjustment.effective_month"),
+        adjustmentKind: enumValue(
+          row.adjustment_kind,
+          ["reversal", "refund", "transfer_proration", "clawback"],
+          "finance.adjustment.adjustment_kind",
+        ),
+        grossAmountDelta: money(
+          row.gross_amount_delta,
+          "finance.adjustment.gross_amount_delta",
+          true,
+        ),
+        ownerAmountDelta: money(
+          row.owner_amount_delta,
+          "finance.adjustment.owner_amount_delta",
+          true,
+        ),
+        operatorFeeAmountDelta: money(
+          row.operator_fee_amount_delta,
+          "finance.adjustment.operator_fee_amount_delta",
+          true,
+        ),
+      };
+    }),
+    settlements: list(root.settlements, "finance.settlements", (item) => {
+      const row = exact(
+        item,
+        [
+          "period_start",
+          "period_end",
+          "settlement_status",
+          "gross_amount",
+          "owner_amount",
+          "operator_fee_amount",
+        ],
+        "finance.settlement",
+      );
+      return {
+        periodStart: date(row.period_start, "finance.settlement.period_start"),
+        periodEnd: date(row.period_end, "finance.settlement.period_end"),
+        settlementStatus: enumValue(
+          row.settlement_status,
+          ["draft", "ready_for_review", "approved", "paid", "void"],
+          "finance.settlement.settlement_status",
+        ),
+        grossAmount: money(row.gross_amount, "finance.settlement.gross_amount"),
+        ownerAmount: money(row.owner_amount, "finance.settlement.owner_amount"),
+        operatorFeeAmount: money(row.operator_fee_amount, "finance.settlement.operator_fee_amount"),
+      };
+    }),
+    payouts: list(root.payouts, "finance.payouts", (item) => {
+      const row = exact(item, ["recorded_at", "payout_kind", "payout_amount"], "finance.payout");
+      return {
+        recordedAt: timestamp(row.recorded_at, "finance.payout.recorded_at"),
+        payoutKind: enumValue(
+          row.payout_kind,
+          ["payout", "reversal"],
+          "finance.payout.payout_kind",
+        ),
+        payoutAmount: money(row.payout_amount, "finance.payout.payout_amount"),
+      };
+    }),
   };
 }
 
@@ -741,7 +1150,16 @@ export function parseOwnerReport(value: unknown): OwnerReport {
     complaints: list(root.complaints, "complaints", (item) => {
       const row = exact(
         item,
-        ["complaint_id", "complaint_code", "complaint_status", "priority", "created_at"],
+        [
+          "complaint_id",
+          "complaint_code",
+          "complaint_status",
+          "priority",
+          "created_at",
+          "room_code",
+          "building_code",
+          "building_name",
+        ],
         "complaint",
       );
       return {
@@ -768,12 +1186,24 @@ export function parseOwnerReport(value: unknown): OwnerReport {
           "complaint.priority",
         ),
         createdAt: timestamp(row.created_at, "complaint.created_at"),
+        roomCode: string(row.room_code, "complaint.room_code"),
+        buildingCode: string(row.building_code, "complaint.building_code"),
+        buildingName: string(row.building_name, "complaint.building_name"),
       };
     }),
     maintenance: list(root.maintenance, "maintenance", (item) => {
       const row = exact(
         item,
-        ["work_order_id", "work_order_code", "work_order_status", "priority", "created_at"],
+        [
+          "work_order_id",
+          "work_order_code",
+          "work_order_status",
+          "priority",
+          "created_at",
+          "room_code",
+          "building_code",
+          "building_name",
+        ],
         "maintenance",
       );
       return {
@@ -799,6 +1229,9 @@ export function parseOwnerReport(value: unknown): OwnerReport {
           "maintenance.priority",
         ),
         createdAt: timestamp(row.created_at, "maintenance.created_at"),
+        roomCode: string(row.room_code, "maintenance.room_code"),
+        buildingCode: string(row.building_code, "maintenance.building_code"),
+        buildingName: string(row.building_name, "maintenance.building_name"),
       };
     }),
     notifications: list(root.notifications, "notifications", (item) => {
@@ -813,6 +1246,9 @@ export function parseOwnerReport(value: unknown): OwnerReport {
           "source_event_type",
           "source_resource_id",
           "created_at",
+          "room_code",
+          "building_code",
+          "building_name",
         ],
         "notification",
       );
@@ -833,6 +1269,9 @@ export function parseOwnerReport(value: unknown): OwnerReport {
         sourceEventType: string(row.source_event_type, "notification.source_event_type"),
         sourceResourceId: string(row.source_resource_id, "notification.source_resource_id"),
         createdAt: timestamp(row.created_at, "notification.created_at"),
+        roomCode: string(row.room_code, "notification.room_code"),
+        buildingCode: string(row.building_code, "notification.building_code"),
+        buildingName: string(row.building_name, "notification.building_name"),
       };
     }),
   };
@@ -865,6 +1304,10 @@ export function formatOwnerMoney(value: Money): string {
 
 export const propertyOwnerPortalApi = {
   get: () => apiClient.get<unknown>("/my/property-owner/portal").then(parseOwnerPortal),
+  getAssets: (query: Record<string, string | number | undefined>) =>
+    apiClient.get<unknown>("/my/property-owner/assets", { query }).then(parseOwnerResourcePage),
+  getOccupancy: (query: Record<string, string | number | undefined>) =>
+    apiClient.get<unknown>("/my/property-owner/occupancy", { query }).then(parseOwnerResourcePage),
   getAssetDetail: (roomCode: string) =>
     apiClient
       .get<unknown>(`/my/property-owner/assets/${encodeURIComponent(roomCode)}`)
@@ -873,6 +1316,10 @@ export const propertyOwnerPortalApi = {
     apiClient
       .get<unknown>("/my/property-owner/reports/preview", { query: { period } })
       .then(parseOwnerReport),
+  finance: (period: string) =>
+    apiClient
+      .get<unknown>("/my/property-owner/finance", { query: { period } })
+      .then(parseOwnerFinance),
 };
 export async function downloadOwnerReport(period: string, format: "pdf" | "xlsx"): Promise<void> {
   const token = getAccessToken();

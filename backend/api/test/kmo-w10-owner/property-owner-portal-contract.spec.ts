@@ -41,6 +41,49 @@ void test('PDF export uses a CommonJS-safe fontkit namespace import', () => {
   assert.match(source, /import \* as fontkit from '@pdf-lib\/fontkit';/);
 });
 
+void test('E2 owner projections are identity scoped, paginated, and contain no resident PII fields', async () => {
+  const calls: Array<{ sql: string; params?: unknown[] }> = [];
+  const service = new PropertyOwnerPortalService({
+    client: {
+      query: (sql: string, params?: unknown[]) => {
+        calls.push({ sql, params });
+        if (sql.includes('property_owner_profiles'))
+          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('owner_occupancy_projection')) return { rows: [ownerResourceRow()] };
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    },
+  } as never);
+
+  const result = await service.listOccupancy(actor(), {
+    query: 'ak0503',
+    roomStatus: 'occupied',
+    billingState: 'partially_paid',
+    limit: '20',
+  });
+
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.items[0].resident, { display_name: 'PUTRI' });
+  assert.equal(result.items[0].billing_state, 'partially_paid');
+  assert.equal(result.items[0].renewal_state, 'approved');
+  assert.equal('email' in result.items[0], false);
+  assert.equal('phone' in result.items[0], false);
+  assert.equal('nik' in result.items[0], false);
+  assert.equal('payment_proof' in result.items[0], false);
+
+  const projection = calls.find((call) => call.sql.includes('owner_occupancy_projection'))!;
+  assert.match(projection.sql, /building_owner_assignments/);
+  assert.match(projection.sql, /room_owner_assignments/);
+  assert.match(projection.sql, /owner_profile_id = \$1/);
+  assert.match(projection.sql, /property_id = \$2/);
+  assert.match(projection.sql, /Asia\/Jakarta/);
+  assert.match(projection.sql, /regexp_replace/);
+  assert.match(projection.sql, /lease_transfer_commands/);
+  assert.match(projection.sql, /lease_renewal_commands/);
+  assert.match(projection.sql, /lease_checkout_commands/);
+  assert.doesNotMatch(projection.sql, /resident\.(email|phone|nik|address)/);
+});
+
 const assignment = (from = '2026-08-01', until: string | null = null) => ({
   assignment_key: 'room:assignment-1',
   effective_from: from,
@@ -136,6 +179,9 @@ const reportRow = () => ({
       complaint_status: 'resolved',
       priority: 'high',
       created_at: '2026-08-05T03:00:00.000Z',
+      room_code: 'RK-01-01',
+      building_code: 'RK-01',
+      building_name: 'Rumah Kost',
     },
   ],
   maintenance: [
@@ -145,6 +191,9 @@ const reportRow = () => ({
       work_order_status: 'verified',
       priority: 'medium',
       created_at: '2026-08-06T03:00:00.000Z',
+      room_code: 'RK-01-01',
+      building_code: 'RK-01',
+      building_name: 'Rumah Kost',
     },
   ],
   notifications: [
@@ -157,6 +206,9 @@ const reportRow = () => ({
       source_event_type: 'complaint.created',
       source_resource_id: 'complaint-1',
       created_at: '2026-08-05T03:01:00.000Z',
+      room_code: 'RK-01-01',
+      building_code: 'RK-01',
+      building_name: 'Rumah Kost',
     },
   ],
 });
@@ -177,12 +229,44 @@ const assetDetailRow = () => ({
   lease_end_date: '2027-02-06',
   resident_display_name: 'PUTRI',
   occupancy_start_date: '2026-08-06',
+  billing_state: 'partially_paid',
+  transfer_state: null,
+  renewal_state: 'approved',
+  checkout_state: null,
   effective_from: '2026-08-01',
   effective_until: null,
   assignment_source: 'room_assignment',
   open_complaints: 1,
   open_maintenance: 0,
   updated_at: '2026-08-06T03:00:00.000Z',
+});
+
+const ownerResourceRow = () => ({
+  room_code: 'AK-05-03',
+  room_status: 'occupied',
+  kost_type: 'apartkost',
+  building_code: 'AK-05',
+  building_name: 'Apart Kost Unit 05',
+  gender_policy: 'female',
+  effective_from: '2026-08-01',
+  effective_until: null,
+  assignment_source: 'room_assignment',
+  occupancy_status: 'active',
+  occupancy_start_date: '2026-08-06',
+  lease_status: 'active',
+  lease_start_date: '2026-08-06',
+  lease_end_date: '2027-02-06',
+  resident_display_name: 'PUTRI',
+  billing_state: 'partially_paid',
+  invoice_count: 1,
+  ending_soon: false,
+  transfer_state: null,
+  renewal_state: 'approved',
+  checkout_state: null,
+  open_complaints: 0,
+  open_maintenance: 0,
+  updated_at: '2026-08-06T03:00:00.000Z',
+  total_count: 1,
 });
 
 function serviceFor(row = reportRow(), owner = ownerId, assignmentRow = assignment()) {
@@ -276,6 +360,8 @@ void test('owner asset detail is identity-scoped, assignment-bound, and omits pr
     commercial: { monthly_price: '1800000', annual_contract_value: '21600000' },
     lease: { status: 'active', start_date: '2026-08-06', end_date: '2027-02-06' },
     resident: { display_name: 'PUTRI', occupancy_start_date: '2026-08-06' },
+    billing: { state: 'partially_paid' },
+    lifecycle: { transfer_state: null, renewal_state: 'approved', checkout_state: null },
     ownership: {
       source: 'room_assignment',
       effective_from: '2026-08-01',
@@ -307,6 +393,47 @@ void test('missing profile is zero-safe and does not query operational scope', a
   assert.equal(calls, 1);
   assert.equal(result.owner, null);
   assert.equal(result.scope.state, 'empty');
+});
+
+void test('owner profile with no current assignment returns a zero-safe empty portal', async () => {
+  const calls: string[] = [];
+  const service = new PropertyOwnerPortalService({
+    client: {
+      query: (sql: string) => {
+        calls.push(sql);
+        if (sql.includes('property_owner_profiles'))
+          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('assignment_state'))
+          return {
+            rows: [
+              {
+                building_count: 0,
+                room_count: 0,
+                occupied_count: 0,
+                reserved_count: 0,
+                maintenance_count: 0,
+                vacant_count: 0,
+                open_complaints: 0,
+                open_maintenance: 0,
+                unread_notifications: 0,
+                scheduled_count: 0,
+                next_scheduled_date: null,
+                expired_count: 0,
+                latest_historical_period: null,
+              },
+            ],
+          };
+        if (sql.includes('lease_end_date')) return { rows: [] };
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    },
+  } as never);
+
+  const result = await service.getPortal(actor());
+  assert.equal(result.scope.state, 'empty');
+  assert.equal(result.scope.room_count, 0);
+  assert.deepEqual(result.assets, []);
+  assert.match(calls[1] ?? '', /FROM assignment_state/);
 });
 
 void test('duplicate profiles fail before asset, finance, or report query', async () => {
@@ -438,6 +565,8 @@ void test('historical lifecycle projections expose only clipped half-open owner-
   assert.match(sql, /notifications\.property_id = \$2 AND notifications\.recipient_user_id = \$5/);
   assert.match(sql, /notifications\.created_at >= scope\.scope_from/);
   assert.match(sql, /notifications\.created_at < scope\.scope_until/);
+  assert.match(sql, /rooms\.room_code, buildings\.building_code, buildings\.building_name/);
+  assert.doesNotMatch(sql, /resident|phone|email|storage_path|payment_proof/i);
 });
 
 void test('two owners sharing a room receive only events inside their exact mid-month intervals', async () => {
@@ -459,6 +588,9 @@ void test('two owners sharing a room receive only events inside their exact mid-
           complaint_status: 'resolved',
           priority: 'low',
           created_at: '2026-08-15T16:59:59.000Z',
+          room_code: 'RK-01-01',
+          building_code: 'RK-01',
+          building_name: 'Rumah Kost',
         },
       ],
       maintenance: [],
@@ -485,6 +617,9 @@ void test('two owners sharing a room receive only events inside their exact mid-
           complaint_status: 'submitted',
           priority: 'high',
           created_at: '2026-08-15T17:00:00.000Z',
+          room_code: 'RK-01-01',
+          building_code: 'RK-01',
+          building_name: 'Rumah Kost',
         },
       ],
       maintenance: [],
@@ -694,4 +829,30 @@ void test('out-of-period report is denied and finance is constrained by service 
     calls[2].sql,
     /JOIN authorized_payout_resources payouts ON payouts\.id = notifications\.source_resource_id/,
   );
+});
+
+void test('E3 finance is a safe, period-bound projection of the authoritative owner report', async () => {
+  const { service } = serviceFor();
+  const finance = await service.finance(actor(), '2026-08');
+
+  assert.equal(finance.period.period, '2026-08');
+  assert.equal(finance.scope_checksum.length, 64);
+  assert.equal(finance.summary.adjusted_owner_entitlement, '1999999000');
+  assert.equal(finance.summary.settlement_state, 'reconciled');
+  assert.deepEqual(finance.summary.settlement_counts, {
+    draft: 0,
+    ready_for_review: 0,
+    approved: 0,
+    paid: 1,
+    void: 0,
+  });
+  assert.equal(finance.earnings[0]?.room_code, 'RK-01-01');
+  assert.equal('earning_id' in finance.earnings[0], false);
+  assert.equal('adjustment_id' in finance.adjustments[0], false);
+  assert.equal('settlement_id' in finance.settlements[0], false);
+  assert.equal('payout_id' in finance.payouts[0], false);
+  assert.doesNotMatch(JSON.stringify(finance), /payment|proof|bank|resident|phone|email/i);
+
+  const controller = new PropertyOwnerPortalController(service);
+  assert.deepEqual(await controller.finance(actor(), '2026-08'), finance);
 });

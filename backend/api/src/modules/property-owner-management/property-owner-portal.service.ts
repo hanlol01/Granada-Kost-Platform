@@ -23,6 +23,15 @@ type AssignmentRow = {
 type ReportPeriod = { period: string; start: string; end: string; until: string };
 type SafeReport = ReturnType<PropertyOwnerPortalService['emptyReport']>;
 type SafeRow = Record<string, string | null>;
+type OwnerListQuery = {
+  query?: string;
+  roomStatus?: string;
+  leaseStatus?: string;
+  billingState?: string;
+  endingWithinDays?: string;
+  offset?: string;
+  limit?: string;
+};
 
 const roomStatuses = [
   'vacant',
@@ -182,12 +191,12 @@ export class PropertyOwnerPortalService {
           WHERE notifications.source_event_type LIKE 'property_owner.adjustment.%'
        )
        SELECT
-         COUNT(DISTINCT scope.building_id)::int AS building_count,
-         COUNT(DISTINCT scope.room_id)::int AS room_count,
-         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'occupied')::int AS occupied_count,
-         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'reserved')::int AS reserved_count,
-         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status IN ('maintenance', 'requires_review', 'inspection_required'))::int AS maintenance_count,
-         COUNT(DISTINCT scope.room_id) FILTER (WHERE rooms.room_status = 'vacant')::int AS vacant_count,
+         (SELECT COUNT(DISTINCT building_id)::int FROM current_scope) AS building_count,
+         (SELECT COUNT(DISTINCT room_id)::int FROM current_scope) AS room_count,
+         (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status = 'occupied') AS occupied_count,
+         (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status = 'reserved') AS reserved_count,
+         (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status IN ('maintenance', 'requires_review', 'inspection_required')) AS maintenance_count,
+         (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status = 'vacant') AS vacant_count,
          (SELECT COUNT(DISTINCT complaints.id)::int FROM complaints JOIN current_scope authorized_scope ON authorized_scope.room_id = complaints.room_id
            WHERE complaints.property_id = $2 AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
              AND complaints.created_at >= authorized_scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
@@ -203,9 +212,7 @@ export class PropertyOwnerPortalService {
              AND notifications.created_at >= authorized_scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
              AND (authorized_scope.scope_until IS NULL OR notifications.created_at < authorized_scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS unread_notifications,
          assignment_state.*
-       FROM current_scope scope
-       JOIN rooms ON rooms.id = scope.room_id
-       CROSS JOIN assignment_state
+       FROM assignment_state
        GROUP BY assignment_state.scheduled_count,
                 assignment_state.next_scheduled_date,
                 assignment_state.expired_count,
@@ -337,6 +344,8 @@ export class PropertyOwnerPortalService {
               commercial.annual_contract_value::text AS annual_contract_value,
               lease.lease_status, lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
               resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
+              COALESCE(billing.billing_state, 'not_available') AS billing_state,
+              transfer.transfer_state, renewal.renewal_state, checkout.checkout_state,
               authorized_asset.effective_from::text, authorized_asset.effective_until::text,
               authorized_asset.assignment_source,
               (SELECT COUNT(*)::int FROM complaints
@@ -383,9 +392,33 @@ export class PropertyOwnerPortalService {
          ORDER BY occupancy.start_date, occupancy.id
          LIMIT 1
        ) occupancy ON true
-       LEFT JOIN residents resident ON resident.id = occupancy.resident_id
-         AND resident.property_id = rooms.property_id
-       ORDER BY authorized_asset.effective_from DESC, rooms.id`,
+        LEFT JOIN residents resident ON resident.id = occupancy.resident_id
+          AND resident.property_id = rooms.property_id
+        LEFT JOIN LATERAL (
+          SELECT CASE
+            WHEN COUNT(*) = 0 THEN 'not_available'
+            WHEN COUNT(*) FILTER (WHERE invoice_status IN ('issued', 'unpaid', 'overdue')) > 0 THEN 'overdue'
+            WHEN COUNT(*) FILTER (WHERE invoice_status = 'partially_paid') > 0 THEN 'partially_paid'
+            WHEN COUNT(*) FILTER (WHERE invoice_status = 'paid') = COUNT(*) THEN 'settled'
+            ELSE 'current' END AS billing_state
+          FROM invoices WHERE property_id = $2 AND occupancy_id = lease.occupancy_id AND invoice_status <> 'void'
+        ) billing ON true
+        LEFT JOIN LATERAL (
+          SELECT state AS transfer_state FROM lease_transfer_commands
+          WHERE property_id = $2 AND (from_room_id = rooms.id OR to_room_id = rooms.id)
+          ORDER BY created_at DESC, id DESC LIMIT 1
+        ) transfer ON true
+        LEFT JOIN LATERAL (
+          SELECT state AS renewal_state FROM lease_renewal_commands
+          WHERE property_id = $2 AND room_id = rooms.id
+          ORDER BY created_at DESC, id DESC LIMIT 1
+        ) renewal ON true
+        LEFT JOIN LATERAL (
+          SELECT state AS checkout_state FROM lease_checkout_commands
+          WHERE property_id = $2 AND room_id = rooms.id
+          ORDER BY created_at DESC, id DESC LIMIT 1
+        ) checkout ON true
+        ORDER BY authorized_asset.effective_from DESC, rooms.id`,
       [owner.id, owner.property_id, roomCode],
     );
     if (result.rows.length === 0) return this.assetUnavailable();
@@ -431,6 +464,18 @@ export class PropertyOwnerPortalService {
         residentName === null || occupancyStart === null
           ? null
           : { display_name: residentName, occupancy_start_date: occupancyStart },
+      billing: {
+        state: this.enumValue(
+          row.billing_state,
+          ['current', 'partially_paid', 'overdue', 'settled', 'not_available'],
+          'asset.billing_state',
+        ),
+      },
+      lifecycle: {
+        transfer_state: this.nullableText(row.transfer_state, 'asset.transfer_state'),
+        renewal_state: this.nullableText(row.renewal_state, 'asset.renewal_state'),
+        checkout_state: this.nullableText(row.checkout_state, 'asset.checkout_state'),
+      },
       ownership: {
         source: this.enumValue(
           row.assignment_source,
@@ -448,11 +493,245 @@ export class PropertyOwnerPortalService {
     };
   }
 
+  async listAssets(actor: UserAccessContext, input: OwnerListQuery = {}) {
+    return this.listOwnedResources(actor, input, false);
+  }
+
+  async listOccupancy(actor: UserAccessContext, input: OwnerListQuery = {}) {
+    return this.listOwnedResources(actor, input, true);
+  }
+
+  private async listOwnedResources(
+    actor: UserAccessContext,
+    input: OwnerListQuery,
+    includeResident: boolean,
+  ) {
+    const owner = await this.resolveOwner(actor);
+    if (!owner) return { items: [], total: 0, offset: 0, limit: 20 };
+    const limit = this.listLimit(input.limit);
+    const offset = this.listOffset(input.offset);
+    const endingWithinDays = this.optionalDays(input.endingWithinDays);
+    const params = [
+      owner.id,
+      owner.property_id,
+      input.query?.trim() || null,
+      input.roomStatus || null,
+      input.leaseStatus || null,
+      input.billingState || null,
+      endingWithinDays,
+      limit,
+      offset,
+    ];
+    const result = await this.database.client.query(
+      `/* owner_${includeResident ? 'occupancy' : 'asset'}_projection */
+       WITH raw_scope AS (
+         SELECT rooms.id AS room_id, assignments.effective_from, assignments.effective_until,
+                'building_assignment'::text AS assignment_source
+         FROM building_owner_assignments assignments
+         JOIN rooms ON rooms.building_id = assignments.building_id AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+         UNION ALL
+         SELECT rooms.id, assignments.effective_from, assignments.effective_until, 'room_assignment'::text
+         FROM room_owner_assignments assignments
+         JOIN rooms ON rooms.id = assignments.room_id AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+       ), scoped AS (
+         SELECT DISTINCT ON (room_id) room_id, effective_from, effective_until, assignment_source
+         FROM raw_scope
+         ORDER BY room_id, (assignment_source = 'room_assignment') DESC, effective_from DESC
+       ), resources AS (
+         SELECT rooms.id AS room_id, rooms.room_code,
+                CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
+                kost_types.category AS kost_type, buildings.building_code, buildings.building_name,
+                rooms.gender_policy, scoped.effective_from, scoped.effective_until, scoped.assignment_source,
+                lease.lease_status, lease.start_date AS lease_start_date, lease.end_date AS lease_end_date,
+                lease.occupancy_id,
+                occupancy.occupancy_status, occupancy.start_date AS occupancy_start_date,
+                resident.full_name AS resident_display_name,
+                COALESCE(billing.billing_state, 'not_available') AS billing_state,
+                billing.invoice_count,
+                transfer.transfer_state, renewal.renewal_state, checkout.checkout_state,
+                issues.open_complaints, issues.open_maintenance,
+                (lease.end_date IS NOT NULL AND lease.end_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+                  AND lease.end_date <= ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '30 days')) AS ending_soon,
+                rooms.updated_at::text AS updated_at
+         FROM scoped
+         JOIN rooms ON rooms.id = scoped.room_id AND rooms.property_id = $2
+         JOIN room_buildings buildings ON buildings.id = rooms.building_id AND buildings.property_id = rooms.property_id
+         JOIN kost_types ON kost_types.id = rooms.kost_type_id AND kost_types.property_id = rooms.property_id
+           AND kost_types.category = rooms.category AND kost_types.deleted_at IS NULL
+         LEFT JOIN LATERAL (
+           SELECT lease_status, start_date, end_date, occupancy_id
+           FROM leases
+           WHERE property_id = $2 AND room_id = rooms.id
+             AND lease_status IN ('active', 'awaiting_activation', 'draft')
+             AND start_date < COALESCE(scoped.effective_until, 'infinity'::date)
+             AND COALESCE(end_date + 1, 'infinity'::date) > scoped.effective_from
+           ORDER BY (lease_status = 'active') DESC, start_date DESC, id DESC LIMIT 1
+         ) lease ON true
+         LEFT JOIN LATERAL (
+           SELECT occupancy_status, start_date, resident_id
+           FROM occupancies
+           WHERE property_id = $2 AND room_id = rooms.id
+             AND occupancy_status = 'active'
+             AND start_date < COALESCE(scoped.effective_until, 'infinity'::date)
+             AND COALESCE(end_date + 1, 'infinity'::date) > scoped.effective_from
+           ORDER BY start_date DESC, id DESC LIMIT 1
+         ) occupancy ON true
+         LEFT JOIN residents resident ON resident.id = occupancy.resident_id AND resident.property_id = rooms.property_id
+         LEFT JOIN LATERAL (
+           SELECT CASE
+             WHEN COUNT(*) = 0 THEN 'not_available'
+             WHEN COUNT(*) FILTER (WHERE invoice_status IN ('issued', 'unpaid', 'overdue')) > 0 THEN 'overdue'
+             WHEN COUNT(*) FILTER (WHERE invoice_status = 'partially_paid') > 0 THEN 'partially_paid'
+             WHEN COUNT(*) FILTER (WHERE invoice_status = 'paid') = COUNT(*) THEN 'settled'
+             ELSE 'current' END AS billing_state, COUNT(*)::int AS invoice_count
+           FROM invoices WHERE property_id = $2 AND occupancy_id = lease.occupancy_id AND invoice_status <> 'void'
+         ) billing ON true
+         LEFT JOIN LATERAL (
+           SELECT state AS transfer_state FROM lease_transfer_commands
+           WHERE property_id = $2 AND (from_room_id = rooms.id OR to_room_id = rooms.id)
+           ORDER BY created_at DESC, id DESC LIMIT 1
+         ) transfer ON true
+         LEFT JOIN LATERAL (
+           SELECT state AS renewal_state FROM lease_renewal_commands
+           WHERE property_id = $2 AND room_id = rooms.id
+           ORDER BY created_at DESC, id DESC LIMIT 1
+         ) renewal ON true
+         LEFT JOIN LATERAL (
+           SELECT state AS checkout_state FROM lease_checkout_commands
+           WHERE property_id = $2 AND room_id = rooms.id
+           ORDER BY created_at DESC, id DESC LIMIT 1
+         ) checkout ON true
+         LEFT JOIN LATERAL (
+           SELECT
+             (SELECT COUNT(*)::int FROM complaints
+              WHERE property_id = $2 AND room_id = rooms.id
+                AND complaint_status NOT IN ('resolved', 'closed', 'cancelled')
+                AND created_at >= scoped.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
+                AND (scoped.effective_until IS NULL OR created_at < scoped.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_complaints,
+             (SELECT COUNT(*)::int FROM maintenance_work_orders
+              WHERE property_id = $2 AND room_id = rooms.id
+                AND work_order_status NOT IN ('verified', 'cancelled')
+                AND created_at >= scoped.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
+                AND (scoped.effective_until IS NULL OR created_at < scoped.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_maintenance
+         ) issues ON true
+       )
+       SELECT resources.*, COUNT(*) OVER()::int AS total_count FROM resources
+       WHERE ($3::text IS NULL OR regexp_replace(lower(room_code || ' ' || COALESCE(building_code, '') || ' ' || COALESCE(building_name, '')), '[^a-z0-9]', '', 'g')
+              LIKE '%' || regexp_replace(lower($3::text), '[^a-z0-9]', '', 'g') || '%')
+         AND ($4::text IS NULL OR room_status = $4)
+         AND ($5::text IS NULL OR lease_status = $5)
+         AND ($6::text IS NULL OR billing_state = $6)
+         AND ($7::int IS NULL OR (lease_end_date IS NOT NULL
+           AND lease_end_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND lease_end_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + $7::int))
+       ORDER BY room_code
+       LIMIT $8 OFFSET $9`,
+      params,
+    );
+    const items = result.rows.map((row: unknown) =>
+      this.ownerResourceRow(row as Record<string, unknown>, includeResident),
+    );
+    return {
+      items,
+      total: items.length ? this.count(result.rows[0].total_count, 'owner_resources.total') : 0,
+      offset,
+      limit,
+    };
+  }
+
+  private ownerResourceRow(row: Record<string, unknown>, includeResident: boolean) {
+    const leaseStatus = this.nullableEnum(
+      row.lease_status,
+      leaseStatuses,
+      'owner_resource.lease_status',
+    );
+    const occupancyStatus = this.nullableEnum(
+      row.occupancy_status,
+      occupancyStatuses,
+      'owner_resource.occupancy_status',
+    );
+    const billingState = this.enumValue(
+      row.billing_state,
+      ['current', 'partially_paid', 'overdue', 'settled', 'not_available'] as const,
+      'owner_resource.billing_state',
+    );
+    return {
+      room_code: this.text(row.room_code, 'owner_resource.room_code'),
+      room_status: this.enumValue(row.room_status, roomStatuses, 'owner_resource.room_status'),
+      kost_type: this.enumValue(
+        row.kost_type,
+        ['rukost', 'apartkost'] as const,
+        'owner_resource.kost_type',
+      ),
+      building_code: this.nullableText(row.building_code, 'owner_resource.building_code'),
+      building_name: this.nullableText(row.building_name, 'owner_resource.building_name'),
+      gender_policy: this.enumValue(
+        row.gender_policy,
+        ['male', 'female'] as const,
+        'owner_resource.gender_policy',
+      ),
+      ownership: {
+        source: this.enumValue(
+          row.assignment_source,
+          ['building_assignment', 'room_assignment'] as const,
+          'owner_resource.assignment_source',
+        ),
+        effective_from: this.date(row.effective_from, 'owner_resource.effective_from'),
+        effective_until: this.nullableDate(row.effective_until, 'owner_resource.effective_until'),
+      },
+      occupancy_status: occupancyStatus,
+      occupancy_start_date: this.nullableDate(
+        row.occupancy_start_date,
+        'owner_resource.occupancy_start_date',
+      ),
+      lease:
+        leaseStatus === null
+          ? null
+          : {
+              status: leaseStatus,
+              start_date: this.date(row.lease_start_date, 'owner_resource.lease_start_date'),
+              end_date: this.nullableDate(row.lease_end_date, 'owner_resource.lease_end_date'),
+            },
+      resident:
+        includeResident && row.resident_display_name !== null
+          ? {
+              display_name: this.text(
+                row.resident_display_name,
+                'owner_resource.resident_display_name',
+              ),
+            }
+          : null,
+      billing_state: billingState,
+      ending_soon: row.ending_soon === true,
+      transfer_state: this.nullableText(row.transfer_state, 'owner_resource.transfer_state'),
+      renewal_state: this.nullableText(row.renewal_state, 'owner_resource.renewal_state'),
+      checkout_state: this.nullableText(row.checkout_state, 'owner_resource.checkout_state'),
+      open_complaints: this.count(row.open_complaints, 'owner_resource.open_complaints'),
+      open_maintenance: this.count(row.open_maintenance, 'owner_resource.open_maintenance'),
+      updated_at: this.timestamp(row.updated_at, 'owner_resource.updated_at'),
+    };
+  }
+
   async preview(actor: UserAccessContext, periodInput: string) {
     const period = this.parsePeriod(periodInput);
     const owner = await this.resolveOwner(actor);
     if (!owner) return this.emptyReport(period);
     return this.buildReport(owner, actor.id, period);
+  }
+
+  /**
+   * Owner finance is deliberately a projection of the report authority, not a
+   * second financial query. The resulting response strips opaque record IDs and
+   * exposes neither payment nor tenant data.
+   */
+  async finance(actor: UserAccessContext, periodInput: string) {
+    return this.toOwnerFinance(await this.preview(actor, periodInput));
   }
 
   async export(actor: UserAccessContext, periodInput: string, formatInput: string) {
@@ -472,6 +751,103 @@ export class PropertyOwnerPortalService {
       filename: `owner-report-${report.period.period}.${formatInput}`,
       checksum: report.scope_checksum,
       watermark: report.watermark,
+    };
+  }
+
+  private toOwnerFinance(report: SafeReport) {
+    const settlementCounts = {
+      draft: 0,
+      ready_for_review: 0,
+      approved: 0,
+      paid: 0,
+      void: 0,
+    };
+    for (const row of report.settlements) {
+      const status = this.enumValue(
+        row.settlement_status,
+        settlementStatuses,
+        'finance.settlement.settlement_status',
+      );
+      settlementCounts[status] += 1;
+    }
+    const settlementState =
+      settlementCounts.draft > 0 || settlementCounts.ready_for_review > 0
+        ? 'requires_review'
+        : settlementCounts.approved > 0
+          ? 'awaiting_payout'
+          : settlementCounts.paid > 0
+            ? 'reconciled'
+            : 'unavailable';
+
+    return {
+      period: report.period,
+      scope_checksum: report.scope_checksum,
+      summary: {
+        gross_earned_rent: report.summary.gross_earned_rent,
+        owner_entitlement: report.summary.owner_entitlement,
+        management_fee: report.summary.management_fee,
+        owner_adjustments: report.summary.owner_adjustments,
+        adjusted_owner_entitlement: (
+          BigInt(report.summary.owner_entitlement) + BigInt(report.summary.owner_adjustments)
+        ).toString(),
+        paid_out: report.summary.paid_out,
+        settlement_state: settlementState,
+        settlement_counts: settlementCounts,
+      },
+      earnings: report.earnings.map((row) => ({
+        room_code: this.text(row.room_code, 'finance.earning.room_code'),
+        earning_month: this.date(row.earning_month, 'finance.earning.earning_month'),
+        service_from: this.date(row.service_from, 'finance.earning.service_from'),
+        service_until: this.date(row.service_until, 'finance.earning.service_until'),
+        earning_status: this.enumValue(
+          row.earning_status,
+          earningStatuses,
+          'finance.earning.earning_status',
+        ),
+        gross_earned_rent: this.money(row.gross_earned_rent, 'finance.earning.gross_earned_rent'),
+        owner_entitlement: this.money(row.owner_entitlement, 'finance.earning.owner_entitlement'),
+        management_fee: this.money(row.management_fee, 'finance.earning.management_fee'),
+      })),
+      adjustments: report.adjustments.map((row) => ({
+        effective_month: this.date(row.effective_month, 'finance.adjustment.effective_month'),
+        adjustment_kind: this.enumValue(
+          row.adjustment_kind,
+          adjustmentKinds,
+          'finance.adjustment.adjustment_kind',
+        ),
+        gross_amount_delta: this.signedMoney(
+          row.gross_amount_delta,
+          'finance.adjustment.gross_amount_delta',
+        ),
+        owner_amount_delta: this.signedMoney(
+          row.owner_amount_delta,
+          'finance.adjustment.owner_amount_delta',
+        ),
+        operator_fee_amount_delta: this.signedMoney(
+          row.operator_fee_amount_delta,
+          'finance.adjustment.operator_fee_amount_delta',
+        ),
+      })),
+      settlements: report.settlements.map((row) => ({
+        period_start: this.date(row.period_start, 'finance.settlement.period_start'),
+        period_end: this.date(row.period_end, 'finance.settlement.period_end'),
+        settlement_status: this.enumValue(
+          row.settlement_status,
+          settlementStatuses,
+          'finance.settlement.settlement_status',
+        ),
+        gross_amount: this.money(row.gross_amount, 'finance.settlement.gross_amount'),
+        owner_amount: this.money(row.owner_amount, 'finance.settlement.owner_amount'),
+        operator_fee_amount: this.money(
+          row.operator_fee_amount,
+          'finance.settlement.operator_fee_amount',
+        ),
+      })),
+      payouts: report.payouts.map((row) => ({
+        recorded_at: this.timestamp(row.recorded_at, 'finance.payout.recorded_at'),
+        payout_kind: this.enumValue(row.payout_kind, payoutKinds, 'finance.payout.payout_kind'),
+        payout_amount: this.money(row.payout_amount, 'finance.payout.payout_amount'),
+      })),
     };
   }
 
@@ -604,14 +980,20 @@ export class PropertyOwnerPortalService {
           JOIN property_owner_settlement_lines lines ON lines.settlement_id = payouts.settlement_id
           JOIN authorized_earnings ON authorized_earnings.id = lines.earning_id
        ), authorized_complaints AS (
-         SELECT DISTINCT complaints.id, complaints.complaint_code, complaints.complaint_status, complaints.priority, complaints.created_at
+         SELECT DISTINCT complaints.id, complaints.complaint_code, complaints.complaint_status, complaints.priority, complaints.created_at,
+                rooms.room_code, buildings.building_code, buildings.building_name
          FROM complaints JOIN period_scope scope ON scope.room_id = complaints.room_id
+         JOIN rooms ON rooms.id = complaints.room_id AND rooms.property_id = complaints.property_id
+         JOIN room_buildings buildings ON buildings.id = rooms.building_id
          WHERE complaints.property_id = $2
            AND complaints.created_at >= scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
            AND complaints.created_at < scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta'
        ), authorized_maintenance AS (
-         SELECT DISTINCT work_orders.id, work_orders.work_order_code, work_orders.work_order_status, work_orders.priority, work_orders.created_at
+         SELECT DISTINCT work_orders.id, work_orders.work_order_code, work_orders.work_order_status, work_orders.priority, work_orders.created_at,
+                rooms.room_code, buildings.building_code, buildings.building_name
          FROM maintenance_work_orders work_orders JOIN period_scope scope ON scope.room_id = work_orders.room_id
+         JOIN rooms ON rooms.id = work_orders.room_id AND rooms.property_id = work_orders.property_id
+         JOIN room_buildings buildings ON buildings.id = rooms.building_id
          WHERE work_orders.property_id = $2
            AND work_orders.created_at >= scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
            AND work_orders.created_at < scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta'
@@ -659,10 +1041,13 @@ export class PropertyOwnerPortalService {
        ), authorized_notifications AS (
          SELECT DISTINCT notifications.id, notifications.notification_type, notifications.notification_status,
                 notifications.priority, notifications.title, notifications.source_event_type,
-                notifications.source_resource_id, notifications.created_at
+                notifications.source_resource_id, notifications.created_at,
+                rooms.room_code, buildings.building_code, buildings.building_name
          FROM notifications
          JOIN notification_resources resources ON resources.notification_id = notifications.id
          JOIN period_scope scope ON scope.room_id = resources.room_id
+         JOIN rooms ON rooms.id = resources.room_id AND rooms.property_id = notifications.property_id
+         JOIN room_buildings buildings ON buildings.id = rooms.building_id
          WHERE notifications.property_id = $2 AND notifications.recipient_user_id = $5
            AND notifications.created_at >= scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
            AND notifications.created_at < scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta'
@@ -709,14 +1094,17 @@ export class PropertyOwnerPortalService {
            SELECT id::text AS payout_id, settlement_id::text, recorded_at::text, payout_kind, payout_amount::text FROM authorized_payouts
          ) item), '[]'::json) AS payouts,
          COALESCE((SELECT json_agg(row_to_json(item) ORDER BY item.created_at, item.complaint_id) FROM (
-           SELECT id::text AS complaint_id, complaint_code, complaint_status, priority, created_at::text FROM authorized_complaints
+           SELECT id::text AS complaint_id, complaint_code, complaint_status, priority, created_at::text,
+                  room_code, building_code, building_name FROM authorized_complaints
          ) item), '[]'::json) AS complaints,
          COALESCE((SELECT json_agg(row_to_json(item) ORDER BY item.created_at, item.work_order_id) FROM (
-           SELECT id::text AS work_order_id, work_order_code, work_order_status, priority, created_at::text FROM authorized_maintenance
+           SELECT id::text AS work_order_id, work_order_code, work_order_status, priority, created_at::text,
+                  room_code, building_code, building_name FROM authorized_maintenance
          ) item), '[]'::json) AS maintenance,
          COALESCE((SELECT json_agg(row_to_json(item) ORDER BY item.created_at, item.notification_id) FROM (
            SELECT id::text AS notification_id, notification_type, notification_status, priority, title,
-                  source_event_type, source_resource_id::text, created_at::text FROM authorized_notifications
+                  source_event_type, source_resource_id::text, created_at::text,
+                  room_code, building_code, building_name FROM authorized_notifications
          ) item), '[]'::json) AS notifications`,
       [owner.id, owner.property_id, period.start, period.until, actorId],
     );
@@ -799,6 +1187,9 @@ export class PropertyOwnerPortalService {
         complaint_status: complaintStatuses,
         priority: issuePriorities,
         created_at: 'timestamp',
+        room_code: 'text',
+        building_code: 'text',
+        building_name: 'text',
       }),
       maintenance: this.rows(row.maintenance, 'maintenance', {
         work_order_id: 'text',
@@ -806,6 +1197,9 @@ export class PropertyOwnerPortalService {
         work_order_status: workOrderStatuses,
         priority: issuePriorities,
         created_at: 'timestamp',
+        room_code: 'text',
+        building_code: 'text',
+        building_name: 'text',
       }),
       notifications: this.rows(row.notifications, 'notifications', {
         notification_id: 'text',
@@ -816,6 +1210,9 @@ export class PropertyOwnerPortalService {
         source_event_type: 'text',
         source_resource_id: 'text',
         created_at: 'timestamp',
+        room_code: 'text',
+        building_code: 'text',
+        building_name: 'text',
       }),
     };
   }
@@ -923,6 +1320,26 @@ export class PropertyOwnerPortalService {
       });
     }
     return parsed;
+  }
+  private nullableEnum<T extends string>(
+    value: unknown,
+    values: readonly T[],
+    field: string,
+  ): T | null {
+    return value === null || value === undefined ? null : this.enumValue(value, values, field);
+  }
+  private listLimit(value: string | undefined): number {
+    const parsed = Number(value ?? 20);
+    return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 20;
+  }
+  private listOffset(value: string | undefined): number {
+    const parsed = Number(value ?? 0);
+    return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, 10000) : 0;
+  }
+  private optionalDays(value: string | undefined): number | null {
+    if (value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 365 ? parsed : null;
   }
   private singleRow(rows: unknown, field: string): Record<string, unknown> {
     if (

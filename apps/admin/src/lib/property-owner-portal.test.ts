@@ -9,6 +9,8 @@ import {
   ownerPortalNavigation,
   parseOwnerAssetDetail,
   parseOwnerPortal,
+  parseOwnerResourcePage,
+  parseOwnerFinance,
   parseOwnerReport,
 } from "./property-owner-portal";
 
@@ -55,6 +57,8 @@ const assetDetail = () => ({
   commercial: { monthly_price: "1800000", annual_contract_value: "21600000" },
   lease: { status: "active", start_date: "2026-08-06", end_date: "2027-02-06" },
   resident: { display_name: "PUTRI", occupancy_start_date: "2026-08-06" },
+  billing: { state: "partially_paid" },
+  lifecycle: { transfer_state: null, renewal_state: "approved", checkout_state: null },
   ownership: {
     source: "room_assignment",
     effective_from: "2026-08-01",
@@ -124,14 +128,72 @@ const report = () => ({
   notifications: [],
 });
 
+const finance = () => ({
+  period: { period: "2026-08", start: "2026-08-01", end: "2026-08-31" },
+  scope_checksum: "a".repeat(64),
+  summary: {
+    gross_earned_rent: "2214000000",
+    owner_entitlement: "2000000000",
+    management_fee: "214000000",
+    owner_adjustments: "-1000",
+    adjusted_owner_entitlement: "1999999000",
+    paid_out: "1999999000",
+    settlement_state: "reconciled",
+    settlement_counts: { draft: 0, ready_for_review: 0, approved: 0, paid: 1, void: 0 },
+  },
+  earnings: [
+    {
+      room_code: "RK-01-01",
+      earning_month: "2026-08-01",
+      service_from: "2026-08-01",
+      service_until: "2026-09-01",
+      earning_status: "recognized",
+      gross_earned_rent: "2214000000",
+      owner_entitlement: "2000000000",
+      management_fee: "214000000",
+    },
+  ],
+  adjustments: [
+    {
+      effective_month: "2026-08-01",
+      adjustment_kind: "transfer_proration",
+      gross_amount_delta: "-1000",
+      owner_amount_delta: "-1000",
+      operator_fee_amount_delta: "0",
+    },
+  ],
+  settlements: [
+    {
+      period_start: "2026-08-01",
+      period_end: "2026-08-31",
+      settlement_status: "paid",
+      gross_amount: "2213999000",
+      owner_amount: "1999999000",
+      operator_fee_amount: "214000000",
+    },
+  ],
+  payouts: [
+    { recorded_at: "2026-08-31T03:00:00.000Z", payout_kind: "payout", payout_amount: "1999999000" },
+  ],
+});
+
 void test("owner portal navigation is an exact read-only allowlist", () => {
   assert.deepEqual(
     ownerPortalNavigation.map((item) => item.id),
-    ["dashboard", "assets", "finance", "reports", "issues", "notifications", "account"],
+    [
+      "dashboard",
+      "assets",
+      "occupancy",
+      "finance",
+      "issues",
+      "reports",
+      "notifications",
+      "account",
+    ],
   );
   assert.equal(
     ownerPortalNavigation.some((item) =>
-      /tambah|ubah|hapus|setujui|bayar|verifikasi/i.test(item.label),
+      /tambah|ubah|hapus|setujui|^bayar$|verifikasi/i.test(item.label),
     ),
     false,
   );
@@ -177,27 +239,120 @@ void test("owner asset detail parser accepts safe detail and rejects tenant PII"
 
 void test("owner portal has an Admin-aligned read-only application shell", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+  const ownerShell = source("components/property-owner-portal/OwnerPortalShell.tsx");
+  const appShell = source("components/layout/app-shell.tsx");
 
-  assert.match(portalComponent, /bg-sidebar/);
-  assert.match(portalComponent, /backdrop-blur/);
-  assert.match(portalComponent, /aria-current/);
-  assert.match(portalComponent, /Akses hanya baca/);
+  assert.match(ownerShell, /bg-sidebar/);
+  assert.match(appShell, /backdrop-blur/);
+  assert.match(ownerShell, /aria-current/);
+  assert.match(ownerShell, /Akses hanya baca/);
   assert.match(portalComponent, /OwnerPortalBoundary/);
-  assert.match(
-    portalComponent,
-    /initialPeriod=\{historical \? portal\.data\.scope\.latestHistoricalPeriod : null\}/,
-  );
+  assert.match(portalComponent, /initialPeriod=\{initialPeriod\}/);
+  assert.match(portalComponent, /<Input/);
+  assert.match(portalComponent, /<Select/);
+  assert.match(portalComponent, /<MonthYearPicker/);
+  assert.match(portalComponent, /function OperationalFilters/);
+  assert.match(portalComponent, /<HeroUiDatePicker/);
+  assert.match(portalComponent, /function OperationalResult/);
+  assert.match(portalComponent, /roomCode/);
+  assert.match(portalComponent, /priority/);
+  assert.match(portalComponent, /fromDate/);
+  assert.match(portalComponent, /to="\/property-owners\/portal\/assets\/\$roomCode"/);
+  assert.doesNotMatch(portalComponent, /to="\/(?:complaints|maintenance|notifications)\//);
+  assert.match(portalComponent, /Reset filter/);
+  assert.match(portalComponent, /variant="outline"/);
   assert.doesNotMatch(
     portalComponent,
     /useMutation|propertyOwnerApi\.(?:create|update|archive|assign|release)/,
   );
 });
 
-void test("owner portal exposes the shared authenticated account menu, including logout", () => {
+void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
-  assert.match(portalComponent, /import \{ UserMenu \} from "@\/components\/layout\/user-menu"/);
-  assert.match(portalComponent, /<UserMenu\s*\/>/);
+  assert.match(portalComponent, /function Dashboard/);
+  assert.match(portalComponent, /href="\/property-owners\/portal\/assets"/);
+  assert.match(portalComponent, /href="\/property-owners\/portal\/occupancy"/);
+  assert.match(portalComponent, /href="\/property-owners\/portal\/issues"/);
+  assert.match(portalComponent, /to="\/property-owners\/portal\/notifications"/);
+  assert.match(portalComponent, /Tidak ada perhatian baru/);
+  assert.match(portalComponent, /ownerPortalNavigation/);
+  assert.match(portalComponent, /Ringkasan ini berasal dari data operasional/);
+  assert.doesNotMatch(portalComponent, /useState\([^)]*openComplaints/);
+});
+
+void test("E5 account page exposes safe identity, read-only scope, and Owner navigation", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /function Account\(\{ portal, accountEmail \}/);
+  assert.match(portalComponent, /Property Owner/);
+  assert.match(portalComponent, /Akses hanya baca/);
+  assert.match(portalComponent, /Cakupan kepemilikan/);
+  assert.match(portalComponent, /Bantuan dan keamanan/);
+  assert.match(portalComponent, /penugasan aset dikelola oleh administrator Kostation/);
+  assert.doesNotMatch(portalComponent, /password|payment_proof|storage_path|NIK|KTP/i);
+});
+
+void test("E6 keeps the read-only account route available without an active assignment", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /view !== "account"/);
+  assert.match(portalComponent, /portal\.data\.owner === null && view !== "account"/);
+  assert.match(portalComponent, /portal\.data\.owner\?\.displayName \?\? "Property Owner"/);
+  assert.match(portalComponent, /Profil owner belum tersedia/);
+});
+
+void test("E6 uses a non-destructive reset control for finance filters", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  const financeStart = portalComponent.indexOf("function Finance(");
+  const financeEnd = portalComponent.indexOf("function OperationalFilters(");
+  assert.ok(financeStart >= 0 && financeEnd > financeStart);
+  const finance = portalComponent.slice(financeStart, financeEnd);
+  assert.match(finance, /variant="outline" onClick=\{resetFilters\}/);
+  assert.doesNotMatch(finance, /variant="destructive" onClick=\{resetFilters\}/);
+});
+
+void test("E2 resource parser accepts safe occupancy facts and rejects resident PII", () => {
+  const resource = {
+    room_code: "AK-05-03",
+    room_status: "occupied",
+    kost_type: "apartkost",
+    building_code: "AK-05",
+    building_name: "Apart Kost Unit 05",
+    gender_policy: "female",
+    ownership: { source: "room_assignment", effective_from: "2026-08-01", effective_until: null },
+    occupancy_status: "active",
+    occupancy_start_date: "2026-08-06",
+    lease: { status: "active", start_date: "2026-08-06", end_date: "2027-02-06" },
+    resident: { display_name: "PUTRI" },
+    billing_state: "partially_paid",
+    ending_soon: false,
+    transfer_state: null,
+    renewal_state: "approved",
+    checkout_state: null,
+    open_complaints: 0,
+    open_maintenance: 0,
+    updated_at: "2026-08-06T03:00:00.000Z",
+  };
+  const parsed = parseOwnerResourcePage({ items: [resource], total: 1, offset: 0, limit: 20 });
+  assert.equal(parsed.items[0]?.resident?.displayName, "PUTRI");
+  assert.equal(parsed.items[0]?.billingState, "partially_paid");
+  assert.throws(() =>
+    parseOwnerResourcePage({
+      items: [{ ...resource, resident: { display_name: "PUTRI", phone: "0812" } }],
+      total: 1,
+      offset: 0,
+      limit: 20,
+    }),
+  );
+});
+
+void test("owner portal exposes the shared authenticated account menu, including logout", () => {
+  const appShell = source("components/layout/app-shell.tsx");
+
+  assert.match(appShell, /import \{ UserMenu \} from "\.\/user-menu"/);
+  assert.match(appShell, /<UserMenu\s*\/>/);
 });
 
 void test("strict portal parser rejects unknown fields, unsafe statuses, dates, and counts", () => {
@@ -278,4 +433,17 @@ void test("view states keep former owners historical instead of empty", () => {
   assert.equal(getOwnerPortalViewState({ ...active, owner: null }, false, false), "empty");
   assert.equal(getOwnerPortalViewState(scheduled, false, false), "scheduled");
   assert.equal(getOwnerPortalViewState(historical, false, false), "historical");
+});
+
+void test("E3 finance parser accepts only the owner-safe financial projection", () => {
+  const parsed = parseOwnerFinance(finance());
+  assert.equal(parsed.summary.settlementState, "reconciled");
+  assert.equal(parsed.summary.adjustedOwnerEntitlement, "1999999000");
+  assert.equal(parsed.earnings[0]?.roomCode, "RK-01-01");
+
+  const unsafe = finance() as ReturnType<typeof finance> & {
+    earnings: Array<Record<string, unknown>>;
+  };
+  unsafe.earnings[0].earning_id = "internal-earning";
+  assert.throws(() => parseOwnerFinance(unsafe));
 });

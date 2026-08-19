@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
-  Bell,
   BedDouble,
   Building2,
   CircleDollarSign,
   ClipboardList,
-  Moon,
   ShieldCheck,
-  Sun,
   UserRound,
 } from "lucide-react";
-import { UserMenu } from "@/components/layout/user-menu";
+import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
 import { ErrorState, LoadingState } from "@/components/state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
@@ -57,6 +55,16 @@ const label = (value: string): string => {
     apartkost: "Apart Kost",
     building_assignment: "Penugasan bangunan Rumah Kost",
     room_assignment: "Penugasan kamar Apart Kost",
+    current: "Berjalan",
+    partially_paid: "Sebagian dibayar",
+    overdue: "Terlambat",
+    settled: "Lunas",
+    not_available: "Belum tersedia",
+    approved: "Disetujui",
+    scheduled: "Terjadwal",
+    notice_received: "Pemberitahuan diterima",
+    inspection_required: "Menunggu inspeksi",
+    settlement_pending: "Menunggu penyelesaian",
   };
   return values[value] ?? value;
 };
@@ -65,7 +73,8 @@ function StatusPill({ value }: { value: string }) {
   const muted = ["vacant", "inactive", "ended", "cancelled"].includes(value);
   const warning = ["maintenance", "requires_review", "awaiting_activation"].includes(value);
   return (
-    <span
+    <Badge
+      variant="outline"
       className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
         warning
           ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
@@ -75,7 +84,7 @@ function StatusPill({ value }: { value: string }) {
       }`}
     >
       {label(value)}
-    </span>
+    </Badge>
   );
 }
 
@@ -212,6 +221,15 @@ function DetailContent({ asset }: { asset: OwnerAssetDetail }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/[0.045] p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                  Status tagihan
+                </p>
+                <p className="mt-1 font-semibold text-foreground">{label(asset.billing.state)}</p>
+              </div>
+              <StatusPill value={asset.billing.state} />
+            </div>
             <div className="rounded-xl border border-border/70 bg-muted/25 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                 Komplain terbuka
@@ -220,6 +238,30 @@ function DetailContent({ asset }: { asset: OwnerAssetDetail }) {
                 {asset.issues.openComplaints}
               </p>
             </div>
+            <DataItem
+              label="Pindah kamar"
+              value={
+                asset.lifecycle.transferState
+                  ? label(asset.lifecycle.transferState)
+                  : "Tidak ada proses"
+              }
+            />
+            <DataItem
+              label="Perpanjangan"
+              value={
+                asset.lifecycle.renewalState
+                  ? label(asset.lifecycle.renewalState)
+                  : "Tidak ada proses"
+              }
+            />
+            <DataItem
+              label="Checkout"
+              value={
+                asset.lifecycle.checkoutState
+                  ? label(asset.lifecycle.checkoutState)
+                  : "Tidak ada proses"
+              }
+            />
             <div className="rounded-xl border border-border/70 bg-muted/25 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                 Maintenance aktif
@@ -242,7 +284,6 @@ function DetailContent({ asset }: { asset: OwnerAssetDetail }) {
 export function PropertyOwnerAssetDetailPage({ roomCode }: { roomCode: string }) {
   const { user, hasRole } = useAuth();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
   const detail = useQuery({
     queryKey: ["property-owner", "asset-detail", user?.id, roomCode],
     queryFn: () => propertyOwnerPortalApi.getAssetDetail(roomCode),
@@ -250,77 +291,36 @@ export function PropertyOwnerAssetDetailPage({ roomCode }: { roomCode: string })
   });
 
   useEffect(() => {
-    const isDark = localStorage.getItem("theme") === "dark";
-    setDark(isDark);
-    document.documentElement.classList.toggle("dark", isDark);
-  }, []);
-
-  useEffect(() => {
     if (!hasRole("property_owner")) void navigate({ to: "/property-owners" });
   }, [hasRole, navigate]);
-
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
-  };
 
   if (!hasRole("property_owner")) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-8">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-              Portal Owner
-            </p>
-            <nav
-              aria-label="Breadcrumb"
-              className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Link to="/property-owners" className="hover:text-foreground">
-                Aset Saya
-              </Link>
-              <span aria-hidden="true">/</span>
-              <span className="truncate font-medium text-foreground">{roomCode}</span>
-            </nav>
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Ubah tema">
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="Notifikasi portal owner">
-              <Bell className="h-4 w-4" />
-            </Button>
-            <div className="border-l border-border pl-3">
-              <UserMenu />
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-7xl px-4 py-7 pb-24 md:px-8 lg:py-8">
-        <Button asChild variant="outline" className="mb-6 min-h-10">
-          <Link to="/property-owners">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Kembali ke Aset Saya
-          </Link>
-        </Button>
-        {detail.isLoading ? (
-          <LoadingState label="Memuat detail aset owner..." />
-        ) : detail.error || !detail.data ? (
-          <ErrorState
-            error={detail.error}
-            onRetry={() => void detail.refetch()}
-            title="Detail aset tidak tersedia"
-          />
-        ) : (
-          <DetailContent asset={detail.data} />
-        )}
-      </main>
-    </div>
+    <OwnerPortalShell
+      activeRoute="assets"
+      ownerName={user?.email ?? "Property Owner"}
+      historical={false}
+      breadcrumbTail={roomCode}
+    >
+      <Button asChild variant="outline" className="mb-6 min-h-10">
+        <Link to="/property-owners/portal/assets">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Kembali ke Aset Saya
+        </Link>
+      </Button>
+      {detail.isLoading ? (
+        <LoadingState label="Memuat detail aset owner..." />
+      ) : detail.error || !detail.data ? (
+        <ErrorState
+          error={detail.error}
+          onRetry={() => void detail.refetch()}
+          title="Detail aset tidak tersedia"
+        />
+      ) : (
+        <DetailContent asset={detail.data} />
+      )}
+    </OwnerPortalShell>
   );
 }

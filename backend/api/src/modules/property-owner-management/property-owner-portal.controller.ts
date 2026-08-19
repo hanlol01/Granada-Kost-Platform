@@ -27,6 +27,40 @@ export class PropertyOwnerPortalController {
     return this.portal.getPortal(actor);
   }
 
+  @Get('assets')
+  getAssets(
+    @CurrentUser() actor: UserAccessContext,
+    @Query('q') query: string | undefined,
+    @Query('room_status') roomStatus: string | undefined,
+    @Query('lease_status') leaseStatus: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Query('limit') limit: string | undefined,
+  ) {
+    return this.portal.listAssets(actor, { query, roomStatus, leaseStatus, offset, limit });
+  }
+
+  @Get('occupancy')
+  getOccupancy(
+    @CurrentUser() actor: UserAccessContext,
+    @Query('q') query: string | undefined,
+    @Query('room_status') roomStatus: string | undefined,
+    @Query('lease_status') leaseStatus: string | undefined,
+    @Query('billing_state') billingState: string | undefined,
+    @Query('ending_within_days') endingWithinDays: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Query('limit') limit: string | undefined,
+  ) {
+    return this.portal.listOccupancy(actor, {
+      query,
+      roomStatus,
+      leaseStatus,
+      billingState,
+      endingWithinDays,
+      offset,
+      limit,
+    });
+  }
+
   @Get('assets/:roomCode')
   getAssetDetail(@CurrentUser() actor: UserAccessContext, @Param('roomCode') roomCode: string) {
     return this.portal.getAssetDetail(actor, roomCode);
@@ -35,6 +69,11 @@ export class PropertyOwnerPortalController {
   @Get('reports/preview')
   preview(@CurrentUser() actor: UserAccessContext, @Query('period') period: string | undefined) {
     return this.portal.preview(actor, period ?? '');
+  }
+
+  @Get('finance')
+  finance(@CurrentUser() actor: UserAccessContext, @Query('period') period: string | undefined) {
+    return this.portal.finance(actor, period ?? '');
   }
 
   @Get('reports/export')

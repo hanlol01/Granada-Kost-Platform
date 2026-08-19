@@ -388,12 +388,32 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
     ],
   },
   {
+    version: '043_vehicle_parking_authority_w09a.sql',
+    checksumSha256: '4c01e5fd92d161caa906ab302133a538dc120f22dbe66636d1c63febf7adaaa9',
+    sentinels: [
+      "to_regclass('public.parking_assignment_histories') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_parking_assignment_history_append_only' AND tgrelid=to_regclass('public.parking_assignment_histories'))",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicle_files' AND column_name='valid_until')",
+    ],
+  },
+  {
     version: '044_complaint_maintenance_w09b.sql',
     checksumSha256: '1c9eddc6539b51f89b24ade83cea792c9110fcbbdae8b8106fe2c2b316f9c8fc',
     sentinels: [
       "to_regclass('public.uq_maintenance_work_orders_actionable_complaint') IS NOT NULL",
       "to_regclass('public.idx_w09b_business_events_aggregate') IS NOT NULL",
       "to_regclass('public.idx_complaint_status_history_actor') IS NOT NULL",
+    ],
+  },
+  {
+    version: '045_expense_lifecycle_w09c.sql',
+    checksumSha256: '6152c1692e6969bc324c18c4bf4657a3b9be6e5066f8647b7c1b25cee98011b3',
+    sentinels: [
+      "to_regclass('public.expenses') IS NOT NULL",
+      "to_regclass('public.expense_status_histories') IS NOT NULL",
+      "to_regclass('public.expense_payments') IS NOT NULL",
+      "to_regclass('public.expense_reversals') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_purpose_check' AND pg_get_constraintdef(oid) ILIKE '%expense_proof%')",
     ],
   },
 ] as const;

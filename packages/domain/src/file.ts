@@ -13,6 +13,7 @@ export const FILE_PURPOSES = [
   "payment_proof",
   "complaint_attachment",
   "maintenance_attachment",
+  "expense_proof",
   "vehicle_photo",
   "vehicle_document",
   "room_photo",
@@ -82,6 +83,18 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     },
     maxFilesPerEntity: 5,
     label: "Foto pekerjaan",
+    compressImages: true,
+  },
+  expense_proof: {
+    purpose: "expense_proof",
+    allowedMimeTypes: ["image/jpeg", "image/png", "application/pdf"],
+    maxBytesByMimeType: {
+      "image/jpeg": 2 * 1024 * 1024,
+      "image/png": 2 * 1024 * 1024,
+      "application/pdf": 5 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 1,
+    label: "Bukti pengeluaran",
     compressImages: true,
   },
   vehicle_photo: {

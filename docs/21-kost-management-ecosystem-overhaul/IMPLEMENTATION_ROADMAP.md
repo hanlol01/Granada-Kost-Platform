@@ -731,7 +731,10 @@ The W09B source boundary now protects complaint and work-order lifecycle
 mutations with property-scoped transactions, idempotency, audit history, and
 outbox events. The existing M16 dispatch authority remains the sole dispatch
 seam. Canonical migration and authenticated runtime/browser evidence remain
-deferred; W09C expenses is still planned.
+deferred. W09C expense source is implemented below; its disposable migration
+proof passed, while automated review and authenticated runtime evidence remain
+deferred.
+
 ### KMO-W09C — Expenses
 
 Requirements:
@@ -746,6 +749,23 @@ Scope:
 - exact Rp500,000 approval boundary; amounts at or above it remain pending until
   the higher approver policy in `OWNER_CONFIRMATION_REQUIRED-005` is decided;
 - reversal and audit.
+
+Implementation boundary (2026-08-19):
+
+- migration `045_expense_lifecycle_w09c.sql` adds property-scoped expense,
+  status-history, payment, and reversal evidence tables;
+- Admin/API authority is append-only for original expense facts, uses
+  property-scoped building/work-order/private-proof references, and requires
+  idempotency, audit, and outbox evidence for mutations;
+- amounts below Rp500,000 may follow the normal approval path; amounts at or
+  above Rp500,000 remain `pending_approval` until
+  `OWNER_CONFIRMATION_REQUIRED-005` defines the higher approver;
+- the Admin Pengeluaran workspace is a read/write surface for authorized
+  `billing.manage` users only; `property_owner` remains read-only;
+- migration application to the canonical database and authenticated runtime
+  verification are not claimed.
+- disposable PostgreSQL apply/replay/rollback proof passed; automated review
+  remains pending.
 
 Exit evidence:
 

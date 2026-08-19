@@ -31,6 +31,7 @@ import { LeaseModule } from './modules/lease/lease.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { OnboardingModule } from './modules/resident/onboarding.module';
 import { PropertyOwnerManagementModule } from './modules/property-owner-management/property-owner-management.module';
+import { ExpenseModule } from './modules/expense/expense.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { PropertyOwnerManagementModule } from './modules/property-owner-manageme
     VehicleModule,
     ParkingModule,
     NotificationModule,
+    ExpenseModule,
     SmartLockModule,
     FileModule,
     PaymentGatewayModule,

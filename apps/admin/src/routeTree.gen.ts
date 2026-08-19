@@ -21,6 +21,7 @@ import { Route as ParkingRouteImport } from './routes/parking'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HunianGalleryRouteImport } from './routes/hunian-gallery'
+import { Route as ExpensesRouteImport } from './routes/expenses'
 import { Route as ComplaintsRouteImport } from './routes/complaints'
 import { Route as CctvRouteImport } from './routes/cctv'
 import { Route as BookingsRouteImport } from './routes/bookings'
@@ -102,6 +103,11 @@ const LoginRoute = LoginRouteImport.update({
 const HunianGalleryRoute = HunianGalleryRouteImport.update({
   id: '/hunian-gallery',
   path: '/hunian-gallery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExpensesRoute = ExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComplaintsRoute = ComplaintsRouteImport.update({
@@ -226,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/expenses': typeof ExpensesRoute
   '/hunian-gallery': typeof HunianGalleryRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
@@ -260,6 +267,7 @@ export interface FileRoutesByTo {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/expenses': typeof ExpensesRoute
   '/hunian-gallery': typeof HunianGalleryRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
@@ -296,6 +304,7 @@ export interface FileRoutesById {
   '/bookings': typeof BookingsRoute
   '/cctv': typeof CctvRoute
   '/complaints': typeof ComplaintsRoute
+  '/expenses': typeof ExpensesRoute
   '/hunian-gallery': typeof HunianGalleryRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
@@ -334,6 +343,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/expenses'
     | '/hunian-gallery'
     | '/login'
     | '/notifications'
@@ -368,6 +378,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/expenses'
     | '/hunian-gallery'
     | '/login'
     | '/notifications'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/cctv'
     | '/complaints'
+    | '/expenses'
     | '/hunian-gallery'
     | '/login'
     | '/notifications'
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   BookingsRoute: typeof BookingsRoute
   CctvRoute: typeof CctvRoute
   ComplaintsRoute: typeof ComplaintsRoute
+  ExpensesRoute: typeof ExpensesRoute
   HunianGalleryRoute: typeof HunianGalleryRoute
   LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
@@ -538,6 +551,13 @@ declare module '@tanstack/react-router' {
       path: '/hunian-gallery'
       fullPath: '/hunian-gallery'
       preLoaderRoute: typeof HunianGalleryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/expenses': {
+      id: '/expenses'
+      path: '/expenses'
+      fullPath: '/expenses'
+      preLoaderRoute: typeof ExpensesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/complaints': {
@@ -773,6 +793,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookingsRoute: BookingsRoute,
   CctvRoute: CctvRoute,
   ComplaintsRoute: ComplaintsRoute,
+  ExpensesRoute: ExpensesRoute,
   HunianGalleryRoute: HunianGalleryRoute,
   LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,

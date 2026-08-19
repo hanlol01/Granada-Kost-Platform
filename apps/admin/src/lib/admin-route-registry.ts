@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Lock,
   MessageSquareWarning,
+  ReceiptText,
   Settings,
   Users,
 } from "lucide-react";
@@ -41,6 +42,7 @@ export type AdminRouteId =
   | "lease-detail"
   | "tenants"
   | "payments"
+  | "expenses"
   | "vehicles"
   | "parking-legacy"
   | "booking-leads"
@@ -317,6 +319,20 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     icon: CreditCard,
     access: { roles: OWNER_MANAGER_ADMIN, readCapabilities: ["billing.read"] },
     navigation: { sidebar: true, mobilePriority: 50 },
+  },
+  {
+    id: "expenses",
+    to: "/expenses",
+    label: "Pengeluaran",
+    section: "pengelolaan",
+    order: 65,
+    icon: ReceiptText,
+    access: {
+      roles: OWNER_MANAGER_ADMIN,
+      readCapabilities: ["billing.manage"],
+      mutationCapabilities: ["billing.manage"],
+    },
+    navigation: { sidebar: true, mobilePriority: 55 },
   },
   {
     id: "vehicles",

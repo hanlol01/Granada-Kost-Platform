@@ -6,6 +6,7 @@ export const FILE_PURPOSES = [
   'payment_proof',
   'complaint_attachment',
   'maintenance_attachment',
+  'expense_proof',
   'vehicle_photo',
   'vehicle_document',
   'room_photo',
@@ -43,6 +44,15 @@ export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
     maxBytesByMimeType: {
       'image/jpeg': 2 * 1024 * 1024,
       'image/png': 2 * 1024 * 1024,
+    },
+  },
+  expense_proof: {
+    purpose: 'expense_proof',
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+    maxBytesByMimeType: {
+      'image/jpeg': 2 * 1024 * 1024,
+      'image/png': 2 * 1024 * 1024,
+      'application/pdf': 5 * 1024 * 1024,
     },
   },
   vehicle_photo: {

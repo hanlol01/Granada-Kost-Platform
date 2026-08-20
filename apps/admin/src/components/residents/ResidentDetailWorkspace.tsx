@@ -25,7 +25,7 @@ import {
   WalletCards,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/W06PaymentsWorkspace";
 import { FileUploadField } from "@/components/file/FileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
@@ -527,6 +527,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [confirmActivation, setConfirmActivation] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
+  const transferPanelRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!transferOpen) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const panel = transferPanelRef.current;
+      panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      panel?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [transferOpen]);
   const [guidanceFocusId, setGuidanceFocusId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -648,21 +661,28 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
       />
 
       {transferOpen && currentTenancy?.leaseStatus === "active" ? (
-        <TransferPanel
-          leaseId={currentTenancy.leaseId}
-          leaseStatus="active"
-          canManage={hasRole("admin") && hasPermission("lease.manage")}
-          canFinancial={canRunTransferTopUp({
-            roles: user?.roles ?? [],
-            permissions: user?.permissions ?? [],
-          })}
-          transferFlagEnabled={transferFlagEnabled}
-          residentGender={resident.gender ?? undefined}
-          onClose={() => setTransferOpen(false)}
-          onOpenLease={(leaseId) =>
-            void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })
-          }
-        />
+        <section
+          ref={transferPanelRef}
+          tabIndex={-1}
+          aria-label="Pindah kamar"
+          className="scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <TransferPanel
+            leaseId={currentTenancy.leaseId}
+            leaseStatus="active"
+            canManage={hasRole("admin") && hasPermission("lease.manage")}
+            canFinancial={canRunTransferTopUp({
+              roles: user?.roles ?? [],
+              permissions: user?.permissions ?? [],
+            })}
+            transferFlagEnabled={transferFlagEnabled}
+            residentGender={resident.gender ?? undefined}
+            onClose={() => setTransferOpen(false)}
+            onOpenLease={(leaseId) =>
+              void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })
+            }
+          />
+        </section>
       ) : null}
 
       <div className="space-y-5">

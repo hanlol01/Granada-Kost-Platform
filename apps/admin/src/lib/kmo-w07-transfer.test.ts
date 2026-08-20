@@ -223,7 +223,12 @@ test("W07B TransferPanel keeps one authority for both paths and one entry per su
   assert.match(panel, /Tinjau Perpindahan/);
   assert.match(panel, /Jadwalkan Pindah Kamar/);
   assert.match(panel, /Tanggal pindah yang direkomendasikan/);
+  assert.match(panel, /Anda tidak perlu menebak tanggal/);
   assert.match(panel, /TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY/);
+  assert.match(panel, /TRANSFER_BILLING_BOUNDARY_UNAVAILABLE/);
+  assert.match(panel, /Buka detail penyewaan/);
+  assert.match(panel, /LEASE_TRANSFER_DISABLED/);
+  assert.match(panel, /Pindah kamar belum diaktifkan untuk properti ini/);
   assert.match(
     panel,
     /Tanggal alternatif hanya dapat dipilih dari daftar tanggal yang disahkan sistem/,
@@ -264,6 +269,9 @@ test("W07B TransferPanel keeps one authority for both paths and one entry per su
   assert.match(resident, /canRunTransferTopUp\(/);
   assert.match(resident, /currentTenancy\.leaseId/);
   assert.match(resident, /Batal Pindah Kamar/);
+  assert.match(resident, /transferPanelRef/);
+  assert.match(resident, /scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
+  assert.match(resident, /aria-label="Pindah kamar"/);
   assert.doesNotMatch(resident, /adminUxLeaseApi\.transfer\./);
 });
 

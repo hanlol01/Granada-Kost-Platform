@@ -199,7 +199,8 @@ export class LeaseTransferService {
       const property = await this.lockProperty(client, scope.property_id);
       await this.features.assertTransferEnabled(scope.property_id, client);
       const source = await this.lockLease(client, leaseId, 'FOR SHARE');
-      this.assertTransferableLease(source, today);
+      this.assertTransferableLease(source);
+      const sourceNextBillingDate = this.currentOrNextBillingBoundary(source, today);
       if (source.room_id === dto.target_room_id) {
         throw new UnprocessableEntityException({
           code: 'TRANSFER_TARGET_ROOM_INVALID',
@@ -251,7 +252,7 @@ export class LeaseTransferService {
         (invoice) => invoice.cycle_start_date === today,
       );
       const targetInvoiceWillBeIssued =
-        source.next_billing_date === today && !currentCycleInvoiceExists;
+        sourceNextBillingDate === today && !currentCycleInvoiceExists;
 
       return {
         data: {
@@ -272,11 +273,11 @@ export class LeaseTransferService {
           billing: {
             billing_cycle: source.billing_cycle,
             billing_anchor_day: source.billing_anchor_day,
-            source_next_billing_date: source.next_billing_date,
+            source_next_billing_date: sourceNextBillingDate,
             target_invoice_will_be_issued: targetInvoiceWillBeIssued,
             target_next_billing_date: targetInvoiceWillBeIssued
               ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
-              : source.next_billing_date,
+              : sourceNextBillingDate,
             due_day: property.default_due_day ?? 25,
             // The successor lease inherits the source contractual end date.
             contractual_end_date: source.end_date,
@@ -363,7 +364,7 @@ export class LeaseTransferService {
       201,
       async (client, today) => {
         const source = await this.lockLease(client, leaseId, 'FOR SHARE');
-        this.assertTransferableLease(source, today);
+        this.assertTransferableLease(source);
         if (source.room_id === dto.target_room_id) {
           throw new UnprocessableEntityException({
             code: 'TRANSFER_TARGET_ROOM_INVALID',
@@ -448,7 +449,7 @@ export class LeaseTransferService {
         const commercialSnapshot = {
           billing_cycle: source.billing_cycle,
           billing_anchor_day: source.billing_anchor_day,
-          next_billing_date: source.next_billing_date,
+          next_billing_date: this.currentOrNextBillingBoundary(source, today),
           snapshot_monthly_price: source.snapshot_monthly_price,
           snapshot_yearly_price: source.snapshot_yearly_price,
           snapshot_deposit_amount: source.snapshot_deposit_amount,
@@ -781,7 +782,8 @@ export class LeaseTransferService {
     const property = await this.lockProperty(client, input.propertyId);
     await this.features.assertTransferEnabled(input.propertyId, client);
     const source = await this.lockLease(client, input.leaseId, 'FOR UPDATE');
-    this.assertTransferableLease(source, today);
+    this.assertTransferableLease(source);
+    const sourceNextBillingDate = this.currentOrNextBillingBoundary(source, today);
     // W07B revision 2: the contractual end date snapshotted when the command
     // was scheduled must still hold at cutover; otherwise the command fails
     // for manual review instead of inheriting a stale term.
@@ -867,12 +869,11 @@ export class LeaseTransferService {
     const sourceCurrentCycleInvoiceExists = invoices.some(
       (invoice) => invoice.cycle_start_date === today,
     );
-    const issueTargetInvoice =
-      source.next_billing_date === today && !sourceCurrentCycleInvoiceExists;
+    const issueTargetInvoice = sourceNextBillingDate === today && !sourceCurrentCycleInvoiceExists;
     const targetNextBillingDate =
-      source.next_billing_date === today
+      sourceNextBillingDate === today
         ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
-        : source.next_billing_date;
+        : sourceNextBillingDate;
     const outstandingAmount = await this.outstandingAmount(
       client,
       invoices.map((invoice) => invoice.id),
@@ -1896,17 +1897,11 @@ export class LeaseTransferService {
     );
   }
 
-  private assertTransferableLease(lease: LeaseRow, today: string): void {
+  private assertTransferableLease(lease: LeaseRow): void {
     if (lease.lease_status !== 'active') {
       throw new ConflictException({
         code: 'LEASE_STATE_CONFLICT',
         message: 'Only an active lease can be transferred',
-      });
-    }
-    if (lease.next_billing_date < today) {
-      throw new ConflictException({
-        code: 'LEASE_BILLING_NOT_CURRENT',
-        message: 'Bring lease billing up to date before transferring it',
       });
     }
   }
@@ -2023,12 +2018,30 @@ export class LeaseTransferService {
 
   private futureBillingBoundaries(source: LeaseRow, today: string): string[] {
     const boundaries: string[] = [];
-    let cursor = source.next_billing_date;
+    let cursor = this.currentOrNextBillingBoundary(source, today);
     for (let index = 0; index < BOUNDARY_SEARCH_HORIZON; index += 1) {
       if (cursor > today) boundaries.push(cursor);
       cursor = nextBillingStart(cursor, source.billing_cycle, source.billing_anchor_day);
     }
     return boundaries;
+  }
+
+  /**
+   * Legacy and scheduler-disabled properties can retain an already-passed
+   * next_billing_date even though their canonical W06 contract invoices are
+   * complete. Transfer derives the nearest valid boundary without mutating
+   * billing records or weakening invoice/payment authority.
+   */
+  private currentOrNextBillingBoundary(source: LeaseRow, today: string): string {
+    let cursor = source.next_billing_date;
+    for (let index = 0; index <= BOUNDARY_SEARCH_HORIZON; index += 1) {
+      if (cursor >= today) return cursor;
+      cursor = nextBillingStart(cursor, source.billing_cycle, source.billing_anchor_day);
+    }
+    throw new ConflictException({
+      code: 'TRANSFER_BILLING_BOUNDARY_UNAVAILABLE',
+      message: 'A current billing-period boundary could not be derived for this lease',
+    });
   }
 
   private assertPropertyScope(user: UserAccessContext, propertyId: string): void {

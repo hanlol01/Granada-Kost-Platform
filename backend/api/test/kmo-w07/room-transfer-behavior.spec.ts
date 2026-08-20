@@ -28,6 +28,7 @@ type TransferOptions = {
   sourceEndDate?: string | null;
   liveSourceEndDate?: string | null;
   nextBillingDate?: string;
+  billingAnchorDay?: number;
   carriedDeposit?: number;
   requiredDeposit?: number;
   commandEffectiveDate?: string;
@@ -47,6 +48,7 @@ function transferHarness(options: TransferOptions = {}) {
   const liveSourceEndDate =
     options.liveSourceEndDate === undefined ? sourceEndDate : options.liveSourceEndDate;
   const nextBillingDate = options.nextBillingDate ?? today;
+  const billingAnchorDay = options.billingAnchorDay ?? 10;
   const carriedDeposit = options.carriedDeposit ?? 500_000;
   const requiredDeposit = options.requiredDeposit ?? 500_000;
   const commandEffectiveDate = options.commandEffectiveDate ?? today;
@@ -77,7 +79,7 @@ function transferHarness(options: TransferOptions = {}) {
     start_date: '2026-03-10',
     end_date: liveSourceEndDate,
     billing_cycle: 'monthly',
-    billing_anchor_day: 10,
+    billing_anchor_day: billingAnchorDay,
     next_billing_date: nextBillingDate,
     snapshot_monthly_price: '1800000',
     snapshot_yearly_price: '19800000',
@@ -108,7 +110,7 @@ function transferHarness(options: TransferOptions = {}) {
     cancel_reason: null,
     commercial_snapshot: {
       billing_cycle: 'monthly',
-      billing_anchor_day: 10,
+      billing_anchor_day: billingAnchorDay,
       next_billing_date: nextBillingDate,
       snapshot_monthly_price: '1800000',
       snapshot_yearly_price: '19800000',
@@ -487,6 +489,74 @@ test('preview recommends the first valid billing boundary when no date is suppli
 
   assert.equal(preview.effective_date, '2026-10-10');
   assert.equal(preview.valid_effective_dates[0], '2026-10-10');
+});
+
+test('preview advances a stale billing cursor to the next valid boundary', async () => {
+  const harness = transferHarness({
+    today: '2026-08-20',
+    nextBillingDate: '2026-08-05',
+    billingAnchorDay: 25,
+  });
+
+  const response = await harness.service.preview(adminActor as never, LEASE_ID, {
+    target_room_id: TARGET_ROOM_ID,
+    transfer_path: 'end_period',
+  });
+  const preview = response.data as {
+    effective_date: string;
+    valid_effective_dates: string[];
+    billing: {
+      source_next_billing_date: string;
+      target_next_billing_date: string;
+    };
+  };
+
+  assert.equal(preview.effective_date, '2026-08-25');
+  assert.equal(preview.valid_effective_dates[0], '2026-08-25');
+  assert.equal(preview.billing.source_next_billing_date, '2026-08-25');
+  assert.equal(preview.billing.target_next_billing_date, '2026-08-25');
+});
+
+test('schedule snapshots the normalized boundary when the stored billing cursor is stale', async () => {
+  const harness = transferHarness({
+    today: '2026-08-20',
+    nextBillingDate: '2026-08-05',
+    billingAnchorDay: 25,
+  });
+
+  await harness.service.schedule(
+    adminActor as never,
+    LEASE_ID,
+    {
+      property_id: PROPERTY_ID,
+      target_room_id: TARGET_ROOM_ID,
+      effective_date: '2026-08-25',
+      reason_code: 'resident_request',
+    } as never,
+    idempotencyKey,
+    auditContext,
+  );
+
+  const command = committedMatching(harness.committed, /INSERT INTO lease_transfer_commands/)[0];
+  assert.ok(command);
+  const snapshot = JSON.parse(command.params[8] as string) as { next_billing_date: string };
+  assert.equal(snapshot.next_billing_date, '2026-08-25');
+});
+
+test('cutover advances a stale cursor and gives the successor the following boundary', async () => {
+  const harness = transferHarness({
+    today: '2026-08-25',
+    commandEffectiveDate: '2026-08-25',
+    nextBillingDate: '2026-08-05',
+    billingAnchorDay: 25,
+  });
+
+  const outcome = await harness.service.executeScheduledTransfer(COMMAND_ID, 'run-stale-cursor');
+
+  assert.equal(outcome.state, 'executed');
+  const successor = committedMatching(harness.committed, /INSERT INTO leases/)[0];
+  assert.ok(successor);
+  assert.equal(successor.params[10], '2026-09-25');
 });
 
 test('a due scheduled command executes at its boundary and inherits the contractual end date', async () => {

@@ -184,35 +184,49 @@ function RoomPicker({
   );
 }
 
-function PreviewErrorNotice({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function PreviewErrorNotice({
+  error,
+  onRetry,
+  onOpenLease,
+}: {
+  error: unknown;
+  onRetry: () => void;
+  onOpenLease: () => void;
+}) {
   const code = ApiError.isApiError(error) ? error.code : null;
   const content =
-    code === "LEASE_BILLING_NOT_CURRENT"
+    code === "LEASE_TRANSFER_DISABLED"
       ? {
-          title: "Jadwal tagihan belum siap untuk perpindahan",
+          title: "Pindah kamar belum diaktifkan untuk properti ini",
           description:
-            "Perbarui status tagihan penyewaan ini terlebih dahulu. Setelah tanggal tagihan berikutnya sudah sesuai, coba tinjau kembali.",
+            "Fitur pindah kamar belum aktif untuk properti yang sedang dipilih. Hubungi pengelola sistem untuk mengaktifkannya.",
         }
-      : code === "TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY" ||
-          code === "TRANSFER_EFFECTIVE_DATE_MUST_BE_FUTURE" ||
-          code === "TRANSFER_EFFECTIVE_DATE_INVALID" ||
-          code === "TRANSFER_BOUNDARY_INVALID"
+      : code === "LEASE_BILLING_NOT_CURRENT" || code === "TRANSFER_BILLING_BOUNDARY_UNAVAILABLE"
         ? {
-            title: "Tanggal perpindahan belum sesuai jadwal tagihan",
+            title: "Tanggal rutin tagihan perlu diperiksa",
             description:
-              "Gunakan tanggal rekomendasi yang ditampilkan sistem atau pilih salah satu tanggal perpindahan yang tersedia.",
+              "Sistem belum dapat menentukan tanggal pindah berikutnya dari data penyewaan. Buka detail penyewaan, lalu periksa tanggal mulai, siklus, dan tanggal rutin tagihannya.",
           }
-        : code === "TRANSFER_TARGET_ROOM_GENDER_INCOMPATIBLE"
+        : code === "TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY" ||
+            code === "TRANSFER_EFFECTIVE_DATE_MUST_BE_FUTURE" ||
+            code === "TRANSFER_EFFECTIVE_DATE_INVALID" ||
+            code === "TRANSFER_BOUNDARY_INVALID"
           ? {
-              title: "Kamar tidak sesuai jenis kelamin penghuni",
+              title: "Tanggal perpindahan belum sesuai jadwal tagihan",
               description:
-                "Pilih kamar Putra, Putri, atau Campuran yang sesuai dengan data penghuni.",
+                "Gunakan tanggal rekomendasi yang ditampilkan sistem atau pilih salah satu tanggal perpindahan yang tersedia.",
             }
-          : {
-              title: "Rencana pindah kamar belum dapat ditampilkan",
-              description:
-                "Data mungkin berubah saat diperiksa. Muat ulang data, pilih kamar kembali, lalu coba lagi.",
-            };
+          : code === "TRANSFER_TARGET_ROOM_GENDER_INCOMPATIBLE"
+            ? {
+                title: "Kamar tidak sesuai jenis kelamin penghuni",
+                description:
+                  "Pilih kamar Putra, Putri, atau Campuran yang sesuai dengan data penghuni.",
+              }
+            : {
+                title: "Rencana pindah kamar belum dapat ditampilkan",
+                description:
+                  "Data mungkin berubah saat diperiksa. Muat ulang data, pilih kamar kembali, lalu coba lagi.",
+              };
 
   return (
     <div className="rounded-xl border border-destructive/35 bg-destructive/10 p-4" role="alert">
@@ -221,9 +235,17 @@ function PreviewErrorNotice({ error, onRetry }: { error: unknown; onRetry: () =>
         <div className="space-y-2">
           <p className="font-semibold text-foreground">{content.title}</p>
           <p className="text-sm text-muted-foreground">{content.description}</p>
-          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
-            Coba lagi
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+              Coba lagi
+            </Button>
+            {(code === "LEASE_BILLING_NOT_CURRENT" ||
+              code === "TRANSFER_BILLING_BOUNDARY_UNAVAILABLE") && (
+              <Button type="button" size="sm" onClick={onOpenLease}>
+                Buka detail penyewaan
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -429,6 +451,13 @@ export function TransferPanel({
   const intentKey = useRef<string | null>(null);
 
   const commands = useM6TransferCommands(leaseId, transferFlagEnabled && leaseStatus === "active");
+  const transferFeatureDisabled =
+    (rooms.error &&
+      ApiError.isApiError(rooms.error) &&
+      rooms.error.code === "LEASE_TRANSFER_DISABLED") ||
+    (commands.error &&
+      ApiError.isApiError(commands.error) &&
+      commands.error.code === "LEASE_TRANSFER_DISABLED");
   const scheduledCommand = (commands.data?.items ?? []).find(
     (command) => command.state === "scheduled",
   );
@@ -575,6 +604,14 @@ export function TransferPanel({
         onClose={onClose}
       />
     );
+  if (transferFeatureDisabled)
+    return (
+      <FeatureOffPanel
+        title="Pindah kamar belum diaktifkan untuk properti ini"
+        description="Fitur ini belum aktif untuk properti yang sedang dipilih. Hubungi pengelola sistem untuk mengaktifkannya."
+        onClose={onClose}
+      />
+    );
   if (!canManage || leaseStatus !== "active")
     return (
       <ActionDeniedPanel
@@ -654,8 +691,9 @@ export function TransferPanel({
           </div>
         ) : (
           <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            Ini pilihan yang disarankan. Sistem akan memilih tanggal tagihan terdekat agar riwayat
-            sewa dan tagihan tetap rapi.
+            Ini pilihan yang disarankan. Anda tidak perlu menebak tanggal: setelah kamar tujuan
+            dipilih, sistem menggunakan tanggal rutin tagihan berikutnya agar riwayat sewa dan
+            tagihan tetap rapi.
           </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -725,7 +763,11 @@ export function TransferPanel({
           </Button>
         </div>
         {previewError ? (
-          <PreviewErrorNotice error={previewError} onRetry={() => void previewTransfer()} />
+          <PreviewErrorNotice
+            error={previewError}
+            onRetry={() => void previewTransfer()}
+            onOpenLease={() => onOpenLease(leaseId)}
+          />
         ) : null}
         {preview ? (
           <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/5 p-4">

@@ -36,6 +36,7 @@ export type AdminRouteId =
   | "rooms-galeri"
   | "terms"
   | "property-owners"
+  | "property-owner-portal"
   | "property-owner-detail"
   | "leases"
   | "leases-create"
@@ -236,6 +237,23 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       mutationCapabilities: ["property_owner.manage"],
     },
     navigation: { sidebar: true, mobilePriority: 35 },
+  },
+  {
+    // This concrete route must precede the dynamic :ownerId detail route.
+    // Otherwise /property-owners/portal is interpreted as an admin owner ID
+    // and the read-only property_owner role is rejected by the route boundary.
+    id: "property-owner-portal",
+    to: "/property-owners/portal",
+    label: "Portal Owner",
+    parentId: "property-owners",
+    section: "master-data",
+    order: 35.25,
+    icon: Building2,
+    access: {
+      roles: ["property_owner"],
+      anyReadCapabilities: ["property_owner.asset.read"],
+    },
+    redirectOnly: true,
   },
   {
     id: "property-owner-detail",
@@ -551,10 +569,16 @@ function isDynamicMatch(pattern: string, pathname: string): boolean {
 /** Resolve a leaf first so /rooms selects Ringkasan rather than the virtual group. */
 export function findRouteMetadata(pathname: string): AdminRouteMetadata | undefined {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  return [...adminRouteRegistry]
-    .filter((route) => !route.group && route.to)
-    .sort((a, b) => (b.to?.length ?? 0) - (a.to?.length ?? 0))
-    .find((route) => route.to === normalized || isDynamicMatch(route.to!, normalized));
+  const routes = adminRouteRegistry.filter((route) => !route.group && route.to);
+  // A concrete path is always more specific than a parameter route, regardless
+  // of the parameter name length. This prevents /property-owners/portal from
+  // being treated as /property-owners/:ownerId.
+  return (
+    routes.find((route) => route.to === normalized) ??
+    [...routes]
+      .sort((a, b) => (b.to?.length ?? 0) - (a.to?.length ?? 0))
+      .find((route) => isDynamicMatch(route.to!, normalized))
+  );
 }
 
 export function isRouteActive(route: AdminRouteMetadata, pathname: string): boolean {

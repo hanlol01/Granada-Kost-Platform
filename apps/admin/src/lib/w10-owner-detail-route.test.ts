@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { adminRouteRegistry, getRouteAccessDecision } from "./admin-route-registry";
+import {
+  adminRouteRegistry,
+  findRouteMetadata,
+  getRouteAccessDecision,
+} from "./admin-route-registry";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADMIN_SRC = resolve(HERE, "..");
@@ -48,6 +52,20 @@ test("W10 owner parent route delegates the index and detail pages through an Out
   assert.match(parentRoute, /return <Outlet\s*\/>/);
   assert.match(indexRoute, /createFileRoute\("\/property-owners\/"\)/);
   assert.match(indexRoute, /<PropertyOwnerWorkspace\s*\/>/);
+});
+
+test("W10 owner portal is not mistaken for the admin owner-detail route", () => {
+  const portalRoute = findRouteMetadata("/property-owners/portal");
+
+  assert.ok(portalRoute);
+  assert.equal(portalRoute.id, "property-owner-portal");
+  assert.equal(
+    getRouteAccessDecision(portalRoute, {
+      roles: ["property_owner"],
+      permissions: ["property_owner.asset.read"],
+    }),
+    "allowed",
+  );
 });
 
 test("W10 owner list provides one Detail action that navigates to the detail page", () => {

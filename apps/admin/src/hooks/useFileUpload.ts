@@ -60,18 +60,20 @@ export async function createPublicGalleryDerivative(file: File): Promise<File> {
     const context = canvas.getContext("2d");
     if (!context) throw new Error("GALLERY_DERIVATIVE_UNAVAILABLE");
     context.drawImage(bitmap, 0, 0, width, height);
+    // Always emit a fresh PNG for the public derivative. Browser JPEG encoders
+    // may embed ICC/EXIF application markers; those are rejected by the
+    // server's public-safety metadata validator even though dimensions are
+    // valid. Canvas PNG output contains only the rendered pixels and keeps the
+    // derivative deterministic and metadata-safe.
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (result) => (result ? resolve(result) : reject(new Error("GALLERY_DERIVATIVE_FAILED"))),
-        file.type,
-        file.type === "image/png" ? undefined : 0.86,
+        "image/png",
       );
     });
-    const extension =
-      file.type === "image/png" ? ".png" : file.type === "image/webp" ? ".webp" : ".jpg";
     const stem = file.name.replace(/\.[^.]+$/, "").slice(0, 100) || "gallery";
-    return new File([blob], `${stem}-public${extension}`, {
-      type: file.type,
+    return new File([blob], `${stem}-public.png`, {
+      type: "image/png",
       lastModified: Date.now(),
     });
   } finally {

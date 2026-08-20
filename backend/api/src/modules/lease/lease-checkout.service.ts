@@ -455,7 +455,29 @@ export class LeaseCheckoutService {
           });
         }
         await client.query(
-          `UPDATE parking_slots slot SET slot_status='available',vehicle_id=NULL,updated_at=now() FROM parking_zones zone JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id WHERE slot.zone_id=zone.id AND zone.property_id=$1 AND vehicle.property_id=$1 AND vehicle.resident_id=$2`,
+          `WITH released AS (
+             SELECT slot.id, slot.vehicle_id, zone.property_id
+             FROM parking_slots slot
+             JOIN parking_zones zone ON zone.id = slot.zone_id
+             JOIN vehicles vehicle ON vehicle.id = slot.vehicle_id
+             WHERE zone.property_id = $1
+               AND vehicle.property_id = $1
+               AND vehicle.resident_id = $2
+               AND slot.slot_status = 'occupied'
+             FOR UPDATE OF slot, vehicle
+           )
+           INSERT INTO parking_assignment_histories
+             (property_id, slot_id, vehicle_id, action, reason, actor_user_id, metadata)
+           SELECT property_id, id, vehicle_id, 'released', 'General checkout', $3,
+                  jsonb_build_object('source', 'lease_checkout', 'checkout_command_id', $4::uuid)
+           FROM released`,
+          [checkout.property_id, checkout.resident_id, user.id, checkout.id],
+        );
+        await client.query(
+          `UPDATE parking_slots slot SET slot_status='available',vehicle_id=NULL,updated_at=now()
+           FROM parking_zones zone JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id
+           WHERE slot.zone_id=zone.id AND zone.property_id=$1 AND vehicle.property_id=$1
+             AND vehicle.resident_id=$2 AND slot.slot_status='occupied'`,
           [checkout.property_id, checkout.resident_id],
         );
         const endedOccupancy = await client.query(

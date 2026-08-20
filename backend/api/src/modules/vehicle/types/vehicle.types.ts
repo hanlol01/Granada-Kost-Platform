@@ -52,6 +52,8 @@ export type VehicleFileRecord = {
   filePurpose: VehicleFilePurpose;
   uploadedByUserId: string | null;
   caption: string | null;
+  issuedAt: string | null;
+  validUntil: string | null;
   createdAt: Date;
 };
 
@@ -120,6 +122,8 @@ export type CreateVehicleFileInput = {
   filePurpose?: VehicleFilePurpose;
   uploadedByUserId?: string;
   caption?: string;
+  issuedAt?: string;
+  validUntil?: string;
 };
 
 export type AuditActorContext = {
@@ -127,4 +131,5 @@ export type AuditActorContext = {
   ipAddress?: string;
   userAgent?: string;
   correlationId?: string;
+  idempotencyKey?: string;
 };

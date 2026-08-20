@@ -14,6 +14,7 @@ import { Route as KamarRouteImport } from './routes/kamar'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as KamarSlugRouteImport } from './routes/kamar.$slug'
+import { Route as AppVehiclesRouteImport } from './routes/_app/vehicles'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
 import { Route as AppNotificationsRouteImport } from './routes/_app/notifications'
 import { Route as AppInfoRouteImport } from './routes/_app/info'
@@ -44,6 +45,11 @@ const KamarSlugRoute = KamarSlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
   getParentRoute: () => KamarRoute,
+} as any)
+const AppVehiclesRoute = AppVehiclesRouteImport.update({
+  id: '/vehicles',
+  path: '/vehicles',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppProfileRoute = AppProfileRouteImport.update({
   id: '/profile',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/info': typeof AppInfoRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
+  '/vehicles': typeof AppVehiclesRoute
   '/kamar/$slug': typeof KamarSlugRoute
 }
 export interface FileRoutesByTo {
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/info': typeof AppInfoRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
+  '/vehicles': typeof AppVehiclesRoute
   '/kamar/$slug': typeof KamarSlugRoute
   '/': typeof AppIndexRoute
 }
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/_app/info': typeof AppInfoRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
+  '/_app/vehicles': typeof AppVehiclesRoute
   '/kamar/$slug': typeof KamarSlugRoute
   '/_app/': typeof AppIndexRoute
 }
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/notifications'
     | '/profile'
+    | '/vehicles'
     | '/kamar/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/info'
     | '/notifications'
     | '/profile'
+    | '/vehicles'
     | '/kamar/$slug'
     | '/'
   id:
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/_app/info'
     | '/_app/notifications'
     | '/_app/profile'
+    | '/_app/vehicles'
     | '/kamar/$slug'
     | '/_app/'
   fileRoutesById: FileRoutesById
@@ -196,6 +208,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/kamar/$slug'
       preLoaderRoute: typeof KamarSlugRouteImport
       parentRoute: typeof KamarRoute
+    }
+    '/_app/vehicles': {
+      id: '/_app/vehicles'
+      path: '/vehicles'
+      fullPath: '/vehicles'
+      preLoaderRoute: typeof AppVehiclesRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/profile': {
       id: '/_app/profile'
@@ -249,6 +268,7 @@ interface AppRouteChildren {
   AppInfoRoute: typeof AppInfoRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
+  AppVehiclesRoute: typeof AppVehiclesRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
@@ -259,6 +279,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInfoRoute: AppInfoRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
+  AppVehiclesRoute: AppVehiclesRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

@@ -63,6 +63,74 @@ test('contract settlement separates verified onboarding payment from later rent 
   );
 });
 
+void test('resident self billing derives scope from resident identity without a phantom membership table', async () => {
+  const lease = {
+    id: LEASE_ID,
+    property_id: PROPERTY_ID,
+    resident_id: RESIDENT_ID,
+    room_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    occupancy_id: null,
+    lease_status: 'active',
+    start_date: '2026-08-01',
+    end_date: '2027-02-01',
+    contract_rent_amount: '10800000',
+    dp_required_amount: '2700000',
+    security_deposit_required_amount: '0',
+    payment_plan_type: 'monthly_installments',
+    snapshot_monthly_price: '1800000',
+    snapshot_room_number: 'AK-05-01',
+    snapshot_kost_type_name: 'Apart Kost',
+    building_code: 'AK-05',
+    resident_name: 'Resident QA',
+    remaining_days: 165,
+  };
+  const statements: string[] = [];
+  const service = new W06BillingService(
+    {
+      client: {
+        query: (statement: string) => {
+          const normalized = sql(statement);
+          statements.push(normalized);
+          if (normalized.includes('property_memberships')) {
+            const error = new Error('relation "property_memberships" does not exist') as Error & {
+              code: string;
+            };
+            error.code = '42P01';
+            return Promise.reject(error);
+          }
+          if (normalized.includes('FROM leases l JOIN residents resident')) {
+            return Promise.resolve({ rows: [lease] });
+          }
+          if (normalized.includes('FROM lease_installments')) {
+            return Promise.resolve({ rows: [{ total: '0', paid: '0', next_due: null }] });
+          }
+          if (normalized.includes('FROM lease_deposit_transactions')) {
+            return Promise.resolve({
+              rows: [{ collected: '0', deducted: '0', refunded: '0', balance: '0' }],
+            });
+          }
+          return Promise.resolve({ rows: [] });
+        },
+      },
+    } as never,
+    { assertCanReadProperty: () => Promise.resolve() } as never,
+    {} as never,
+  );
+
+  const result = await service.myBilling({ id: ACTOR_ID } as never);
+
+  assert.equal(result.data.lease.id, LEASE_ID);
+  assert.equal(result.data.lease.property_id, PROPERTY_ID);
+  assert.equal(
+    statements.some((statement) => statement.includes('property_memberships')),
+    false,
+  );
+  assert.equal(
+    statements.some((statement) => statement.includes('resident.user_id=$1')),
+    true,
+  );
+});
+
 test('first-payment checkpoint requires one monthly rate after activation and accepts rent paid early', () => {
   const harness = paymentHarness();
   const project = (

@@ -64,7 +64,28 @@ export function toNotificationResponse(notification: NotificationRecord) {
     read_at: notification.readAt,
     expires_at: notification.expiresAt,
     created_at: notification.createdAt,
+    deep_link: notificationDeepLink(notification.notificationType),
   };
+}
+
+/**
+ * Notification links are intentionally generic route targets. Resource IDs,
+ * storage paths, and internal audit references never cross the notification
+ * boundary; the destination route applies its own authenticated scope.
+ */
+function notificationDeepLink(type: string): string | null {
+  if (type.startsWith('billing.') || type.startsWith('payment.') || type.startsWith('invoice.')) {
+    return '/billing';
+  }
+  if (
+    type.startsWith('complaint.') ||
+    type.startsWith('maintenance.') ||
+    type.startsWith('work_order.')
+  ) {
+    return '/complaints';
+  }
+  if (type.startsWith('announce.')) return '/info';
+  return null;
 }
 
 export function toNotificationPreferenceResponse(preference: NotificationPreferenceRecord) {

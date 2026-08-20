@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
-import { VehicleStatus, VehicleStatusHistoryRecord, VehicleStatusTransitionInput } from '../types/vehicle.types';
+import {
+  VehicleStatus,
+  VehicleStatusHistoryRecord,
+  VehicleStatusTransitionInput,
+} from '../types/vehicle.types';
 
 type VehicleStatusHistoryRow = {
   id: string;
@@ -16,12 +21,21 @@ type VehicleStatusHistoryRow = {
 export class VehicleStatusHistoryRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async record(input: VehicleStatusTransitionInput): Promise<VehicleStatusHistoryRecord> {
-    const result = await this.database.client.query<VehicleStatusHistoryRow>(
+  async record(
+    input: VehicleStatusTransitionInput,
+    client?: PoolClient,
+  ): Promise<VehicleStatusHistoryRecord> {
+    const result = await (client ?? this.database.client).query<VehicleStatusHistoryRow>(
       `INSERT INTO vehicle_status_histories (vehicle_id, from_status, to_status, changed_by_user_id, notes)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, vehicle_id, from_status, to_status, changed_by_user_id, changed_at, notes`,
-      [input.vehicleId, input.fromStatus, input.toStatus, input.actorUserId ?? null, input.notes ?? null],
+      [
+        input.vehicleId,
+        input.fromStatus,
+        input.toStatus,
+        input.actorUserId ?? null,
+        input.notes ?? null,
+      ],
     );
     return this.map(result.rows[0]);
   }

@@ -34,6 +34,7 @@ export type MyNotificationRecord = {
   read_at: string | null;
   expires_at: string | null;
   created_at: string;
+  deep_link: string | null;
 };
 
 export type UseNotificationsFilters = {
@@ -113,9 +114,9 @@ export function useMarkNotificationRead() {
 
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient();
-  return useMutation<MyNotificationRecord[], unknown, void>({
+  return useMutation<{ updatedCount: number }, unknown, void>({
     mutationFn: () =>
-      apiClient.post<MyNotificationRecord[]>("/my/notifications/read-all", undefined, {
+      apiClient.post<{ updatedCount: number }>("/my/notifications/read-all", undefined, {
         idempotencyKey: newIdempotencyKey(),
       }),
     onSuccess: async () => {
@@ -123,5 +124,20 @@ export function useMarkAllNotificationsRead() {
       await queryClient.invalidateQueries({ queryKey: qk.penghuni.notifications() });
     },
     onError: (err) => toastMutationError(err, "Gagal menandai semua notifikasi"),
+  });
+}
+
+export function useArchiveNotification() {
+  const queryClient = useQueryClient();
+  return useMutation<MyNotificationRecord, unknown, { id: string }>({
+    mutationFn: ({ id }) =>
+      apiClient.post<MyNotificationRecord>(`/my/notifications/${id}/archive`, undefined, {
+        idempotencyKey: newIdempotencyKey(),
+      }),
+    onSuccess: async () => {
+      toastMutationSuccess("Notifikasi diarsipkan");
+      await queryClient.invalidateQueries({ queryKey: qk.penghuni.notifications() });
+    },
+    onError: (err) => toastMutationError(err, "Gagal mengarsipkan notifikasi"),
   });
 }

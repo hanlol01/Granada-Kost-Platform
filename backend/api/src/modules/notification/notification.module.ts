@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { AdminNotificationController } from './controllers/admin-notification.controller';
+import { AdminNotificationCenterController } from './controllers/admin-notification-center.controller';
 import { MyNotificationPreferenceController } from './controllers/my-notification-preference.controller';
 import { MyNotificationController } from './controllers/my-notification.controller';
 import { NotificationDeliveryController } from './controllers/notification-delivery.controller';
@@ -14,10 +15,12 @@ import { BrevoEmailProvider } from './providers/brevo-email.provider';
 import { FonnteWhatsappProvider } from './providers/fonnte-whatsapp.provider';
 import { WebPushProvider } from './providers/web-push.provider';
 import { AdminNotificationRepository } from './repositories/admin-notification.repository';
+import { AdminNotificationCenterRepository } from './repositories/admin-notification-center.repository';
 import { NotificationDeliveryRepository } from './repositories/notification-delivery.repository';
 import { NotificationPreferenceRepository } from './repositories/notification-preference.repository';
 import { NotificationRepository } from './repositories/notification.repository';
 import { AdminNotificationService } from './services/admin-notification.service';
+import { AdminNotificationCenterService } from './services/admin-notification-center.service';
 import { NotificationDeliveryService } from './services/notification-delivery.service';
 import { NotificationPreferenceService } from './services/notification-preference.service';
 import { NotificationService } from './services/notification.service';
@@ -29,14 +32,17 @@ import { NotificationService } from './services/notification.service';
     MyNotificationPreferenceController,
     NotificationDeliveryController,
     AdminNotificationController,
+    AdminNotificationCenterController,
   ],
   providers: [
     NotificationRepository,
     AdminNotificationRepository,
+    AdminNotificationCenterRepository,
     NotificationDeliveryRepository,
     NotificationPreferenceRepository,
     NotificationService,
     AdminNotificationService,
+    AdminNotificationCenterService,
     NotificationDeliveryService,
     NotificationPreferenceService,
     BrevoEmailProvider,

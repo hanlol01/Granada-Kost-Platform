@@ -1,12 +1,12 @@
 // THESIS: /kamar is a guided housing journey, not a generic hotel-search grid.
 // OWN-WORLD: calm operational blue, cool-white planes, room photography, restrained borders.
 // STORY: understand two Kostation categories, compare published facts, then submit a safe lead.
-// FIRST VIEWPORT: image-led promise, concise trust copy, and one integrated choice panel.
+// FIRST VIEWPORT: image-led promise, concise trust copy, and a direct catalog path.
 // FORM: continuous guided route, assigned structure 5, staged as a fold-by-fold journey (c171d1f1).
 //
-// Public authority stays category-level. Visitors choose category, gender, planned start, and
-// payment schedule; exact room placement remains an Admin decision. A lead is not a booking,
-// hold, lease, occupancy, invoice, or payment.
+// Public authority stays category-level. Visitors compare published categories; exact room
+// placement remains an Admin decision. A lead is not a booking, hold, lease, occupancy, invoice,
+// or payment.
 
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -15,7 +15,6 @@ import {
   BadgeCheck,
   BookOpen,
   Building2,
-  CalendarDays,
   Check,
   CheckCircle2,
   DoorOpen,
@@ -25,18 +24,13 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
-  Users,
-  WalletCards,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatIDR } from "@/lib/format";
 import { type PublicCategory, type PublicGender } from "@/hooks/usePublicRooms";
 import {
-  getJakartaDateBounds,
   normalizePublicPlannedStart,
   resolveGalleryImageUrl,
   toPublicRoomGroup,
@@ -57,18 +51,6 @@ type KamarSearch = {
   plannedStart?: string;
   paymentSchedule?: "annual" | "two_month_installments";
 };
-
-const GENDER_OPTIONS: { value: PublicGender | undefined; label: string }[] = [
-  { value: undefined, label: "Semua" },
-  { value: "putra", label: "Putra" },
-  { value: "putri", label: "Putri" },
-];
-
-const CATEGORY_OPTIONS: { value: PublicCategory | undefined; label: string }[] = [
-  { value: undefined, label: "Semua" },
-  { value: "rukost", label: "Rumah Kost" },
-  { value: "apartkost", label: "Apart Kost" },
-];
 
 export const Route = createFileRoute("/kamar")({
   validateSearch: (raw: Record<string, unknown>): KamarSearch => ({
@@ -128,7 +110,6 @@ function KamarPage() {
   const catalog = usePublicHunianCatalog({ gender, category, plannedStart, paymentSchedule });
   const whatsAppNumber = getPublicWhatsAppNumber();
   const items = useMemo(() => catalog.data ?? [], [catalog.data]);
-  const dateBounds = getJakartaDateBounds();
   const totalAvailability = items.reduce((sum, item) => sum + item.availabilityCount, 0);
   const publishedFacilities = useMemo(
     () => [...new Set(items.flatMap((item) => item.facilitiesPreview))].slice(0, 8),
@@ -156,10 +137,6 @@ function KamarPage() {
 
   useEffect(() => setHeroFailed(false), [heroCoverUrl]);
 
-  const setGender = (value: PublicGender | undefined) =>
-    void navigate({ search: (prev) => ({ ...prev, gender: value }), replace: true });
-  const setCategory = (value: PublicCategory | undefined) =>
-    void navigate({ search: (prev) => ({ ...prev, category: value }), replace: true });
   const scrollToCatalog = () =>
     document
       .getElementById("pilihan-hunian")
@@ -232,7 +209,7 @@ function KamarPage() {
             className="absolute inset-0 bg-gradient-to-r from-[oklch(0.15_0.045_250/0.96)] via-[oklch(0.18_0.05_250/0.76)] to-[oklch(0.18_0.04_250/0.22)]"
           />
 
-          <div className="relative mx-auto flex w-full max-w-7xl flex-col px-4 pb-40 pt-16 sm:px-6 sm:pb-44 sm:pt-24 lg:px-8 lg:pt-28">
+          <div className="relative mx-auto flex w-full max-w-7xl flex-col px-4 pb-20 pt-16 sm:px-6 sm:pb-24 sm:pt-24 lg:px-8 lg:pt-28">
             <div className="max-w-2xl">
               <Badge className="mb-5 border-white/20 bg-white/10 text-white hover:bg-white/10">
                 Hunian mahasiswa di Jatinangor
@@ -260,138 +237,29 @@ function KamarPage() {
               </div>
             </div>
           </div>
-
-          <div className="absolute inset-x-0 bottom-0 translate-y-[44%] px-4 sm:px-6">
-            <div className="mx-auto max-w-7xl rounded-2xl bg-card p-4 text-card-foreground shadow-[0_24px_70px_-30px_oklch(0.08_0.04_250/0.65)] sm:p-6">
-              <div className="grid gap-5 lg:grid-cols-[1fr_1.08fr_1.2fr_auto] lg:items-end">
-                <ChoiceGroup label="Hunian untuk" icon={<Users className="h-4 w-4" />}>
-                  {GENDER_OPTIONS.map((option) => (
-                    <FilterButton
-                      key={option.label}
-                      active={gender === option.value}
-                      onClick={() => setGender(option.value)}
-                    >
-                      {option.label}
-                    </FilterButton>
-                  ))}
-                </ChoiceGroup>
-                <div>
-                  <div className="flex items-end gap-2">
-                    <HeroUiDatePicker
-                      id="public-planned-start"
-                      className="min-w-0 flex-1"
-                      label={
-                        <span className="flex items-center gap-2 text-xs font-semibold">
-                          <CalendarDays className="h-4 w-4 text-primary" /> Rencana mulai
-                        </span>
-                      }
-                      value={plannedStart ?? ""}
-                      minDate={dateBounds.today}
-                      maxDate={dateBounds.max}
-                      onChange={(value) =>
-                        void navigate({
-                          search: (prev) => ({
-                            ...prev,
-                            plannedStart: value || undefined,
-                          }),
-                          replace: true,
-                        })
-                      }
-                    />
-                    {plannedStart ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="min-h-11 px-3 text-xs"
-                        onClick={() =>
-                          void navigate({
-                            search: (prev) => ({ ...prev, plannedStart: undefined }),
-                            replace: true,
-                          })
-                        }
-                      >
-                        Hapus
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-                <ChoiceGroup label="Rencana pembayaran" icon={<WalletCards className="h-4 w-4" />}>
-                  <FilterButton
-                    active={paymentSchedule === undefined}
-                    onClick={() =>
-                      void navigate({
-                        search: (prev) => ({ ...prev, paymentSchedule: undefined }),
-                        replace: true,
-                      })
-                    }
-                  >
-                    Belum ditentukan
-                  </FilterButton>
-                  <FilterButton
-                    active={paymentSchedule === "annual"}
-                    onClick={() =>
-                      void navigate({
-                        search: (prev) => ({ ...prev, paymentSchedule: "annual" }),
-                        replace: true,
-                      })
-                    }
-                  >
-                    Tahunan
-                  </FilterButton>
-                  <FilterButton
-                    active={paymentSchedule === "two_month_installments"}
-                    onClick={() =>
-                      void navigate({
-                        search: (prev) => ({ ...prev, paymentSchedule: "two_month_installments" }),
-                        replace: true,
-                      })
-                    }
-                  >
-                    Per 2 bulan
-                  </FilterButton>
-                </ChoiceGroup>
-                <Button type="button" className="min-h-12 gap-2 px-6" onClick={scrollToCatalog}>
-                  Lihat Pilihan <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
         </section>
 
         <section
           id="pilihan-hunian"
-          className="scroll-mt-6 px-4 pb-16 pt-40 sm:px-6 sm:pb-24 sm:pt-44 lg:px-8"
+          className="scroll-mt-6 px-4 pb-16 pt-16 sm:px-6 sm:pb-24 sm:pt-20 lg:px-8"
         >
           <div className="mx-auto max-w-7xl">
-            <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-              <div className="max-w-2xl">
-                <p className="text-sm font-semibold text-primary">Satu properti, dua pilihan</p>
-                <h2 className="mt-2 text-3xl font-bold tracking-[-0.025em] sm:text-4xl">
-                  Pilih hunian yang paling sesuai.
-                </h2>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Ketersediaan ditampilkan per kategori. Nomor kamar dan penempatan akhir
-                  dikonfirmasi oleh Admin setelah pengajuan.
-                </p>
-              </div>
-              <ChoiceGroup label="Saring kategori" icon={<Building2 className="h-4 w-4" />}>
-                {CATEGORY_OPTIONS.map((option) => (
-                  <FilterButton
-                    key={option.label}
-                    active={category === option.value}
-                    onClick={() => setCategory(option.value)}
-                  >
-                    {option.label}
-                  </FilterButton>
-                ))}
-              </ChoiceGroup>
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold text-primary">Satu properti, dua pilihan</p>
+              <h2 className="mt-2 text-3xl font-bold tracking-[-0.025em] sm:text-4xl">
+                Pilih hunian yang paling sesuai.
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                Ketersediaan ditampilkan per kategori. Nomor kamar dan penempatan akhir dikonfirmasi
+                oleh Admin setelah pengajuan.
+              </p>
             </div>
 
             {catalog.isSuccess ? (
               <div className="mt-6 flex flex-wrap items-center gap-3 rounded-xl bg-secondary/65 px-4 py-3 text-xs text-secondary-foreground">
                 <DoorOpen className="h-4 w-4 text-primary" />
                 <strong>{totalAvailability} kamar tersedia</strong>
-                <span className="text-muted-foreground">berdasarkan filter saat ini</span>
+                <span className="text-muted-foreground">dari katalog yang diterbitkan Admin</span>
               </div>
             ) : null}
 
@@ -418,7 +286,7 @@ function KamarPage() {
                 <CatalogMessage
                   icon={<Building2 className="h-6 w-6" />}
                   title="Belum ada hunian untuk pilihan ini"
-                  description="Ubah kategori, gender, atau tanggal rencana masuk. Admin tetap dapat membantu mengecek pilihan lain."
+                  description="Belum ada kategori hunian yang tersedia untuk ditampilkan. Admin dapat membantu mengecek pilihan lain."
                   action={
                     <Button
                       variant="outline"
@@ -500,8 +368,8 @@ function KamarPage() {
             <ol className="relative mx-auto mt-12 grid max-w-5xl gap-8 md:grid-cols-3 md:gap-10">
               <ProcessStep
                 icon={<Building2 className="h-5 w-5" />}
-                title="Pilih tipe hunian"
-                description="Tentukan kategori, gender, rencana masuk, dan pola pembayaran yang Anda pertimbangkan."
+                title="Bandingkan tipe hunian"
+                description="Bandingkan kategori, fasilitas, tarif, dan ketentuan yang telah diterbitkan."
               />
               <ProcessStep
                 icon={<Send className="h-5 w-5" />}
@@ -586,49 +454,6 @@ function KamarPage() {
         </div>
       </footer>
     </div>
-  );
-}
-
-function ChoiceGroup({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <fieldset className="min-w-0">
-      <legend className="mb-2 flex items-center gap-2 text-xs font-semibold">
-        {icon}
-        {label}
-      </legend>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </fieldset>
-  );
-}
-
-function FilterButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={active ? "default" : "outline"}
-      className="min-h-11 rounded-full px-4"
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
   );
 }
 

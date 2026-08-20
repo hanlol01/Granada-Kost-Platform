@@ -120,6 +120,49 @@ test("W06 Penghuni parser accepts the exact self-scoped billing contract", () =>
   assert.throws(() => parseMyW06Billing(legacy), /tidak valid/i);
 });
 
+test("W11C Penghuni parser accepts the current billing projection", () => {
+  const current = response() as {
+    data: {
+      lease: Record<string, unknown>;
+      contract_settlement?: unknown;
+    };
+  };
+  current.data.lease.resident_name = "Resident Test";
+  current.data.lease.room_number = "AK-05-03";
+  current.data.contract_settlement = {
+    id: leaseId,
+    invoice_id: invoiceId,
+    status: "open",
+    activated_at: "2026-08-01T00:00:00.000Z",
+    original_due_at: "2026-10-09T16:59:59.999Z",
+    extension_due_at: null,
+    extension_reason: null,
+    effective_due_at: "2026-10-09T16:59:59.999Z",
+    contract_rent_amount: 21_600_000,
+    initial_rent_credit: 1_800_000,
+    payment_allocated: 0,
+    first_payment_checkpoint: {
+      due_at: "2026-09-01T16:59:59.999Z",
+      required_additional_amount: 1_800_000,
+      additional_payment_received: 0,
+      remaining_amount: 1_800_000,
+      status: "pending",
+    },
+    deposit_offset_amount: 0,
+    outstanding_amount: 19_800_000,
+    reminder_stage: "H-30",
+    admin_action_required: false,
+    partial_payment_allowed: true,
+    full_payment_required: false,
+    extension_available: false,
+    termination_case: null,
+  };
+  const billing = parseMyW06Billing(current);
+  assert.equal(billing.lease.room_number, "AK-05-03");
+  assert.equal(billing.contract_settlement?.first_payment_checkpoint.status, "pending");
+  assert.equal(billing.contract_settlement?.outstanding_amount, 19_800_000);
+});
+
 test("W06 Penghuni parser rejects extra fields, prototypes, malformed dates, UUIDs, timestamps, and money", () => {
   assert.throws(() => parseMyW06Billing({ ...response(), resident_id: proofId }), /tidak valid/i);
 
@@ -186,6 +229,44 @@ test("W06 Penghuni requesters are self-scoped, cancellable, and preserve a logic
     (calls[1].options as { idempotencyKey: string }).idempotencyKey,
     "w06-proof-command-key",
   );
+});
+
+test("W11C billing helpers accept ApiClient's unwrapped success data", async () => {
+  const calls: string[] = [];
+  const requester = {
+    async get(path: string) {
+      calls.push(path);
+      return response().data;
+    },
+    async post(path: string) {
+      calls.push(path);
+      return {
+        id: proofId,
+        invoice_id: invoiceId,
+        proof_status: "pending_review",
+        claimed_amount: 1_800_000,
+        payment_purpose: "rent",
+        uploaded_at: "2026-07-31T10:00:00.000Z",
+      };
+    },
+  };
+
+  const billing = await getMyW06Billing(undefined, requester as never);
+  assert.equal(billing.lease.id, leaseId);
+
+  const proof = await submitMyW06Proof(
+    {
+      invoice_id: invoiceId,
+      claimed_amount: 1_800_000,
+      payment_method: "bank_transfer",
+      payment_purpose: "rent",
+      file_ids: [fileId],
+    },
+    "w06-unwrapped-proof-key",
+    requester as never,
+  );
+  assert.equal(proof.id, proofId);
+  assert.deepEqual(calls, ["/my/billing", "/my/payment-proofs"]);
 });
 
 test("live Penghuni W06 mutation rejects a superseded response before account cache effects", async () => {
@@ -272,13 +353,18 @@ test("live Penghuni W06 mutation rejects a superseded response before account ca
   }
 });
 
-test("W06 Penghuni cache keys isolate accounts and the route contains no provider checkout", () => {
+test("W11C Penghuni billing is account-scoped and exposes no resident payment mutation UI", () => {
   assert.notDeepEqual(w06BillingKey("account-a"), w06BillingKey("account-b"));
   const route = readFileSync(new URL("../routes/_app/billing.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(route, /usePaymentGateway|OnlinePayment|QRIS|ewallet|checkout_url/i);
+  assert.doesNotMatch(
+    route,
+    /FileUploadField|useSubmitMyW06Proof|Kirim bukti transfer|payment_proof|bank_transfer/,
+  );
   assert.doesNotMatch(route, /resident_id/);
-  assert.match(route, /bank_transfer/);
   assert.match(route, /security_deposit/);
+  assert.match(route, /Informasi pembayaran resmi/);
+  assert.match(route, /Pembayaran tidak dilakukan melalui aplikasi ini/);
   assert.match(route, /downloadMyInvoiceDocument/);
   assert.match(
     readFileSync(new URL("./penghuni-w06-billing.ts", import.meta.url), "utf8"),

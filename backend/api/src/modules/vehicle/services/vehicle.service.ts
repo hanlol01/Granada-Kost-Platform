@@ -4,7 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
+import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { selectSingleResidentContext } from '../../resident/resident.service';
 import { VEHICLE_AUDIT_ACTIONS } from '../constants/vehicle.constants';
 import { VehicleCodeGenerator } from '../helpers/vehicle-code-generator';
@@ -36,6 +39,7 @@ type RegisterVehicleInput = Omit<
 @Injectable()
 export class VehicleService {
   constructor(
+    private readonly database: DatabaseService,
     private readonly vehicles: VehicleRepository,
     private readonly histories: VehicleStatusHistoryRepository,
     private readonly files: VehicleFileRepository,
@@ -101,45 +105,72 @@ export class VehicleService {
     input: RegisterVehicleInput,
     context: AuditActorContext = {},
   ): Promise<VehicleRecord> {
-    const settings = await this.vehicles.settings(input.propertyId);
-    const maxVehicles = settings?.maxVehiclesPerResident ?? 3;
-    const activeVehicleCount = await this.vehicles.nonTerminalCountForResident(
-      input.propertyId,
-      input.residentId,
-    );
-    if (activeVehicleCount >= maxVehicles) {
-      throw new BadRequestException({
-        code: 'VEHICLE_LIMIT_REACHED',
-        message: 'Resident has reached vehicle limit',
-      });
-    }
-
     const plateNumber = VehiclePlateNormalizer.normalize(input.plateNumber);
-    await this.assertPlateAvailable(input.propertyId, plateNumber);
-
-    const vehicleStatus: VehicleStatus =
-      input.adminCreated || settings?.parkingRequiresApproval === false
-        ? 'active'
-        : 'pending_approval';
-    const vehicle = await this.vehicles.create({
-      ...input,
-      plateNumber,
-      vehicleStatus,
-      approvedByUserId: vehicleStatus === 'active' ? context.actorUserId : undefined,
-    });
-
-    await this.histories.record({
-      vehicleId: vehicle.id,
-      fromStatus: null,
-      toStatus: vehicle.vehicleStatus,
-      actorUserId: context.actorUserId,
-      notes:
-        vehicle.vehicleStatus === 'active'
-          ? 'Vehicle registered as active'
-          : 'Vehicle registration submitted',
-    });
-    await this.writeVehicleAudit(VEHICLE_AUDIT_ACTIONS.create, vehicle, context);
-    return vehicle;
+    return this.command(
+      context,
+      input.propertyId,
+      '/vehicles',
+      { ...input, plateNumber },
+      async (client) => {
+        const settings = await this.vehicles.settings(input.propertyId, client);
+        const maxVehicles = settings?.maxVehiclesPerResident ?? 3;
+        const activeVehicleCount = await this.vehicles.nonTerminalCountForResident(
+          input.propertyId,
+          input.residentId,
+          client,
+        );
+        if (activeVehicleCount >= maxVehicles) {
+          throw new BadRequestException({
+            code: 'VEHICLE_LIMIT_REACHED',
+            message: 'Resident has reached vehicle limit',
+          });
+        }
+        await this.assertPlateAvailable(input.propertyId, plateNumber, undefined, client);
+        const vehicleStatus: VehicleStatus =
+          input.adminCreated || settings?.parkingRequiresApproval === false
+            ? 'active'
+            : 'pending_approval';
+        const vehicle = await this.vehicles.create(
+          {
+            ...input,
+            plateNumber,
+            vehicleStatus,
+            approvedByUserId: vehicleStatus === 'active' ? context.actorUserId : undefined,
+          },
+          client,
+        );
+        await this.histories.record(
+          {
+            vehicleId: vehicle.id,
+            fromStatus: null,
+            toStatus: vehicle.vehicleStatus,
+            actorUserId: context.actorUserId,
+            notes:
+              vehicle.vehicleStatus === 'active'
+                ? 'Vehicle registered as active'
+                : 'Vehicle registration submitted',
+          },
+          client,
+        );
+        await this.writeVehicleAudit(
+          VEHICLE_AUDIT_ACTIONS.create,
+          vehicle,
+          context,
+          undefined,
+          client,
+        );
+        await this.writeVehicleEvent(
+          client,
+          vehicle.propertyId,
+          `vehicle:${vehicle.id}:registered:${context.idempotencyKey}`,
+          'vehicle.registered',
+          vehicle.id,
+          context,
+          { vehicle_id: vehicle.id, status: vehicle.vehicleStatus },
+        );
+        return vehicle;
+      },
+    );
   }
 
   async generateCode(propertyName: string, propertyId: string, date = new Date()): Promise<string> {
@@ -153,19 +184,31 @@ export class VehicleService {
     input: UpdateVehicleInput,
     context: AuditActorContext = {},
   ): Promise<VehicleRecord> {
-    const current = await this.get(vehicleId);
     const patch = { ...input };
     if (patch.plateNumber) {
       patch.plateNumber = VehiclePlateNormalizer.normalize(patch.plateNumber);
-      await this.assertPlateAvailable(current.propertyId, patch.plateNumber, current.id);
     }
-
-    const updated = await this.vehicles.update(current.id, patch);
-    if (!updated) {
-      throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
-    }
-    await this.writeVehicleAudit(VEHICLE_AUDIT_ACTIONS.update, updated, context, current);
-    return updated;
+    return this.command(context, vehicleId, `/vehicles/${vehicleId}`, patch, async (client) => {
+      const current = await this.vehicles.findByIdForUpdate(vehicleId, client);
+      if (!current)
+        throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+      if (patch.plateNumber)
+        await this.assertPlateAvailable(current.propertyId, patch.plateNumber, current.id, client);
+      const updated = await this.vehicles.update(current.id, patch, client);
+      if (!updated)
+        throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+      await this.writeVehicleAudit(VEHICLE_AUDIT_ACTIONS.update, updated, context, current, client);
+      await this.writeVehicleEvent(
+        client,
+        updated.propertyId,
+        `vehicle:${updated.id}:updated:${context.idempotencyKey}`,
+        'vehicle.updated',
+        updated.id,
+        context,
+        { vehicle_id: updated.id },
+      );
+      return updated;
+    });
   }
 
   async updateVehicleForUser(
@@ -240,6 +283,10 @@ export class VehicleService {
     return this.files.list(vehicleId);
   }
 
+  listHistory(vehicleId: string) {
+    return this.histories.list(vehicleId);
+  }
+
   summaryForProperties(propertyIds: string[]): Promise<VehicleSummaryRecord> {
     return this.vehicles.summaryForProperties(propertyIds);
   }
@@ -256,42 +303,68 @@ export class VehicleService {
       notes?: string;
     } = {},
   ): Promise<VehicleRecord> {
-    const current = await this.get(vehicleId);
-    VehicleStatusTransitionHelper.assertCanTransition(current.vehicleStatus, toStatus);
-
-    const updated = await this.vehicles.transitionStatus(current.id, toStatus, {
-      actorUserId: context.actorUserId,
-      rejectReason: options.rejectReason,
-      suspendReason: options.suspendReason,
-      deactivationReason: options.deactivationReason,
-    });
-    if (!updated) {
-      throw new BadRequestException({
-        code: 'VEHICLE_TRANSITION_FAILED',
-        message: 'Vehicle transition failed',
-      });
-    }
-
-    await this.histories.record({
-      vehicleId: updated.id,
-      fromStatus: current.vehicleStatus,
-      toStatus,
-      actorUserId: context.actorUserId,
-      notes: options.notes,
-    });
-    await this.writeVehicleAudit(auditAction, updated, context, current);
-    return updated;
+    return this.command(
+      context,
+      vehicleId,
+      `/vehicles/${vehicleId}/${auditAction}`,
+      { toStatus, ...options },
+      async (client) => {
+        const current = await this.vehicles.findByIdForUpdate(vehicleId, client);
+        if (!current)
+          throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+        VehicleStatusTransitionHelper.assertCanTransition(current.vehicleStatus, toStatus);
+        const updated = await this.vehicles.transitionStatus(
+          current.id,
+          toStatus,
+          {
+            actorUserId: context.actorUserId,
+            rejectReason: options.rejectReason,
+            suspendReason: options.suspendReason,
+            deactivationReason: options.deactivationReason,
+          },
+          client,
+        );
+        if (!updated)
+          throw new BadRequestException({
+            code: 'VEHICLE_TRANSITION_FAILED',
+            message: 'Vehicle transition failed',
+          });
+        await this.histories.record(
+          {
+            vehicleId: updated.id,
+            fromStatus: current.vehicleStatus,
+            toStatus,
+            actorUserId: context.actorUserId,
+            notes: options.notes,
+          },
+          client,
+        );
+        await this.writeVehicleAudit(auditAction, updated, context, current, client);
+        await this.writeVehicleEvent(
+          client,
+          updated.propertyId,
+          `vehicle:${updated.id}:${auditAction}:${context.idempotencyKey}`,
+          `vehicle.${auditAction}`,
+          updated.id,
+          context,
+          { vehicle_id: updated.id, from_status: current.vehicleStatus, to_status: toStatus },
+        );
+        return updated;
+      },
+    );
   }
 
   private async assertPlateAvailable(
     propertyId: string,
     plateNumber: string,
     excludedVehicleId?: string,
+    client?: PoolClient,
   ): Promise<void> {
     const exists = await this.vehicles.activePlateExists(
       propertyId,
       plateNumber,
       excludedVehicleId,
+      client,
     );
     if (exists) {
       throw new ConflictException({
@@ -306,20 +379,112 @@ export class VehicleService {
     vehicle: VehicleRecord,
     context: AuditActorContext,
     before?: VehicleRecord,
+    client?: PoolClient,
   ): Promise<void> {
-    await this.audit.write({
-      actorUserId: context.actorUserId,
-      propertyId: vehicle.propertyId,
-      action,
-      resourceType: 'vehicle',
-      resourceId: vehicle.id,
-      beforeData: before ? this.auditSnapshot(before) : undefined,
-      afterData: this.auditSnapshot(vehicle),
-      resultStatus: 'success',
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
-      correlationId: context.correlationId,
+    await this.audit.write(
+      {
+        actorUserId: context.actorUserId,
+        propertyId: vehicle.propertyId,
+        action,
+        resourceType: 'vehicle',
+        resourceId: vehicle.id,
+        beforeData: before ? this.auditSnapshot(before) : undefined,
+        afterData: this.auditSnapshot(vehicle),
+        resultStatus: 'success',
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+        correlationId: context.correlationId,
+      },
+      client,
+    );
+  }
+
+  private async command<T>(
+    context: AuditActorContext,
+    propertyId: string,
+    route: string,
+    payload: unknown,
+    operation: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const actor = context.actorUserId;
+    const key = context.idempotencyKey?.trim();
+    if (!actor || !key || key.length < 16 || key.length > 128) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'A valid Idempotency-Key header is required',
+      });
+    }
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify({ route, actor, propertyId, payload }))
+      .digest('hex');
+    return this.database.transaction(async (client) => {
+      const inserted = await client.query<{ request_fingerprint: string }>(
+        `INSERT INTO idempotency_commands(property_id,actor_user_id,route,idempotency_key,request_fingerprint,correlation_id)
+         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(actor_user_id,route,idempotency_key) DO NOTHING RETURNING request_fingerprint`,
+        [propertyId, actor, route, key, fingerprint, context.correlationId ?? null],
+      );
+      if (!inserted.rows[0]) {
+        const existing = await client.query<{
+          request_fingerprint: string;
+          command_status: string;
+          response_body: unknown;
+        }>(
+          `SELECT request_fingerprint, command_status, response_body FROM idempotency_commands
+           WHERE actor_user_id=$1 AND route=$2 AND idempotency_key=$3 FOR UPDATE`,
+          [actor, route, key],
+        );
+        const row = existing.rows[0];
+        if (!row || row.command_status === 'pending')
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+            message: 'Idempotency command is still in progress',
+          });
+        if (row.request_fingerprint !== fingerprint)
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_KEY_REUSED',
+            message: 'Idempotency key was already used with a different payload',
+          });
+        const stored = row.response_body as { data?: T } | null;
+        if (!stored || !Object.prototype.hasOwnProperty.call(stored, 'data'))
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+            message: 'Idempotency command has no replayable result',
+          });
+        return stored.data as T;
+      }
+      const result = await operation(client);
+      await client.query(
+        `UPDATE idempotency_commands SET command_status='succeeded', response_status=200,
+         response_body=$1::jsonb, completed_at=now()
+         WHERE actor_user_id=$2 AND route=$3 AND idempotency_key=$4`,
+        [JSON.stringify({ data: result }), actor, route, key],
+      );
+      return result;
     });
+  }
+
+  private async writeVehicleEvent(
+    client: PoolClient,
+    propertyId: string,
+    eventKey: string,
+    eventType: string,
+    vehicleId: string,
+    context: AuditActorContext,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,payload,correlation_id,actor_user_id)
+       VALUES($1,$2,$3,'vehicle',$4,$5::jsonb,$6,$7) ON CONFLICT(event_key) DO NOTHING`,
+      [
+        propertyId,
+        eventKey,
+        eventType,
+        vehicleId,
+        JSON.stringify(payload),
+        context.correlationId ?? null,
+        context.actorUserId ?? null,
+      ],
+    );
   }
 
   private auditSnapshot(vehicle: VehicleRecord): Record<string, unknown> {

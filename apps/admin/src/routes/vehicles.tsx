@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
+import { CreateVehicleDialog } from "@/components/forms/CreateVehicleDialog";
+import { VehicleHistoryDialog } from "@/components/forms/VehicleHistoryDialog";
 import {
   useVehicles,
   type VehicleRecord,
@@ -53,6 +54,7 @@ import {
   Pause,
   Play,
   PowerOff,
+  History,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -202,9 +204,11 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | VehicleStatus>("all");
   const [type, setType] = useState<"all" | VehicleType>("all");
+  const [createOpen, setCreateOpen] = useState(false);
   const [pending, setPending] = useState<{ vehicle: VehicleRecord; kind: TransitionKind } | null>(
     null,
   );
+  const [historyTarget, setHistoryTarget] = useState<VehicleRecord | null>(null);
 
   const { hasPermission } = useAuth();
   const canManage = hasPermission("vehicle.manage");
@@ -239,7 +243,7 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
     Number(Boolean(q.trim())) + Number(status !== "all") + Number(type !== "all");
   const filterSignature = `${q}:${status}:${type}`;
   const filterCriteria = [
-    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    q.trim() ? `pencarian "${q.trim()}"` : "",
     status !== "all"
       ? `status kendaraan: ${
           {
@@ -334,18 +338,9 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
       title="Kendaraan"
       subtitle={data ? `${data.length} kendaraan terdaftar` : "Memuat..."}
       actions={
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0}>
-                <Button disabled>
-                  <Plus className="h-4 w-4 mr-1" /> Daftar Kendaraan
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Picker penghuni belum tersedia di Phase 1.</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Button onClick={() => setCreateOpen(true)} disabled={!canManage}>
+          <Plus className="h-4 w-4 mr-1" /> Daftar Kendaraan
+        </Button>
       }
     >
       {workspaceNavigation}
@@ -484,8 +479,29 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                           </div>
                         </td>
                         <td className="px-5 py-3">
-                          <p className="font-medium">{v.snapshotResidentName}</p>
+                          <p className="font-medium">
+                            <Link
+                              to="/tenants/$residentId"
+                              params={{ residentId: v.residentId }}
+                              className="hover:text-primary hover:underline"
+                            >
+                              {v.snapshotResidentName}
+                            </Link>
+                          </p>
                           <p className="text-xs text-muted-foreground">
+                            {v.snapshotRoomNumber ? (
+                              <Link
+                                to="/rooms/$roomNumber"
+                                params={{ roomNumber: v.snapshotRoomNumber }}
+                                className="hover:text-primary hover:underline"
+                              >
+                                Kamar {v.snapshotRoomNumber}
+                              </Link>
+                            ) : (
+                              "—"
+                            )}
+                          </p>
+                          <p className="hidden">
                             {v.snapshotRoomNumber ? `Kamar ${v.snapshotRoomNumber}` : "–"}
                           </p>
                         </td>
@@ -498,54 +514,54 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                         </td>
                         {canManage ? (
                           <td className="px-5 py-3 text-right">
-                            {actions.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">–</span>
-                            ) : (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="outline" size="sm" aria-label="Aksi kendaraan">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {actions.map((kind, idx) => (
-                                    <div key={kind}>
-                                      {idx > 0 ? <DropdownMenuSeparator /> : null}
-                                      <DropdownMenuItem
-                                        className={
-                                          kind === "deactivate" || kind === "reject"
-                                            ? "text-destructive"
-                                            : undefined
-                                        }
-                                        onClick={() => setPending({ vehicle: v, kind })}
-                                      >
-                                        {kind === "approve" ? (
-                                          <>
-                                            <Check className="h-3.5 w-3.5 mr-2" /> Setujui
-                                          </>
-                                        ) : kind === "reject" ? (
-                                          <>
-                                            <Ban className="h-3.5 w-3.5 mr-2" /> Tolak
-                                          </>
-                                        ) : kind === "suspend" ? (
-                                          <>
-                                            <Pause className="h-3.5 w-3.5 mr-2" /> Suspend
-                                          </>
-                                        ) : kind === "reactivate" ? (
-                                          <>
-                                            <Play className="h-3.5 w-3.5 mr-2" /> Aktifkan
-                                          </>
-                                        ) : (
-                                          <>
-                                            <PowerOff className="h-3.5 w-3.5 mr-2" /> Nonaktifkan
-                                          </>
-                                        )}
-                                      </DropdownMenuItem>
-                                    </div>
-                                  ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" aria-label="Aksi kendaraan">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {actions.map((kind, idx) => (
+                                  <div key={kind}>
+                                    {idx > 0 ? <DropdownMenuSeparator /> : null}
+                                    <DropdownMenuItem
+                                      className={
+                                        kind === "deactivate" || kind === "reject"
+                                          ? "text-destructive"
+                                          : undefined
+                                      }
+                                      onClick={() => setPending({ vehicle: v, kind })}
+                                    >
+                                      {kind === "approve" ? (
+                                        <>
+                                          <Check className="h-3.5 w-3.5 mr-2" /> Setujui
+                                        </>
+                                      ) : kind === "reject" ? (
+                                        <>
+                                          <Ban className="h-3.5 w-3.5 mr-2" /> Tolak
+                                        </>
+                                      ) : kind === "suspend" ? (
+                                        <>
+                                          <Pause className="h-3.5 w-3.5 mr-2" /> Suspend
+                                        </>
+                                      ) : kind === "reactivate" ? (
+                                        <>
+                                          <Play className="h-3.5 w-3.5 mr-2" /> Aktifkan
+                                        </>
+                                      ) : (
+                                        <>
+                                          <PowerOff className="h-3.5 w-3.5 mr-2" /> Nonaktifkan
+                                        </>
+                                      )}
+                                    </DropdownMenuItem>
+                                  </div>
+                                ))}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setHistoryTarget(v)}>
+                                  <History className="h-3.5 w-3.5 mr-2" /> Lihat riwayat
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </td>
                         ) : null}
                       </tr>
@@ -574,7 +590,7 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                       </p>
                     </div>
                     <VehicleStatusBadge status={v.vehicleStatus} />
-                    {canManage && actions.length > 0 ? (
+                    {canManage ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm" aria-label="Aksi kendaraan">
@@ -603,6 +619,10 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                                       : "Nonaktifkan"}
                             </DropdownMenuItem>
                           ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setHistoryTarget(v)}>
+                            <History className="h-3.5 w-3.5 mr-2" /> Lihat riwayat
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : null}
@@ -636,6 +656,13 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
           if (transitionMeta(pending.kind).requiresReason && !reason) return;
           await runTransition(pending.vehicle, pending.kind, reason);
         }}
+      />
+
+      <CreateVehicleDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <VehicleHistoryDialog
+        vehicle={historyTarget}
+        open={historyTarget !== null}
+        onOpenChange={(open) => !open && setHistoryTarget(null)}
       />
     </AppShell>
   );

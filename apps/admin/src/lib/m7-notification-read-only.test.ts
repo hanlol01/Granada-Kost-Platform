@@ -167,7 +167,7 @@ test("M7 notification query key isolates property, status, limit, and offset", (
   );
 });
 
-test("M7 notification route keeps existing path and exposes distinct read-only states", async () => {
+test("M7 notification route keeps its path while W08D adds scoped inbox state actions", async () => {
   const route = await readFile(resolve(root, "routes/notifications.tsx"), "utf8");
   const hook = await readFile(resolve(root, "hooks/useAdminNotifications.ts"), "utf8");
 
@@ -182,8 +182,9 @@ test("M7 notification route keeps existing path and exposes distinct read-only s
   assert.match(hook, /enabled: Boolean\(currentPropertyId\) && hasAccess/);
   assert.match(hook, /\{ signal \}/);
   assert.doesNotMatch(hook, /setCurrentPropertyId/);
-  assert.doesNotMatch(
-    route + hook,
-    /mock-data|useMutation|refetchInterval|placeholderData|keepPreviousData|markAll|markRead|read-all|\/archive|unread-count|apiClient\.(post|patch|put|delete)/,
-  );
+  assert.doesNotMatch(route + hook, /mock-data|refetchInterval|placeholderData|keepPreviousData/);
+  assert.match(route, /useAdminNotificationCenter/);
+  assert.match(route, /Tandai semua dibaca/);
+  assert.match(route, /Arsipkan/);
+  assert.match(route, /Tandai dibaca/);
 });

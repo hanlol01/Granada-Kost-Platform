@@ -6,9 +6,6 @@
 //   POST /vehicles/:id/deactivate   — body: { reason }
 // All require vehicle.manage and owner|manager|admin.
 //
-// CREATE/EDIT are NOT wired in M11E: the UI needs a resident picker because
-// resident_id is required and the backend rejects mismatched property scope.
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
@@ -17,6 +14,43 @@ import type { VehicleRecord } from "./useVehicles";
 
 type IdInput = { vehicleId: string };
 type ReasonInput = IdInput & { reason: string };
+
+export type CreateVehicleInput = {
+  propertyId: string;
+  residentId: string;
+  plateNumber: string;
+  vehicleType: VehicleRecord["vehicleType"];
+  brand: string;
+  color: string;
+  year?: string;
+  notes?: string;
+};
+
+export function useCreateVehicle() {
+  const qc = useQueryClient();
+  return useMutation<VehicleRecord, unknown, CreateVehicleInput>({
+    mutationFn: ({ propertyId, residentId, plateNumber, vehicleType, brand, color, year, notes }) =>
+      apiClient.post<VehicleRecord>(
+        "/vehicles",
+        {
+          property_id: propertyId,
+          resident_id: residentId,
+          plate_number: plateNumber,
+          vehicle_type: vehicleType,
+          brand,
+          color,
+          year: year || undefined,
+          notes: notes || undefined,
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      ),
+    onSuccess: () => {
+      toastMutationSuccess("Kendaraan berhasil didaftarkan");
+      qc.invalidateQueries({ queryKey: ["vehicles"] });
+    },
+    onError: (err) => toastMutationError(err, "Gagal mendaftarkan kendaraan"),
+  });
+}
 
 export function useApproveVehicle() {
   const qc = useQueryClient();

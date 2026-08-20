@@ -14,6 +14,15 @@ const CONTEXT_KEYS = [
   "property_name",
   "room_number",
   "occupancy_start",
+  "building_name",
+  "building_code",
+  "kost_type",
+  "gender",
+  "lease_status",
+  "lease_start",
+  "lease_end",
+  "term_months",
+  "payment_plan_type",
 ] as const;
 
 export type ResidentContext = {
@@ -22,6 +31,15 @@ export type ResidentContext = {
   propertyName: string;
   roomNumber: string;
   occupancyStart: string;
+  buildingName: string;
+  buildingCode: string;
+  kostType: "rukost" | "apartkost";
+  gender: "male" | "female";
+  leaseStatus: "awaiting_activation" | "active" | null;
+  leaseStart: string | null;
+  leaseEnd: string | null;
+  termMonths: number | null;
+  paymentPlanType: string | null;
 };
 
 export type ResidentContextState =
@@ -107,6 +125,8 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
   const propertyName = nonEmptyString(value.data.property_name);
   const roomNumber = nonEmptyString(value.data.room_number);
   const occupancyStart = nonEmptyString(value.data.occupancy_start);
+  const buildingName = nonEmptyString(value.data.building_name);
+  const buildingCode = nonEmptyString(value.data.building_code);
   const phone =
     value.data.phone === null
       ? null
@@ -114,12 +134,56 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
         ? nonEmptyString(value.data.phone)
         : null;
 
+  const kostType =
+    value.data.kost_type === "rukost" || value.data.kost_type === "apartkost"
+      ? value.data.kost_type
+      : null;
+  const gender =
+    value.data.gender === "male" || value.data.gender === "female" ? value.data.gender : null;
+  const leaseStatus =
+    value.data.lease_status === null
+      ? null
+      : value.data.lease_status === "active" || value.data.lease_status === "awaiting_activation"
+        ? value.data.lease_status
+        : undefined;
+  const leaseStart =
+    value.data.lease_start === null
+      ? null
+      : typeof value.data.lease_start === "string" && isCanonicalDate(value.data.lease_start)
+        ? value.data.lease_start
+        : undefined;
+  const leaseEnd =
+    value.data.lease_end === null
+      ? null
+      : typeof value.data.lease_end === "string" && isCanonicalDate(value.data.lease_end)
+        ? value.data.lease_end
+        : undefined;
+  const termMonths =
+    value.data.term_months === null
+      ? null
+      : typeof value.data.term_months === "number" &&
+          Number.isInteger(value.data.term_months) &&
+          value.data.term_months > 0
+        ? value.data.term_months
+        : undefined;
+  const paymentPlanType =
+    value.data.payment_plan_type === null ? null : nonEmptyString(value.data.payment_plan_type);
+
   if (
     !displayName ||
     !propertyName ||
     !roomNumber ||
     !occupancyStart ||
+    !buildingName ||
+    !buildingCode ||
     !isCanonicalDate(occupancyStart) ||
+    !kostType ||
+    !gender ||
+    leaseStatus === undefined ||
+    leaseStart === undefined ||
+    leaseEnd === undefined ||
+    termMonths === undefined ||
+    (!paymentPlanType && value.data.payment_plan_type !== null) ||
     (value.data.phone !== null && phone === null)
   ) {
     return parseFailure();
@@ -131,6 +195,15 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
     propertyName,
     roomNumber,
     occupancyStart,
+    buildingName,
+    buildingCode,
+    kostType,
+    gender,
+    leaseStatus,
+    leaseStart,
+    leaseEnd,
+    termMonths,
+    paymentPlanType,
   };
 }
 

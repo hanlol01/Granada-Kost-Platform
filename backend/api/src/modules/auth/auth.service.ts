@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 import { AuthAuditRepository } from '../iam/audit/auth-audit.repository';
+import { normalizeLoginIdentifier } from '../iam/identifier-normalizer';
 import { IamRepository } from '../iam/repositories/iam.repository';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -44,8 +45,9 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, context: RequestContext): Promise<AuthTokenResponse> {
-    await this.rateLimiter.assertLoginAllowed(dto.identifier, context.ipAddress);
-    const user = await this.iam.findUserByIdentifier(dto.identifier);
+    const identifier = normalizeLoginIdentifier(dto.identifier);
+    await this.rateLimiter.assertLoginAllowed(identifier, context.ipAddress);
+    const user = await this.iam.findUserByIdentifier(identifier);
 
     if (!user || !(await argon2.verify(user.passwordHash, dto.password))) {
       await this.audit.write({
@@ -54,7 +56,7 @@ export class AuthService {
         ipAddress: context.ipAddress,
         userAgent: context.userAgent,
         correlationId: context.correlationId,
-        metadata: { identifier: this.safeIdentifier(dto.identifier) },
+        metadata: { identifier: this.safeIdentifier(identifier) },
       });
 
       throw new UnauthorizedException({
@@ -82,7 +84,7 @@ export class AuthService {
 
     const authResponse = await this.issueTokens(user.id, dto.device_name, context);
     await this.iam.updateLastLogin(user.id);
-    await this.rateLimiter.clearLoginAttempts(dto.identifier, context.ipAddress);
+    await this.rateLimiter.clearLoginAttempts(identifier, context.ipAddress);
     await this.audit.write({
       actorUserId: user.id,
       action: 'auth.login',

@@ -5,6 +5,7 @@ import { LoadingState, EmptyState, ErrorState } from "@/components/state";
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
+  useArchiveNotification,
   useNotifications,
   type MyNotificationRecord,
 } from "@/hooks/usePenghuniNotifications";
@@ -34,6 +35,7 @@ function NotificationsPage() {
   const list = useNotifications({ limit: 50 });
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
+  const archive = useArchiveNotification();
 
   const items = list.data ?? [];
   const unreadCount = items.filter((n) => n.notification_status === "unread").length;
@@ -76,6 +78,7 @@ function NotificationsPage() {
               onRead={() => {
                 if (n.notification_status === "unread") markRead.mutate({ id: n.id });
               }}
+              onArchive={() => archive.mutate({ id: n.id })}
             />
           ))
         )}
@@ -87,19 +90,19 @@ function NotificationsPage() {
 function NotificationCard({
   notification,
   onRead,
+  onArchive,
 }: {
   notification: MyNotificationRecord;
   onRead: () => void;
+  onArchive: () => void;
 }) {
   const Icon = iconForType(notification.notification_type);
   const isUnread = notification.notification_status === "unread";
   return (
-    <button
-      type="button"
-      onClick={onRead}
+    <article
       className={
-        "flex w-full items-start gap-3 rounded-2xl bg-card p-4 text-left shadow-[var(--shadow-soft)] transition active:scale-[0.99] " +
-        (isUnread ? "" : "opacity-80")
+        "flex w-full items-start gap-3 rounded-2xl border border-border/80 bg-card p-4 text-left shadow-[var(--shadow-soft)] transition " +
+        (isUnread ? "ring-1 ring-primary/20" : "opacity-80")
       }
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
@@ -111,10 +114,37 @@ function NotificationCard({
           {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
         </div>
         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.body}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {formatRelative(notification.created_at)}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+          <span>{formatRelative(notification.created_at)}</span>
+          {isUnread ? (
+            <button
+              type="button"
+              onClick={onRead}
+              className="font-semibold text-primary underline-offset-2 hover:underline"
+            >
+              Tandai dibaca
+            </button>
+          ) : null}
+          {notification.notification_status !== "archived" ? (
+            <button
+              type="button"
+              onClick={onArchive}
+              className="font-semibold text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Arsipkan
+            </button>
+          ) : null}
+          {notification.deep_link ? (
+            <a
+              href={notification.deep_link}
+              onClick={onRead}
+              className="font-semibold text-primary underline-offset-2 hover:underline"
+            >
+              Buka terkait
+            </a>
+          ) : null}
+        </div>
       </div>
-    </button>
+    </article>
   );
 }

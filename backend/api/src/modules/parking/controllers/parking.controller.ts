@@ -26,7 +26,10 @@ export class ParkingController {
   ) {}
 
   @Get('zones')
-  async listZones(@CurrentUser() user: UserAccessContext, @Query() query: ListParkingZonesQueryDto) {
+  async listZones(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListParkingZonesQueryDto,
+  ) {
     await this.properties.assertCanReadProperty(user, query.property_id);
     return this.parking.listZones(query.property_id, query.active_only);
   }
@@ -54,21 +57,39 @@ export class ParkingController {
   }
 
   @Get('slots')
-  async listSlots(@CurrentUser() user: UserAccessContext, @Query() query: ListParkingSlotsQueryDto) {
+  async listSlots(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListParkingSlotsQueryDto,
+  ) {
     const zone = await this.parking.getZone(query.zone_id);
     await this.properties.assertCanReadProperty(user, zone.propertyId);
     return this.parking.listSlots(query.zone_id, query.status);
   }
 
   @Post('slots')
-  async createSlot(@CurrentUser() user: UserAccessContext, @Body() dto: CreateParkingSlotDto) {
+  async createSlot(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: CreateParkingSlotDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
     const zone = await this.parking.getZone(dto.zone_id);
     await this.properties.assertCanReadProperty(user, zone.propertyId);
-    return this.parking.createSlot({
-      zoneId: dto.zone_id,
-      slotNumber: dto.slot_number,
-      slotType: dto.slot_type,
-    });
+    return this.parking.createSlot(
+      {
+        zoneId: dto.zone_id,
+        slotNumber: dto.slot_number,
+        slotType: dto.slot_type,
+      },
+      auditContext(user, request),
+    );
+  }
+
+  @Get('slots/:slotId/history')
+  async assignmentHistory(@CurrentUser() user: UserAccessContext, @Param('slotId') slotId: string) {
+    const slot = await this.parking.getSlot(slotId);
+    const zone = await this.parking.getZone(slot.zoneId);
+    await this.properties.assertCanReadProperty(user, zone.propertyId);
+    return this.parking.listAssignmentHistory(slotId);
   }
 
   @Post('slots/:slotId/assign')

@@ -25,6 +25,15 @@ export class MyResidentContextController {
         property_name: context.propertyName,
         room_number: context.roomNumber,
         occupancy_start: context.occupancyStart,
+        building_name: context.buildingName,
+        building_code: context.buildingCode,
+        kost_type: context.kostType,
+        gender: context.gender,
+        lease_status: context.leaseStatus,
+        lease_start: context.leaseStart,
+        lease_end: context.leaseEnd,
+        term_months: context.termMonths,
+        payment_plan_type: context.paymentPlanType,
       },
     };
   }

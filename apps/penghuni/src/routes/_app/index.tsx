@@ -11,8 +11,10 @@ import {
   Clock,
   Home,
   RefreshCw,
+  Car,
 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState } from "@/components/state";
+import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
 import { usePenghuniHome, type PenghuniHomeView } from "@/hooks/usePenghuniHome";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
@@ -82,10 +84,11 @@ function HomePage() {
 
       {/* Quick actions */}
       <section className="-mt-4 px-5">
-        <div className="grid grid-cols-4 gap-2 rounded-2xl bg-card p-3 shadow-[var(--shadow-card)]">
+        <div className="grid grid-cols-5 gap-2 rounded-2xl border border-border/80 bg-card p-3 shadow-[var(--shadow-card)]">
           <QuickAction to="/billing" icon={Receipt} label="Tagihan" />
           <QuickAction to="/complaints" icon={Wrench} label="Komplain" />
           <QuickAction to="/info" icon={Megaphone} label="Info" />
+          <QuickAction to="/vehicles" icon={Car} label="Kendaraan" />
           <QuickAction
             to="/notifications"
             icon={MessageCircle}
@@ -93,6 +96,10 @@ function HomePage() {
             badge={unreadNotifications > 0 ? unreadNotifications : undefined}
           />
         </div>
+      </section>
+
+      <section className="px-5">
+        <ResidentTenancySummary profile={profile} />
       </section>
 
       {/* Stats */}
@@ -112,7 +119,7 @@ function HomePage() {
       </section>
 
       {/* Progress */}
-      <section className="mx-5 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
+      <section className="mx-5 rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-muted-foreground">Progress pembayaran (riwayat terbaru)</p>
@@ -130,13 +137,13 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Announcements (placeholder until M11F+ backend endpoint) */}
+      {/* Announcements remain empty until resident-safe publication authority is available. */}
       <section className="px-5">
         <SectionTitle title="Pengumuman Terbaru" to="/info" />
-        <div className="mt-3 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
+        <div className="mt-3 rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
           <EmptyState
             title="Belum tersedia"
-            description="Endpoint pengumuman untuk Penghuni belum dirilis di Phase 1."
+            description="Belum ada pengumuman yang diterbitkan untuk akun Anda."
           />
         </div>
       </section>
@@ -215,6 +222,10 @@ function ResidentContextHero({ profile }: { profile: PenghuniHomeView["profile"]
             <span aria-hidden="true">·</span>
             <span className="break-words">Kamar {profile.roomNumber}</span>
           </p>
+          <p className="mt-1 text-[11px] opacity-80">
+            {profile.buildingName ?? profile.buildingCode} ·{" "}
+            {profile.kostType === "rukost" ? "Rumah Kost" : "Apart Kost"}
+          </p>
         </div>
         <div
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/20 text-base font-semibold backdrop-blur"
@@ -290,7 +301,7 @@ function StatCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)]">
+    <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {icon} {label}
       </div>

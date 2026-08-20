@@ -8,6 +8,7 @@ export function auditContext(user: UserAccessContext, request: RequestWithCorrel
     ipAddress: request.ip,
     userAgent: request.headers['user-agent'],
     correlationId: request.correlationId,
+    idempotencyKey: request.headers['idempotency-key'] as string | undefined,
   };
 }
 

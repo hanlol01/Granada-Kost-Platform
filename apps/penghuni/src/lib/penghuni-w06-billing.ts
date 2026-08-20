@@ -24,10 +24,53 @@ export const W06_PAYMENT_STATUSES = [
 export type W06PaymentStatus = (typeof W06_PAYMENT_STATUSES)[number];
 export type W06ProofStatus = "pending_review" | "verified" | "rejected" | "expired";
 
+export type MyW06ContractSettlement = {
+  id: string;
+  invoice_id: string;
+  status:
+    | "awaiting_activation"
+    | "open"
+    | "extended"
+    | "overdue"
+    | "admin_action_required"
+    | "termination_pending"
+    | "terminated"
+    | "paid";
+  activated_at: string | null;
+  original_due_at: string | null;
+  extension_due_at: string | null;
+  extension_reason: string | null;
+  effective_due_at: string | null;
+  contract_rent_amount: number;
+  initial_rent_credit: number;
+  payment_allocated: number;
+  first_payment_checkpoint: {
+    due_at: string | null;
+    required_additional_amount: number;
+    additional_payment_received: number;
+    remaining_amount: number;
+    status: "not_required" | "pending" | "met_early" | "met" | "overdue";
+  };
+  deposit_offset_amount: number;
+  outstanding_amount: number;
+  reminder_stage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
+  admin_action_required: boolean;
+  partial_payment_allowed: boolean;
+  full_payment_required: boolean;
+  extension_available: boolean;
+  termination_case: {
+    id: string;
+    status: "pending" | "cancelled" | "checked_out";
+    planned_checkout_date: string;
+  } | null;
+};
+
 export type MyW06Billing = {
   lease: {
     id: string;
     property_id: string;
+    resident_name?: string;
+    room_number?: string;
     status: "awaiting_activation" | "active";
     start_date: string;
     end_date: string;
@@ -51,6 +94,7 @@ export type MyW06Billing = {
     next_due_date: string | null;
     overdue_count: number;
   };
+  contract_settlement: MyW06ContractSettlement | null;
   invoices: Array<{
     id: string;
     invoice_code: string;
@@ -125,6 +169,17 @@ type Requester = {
   post<T>(path: string, body: unknown, options?: { idempotencyKey?: string }): Promise<T>;
 };
 
+function asEnvelope(value: unknown): unknown {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value, "data")
+  ) {
+    return value;
+  }
+  return { data: value };
+}
+
 function fail(label: string): never {
   throw new Error(`${label} tidak valid.`);
 }
@@ -141,6 +196,27 @@ function object(value: unknown, keys: readonly string[], label: string): Record<
   const actual = Object.keys(record).sort();
   const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index]))
+    return fail(label);
+  return record;
+}
+
+function objectWithOptional(
+  value: unknown,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[],
+  label: string,
+): Record<string, unknown> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  )
+    return fail(label);
+  const record = value as Record<string, unknown>;
+  const allowed = new Set([...requiredKeys, ...optionalKeys]);
+  const actual = Object.keys(record);
+  if (requiredKeys.some((key) => !(key in record)) || actual.some((key) => !allowed.has(key)))
     return fail(label);
   return record;
 }
@@ -241,14 +317,130 @@ function payment(value: unknown): MyW06Billing["payments"][number] {
   };
 }
 
+function contractSettlement(value: unknown): MyW06ContractSettlement {
+  const record = object(
+    value,
+    [
+      "id",
+      "invoice_id",
+      "status",
+      "activated_at",
+      "original_due_at",
+      "extension_due_at",
+      "extension_reason",
+      "effective_due_at",
+      "contract_rent_amount",
+      "initial_rent_credit",
+      "payment_allocated",
+      "first_payment_checkpoint",
+      "deposit_offset_amount",
+      "outstanding_amount",
+      "reminder_stage",
+      "admin_action_required",
+      "partial_payment_allowed",
+      "full_payment_required",
+      "extension_available",
+      "termination_case",
+    ],
+    "Pelunasan kontrak",
+  );
+  const checkpoint = object(
+    record.first_payment_checkpoint,
+    [
+      "due_at",
+      "required_additional_amount",
+      "additional_payment_received",
+      "remaining_amount",
+      "status",
+    ],
+    "Checkpoint pembayaran pertama",
+  );
+  const terminationCase = nullable(record.termination_case, (entry) => {
+    const termination = object(entry, ["id", "status", "planned_checkout_date"], "Proses checkout");
+    return {
+      id: uuid(termination.id, "ID proses checkout"),
+      status: oneOf(
+        termination.status,
+        ["pending", "cancelled", "checked_out"] as const,
+        "Status proses checkout",
+      ),
+      planned_checkout_date: date(termination.planned_checkout_date, "Tanggal checkout"),
+    };
+  });
+  const boolean = (entry: unknown, label: string) => {
+    if (typeof entry !== "boolean") return fail(label);
+    return entry;
+  };
+  return {
+    id: uuid(record.id, "ID pelunasan kontrak"),
+    invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
+    status: oneOf(
+      record.status,
+      [
+        "awaiting_activation",
+        "open",
+        "extended",
+        "overdue",
+        "admin_action_required",
+        "termination_pending",
+        "terminated",
+        "paid",
+      ] as const,
+      "Status pelunasan kontrak",
+    ),
+    activated_at: nullable(record.activated_at, (entry) => timestamp(entry, "Waktu aktivasi")),
+    original_due_at: nullable(record.original_due_at, (entry) => timestamp(entry, "Tenggat awal")),
+    extension_due_at: nullable(record.extension_due_at, (entry) =>
+      timestamp(entry, "Tenggat perpanjangan"),
+    ),
+    extension_reason: nullable(record.extension_reason, (entry) =>
+      text(entry, "Alasan perpanjangan"),
+    ),
+    effective_due_at: nullable(record.effective_due_at, (entry) =>
+      timestamp(entry, "Tenggat efektif"),
+    ),
+    contract_rent_amount: integer(record.contract_rent_amount, "Total sewa kontrak"),
+    initial_rent_credit: integer(record.initial_rent_credit, "Kredit sewa awal"),
+    payment_allocated: integer(record.payment_allocated, "Pembayaran sewa"),
+    first_payment_checkpoint: {
+      due_at: nullable(checkpoint.due_at, (entry) => timestamp(entry, "Tenggat checkpoint")),
+      required_additional_amount: integer(
+        checkpoint.required_additional_amount,
+        "Minimum pembayaran checkpoint",
+      ),
+      additional_payment_received: integer(
+        checkpoint.additional_payment_received,
+        "Pembayaran checkpoint",
+      ),
+      remaining_amount: integer(checkpoint.remaining_amount, "Sisa checkpoint"),
+      status: oneOf(
+        checkpoint.status,
+        ["not_required", "pending", "met_early", "met", "overdue"] as const,
+        "Status checkpoint",
+      ),
+    },
+    deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit"),
+    outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
+    reminder_stage: nullable(record.reminder_stage, (entry) =>
+      oneOf(entry, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "Tahap pengingat"),
+    ),
+    admin_action_required: boolean(record.admin_action_required, "Kebutuhan tindakan admin"),
+    partial_payment_allowed: boolean(record.partial_payment_allowed, "Izin pembayaran sebagian"),
+    full_payment_required: boolean(record.full_payment_required, "Kewajiban pelunasan penuh"),
+    extension_available: boolean(record.extension_available, "Izin perpanjangan"),
+    termination_case: terminationCase,
+  };
+}
+
 export function parseMyW06Billing(value: unknown): MyW06Billing {
   const envelope = object(value, ["data"], "Respons billing");
-  const data = object(
+  const data = objectWithOptional(
     envelope.data,
     ["lease", "summary", "invoices", "payments", "proofs"],
+    ["contract_settlement"],
     "Data billing",
   );
-  const lease = object(
+  const lease = objectWithOptional(
     data.lease,
     [
       "id",
@@ -262,6 +454,7 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       "remaining_days",
       "note",
     ],
+    ["resident_name", "room_number"],
     "Kontrak billing",
   );
   const summary = object(
@@ -282,10 +475,18 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
     ],
     "Ringkasan billing",
   );
+  const settlement =
+    data.contract_settlement === undefined
+      ? null
+      : nullable(data.contract_settlement, contractSettlement);
   return {
     lease: {
       id: uuid(lease.id, "ID kontrak"),
       property_id: uuid(lease.property_id, "ID properti"),
+      resident_name:
+        lease.resident_name === undefined ? undefined : text(lease.resident_name, "Nama penghuni"),
+      room_number:
+        lease.room_number === undefined ? undefined : text(lease.room_number, "Nomor kamar"),
       status: oneOf(lease.status, ["awaiting_activation", "active"] as const, "Status kontrak"),
       start_date: date(lease.start_date, "Mulai kontrak"),
       end_date: date(lease.end_date, "Akhir kontrak"),
@@ -315,6 +516,7 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       ),
       overdue_count: integer(summary.overdue_count, "Jumlah terlambat"),
     },
+    contract_settlement: settlement,
     invoices: list(
       data.invoices,
       (value) => {
@@ -435,7 +637,7 @@ export function parseMyW06Receipt(value: unknown): MyW06Receipt {
 }
 
 export async function getMyW06Billing(signal?: AbortSignal, requester: Requester = apiClient) {
-  return parseMyW06Billing(await requester.get<unknown>("/my/billing", { signal }));
+  return parseMyW06Billing(asEnvelope(await requester.get<unknown>("/my/billing", { signal })));
 }
 
 export async function getMyW06Receipt(
@@ -444,7 +646,9 @@ export async function getMyW06Receipt(
   requester: Requester = apiClient,
 ) {
   return parseMyW06Receipt(
-    await requester.get<unknown>(`/my/receipts/${encodeURIComponent(receiptId)}`, { signal }),
+    asEnvelope(
+      await requester.get<unknown>(`/my/receipts/${encodeURIComponent(receiptId)}`, { signal }),
+    ),
   );
 }
 
@@ -454,7 +658,7 @@ export async function submitMyW06Proof(
   requester: Requester = apiClient,
 ) {
   return parseSubmittedMyW06Proof(
-    await requester.post<unknown>("/my/payment-proofs", input, { idempotencyKey }),
+    asEnvelope(await requester.post<unknown>("/my/payment-proofs", input, { idempotencyKey })),
   );
 }
 

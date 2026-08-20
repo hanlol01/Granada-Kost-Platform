@@ -594,7 +594,6 @@ export class W06BillingService {
   async myBilling(user: UserAccessContext) {
     const contexts = await this.database.client.query<LeaseTupleRow>(
       `${this.leaseTupleSql()}
-       JOIN property_memberships pm ON pm.property_id=l.property_id AND pm.user_id=$1 AND pm.membership_status='active'
        WHERE resident.user_id=$1 AND l.lease_status IN ('awaiting_activation','active')
        ORDER BY l.created_at DESC`,
       [user.id],
@@ -628,8 +627,6 @@ export class W06BillingService {
       `SELECT i.property_id,i.resident_id,i.lease_id
        FROM invoices i
        JOIN residents resident ON resident.id=i.resident_id AND resident.property_id=i.property_id
-       JOIN property_memberships membership ON membership.property_id=i.property_id
-         AND membership.user_id=$2 AND membership.membership_status='active'
        WHERE i.id=$1 AND resident.user_id=$2 AND i.lease_id IS NOT NULL`,
       [dto.invoice_id, user.id],
     );
@@ -774,7 +771,7 @@ export class W06BillingService {
       issued_at: Date;
       safe_snapshot: Record<string, unknown>;
     }>(
-      `SELECT receipt.id,receipt.receipt_code,receipt.receipt_kind,receipt.amount,receipt.issued_at,receipt.safe_snapshot FROM payment_receipts receipt LEFT JOIN payments payment ON payment.id=receipt.payment_id LEFT JOIN payment_reversals reversal ON reversal.receipt_id=receipt.id LEFT JOIN payments reversed_payment ON reversed_payment.id=reversal.payment_id JOIN residents resident ON resident.id=COALESCE(payment.resident_id,reversed_payment.resident_id) JOIN property_memberships membership ON membership.property_id=receipt.property_id AND membership.user_id=$2 AND membership.membership_status='active' WHERE receipt.id=$1 AND resident.user_id=$2`,
+      `SELECT receipt.id,receipt.receipt_code,receipt.receipt_kind,receipt.amount,receipt.issued_at,receipt.safe_snapshot FROM payment_receipts receipt LEFT JOIN payments payment ON payment.id=receipt.payment_id LEFT JOIN payment_reversals reversal ON reversal.receipt_id=receipt.id LEFT JOIN payments reversed_payment ON reversed_payment.id=reversal.payment_id JOIN residents resident ON resident.id=COALESCE(payment.resident_id,reversed_payment.resident_id) AND resident.property_id=receipt.property_id WHERE receipt.id=$1 AND resident.user_id=$2`,
       [receiptId, user.id],
     );
     if (result.rows.length !== 1)
@@ -2204,11 +2201,28 @@ export class W06BillingService {
     const result = await this.database.client.query<InvoiceDocumentRow>(
       `${this.invoiceDocumentSql()}
        JOIN residents resident ON resident.id=invoice.resident_id AND resident.property_id=invoice.property_id
-       JOIN property_memberships membership ON membership.property_id=invoice.property_id
-         AND membership.user_id=$2 AND membership.membership_status='active'
        WHERE invoice.id=$1 AND resident.user_id=$2
          AND invoice.lease_id IS NOT NULL AND invoice.invoice_status<>'draft'`,
       [invoiceId, user.id],
+    );
+    if (result.rows.length !== 1)
+      throw new NotFoundException({
+        code: 'INVOICE_DOCUMENT_NOT_FOUND',
+        message: 'Invoice document not found',
+      });
+    return this.renderInvoiceDocument(result.rows[0]);
+  }
+
+  /** The caller must already have validated an opaque, expiring share token. */
+  async sharedInvoiceDocument(
+    propertyId: string,
+    invoiceId: string,
+  ): Promise<BillingInvoiceDocument> {
+    const result = await this.database.client.query<InvoiceDocumentRow>(
+      `${this.invoiceDocumentSql()}
+       WHERE invoice.id=$1 AND invoice.property_id=$2
+         AND invoice.lease_id IS NOT NULL AND invoice.invoice_status<>'draft'`,
+      [invoiceId, propertyId],
     );
     if (result.rows.length !== 1)
       throw new NotFoundException({
@@ -2539,8 +2553,8 @@ export class W06BillingService {
         ? 'not_required'
         : firstCheckpointMet
           ? firstCheckpointTime !== null &&
-              authoritativeNowTime !== null &&
-              authoritativeNowTime < firstCheckpointTime
+            authoritativeNowTime !== null &&
+            authoritativeNowTime < firstCheckpointTime
             ? 'met_early'
             : 'met'
           : firstCheckpointTime !== null &&
@@ -2551,15 +2565,15 @@ export class W06BillingService {
     const isPaid = outstanding === 0;
     const overdue = Boolean(
       !isPaid &&
-        dueAtTime !== null &&
-        authoritativeNowTime !== null &&
-        authoritativeNowTime > dueAtTime,
+      dueAtTime !== null &&
+      authoritativeNowTime !== null &&
+      authoritativeNowTime > dueAtTime,
     );
     const adminActionRequired = Boolean(
       !isPaid &&
-        partialPaymentDeadlineTime !== null &&
-        authoritativeNowTime !== null &&
-        authoritativeNowTime > partialPaymentDeadlineTime,
+      partialPaymentDeadlineTime !== null &&
+      authoritativeNowTime !== null &&
+      authoritativeNowTime > partialPaymentDeadlineTime,
     );
     const daysUntilDue =
       dueAtTime !== null && authoritativeNowTime !== null
@@ -2770,11 +2784,7 @@ export class W06BillingService {
           [payment.id, invoice.id, amount, lease.id, payment.payment_purpose],
         );
         receiptAllocations.push({ invoice_id: invoice.id, amount: this.money(amount) });
-        await this.reconcileInvoiceLifecycleInTransaction(
-          client,
-          lease.property_id,
-          invoice.id,
-        );
+        await this.reconcileInvoiceLifecycleInTransaction(client, lease.property_id, invoice.id);
       }
     }
     await this.syncOnboardingFinancialProjection(client, lease);

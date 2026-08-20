@@ -103,7 +103,7 @@ components:
 
 “Pusat Kendali Hunian” memperlakukan setiap layar operasional sebagai permukaan kendali yang tenang: informasi cukup padat untuk kerja harian, tetapi hierarki, jarak, dan penekanan yang restrained membuatnya mudah dipindai. Permukaan tonal dan border terukur membawa struktur; shadow bersifat sekunder dan tidak dekoratif.
 
-Shared core memakai role warna semantic light/dark, kontrol ringkas, focus state yang jelas, dan layout responsif yang wrap sebelum overflow. Admin mengutamakan tabel property-wide dan kepadatan navigasi, sedangkan Penghuni memakai shell mobile sempit dengan radius, gradient, dan elevation yang sedikit lebih lunak.
+Shared core memakai role warna semantic light/dark, kontrol ringkas, focus state yang jelas, dan layout responsif yang wrap sebelum overflow. Admin mengutamakan tabel property-wide dan kepadatan navigasi, Penghuni memakai shell mobile sempit dengan radius, gradient, dan elevation yang sedikit lebih lunak, sedangkan Property Owner memakai shell visual setara Admin dengan registry navigasi yang khusus, terbatas, dan read-only.
 
 **Key Characteristics:**
 
@@ -111,6 +111,14 @@ Shared core memakai role warna semantic light/dark, kontrol ringkas, focus state
 - Kepadatan operasional yang nyaman dengan hierarki eksplisit.
 - Tonal layering, border terukur, dan shadow minimal.
 - Komponen refined dan restrained yang mempertahankan implementasi incumbent.
+
+### Role Profiles
+
+- **Admin:** permukaan kendali property-wide dengan tindakan sesuai RBAC.
+- **Property Owner:** bahasa visual, shell, ritme, dan primitive sama dengan Admin; hanya route dan proyeksi data yang sudah diizinkan untuk Owner yang boleh ada. Tidak ada mutasi tersembunyi, shortcut Admin, atau data yang disaring di frontend.
+- **Penghuni:** shell mobile-first yang tetap memakai token semantic shared, dengan prioritas layanan mandiri.
+
+**The Same Shell, Different Authority Rule.** Kesetaraan visual tidak berarti kesetaraan route, DTO, tindakan, atau data pribadi.
 
 ## Colors
 
@@ -121,6 +129,7 @@ Palet berbasis semantic roles biru sejuk dan neutral kebiruan, dengan state succ
 - **Operational Blue:** aksi utama, active navigation, focus ring, dan penanda prioritas.
 - **Soft Operational Blue:** active navigation atau selected state yang membutuhkan penekanan tonal tanpa bidang solid.
 - **Penghuni Blue Glow:** aksen Penghuni untuk gradient dan elevation ringan; bukan pengganti role primary shared.
+- **Owner Operational Blue:** Property Owner memakai Operational Blue yang sama dengan Admin. Tidak ada palet Owner terpisah; perbedaannya adalah konteks read-only dan bukan warna baru.
 
 ### Neutral
 
@@ -130,7 +139,7 @@ Palet berbasis semantic roles biru sejuk dan neutral kebiruan, dengan state succ
 
 ### State
 
-- **Success, Warning, dan Destructive:** hanya untuk state yang mempunyai label atau cue eksplisit; jangan gunakan hue sebagai satu-satunya pembawa arti.
+- **Informational, Success, Warning, Destructive, dan Neutral:** setiap status memakai label, ikon/cue, border atau surface semantic yang sesuai. Informasi/proses memakai biru, selesai/terkonfirmasi memakai hijau, perlu perhatian memakai kuning, gagal/dibatalkan memakai merah, dan status pasif memakai neutral.
 
 ### Named Rules
 
@@ -155,6 +164,8 @@ Admin memakai app shell full-width dengan sidebar desktop tetap, header sticky, 
 
 Penghuni memakai shell mobile-first dengan lebar maksimum `28rem`, bottom navigation tetap, safe-area inset, dan public catalog yang dapat melebar sampai `72rem`. Breakpoint incumbent yang aktif adalah `sm` (`640px`), `md` (`768px`), dan `lg` (`1024px`).
 
+Property Owner memakai shell desktop dan header responsif Admin, tetapi sidebar, bottom navigation, breadcrumb, dan tombol notifikasi hanya boleh membaca registry route Owner yang diizinkan. Pada mobile, tampilkan maksimal empat navigasi prioritas dan satu affordance “Lainnya”; jangan membuat horizontal menu tab sebagai pengganti route.
+
 Gunakan ritme berbasis 0.25rem dengan langkah yang berulang pada frontmatter. Kelompokkan kontrol rapat; gunakan jarak section yang lebih besar untuk memisahkan konteks. Grid dan action row harus wrap atau stack saat ruang berkurang. Targetnya adalah comfortable density, scanability, dan `scrollWidth <= clientWidth`.
 
 ### Named Rules
@@ -177,42 +188,47 @@ Admin mengandalkan tonal layering, border, sticky surfaces dengan backdrop blur,
 
 ## Shapes
 
-Admin berakar pada radius `0.75rem` dengan turunan dari `0.5rem` sampai `1.25rem`. Penghuni berakar pada radius `1rem` dan dapat mencapai `1.75rem` untuk surface yang lebih lunak. Button dan field memakai radius medium; card memakai radius lebih besar; pill hanya untuk filter, compact status, atau affordance yang memang berbentuk capsule.
+Admin dan Property Owner berakar pada radius `0.75rem` dengan turunan dari `0.5rem` sampai `1.25rem`. Penghuni berakar pada radius `1rem` dan dapat mencapai `1.75rem` untuk surface yang lebih lunak. Button dan field memakai radius medium; card memakai radius lebih besar; pill hanya untuk filter, compact status, atau affordance yang memang berbentuk capsule.
 
 Border satu lapis memisahkan surface dan field. Jangan menambah radius baru atau mengubah seluruh silhouette untuk satu halaman. Dialog dan sheet mempertahankan containment yang jelas serta tidak boleh dipotong viewport.
 
 ## Components
 
-Shared Admin/Penghuni primitives memakai variant dan state yang sejalan; perbedaan visual utama berasal dari token app, bukan fork perilaku.
+Shared Admin/Property Owner/Penghuni primitives memakai variant dan state yang sejalan; perbedaan visual utama berasal dari token app dan perbedaan authority berasal dari route registry serta backend projection, bukan fork perilaku UI.
 
 ### Buttons
 
 - **Primary:** tinggi `2.25rem`, padding horizontal `1rem`, teks medium, primary surface, dan kontras foreground semantic.
 - **Outline/Secondary/Ghost:** mempertahankan hierarchy melalui border atau tonal background; ghost tidak menambah surface saat idle.
 - **Hover/Focus/Disabled:** perubahan warna halus, focus-visible ring, disabled opacity, dan cursor yang sesuai. Icon button tetap mempunyai accessible name.
+- **Owner actions:** aksi navigasi/read-only seperti `Lihat detail`, `Lihat laporan`, atau `Unduh export` memakai primary atau outline sesuai hierarchy. `Reset filter` memakai outline/secondary dengan ikon reset—bukan destructive merah—karena tidak menghapus data.
 
 ### Inputs and Selects
 
 - Tinggi standar `2.25rem`, border input semantic, radius medium, dan padding horizontal `0.75rem`.
 - Field harus mempunyai label terlihat, placeholder bukan pengganti label, error inline terkait, dan focus-visible ring.
 - Dialog atau sheet harus memindahkan focus secara aman dan mengembalikannya ketika ditutup.
+- **Search and date:** gunakan search field dengan ikon dan clear affordance ketika perlu; gunakan date/month picker bersama yang berbahasa Indonesia, label terlihat, helper text, batas tanggal, serta format tampilan konsisten. Native input polos tidak boleh menjadi variasi halaman Owner.
 
 ### Cards and Tables
 
 - Card memakai card surface, border, radius besar, dan shadow ringan; internal padding umumnya `1.5rem`.
 - Tabel memakai header muted, divider horizontal, hover tonal, cell padding ringkas, dan horizontal scroll hanya di wrapper tabel.
 - Pada mobile, data kompleks boleh berubah menjadi card bila struktur dan action tetap dapat dipahami.
+- **Owner summary cards:** tampilkan satu fakta utama, konteks periode/scope, status semantic, dan link read-only yang jelas. Border harus tetap terlihat pada light mode; card bukan wadah untuk menumpuk card lain tanpa kebutuhan informasi.
 
 ### Badges and Status
 
 - Badge ringkas memakai label eksplisit, border atau surface semantic, dan teks semibold.
 - Status selalu menyertakan teks atau cue nonwarna. Jangan merender raw enum tanpa copy operasional yang dipahami pengguna.
+- **Domain mapping:** status aset/hunian, pembayaran, entitlement, settlement, payout, komplain, maintenance, dan notifikasi memakai mapping semantic bersama. Jangan menggabungkan `dibayar`, `diakui`, `settled`, dan `dibayarkan` menjadi satu badge hanya karena semuanya bernuansa sukses.
 
 ### Navigation
 
 - Admin sidebar mengelompokkan route berdasarkan konteks, memakai active tonal background plus bar indikator, dan scrollbar tipis yang theme-aware.
 - Admin mobile menampilkan empat route prioritas dan sheet “Lainnya”; Penghuni memakai lima item bottom navigation.
 - Active state harus terbaca tanpa bergantung pada warna saja, dan seluruh menu tetap keyboard-accessible serta dapat discroll.
+- **Property Owner navigation:** gunakan registry allowlist khusus: Dashboard, Aset Saya, Hunian & Penyewaan, Pembayaran & Pendapatan, Komplain & Maintenance, Laporan, Notifikasi, dan Profil Akun. Registry Admin tidak boleh difilter di client untuk membentuk navigasi Owner.
 
 ### Dialogs and Sheets
 
@@ -229,6 +245,7 @@ Shared Admin/Penghuni primitives memakai variant dan state yang sejalan; perbeda
 - **Do** dampingi setiap warna status dengan teks, ikon, atau cue eksplisit lain.
 - **Do** jauhkan opaque identifier, rahasia autentikasi, dan metadata privat dari UI yang dirender.
 - **Do** beri setiap form control label terlihat, validasi inline, dan focus management yang disengaja.
+- **Do** tampilkan fakta Owner melalui proyeksi backend yang property-scoped dan period-bound; gunakan loading, empty, historical, unavailable, no-result, dan retry state yang eksplisit.
 
 ### Don't:
 
@@ -237,3 +254,6 @@ Shared Admin/Penghuni primitives memakai variant dan state yang sejalan; perbeda
 - **Don't** biarkan tabel, header, dialog, atau action row membuat horizontal page overflow.
 - **Don't** promosikan keputusan layout khusus satu halaman menjadi aturan desain global.
 - **Don't** gunakan shadow berat atau efek dekoratif sebagai pengganti hierarki.
+- **Don't** memakai DTO Admin, route Admin, data mock, atau join di browser untuk membentuk tampilan Owner.
+- **Don't** memakai merah/destructive untuk reset filter atau tindakan non-destruktif lain.
+- **Don't** menjadikan detail penghuni Admin sebagai halaman Owner; proyeksi Owner hanya menampilkan identitas penghuni yang aman bila relevan terhadap hunian aset.

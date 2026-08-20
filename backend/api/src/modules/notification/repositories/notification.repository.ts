@@ -68,12 +68,18 @@ export class NotificationRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async listForUser(userId: string, status?: NotificationStatus, limit = 20, offset = 0): Promise<NotificationRecord[]> {
+  async listForUser(
+    userId: string,
+    status?: NotificationStatus,
+    limit = 20,
+    offset = 0,
+  ): Promise<NotificationRecord[]> {
     const result = await this.database.client.query<NotificationRow>(
       `SELECT ${this.columns()}
        FROM notifications
        WHERE recipient_user_id = $1
          AND ($2::text IS NULL OR notification_status = $2)
+         AND ($2::text IS NULL OR $2::text <> 'unread' OR expires_at IS NULL OR expires_at > now())
        ORDER BY created_at DESC
        LIMIT $3 OFFSET $4`,
       [userId, status ?? null, limit, offset],
@@ -86,7 +92,8 @@ export class NotificationRepository {
       `SELECT count(*) AS unread_count
        FROM notifications
        WHERE recipient_user_id = $1
-         AND notification_status = 'unread'`,
+         AND notification_status = 'unread'
+         AND (expires_at IS NULL OR expires_at > now())`,
       [userId],
     );
     return Number(result.rows[0].unread_count);
@@ -99,6 +106,7 @@ export class NotificationRepository {
            read_at = COALESCE(read_at, now())
        WHERE recipient_user_id = $1
          AND notification_status = 'unread'
+         AND (expires_at IS NULL OR expires_at > now())
        RETURNING id`,
       [userId],
     );

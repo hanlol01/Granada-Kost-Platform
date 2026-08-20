@@ -676,7 +676,7 @@ Implementation evidence:
 
 ### KMO-W08D — Notification Center
 
-Status: `SOURCE_IMPLEMENTED`; `AUTOMATED_REVIEW_PENDING`; `RUNTIME_DEFERRED`.
+Status: `AUTOMATED_VERIFIED`; `RUNTIME_DEFERRED`.
 
 Scope:
 
@@ -686,11 +686,16 @@ Scope:
 
 Exit evidence:
 
-- protected variables cannot be removed or forged;
-- invoice selection updates preview exactly;
-- stale badge mutation proofs;
-- no delivered/read claim without provider evidence;
-- account/property isolation.
+- recipient- and property-scoped Admin/Penghuni listing and unread counts;
+- expired unread notifications are excluded from badges and bulk read actions;
+- read, archive, and mark-all-read mutations are transactional, idempotent,
+  audited, and outbox-backed;
+- safe allowlisted deep links are exposed without changing reminder delivery
+  semantics;
+- focused W08A–W08D behavior tests, Admin/Penghuni typechecks, backend build,
+  focused lint/Prettier checks, and disposable-database-independent regression
+  tests passed; canonical migration and runtime/browser evidence remain
+  deferred.
 
 ## KMO-W09 — Vehicles, Complaints, Maintenance, and Expenses
 
@@ -736,6 +741,8 @@ proof passed, while automated review and authenticated runtime evidence remain
 deferred.
 
 ### KMO-W09C — Expenses
+
+Status: `SOURCE_IMPLEMENTED`; `AUTOMATED_REVIEW_PENDING`; `RUNTIME_DEFERRED`.
 
 Requirements:
 

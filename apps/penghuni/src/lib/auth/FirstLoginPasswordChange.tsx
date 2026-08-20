@@ -15,6 +15,7 @@ export function FirstLoginPasswordChange() {
   const [confirmation, setConfirmation] = useState("");
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -90,17 +91,16 @@ export function FirstLoginPasswordChange() {
               autoComplete="new-password"
               description="Gunakan minimal 12 karakter dan jangan memakai password sementara."
             />
-            <div className="space-y-2">
-              <Label htmlFor="new-password-confirmation">Ulangi password baru</Label>
-              <Input
-                id="new-password-confirmation"
-                type="password"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="new-password"
-                aria-invalid={Boolean(validationError)}
-              />
-            </div>
+            <PasswordField
+              id="new-password-confirmation"
+              label="Ulangi password baru"
+              value={confirmation}
+              visible={showConfirmation}
+              onToggle={() => setShowConfirmation((value) => !value)}
+              onChange={setConfirmation}
+              autoComplete="new-password"
+              invalid={Boolean(validationError)}
+            />
 
             {validationError ? (
               <div
@@ -143,6 +143,7 @@ function PasswordField({
   onChange,
   autoComplete,
   description,
+  invalid = false,
 }: {
   id: string;
   label: string;
@@ -152,6 +153,7 @@ function PasswordField({
   onChange: (value: string) => void;
   autoComplete: string;
   description?: string;
+  invalid?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -164,6 +166,7 @@ function PasswordField({
           onChange={(event) => onChange(event.target.value)}
           autoComplete={autoComplete}
           className="h-11 pr-12"
+          aria-invalid={invalid}
         />
         <button
           type="button"
@@ -172,6 +175,7 @@ function PasswordField({
           aria-label={
             visible ? `Sembunyikan ${label.toLowerCase()}` : `Tampilkan ${label.toLowerCase()}`
           }
+          aria-pressed={visible}
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>

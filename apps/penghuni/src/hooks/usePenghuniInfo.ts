@@ -1,7 +1,7 @@
 // Penghuni info domain hook.
 //
-// Phase 1 has NO public endpoint that a `resident` token can read for
-// announcements, kost rules, or FAQ. API_PLANNING lists those surfaces but
+// There is currently no public endpoint that a `resident` token can read for
+// announcements, kost rules, or FAQ. API planning lists those surfaces but
 // the backend implementation currently exposes only admin-side POST endpoints.
 // To avoid creating a fake workflow, this hook always returns empty data with
 // a `reason` string the UI uses to render an EmptyState. When the backend
@@ -29,7 +29,7 @@ export function useAnnouncements(): UseQueryResult<InfoSection<InfoAnnouncement>
     queryKey: qk.info.announcements(),
     queryFn: async () => ({
       available: false,
-      reason: "Endpoint pengumuman untuk Penghuni belum tersedia di Phase 1.",
+      reason: "Belum ada pengumuman yang diterbitkan untuk akun Anda.",
       items: [],
     }),
     staleTime: Infinity,
@@ -41,7 +41,7 @@ export function useKostRules(): UseQueryResult<InfoSection<string>> {
     queryKey: qk.info.rules(),
     queryFn: async () => ({
       available: false,
-      reason: "Peraturan kos akan disinkronkan dengan property settings di milestone berikutnya.",
+      reason: "Peraturan properti belum diterbitkan di aplikasi.",
       items: [],
     }),
     staleTime: Infinity,
@@ -53,7 +53,7 @@ export function useFaqs(): UseQueryResult<InfoSection<{ q: string; a: string }>>
     queryKey: qk.info.faqs(),
     queryFn: async () => ({
       available: false,
-      reason: "FAQ untuk Penghuni belum tersedia di Phase 1.",
+      reason: "Panduan tanya jawab belum diterbitkan di aplikasi.",
       items: [],
     }),
     staleTime: Infinity,

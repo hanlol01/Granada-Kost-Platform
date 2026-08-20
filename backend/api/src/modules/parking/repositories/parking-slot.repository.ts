@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import {
   CreateParkingSlotInput,
@@ -44,8 +45,19 @@ export class ParkingSlotRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async create(input: CreateParkingSlotInput): Promise<ParkingSlotRecord> {
-    const result = await this.database.client.query<ParkingSlotRow>(
+  async findByIdForUpdate(id: string, client: PoolClient): Promise<ParkingSlotRecord | null> {
+    const result = await client.query<ParkingSlotRow>(
+      `SELECT ${this.columns()}
+       FROM parking_slots
+       WHERE id = $1
+       FOR UPDATE`,
+      [id],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async create(input: CreateParkingSlotInput, client?: PoolClient): Promise<ParkingSlotRecord> {
+    const result = await (client ?? this.database.client).query<ParkingSlotRow>(
       `INSERT INTO parking_slots (zone_id, slot_number, slot_type)
        VALUES ($1, $2, $3)
        RETURNING ${this.columns()}`,
@@ -54,8 +66,12 @@ export class ParkingSlotRepository {
     return this.map(result.rows[0]);
   }
 
-  async assign(slotId: string, vehicleId: string): Promise<ParkingSlotRecord | null> {
-    const result = await this.database.client.query<ParkingSlotRow>(
+  async assign(
+    slotId: string,
+    vehicleId: string,
+    client?: PoolClient,
+  ): Promise<ParkingSlotRecord | null> {
+    const result = await (client ?? this.database.client).query<ParkingSlotRow>(
       `UPDATE parking_slots
        SET vehicle_id = $2,
            slot_status = 'occupied',
@@ -67,8 +83,8 @@ export class ParkingSlotRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async release(slotId: string): Promise<ParkingSlotRecord | null> {
-    const result = await this.database.client.query<ParkingSlotRow>(
+  async release(slotId: string, client?: PoolClient): Promise<ParkingSlotRecord | null> {
+    const result = await (client ?? this.database.client).query<ParkingSlotRow>(
       `UPDATE parking_slots
        SET vehicle_id = NULL,
            slot_status = 'available',
@@ -91,8 +107,8 @@ export class ParkingSlotRepository {
     return Number(result.rows[0].occupied_count);
   }
 
-  async countByZone(zoneId: string): Promise<number> {
-    const result = await this.database.client.query<{ slot_count: string }>(
+  async countByZone(zoneId: string, client?: PoolClient): Promise<number> {
+    const result = await (client ?? this.database.client).query<{ slot_count: string }>(
       `SELECT count(*) AS slot_count
        FROM parking_slots
        WHERE zone_id = $1`,

@@ -33,6 +33,16 @@ export type VehicleRecord = {
   updatedAt: string;
 };
 
+export type VehicleStatusHistoryRecord = {
+  id: string;
+  vehicleId: string;
+  fromStatus: VehicleStatus | null;
+  toStatus: VehicleStatus;
+  changedByUserId: string | null;
+  changedAt: string;
+  notes: string | null;
+};
+
 export type UseVehiclesFilters = {
   status?: VehicleStatus;
   vehicleType?: VehicleType;
@@ -55,5 +65,15 @@ export function useVehicles(filters: UseVehiclesFilters = {}): UseQueryResult<Ve
         },
       }),
     enabled: Boolean(currentPropertyId),
+  });
+}
+
+export function useVehicleHistory(
+  vehicleId: string | null,
+): UseQueryResult<VehicleStatusHistoryRecord[]> {
+  return useQuery<VehicleStatusHistoryRecord[]>({
+    queryKey: ["vehicles", "history", vehicleId] as const,
+    queryFn: () => apiClient.get<VehicleStatusHistoryRecord[]>(`/vehicles/${vehicleId}/history`),
+    enabled: Boolean(vehicleId),
   });
 }

@@ -61,4 +61,20 @@ export type AuditActorContext = {
   ipAddress?: string;
   userAgent?: string;
   correlationId?: string;
+  idempotencyKey?: string;
+};
+
+export type ParkingAssignmentAction = 'assigned' | 'released';
+
+export type ParkingAssignmentHistoryRecord = {
+  id: string;
+  propertyId: string;
+  slotId: string;
+  vehicleId: string;
+  action: ParkingAssignmentAction;
+  reason: string | null;
+  actorUserId: string | null;
+  effectiveAt: Date;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
 };

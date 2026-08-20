@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { CreateParkingZoneInput, ParkingZoneRecord, ParkingZoneType } from '../types/parking.types';
 
@@ -43,8 +44,8 @@ export class ParkingZoneRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async create(input: CreateParkingZoneInput): Promise<ParkingZoneRecord> {
-    const result = await this.database.client.query<ParkingZoneRow>(
+  async create(input: CreateParkingZoneInput, client?: PoolClient): Promise<ParkingZoneRecord> {
+    const result = await (client ?? this.database.client).query<ParkingZoneRow>(
       `INSERT INTO parking_zones (
          property_id, zone_code, zone_name, zone_type, capacity,
          location_description, sort_order, created_by_user_id

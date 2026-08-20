@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
 import {
@@ -118,6 +119,17 @@ export class VehicleRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  async findByIdForUpdate(id: string, client: PoolClient): Promise<VehicleRecord | null> {
+    const result = await client.query<VehicleRow>(
+      `SELECT ${this.columns()}
+       FROM vehicles
+       WHERE id = $1
+       FOR UPDATE`,
+      [id],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
   async findByIdForUser(vehicleId: string, userId: string): Promise<VehicleRecord | null> {
     const result = await this.database.client.query<VehicleRow>(
       `SELECT ${this.columns('vehicles')}
@@ -168,8 +180,8 @@ export class VehicleRepository {
     }));
   }
 
-  async settings(propertyId: string): Promise<VehicleSettingsRecord | null> {
-    const result = await this.database.client.query<{
+  async settings(propertyId: string, client?: PoolClient): Promise<VehicleSettingsRecord | null> {
+    const result = await (client ?? this.database.client).query<{
       property_id: string;
       parking_management_mode: 'unmanaged' | 'zone' | 'slot';
       max_vehicles_per_resident: number;
@@ -204,8 +216,9 @@ export class VehicleRepository {
     propertyId: string,
     plateNumber: string,
     excludedVehicleId?: string,
+    client?: PoolClient,
   ): Promise<boolean> {
-    const result = await this.database.client.query<{ exists: boolean }>(
+    const result = await (client ?? this.database.client).query<{ exists: boolean }>(
       `SELECT EXISTS (
          SELECT 1
          FROM vehicles
@@ -219,8 +232,12 @@ export class VehicleRepository {
     return result.rows[0].exists;
   }
 
-  async nonTerminalCountForResident(propertyId: string, residentId: string): Promise<number> {
-    const result = await this.database.client.query<{ vehicle_count: string }>(
+  async nonTerminalCountForResident(
+    propertyId: string,
+    residentId: string,
+    client?: PoolClient,
+  ): Promise<number> {
+    const result = await (client ?? this.database.client).query<{ vehicle_count: string }>(
       `SELECT count(*) AS vehicle_count
        FROM vehicles
        WHERE property_id = $1
@@ -231,8 +248,8 @@ export class VehicleRepository {
     return Number(result.rows[0].vehicle_count);
   }
 
-  async create(input: CreateVehicleInput): Promise<VehicleRecord> {
-    const result = await this.database.client.query<VehicleRow>(
+  async create(input: CreateVehicleInput, client?: PoolClient): Promise<VehicleRecord> {
+    const result = await (client ?? this.database.client).query<VehicleRow>(
       `INSERT INTO vehicles (
          property_id, resident_id, vehicle_code, plate_number, vehicle_type, brand, color, year,
          vehicle_status, notes, approved_by_user_id, approved_at, snapshot_resident_name,
@@ -261,8 +278,12 @@ export class VehicleRepository {
     return this.map(result.rows[0]);
   }
 
-  async update(id: string, input: UpdateVehicleInput): Promise<VehicleRecord | null> {
-    const result = await this.database.client.query<VehicleRow>(
+  async update(
+    id: string,
+    input: UpdateVehicleInput,
+    client?: PoolClient,
+  ): Promise<VehicleRecord | null> {
+    const result = await (client ?? this.database.client).query<VehicleRow>(
       `UPDATE vehicles
        SET plate_number = COALESCE($2, plate_number),
            vehicle_type = COALESCE($3, vehicle_type),
@@ -297,8 +318,9 @@ export class VehicleRepository {
       suspendReason?: string;
       deactivationReason?: string;
     } = {},
+    client?: PoolClient,
   ): Promise<VehicleRecord | null> {
-    const result = await this.database.client.query<VehicleRow>(
+    const result = await (client ?? this.database.client).query<VehicleRow>(
       `UPDATE vehicles
        SET vehicle_status = $2,
            approved_by_user_id = CASE WHEN $2 = 'active' THEN COALESCE($3, approved_by_user_id) ELSE approved_by_user_id END,
@@ -322,8 +344,8 @@ export class VehicleRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async nextSequence(propertyId: string, year: number): Promise<number> {
-    const result = await this.database.client.query<{ next_sequence: string }>(
+  async nextSequence(propertyId: string, year: number, client?: PoolClient): Promise<number> {
+    const result = await (client ?? this.database.client).query<{ next_sequence: string }>(
       `SELECT count(*) + 1 AS next_sequence
        FROM vehicles
        WHERE property_id = $1

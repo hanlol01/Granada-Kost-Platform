@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { FileResponse } from "@granada-kost/domain";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Banknote,
@@ -8,13 +7,11 @@ import {
   CheckCircle2,
   Clock3,
   Download,
-  FileCheck2,
-  Landmark,
+  Info,
   ReceiptText,
   ShieldCheck,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
-import { FileUploadField } from "@/components/file/FileUploadField";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,14 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  useMyW06Billing,
-  useMyW06Receipt,
-  useSubmitMyW06Proof,
-  useW06BillingAccountId,
-} from "@/hooks/useW06Billing";
-import { newIdempotencyKey } from "@/lib/idempotency";
+import { useMyW06Billing, useMyW06Receipt } from "@/hooks/useW06Billing";
 import { downloadMyInvoiceDocument } from "@/lib/penghuni-w06-billing";
 import type {
   MyW06Billing,
@@ -42,6 +32,11 @@ import type {
   W06PaymentPurpose,
   W06ProofStatus,
 } from "@/lib/penghuni-w06-billing";
+import {
+  deriveResidentBillingNotice,
+  verifiedDpTotal,
+  type ResidentBillingNotice,
+} from "@/lib/w11c-resident-billing";
 
 export const Route = createFileRoute("/_app/billing")({ component: BillingPage });
 
@@ -50,14 +45,7 @@ type Proof = MyW06Billing["proofs"][number];
 
 function BillingPage() {
   const query = useMyW06Billing();
-  const accountId = useW06BillingAccountId();
-  const [proofInvoice, setProofInvoice] = useState<Invoice | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setProofInvoice(null);
-    setReceiptId(null);
-  }, [accountId]);
 
   if (query.isPending)
     return (
@@ -81,8 +69,11 @@ function BillingPage() {
     <Page
       subtitle={`${planLabel(billing.lease.payment_plan)} · ${billing.summary.installment_paid}/${billing.summary.installment_total} tahap lunas`}
     >
+      <ReadOnlyNotice />
       <BalanceHero billing={billing} />
+      <BillingNotice billing={billing} />
       <ContractSummary billing={billing} />
+      <FinancialSeparationSummary billing={billing} />
       <section aria-labelledby="invoice-heading">
         <SectionHeading
           id="invoice-heading"
@@ -91,14 +82,7 @@ function BillingPage() {
         />
         <div className="mt-3 space-y-3">
           {billing.invoices.length ? (
-            billing.invoices.map((invoice) => (
-              <InvoiceCard
-                key={invoice.id}
-                invoice={invoice}
-                proofs={billing.proofs.filter((proof) => proof.invoice_id === invoice.id)}
-                onProof={() => setProofInvoice(invoice)}
-              />
-            ))
+            billing.invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)
           ) : (
             <Card>
               <CardContent className="p-4">
@@ -113,7 +97,6 @@ function BillingPage() {
       </section>
       <PaymentHistory billing={billing} onReceipt={setReceiptId} />
       <ProofHistory proofs={billing.proofs} invoices={billing.invoices} />
-      <ProofDialog invoice={proofInvoice} billing={billing} onClose={() => setProofInvoice(null)} />
       <ReceiptDialog receiptId={receiptId} onClose={() => setReceiptId(null)} />
     </Page>
   );
@@ -130,6 +113,41 @@ function Page({ children, subtitle }: { children: React.ReactNode; subtitle?: st
         {children}
       </main>
     </>
+  );
+}
+
+function ReadOnlyNotice() {
+  return (
+    <section className="flex gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Info className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div>
+        <h2 className="text-sm font-semibold">Informasi pembayaran resmi</h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+          Halaman ini hanya menampilkan tagihan dan pembayaran yang sudah dicatat pengelola.
+          Pembayaran tidak dilakukan melalui aplikasi ini.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function BillingNotice({ billing }: { billing: MyW06Billing }) {
+  const notice = deriveResidentBillingNotice(billing.summary);
+  const presentation = noticePresentation(notice, billing.summary.next_due_date);
+  const Icon = presentation.icon;
+  return (
+    <section
+      aria-live="polite"
+      className={`flex gap-3 rounded-2xl border p-4 ${presentation.className}`}
+    >
+      <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+      <div>
+        <h2 className="text-sm font-semibold">{presentation.title}</h2>
+        <p className="mt-1 text-sm leading-relaxed opacity-85">{presentation.description}</p>
+      </div>
+    </section>
   );
 }
 
@@ -199,20 +217,57 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
   );
 }
 
-function InvoiceCard({
-  invoice,
-  proofs,
-  onProof,
-}: {
-  invoice: Invoice;
-  proofs: Proof[];
-  onProof: () => void;
-}) {
+function FinancialSeparationSummary({ billing }: { billing: MyW06Billing }) {
+  const dpTotal = verifiedDpTotal(billing.payments);
+  return (
+    <section aria-labelledby="financial-separation-heading">
+      <SectionHeading
+        id="financial-separation-heading"
+        title="DP dan security deposit"
+        description="Keduanya dicatat terpisah agar nilai pembayaran sewa tidak tercampur dengan jaminan."
+      />
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Card className="border-primary/25">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Banknote className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">DP / uang muka sewa</p>
+                <p className="mt-1 text-xl font-bold">{idr(dpTotal)}</p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  DP yang terverifikasi menjadi kredit dan mengurangi kewajiban sewa kontrak.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-primary/30">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Security deposit tercatat
+                </p>
+                <p className="mt-1 text-xl font-bold">{idr(billing.summary.deposit_balance)}</p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Security deposit adalah dana jaminan terpisah dan tidak mengurangi tagihan sewa.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+function InvoiceCard({ invoice }: { invoice: Invoice }) {
   const [documentState, setDocumentState] = useState<"idle" | "loading" | "error">("idle");
-  const actionable =
-    invoice.outstanding_amount > 0 &&
-    ["issued", "partially_paid", "overdue"].includes(invoice.invoice_status);
-  const pending = proofs.some((proof) => proof.proof_status === "pending_review");
   return (
     <Card className={invoice.invoice_status === "overdue" ? "border-destructive/40" : undefined}>
       <CardContent className="p-4">
@@ -231,12 +286,12 @@ function InvoiceCard({
           <SummaryRow label="Sisa" value={idr(invoice.outstanding_amount)} stacked />
           <SummaryRow label="Jatuh tempo" value={jakartaDate(invoice.due_date)} stacked />
           <SummaryRow
-            label="Bukti"
-            value={pending ? "Menunggu review" : `${proofs.length} tercatat`}
+            label="Status pembayaran"
+            value={invoiceStatusLabel(invoice.invoice_status)}
             stacked
           />
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <div className="mt-4">
           {invoice.invoice_status !== "draft" ? (
             <Button
               variant="outline"
@@ -251,12 +306,6 @@ function InvoiceCard({
             >
               <Download className="mr-2 h-4 w-4" />
               {documentState === "loading" ? "Menyiapkan PDF..." : "Unduh invoice"}
-            </Button>
-          ) : null}
-          {actionable ? (
-            <Button className="min-h-11 w-full" onClick={onProof} disabled={pending}>
-              <FileCheck2 className="mr-2 h-4 w-4" />
-              {pending ? "Bukti sedang direview" : "Kirim bukti transfer"}
             </Button>
           ) : null}
         </div>
@@ -297,15 +346,7 @@ function PaymentHistory({
                       {purposeLabel(payment.payment_purpose)}
                     </p>
                   </div>
-                  <Badge variant="outline">
-                    {payment.payment_status === "verified"
-                      ? "Terverifikasi"
-                      : payment.payment_status === "pending_confirmation"
-                        ? "Menunggu konfirmasi"
-                        : payment.payment_status === "rejected"
-                          ? "Ditolak"
-                          : "Dibalik"}
-                  </Badge>
+                  <PaymentBadge status={payment.payment_status} />
                 </div>
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div>
@@ -357,8 +398,8 @@ function ProofHistory({ proofs, invoices }: { proofs: Proof[]; invoices: Invoice
     <section aria-labelledby="proof-heading">
       <SectionHeading
         id="proof-heading"
-        title="Status bukti transfer"
-        description="Transfer tidak mengubah saldo sampai bukti diverifikasi admin."
+        title="Riwayat bukti pembayaran"
+        description="Arsip bukti lama ditampilkan untuk referensi. Pengiriman bukti baru dilakukan melalui pengelola."
       />
       <div className="mt-3 space-y-2">
         {proofs.length ? (
@@ -387,171 +428,11 @@ function ProofHistory({ proofs, invoices }: { proofs: Proof[]; invoices: Invoice
           ))
         ) : (
           <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-            Belum ada bukti transfer yang dikirim.
+            Belum ada riwayat bukti pembayaran.
           </p>
         )}
       </div>
     </section>
-  );
-}
-
-function ProofDialog({
-  invoice,
-  billing,
-  onClose,
-}: {
-  invoice: Invoice | null;
-  billing: MyW06Billing;
-  onClose: () => void;
-}) {
-  const [purpose, setPurpose] = useState<W06PaymentPurpose>("rent");
-  const [amount, setAmount] = useState(0);
-  const [notes, setNotes] = useState("");
-  const [evidenceFile, setEvidenceFile] = useState<FileResponse | null>(null);
-  const [evidenceBusy, setEvidenceBusy] = useState(false);
-  const submit = useSubmitMyW06Proof();
-  const normalizedPurpose = invoice?.invoice_purpose === "other_charge" ? "other_charge" : purpose;
-  const fingerprint = JSON.stringify({
-    invoice: invoice?.id,
-    normalizedPurpose,
-    amount,
-    notes,
-    fileId: evidenceFile?.id ?? null,
-  });
-  const key = useLogicalKey(fingerprint);
-  const totalRentOutstanding = billing.invoices
-    .filter((item) => item.invoice_purpose === "rent")
-    .reduce((sum, item) => sum + item.outstanding_amount, 0);
-  const depositRemaining = Math.max(
-    0,
-    billing.summary.security_deposit_required - billing.summary.deposit_collected,
-  );
-  const maximum =
-    normalizedPurpose === "dp"
-      ? totalRentOutstanding
-      : normalizedPurpose === "security_deposit"
-        ? depositRemaining
-        : (invoice?.outstanding_amount ?? 0);
-
-  function close() {
-    if (submit.isPending || evidenceBusy) return;
-    setPurpose("rent");
-    setAmount(0);
-    setNotes("");
-    setEvidenceFile(null);
-    setEvidenceBusy(false);
-    submit.reset();
-    onClose();
-  }
-
-  return (
-    <Dialog open={Boolean(invoice)} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Kirim bukti transfer</DialogTitle>
-          <DialogDescription>
-            Bukti akan masuk antrean review. Saldo hanya berubah setelah verifikasi admin.
-          </DialogDescription>
-        </DialogHeader>
-        {invoice ? (
-          <div className="space-y-4">
-            <div className="rounded-xl bg-muted p-3 text-sm">
-              <p className="font-semibold">{invoice.invoice_code}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Sisa invoice {idr(invoice.outstanding_amount)}
-              </p>
-            </div>
-            {invoice.invoice_purpose === "rent" ? (
-              <Field label="Tujuan pembayaran">
-                <select
-                  className="min-h-11 w-full rounded-md border border-input bg-background px-3"
-                  value={purpose}
-                  onChange={(event) => {
-                    setPurpose(event.target.value as W06PaymentPurpose);
-                    setAmount(0);
-                  }}
-                >
-                  <option value="rent">Sewa</option>
-                  <option value="dp">DP sewa</option>
-                  <option value="security_deposit">Deposit keamanan</option>
-                </select>
-              </Field>
-            ) : null}
-            <Field label="Nominal transfer">
-              <Input
-                type="number"
-                min={1}
-                max={maximum}
-                value={amount || ""}
-                onChange={(event) => setAmount(Number(event.target.value))}
-              />
-              <p className="text-xs font-normal text-muted-foreground">
-                Maksimum yang dapat diklaim: {idr(maximum)}
-              </p>
-            </Field>
-            <FileUploadField
-              propertyId={billing.lease.property_id}
-              filePurpose="payment_proof"
-              label="Bukti transfer"
-              description="Wajib untuk proses verifikasi. File dapat dilihat, diganti, atau dihapus sebelum dikirim."
-              value={evidenceFile}
-              onChange={setEvidenceFile}
-              onBusyChange={setEvidenceBusy}
-              required
-            />
-            <Field label="Catatan (opsional)">
-              <textarea
-                className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
-                maxLength={500}
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-              />
-            </Field>
-            {submit.isError ? (
-              <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
-                Bukti belum terkirim. Periksa nominal dan file, lalu coba lagi dengan data yang
-                sama.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button variant="outline" className="min-h-11" onClick={close}>
-            Batal
-          </Button>
-          <Button
-            className="min-h-11"
-            disabled={
-              !invoice ||
-              submit.isPending ||
-              evidenceBusy ||
-              !evidenceFile ||
-              amount <= 0 ||
-              amount > maximum
-            }
-            onClick={() => {
-              if (!invoice || !evidenceFile) return;
-              submit.mutate(
-                {
-                  input: {
-                    invoice_id: invoice.id,
-                    claimed_amount: amount,
-                    payment_method: "bank_transfer",
-                    payment_purpose: normalizedPurpose,
-                    notes: notes.trim() || undefined,
-                    file_ids: [evidenceFile.id],
-                  },
-                  idempotencyKey: key.current.key,
-                },
-                { onSuccess: close },
-              );
-            }}
-          >
-            {submit.isPending ? "Mengirim..." : "Kirim untuk review"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -631,24 +512,20 @@ function SummaryRow({
     </div>
   );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block space-y-1.5 text-sm font-medium">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
 function InvoiceBadge({ status }: { status: W06InvoiceStatus }) {
-  const labels: Record<W06InvoiceStatus, string> = {
-    draft: "Terjadwal",
-    issued: "Terbit",
-    partially_paid: "Sebagian",
-    paid: "Lunas",
-    overdue: "Terlambat",
-    void: "Void",
+  const styles: Record<W06InvoiceStatus, string> = {
+    draft: "border-border bg-muted text-muted-foreground",
+    issued: "border-primary/30 bg-primary/10 text-primary",
+    partially_paid: "border-warning/30 bg-warning/10 text-warning",
+    paid: "border-success/30 bg-success/10 text-success",
+    overdue: "border-destructive/30 bg-destructive/10 text-destructive",
+    void: "border-border bg-muted text-muted-foreground",
   };
-  return <Badge variant="outline">{labels[status]}</Badge>;
+  return (
+    <Badge variant="outline" className={styles[status]}>
+      {invoiceStatusLabel(status)}
+    </Badge>
+  );
 }
 function ProofBadge({ status }: { status: W06ProofStatus }) {
   const labels: Record<W06ProofStatus, string> = {
@@ -666,17 +543,86 @@ function ProofBadge({ status }: { status: W06ProofStatus }) {
       <Clock3 className="mr-1 h-3 w-3" />
     );
   return (
-    <Badge variant="outline">
+    <Badge
+      variant="outline"
+      className={
+        status === "verified"
+          ? "border-success/30 bg-success/10 text-success"
+          : status === "rejected" || status === "expired"
+            ? "border-destructive/30 bg-destructive/10 text-destructive"
+            : "border-warning/30 bg-warning/10 text-warning"
+      }
+    >
       {icon}
       {labels[status]}
     </Badge>
   );
 }
-function useLogicalKey(fingerprint: string) {
-  const ref = useRef({ fingerprint, key: newIdempotencyKey() });
-  if (ref.current.fingerprint !== fingerprint)
-    ref.current = { fingerprint, key: newIdempotencyKey() };
-  return ref;
+function PaymentBadge({ status }: { status: MyW06Billing["payments"][number]["payment_status"] }) {
+  const labels = {
+    verified: "Terverifikasi",
+    pending_confirmation: "Menunggu konfirmasi",
+    rejected: "Ditolak",
+    reversed: "Dibalik",
+  } as const;
+  const classes = {
+    verified: "border-success/30 bg-success/10 text-success",
+    pending_confirmation: "border-warning/30 bg-warning/10 text-warning",
+    rejected: "border-destructive/30 bg-destructive/10 text-destructive",
+    reversed: "border-border bg-muted text-muted-foreground",
+  } as const;
+  return (
+    <Badge variant="outline" className={classes[status]}>
+      {labels[status]}
+    </Badge>
+  );
+}
+function invoiceStatusLabel(status: W06InvoiceStatus) {
+  const labels: Record<W06InvoiceStatus, string> = {
+    draft: "Terjadwal",
+    issued: "Terbit",
+    partially_paid: "Dibayar sebagian",
+    paid: "Lunas",
+    overdue: "Terlambat",
+    void: "Dibatalkan",
+  };
+  return labels[status];
+}
+function noticePresentation(notice: ResidentBillingNotice, nextDueDate: string | null) {
+  if (notice.kind === "settled")
+    return {
+      icon: CheckCircle2,
+      title: "Tagihan sewa telah lunas",
+      description: "Tidak ada sisa kewajiban sewa pada kontrak aktif Anda.",
+      className: "border-success/35 bg-success/10 text-success",
+    };
+  if (notice.kind === "overdue")
+    return {
+      icon: AlertTriangle,
+      title: "Ada tagihan yang melewati jatuh tempo",
+      description: "Hubungi pengelola untuk memastikan status dan tindak lanjut pembayaran Anda.",
+      className: "border-destructive/35 bg-destructive/10 text-destructive",
+    };
+  if (notice.kind === "due_soon")
+    return {
+      icon: Clock3,
+      title: "Jatuh tempo dalam tujuh hari",
+      description: `Tagihan berikutnya jatuh tempo ${nextDueDate ? jakartaDate(nextDueDate) : "dalam waktu dekat"}.`,
+      className: "border-warning/35 bg-warning/10 text-warning",
+    };
+  if (notice.kind === "upcoming")
+    return {
+      icon: CalendarDays,
+      title: "Jadwal pembayaran berikutnya",
+      description: `Jatuh tempo berikutnya ${nextDueDate ? jakartaDate(nextDueDate) : "belum tersedia"}.`,
+      className: "border-primary/35 bg-primary/10 text-primary",
+    };
+  return {
+    icon: Info,
+    title: "Jadwal pembayaran belum tersedia",
+    description: "Belum ada tanggal jatuh tempo berikutnya pada data kontrak Anda.",
+    className: "border-border bg-muted/60 text-foreground",
+  };
 }
 function idr(value: number) {
   return new Intl.NumberFormat("id-ID", {

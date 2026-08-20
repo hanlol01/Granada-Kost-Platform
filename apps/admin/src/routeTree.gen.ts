@@ -40,9 +40,19 @@ import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
 import { Route as RoomsFasilitasRouteImport } from './routes/rooms/fasilitas'
 import { Route as RoomsApartKostRouteImport } from './routes/rooms/apart-kost'
 import { Route as RoomsRoomNumberRouteImport } from './routes/rooms/$roomNumber'
+import { Route as RemindersHistoryRouteImport } from './routes/reminders/history'
+import { Route as RemindersH30RouteImport } from './routes/reminders/h-30'
 import { Route as PropertyOwnersOwnerIdRouteImport } from './routes/property-owners/$ownerId'
 import { Route as PenyewaanTambahRouteImport } from './routes/penyewaan/tambah'
 import { Route as PenyewaanLeaseIdRouteImport } from './routes/penyewaan/$leaseId'
+import { Route as PropertyOwnersPortalIndexRouteImport } from './routes/property-owners/portal/index'
+import { Route as PropertyOwnersPortalReportsRouteImport } from './routes/property-owners/portal/reports'
+import { Route as PropertyOwnersPortalOccupancyRouteImport } from './routes/property-owners/portal/occupancy'
+import { Route as PropertyOwnersPortalNotificationsRouteImport } from './routes/property-owners/portal/notifications'
+import { Route as PropertyOwnersPortalIssuesRouteImport } from './routes/property-owners/portal/issues'
+import { Route as PropertyOwnersPortalFinanceRouteImport } from './routes/property-owners/portal/finance'
+import { Route as PropertyOwnersPortalAccountRouteImport } from './routes/property-owners/portal/account'
+import { Route as PropertyOwnersPortalAssetsIndexRouteImport } from './routes/property-owners/portal/assets/index'
 import { Route as PropertyOwnersPortalAssetsRoomCodeRouteImport } from './routes/property-owners/portal/assets/$roomCode'
 
 const VehiclesRoute = VehiclesRouteImport.update({
@@ -200,6 +210,16 @@ const RoomsRoomNumberRoute = RoomsRoomNumberRouteImport.update({
   path: '/$roomNumber',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const RemindersHistoryRoute = RemindersHistoryRouteImport.update({
+  id: '/reminders/history',
+  path: '/reminders/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RemindersH30Route = RemindersH30RouteImport.update({
+  id: '/reminders/h-30',
+  path: '/reminders/h-30',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PropertyOwnersOwnerIdRoute = PropertyOwnersOwnerIdRouteImport.update({
   id: '/$ownerId',
   path: '/$ownerId',
@@ -215,6 +235,54 @@ const PenyewaanLeaseIdRoute = PenyewaanLeaseIdRouteImport.update({
   path: '/$leaseId',
   getParentRoute: () => PenyewaanRouteRoute,
 } as any)
+const PropertyOwnersPortalIndexRoute =
+  PropertyOwnersPortalIndexRouteImport.update({
+    id: '/portal/',
+    path: '/portal/',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalReportsRoute =
+  PropertyOwnersPortalReportsRouteImport.update({
+    id: '/portal/reports',
+    path: '/portal/reports',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalOccupancyRoute =
+  PropertyOwnersPortalOccupancyRouteImport.update({
+    id: '/portal/occupancy',
+    path: '/portal/occupancy',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalNotificationsRoute =
+  PropertyOwnersPortalNotificationsRouteImport.update({
+    id: '/portal/notifications',
+    path: '/portal/notifications',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalIssuesRoute =
+  PropertyOwnersPortalIssuesRouteImport.update({
+    id: '/portal/issues',
+    path: '/portal/issues',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalFinanceRoute =
+  PropertyOwnersPortalFinanceRouteImport.update({
+    id: '/portal/finance',
+    path: '/portal/finance',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalAccountRoute =
+  PropertyOwnersPortalAccountRouteImport.update({
+    id: '/portal/account',
+    path: '/portal/account',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const PropertyOwnersPortalAssetsIndexRoute =
+  PropertyOwnersPortalAssetsIndexRouteImport.update({
+    id: '/portal/assets/',
+    path: '/portal/assets/',
+    getParentRoute: () => PropertyOwnersRoute,
+  } as any)
 const PropertyOwnersPortalAssetsRoomCodeRoute =
   PropertyOwnersPortalAssetsRoomCodeRouteImport.update({
     id: '/portal/assets/$roomCode',
@@ -248,6 +316,8 @@ export interface FileRoutesByFullPath {
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
+  '/reminders/h-30': typeof RemindersH30Route
+  '/reminders/history': typeof RemindersHistoryRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -257,7 +327,15 @@ export interface FileRoutesByFullPath {
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
   '/rooms/': typeof RoomsIndexRoute
+  '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
+  '/property-owners/portal/finance': typeof PropertyOwnersPortalFinanceRoute
+  '/property-owners/portal/issues': typeof PropertyOwnersPortalIssuesRoute
+  '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
+  '/property-owners/portal/occupancy': typeof PropertyOwnersPortalOccupancyRoute
+  '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
+  '/property-owners/portal/': typeof PropertyOwnersPortalIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
+  '/property-owners/portal/assets/': typeof PropertyOwnersPortalAssetsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -282,6 +360,8 @@ export interface FileRoutesByTo {
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
+  '/reminders/h-30': typeof RemindersH30Route
+  '/reminders/history': typeof RemindersHistoryRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -291,7 +371,15 @@ export interface FileRoutesByTo {
   '/penyewaan': typeof PenyewaanIndexRoute
   '/property-owners': typeof PropertyOwnersIndexRoute
   '/rooms': typeof RoomsIndexRoute
+  '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
+  '/property-owners/portal/finance': typeof PropertyOwnersPortalFinanceRoute
+  '/property-owners/portal/issues': typeof PropertyOwnersPortalIssuesRoute
+  '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
+  '/property-owners/portal/occupancy': typeof PropertyOwnersPortalOccupancyRoute
+  '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
+  '/property-owners/portal': typeof PropertyOwnersPortalIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
+  '/property-owners/portal/assets': typeof PropertyOwnersPortalAssetsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -320,6 +408,8 @@ export interface FileRoutesById {
   '/penyewaan/$leaseId': typeof PenyewaanLeaseIdRoute
   '/penyewaan/tambah': typeof PenyewaanTambahRoute
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
+  '/reminders/h-30': typeof RemindersH30Route
+  '/reminders/history': typeof RemindersHistoryRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -329,7 +419,15 @@ export interface FileRoutesById {
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
   '/rooms/': typeof RoomsIndexRoute
+  '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
+  '/property-owners/portal/finance': typeof PropertyOwnersPortalFinanceRoute
+  '/property-owners/portal/issues': typeof PropertyOwnersPortalIssuesRoute
+  '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
+  '/property-owners/portal/occupancy': typeof PropertyOwnersPortalOccupancyRoute
+  '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
+  '/property-owners/portal/': typeof PropertyOwnersPortalIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
+  '/property-owners/portal/assets/': typeof PropertyOwnersPortalAssetsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -359,6 +457,8 @@ export interface FileRouteTypes {
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
     | '/property-owners/$ownerId'
+    | '/reminders/h-30'
+    | '/reminders/history'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -368,7 +468,15 @@ export interface FileRouteTypes {
     | '/penyewaan/'
     | '/property-owners/'
     | '/rooms/'
+    | '/property-owners/portal/account'
+    | '/property-owners/portal/finance'
+    | '/property-owners/portal/issues'
+    | '/property-owners/portal/notifications'
+    | '/property-owners/portal/occupancy'
+    | '/property-owners/portal/reports'
+    | '/property-owners/portal/'
     | '/property-owners/portal/assets/$roomCode'
+    | '/property-owners/portal/assets/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -393,6 +501,8 @@ export interface FileRouteTypes {
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
     | '/property-owners/$ownerId'
+    | '/reminders/h-30'
+    | '/reminders/history'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -402,7 +512,15 @@ export interface FileRouteTypes {
     | '/penyewaan'
     | '/property-owners'
     | '/rooms'
+    | '/property-owners/portal/account'
+    | '/property-owners/portal/finance'
+    | '/property-owners/portal/issues'
+    | '/property-owners/portal/notifications'
+    | '/property-owners/portal/occupancy'
+    | '/property-owners/portal/reports'
+    | '/property-owners/portal'
     | '/property-owners/portal/assets/$roomCode'
+    | '/property-owners/portal/assets'
   id:
     | '__root__'
     | '/'
@@ -430,6 +548,8 @@ export interface FileRouteTypes {
     | '/penyewaan/$leaseId'
     | '/penyewaan/tambah'
     | '/property-owners/$ownerId'
+    | '/reminders/h-30'
+    | '/reminders/history'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -439,7 +559,15 @@ export interface FileRouteTypes {
     | '/penyewaan/'
     | '/property-owners/'
     | '/rooms/'
+    | '/property-owners/portal/account'
+    | '/property-owners/portal/finance'
+    | '/property-owners/portal/issues'
+    | '/property-owners/portal/notifications'
+    | '/property-owners/portal/occupancy'
+    | '/property-owners/portal/reports'
+    | '/property-owners/portal/'
     | '/property-owners/portal/assets/$roomCode'
+    | '/property-owners/portal/assets/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -465,6 +593,8 @@ export interface RootRouteChildren {
   SyaratKetentuanRoute: typeof SyaratKetentuanRoute
   TenantsRoute: typeof TenantsRouteWithChildren
   VehiclesRoute: typeof VehiclesRoute
+  RemindersH30Route: typeof RemindersH30Route
+  RemindersHistoryRoute: typeof RemindersHistoryRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -686,6 +816,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsRoomNumberRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/reminders/history': {
+      id: '/reminders/history'
+      path: '/reminders/history'
+      fullPath: '/reminders/history'
+      preLoaderRoute: typeof RemindersHistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reminders/h-30': {
+      id: '/reminders/h-30'
+      path: '/reminders/h-30'
+      fullPath: '/reminders/h-30'
+      preLoaderRoute: typeof RemindersH30RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/property-owners/$ownerId': {
       id: '/property-owners/$ownerId'
       path: '/$ownerId'
@@ -706,6 +850,62 @@ declare module '@tanstack/react-router' {
       fullPath: '/penyewaan/$leaseId'
       preLoaderRoute: typeof PenyewaanLeaseIdRouteImport
       parentRoute: typeof PenyewaanRouteRoute
+    }
+    '/property-owners/portal/': {
+      id: '/property-owners/portal/'
+      path: '/portal'
+      fullPath: '/property-owners/portal/'
+      preLoaderRoute: typeof PropertyOwnersPortalIndexRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/reports': {
+      id: '/property-owners/portal/reports'
+      path: '/portal/reports'
+      fullPath: '/property-owners/portal/reports'
+      preLoaderRoute: typeof PropertyOwnersPortalReportsRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/occupancy': {
+      id: '/property-owners/portal/occupancy'
+      path: '/portal/occupancy'
+      fullPath: '/property-owners/portal/occupancy'
+      preLoaderRoute: typeof PropertyOwnersPortalOccupancyRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/notifications': {
+      id: '/property-owners/portal/notifications'
+      path: '/portal/notifications'
+      fullPath: '/property-owners/portal/notifications'
+      preLoaderRoute: typeof PropertyOwnersPortalNotificationsRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/issues': {
+      id: '/property-owners/portal/issues'
+      path: '/portal/issues'
+      fullPath: '/property-owners/portal/issues'
+      preLoaderRoute: typeof PropertyOwnersPortalIssuesRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/finance': {
+      id: '/property-owners/portal/finance'
+      path: '/portal/finance'
+      fullPath: '/property-owners/portal/finance'
+      preLoaderRoute: typeof PropertyOwnersPortalFinanceRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/account': {
+      id: '/property-owners/portal/account'
+      path: '/portal/account'
+      fullPath: '/property-owners/portal/account'
+      preLoaderRoute: typeof PropertyOwnersPortalAccountRouteImport
+      parentRoute: typeof PropertyOwnersRoute
+    }
+    '/property-owners/portal/assets/': {
+      id: '/property-owners/portal/assets/'
+      path: '/portal/assets'
+      fullPath: '/property-owners/portal/assets/'
+      preLoaderRoute: typeof PropertyOwnersPortalAssetsIndexRouteImport
+      parentRoute: typeof PropertyOwnersRoute
     }
     '/property-owners/portal/assets/$roomCode': {
       id: '/property-owners/portal/assets/$roomCode'
@@ -758,14 +958,31 @@ const RoomsRouteRouteWithChildren = RoomsRouteRoute._addFileChildren(
 interface PropertyOwnersRouteChildren {
   PropertyOwnersOwnerIdRoute: typeof PropertyOwnersOwnerIdRoute
   PropertyOwnersIndexRoute: typeof PropertyOwnersIndexRoute
+  PropertyOwnersPortalAccountRoute: typeof PropertyOwnersPortalAccountRoute
+  PropertyOwnersPortalFinanceRoute: typeof PropertyOwnersPortalFinanceRoute
+  PropertyOwnersPortalIssuesRoute: typeof PropertyOwnersPortalIssuesRoute
+  PropertyOwnersPortalNotificationsRoute: typeof PropertyOwnersPortalNotificationsRoute
+  PropertyOwnersPortalOccupancyRoute: typeof PropertyOwnersPortalOccupancyRoute
+  PropertyOwnersPortalReportsRoute: typeof PropertyOwnersPortalReportsRoute
+  PropertyOwnersPortalIndexRoute: typeof PropertyOwnersPortalIndexRoute
   PropertyOwnersPortalAssetsRoomCodeRoute: typeof PropertyOwnersPortalAssetsRoomCodeRoute
+  PropertyOwnersPortalAssetsIndexRoute: typeof PropertyOwnersPortalAssetsIndexRoute
 }
 
 const PropertyOwnersRouteChildren: PropertyOwnersRouteChildren = {
   PropertyOwnersOwnerIdRoute: PropertyOwnersOwnerIdRoute,
   PropertyOwnersIndexRoute: PropertyOwnersIndexRoute,
+  PropertyOwnersPortalAccountRoute: PropertyOwnersPortalAccountRoute,
+  PropertyOwnersPortalFinanceRoute: PropertyOwnersPortalFinanceRoute,
+  PropertyOwnersPortalIssuesRoute: PropertyOwnersPortalIssuesRoute,
+  PropertyOwnersPortalNotificationsRoute:
+    PropertyOwnersPortalNotificationsRoute,
+  PropertyOwnersPortalOccupancyRoute: PropertyOwnersPortalOccupancyRoute,
+  PropertyOwnersPortalReportsRoute: PropertyOwnersPortalReportsRoute,
+  PropertyOwnersPortalIndexRoute: PropertyOwnersPortalIndexRoute,
   PropertyOwnersPortalAssetsRoomCodeRoute:
     PropertyOwnersPortalAssetsRoomCodeRoute,
+  PropertyOwnersPortalAssetsIndexRoute: PropertyOwnersPortalAssetsIndexRoute,
 }
 
 const PropertyOwnersRouteWithChildren = PropertyOwnersRoute._addFileChildren(
@@ -806,6 +1023,8 @@ const rootRouteChildren: RootRouteChildren = {
   SyaratKetentuanRoute: SyaratKetentuanRoute,
   TenantsRoute: TenantsRouteWithChildren,
   VehiclesRoute: VehiclesRoute,
+  RemindersH30Route: RemindersH30Route,
+  RemindersHistoryRoute: RemindersHistoryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

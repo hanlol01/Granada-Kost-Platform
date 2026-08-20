@@ -81,6 +81,8 @@ import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property/useProperty";
+import { ReminderComposerDialog } from "./ReminderComposerDialog";
+import { ReminderTemplateDialog } from "./ReminderTemplateDialog";
 
 type WorkspaceTab = "unpaid" | "paid" | "pending" | "other";
 
@@ -345,6 +347,8 @@ export function W06PaymentsWorkspace() {
             ) : null}
             <WorklistPanel
               query={worklist}
+              propertyId={currentPropertyId}
+              canManage={canManage}
               onSelect={(residentId) =>
                 setSelection(
                   currentPropertyId ? { propertyId: currentPropertyId, residentId } : null,
@@ -726,10 +730,14 @@ function DeadlineWindowFilter({
 
 function WorklistPanel({
   query,
+  propertyId,
+  canManage,
   onSelect,
   onOffset,
 }: {
   query: ReturnType<typeof useBillingWorklist>;
+  propertyId: string | null;
+  canManage: boolean;
   onSelect: (residentId: string) => void;
   onOffset: (offset: number) => void;
 }) {
@@ -789,13 +797,23 @@ function WorklistPanel({
                     {formatIDR(item.outstanding_amount)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      className="min-h-11"
-                      variant="default"
-                      onClick={() => onSelect(item.resident_id)}
-                    >
-                      Buka billing
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {canManage ? (
+                        <ReminderComposerDialog
+                          propertyId={propertyId}
+                          residentId={item.resident_id}
+                          invoices={[item]}
+                          currentMonthInvoiceId={item.id}
+                        />
+                      ) : null}
+                      <Button
+                        className="min-h-11"
+                        variant="default"
+                        onClick={() => onSelect(item.resident_id)}
+                      >
+                        Buka billing
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -892,7 +910,7 @@ function ResidentBillingPanel({
       </div>
       <SummaryGrid data={data} />
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <InvoiceHistory data={data} propertyId={propertyId} />
+        <InvoiceHistory data={data} propertyId={propertyId} canManage={canManage} />
         <PaymentHistory data={data} propertyId={propertyId} canManage={canManage} />
       </div>
       {canManage ? <RecordPaymentDialog data={data} propertyId={propertyId} /> : null}
@@ -936,16 +954,30 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
 function InvoiceHistory({
   data,
   propertyId,
+  canManage,
 }: {
   data: ResidentBilling;
   propertyId: string | null;
+  canManage: boolean;
 }) {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Invoice dan alokasi</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-base">Invoice dan alokasi</CardTitle>
+          {canManage ? (
+            <div className="flex flex-wrap gap-2">
+              <ReminderTemplateDialog propertyId={propertyId} />
+              <ReminderComposerDialog
+                propertyId={propertyId}
+                residentId={data.lease.resident_id}
+                invoices={data.invoices}
+              />
+            </div>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-2">
         {data.invoices.map((invoice) => (

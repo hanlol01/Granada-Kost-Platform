@@ -41,6 +41,15 @@ const validEnvelope = {
     property_name: "Properti Demo",
     room_number: "RK-01-01",
     occupancy_start: "2026-07-29",
+    building_name: "Rumah Kost Unit 01",
+    building_code: "RK-01",
+    kost_type: "rukost",
+    gender: "male",
+    lease_status: "active",
+    lease_start: "2026-07-29",
+    lease_end: "2027-01-29",
+    term_months: 6,
+    payment_plan_type: "monthly",
   },
 };
 
@@ -181,7 +190,7 @@ function assertSourceContracts(sources: Sources): void {
   assert.match(sources.profileRoute, /formatDate\(profile\.occupancyStart\)/);
 }
 
-test("strict parser accepts zero/single context and returns an isolated five-field copy", () => {
+test("strict parser accepts zero/single context and returns an isolated resident-safe copy", () => {
   const envelope = {
     data: { ...validEnvelope.data },
   };
@@ -193,6 +202,15 @@ test("strict parser accepts zero/single context and returns an isolated five-fie
     propertyName: "Properti Demo",
     roomNumber: "RK-01-01",
     occupancyStart: "2026-07-29",
+    buildingName: "Rumah Kost Unit 01",
+    buildingCode: "RK-01",
+    kostType: "rukost",
+    gender: "male",
+    leaseStatus: "active",
+    leaseStart: "2026-07-29",
+    leaseEnd: "2027-01-29",
+    termMonths: 6,
+    paymentPlanType: "monthly",
   });
   assert.notEqual(parsed, envelope.data);
   envelope.data.display_name = "Changed after parse";
@@ -211,6 +229,11 @@ test("strict parser rejects missing, extra, wrong-type, nullability, blank, and 
     { data: { ...validEnvelope.data, occupancy_start: "2026-02-31" } },
     { data: { ...validEnvelope.data, occupancy_start: "29/07/2026" } },
     { data: { ...validEnvelope.data, occupancy_start: "2026-07-29T00:00:00Z" } },
+    { data: { ...validEnvelope.data, kost_type: "hotel" } },
+    { data: { ...validEnvelope.data, gender: "mixed" } },
+    { data: { ...validEnvelope.data, lease_status: "ended" } },
+    { data: { ...validEnvelope.data, lease_start: "29/07/2026" } },
+    { data: { ...validEnvelope.data, term_months: 0 } },
     { data: null, metadata: {} },
   ];
   const inheritedEnvelope = Object.assign(Object.create({ metadata: true }), validEnvelope);

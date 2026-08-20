@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@granada-kost/api-client";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ function LoginPage() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -55,6 +57,9 @@ function LoginPage() {
         <form className="space-y-4" onSubmit={submit}>
           <div className="space-y-1.5">
             <Label htmlFor="identifier">Email atau Nomor Telepon</Label>
+            <p className="text-xs text-muted-foreground">
+              Nomor telepon dapat ditulis dengan awalan 08 atau 62.
+            </p>
             <Input
               id="identifier"
               autoComplete="username"
@@ -65,14 +70,28 @@ function LoginPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Kata Sandi</Label>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pr-10"
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Memproses..." : "Masuk"}

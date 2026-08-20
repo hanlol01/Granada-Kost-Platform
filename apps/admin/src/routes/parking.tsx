@@ -9,6 +9,9 @@ import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { AssignSlotDialog } from "@/components/forms/AssignSlotDialog";
+import { ParkingHistoryDialog } from "@/components/forms/ParkingHistoryDialog";
+import { CreateParkingZoneDialog } from "@/components/forms/CreateParkingZoneDialog";
+import { CreateParkingSlotDialog } from "@/components/forms/CreateParkingSlotDialog";
 import {
   useParkingZones,
   useParkingSlots,
@@ -18,7 +21,7 @@ import {
 } from "@/hooks/useParking";
 import { useReleaseParkingSlot } from "@/hooks/useParkingMutations";
 import { useAuth } from "@/lib/auth";
-import { ParkingSquare, Bike, Car, CircleDot, Link as LinkIcon, Unlink } from "lucide-react";
+import { ParkingSquare, Bike, Car, CircleDot, Link as LinkIcon, Unlink, Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { parkingRedirectSearch } from "@/lib/admin-route-redirects";
 import { cn } from "@/lib/utils";
@@ -52,6 +55,9 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [assignTarget, setAssignTarget] = useState<ParkingSlotRecord | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<ParkingSlotRecord | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<ParkingSlotRecord | null>(null);
+  const [createZoneOpen, setCreateZoneOpen] = useState(false);
+  const [createSlotOpen, setCreateSlotOpen] = useState(false);
 
   const { hasPermission } = useAuth();
   const canManage = hasPermission("parking.manage");
@@ -76,8 +82,14 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
       {workspaceNavigation}
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className="text-base">Zona Parkir</CardTitle>
+            {canManage ? (
+              <Button size="sm" onClick={() => setCreateZoneOpen(true)}>
+                <Plus className="mr-1 h-4 w-4" />
+                Tambah zona
+              </Button>
+            ) : null}
           </CardHeader>
           <CardContent>
             {zonesQuery.error ? (
@@ -96,7 +108,7 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
               <EmptyState
                 icon={<ParkingSquare className="h-5 w-5" />}
                 title="Belum ada zona"
-                description="Pembuatan zona parkir belum tersedia di Phase 1."
+                description="Buat zona untuk mengatur kapasitas dan lokasi slot parkir."
               />
             ) : (
               <div className="space-y-1">
@@ -147,10 +159,18 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
               ) : null}
             </div>
             {selectedZone ? (
-              <CapacityPill
-                capacity={selectedZone.capacity}
-                slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)}
-              />
+              <div className="flex items-center gap-4">
+                <CapacityPill
+                  capacity={selectedZone.capacity}
+                  slots={(slotsQuery.data ?? []).map((s) => s.slotStatus)}
+                />
+                {canManage ? (
+                  <Button size="sm" variant="outline" onClick={() => setCreateSlotOpen(true)}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Tambah slot
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </CardHeader>
           <CardContent>
@@ -200,6 +220,14 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
                       >
                         {meta.label}
                       </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-2 h-7 w-full text-[11px]"
+                        onClick={() => setHistoryTarget(s)}
+                      >
+                        Lihat riwayat
+                      </Button>
                       {canManage ? (
                         <div className="mt-2">
                           {s.slotStatus === "available" ? (
@@ -259,6 +287,18 @@ export function ParkingPage({ workspaceNavigation }: { workspaceNavigation?: Rea
             // Already toasted by hook.
           }
         }}
+      />
+
+      <ParkingHistoryDialog
+        slot={historyTarget}
+        open={historyTarget !== null}
+        onOpenChange={(open) => !open && setHistoryTarget(null)}
+      />
+      <CreateParkingZoneDialog open={createZoneOpen} onOpenChange={setCreateZoneOpen} />
+      <CreateParkingSlotDialog
+        open={createSlotOpen}
+        onOpenChange={setCreateSlotOpen}
+        zone={selectedZone}
       />
     </AppShell>
   );

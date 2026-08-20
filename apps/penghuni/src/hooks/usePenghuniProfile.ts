@@ -28,6 +28,15 @@ export type PenghuniProfileView = {
   propertyName: string | null;
   roomNumber: string | null;
   occupancyStart: string | null;
+  buildingName: string | null;
+  buildingCode: string | null;
+  kostType: "rukost" | "apartkost" | null;
+  gender: "male" | "female" | null;
+  leaseStatus: "awaiting_activation" | "active" | null;
+  leaseStart: string | null;
+  leaseEnd: string | null;
+  termMonths: number | null;
+  paymentPlanType: string | null;
   contextState: ResidentContextState;
   contextError: unknown;
   refetchContext: () => Promise<void>;
@@ -56,6 +65,15 @@ export function usePenghuniProfile(): PenghuniProfileView {
     propertyName: resident?.propertyName ?? null,
     roomNumber: resident?.roomNumber ?? null,
     occupancyStart: resident?.occupancyStart ?? null,
+    buildingName: resident?.buildingName ?? null,
+    buildingCode: resident?.buildingCode ?? null,
+    kostType: resident?.kostType ?? null,
+    gender: resident?.gender ?? null,
+    leaseStatus: resident?.leaseStatus ?? null,
+    leaseStart: resident?.leaseStart ?? null,
+    leaseEnd: resident?.leaseEnd ?? null,
+    termMonths: resident?.termMonths ?? null,
+    paymentPlanType: resident?.paymentPlanType ?? null,
     contextState: state,
     contextError: context.error,
     refetchContext: async () => {

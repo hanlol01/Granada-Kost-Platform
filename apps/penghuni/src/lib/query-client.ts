@@ -43,6 +43,8 @@ export const qk = {
     complaints: (filters?: Record<string, unknown>) =>
       ["penghuni", "complaints", { ...filters }] as const,
     complaintCategories: () => ["penghuni", "complaint-categories"] as const,
+    vehicles: (filters?: Record<string, unknown>) =>
+      ["penghuni", "vehicles", { ...filters }] as const,
     notifications: () => ["penghuni", "notifications"] as const,
   },
   info: {

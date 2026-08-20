@@ -136,6 +136,15 @@ function residentContext(propertyName = 'Property Demo') {
     propertyName,
     roomNumber: 'RK-01-01',
     occupancyStart: '2026-01-01',
+    buildingName: 'Rumah Kost Unit 01',
+    buildingCode: 'RK-01',
+    kostType: 'rukost' as const,
+    gender: 'male' as const,
+    leaseStatus: 'active' as const,
+    leaseStart: '2026-01-01',
+    leaseEnd: '2026-07-01',
+    termMonths: 6,
+    paymentPlanType: 'monthly',
   };
 }
 
@@ -187,11 +196,9 @@ function assertSourceContracts(sources: ReturnType<typeof readSources>): void {
   assert.match(sources.residentRepository, /resident_membership\.revoked_at IS NULL/);
   assert.match(sources.residentRepository, /resident_role\.code\s*=\s*'resident'/);
   assert.match(sources.residentRepository, /LIMIT 2/);
-  assert.doesNotMatch(
-    sources.residentRepository.slice(
-      sources.residentRepository.indexOf('async findActiveContextsForUser('),
-    ),
-    /LIMIT 1/,
+  assert.match(
+    sources.residentRepository,
+    /ORDER BY occupancies\.start_date DESC, occupancies\.id ASC\s+LIMIT 2/,
   );
 
   for (const [key, entity] of [
@@ -350,9 +357,12 @@ test('resident context is bounded, deterministic, safe-null, and conflicts on am
   assert.match(query.sql, /occupancies\.end_date IS NULL/);
   assert.match(query.sql, /occupancies\.property_id = residents\.property_id/);
   assert.match(query.sql, /rooms\.property_id = residents\.property_id/);
+  assert.match(query.sql, /room_buildings\.property_id = residents\.property_id/);
+  assert.match(query.sql, /leases\.property_id = residents\.property_id/);
+  assert.match(query.sql, /leases\.resident_id = residents\.id/);
   assert.match(query.sql, /ORDER BY occupancies\.start_date DESC, occupancies\.id ASC/);
   assert.match(query.sql, /LIMIT 2/);
-  assert.doesNotMatch(query.sql, /LIMIT 1/);
+  assert.match(query.sql, /lease_authority ON TRUE/);
 
   assert.equal(selectSingleResidentContext([]), null);
   assert.deepEqual(selectSingleResidentContext([residentContext()]), residentContext());
@@ -406,6 +416,15 @@ test('/my/resident-context returns exact whitelisted envelope without opaque IDs
       property_name: 'Property Demo',
       room_number: 'RK-01-01',
       occupancy_start: '2026-01-01',
+      building_name: 'Rumah Kost Unit 01',
+      building_code: 'RK-01',
+      kost_type: 'rukost',
+      gender: 'male',
+      lease_status: 'active',
+      lease_start: '2026-01-01',
+      lease_end: '2026-07-01',
+      term_months: 6,
+      payment_plan_type: 'monthly',
     },
   });
 
@@ -414,11 +433,20 @@ test('/my/resident-context returns exact whitelisted envelope without opaque IDs
   } as never);
   assert.deepEqual(await zero.get(actor()), { data: null });
   assert.deepEqual(Object.keys((await controller.get(actor())).data).sort(), [
+    'building_code',
+    'building_name',
     'display_name',
+    'gender',
+    'kost_type',
+    'lease_end',
+    'lease_start',
+    'lease_status',
     'occupancy_start',
+    'payment_plan_type',
     'phone',
     'property_name',
     'room_number',
+    'term_months',
   ]);
 });
 

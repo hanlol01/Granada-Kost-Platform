@@ -105,7 +105,7 @@ export class ReminderWorkspaceService {
     const groups = buildReminderWorkspaceGroups(leases.rows);
     const currentMonth = await this.billing.currentWorklist(user, {
       property_id: propertyId,
-      month: `${today.slice(0, 7)}-01`,
+      month: today.slice(0, 7),
       limit: 100,
       offset: 0,
       sort: 'due_date_asc',

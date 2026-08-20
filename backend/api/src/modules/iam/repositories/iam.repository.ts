@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
+import { normalizeLoginIdentifier } from '../identifier-normalizer';
 import {
   AuthUserRecord,
   CreateSessionInput,
@@ -55,13 +56,14 @@ export class IamRepository {
   constructor(private readonly database: DatabaseService) {}
 
   async findUserByIdentifier(identifier: string): Promise<AuthUserRecord | null> {
+    const normalizedIdentifier = normalizeLoginIdentifier(identifier);
     const result = await this.database.client.query<UserRow>(
       `SELECT id, email, phone, password_hash, display_name, user_status, last_login_at,
               password_changed_at
        FROM users
        WHERE lower(email) = lower($1) OR phone = $1
        LIMIT 1`,
-      [identifier],
+      [normalizedIdentifier],
     );
 
     return result.rows[0] ? this.mapUser(result.rows[0]) : null;

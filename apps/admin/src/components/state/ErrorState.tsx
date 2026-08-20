@@ -7,9 +7,10 @@ type Props = {
   error: unknown;
   onRetry?: () => void;
   title?: string;
+  backTo?: string;
 };
 
-export function ErrorState({ error, onRetry, title = "Gagal memuat data" }: Props) {
+export function ErrorState({ error, onRetry, title = "Gagal memuat data", backTo = "/" }: Props) {
   return (
     <div className="flex min-h-[40vh] w-full flex-col items-center justify-center gap-4 px-4 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/15 text-destructive">
@@ -26,7 +27,9 @@ export function ErrorState({ error, onRetry, title = "Gagal memuat data" }: Prop
           </Button>
         ) : null}
         <Button asChild variant="outline">
-          <Link to="/">Kembali ke Dashboard</Link>
+          <Link to={backTo as never}>
+            {backTo === "/" ? "Kembali ke Dashboard" : "Kembali ke portal Owner"}
+          </Link>
         </Button>
       </div>
     </div>

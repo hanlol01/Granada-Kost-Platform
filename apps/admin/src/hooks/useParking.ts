@@ -35,6 +35,19 @@ export type ParkingSlotRecord = {
   updatedAt: string;
 };
 
+export type ParkingAssignmentHistoryRecord = {
+  id: string;
+  propertyId: string;
+  slotId: string;
+  vehicleId: string;
+  action: "assigned" | "released";
+  reason: string | null;
+  actorUserId: string | null;
+  effectiveAt: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 export function useParkingZones(activeOnly = true): UseQueryResult<ParkingZoneRecord[]> {
   const { currentPropertyId } = useProperty();
   return useQuery<ParkingZoneRecord[]>({
@@ -62,5 +75,16 @@ export function useParkingSlots(
         query: { zone_id: zoneId ?? undefined, status },
       }),
     enabled: Boolean(zoneId) && Boolean(currentPropertyId),
+  });
+}
+
+export function useParkingAssignmentHistory(
+  slotId: string | null,
+): UseQueryResult<ParkingAssignmentHistoryRecord[]> {
+  return useQuery<ParkingAssignmentHistoryRecord[]>({
+    queryKey: ["parking", "history", slotId] as const,
+    queryFn: () =>
+      apiClient.get<ParkingAssignmentHistoryRecord[]>(`/parking/slots/${slotId}/history`),
+    enabled: Boolean(slotId),
   });
 }

@@ -76,6 +76,15 @@ export type ResidentSelfContext = {
   propertyName: string;
   roomNumber: string;
   occupancyStart: string;
+  buildingName: string;
+  buildingCode: string;
+  kostType: 'rukost' | 'apartkost';
+  gender: 'male' | 'female';
+  leaseStatus: 'awaiting_activation' | 'active' | null;
+  leaseStart: string | null;
+  leaseEnd: string | null;
+  termMonths: number | null;
+  paymentPlanType: string | null;
 };
 
 export type PropertyOwnerResidentSummary = {
@@ -585,16 +594,52 @@ export class ResidentRepository {
       property_name: string;
       room_number: string;
       occupancy_start: string;
+      building_name: string;
+      building_code: string;
+      kost_type: 'rukost' | 'apartkost';
+      gender: 'male' | 'female';
+      lease_status: 'awaiting_activation' | 'active' | null;
+      lease_start: string | null;
+      lease_end: string | null;
+      term_months: number | null;
+      payment_plan_type: string | null;
     }>(
       `SELECT residents.full_name AS display_name,
               residents.phone,
               properties.name AS property_name,
               rooms.number AS room_number,
-              occupancies.start_date::text AS occupancy_start
+              occupancies.start_date::text AS occupancy_start,
+              room_buildings.building_name,
+              room_buildings.building_code,
+              room_buildings.category AS kost_type,
+              room_buildings.gender_policy AS gender,
+              lease_authority.lease_status,
+              lease_authority.lease_start,
+              lease_authority.lease_end,
+              lease_authority.term_months,
+              lease_authority.payment_plan_type
        FROM residents
        JOIN occupancies ON occupancies.resident_id = residents.id
        JOIN rooms ON rooms.id = occupancies.room_id
+                  AND rooms.property_id = residents.property_id
+       JOIN room_buildings ON room_buildings.id = rooms.building_id
+                          AND room_buildings.property_id = residents.property_id
        JOIN properties ON properties.id = residents.property_id
+       LEFT JOIN LATERAL (
+         SELECT leases.lease_status,
+                leases.start_date::text AS lease_start,
+                leases.end_date::text AS lease_end,
+                leases.term_months,
+                leases.payment_plan_type
+         FROM leases
+         WHERE leases.resident_id = residents.id
+           AND leases.room_id = rooms.id
+           AND leases.property_id = residents.property_id
+           AND leases.lease_status IN ('awaiting_activation', 'active')
+         ORDER BY CASE leases.lease_status WHEN 'active' THEN 0 ELSE 1 END,
+                  leases.created_at DESC, leases.id DESC
+         LIMIT 1
+       ) AS lease_authority ON TRUE
        WHERE residents.user_id = $1
          AND residents.resident_status = 'active'
          AND occupancies.occupancy_status = 'active'
@@ -613,6 +658,15 @@ export class ResidentRepository {
       propertyName: row.property_name,
       roomNumber: row.room_number,
       occupancyStart: row.occupancy_start,
+      buildingName: row.building_name,
+      buildingCode: row.building_code,
+      kostType: row.kost_type,
+      gender: row.gender,
+      leaseStatus: row.lease_status,
+      leaseStart: row.lease_start,
+      leaseEnd: row.lease_end,
+      termMonths: row.term_months,
+      paymentPlanType: row.payment_plan_type,
     }));
   }
 

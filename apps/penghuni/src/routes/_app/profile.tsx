@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
 import { LoadingState, EmptyState, ErrorState } from "@/components/state";
 import { useAuth } from "@/lib/auth";
 import { isChatEnabled } from "@/lib/features";
@@ -83,13 +84,23 @@ function ProfilePage() {
       <div className="flex flex-col gap-5 px-5 py-5 animate-[fade-in_0.4s_ease-out]">
         <ResidentProfileCard profile={profile} />
 
+        <ResidentTenancySummary profile={profile} />
+
         {/* Info */}
-        <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
+        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           {profile.contextState === "ready" ? (
             <>
               <InfoRow icon={Home} label="Properti" value={profile.propertyName ?? "-"} />
               <Divider />
               <InfoRow icon={DoorOpen} label="Kamar" value={profile.roomNumber ?? "-"} />
+              <Divider />
+              <InfoRow
+                icon={Home}
+                label="Gedung & tipe hunian"
+                value={`${profile.buildingName ?? profile.buildingCode ?? "-"} · ${kostTypeLabel(profile.kostType)}`}
+              />
+              <Divider />
+              <InfoRow icon={BadgeCheck} label="Jenis kamar" value={genderLabel(profile.gender)} />
               <Divider />
             </>
           ) : null}
@@ -109,12 +120,42 @@ function ProfilePage() {
                 label="Tanggal Masuk"
                 value={formatDate(profile.occupancyStart)}
               />
+              <Divider />
+              <InfoRow
+                icon={CalendarDays}
+                label="Periode sewa"
+                value={leasePeriodLabel(profile.leaseStart, profile.leaseEnd, profile.termMonths)}
+                muted={profile.leaseStart === null}
+              />
             </>
           ) : null}
         </div>
 
+        {profile.contextState === "ready" ? (
+          <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
+                <CalendarDays className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold">Status sewa</p>
+                  <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
+                    {leaseStatusLabel(profile.leaseStatus)}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {profile.paymentPlanType
+                    ? `Skema pembayaran: ${profile.paymentPlanType}`
+                    : "Skema pembayaran belum tersedia."}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {/* Active sessions */}
-        <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
+        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           <div className="flex items-center justify-between px-4 pt-4">
             <p className="text-sm font-semibold">Sesi Aktif</p>
             {sessions.data && sessions.data.length > 0 ? (
@@ -182,7 +223,7 @@ function ProfilePage() {
         </div>
 
         {/* Settings (visual-only toggles; preferences endpoint belongs to later milestone) */}
-        <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
+        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           <ToggleRow
             icon={dark ? Moon : Sun}
             label="Dark Mode"
@@ -202,7 +243,7 @@ function ProfilePage() {
         </div>
 
         {/* Links */}
-        <div className="rounded-2xl bg-card shadow-[var(--shadow-soft)]">
+        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           {chatEnabled ? (
             <NavRow to="/chat" icon={MessageCircle} label="Chat dengan Admin" />
           ) : (
@@ -260,7 +301,7 @@ function ResidentProfileCard({ profile }: { profile: PenghuniProfileView }) {
 
   if (profile.contextState === "ready" && profile.displayName) {
     return (
-      <div className="overflow-hidden rounded-3xl bg-[image:var(--gradient-primary)] p-5 text-primary-foreground shadow-[var(--shadow-glow)]">
+      <div className="overflow-hidden rounded-3xl border border-primary/30 bg-[image:var(--gradient-primary)] p-5 text-primary-foreground shadow-[var(--shadow-glow)]">
         <div className="flex min-w-0 items-start gap-4">
           <div
             className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-xl font-semibold backdrop-blur"
@@ -294,7 +335,7 @@ function ResidentProfileCard({ profile }: { profile: PenghuniProfileView }) {
   return (
     <section
       role={residentContextAnnouncementRole(profile.contextState)}
-      className="rounded-3xl bg-card p-5 shadow-[var(--shadow-soft)]"
+      className="rounded-3xl border border-border/80 bg-card p-5 shadow-[var(--shadow-soft)]"
     >
       <p className="text-sm font-semibold">{copy.title}</p>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{copy.description}</p>
@@ -427,4 +468,32 @@ function DisabledRow({
 
 function Divider() {
   return <div className="mx-4 h-px bg-border" />;
+}
+
+function kostTypeLabel(value: PenghuniProfileView["kostType"]): string {
+  if (value === "rukost") return "Rumah Kost";
+  if (value === "apartkost") return "Apart Kost";
+  return "Tipe belum tersedia";
+}
+
+function genderLabel(value: PenghuniProfileView["gender"]): string {
+  if (value === "male") return "Putra";
+  if (value === "female") return "Putri";
+  return "Belum tersedia";
+}
+
+function leaseStatusLabel(value: PenghuniProfileView["leaseStatus"]): string {
+  if (value === "active") return "Aktif";
+  if (value === "awaiting_activation") return "Menunggu aktivasi";
+  return "Belum tersedia";
+}
+
+function leasePeriodLabel(
+  start: string | null,
+  end: string | null,
+  termMonths: number | null,
+): string {
+  if (!start) return "Periode belum tersedia";
+  const period = end ? `${formatDate(start)} – ${formatDate(end)}` : `Mulai ${formatDate(start)}`;
+  return termMonths ? `${period} · ${termMonths} bulan` : period;
 }

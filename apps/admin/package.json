@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "start": "node .output/server/index.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test": "tsx --test src/lib/*.test.ts",
@@ -14,7 +15,6 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@cloudflare/vite-plugin": "^1.25.5",
     "@granada-kost/api-client": "*",
     "@granada-kost/domain": "*",
     "@hookform/resolvers": "^5.2.2",
@@ -83,6 +83,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "nitro": "^3.0.260603-beta",
     "tsx": "^4.22.4",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",

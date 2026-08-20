@@ -12,6 +12,10 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
   },
+  nitro: {
+    preset: "node-server",
+    output: { dir: ".output" },
+  },
   vite: {
     server: {
       port: 8081,

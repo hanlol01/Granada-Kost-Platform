@@ -84,6 +84,49 @@ void test('E2 owner projections are identity scoped, paginated, and contain no r
   assert.doesNotMatch(projection.sql, /resident\.(email|phone|nik|address)/);
 });
 
+void test('owner asset projection serializes PostgreSQL DATE columns before validating them', async () => {
+  const calls: string[] = [];
+  const service = new PropertyOwnerPortalService({
+    client: {
+      query: (sql: string) => {
+        calls.push(sql);
+        if (sql.includes('property_owner_profiles'))
+          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('owner_asset_projection')) {
+          const row = ownerResourceRow();
+          return {
+            rows: [
+              {
+                ...row,
+                effective_from: '2026-08-01',
+                effective_until: '2026-09-01',
+                lease_start_date: '2026-08-06',
+                lease_end_date: '2027-02-06',
+                occupancy_start_date: '2026-08-06',
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    },
+  } as never);
+
+  const result = await service.listAssets(actor(), { limit: '12', offset: '0' });
+
+  assert.equal(result.items[0]?.ownership.effective_from, '2026-08-01');
+  assert.equal(result.items[0]?.ownership.effective_until, '2026-09-01');
+  assert.equal(result.items[0]?.lease?.start_date, '2026-08-06');
+  assert.equal(result.items[0]?.lease?.end_date, '2027-02-06');
+  assert.equal(result.items[0]?.occupancy_start_date, '2026-08-06');
+  const projection = calls.find((sql) => sql.includes('owner_asset_projection'))!;
+  assert.match(projection, /scoped\.effective_from::text AS effective_from/);
+  assert.match(projection, /scoped\.effective_until::text AS effective_until/);
+  assert.match(projection, /lease\.start_date::text AS lease_start_date/);
+  assert.match(projection, /lease\.end_date::text AS lease_end_date/);
+  assert.match(projection, /occupancy\.start_date::text AS occupancy_start_date/);
+});
+
 const assignment = (from = '2026-08-01', until: string | null = null) => ({
   assignment_key: 'room:assignment-1',
   effective_from: from,

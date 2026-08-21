@@ -15,6 +15,7 @@ import {
   FileText,
   House,
   ReceiptText,
+  RotateCcw,
   Search,
   ShieldCheck,
   UserRound,
@@ -51,6 +52,7 @@ import {
   type OwnerKostType,
   type OwnerPortalTab,
   type OwnerFinance,
+  type OwnerCollectionProgress,
   type OwnerReport,
 } from "@/lib/property-owner-portal";
 
@@ -227,11 +229,108 @@ function PortalSection({
   );
 }
 
+function DashboardFinanceSnapshot({ ownerId }: { ownerId: string }) {
+  const period = periodNow();
+  const finance = useQuery({
+    queryKey: ["property-owner", "dashboard-finance", ownerId, period],
+    queryFn: () => propertyOwnerPortalApi.finance(period),
+    enabled: Boolean(ownerId),
+    staleTime: 30_000,
+  });
+
+  return (
+    <Card className="border-primary/25 bg-primary/[0.045] shadow-sm">
+      <CardHeader className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CircleDollarSign className="h-4 w-4 text-primary" /> Ringkasan keuangan periode
+            berjalan
+          </CardTitle>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Nilai ini berasal langsung dari laporan keuangan Owner untuk periode {period}.
+          </p>
+        </div>
+        {finance.data ? <StatusPill value={finance.data.summary.settlementState} /> : null}
+      </CardHeader>
+      <CardContent className="p-5">
+        {finance.isLoading ? (
+          <div className="grid gap-3 sm:grid-cols-3" aria-label="Memuat ringkasan keuangan">
+            {["Pendapatan diakui", "Hak owner", "Payout tercatat"].map((label) => (
+              <div key={label} className="rounded-xl border border-border/80 bg-background/50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  {label}
+                </p>
+                <div className="mt-3 h-6 w-32 animate-pulse rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        ) : finance.error ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Ringkasan keuangan belum tersedia
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Muat ulang untuk meminta laporan periode ini kembali.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="min-h-10 shrink-0"
+              onClick={() => void finance.refetch()}
+            >
+              Coba lagi
+            </Button>
+          </div>
+        ) : finance.data ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-border/80 bg-background/50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Pendapatan diakui
+                </p>
+                <p className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                  {formatOwnerMoney(finance.data.summary.grossEarnedRent)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-background/50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Hak owner setelah penyesuaian
+                </p>
+                <p className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                  {formatOwnerMoney(finance.data.summary.adjustedOwnerEntitlement)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-background/50 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                  Payout tercatat
+                </p>
+                <p className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                  {formatOwnerMoney(finance.data.summary.paidOut)}
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/property-owners/portal/finance"
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-primary/35 px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Buka rincian keuangan
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function Dashboard({
   portal,
+  ownerId,
   onNavigate,
 }: {
   portal: OwnerPortal;
+  ownerId: string;
   onNavigate: (tab: OwnerPortalTab) => void;
 }) {
   return (
@@ -293,6 +392,8 @@ function Dashboard({
           actionLabel="Buka maintenance"
         />
       </section>
+
+      <DashboardFinanceSnapshot ownerId={ownerId} />
 
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -630,18 +731,18 @@ function Assets({ portal }: { portal: OwnerPortal }) {
                   </SelectContent>
                 </Select>
               </label>
-              {hasFilter ? (
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={() => {
-                    setFilters({ query: "", roomStatus: "all", leaseStatus: "all" });
-                    setOffset(0);
-                  }}
-                >
-                  Reset filter
-                </Button>
-              ) : null}
+              <Button
+                variant="outline"
+                disabled={!hasFilter}
+                className="min-h-11"
+                onClick={() => {
+                  setFilters({ query: "", roomStatus: "all", leaseStatus: "all" });
+                  setOffset(0);
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset filter
+              </Button>
             </CardContent>
           </Card>
 
@@ -819,7 +920,183 @@ function Rows({ title, rows }: { title: string; rows: Array<Record<string, strin
   );
 }
 
-function Finance({ finance }: { finance: OwnerFinance }) {
+function CollectionProgress({ collection }: { collection: OwnerCollectionProgress }) {
+  if (collection.items.length === 0) {
+    return (
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="border-b border-border/70 pb-4">
+          <CardTitle className="text-base">Rincian pembayaran per kamar</CardTitle>
+        </CardHeader>
+        <CardContent className="p-5 text-sm text-muted-foreground">
+          Belum ada sewa aktif pada aset dalam cakupan kepemilikan saat ini.
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <section className="space-y-4" aria-label="Rincian pembayaran per kamar">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">
+            Rincian pembayaran per kamar
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Periksa tagihan terbit, pembayaran yang telah diverifikasi, sisa tagihan, jatuh tempo,
+            H-7, dan checkpoint untuk setiap kamar aktif. Bukti transfer mentah tidak ditampilkan.
+          </p>
+        </div>
+        <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-primary">
+          {collection.summary.activeLeaseCount} sewa aktif
+        </Badge>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Belum dibayar"
+          value={formatOwnerMoney(collection.summary.rentOutstanding)}
+          description="Akumulasi tagihan aktif"
+          icon={ReceiptText}
+        />
+        <Metric
+          label="Terlambat"
+          value={`${collection.summary.overdueLeaseCount} kamar`}
+          description="Memerlukan tindak lanjut"
+          icon={CircleAlert}
+        />
+        <Metric
+          label="Jatuh tempo H-7"
+          value={`${collection.summary.h7LeaseCount} kamar`}
+          description="Tujuh hari sebelum tenggat"
+          icon={ClipboardList}
+        />
+        <Metric
+          label="Checkpoint"
+          value={`${collection.summary.checkpointAttentionCount} perlu perhatian`}
+          description="Sesuai ketentuan pelunasan"
+          icon={ShieldCheck}
+        />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {collection.items.map((item) => {
+          const alert =
+            item.billing.overdueCount > 0 || item.settlement.checkpoint.status === "overdue";
+          const h7 = item.billing.h7Count > 0 || item.settlement.reminderStage === "H-7";
+          return (
+            <Card
+              key={item.room.code}
+              className={
+                alert
+                  ? "border-destructive/40 shadow-sm"
+                  : h7
+                    ? "border-amber-500/45 shadow-sm"
+                    : "border-border/80 shadow-sm"
+              }
+            >
+              <CardHeader className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-base">{item.room.code}</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {item.resident.displayName} · {item.room.buildingName}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <StatusPill value={item.billing.state} />
+                  {alert ? <Badge variant="destructive">Terlambat</Badge> : null}
+                  {!alert && h7 ? (
+                    <Badge className="border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                      H-7
+                    </Badge>
+                  ) : null}
+                  {item.settlement.checkpoint.status === "pending" ? (
+                    <Badge variant="outline">Checkpoint</Badge>
+                  ) : null}
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
+                <FinanceRow
+                  label="Tagihan terbit"
+                  value={formatOwnerMoney(item.billing.rentInvoiced)}
+                />
+                <FinanceRow
+                  label="Pembayaran terverifikasi"
+                  value={formatOwnerMoney(item.billing.rentVerified)}
+                />
+                <FinanceRow
+                  label="Sisa tagihan"
+                  value={formatOwnerMoney(item.billing.rentOutstanding)}
+                />
+                <FinanceRow
+                  label="Jatuh tempo berikutnya"
+                  value={localDate(item.billing.nextDueDate)}
+                />
+                <FinanceRow
+                  label="Angsuran"
+                  value={`${item.billing.installmentPaid}/${item.billing.installmentTotal} dibayar`}
+                />
+                <FinanceRow
+                  label="Saldo security deposit"
+                  value={formatOwnerMoney(item.securityDeposit.balance)}
+                />
+                <FinanceRow label="Checkpoint" value={labelOf(item.settlement.checkpoint.status)} />
+                <FinanceRow
+                  label="Batas pelunasan"
+                  value={
+                    item.settlement.effectiveDueAt
+                      ? localDate(item.settlement.effectiveDueAt)
+                      : "Tidak tercatat"
+                  }
+                />
+                <Link
+                  to="/property-owners/portal/assets/$roomCode"
+                  params={{ roomCode: item.room.code }}
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-primary/35 px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:col-span-2"
+                >
+                  Buka detail kamar
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function CollectionPaymentOverview({
+  collection,
+}: {
+  collection: OwnerCollectionProgress | undefined;
+}) {
+  return (
+    <section className="space-y-4" aria-labelledby="owner-collection-heading">
+      <div className="rounded-xl border border-primary/25 bg-primary/[0.045] px-5 py-4 shadow-sm">
+        <p className="text-xs font-semibold tracking-[0.14em] text-primary">
+          PEMBAYARAN PENGHUNI AKTIF
+        </p>
+        <h2
+          id="owner-collection-heading"
+          className="mt-1 text-lg font-semibold tracking-tight text-foreground"
+        >
+          Pantau progres pembayaran setiap kamar
+        </h2>
+        <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">
+          Bagian ini menunjukkan tagihan sewa yang telah diterbitkan, pembayaran yang sudah
+          diverifikasi, sisa tagihan, keterlambatan, H-7, dan checkpoint. Pendapatan Owner untuk
+          periode laporan ditampilkan terpisah di bawah.
+        </p>
+      </div>
+      {collection ? <CollectionProgress collection={collection} /> : null}
+    </section>
+  );
+}
+
+function Finance({
+  finance,
+  collection,
+}: {
+  finance: OwnerFinance;
+  collection: OwnerCollectionProgress | undefined;
+}) {
   const [query, setQuery] = useState("");
   const [earningStatus, setEarningStatus] = useState("all");
   const [settlementStatus, setSettlementStatus] = useState("all");
@@ -845,31 +1122,50 @@ function Finance({ finance }: { finance: OwnerFinance }) {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          label="Pendapatan diakui"
-          value={formatOwnerMoney(finance.summary.grossEarnedRent)}
-          description="Pengakuan pendapatan periode ini"
-          icon={ReceiptText}
-        />
-        <Metric
-          label="Hak owner setelah penyesuaian"
-          value={formatOwnerMoney(finance.summary.adjustedOwnerEntitlement)}
-          description="Entitlement bukan pembayaran penghuni"
-          icon={CircleDollarSign}
-        />
-        <Metric
-          label="Biaya layanan"
-          value={formatOwnerMoney(finance.summary.managementFee)}
-          description="Terpisah dari hak owner"
-          icon={ShieldCheck}
-        />
-        <Metric
-          label="Payout tercatat"
-          value={formatOwnerMoney(finance.summary.paidOut)}
-          description="Payout atau pembalikan yang tercatat"
-          icon={CheckCircle2}
-        />
+      <CollectionPaymentOverview collection={collection} />
+      <section className="space-y-4" aria-labelledby="owner-period-finance-heading">
+        <div>
+          <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground">
+            KEUANGAN OWNER PERIODE TERPILIH
+          </p>
+          <h2
+            id="owner-period-finance-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-foreground"
+          >
+            Pendapatan dan hak Owner yang telah diakui
+          </h2>
+          <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">
+            Nilai di bawah mengikuti pengakuan pendapatan, entitlement, settlement, dan payout pada
+            periode laporan. Nilai ini dapat bernilai Rp 0 meskipun pembayaran penghuni aktif
+            tercatat pada bagian di atas.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric
+            label="Pendapatan diakui"
+            value={formatOwnerMoney(finance.summary.grossEarnedRent)}
+            description="Pengakuan pendapatan periode ini"
+            icon={ReceiptText}
+          />
+          <Metric
+            label="Hak owner setelah penyesuaian"
+            value={formatOwnerMoney(finance.summary.adjustedOwnerEntitlement)}
+            description="Entitlement bukan pembayaran penghuni"
+            icon={CircleDollarSign}
+          />
+          <Metric
+            label="Biaya layanan"
+            value={formatOwnerMoney(finance.summary.managementFee)}
+            description="Terpisah dari hak owner"
+            icon={ShieldCheck}
+          />
+          <Metric
+            label="Payout tercatat"
+            value={formatOwnerMoney(finance.summary.paidOut)}
+            description="Payout atau pembalikan yang tercatat"
+            icon={CheckCircle2}
+          />
+        </div>
       </section>
       <Card className="border-primary/25 bg-primary/[0.045] shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
@@ -936,6 +1232,7 @@ function Finance({ finance }: { finance: OwnerFinance }) {
             </Select>
           </label>
           <Button className="min-h-11" variant="outline" onClick={resetFilters}>
+            <RotateCcw className="mr-2 h-4 w-4" />
             Reset filter
           </Button>
         </CardContent>
@@ -976,7 +1273,13 @@ function Finance({ finance }: { finance: OwnerFinance }) {
   );
 }
 
-function Reports({ report }: { report: OwnerReport }) {
+function Reports({
+  report,
+  collection,
+}: {
+  report: OwnerReport;
+  collection: OwnerCollectionProgress | undefined;
+}) {
   return (
     <div className="space-y-6">
       <Card className="border-primary/20 bg-primary/[0.045] shadow-sm">
@@ -992,7 +1295,25 @@ function Reports({ report }: { report: OwnerReport }) {
           </div>
         </CardContent>
       </Card>
-      <ReportSummary report={report} />
+      <CollectionPaymentOverview collection={collection} />
+      <section className="space-y-4" aria-labelledby="owner-report-finance-heading">
+        <div>
+          <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground">
+            LAPORAN KEUANGAN OWNER
+          </p>
+          <h2
+            id="owner-report-finance-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-foreground"
+          >
+            Pendapatan dan settlement pada periode laporan
+          </h2>
+          <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">
+            Ringkasan ini terpisah dari arus pembayaran penghuni aktif. Angka Rp 0 berarti belum ada
+            pengakuan atau settlement Owner pada periode yang dipilih.
+          </p>
+        </div>
+        <ReportSummary report={report} />
+      </section>
       <Rows
         title="Ringkasan operasional"
         rows={[
@@ -1001,6 +1322,36 @@ function Reports({ report }: { report: OwnerReport }) {
             "Hunian aktif": String(report.summary.occupiedCount),
             "Sewa aktif": String(report.summary.activeLeaseCount),
           },
+        ]}
+      />
+      <Rows
+        title="Sewa dalam periode laporan"
+        rows={report.leases.map((row) => ({
+          Kamar: row.roomCode,
+          Periode: `${localDate(row.startDate)} s.d. ${localDate(row.endDate)}`,
+          Status: labelOf(row.leaseStatus),
+        }))}
+      />
+      <Rows
+        title="Jejak pendapatan dan settlement"
+        rows={[
+          ...report.earnings.map((row) => ({
+            Kamar: row.roomCode,
+            Periode: `${localDate(row.serviceFrom)} s.d. ${localDate(row.serviceUntil)}`,
+            Pendapatan: formatOwnerMoney(row.grossEarnedRent),
+            Entitlement: formatOwnerMoney(row.ownerEntitlement),
+            Status: labelOf(row.earningStatus),
+          })),
+          ...report.settlements.map((row) => ({
+            Periode: `${localDate(row.periodStart)} s.d. ${localDate(row.periodEnd)}`,
+            Entitlement: formatOwnerMoney(row.ownerAmount),
+            Status: labelOf(row.settlementStatus),
+          })),
+          ...report.payouts.map((row) => ({
+            Tercatat: localDate(row.recordedAt),
+            Payout: formatOwnerMoney(row.payoutAmount),
+            Status: labelOf(row.payoutKind),
+          })),
         ]}
       />
       <Rows
@@ -1098,7 +1449,8 @@ function OperationalFilters({
             </SelectContent>
           </Select>
         </label>
-        <Button type="button" variant="outline" className="min-h-11" onClick={onReset}>
+        <Button type="button" variant="destructive" className="min-h-11" onClick={onReset}>
+          <RotateCcw className="mr-2 h-4 w-4" />
           Reset filter
         </Button>
         <div className="grid gap-4 sm:grid-cols-2 lg:col-span-3">
@@ -1202,6 +1554,15 @@ function Issues({ report }: { report: OwnerReport }) {
   const maintenance = report.maintenance.filter((row) =>
     matches(row, row.workOrderStatus, row.workOrderCode),
   );
+  const openComplaintCount = report.complaints.filter(
+    (row) => !["resolved", "closed", "cancelled"].includes(row.complaintStatus),
+  ).length;
+  const openMaintenanceCount = report.maintenance.filter(
+    (row) => !["completed", "verified", "cancelled"].includes(row.workOrderStatus),
+  ).length;
+  const highPriorityCount = [...report.complaints, ...report.maintenance].filter(
+    (row) => row.priority === "high" || row.priority === "urgent",
+  ).length;
   const reset = () => {
     setQuery("");
     setPriority("all");
@@ -1211,6 +1572,32 @@ function Issues({ report }: { report: OwnerReport }) {
   };
   return (
     <div className="space-y-6">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Komplain terbuka"
+          value={String(openComplaintCount)}
+          description="Dalam periode laporan"
+          icon={ClipboardList}
+        />
+        <Metric
+          label="Maintenance aktif"
+          value={String(openMaintenanceCount)}
+          description="Masih perlu ditindaklanjuti"
+          icon={Wrench}
+        />
+        <Metric
+          label="Prioritas tinggi"
+          value={String(highPriorityCount)}
+          description="Tinggi atau mendesak"
+          icon={CircleAlert}
+        />
+        <Metric
+          label="Total isu"
+          value={String(report.complaints.length + report.maintenance.length)}
+          description="Termasuk isu yang sudah selesai"
+          icon={Building2}
+        />
+      </section>
       <OperationalFilters
         query={query}
         onQueryChange={setQuery}
@@ -1395,6 +1782,12 @@ function ReportPanel({
     queryFn: () => propertyOwnerPortalApi.finance(period),
     enabled: tab === "finance" && Boolean(period),
   });
+  const collection = useQuery({
+    queryKey: ["property-owner", "collection-progress", ownerId],
+    queryFn: () => propertyOwnerPortalApi.collectionProgress(),
+    enabled: (tab === "finance" || tab === "reports") && Boolean(ownerId),
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (initialPeriod) setPeriod(initialPeriod);
@@ -1424,10 +1817,10 @@ function ReportPanel({
           backTo={getOwnerPortalRoute(tab)?.to ?? "/property-owners/portal"}
         />
       ) : tab === "finance" && finance.data ? (
-        <Finance finance={finance.data} />
+        <Finance finance={finance.data} collection={collection.data} />
       ) : report.data ? (
         tab === "reports" ? (
-          <Reports report={report.data} />
+          <Reports report={report.data} collection={collection.data} />
         ) : tab === "issues" ? (
           <Issues report={report.data} />
         ) : (
@@ -1671,21 +2064,21 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
               </SelectContent>
             </Select>
           </label>
-          {hasFilter ? (
-            <Button
-              variant="outline"
-              className="min-h-11"
-              onClick={() => {
-                setQuery("");
-                setRoomStatus("all");
-                setLeaseStatus("all");
-                setBillingState("all");
-                setOffset(0);
-              }}
-            >
-              Reset filter
-            </Button>
-          ) : null}
+          <Button
+            variant="outline"
+            disabled={!hasFilter}
+            className="min-h-11"
+            onClick={() => {
+              setQuery("");
+              setRoomStatus("all");
+              setLeaseStatus("all");
+              setBillingState("all");
+              setOffset(0);
+            }}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset filter
+          </Button>
         </CardContent>
       </Card>
       {occupancy.isLoading ? (
@@ -1747,14 +2140,30 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
                         : `${item.openComplaints} komplain · ${item.openMaintenance} maintenance`}
                     </p>
                   </div>
-                  <Button asChild variant="outline" className="min-h-10 sm:col-span-2">
-                    <Link
-                      to="/property-owners/portal/assets/$roomCode"
-                      params={{ roomCode: item.roomCode }}
-                    >
-                      <Eye className="mr-2 h-4 w-4" /> Detail kamar
-                    </Link>
-                  </Button>
+                  <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+                    <Button asChild variant="outline" className="min-h-10">
+                      <Link
+                        to="/property-owners/portal/assets/$roomCode"
+                        params={{ roomCode: item.roomCode }}
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> Detail kamar
+                      </Link>
+                    </Button>
+                    {item.resident ? (
+                      <Button asChild className="min-h-10">
+                        <Link
+                          to="/property-owners/portal/occupancy/$roomCode"
+                          params={{ roomCode: item.roomCode }}
+                        >
+                          <UserRound className="mr-2 h-4 w-4" /> Detail penghuni
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="min-h-10" disabled>
+                        <UserRound className="mr-2 h-4 w-4" /> Belum ada penghuni
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))
@@ -1810,7 +2219,8 @@ function Content({
   initialPeriod: string | null;
   onNavigate: (tab: OwnerPortalTab) => void;
 }) {
-  if (tab === "dashboard") return <Dashboard portal={portal} onNavigate={onNavigate} />;
+  if (tab === "dashboard")
+    return <Dashboard portal={portal} ownerId={ownerId} onNavigate={onNavigate} />;
   if (tab === "assets") return <Assets portal={portal} />;
   if (tab === "occupancy") return <OccupancyFoundation portal={portal} />;
   if (tab === "finance" || tab === "reports" || tab === "issues" || tab === "notifications")

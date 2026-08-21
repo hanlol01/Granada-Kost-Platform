@@ -125,8 +125,14 @@ void test('owner asset projection serializes PostgreSQL DATE columns before vali
   assert.match(projection, /lease\.start_date::text AS lease_start_date/);
   assert.match(projection, /lease\.end_date::text AS lease_end_date/);
   assert.match(projection, /occupancy\.start_date::text AS occupancy_start_date/);
-  assert.match(projection, /lease_end_date::date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date/);
-  assert.match(projection, /lease_end_date::date <= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date \+ \$7::int/);
+  assert.match(
+    projection,
+    /lease_end_date::date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date/,
+  );
+  assert.match(
+    projection,
+    /lease_end_date::date <= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date \+ \$7::int/,
+  );
 });
 
 const assignment = (from = '2026-08-01', until: string | null = null) => ({
@@ -383,6 +389,27 @@ void test('owner asset detail is identity-scoped, assignment-bound, and omits pr
         calls.push({ sql, params });
         if (sql.includes('property_owner_profiles'))
           return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('scoped_invoices'))
+          return {
+            rows: [
+              {
+                rent_invoiced: '1080000000',
+                rent_verified: '270000000',
+                rent_outstanding: '810000000',
+                invoice_count: 6,
+                overdue_count: 1,
+                next_due_date: '2026-09-05',
+                installment_paid: 1,
+                installment_total: 6,
+                installment_next_due_date: '2026-09-05',
+                deposit_required: '180000000',
+                deposit_collected: '30000000',
+                deposit_deducted: '0',
+                deposit_refunded: '0',
+                deposit_balance: '30000000',
+              },
+            ],
+          };
         if (sql.includes('authorized_asset')) return { rows: [assetDetailRow()] };
         throw new Error(`unexpected query: ${sql}`);
       },
@@ -422,6 +449,136 @@ void test('owner asset detail is identity-scoped, assignment-bound, and omits pr
   assert.match(authorizationSql, /rooms\.room_code = \$3/);
   assert.doesNotMatch(authorizationSql, /payment_proofs|storage_path|nik|phone|email/i);
   assert.doesNotMatch(JSON.stringify(detail), /nik|ktp|phone|email|storage|proof/i);
+
+  const residentDetail = await service.getOccupancyResidentDetail(actor(), 'AK-05-03');
+  assert.deepEqual(residentDetail, {
+    resident: { display_name: 'PUTRI', occupancy_start_date: '2026-08-06' },
+    room: {
+      room_code: 'AK-05-03',
+      room_status: 'occupied',
+      kost_type: 'apartkost',
+      building_code: 'AK-05',
+      building_name: 'Apart Kost Unit 05',
+    },
+    occupancy: { occupancy_status: 'active', start_date: '2026-08-06' },
+    lease: { status: 'active', start_date: '2026-08-06', end_date: '2027-02-06' },
+    billing: {
+      state: 'partially_paid',
+      rent_invoiced: '1080000000',
+      rent_verified: '270000000',
+      rent_outstanding: '810000000',
+      invoice_count: 6,
+      overdue_count: 1,
+      next_due_date: '2026-09-05',
+      installment_paid: 1,
+      installment_total: 6,
+      installment_next_due_date: '2026-09-05',
+      security_deposit_required: '180000000',
+      deposit_collected: '30000000',
+      deposit_deducted: '0',
+      deposit_refunded: '0',
+      deposit_balance: '30000000',
+    },
+    operations: {
+      open_complaints: 1,
+      open_maintenance: 0,
+      transfer_state: null,
+      renewal_state: 'approved',
+      checkout_state: null,
+      active_vehicle_count: 0,
+      assigned_parking_count: 0,
+    },
+  });
+  const billingSql = calls.find((call) => call.sql.includes('scoped_invoices'))?.sql ?? '';
+  // W10-R: a current owner needs the aggregate business progress of the
+  // current active lease even if the assignment starts after its DP/invoice.
+  // Assignment scope authorizes the room lookup; it must not erase earlier
+  // records belonging to that still-active lease.
+  assert.match(billingSql, /leases\.lease_status = 'active'/);
+  assert.doesNotMatch(billingSql, /invoice\.issued_at >=/);
+  assert.doesNotMatch(billingSql, /ledger\.created_at >=/);
+  assert.match(
+    billingSql,
+    /COUNT\(\*\) FILTER \(WHERE invoice_purpose = 'rent' AND outstanding_amount > 0 AND invoice_status = 'overdue'\)/,
+  );
+  assert.doesNotMatch(billingSql, /payment_proofs|storage_path|residents\.(phone|email|nik)/i);
+  assert.doesNotMatch(JSON.stringify(residentDetail), /nik|ktp|phone|email|storage|proof/i);
+});
+
+void test('W10-R collection progress is current-lease scoped, reconciles aggregates, and excludes raw payment data', async () => {
+  const calls: string[] = [];
+  const service = new PropertyOwnerPortalService({
+    client: {
+      query: (sql: string) => {
+        calls.push(sql);
+        if (sql.includes('property_owner_profiles'))
+          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+        if (sql.includes('owner_collection_progress'))
+          return {
+            rows: [
+              {
+                room_code: 'AK-05-03',
+                building_code: 'AK-05',
+                building_name: 'Apart Kost Unit 05',
+                resident_display_name: 'PUTRI',
+                lease_start_date: '2026-08-06',
+                lease_end_date: '2027-02-06',
+                rent_invoiced: '10800000',
+                rent_verified: '2700000',
+                rent_outstanding: '8100000',
+                invoice_count: 1,
+                overdue_count: 0,
+                h7_count: 1,
+                next_due_date: '2026-09-05',
+                installment_total: 6,
+                installment_paid: 1,
+                installment_next_due_date: '2026-09-05',
+                deposit_required: '1800000',
+                deposit_collected: '300000',
+                deposit_deducted: '0',
+                deposit_refunded: '0',
+                deposit_balance: '300000',
+                settlement_state: 'open',
+                original_due_at: '2026-10-08T16:59:59.999Z',
+                effective_due_at: '2026-10-08T16:59:59.999Z',
+                settlement_outstanding: '8100000',
+                reminder_stage: 'H-7',
+                checkpoint_due_at: '2026-09-08T16:59:59.999Z',
+                checkpoint_required: '1800000',
+                checkpoint_received: '0',
+                checkpoint_remaining: '1800000',
+                checkpoint_status: 'pending',
+              },
+            ],
+          };
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    },
+  } as never);
+
+  const progress = await service.collectionProgress(actor());
+  assert.equal(progress.summary.active_lease_count, 1);
+  assert.equal(progress.summary.h7_lease_count, 1);
+  assert.equal(progress.summary.rent_outstanding, '8100000');
+  assert.equal(progress.items[0]?.billing.rent_verified, '2700000');
+  assert.equal(progress.items[0]?.billing.rent_outstanding, '8100000');
+  assert.equal(progress.items[0]?.settlement.checkpoint.remaining_amount, '1800000');
+  assert.doesNotMatch(
+    JSON.stringify(progress),
+    /payment_proof|storage_path|bank_account|nik|email|phone/i,
+  );
+
+  const sql = calls.find((value) => value.includes('owner_collection_progress')) ?? '';
+  assert.match(sql, /leases\.lease_status = 'active'/);
+  assert.match(sql, /invoice\.lease_id = lease\.id/);
+  assert.match(sql, /payment_allocations/);
+  assert.match(sql, /lease_deposit_transactions/);
+  assert.match(
+    sql,
+    /COALESCE\(settlement\.extension_due_at, settlement\.original_due_at\)::text AS effective_due_at/,
+  );
+  assert.match(sql, /checkpoint_remaining/);
+  assert.doesNotMatch(sql, /payment_proofs|storage_path|residents\.(phone|email|nik)/i);
 });
 
 void test('missing profile is zero-safe and does not query operational scope', async () => {
@@ -569,6 +726,8 @@ void test('current portal complaints, maintenance, notifications, and leases ret
 void test('historical lifecycle projections expose only clipped half-open owner-report service intervals', async () => {
   const { service, calls } = serviceFor();
   const report = await service.preview(actor(), '2026-08');
+  assert.equal(report.watermark, 'Laporan kepemilikan · 2026-08');
+  assert.doesNotMatch(report.watermark, /owner|scope/i);
   assert.equal(report.scope[0]?.scope_from, '2026-08-01');
   assert.equal(report.occupancies[0]?.start_date, '2026-08-01');
   assert.equal(report.occupancies[0]?.end_date, '2026-08-31');

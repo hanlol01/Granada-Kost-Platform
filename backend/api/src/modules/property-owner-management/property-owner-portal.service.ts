@@ -375,11 +375,9 @@ export class PropertyOwnerPortalService {
          LIMIT 1
        ) commercial ON true
        LEFT JOIN LATERAL (
-         SELECT lease_status, start_date, end_date, resident_id, occupancy_id
+         SELECT id, lease_status, start_date, end_date, resident_id, occupancy_id
          FROM leases
          WHERE property_id = $2 AND room_id = rooms.id AND lease_status = 'active'
-           AND start_date < COALESCE(authorized_asset.effective_until, 'infinity'::date)
-           AND COALESCE(end_date + 1, 'infinity'::date) > authorized_asset.effective_from
          ORDER BY start_date, id
          LIMIT 1
        ) lease ON true
@@ -387,8 +385,6 @@ export class PropertyOwnerPortalService {
          SELECT occupancy.resident_id, occupancy.start_date
          FROM occupancies occupancy
          WHERE occupancy.property_id = $2 AND occupancy.room_id = rooms.id AND occupancy.occupancy_status = 'active'
-           AND occupancy.start_date < COALESCE(authorized_asset.effective_until, 'infinity'::date)
-           AND COALESCE(occupancy.end_date + 1, 'infinity'::date) > authorized_asset.effective_from
          ORDER BY occupancy.start_date, occupancy.id
          LIMIT 1
        ) occupancy ON true
@@ -401,7 +397,7 @@ export class PropertyOwnerPortalService {
             WHEN COUNT(*) FILTER (WHERE invoice_status = 'partially_paid') > 0 THEN 'partially_paid'
             WHEN COUNT(*) FILTER (WHERE invoice_status = 'paid') = COUNT(*) THEN 'settled'
             ELSE 'current' END AS billing_state
-          FROM invoices WHERE property_id = $2 AND occupancy_id = lease.occupancy_id AND invoice_status <> 'void'
+          FROM invoices WHERE property_id = $2 AND lease_id = lease.id AND invoice_status <> 'void'
         ) billing ON true
         LEFT JOIN LATERAL (
           SELECT state AS transfer_state FROM lease_transfer_commands
@@ -493,6 +489,188 @@ export class PropertyOwnerPortalService {
     };
   }
 
+  /**
+   * A deliberately small resident projection for the property-owner portal.
+   * The room code is the only lookup key: getAssetDetail() has already proved
+   * the current effective ownership scope before this response is built.
+   *
+   * Keep this separate from the Admin resident detail authority. In particular,
+   * do not add resident identifiers, contact data, identity documents, payment
+   * evidence, or internal notes here.
+   */
+  async getOccupancyResidentDetail(actor: UserAccessContext, rawRoomCode: string) {
+    const asset = await this.getAssetDetail(actor, rawRoomCode);
+    const owner = await this.resolveOwner(actor);
+    if (!owner) return this.assetUnavailable();
+    const billingResult =
+      asset.lease === null
+        ? null
+        : await this.database.client.query(
+            `WITH scoped_lease AS (
+               SELECT leases.id, leases.resident_id, leases.security_deposit_required_amount
+               FROM leases
+               JOIN rooms ON rooms.id = leases.room_id AND rooms.property_id = leases.property_id
+               WHERE leases.property_id = $1 AND rooms.room_code = $2 AND leases.lease_status = 'active'
+               ORDER BY leases.start_date, leases.id
+               LIMIT 1
+             ), scoped_invoices AS (
+               SELECT invoice.id, invoice.invoice_status, invoice.invoice_purpose,
+                      invoice.total_amount,
+                      GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) AS outstanding_amount,
+                      invoice.due_date
+               FROM invoices invoice
+               JOIN scoped_lease ON scoped_lease.id = invoice.lease_id
+               LEFT JOIN LATERAL (
+                 SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
+                 FROM payment_allocations pa
+                 LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
+                 WHERE pa.invoice_id = invoice.id
+               ) allocation ON true
+               WHERE invoice.property_id = $1 AND invoice.invoice_status <> 'void'
+             ), invoice_summary AS (
+               SELECT
+                 COALESCE(sum(total_amount) FILTER (WHERE invoice_purpose = 'rent'), 0)::text AS rent_invoiced,
+                 COALESCE(sum(total_amount - outstanding_amount) FILTER (WHERE invoice_purpose = 'rent'), 0)::text AS rent_verified,
+                 COALESCE(sum(outstanding_amount) FILTER (WHERE invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
+                 COUNT(*) FILTER (WHERE invoice_purpose = 'rent')::int AS invoice_count,
+                  COUNT(*) FILTER (WHERE invoice_purpose = 'rent' AND outstanding_amount > 0 AND invoice_status = 'overdue')::int AS overdue_count,
+                 (MIN(due_date) FILTER (WHERE invoice_purpose = 'rent' AND outstanding_amount > 0))::text AS next_due_date
+               FROM scoped_invoices
+             ), installment_summary AS (
+               SELECT COUNT(*)::int AS installment_total,
+                      COUNT(*) FILTER (WHERE installment_status = 'paid')::int AS installment_paid,
+                      (MIN(due_date) FILTER (WHERE installment_status IN ('scheduled', 'issued', 'partially_paid')))::text AS installment_next_due_date
+               FROM lease_installments installments
+               JOIN scoped_lease ON scoped_lease.id = installments.lease_id
+               WHERE installments.property_id = $1
+             ), deposit_summary AS (
+               SELECT scoped_lease.security_deposit_required_amount::text AS deposit_required,
+                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.direction = 'credit'), 0)::text AS deposit_collected,
+                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'deduction'), 0)::text AS deposit_deducted,
+                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'refund'), 0)::text AS deposit_refunded,
+                      COALESCE(sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END), 0)::text AS deposit_balance
+               FROM scoped_lease
+               LEFT JOIN lease_deposit_transactions ledger
+                 ON ledger.property_id = $1 AND ledger.lease_id = scoped_lease.id
+               GROUP BY scoped_lease.security_deposit_required_amount
+             ), vehicle_summary AS (
+               SELECT COUNT(DISTINCT vehicle.id)::int AS active_vehicle_count,
+                      COUNT(DISTINCT slot.id)::int AS assigned_parking_count
+               FROM scoped_lease
+               LEFT JOIN vehicles vehicle
+                 ON vehicle.property_id = $1
+                AND vehicle.resident_id = scoped_lease.resident_id
+                AND vehicle.vehicle_status = 'active'
+               LEFT JOIN parking_zones zone
+                 ON zone.property_id = $1
+               LEFT JOIN parking_slots slot
+                 ON slot.zone_id = zone.id
+                AND slot.vehicle_id = vehicle.id
+             )
+             SELECT invoice_summary.*, installment_summary.*, deposit_summary.*, vehicle_summary.*
+             FROM invoice_summary
+             CROSS JOIN installment_summary
+             CROSS JOIN deposit_summary
+             CROSS JOIN vehicle_summary`,
+            [owner.property_id, asset.room_code],
+          );
+    const billing = billingResult?.rows[0];
+    if (asset.lease !== null && !billing) return this.invalid('owner_occupancy.billing');
+    return {
+      resident:
+        asset.resident === null
+          ? null
+          : {
+              display_name: asset.resident.display_name,
+              occupancy_start_date: asset.resident.occupancy_start_date,
+            },
+      room: {
+        room_code: asset.room_code,
+        room_status: asset.room_status,
+        kost_type: asset.kost_type,
+        building_code: asset.building.code,
+        building_name: asset.building.name,
+      },
+      occupancy:
+        asset.resident === null
+          ? null
+          : {
+              occupancy_status: 'active',
+              start_date: asset.resident.occupancy_start_date,
+            },
+      lease:
+        asset.lease === null
+          ? null
+          : {
+              status: asset.lease.status,
+              start_date: asset.lease.start_date,
+              end_date: asset.lease.end_date,
+            },
+      billing: {
+        ...asset.billing,
+        rent_invoiced: this.money(billing?.rent_invoiced ?? '0', 'owner_occupancy.rent_invoiced'),
+        rent_verified: this.money(billing?.rent_verified ?? '0', 'owner_occupancy.rent_verified'),
+        rent_outstanding: this.money(
+          billing?.rent_outstanding ?? '0',
+          'owner_occupancy.rent_outstanding',
+        ),
+        invoice_count: this.count(billing?.invoice_count ?? 0, 'owner_occupancy.invoice_count'),
+        overdue_count: this.count(billing?.overdue_count ?? 0, 'owner_occupancy.overdue_count'),
+        next_due_date: this.nullableDate(
+          billing?.next_due_date ?? null,
+          'owner_occupancy.next_due_date',
+        ),
+        installment_paid: this.count(
+          billing?.installment_paid ?? 0,
+          'owner_occupancy.installment_paid',
+        ),
+        installment_total: this.count(
+          billing?.installment_total ?? 0,
+          'owner_occupancy.installment_total',
+        ),
+        installment_next_due_date: this.nullableDate(
+          billing?.installment_next_due_date ?? null,
+          'owner_occupancy.installment_next_due_date',
+        ),
+        security_deposit_required: this.money(
+          billing?.deposit_required ?? '0',
+          'owner_occupancy.security_deposit_required',
+        ),
+        deposit_collected: this.money(
+          billing?.deposit_collected ?? '0',
+          'owner_occupancy.deposit_collected',
+        ),
+        deposit_deducted: this.money(
+          billing?.deposit_deducted ?? '0',
+          'owner_occupancy.deposit_deducted',
+        ),
+        deposit_refunded: this.money(
+          billing?.deposit_refunded ?? '0',
+          'owner_occupancy.deposit_refunded',
+        ),
+        deposit_balance: this.money(
+          billing?.deposit_balance ?? '0',
+          'owner_occupancy.deposit_balance',
+        ),
+      },
+      operations: {
+        open_complaints: asset.issues.open_complaints,
+        open_maintenance: asset.issues.open_maintenance,
+        transfer_state: asset.lifecycle.transfer_state,
+        renewal_state: asset.lifecycle.renewal_state,
+        checkout_state: asset.lifecycle.checkout_state,
+        active_vehicle_count: this.count(
+          billing?.active_vehicle_count ?? 0,
+          'owner_occupancy.active_vehicle_count',
+        ),
+        assigned_parking_count: this.count(
+          billing?.assigned_parking_count ?? 0,
+          'owner_occupancy.assigned_parking_count',
+        ),
+      },
+    };
+  }
+
   async listAssets(actor: UserAccessContext, input: OwnerListQuery = {}) {
     return this.listOwnedResources(actor, input, false);
   }
@@ -567,12 +745,10 @@ export class PropertyOwnerPortalService {
          JOIN kost_types ON kost_types.id = rooms.kost_type_id AND kost_types.property_id = rooms.property_id
            AND kost_types.category = rooms.category AND kost_types.deleted_at IS NULL
          LEFT JOIN LATERAL (
-           SELECT lease_status, start_date, end_date, occupancy_id
+           SELECT id, lease_status, start_date, end_date, occupancy_id
            FROM leases
            WHERE property_id = $2 AND room_id = rooms.id
              AND lease_status IN ('active', 'awaiting_activation', 'draft')
-             AND start_date < COALESCE(scoped.effective_until, 'infinity'::date)
-             AND COALESCE(end_date + 1, 'infinity'::date) > scoped.effective_from
            ORDER BY (lease_status = 'active') DESC, start_date DESC, id DESC LIMIT 1
          ) lease ON true
          LEFT JOIN LATERAL (
@@ -580,8 +756,6 @@ export class PropertyOwnerPortalService {
            FROM occupancies
            WHERE property_id = $2 AND room_id = rooms.id
              AND occupancy_status = 'active'
-             AND start_date < COALESCE(scoped.effective_until, 'infinity'::date)
-             AND COALESCE(end_date + 1, 'infinity'::date) > scoped.effective_from
            ORDER BY start_date DESC, id DESC LIMIT 1
          ) occupancy ON true
          LEFT JOIN residents resident ON resident.id = occupancy.resident_id AND resident.property_id = rooms.property_id
@@ -592,7 +766,7 @@ export class PropertyOwnerPortalService {
              WHEN COUNT(*) FILTER (WHERE invoice_status = 'partially_paid') > 0 THEN 'partially_paid'
              WHEN COUNT(*) FILTER (WHERE invoice_status = 'paid') = COUNT(*) THEN 'settled'
              ELSE 'current' END AS billing_state, COUNT(*)::int AS invoice_count
-           FROM invoices WHERE property_id = $2 AND occupancy_id = lease.occupancy_id AND invoice_status <> 'void'
+           FROM invoices WHERE property_id = $2 AND lease_id = lease.id AND invoice_status <> 'void'
          ) billing ON true
          LEFT JOIN LATERAL (
            SELECT state AS transfer_state FROM lease_transfer_commands
@@ -734,6 +908,169 @@ export class PropertyOwnerPortalService {
    */
   async finance(actor: UserAccessContext, periodInput: string) {
     return this.toOwnerFinance(await this.preview(actor, periodInput));
+  }
+
+  /**
+   * W10-R collection-progress read model.
+   *
+   * This intentionally follows the current active lease for a room that is
+   * currently in the Owner's effective scope.  It is not an Owner earning,
+   * entitlement, settlement, or payout projection: those authorities remain
+   * period-bound in finance().  The response contains no payment rows, proof,
+   * bank, contact, credential, or internal-note data.
+   */
+  async collectionProgress(actor: UserAccessContext) {
+    const owner = await this.resolveOwner(actor);
+    if (!owner) return { summary: this.emptyCollectionSummary(), items: [] };
+
+    const result = await this.database.client.query(
+      `/* owner_collection_progress */
+       WITH raw_scope AS (
+         SELECT rooms.id AS room_id
+         FROM building_owner_assignments assignments
+         JOIN rooms ON rooms.building_id = assignments.building_id
+           AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+         UNION
+         SELECT rooms.id
+         FROM room_owner_assignments assignments
+         JOIN rooms ON rooms.id = assignments.room_id AND rooms.property_id = assignments.property_id
+         WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
+           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+       ), scoped_rooms AS (
+         SELECT DISTINCT room_id FROM raw_scope
+       ), active_leases AS (
+         SELECT lease.id, lease.property_id, lease.room_id, lease.resident_id,
+                lease.start_date, lease.end_date, lease.security_deposit_required_amount,
+                lease.snapshot_monthly_price
+         FROM leases lease
+         JOIN scoped_rooms scope ON scope.room_id = lease.room_id
+         WHERE lease.property_id = $2 AND lease.lease_status = 'active'
+       ), invoice_summary AS (
+         SELECT lease.id AS lease_id,
+                COALESCE(sum(invoice.total_amount) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_invoiced,
+                COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
+                COALESCE(sum(GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
+                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent')::int AS invoice_count,
+                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0)::int AS overdue_count,
+                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0 AND invoice.due_date BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7)::int AS h7_count,
+                MIN(invoice.due_date) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0)::text AS next_due_date
+         FROM active_leases lease
+         LEFT JOIN invoices invoice ON invoice.property_id = lease.property_id
+           AND invoice.lease_id = lease.id AND invoice.invoice_status <> 'void'
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
+           FROM payment_allocations pa
+           LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
+           WHERE pa.invoice_id = invoice.id
+         ) allocation ON true
+         GROUP BY lease.id
+       ), installment_summary AS (
+         SELECT lease.id AS lease_id,
+                COUNT(installment.id)::int AS installment_total,
+                COUNT(installment.id) FILTER (WHERE installment.installment_status = 'paid')::int AS installment_paid,
+                MIN(installment.due_date) FILTER (WHERE installment.installment_status IN ('scheduled', 'issued', 'partially_paid'))::text AS installment_next_due_date
+         FROM active_leases lease
+         LEFT JOIN lease_installments installment ON installment.property_id = lease.property_id AND installment.lease_id = lease.id
+         GROUP BY lease.id
+       ), deposit_summary AS (
+         SELECT lease.id AS lease_id,
+                COALESCE(lease.security_deposit_required_amount, 0)::text AS deposit_required,
+                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.direction = 'credit'), 0)::text AS deposit_collected,
+                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'deduction'), 0)::text AS deposit_deducted,
+                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'refund'), 0)::text AS deposit_refunded,
+                COALESCE(sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END), 0)::text AS deposit_balance
+         FROM active_leases lease
+         LEFT JOIN lease_deposit_transactions ledger ON ledger.property_id = lease.property_id AND ledger.lease_id = lease.id
+         GROUP BY lease.id, lease.security_deposit_required_amount
+       ), settlement_projection AS (
+         SELECT lease.id AS lease_id,
+                settlement.state AS settlement_state,
+                settlement.original_due_at::text AS original_due_at,
+                COALESCE(settlement.extension_due_at, settlement.original_due_at)::text AS effective_due_at,
+                (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')::text AS checkpoint_due_at,
+                GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0)::text AS settlement_outstanding,
+                LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0))::text AS checkpoint_required,
+                GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0)::text AS checkpoint_received,
+                GREATEST(
+                  LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0))
+                    - GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0),
+                  0
+                )::text AS checkpoint_remaining,
+                CASE
+                  WHEN settlement.id IS NULL THEN 'not_available'
+                  WHEN LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) = 0 THEN 'not_required'
+                  WHEN GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0) >= LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) THEN 'met'
+                  WHEN now() > (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') THEN 'overdue'
+                  ELSE 'pending'
+                END AS checkpoint_status,
+                CASE
+                  WHEN GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0) = 0 THEN NULL
+                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at) IS NULL THEN NULL
+                  WHEN now() > COALESCE(settlement.extension_due_at, settlement.original_due_at) + INTERVAL '7 days' THEN 'D+7'
+                  WHEN now() > COALESCE(settlement.extension_due_at, settlement.original_due_at) THEN 'D+1'
+                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date THEN 'H-0'
+                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7 THEN 'H-7'
+                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 14 THEN 'H-14'
+                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 30 THEN 'H-30'
+                  ELSE NULL
+                END AS reminder_stage
+         FROM active_leases lease
+         LEFT JOIN lease_contract_settlements settlement ON settlement.property_id = lease.property_id AND settlement.lease_id = lease.id
+         LEFT JOIN invoices invoice ON invoice.id = settlement.invoice_id AND invoice.property_id = settlement.property_id
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
+           FROM payment_allocations pa
+           LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
+           WHERE pa.invoice_id = invoice.id
+         ) allocation ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(pa.allocated_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'), 0)
+                    - COALESCE(sum(pra.reversed_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'), 0) AS net
+           FROM payment_allocations pa
+           JOIN payments payment ON payment.id = pa.payment_id
+           LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
+           WHERE pa.invoice_id = invoice.id
+         ) initial_credit ON true
+       )
+       SELECT rooms.room_code, buildings.building_code, buildings.building_name,
+              resident.full_name AS resident_display_name,
+              lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+              invoice_summary.*, installment_summary.*, deposit_summary.*, settlement_projection.*
+       FROM active_leases lease
+       JOIN rooms ON rooms.id = lease.room_id AND rooms.property_id = lease.property_id
+       JOIN room_buildings buildings ON buildings.id = rooms.building_id AND buildings.property_id = rooms.property_id
+       JOIN residents resident ON resident.id = lease.resident_id AND resident.property_id = lease.property_id
+       JOIN invoice_summary ON invoice_summary.lease_id = lease.id
+       JOIN installment_summary ON installment_summary.lease_id = lease.id
+       JOIN deposit_summary ON deposit_summary.lease_id = lease.id
+       LEFT JOIN settlement_projection ON settlement_projection.lease_id = lease.id
+       ORDER BY rooms.room_code`,
+      [owner.id, owner.property_id],
+    );
+
+    const items = result.rows.map((row) =>
+      this.collectionProgressRow(row as Record<string, unknown>),
+    );
+    return {
+      summary: {
+        active_lease_count: items.length,
+        overdue_lease_count: items.filter((item) => item.billing.overdue_count > 0).length,
+        h7_lease_count: items.filter(
+          (item) => item.billing.h7_count > 0 || item.settlement.reminder_stage === 'H-7',
+        ).length,
+        checkpoint_attention_count: items.filter((item) =>
+          ['pending', 'overdue'].includes(item.settlement.checkpoint.status),
+        ).length,
+        rent_outstanding: items
+          .reduce<bigint>((total, item) => total + BigInt(item.billing.rent_outstanding), 0n)
+          .toString(),
+      },
+      items,
+    };
   }
 
   async export(actor: UserAccessContext, periodInput: string, formatInput: string) {
@@ -1115,7 +1452,7 @@ export class PropertyOwnerPortalService {
     return {
       period: publicPeriod,
       scope_checksum: scopeChecksum,
-      watermark: `Owner ${this.text(owner.full_name, 'owner.full_name')} | ${period.period} | scope ${scopeChecksum.slice(0, 12)}`,
+      watermark: `Laporan kepemilikan · ${period.period}`,
       summary: {
         asset_count: this.count(row.asset_count, 'summary.asset_count'),
         occupied_count: this.count(row.occupied_count, 'summary.occupied_count'),
@@ -1273,7 +1610,7 @@ export class PropertyOwnerPortalService {
     return {
       period: this.publicPeriod(period),
       scope_checksum: createHash('sha256').update(`empty:${period.period}`).digest('hex'),
-      watermark: `Owner scope unavailable | ${period.period}`,
+      watermark: `Laporan kepemilikan · ${period.period}`,
       summary: {
         asset_count: 0,
         occupied_count: 0,
@@ -1294,6 +1631,123 @@ export class PropertyOwnerPortalService {
       complaints: [] as SafeRow[],
       maintenance: [] as SafeRow[],
       notifications: [] as SafeRow[],
+    };
+  }
+
+  /**
+   * The collection summary is deliberately distinct from owner revenue and payout.
+   * It contains safe, current, lease-level collection progress only.
+   */
+  private emptyCollectionSummary() {
+    return {
+      active_lease_count: 0,
+      overdue_lease_count: 0,
+      h7_lease_count: 0,
+      checkpoint_attention_count: 0,
+      rent_outstanding: '0',
+    };
+  }
+
+  private collectionProgressRow(row: Record<string, unknown>) {
+    const rentInvoiced = this.money(row.rent_invoiced, 'owner_collection.rent_invoiced');
+    const rentVerified = this.money(row.rent_verified, 'owner_collection.rent_verified');
+    const rentOutstanding = this.money(row.rent_outstanding, 'owner_collection.rent_outstanding');
+    const invoiceCount = this.count(row.invoice_count, 'owner_collection.invoice_count');
+    const overdueCount = this.count(row.overdue_count, 'owner_collection.overdue_count');
+    const h7Count = this.count(row.h7_count, 'owner_collection.h7_count');
+    const outstanding = BigInt(rentOutstanding);
+    const verified = BigInt(rentVerified);
+    const billingState =
+      invoiceCount === 0
+        ? 'not_available'
+        : overdueCount > 0
+          ? 'overdue'
+          : outstanding === 0n
+            ? 'settled'
+            : verified > 0n
+              ? 'partially_paid'
+              : 'current';
+
+    const checkpointStatus = this.enumValue(
+      row.checkpoint_status ?? 'not_available',
+      ['not_available', 'not_required', 'met', 'pending', 'overdue'] as const,
+      'owner_collection.checkpoint_status',
+    );
+    const reminderStage = this.nullableEnum(
+      row.reminder_stage,
+      ['H-30', 'H-14', 'H-7', 'H-0', 'D+1', 'D+7'] as const,
+      'owner_collection.reminder_stage',
+    );
+
+    return {
+      room: {
+        code: this.text(row.room_code, 'owner_collection.room_code'),
+        building_code: this.text(row.building_code, 'owner_collection.building_code'),
+        building_name: this.text(row.building_name, 'owner_collection.building_name'),
+      },
+      resident: {
+        display_name: this.text(
+          row.resident_display_name,
+          'owner_collection.resident_display_name',
+        ),
+      },
+      lease: {
+        status: 'active' as const,
+        start_date: this.date(row.lease_start_date, 'owner_collection.lease_start_date'),
+        end_date: this.nullableDate(row.lease_end_date, 'owner_collection.lease_end_date'),
+      },
+      billing: {
+        state: billingState,
+        rent_invoiced: rentInvoiced,
+        rent_verified: rentVerified,
+        rent_outstanding: rentOutstanding,
+        invoice_count: invoiceCount,
+        overdue_count: overdueCount,
+        h7_count: h7Count,
+        next_due_date: this.nullableDate(row.next_due_date, 'owner_collection.next_due_date'),
+        installment_total: this.count(row.installment_total, 'owner_collection.installment_total'),
+        installment_paid: this.count(row.installment_paid, 'owner_collection.installment_paid'),
+        installment_next_due_date: this.nullableDate(
+          row.installment_next_due_date,
+          'owner_collection.installment_next_due_date',
+        ),
+      },
+      security_deposit: {
+        required: this.money(row.deposit_required, 'owner_collection.deposit_required'),
+        collected: this.money(row.deposit_collected, 'owner_collection.deposit_collected'),
+        deducted: this.money(row.deposit_deducted, 'owner_collection.deposit_deducted'),
+        refunded: this.money(row.deposit_refunded, 'owner_collection.deposit_refunded'),
+        balance: this.money(row.deposit_balance, 'owner_collection.deposit_balance'),
+      },
+      settlement: {
+        state: this.nullableText(row.settlement_state, 'owner_collection.settlement_state'),
+        original_due_at: this.nullableText(row.original_due_at, 'owner_collection.original_due_at'),
+        effective_due_at: this.nullableText(
+          row.effective_due_at,
+          'owner_collection.effective_due_at',
+        ),
+        outstanding_amount: this.money(
+          row.settlement_outstanding,
+          'owner_collection.settlement_outstanding',
+        ),
+        reminder_stage: reminderStage,
+        checkpoint: {
+          due_at: this.nullableText(row.checkpoint_due_at, 'owner_collection.checkpoint_due_at'),
+          required_amount: this.money(
+            row.checkpoint_required,
+            'owner_collection.checkpoint_required',
+          ),
+          received_amount: this.money(
+            row.checkpoint_received,
+            'owner_collection.checkpoint_received',
+          ),
+          remaining_amount: this.money(
+            row.checkpoint_remaining,
+            'owner_collection.checkpoint_remaining',
+          ),
+          status: checkpointStatus,
+        },
+      },
     };
   }
 

@@ -125,6 +125,8 @@ void test('owner asset projection serializes PostgreSQL DATE columns before vali
   assert.match(projection, /lease\.start_date::text AS lease_start_date/);
   assert.match(projection, /lease\.end_date::text AS lease_end_date/);
   assert.match(projection, /occupancy\.start_date::text AS occupancy_start_date/);
+  assert.match(projection, /lease_end_date::date >= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date/);
+  assert.match(projection, /lease_end_date::date <= \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date \+ \$7::int/);
 });
 
 const assignment = (from = '2026-08-01', until: string | null = null) => ({

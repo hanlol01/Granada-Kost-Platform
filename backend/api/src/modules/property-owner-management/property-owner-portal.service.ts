@@ -630,8 +630,8 @@ export class PropertyOwnerPortalService {
          AND ($5::text IS NULL OR lease_status = $5)
          AND ($6::text IS NULL OR billing_state = $6)
          AND ($7::int IS NULL OR (lease_end_date IS NOT NULL
-           AND lease_end_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND lease_end_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + $7::int))
+           AND lease_end_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           AND lease_end_date::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + $7::int))
        ORDER BY room_code
        LIMIT $8 OFFSET $9`,
       params,

@@ -1,40 +1,37 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState, type ComponentType, type FormEvent } from "react";
 import { toast } from "sonner";
 import {
   BadgeCheck,
-  Bell,
   CalendarDays,
   ChevronRight,
   DoorOpen,
+  Eye,
+  EyeOff,
   HelpCircle,
   Home,
   KeyRound,
+  Loader2,
   LogOut,
   Mail,
-  MessageCircle,
-  Monitor,
   Moon,
-  Pencil,
   Phone,
   RefreshCw,
   ShieldCheck,
   Sun,
-  Trash2,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
-import { LoadingState, EmptyState, ErrorState } from "@/components/state";
-import { useAuth } from "@/lib/auth";
-import { isChatEnabled } from "@/lib/features";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  useActiveSessions,
-  useLogoutAll,
+  useChangePassword,
   usePenghuniProfile,
-  useRevokeSession,
   type PenghuniProfileView,
 } from "@/hooks/usePenghuniProfile";
-import { formatDate, formatRelative } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
+import { formatDate, paymentPlanLabel } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
 
 export const Route = createFileRoute("/_app/profile")({
@@ -42,21 +39,26 @@ export const Route = createFileRoute("/_app/profile")({
 });
 
 function ProfilePage() {
-  // Resident/hunian facts come only from /my/resident-context; account email
-  // and session management retain their existing auth authority.
   const { logout } = useAuth();
   const profile = usePenghuniProfile();
-  const sessions = useActiveSessions();
-  const revoke = useRevokeSession();
-  const logoutAll = useLogoutAll();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [pending, setPending] = useState(false);
-  const chatEnabled = isChatEnabled();
+  const [passwordOpen, setPasswordOpen] = useState(false);
+
+  useEffect(() => {
+    const isDark = localStorage.getItem("theme") !== "light";
+    setDark(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
 
   const toggleDark = () => {
-    setDark(!dark);
-    document.documentElement.classList.toggle("dark");
+    setDark((current) => {
+      const next = !current;
+      document.documentElement.classList.toggle("dark", next);
+      localStorage.setItem("theme", next ? "dark" : "light");
+      return next;
+    });
   };
 
   const onLogout = async () => {
@@ -73,9 +75,12 @@ function ProfilePage() {
     }
   };
 
-  const onLogoutAll = async () => {
-    await logoutAll.mutateAsync();
-    void navigate({ to: "/login" });
+  const onPasswordSuccess = async () => {
+    try {
+      await logout();
+    } finally {
+      void navigate({ to: "/login" });
+    }
   };
 
   return (
@@ -83,10 +88,8 @@ function ProfilePage() {
       <AppHeader title="Profil Saya" />
       <div className="flex flex-col gap-5 px-5 py-5 animate-[fade-in_0.4s_ease-out]">
         <ResidentProfileCard profile={profile} />
-
         <ResidentTenancySummary profile={profile} />
 
-        {/* Info */}
         <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           {profile.contextState === "ready" ? (
             <>
@@ -145,84 +148,20 @@ function ProfilePage() {
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {profile.paymentPlanType
-                    ? `Skema pembayaran: ${profile.paymentPlanType}`
-                    : "Skema pembayaran belum tersedia."}
+                  {`Skema pembayaran: ${paymentPlanLabel(profile.paymentPlanType)}`}
                 </p>
               </div>
             </div>
           </div>
         ) : null}
 
-        {/* Active sessions */}
-        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between px-4 pt-4">
-            <p className="text-sm font-semibold">Sesi Aktif</p>
-            {sessions.data && sessions.data.length > 0 ? (
-              <button
-                onClick={() => void onLogoutAll()}
-                disabled={logoutAll.isPending}
-                className="text-[11px] font-semibold text-destructive disabled:opacity-60"
-              >
-                {logoutAll.isPending ? "Memproses..." : "Keluar dari semua"}
-              </button>
-            ) : null}
-          </div>
-          <div className="p-4">
-            {sessions.isLoading ? (
-              <LoadingState label="Memuat sesi..." />
-            ) : sessions.isError ? (
-              <ErrorState
-                error={sessions.error}
-                onRetry={() => void sessions.refetch()}
-                title="Gagal memuat sesi"
-              />
-            ) : (sessions.data ?? []).length === 0 ? (
-              <EmptyState
-                title="Tidak ada sesi aktif"
-                description="Saat Anda masuk dari perangkat lain, sesi tersebut akan muncul di sini."
-              />
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {sessions.data!.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
-                  >
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-primary">
-                      <Monitor className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {s.device_name ?? s.user_agent ?? "Perangkat tidak dikenal"}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {s.current ? "Sesi saat ini · " : ""}
-                        {s.last_activity_at
-                          ? `Aktif ${formatRelative(s.last_activity_at)}`
-                          : s.created_at
-                            ? `Dibuat ${formatRelative(s.created_at)}`
-                            : "-"}
-                      </p>
-                    </div>
-                    {!s.current && (
-                      <button
-                        onClick={() => revoke.mutate({ sessionId: s.id })}
-                        disabled={revoke.isPending}
-                        className="inline-flex h-8 items-center gap-1 rounded-full bg-destructive/10 px-2.5 text-[11px] font-semibold text-destructive disabled:opacity-60"
-                        aria-label="Cabut sesi"
-                      >
-                        <Trash2 className="h-3 w-3" /> Cabut
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+        {passwordOpen ? (
+          <ProfilePasswordForm
+            onCancel={() => setPasswordOpen(false)}
+            onSuccess={() => void onPasswordSuccess()}
+          />
+        ) : null}
 
-        {/* Settings (visual-only toggles; preferences endpoint belongs to later milestone) */}
         <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
           <ToggleRow
             icon={dark ? Moon : Sun}
@@ -232,34 +171,14 @@ function ProfilePage() {
             hint="Preferensi tampilan lokal"
           />
           <Divider />
-          <ToggleRow
-            icon={Bell}
-            label="Notifikasi"
-            checked={false}
-            onChange={() => toast.message("Pengaturan notifikasi tersedia di milestone berikutnya")}
-            hint="Akan terhubung ke preferensi backend"
-            disabled
-          />
-        </div>
-
-        {/* Links */}
-        <div className="rounded-2xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
-          {chatEnabled ? (
-            <NavRow to="/chat" icon={MessageCircle} label="Chat dengan Admin" />
-          ) : (
-            <DisabledRow
-              icon={MessageCircle}
-              label="Chat dengan Admin"
-              hint="Fitur chat belum aktif untuk release saat ini"
-            />
-          )}
-          <Divider />
           <NavRow to="/info" icon={HelpCircle} label="Informasi & FAQ" />
           <Divider />
-          <DisabledRow
+          <ActionRow
             icon={KeyRound}
             label="Ubah Kata Sandi"
-            hint="Form ubah kata sandi tersedia di milestone berikutnya"
+            hint="Perbarui kata sandi akun Anda secara aman"
+            onClick={() => setPasswordOpen((open) => !open)}
+            active={passwordOpen}
           />
           <Divider />
           <DisabledRow icon={ShieldCheck} label="Kebijakan Privasi" hint="Belum tersedia" />
@@ -278,6 +197,146 @@ function ProfilePage() {
         </p>
       </div>
     </>
+  );
+}
+
+function ProfilePasswordForm({
+  onCancel,
+  onSuccess,
+}: {
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const changePassword = useChangePassword();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword.length < 12) {
+      toast.error("Kata sandi baru minimal 12 karakter");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Konfirmasi kata sandi belum sama");
+      return;
+    }
+    changePassword.mutate(
+      { current_password: currentPassword, new_password: newPassword },
+      { onSuccess },
+    );
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-2xl border border-primary/30 bg-card p-4 shadow-[var(--shadow-soft)]"
+      aria-label="Ubah kata sandi"
+    >
+      <div className="mb-4">
+        <p className="text-sm font-semibold">Ubah Kata Sandi</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Gunakan minimal 12 karakter. Setelah berhasil, Anda akan keluar dan perlu masuk kembali.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <ProfilePasswordField
+          id="current-password"
+          label="Kata sandi saat ini"
+          value={currentPassword}
+          onChange={setCurrentPassword}
+          visible={showCurrent}
+          onToggle={() => setShowCurrent((visible) => !visible)}
+          required
+        />
+        <ProfilePasswordField
+          id="new-password"
+          label="Kata sandi baru"
+          value={newPassword}
+          onChange={setNewPassword}
+          visible={showNew}
+          onToggle={() => setShowNew((visible) => !visible)}
+          minLength={12}
+          required
+        />
+        <ProfilePasswordField
+          id="confirm-password"
+          label="Ulangi kata sandi baru"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          visible={showConfirm}
+          onToggle={() => setShowConfirm((visible) => !visible)}
+          minLength={12}
+          required
+        />
+      </div>
+      <div className="mt-4 flex gap-2">
+        <Button type="submit" disabled={changePassword.isPending} className="min-h-11 flex-1">
+          {changePassword.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {changePassword.isPending ? "Menyimpan..." : "Simpan kata sandi"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={changePassword.isPending}
+        >
+          Batal
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ProfilePasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  visible,
+  onToggle,
+  minLength,
+  required,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+  minLength?: number;
+  required?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          minLength={minLength}
+          required={required}
+          autoComplete={id === "current-password" ? "current-password" : "new-password"}
+          className="min-h-11 pr-11"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-foreground"
+          aria-label={
+            visible ? `Sembunyikan ${label.toLowerCase()}` : `Tampilkan ${label.toLowerCase()}`
+          }
+        >
+          {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -316,17 +375,7 @@ function ResidentProfileCard({ profile }: { profile: PenghuniProfileView }) {
               <BadgeCheck className="h-3 w-3" aria-hidden="true" /> Hunian aktif
             </span>
           </div>
-          <button
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur disabled:opacity-60"
-            aria-label="Edit profil belum tersedia"
-            disabled
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
-        <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[11px] opacity-90">
-          Edit profil belum tersedia sampai endpoint update profil Penghuni dirilis.
-        </p>
       </div>
     );
   }
@@ -346,8 +395,7 @@ function ResidentProfileCard({ profile }: { profile: PenghuniProfileView }) {
           className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label="Coba lagi memuat profil hunian"
         >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          Coba lagi
+          <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
         </button>
       ) : null}
     </section>
@@ -360,7 +408,7 @@ function InfoRow({
   value,
   muted,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   value: string;
   muted?: boolean;
@@ -372,7 +420,7 @@ function InfoRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className={"break-words text-sm font-medium " + (muted ? "text-muted-foreground" : "")}>
+        <p className={`break-words text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>
           {value}
         </p>
       </div>
@@ -386,20 +434,18 @@ function ToggleRow({
   checked,
   onChange,
   hint,
-  disabled,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   checked: boolean;
   onChange: () => void;
   hint?: string;
-  disabled?: boolean;
 }) {
   return (
     <button
+      type="button"
       onClick={onChange}
-      disabled={disabled}
-      className="flex w-full items-center gap-3 p-4 text-left disabled:opacity-70"
+      className="flex w-full items-center gap-3 p-4 text-left"
     >
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-primary">
         <Icon className="h-4 w-4" />
@@ -409,17 +455,45 @@ function ToggleRow({
         {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
       </div>
       <span
-        className={
-          "relative h-6 w-11 rounded-full transition " + (checked ? "bg-primary" : "bg-border")
-        }
+        className={`relative h-6 w-11 rounded-full transition ${checked ? "bg-primary" : "bg-border"}`}
       >
         <span
-          className={
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition " +
-            (checked ? "left-5" : "left-0.5")
-          }
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${checked ? "left-5" : "left-0.5"}`}
         />
       </span>
+    </button>
+  );
+}
+
+function ActionRow({
+  icon: Icon,
+  label,
+  hint,
+  onClick,
+  active,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+  onClick: () => void;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-accent/50"
+    >
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-[11px] text-muted-foreground">{hint}</p>
+      </div>
+      <ChevronRight
+        className={`h-4 w-4 text-muted-foreground transition ${active ? "rotate-90" : ""}`}
+      />
     </button>
   );
 }
@@ -430,7 +504,7 @@ function NavRow({
   label,
 }: {
   to: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
 }) {
   return (
@@ -449,7 +523,7 @@ function DisabledRow({
   label,
   hint,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   hint: string;
 }) {

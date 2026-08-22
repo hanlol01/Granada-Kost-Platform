@@ -63,10 +63,10 @@ function SettingsField({ id, label, hint, error, children }: FieldProps) {
 }
 
 function AppearancePanel() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
 
   useEffect(() => {
-    const isDark = localStorage.getItem("theme") === "dark";
+    const isDark = localStorage.getItem("theme") !== "light";
     setDark(isDark);
     document.documentElement.classList.toggle("dark", isDark);
   }, []);

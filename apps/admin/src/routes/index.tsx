@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/state/EmptyState";
 import { FeatureDisabledState } from "@/components/state/FeatureDisabledState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
+import { useDashboardRevenue } from "@/hooks/useDashboardRevenue";
+import { MonthlyRevenueChart } from "@/components/dashboard/MonthlyRevenueChart";
 import { formatDashboardIDR } from "@/lib/admin-ux-dashboard";
 import {
   BedDouble,
@@ -70,6 +72,7 @@ function StatCardSkeleton() {
 
 function Dashboard() {
   const { summary, isLoading, error, refetch, hasAccess, rolloutEnabled } = useDashboardSummary();
+  const revenueState = useDashboardRevenue(hasAccess && rolloutEnabled);
   const occupancyPercent =
     summary && summary.roomsTotal > 0
       ? Math.round((summary.roomsOccupied / summary.roomsTotal) * 100)
@@ -132,21 +135,15 @@ function Dashboard() {
                 <div>
                   <CardTitle className="text-base">Pemasukan Bulanan</CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Tersedia setelah modul Billing terintegrasi penuh
+                    Pembayaran terverifikasi · {revenueState.year} · Asia/Jakarta
                   </p>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground font-medium">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
                   <TrendingUp className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Tren pemasukan</span>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <EmptyState
-                    title="Belum tersedia"
-                    description="Grafik pemasukan bulanan akan aktif setelah endpoint laporan revenue terintegrasi pada M11D."
-                  />
-                </div>
-              </CardContent>
+              <MonthlyRevenueChart {...revenueState} onRetry={revenueState.refetch} />
             </Card>
 
             <Card>

@@ -31,10 +31,13 @@ export function AppShell({
   contentClassName,
   children,
 }: Props) {
-  const [dark, setDark] = useState(false);
+  // Dark is the product default. A previously saved light preference remains
+  // respected so changing the default does not unexpectedly override a user's
+  // explicit choice on this device.
+  const [dark, setDark] = useState(true);
 
   useEffect(() => {
-    const isDark = localStorage.getItem("theme") === "dark";
+    const isDark = localStorage.getItem("theme") !== "light";
     setDark(isDark);
     document.documentElement.classList.toggle("dark", isDark);
   }, []);

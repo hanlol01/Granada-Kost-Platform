@@ -33,17 +33,12 @@ import { type PublicCategory, type PublicGender } from "@/hooks/usePublicRooms";
 import {
   normalizePublicPlannedStart,
   resolveGalleryImageUrl,
-  toPublicRoomGroup,
   usePublicHunianCatalog,
   type PublicHunianCatalogItem,
 } from "@/hooks/usePublicHunianCatalog";
-import { GALLERY_PLACEHOLDER_COPY } from "@/components/public-gallery/PublicHunianGallery";
-import {
-  buildRoomInquiryMessage,
-  buildWhatsAppUrl,
-  getPublicWhatsAppNumber,
-} from "@/lib/whatsapp-cta";
+import { getPublicWhatsAppNumber } from "@/lib/whatsapp-cta";
 import { PublicBookingLeadDialog } from "@/components/booking-lead/PublicBookingLeadDialog";
+import { PublicCategoryGalleryCarousel } from "@/components/public-gallery/PublicCategoryGalleryCarousel";
 
 type KamarSearch = {
   gender?: PublicGender;
@@ -508,37 +503,12 @@ function HunianOffer({
   whatsAppNumber: string | null;
 }) {
   const [leadFormOpen, setLeadFormOpen] = useState(false);
-  const [coverFailed, setCoverFailed] = useState(false);
-  const directGender =
-    item.genderAvailability.find((entry) => entry.gender === preferredGender)?.gender ??
-    item.genderAvailability[0]?.gender;
-  const leadGroup = directGender ? toPublicRoomGroup(item, directGender) : null;
-  const whatsAppHref =
-    whatsAppNumber && leadGroup
-      ? buildWhatsAppUrl(whatsAppNumber, buildRoomInquiryMessage(leadGroup))
-      : null;
-  const cover = (item.galleryPreview ?? [])[0] ?? null;
-  const coverUrl = cover ? resolveGalleryImageUrl(cover.contentUrl) : null;
 
   return (
     <article className="group overflow-hidden rounded-2xl bg-card shadow-[0_16px_45px_-28px_oklch(0.25_0.07_250/0.55)]">
-      <div className="relative aspect-[16/9] overflow-hidden bg-muted">
-        {coverUrl && !coverFailed ? (
-          <img
-            src={coverUrl}
-            alt={cover?.altText || item.title}
-            loading="lazy"
-            decoding="async"
-            onError={() => setCoverFailed(true)}
-            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.025] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-          />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
-            <ImageIcon className="h-8 w-8 text-muted-foreground/45" />
-            <p className="max-w-sm text-xs text-muted-foreground">{GALLERY_PLACEHOLDER_COPY}</p>
-          </div>
-        )}
-        <div className="absolute inset-x-0 top-0 flex flex-wrap gap-2 bg-gradient-to-b from-black/55 to-transparent p-4 pb-10">
+      <div className="relative">
+        <PublicCategoryGalleryCarousel title={item.title} images={item.galleryPreview} />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex flex-wrap gap-2 bg-gradient-to-b from-black/55 to-transparent p-4 pb-10">
           <Badge className="border-white/20 bg-white/90 text-foreground hover:bg-white/90">
             {item.categoryLabel}
           </Badge>
@@ -582,28 +552,11 @@ function HunianOffer({
             </span>
           ))}
         </div>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-          <Button className="min-h-11 flex-1" onClick={() => setLeadFormOpen(true)}>
+        <div className="mt-6">
+          <Button className="min-h-11 w-full" onClick={() => setLeadFormOpen(true)}>
             <Send className="h-4 w-4" />
             {item.ctaLabel || "Ajukan Minat Booking"}
           </Button>
-          <Button asChild variant="outline" className="min-h-11 flex-1">
-            <Link to="/kamar/$slug" params={{ slug: item.slug }}>
-              Lihat Detail <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-          {whatsAppHref ? (
-            <Button asChild variant="outline" size="icon" className="min-h-11 min-w-11">
-              <a
-                href={whatsAppHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Tanyakan ${item.title} melalui WhatsApp`}
-              >
-                <MessageCircle className="h-4 w-4" />
-              </a>
-            </Button>
-          ) : null}
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           <DoorOpen className="mr-1.5 inline h-3.5 w-3.5 text-primary" />

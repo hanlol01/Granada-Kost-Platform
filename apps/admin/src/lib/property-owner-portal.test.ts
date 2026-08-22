@@ -8,6 +8,7 @@ import {
   getOwnerPortalViewState,
   ownerPortalNavigation,
   parseOwnerAssetDetail,
+  parseOwnerOccupancyResidentDetail,
   parseOwnerPortal,
   parseOwnerResourcePage,
   parseOwnerFinance,
@@ -66,6 +67,45 @@ const assetDetail = () => ({
   },
   issues: { open_complaints: 1, open_maintenance: 0 },
   updated_at: "2026-08-06T03:00:00.000Z",
+});
+
+const occupancyResidentDetail = () => ({
+  resident: { display_name: "PUTRI", occupancy_start_date: "2026-08-06" },
+  room: {
+    room_code: "AK-05-03",
+    room_status: "occupied",
+    kost_type: "apartkost",
+    building_code: "AK-05",
+    building_name: "Apart Kost Unit 05",
+  },
+  occupancy: { occupancy_status: "active", start_date: "2026-08-06" },
+  lease: { status: "active", start_date: "2026-08-06", end_date: "2027-02-06" },
+  billing: {
+    state: "partially_paid",
+    rent_invoiced: "1080000000",
+    rent_verified: "270000000",
+    rent_outstanding: "810000000",
+    invoice_count: 6,
+    overdue_count: 1,
+    next_due_date: "2026-09-05",
+    installment_paid: 1,
+    installment_total: 6,
+    installment_next_due_date: "2026-09-05",
+    security_deposit_required: "180000000",
+    deposit_collected: "30000000",
+    deposit_deducted: "0",
+    deposit_refunded: "0",
+    deposit_balance: "30000000",
+  },
+  operations: {
+    open_complaints: 1,
+    open_maintenance: 0,
+    transfer_state: null,
+    renewal_state: "approved",
+    checkout_state: null,
+    active_vehicle_count: 0,
+    assigned_parking_count: 0,
+  },
 });
 const report = () => ({
   period: { period: "2026-08", start: "2026-08-01", end: "2026-08-31" },
@@ -237,6 +277,22 @@ void test("owner asset detail parser accepts safe detail and rejects tenant PII"
   assert.throws(() => parseOwnerAssetDetail(unsafe));
 });
 
+void test("owner occupancy resident detail stays room-scoped and rejects tenant PII", () => {
+  const parsed = parseOwnerOccupancyResidentDetail(occupancyResidentDetail());
+  assert.equal(parsed.resident?.displayName, "PUTRI");
+  assert.equal(parsed.room.roomCode, "AK-05-03");
+  assert.equal(parsed.billing.state, "partially_paid");
+  assert.equal(parsed.billing.rentOutstanding, "810000000");
+  assert.equal(parsed.billing.installmentPaid, 1);
+  assert.equal(parsed.billing.depositBalance, "30000000");
+
+  const unsafe = occupancyResidentDetail() as ReturnType<typeof occupancyResidentDetail> & {
+    resident: Record<string, unknown>;
+  };
+  unsafe.resident.email = "putri@example.test";
+  assert.throws(() => parseOwnerOccupancyResidentDetail(unsafe));
+});
+
 void test("owner portal has an Admin-aligned read-only application shell", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
   const ownerShell = source("components/property-owner-portal/OwnerPortalShell.tsx");
@@ -267,6 +323,17 @@ void test("owner portal has an Admin-aligned read-only application shell", () =>
   );
 });
 
+void test("owner occupancy detail route renders through its parent outlet", () => {
+  const occupancyLayout = source("routes/property-owners/portal/occupancy/route.tsx");
+  const occupancyIndex = source("routes/property-owners/portal/occupancy/index.tsx");
+  const residentDetailRoute = source("routes/property-owners/portal/occupancy/$roomCode.tsx");
+
+  assert.match(occupancyLayout, /Outlet/);
+  assert.match(occupancyLayout, /createFileRoute\("\/property-owners\/portal\/occupancy"\)/);
+  assert.match(occupancyIndex, /PropertyOwnerPortal view="occupancy"/);
+  assert.match(residentDetailRoute, /PropertyOwnerResidentDetailPage/);
+});
+
 void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
@@ -279,6 +346,22 @@ void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations
   assert.match(portalComponent, /ownerPortalNavigation/);
   assert.match(portalComponent, /Ringkasan ini berasal dari data operasional/);
   assert.doesNotMatch(portalComponent, /useState\([^)]*openComplaints/);
+});
+
+void test("E5 dashboard finance snapshot is report-only and comes from the owner projection", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /function DashboardFinanceSnapshot/);
+  assert.match(portalComponent, /\["property-owner", "dashboard-finance", ownerId, period\]/);
+  assert.match(portalComponent, /propertyOwnerPortalApi\.finance\(period\)/);
+  assert.match(portalComponent, /formatOwnerMoney\(finance\.data\.summary\.grossEarnedRent\)/);
+  assert.match(
+    portalComponent,
+    /formatOwnerMoney\(finance\.data\.summary\.adjustedOwnerEntitlement\)/,
+  );
+  assert.match(portalComponent, /to="\/property-owners\/portal\/finance"/);
+  assert.match(portalComponent, /Ringkasan keuangan belum tersedia/);
+  assert.doesNotMatch(portalComponent, /propertyOwnerPortalApi\.(?:create|update|archive|assign|release)/);
 });
 
 void test("E5 account page exposes safe identity, read-only scope, and Owner navigation", () => {

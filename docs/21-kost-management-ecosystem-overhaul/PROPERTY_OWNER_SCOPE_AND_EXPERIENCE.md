@@ -1,8 +1,9 @@
 # Property Owner Scope and Experience
 
-Status: `IN_PROGRESS` (`W10-OWNER-A`, `W10-OWNER-B`, `W10-OWNER-A3`,
-`W10-OWNER-C`, and `W10-OWNER-D` automated verified; controlled runtime QA and
-canonical migration deferred)
+Status: `W10-OWNER-A`, `W10-OWNER-B`, `W10-OWNER-A3`, `W10-OWNER-C`, and
+`W10-OWNER-D` are automated verified. `W10-R` active-lease continuity is
+source implemented and automated review pending. Controlled runtime QA and the
+canonical migration gate remain deferred.
 
 Audience: Product, Design, Admin operations, Finance, Backend, Frontend, QA, and
 future agents implementing KMO-W10.
@@ -17,7 +18,7 @@ legal-document references; it does not replace the government land registry.
 | ---------------- | ------------------------- | ------------------------- | -------------------------------- |
 | `owner`          | Global Kostation operator | All authorized properties | Operational writes by permission |
 | `admin`          | Property operator         | Assigned property         | Operational writes by permission |
-| `property_owner` | Asset owner/investor      | Effective assigned assets | None; read-only                  |
+| `property_owner` | Asset owner/investor      | Effective assigned assets and safe active-lease continuity | None; read-only |
 
 The two owner roles are never interchangeable.
 
@@ -137,8 +138,29 @@ shell. Navigation is allowlisted, not a visually hidden Admin shell.
 - NIK, KTP, private address, emergency contacts, credentials;
 - raw payment proof, payout bank values, storage paths, internal notes;
 - raw audit payload, idempotency metadata, or unrelated assets;
-- data before/after the owner's effective ownership period, except the current
-  safe asset condition while ownership is active.
+- closed historical lease, occupancy, invoice, payment, or deposit rows outside
+  the owner's effective ownership period;
+- any attribute which is not explicitly included in the Owner read model.
+
+### Active-lease continuity read model
+
+When an Owner currently has an effective assignment for an asset, the portal may
+show the **aggregate business progress of that asset's current active lease**
+even when the lease, its initial DP, security-deposit ledger, or its first
+invoice started before the assignment date. This prevents a newly assigned Owner
+from seeing a misleading zero balance for a currently occupied asset.
+
+The continuity view is read-only and allowlisted. It may include the resident's
+display name, room/building, active lease coverage, invoice and installment
+counts, verified rent amount, outstanding rent, overdue/H-7/checkpoint state,
+next due date, and aggregate security-deposit required/collected/deducted/
+refunded/balance values. It does not expose a raw payment, payment proof, bank
+account, payer identifier, resident contact/identity data, or internal note.
+
+This is a current-operational continuity exception only. It does not make a
+former Owner eligible for post-transfer activity, does not reveal a closed
+historical lease to a later Owner, and does not change period-bound earned-rent,
+entitlement, settlement, adjustment, or payout authority.
 
 ### Empty and boundary states
 
@@ -166,8 +188,12 @@ The dashboard reconciles to the selected effective owned-asset scope and shows:
 - alerts for missing assignment, unsettled periods, reversals, and transfer dates.
 
 Room detail shows current operational condition, safe resident display name,
-lease period, payment status summary, complaint/maintenance summary, and ownership
-period. It exposes no mutation control.
+lease period, payment status and active-lease collection progress,
+complaint/maintenance summary, and ownership period. It exposes no mutation
+control. When an active lease exists, its collection progress must be derived
+from the authoritative invoice, verified-allocation, installment, and
+security-deposit ledger data for that lease rather than from assignment-start
+date filtering.
 
 ## 7. Financial Experience
 
@@ -195,6 +221,22 @@ for one allocation are contiguous and non-overlapping; their Gross Earned Rent
 reconciles exactly to that allocation, not the raw payment. One advance payment
 may therefore have separate allocations for multiple service months without
 duplicate entitlement.
+
+### Collection progress versus Owner finance
+
+The portal presents two adjacent but distinct read-only views:
+
+1. **Active-lease collection progress per currently owned room**: rent invoiced,
+   verified rent, outstanding balance, overdue/H-7/checkpoint state, installment
+   progress, and aggregate security-deposit position. This follows the current
+   active lease under the active-lease continuity read model.
+2. **Owner finance**: gross earned rent, Owner entitlement, management fee,
+   adjustment, settlement, and payout. This remains strictly attributed to the
+   owner's effective service coverage period.
+
+Neither view substitutes for the other. A verified payment is not automatically
+earned rent or Owner entitlement, and a zero settlement must never be displayed
+as if the resident has paid nothing.
 
 ### Settlement
 
@@ -235,7 +277,9 @@ settlements are not projected to either Owner.
 Historical occupancy and lease rows are period-scoped projections. Their exposed
 dates are the intersection of report period, ownership assignment, lease, and
 occupancy intervals: a former Owner cannot see post-transfer dates and a new
-Owner cannot see pre-transfer dates.
+Owner cannot see pre-transfer dates. The only exception is the aggregate
+active-lease continuity read model defined above; it exposes no historical row,
+proof, or private detail.
 
 ## 8. Reports and Exports
 
@@ -277,11 +321,15 @@ scope, and ownership period. A former owner cannot export current data.
 8. An owner without assignments receives empty lists and zero totals.
 9. Every owner mutation attempt is denied.
 10. Raw PII/payment proof never appears in owner payloads or exports.
-11. Rp1.800.000 fully earned produces Rp1.500.000 entitlement and Rp300.000 fee.
-12. Security deposit and vacancy produce zero owner entitlement.
-13. Advance rent is recognized over coverage rather than entirely on receipt.
-14. Reversal after approval produces an adjustment without deleting history.
-15. Archive is blocked while active or future assignments remain.
+11. A current Owner assigned after an active lease starts still sees that
+    lease's aggregate invoice, verified-rent, outstanding-balance,
+    checkpoint/overdue, and aggregate deposit progress; no raw transaction or
+    private resident field is exposed.
+12. Rp1.800.000 fully earned produces Rp1.500.000 entitlement and Rp300.000 fee.
+13. Security deposit and vacancy produce zero owner entitlement.
+14. Advance rent is recognized over coverage rather than entirely on receipt.
+15. Reversal after approval produces an adjustment without deleting history.
+16. Archive is blocked while active or future assignments remain.
 
 ## 11. Completion Boundary
 

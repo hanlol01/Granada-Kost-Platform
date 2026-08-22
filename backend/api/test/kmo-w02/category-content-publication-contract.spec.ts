@@ -22,6 +22,8 @@ import { FileService } from '../../src/modules/file/file.service';
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const migrationPath =
   'backend/api/src/infrastructure/database/migrations/023_category_content_publication.sql';
+const republishMigrationPath =
+  'backend/api/src/infrastructure/database/migrations/046_category_content_republish_same_day.sql';
 const propertyId = '11111111-1111-4111-8111-111111111111';
 const kostTypeId = '22222222-2222-4222-8222-222222222222';
 const actorId = '33333333-3333-4333-8333-333333333333';
@@ -186,6 +188,26 @@ test('migration 023 is additive, replay-aware, and registered by checksum', () =
   ]) {
     assert.match(manifest, new RegExp(sentinel));
   }
+});
+
+test('migration 046 preserves archived history while reserving an effective date only for published content', () => {
+  const migration = source(republishMigrationPath);
+  assert.match(migration, /^-- KMO-W02/m);
+  assert.match(migration, /BEGIN;[\s\S]*COMMIT;/);
+  assert.match(migration, /DROP CONSTRAINT IF EXISTS kost_type_content_versions_unique_effective/);
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uq_kost_type_content_versions_published_effective/,
+  );
+  assert.match(migration, /WHERE publication_status = 'published'/);
+
+  const checksum = createHash('sha256')
+    .update(readFileSync(resolve(process.cwd(), republishMigrationPath)))
+    .digest('hex');
+  const manifest = source('backend/api/src/infrastructure/database/scripts/migration-manifest.ts');
+  assert.match(manifest, /version: '046_category_content_republish_same_day\.sql'/);
+  assert.match(manifest, new RegExp(`checksumSha256: '${checksum}'`));
+  assert.match(manifest, /uq_kost_type_content_versions_published_effective/);
 });
 
 void test(
@@ -690,6 +712,9 @@ test('live paths lock publication, preserve history, and expose only published d
   }
   assert.match(publication, /PROPERTY_POLICY_FUTURE_CONFLICT/);
   assert.match(publication, /CATEGORY_CONTENT_FUTURE_CONFLICT/);
+  assert.match(publication, /CATEGORY_CONTENT_EFFECTIVE_DATE_CONFLICT/);
+  assert.match(publication, /assertNoPublicationAtEffectiveDate/);
+  assert.match(publication, /publication_status = 'published' AND effective_date = \$4::date/);
   assert.match(publication, /GALLERY_COVER_AUTHORITY_INVALID/);
   assert.match(publication, /internal_operating_policy/);
   const publicProjection = publication.slice(

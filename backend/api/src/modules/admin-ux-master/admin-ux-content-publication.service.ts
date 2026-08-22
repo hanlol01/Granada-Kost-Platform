@@ -267,6 +267,13 @@ export class AdminUxContentPublicationService {
       );
       if (replay) return replay;
       await this.assertNoFuturePublication(client, dto.property_id, kostTypeId, dto.content_type);
+      await this.assertNoPublicationAtEffectiveDate(
+        client,
+        dto.property_id,
+        kostTypeId,
+        dto.content_type,
+        dto.effective_date,
+      );
       const payload =
         dto.content_type === 'facilities'
           ? await this.facilitySnapshot(client, dto.property_id, kostTypeId)
@@ -1072,6 +1079,28 @@ export class AdminUxContentPublicationService {
       throw new ConflictException({
         code: 'CATEGORY_CONTENT_FUTURE_CONFLICT',
         message: 'A future category publication is already scheduled.',
+      });
+    }
+  }
+
+  private async assertNoPublicationAtEffectiveDate(
+    client: PoolClient,
+    propertyId: string,
+    kostTypeId: string,
+    contentType: ContentType,
+    effectiveDate: string,
+  ) {
+    const result = await client.query(
+      `SELECT id FROM kost_type_content_versions
+       WHERE property_id = $1 AND kost_type_id = $2 AND content_type = $3
+         AND publication_status = 'published' AND effective_date = $4::date
+       FOR UPDATE`,
+      [propertyId, kostTypeId, contentType, effectiveDate.slice(0, 10)],
+    );
+    if (result.rows.length) {
+      throw new ConflictException({
+        code: 'CATEGORY_CONTENT_EFFECTIVE_DATE_CONFLICT',
+        message: 'Category content is already published for this effective date.',
       });
     }
   }

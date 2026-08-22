@@ -61,6 +61,14 @@ export class PropertyOwnerPortalController {
     });
   }
 
+  @Get('occupancy/:roomCode/resident')
+  getOccupancyResidentDetail(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('roomCode') roomCode: string,
+  ) {
+    return this.portal.getOccupancyResidentDetail(actor, roomCode);
+  }
+
   @Get('assets/:roomCode')
   getAssetDetail(@CurrentUser() actor: UserAccessContext, @Param('roomCode') roomCode: string) {
     return this.portal.getAssetDetail(actor, roomCode);
@@ -74,6 +82,11 @@ export class PropertyOwnerPortalController {
   @Get('finance')
   finance(@CurrentUser() actor: UserAccessContext, @Query('period') period: string | undefined) {
     return this.portal.finance(actor, period ?? '');
+  }
+
+  @Get('collection-progress')
+  collectionProgress(@CurrentUser() actor: UserAccessContext) {
+    return this.portal.collectionProgress(actor);
   }
 
   @Get('reports/export')

@@ -162,6 +162,21 @@ export type RevenueSummary = {
   bestMonth: { month: number; amount: number } | null;
 };
 
+const REVENUE_TIME_ZONE = "Asia/Jakarta";
+
+function getRevenueYearMonth(value: string): { year: number; month: number } | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: REVENUE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value) - 1;
+  return Number.isInteger(year) && month >= 0 && month < 12 ? { year, month } : null;
+}
+
 export function selectRevenueSummary(
   payments: readonly PaymentRecord[],
   year: number,
@@ -177,12 +192,11 @@ export function selectRevenueSummary(
     if (p.paymentStatus !== "verified") continue;
     const when = p.paidAt ?? p.verifiedAt;
     if (!when) continue;
-    const date = new Date(when);
-    if (Number.isNaN(date.getTime())) continue;
-    if (date.getFullYear() !== year) continue;
+    const period = getRevenueYearMonth(when);
+    if (!period || period.year !== year) continue;
     verified += 1;
     verifiedAmount += p.amount ?? 0;
-    monthly[date.getMonth()] += p.amount ?? 0;
+    monthly[period.month] += p.amount ?? 0;
   }
   const months = monthly.map((amount, idx) => ({ month: idx, amount }));
   const monthsWithRevenue = months.filter((m) => m.amount > 0);

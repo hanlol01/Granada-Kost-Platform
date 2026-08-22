@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   AlertCircle,
@@ -8,7 +8,6 @@ import {
   Hammer,
   Info,
   Loader2,
-  MessageCircle,
   Plus,
   Trash2,
   Wrench,
@@ -32,7 +31,6 @@ import {
 } from "@/hooks/usePenghuniComplaints";
 import { env } from "@/lib/env";
 import { formatDate } from "@/lib/format";
-import { isChatEnabled } from "@/lib/features";
 import {
   FILE_PURPOSE_POLICIES,
   type FileResponse,
@@ -50,7 +48,6 @@ const MAX_COMPLAINT_ATTACHMENTS = FILE_PURPOSE_POLICIES.complaint_attachment.max
 function ComplaintsPage() {
   const complaints = useMyComplaints({ limit: 50 });
   const [showCreate, setShowCreate] = useState(false);
-  const chatEnabled = isChatEnabled();
 
   return (
     <>
@@ -66,8 +63,6 @@ function ComplaintsPage() {
             </p>
           </div>
         </div>
-
-        <ChatSupportAction enabled={chatEnabled} />
 
         <div>
           <p className="text-sm font-semibold">Riwayat Tiket</p>
@@ -101,33 +96,6 @@ function ComplaintsPage() {
 
       {showCreate && <CreateComplaintSheet onClose={() => setShowCreate(false)} />}
     </>
-  );
-}
-
-function ChatSupportAction({ enabled }: { enabled: boolean }) {
-  if (!enabled) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm shadow-[var(--shadow-soft)]">
-        <span className="inline-flex items-center gap-2 font-medium text-muted-foreground">
-          <MessageCircle className="h-4 w-4" /> Chat dengan admin belum tersedia
-        </span>
-        <p className="mt-1 text-xs text-muted-foreground">
-          VITE_FEATURE_CHAT_ENABLED=false. Gunakan tombol + untuk membuat tiket komplain baru.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      to="/chat"
-      className="flex items-center justify-between rounded-2xl bg-card p-4 text-sm font-medium shadow-[var(--shadow-soft)]"
-    >
-      <span className="inline-flex items-center gap-2 text-primary">
-        <MessageCircle className="h-4 w-4" /> Chat dengan admin
-      </span>
-      <span className="text-xs text-muted-foreground">Buka</span>
-    </Link>
   );
 }
 

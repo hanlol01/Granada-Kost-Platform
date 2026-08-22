@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { useMyW06Billing, useMyW06Receipt } from "@/hooks/useW06Billing";
 import { downloadMyInvoiceDocument } from "@/lib/penghuni-w06-billing";
+import { paymentPlanLabel } from "@/lib/format";
 import type {
   MyW06Billing,
   W06InvoiceStatus,
@@ -67,7 +68,7 @@ function BillingPage() {
   const billing = query.data;
   return (
     <Page
-      subtitle={`${planLabel(billing.lease.payment_plan)} · ${billing.summary.installment_paid}/${billing.summary.installment_total} tahap lunas`}
+      subtitle={`${paymentPlanLabel(billing.lease.payment_plan)} · ${billing.summary.installment_paid}/${billing.summary.installment_total} tahap lunas`}
     >
       <ReadOnlyNotice />
       <BalanceHero billing={billing} />
@@ -206,7 +207,10 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <SummaryRow label="Kewajiban" value={idr(billing.summary.security_deposit_required)} />
-          <SummaryRow label="Saldo ledger" value={idr(billing.summary.deposit_balance)} />
+          <SummaryRow
+            label="Deposit yang masih tercatat"
+            value={idr(billing.summary.deposit_balance)}
+          />
           <SummaryRow label="Belum terkumpul" value={idr(depositRemaining)} />
           <p className="rounded-xl bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             Deposit adalah liabilitas terpisah. Saldo ini tidak mengurangi tagihan sewa.
@@ -294,8 +298,8 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
         <div className="mt-4">
           {invoice.invoice_status !== "draft" ? (
             <Button
-              variant="outline"
-              className="min-h-11 w-full"
+              variant="default"
+              className="min-h-11 w-full shadow-sm"
               disabled={documentState === "loading"}
               onClick={() => {
                 setDocumentState("loading");
@@ -357,8 +361,8 @@ function PaymentHistory({
                   </div>
                   {payment.receipt_id ? (
                     <Button
-                      variant="outline"
-                      className="min-h-11"
+                      variant="default"
+                      className="min-h-11 shadow-sm"
                       onClick={() => onReceipt(payment.receipt_id!)}
                     >
                       <ReceiptText className="mr-2 h-4 w-4" /> Kuitansi
@@ -645,9 +649,6 @@ function jakartaTime(value: string) {
     timeStyle: "short",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
-}
-function planLabel(value: MyW06Billing["lease"]["payment_plan"]) {
-  return value === "annual_full" ? "Bayar tahunan" : "Angsuran dua bulanan";
 }
 function methodLabel(value: string) {
   return value === "cash" ? "Kas" : "Transfer bank";

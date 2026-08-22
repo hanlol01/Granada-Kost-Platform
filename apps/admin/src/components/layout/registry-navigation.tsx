@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Building2,
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
@@ -256,9 +255,11 @@ export function RegistrySidebar() {
           expanded ? "gap-3 px-6" : "justify-center px-3",
         )}
       >
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-          <Building2 className="h-5 w-5" />
-        </div>
+        <img
+          src="/images/brand/kostation-mark.png"
+          alt="Kostation"
+          className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-sm"
+        />
         {expanded ? (
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-sidebar-foreground">Kos Management</p>

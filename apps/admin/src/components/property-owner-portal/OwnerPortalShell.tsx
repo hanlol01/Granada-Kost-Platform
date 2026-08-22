@@ -79,9 +79,11 @@ function OwnerPortalSidebar({ ownerName, historical }: { ownerName: string; hist
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
       <div className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
-          <Building2 className="h-5 w-5" />
-        </div>
+        <img
+          src="/images/brand/kostation-mark.png"
+          alt="Kostation"
+          className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-sm"
+        />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">Kostation</p>
           <p className="truncate text-xs text-sidebar-foreground/65">Portal Pemilik Properti</p>

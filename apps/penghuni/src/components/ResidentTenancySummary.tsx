@@ -1,6 +1,6 @@
 import { BadgeCheck, CalendarDays, DoorOpen, Home, type LucideIcon } from "lucide-react";
 import type { PenghuniProfileView } from "@/hooks/usePenghuniProfile";
-import { formatDate } from "@/lib/format";
+import { formatDate, paymentPlanLabel } from "@/lib/format";
 
 type ResidentTenancySummaryProps = {
   profile: PenghuniProfileView;
@@ -57,7 +57,7 @@ export function ResidentTenancySummary({ profile }: ResidentTenancySummaryProps)
         <SummaryItem
           icon={CalendarDays}
           label="Skema pembayaran"
-          value={profile.paymentPlanType ?? "Belum tersedia"}
+          value={paymentPlanLabel(profile.paymentPlanType)}
         />
       </div>
     </section>

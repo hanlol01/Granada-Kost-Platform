@@ -36,6 +36,24 @@ export function formatPeriodKey(key: string | null | undefined): string {
   return `${months[m - 1]} ${year}`;
 }
 
+/** Convert backend payment-plan codes into resident-facing Indonesian copy. */
+export function paymentPlanLabel(value: string | null | undefined): string {
+  if (!value) return "Belum tersedia";
+  switch (value) {
+    case "annual_full":
+      return "Tahunan penuh";
+    case "monthly":
+    case "monthly_installments":
+    case "monthly_full":
+      return "Angsuran bulanan";
+    case "bi_monthly":
+    case "two_month_installments":
+      return "Angsuran setiap 2 bulan";
+    default:
+      return "Skema pembayaran tersedia";
+  }
+}
+
 export function daysUntil(iso: string | Date | null | undefined): number | null {
   if (!iso) return null;
   const date = typeof iso === "string" ? new Date(iso) : iso;

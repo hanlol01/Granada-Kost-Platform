@@ -120,6 +120,50 @@ export type OwnerResourcePage = {
   limit: number;
 };
 
+/**
+ * Safe, room-scoped resident context for the read-only Property Owner portal.
+ * This must never grow into the Admin resident profile: identifiers, contacts,
+ * documents, payment evidence, and internal notes are intentionally excluded.
+ */
+export type OwnerOccupancyResidentDetail = {
+  resident: { displayName: string; occupancyStartDate: string } | null;
+  room: {
+    roomCode: string;
+    roomStatus: RoomStatus;
+    kostType: OwnerKostType;
+    buildingCode: string;
+    buildingName: string;
+  };
+  occupancy: { status: "active"; startDate: string } | null;
+  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  billing: {
+    state: "current" | "partially_paid" | "overdue" | "settled" | "not_available";
+    rentInvoiced: Money;
+    rentVerified: Money;
+    rentOutstanding: Money;
+    invoiceCount: number;
+    overdueCount: number;
+    nextDueDate: string | null;
+    installmentPaid: number;
+    installmentTotal: number;
+    installmentNextDueDate: string | null;
+    securityDepositRequired: Money;
+    depositCollected: Money;
+    depositDeducted: Money;
+    depositRefunded: Money;
+    depositBalance: Money;
+  };
+  operations: {
+    openComplaints: number;
+    openMaintenance: number;
+    transferState: string | null;
+    renewalState: string | null;
+    checkoutState: string | null;
+    activeVehicleCount: number;
+    assignedParkingCount: number;
+  };
+};
+
 export type OwnerReport = {
   period: { period: string; start: string; end: string };
   scopeChecksum: string;
@@ -286,6 +330,50 @@ export type OwnerFinance = {
     recordedAt: string;
     payoutKind: "payout" | "reversal";
     payoutAmount: Money;
+  }>;
+};
+
+/** Safe collection progress for current active leases. It is not owner revenue or payout. */
+export type OwnerCollectionProgress = {
+  summary: {
+    activeLeaseCount: number;
+    overdueLeaseCount: number;
+    h7LeaseCount: number;
+    checkpointAttentionCount: number;
+    rentOutstanding: Money;
+  };
+  items: Array<{
+    room: { code: string; buildingCode: string; buildingName: string };
+    resident: { displayName: string };
+    lease: { status: "active"; startDate: string; endDate: string | null };
+    billing: {
+      state: "not_available" | "current" | "partially_paid" | "settled" | "overdue";
+      rentInvoiced: Money;
+      rentVerified: Money;
+      rentOutstanding: Money;
+      invoiceCount: number;
+      overdueCount: number;
+      h7Count: number;
+      nextDueDate: string | null;
+      installmentTotal: number;
+      installmentPaid: number;
+      installmentNextDueDate: string | null;
+    };
+    securityDeposit: { required: Money; collected: Money; deducted: Money; refunded: Money; balance: Money };
+    settlement: {
+      state: string | null;
+      originalDueAt: string | null;
+      effectiveDueAt: string | null;
+      outstandingAmount: Money;
+      reminderStage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
+      checkpoint: {
+        dueAt: string | null;
+        requiredAmount: Money;
+        receivedAmount: Money;
+        remainingAmount: Money;
+        status: "not_available" | "not_required" | "met" | "pending" | "overdue";
+      };
+    };
   }>;
 };
 
@@ -770,6 +858,225 @@ export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
     total: count(root.total, "resource_page.total"),
     offset: count(root.offset, "resource_page.offset"),
     limit: count(root.limit, "resource_page.limit"),
+  };
+}
+
+export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupancyResidentDetail {
+  const root = exact(
+    value,
+    ["resident", "room", "occupancy", "lease", "billing", "operations"],
+    "occupancy_resident_detail",
+  );
+  const room = exact(
+    root.room,
+    ["room_code", "room_status", "kost_type", "building_code", "building_name"],
+    "occupancy_resident_detail.room",
+  );
+  const billing = exact(
+    root.billing,
+    [
+      "state",
+      "rent_invoiced",
+      "rent_verified",
+      "rent_outstanding",
+      "invoice_count",
+      "overdue_count",
+      "next_due_date",
+      "installment_paid",
+      "installment_total",
+      "installment_next_due_date",
+      "security_deposit_required",
+      "deposit_collected",
+      "deposit_deducted",
+      "deposit_refunded",
+      "deposit_balance",
+    ],
+    "occupancy_resident_detail.billing",
+  );
+  const operations = exact(
+    root.operations,
+    [
+      "open_complaints",
+      "open_maintenance",
+      "transfer_state",
+      "renewal_state",
+      "checkout_state",
+      "active_vehicle_count",
+      "assigned_parking_count",
+    ],
+    "occupancy_resident_detail.operations",
+  );
+  const resident =
+    root.resident === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.resident,
+            ["display_name", "occupancy_start_date"],
+            "occupancy_resident_detail.resident",
+          );
+          return {
+            displayName: string(
+              parsed.display_name,
+              "occupancy_resident_detail.resident.display_name",
+            ),
+            occupancyStartDate: date(
+              parsed.occupancy_start_date,
+              "occupancy_resident_detail.resident.occupancy_start_date",
+            ),
+          };
+        })();
+  const occupancy =
+    root.occupancy === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.occupancy,
+            ["occupancy_status", "start_date"],
+            "occupancy_resident_detail.occupancy",
+          );
+          return {
+            status: enumValue(
+              parsed.occupancy_status,
+              ["active"],
+              "occupancy_resident_detail.occupancy.status",
+            ),
+            startDate: date(parsed.start_date, "occupancy_resident_detail.occupancy.start_date"),
+          };
+        })();
+  const lease =
+    root.lease === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.lease,
+            ["status", "start_date", "end_date"],
+            "occupancy_resident_detail.lease",
+          );
+          return {
+            status: enumValue<LeaseStatus>(
+              parsed.status,
+              [
+                "draft",
+                "awaiting_activation",
+                "active",
+                "ended",
+                "completed",
+                "cancelled",
+                "transferred",
+              ],
+              "occupancy_resident_detail.lease.status",
+            ),
+            startDate: date(parsed.start_date, "occupancy_resident_detail.lease.start_date"),
+            endDate:
+              parsed.end_date === null
+                ? null
+                : date(parsed.end_date, "occupancy_resident_detail.lease.end_date"),
+          };
+        })();
+  return {
+    resident,
+    room: {
+      roomCode: string(room.room_code, "occupancy_resident_detail.room.room_code"),
+      roomStatus: enumValue(
+        room.room_status,
+        ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+        "occupancy_resident_detail.room.room_status",
+      ),
+      kostType: enumValue(
+        room.kost_type,
+        ["rukost", "apartkost"],
+        "occupancy_resident_detail.room.kost_type",
+      ),
+      buildingCode: string(room.building_code, "occupancy_resident_detail.room.building_code"),
+      buildingName: string(room.building_name, "occupancy_resident_detail.room.building_name"),
+    },
+    occupancy,
+    lease,
+    billing: {
+      state: enumValue(
+        billing.state,
+        ["current", "partially_paid", "overdue", "settled", "not_available"],
+        "occupancy_resident_detail.billing.state",
+      ),
+      rentInvoiced: money(billing.rent_invoiced, "occupancy_resident_detail.billing.rent_invoiced"),
+      rentVerified: money(billing.rent_verified, "occupancy_resident_detail.billing.rent_verified"),
+      rentOutstanding: money(
+        billing.rent_outstanding,
+        "occupancy_resident_detail.billing.rent_outstanding",
+      ),
+      invoiceCount: count(billing.invoice_count, "occupancy_resident_detail.billing.invoice_count"),
+      overdueCount: count(billing.overdue_count, "occupancy_resident_detail.billing.overdue_count"),
+      nextDueDate:
+        billing.next_due_date === null
+          ? null
+          : date(billing.next_due_date, "occupancy_resident_detail.billing.next_due_date"),
+      installmentPaid: count(
+        billing.installment_paid,
+        "occupancy_resident_detail.billing.installment_paid",
+      ),
+      installmentTotal: count(
+        billing.installment_total,
+        "occupancy_resident_detail.billing.installment_total",
+      ),
+      installmentNextDueDate:
+        billing.installment_next_due_date === null
+          ? null
+          : date(
+              billing.installment_next_due_date,
+              "occupancy_resident_detail.billing.installment_next_due_date",
+            ),
+      securityDepositRequired: money(
+        billing.security_deposit_required,
+        "occupancy_resident_detail.billing.security_deposit_required",
+      ),
+      depositCollected: money(
+        billing.deposit_collected,
+        "occupancy_resident_detail.billing.deposit_collected",
+      ),
+      depositDeducted: money(
+        billing.deposit_deducted,
+        "occupancy_resident_detail.billing.deposit_deducted",
+      ),
+      depositRefunded: money(
+        billing.deposit_refunded,
+        "occupancy_resident_detail.billing.deposit_refunded",
+      ),
+      depositBalance: money(
+        billing.deposit_balance,
+        "occupancy_resident_detail.billing.deposit_balance",
+      ),
+    },
+    operations: {
+      openComplaints: count(
+        operations.open_complaints,
+        "occupancy_resident_detail.operations.open_complaints",
+      ),
+      openMaintenance: count(
+        operations.open_maintenance,
+        "occupancy_resident_detail.operations.open_maintenance",
+      ),
+      transferState: nullableString(
+        operations.transfer_state,
+        "occupancy_resident_detail.operations.transfer_state",
+      ),
+      renewalState: nullableString(
+        operations.renewal_state,
+        "occupancy_resident_detail.operations.renewal_state",
+      ),
+      checkoutState: nullableString(
+        operations.checkout_state,
+        "occupancy_resident_detail.operations.checkout_state",
+      ),
+      activeVehicleCount: count(
+        operations.active_vehicle_count,
+        "occupancy_resident_detail.operations.active_vehicle_count",
+      ),
+      assignedParkingCount: count(
+        operations.assigned_parking_count,
+        "occupancy_resident_detail.operations.assigned_parking_count",
+      ),
+    },
   };
 }
 
@@ -1302,12 +1609,87 @@ export function formatOwnerMoney(value: Money): string {
   }).format(BigInt(value));
 }
 
+export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionProgress {
+  const root = exact(value, ["summary", "items"], "collection_progress");
+  const summary = exact(
+    root.summary,
+    ["active_lease_count", "overdue_lease_count", "h7_lease_count", "checkpoint_attention_count", "rent_outstanding"],
+    "collection_progress.summary",
+  );
+  return {
+    summary: {
+      activeLeaseCount: count(summary.active_lease_count, "collection_progress.summary.active_lease_count"),
+      overdueLeaseCount: count(summary.overdue_lease_count, "collection_progress.summary.overdue_lease_count"),
+      h7LeaseCount: count(summary.h7_lease_count, "collection_progress.summary.h7_lease_count"),
+      checkpointAttentionCount: count(
+        summary.checkpoint_attention_count,
+        "collection_progress.summary.checkpoint_attention_count",
+      ),
+      rentOutstanding: money(summary.rent_outstanding, "collection_progress.summary.rent_outstanding"),
+    },
+    items: list(root.items, "collection_progress.items", (value) => {
+      const item = exact(value, ["room", "resident", "lease", "billing", "security_deposit", "settlement"], "collection_progress.item");
+      const room = exact(item.room, ["code", "building_code", "building_name"], "collection_progress.item.room");
+      const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
+      const lease = exact(item.lease, ["status", "start_date", "end_date"], "collection_progress.item.lease");
+      const billing = exact(item.billing, ["state", "rent_invoiced", "rent_verified", "rent_outstanding", "invoice_count", "overdue_count", "h7_count", "next_due_date", "installment_total", "installment_paid", "installment_next_due_date"], "collection_progress.item.billing");
+      const deposit = exact(item.security_deposit, ["required", "collected", "deducted", "refunded", "balance"], "collection_progress.item.security_deposit");
+      const settlement = exact(item.settlement, ["state", "original_due_at", "effective_due_at", "outstanding_amount", "reminder_stage", "checkpoint"], "collection_progress.item.settlement");
+      const checkpoint = exact(settlement.checkpoint, ["due_at", "required_amount", "received_amount", "remaining_amount", "status"], "collection_progress.item.settlement.checkpoint");
+      const nullableDate = (input: unknown, field: string) => input === null ? null : date(input, field);
+      return {
+        room: { code: string(room.code, "collection_progress.item.room.code"), buildingCode: string(room.building_code, "collection_progress.item.room.building_code"), buildingName: string(room.building_name, "collection_progress.item.room.building_name") },
+        resident: { displayName: string(resident.display_name, "collection_progress.item.resident.display_name") },
+        lease: { status: enumValue(lease.status, ["active"] as const, "collection_progress.item.lease.status"), startDate: date(lease.start_date, "collection_progress.item.lease.start_date"), endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date") },
+        billing: {
+          state: enumValue(billing.state, ["not_available", "current", "partially_paid", "settled", "overdue"] as const, "collection_progress.item.billing.state"),
+          rentInvoiced: money(billing.rent_invoiced, "collection_progress.item.billing.rent_invoiced"),
+          rentVerified: money(billing.rent_verified, "collection_progress.item.billing.rent_verified"),
+          rentOutstanding: money(billing.rent_outstanding, "collection_progress.item.billing.rent_outstanding"),
+          invoiceCount: count(billing.invoice_count, "collection_progress.item.billing.invoice_count"),
+          overdueCount: count(billing.overdue_count, "collection_progress.item.billing.overdue_count"),
+          h7Count: count(billing.h7_count, "collection_progress.item.billing.h7_count"),
+          nextDueDate: nullableDate(billing.next_due_date, "collection_progress.item.billing.next_due_date"),
+          installmentTotal: count(billing.installment_total, "collection_progress.item.billing.installment_total"),
+          installmentPaid: count(billing.installment_paid, "collection_progress.item.billing.installment_paid"),
+          installmentNextDueDate: nullableDate(billing.installment_next_due_date, "collection_progress.item.billing.installment_next_due_date"),
+        },
+        securityDeposit: {
+          required: money(deposit.required, "collection_progress.item.security_deposit.required"),
+          collected: money(deposit.collected, "collection_progress.item.security_deposit.collected"),
+          deducted: money(deposit.deducted, "collection_progress.item.security_deposit.deducted"),
+          refunded: money(deposit.refunded, "collection_progress.item.security_deposit.refunded"),
+          balance: money(deposit.balance, "collection_progress.item.security_deposit.balance"),
+        },
+        settlement: {
+          state: nullableString(settlement.state, "collection_progress.item.settlement.state"),
+          originalDueAt: nullableString(settlement.original_due_at, "collection_progress.item.settlement.original_due_at"),
+          effectiveDueAt: nullableString(settlement.effective_due_at, "collection_progress.item.settlement.effective_due_at"),
+          outstandingAmount: money(settlement.outstanding_amount, "collection_progress.item.settlement.outstanding_amount"),
+          reminderStage: settlement.reminder_stage === null ? null : enumValue(settlement.reminder_stage, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "collection_progress.item.settlement.reminder_stage"),
+          checkpoint: {
+            dueAt: nullableString(checkpoint.due_at, "collection_progress.item.settlement.checkpoint.due_at"),
+            requiredAmount: money(checkpoint.required_amount, "collection_progress.item.settlement.checkpoint.required_amount"),
+            receivedAmount: money(checkpoint.received_amount, "collection_progress.item.settlement.checkpoint.received_amount"),
+            remainingAmount: money(checkpoint.remaining_amount, "collection_progress.item.settlement.checkpoint.remaining_amount"),
+            status: enumValue(checkpoint.status, ["not_available", "not_required", "met", "pending", "overdue"] as const, "collection_progress.item.settlement.checkpoint.status"),
+          },
+        },
+      };
+    }),
+  };
+}
+
 export const propertyOwnerPortalApi = {
   get: () => apiClient.get<unknown>("/my/property-owner/portal").then(parseOwnerPortal),
   getAssets: (query: Record<string, string | number | undefined>) =>
     apiClient.get<unknown>("/my/property-owner/assets", { query }).then(parseOwnerResourcePage),
   getOccupancy: (query: Record<string, string | number | undefined>) =>
     apiClient.get<unknown>("/my/property-owner/occupancy", { query }).then(parseOwnerResourcePage),
+  getOccupancyResidentDetail: (roomCode: string) =>
+    apiClient
+      .get<unknown>(`/my/property-owner/occupancy/${encodeURIComponent(roomCode)}/resident`)
+      .then(parseOwnerOccupancyResidentDetail),
   getAssetDetail: (roomCode: string) =>
     apiClient
       .get<unknown>(`/my/property-owner/assets/${encodeURIComponent(roomCode)}`)
@@ -1320,6 +1702,8 @@ export const propertyOwnerPortalApi = {
     apiClient
       .get<unknown>("/my/property-owner/finance", { query: { period } })
       .then(parseOwnerFinance),
+  collectionProgress: () =>
+    apiClient.get<unknown>("/my/property-owner/collection-progress").then(parseOwnerCollectionProgress),
 };
 export async function downloadOwnerReport(period: string, format: "pdf" | "xlsx"): Promise<void> {
   const token = getAccessToken();

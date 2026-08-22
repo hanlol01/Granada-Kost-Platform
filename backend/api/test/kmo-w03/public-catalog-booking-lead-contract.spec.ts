@@ -5,6 +5,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { CreatePublicBookingLeadDto } from '../../src/modules/booking-lead/dto/create-public-booking-lead.dto';
 import { BookingLeadService } from '../../src/modules/booking-lead/booking-lead.service';
 import { BookingLeadRepository } from '../../src/modules/booking-lead/repositories/booking-lead.repository';
 import type { BookingLeadRecord } from '../../src/modules/booking-lead/types/booking-lead.types';
@@ -13,6 +16,21 @@ const projectRoot = existsSync(resolve(process.cwd(), 'apps'))
   ? process.cwd()
   : resolve(process.cwd(), '../..');
 const read = (path: string) => readFileSync(resolve(projectRoot, path), 'utf8');
+
+function jakartaDateIn(days: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? '';
+  const date = new Date(
+    Date.UTC(Number(part('year')), Number(part('month')) - 1, Number(part('day')) + days),
+  );
+  return date.toISOString().slice(0, 10);
+}
 
 function initializePostgres(bin: string, prefix: string): string {
   const directory = mkdtempSync(join(tmpdir(), prefix));
@@ -63,6 +81,8 @@ const migrationPrelude = `
 
 const migrationPath =
   'backend/api/src/infrastructure/database/migrations/024_public_booking_lead_contact.sql';
+const optionalEmailMigrationPath =
+  'backend/api/src/infrastructure/database/migrations/047_public_booking_lead_optional_email.sql';
 
 test('W03 public catalog is category-only and excludes internal inventory fields', () => {
   const service = read('backend/api/src/modules/room/public-hunian-catalog.service.ts');
@@ -76,11 +96,14 @@ test('W03 public catalog is category-only and excludes internal inventory fields
   assert.match(service, /securityDepositMonths/);
 });
 
-test('W03 public lead has strict contact, consent, and no room authority', () => {
+test('W03 public lead has WhatsApp contact, optional email, consent, and no room authority', () => {
   const dto = read('backend/api/src/modules/booking-lead/dto/create-public-booking-lead.dto.ts');
   const service = read('backend/api/src/modules/booking-lead/booking-lead.service.ts');
   const controller = read('backend/api/src/modules/booking-lead/public-booking-lead.controller.ts');
-  assert.match(dto, /visitorEmail/);
+  assert.match(
+    dto,
+    /@IsOptional\(\)\s+@optionalTrim\s+@IsEmail\(\)\s+@MaxLength\(254\)\s+visitorEmail\?: string;/,
+  );
   assert.match(dto, /visitorUniversity!/);
   assert.match(dto, /consent/);
   assert.doesNotMatch(dto, /roomId|propertyId|buildingCode|floorCode/);
@@ -91,6 +114,24 @@ test('W03 public lead has strict contact, consent, and no room authority', () =>
   assert.match(service, /writePublicCreatedEvent/);
   assert.match(service, /BOOKING_LEAD_IDEMPOTENCY_KEY_REUSED/);
   assert.doesNotMatch(service, /updateRoom|updateStatus\(.*public/);
+});
+
+test('public booking lead accepts a missing email when WhatsApp contact and consent are valid', async () => {
+  const dto = plainToInstance(CreatePublicBookingLeadDto, {
+    category: 'rukost',
+    gender: 'female',
+    visitorName: 'Calon penghuni',
+    visitorPhone: '08123456789',
+    visitorUniversity: 'Universitas Test',
+    consent: true,
+  });
+
+  const errors = await validate(dto);
+  assert.equal(
+    errors.find((error) => error.property === 'visitorEmail'),
+    undefined,
+    'visitorEmail is optional when the required WhatsApp contact and consent are present',
+  );
 });
 
 test('public lead creation is one locked transaction with atomic safe evidence', async () => {
@@ -145,8 +186,9 @@ test('public lead creation is one locked transaction with atomic safe evidence',
       calls.push('duplicate');
       return null;
     },
-    create: async (_input: unknown, transactionClient: unknown) => {
+    create: async (input: { visitorEmail?: string }, transactionClient: unknown) => {
       assert.equal(transactionClient, client);
+      assert.equal(input.visitorEmail, undefined);
       calls.push('create');
       return lead;
     },
@@ -175,10 +217,9 @@ test('public lead creation is one locked transaction with atomic safe evidence',
       category: 'rukost',
       gender: 'female',
       visitorName: 'Calon penghuni',
-      visitorEmail: 'calon@example.test',
       visitorPhone: '081111111111',
       visitorUniversity: 'Universitas Demo',
-      preferredMoveInDate: '2026-08-15',
+      preferredMoveInDate: jakartaDateIn(7),
       consent: true,
     },
     { idempotencyKey: 'public-test-key-0001' },
@@ -418,6 +459,79 @@ test('migration 024 is checksum-addressed and additive', () => {
   assert.match(migration, /booking_leads_public_contact_authority_check/);
   assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM|UPDATE rooms/i);
   const checksum = createHash('sha256').update(read(path)).digest('hex');
+  assert.match(
+    read('backend/api/src/infrastructure/database/scripts/migration-manifest.ts'),
+    new RegExp(checksum),
+  );
+});
+
+void test(
+  'migration 047 accepts an email-free public lead while preserving consent authority',
+  { skip: !process.env.KOSTATION_POSTGRES_BIN },
+  () => {
+    const bin = process.env.KOSTATION_POSTGRES_BIN!;
+    const directory = initializePostgres(bin, 'kostation-w03-optional-email-');
+    try {
+      const proof = `${migrationPrelude}
+        ${read(migrationPath)}
+        ${read(optionalEmailMigrationPath)}
+        DO $proof$
+        BEGIN
+          INSERT INTO booking_leads (
+            id, property_id, category, gender, visitor_name, visitor_phone,
+            visitor_email, visitor_university, consent_at, consent_version, source
+          ) VALUES (
+            '30000000-0000-4000-8000-000000000009',
+            '20000000-0000-4000-8000-000000000001', 'rukost', 'female',
+            'WhatsApp only', '6281111111111', NULL, 'Universitas Demo',
+            now(), 'public-lead-v1', 'public_kamar'
+          );
+          BEGIN
+            INSERT INTO booking_leads (
+              id, property_id, category, gender, visitor_name, visitor_phone,
+              visitor_email, visitor_university, consent_at, consent_version, source
+            ) VALUES (
+              '30000000-0000-4000-8000-000000000010',
+              '20000000-0000-4000-8000-000000000001', 'rukost', 'female',
+              'Missing university', '6281111111111', NULL, NULL,
+              now(), 'public-lead-v1', 'public_kamar'
+            );
+            RAISE EXCEPTION 'W03_OPTIONAL_EMAIL_REMOVED_CONSENT_AUTHORITY';
+          EXCEPTION WHEN check_violation THEN NULL;
+          END;
+        END
+        $proof$;
+        ${read(optionalEmailMigrationPath)}
+        DO $replay$
+        BEGIN
+          IF (SELECT count(*) FROM booking_leads WHERE id = '30000000-0000-4000-8000-000000000009') <> 1
+            OR NOT EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conname = 'booking_leads_public_contact_authority_check'
+                AND conrelid = 'booking_leads'::regclass
+            )
+          THEN
+            RAISE EXCEPTION 'W03_OPTIONAL_EMAIL_REPLAY_DID_NOT_CONVERGE';
+          END IF;
+        END
+        $replay$;`;
+      const result = runSingleUser(bin, directory, proof);
+      assert.equal(result.status, 0, 'disposable optional-email migration proof failed');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test('migration 047 is checksum-addressed and only relaxes public email presence', () => {
+  const migration = read(optionalEmailMigrationPath);
+  assert.match(migration, /DROP CONSTRAINT IF EXISTS booking_leads_public_contact_authority_check/);
+  assert.match(migration, /visitor_university IS NOT NULL/);
+  assert.match(migration, /consent_at IS NOT NULL/);
+  assert.match(migration, /consent_version = 'public-lead-v1'/);
+  assert.doesNotMatch(migration, /visitor_email IS NOT NULL/);
+  assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM|UPDATE booking_leads/i);
+  const checksum = createHash('sha256').update(migration).digest('hex');
   assert.match(
     read('backend/api/src/infrastructure/database/scripts/migration-manifest.ts'),
     new RegExp(checksum),

@@ -416,4 +416,20 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_purpose_check' AND pg_get_constraintdef(oid) ILIKE '%expense_proof%')",
     ],
   },
+  {
+    version: '046_category_content_republish_same_day.sql',
+    checksumSha256: '66bda5c9482b0cf7b1431695f9ce176cc9e38f2746a474943eb95adf7369a4d1',
+    sentinels: [
+      "to_regclass('public.uq_kost_type_content_versions_published_effective') IS NOT NULL",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='kost_type_content_versions_unique_effective' AND conrelid=to_regclass('public.kost_type_content_versions'))",
+    ],
+  },
+  {
+    version: '047_public_booking_lead_optional_email.sql',
+    checksumSha256: '40e835306052110da289596fb6aa54619db0c41fc4036d34773ca131961e2189',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_leads_public_contact_authority_check' AND conrelid=to_regclass('public.booking_leads') AND pg_get_constraintdef(oid) ILIKE '%visitor_university IS NOT NULL%')",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_leads_public_contact_authority_check' AND conrelid=to_regclass('public.booking_leads') AND pg_get_constraintdef(oid) ILIKE '%visitor_email IS NOT NULL%')",
+    ],
+  },
 ] as const;

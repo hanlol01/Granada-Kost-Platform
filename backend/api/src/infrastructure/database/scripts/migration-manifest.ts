@@ -432,4 +432,12 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_leads_public_contact_authority_check' AND conrelid=to_regclass('public.booking_leads') AND pg_get_constraintdef(oid) ILIKE '%visitor_email IS NOT NULL%')",
     ],
   },
+  {
+    version: '048_pre_activation_lease_cancellation.sql',
+    checksumSha256: '2d51d2503482d8d11a98e1ec78b54d3ad6566a16a0712bac0e554625d50560d9',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_contract_settlements_state_check' AND conrelid=to_regclass('public.lease_contract_settlements') AND pg_get_constraintdef(oid) ILIKE '%cancelled%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_contract_settlements_activation_check' AND conrelid=to_regclass('public.lease_contract_settlements') AND pg_get_constraintdef(oid) ILIKE '%cancelled%')",
+    ],
+  },
 ] as const;

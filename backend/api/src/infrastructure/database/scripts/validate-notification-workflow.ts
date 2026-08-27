@@ -76,13 +76,20 @@ async function request<T>(
   const data = text ? JSON.parse(text) : {};
 
   if (response.status !== expectedStatus) {
-    throw new Error(`${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`);
+    throw new Error(
+      `${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`,
+    );
   }
 
   return data as T;
 }
 
-async function requestDenied(method: string, path: string, token: string, body?: unknown): Promise<number> {
+async function requestDenied(
+  method: string,
+  path: string,
+  token: string,
+  body?: unknown,
+): Promise<number> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
@@ -102,7 +109,10 @@ async function requestDenied(method: string, path: string, token: string, body?:
 }
 
 async function validationToken(client: PoolClient, email: string): Promise<string> {
-  const userResult = await client.query<{ id: string }>('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+  const userResult = await client.query<{ id: string }>(
+    'SELECT id FROM users WHERE lower(email) = lower($1)',
+    [email],
+  );
   const user = userResult.rows[0];
   if (!user) {
     throw new Error(`Validation user not found: ${email}. Run db:seed:dev first.`);
@@ -207,7 +217,7 @@ async function main(): Promise<void> {
   try {
     await resetNotificationSeedState(client);
 
-    const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+    const adminToken = await validationToken(client, 'admin.diki@kostation.com');
     const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
     const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
 
@@ -217,11 +227,15 @@ async function main(): Promise<void> {
       residentAlphaToken,
     );
     assert(
-      alphaNotifications.some((notification) => notification.id === CORE_SEED_IDS.devNotifications.invoiceIssued),
+      alphaNotifications.some(
+        (notification) => notification.id === CORE_SEED_IDS.devNotifications.invoiceIssued,
+      ),
       'user cannot see own notification',
     );
     assert(
-      !alphaNotifications.some((notification) => notification.id === CORE_SEED_IDS.devNotifications.billingOverdue),
+      !alphaNotifications.some(
+        (notification) => notification.id === CORE_SEED_IDS.devNotifications.billingOverdue,
+      ),
       'user can see another user notification',
     );
 
@@ -230,10 +244,20 @@ async function main(): Promise<void> {
       `/my/notifications/${CORE_SEED_IDS.devNotifications.billingOverdue}/read`,
       residentAlphaToken,
     );
-    assert(deniedStatus === 404, `other user notification read should return 404, got ${deniedStatus}`);
+    assert(
+      deniedStatus === 404,
+      `other user notification read should return 404, got ${deniedStatus}`,
+    );
 
-    const unreadBefore = await request<UnreadCountResponse>('GET', '/my/notifications/unread-count', residentAlphaToken);
-    assert(unreadBefore.unread_count === 2, `unread count expected 2, got ${unreadBefore.unread_count}`);
+    const unreadBefore = await request<UnreadCountResponse>(
+      'GET',
+      '/my/notifications/unread-count',
+      residentAlphaToken,
+    );
+    assert(
+      unreadBefore.unread_count === 2,
+      `unread count expected 2, got ${unreadBefore.unread_count}`,
+    );
 
     const readNotification = await request<NotificationResponse>(
       'POST',
@@ -244,14 +268,37 @@ async function main(): Promise<void> {
     );
     assert(readNotification.notification_status === 'read', 'mark as read did not set read status');
 
-    const unreadAfterRead = await request<UnreadCountResponse>('GET', '/my/notifications/unread-count', residentAlphaToken);
-    assert(unreadAfterRead.unread_count === 1, `unread count after read expected 1, got ${unreadAfterRead.unread_count}`);
+    const unreadAfterRead = await request<UnreadCountResponse>(
+      'GET',
+      '/my/notifications/unread-count',
+      residentAlphaToken,
+    );
+    assert(
+      unreadAfterRead.unread_count === 1,
+      `unread count after read expected 1, got ${unreadAfterRead.unread_count}`,
+    );
 
-    const readAll = await request<{ updatedCount: number }>('POST', '/my/notifications/read-all', residentAlphaToken, undefined, 201);
-    assert(readAll.updatedCount === 1, `read all expected to update 1 notification, got ${readAll.updatedCount}`);
+    const readAll = await request<{ updatedCount: number }>(
+      'POST',
+      '/my/notifications/read-all',
+      residentAlphaToken,
+      undefined,
+      201,
+    );
+    assert(
+      readAll.updatedCount === 1,
+      `read all expected to update 1 notification, got ${readAll.updatedCount}`,
+    );
 
-    const unreadAfterReadAll = await request<UnreadCountResponse>('GET', '/my/notifications/unread-count', residentAlphaToken);
-    assert(unreadAfterReadAll.unread_count === 0, `unread count after read all expected 0, got ${unreadAfterReadAll.unread_count}`);
+    const unreadAfterReadAll = await request<UnreadCountResponse>(
+      'GET',
+      '/my/notifications/unread-count',
+      residentAlphaToken,
+    );
+    assert(
+      unreadAfterReadAll.unread_count === 0,
+      `unread count after read all expected 0, got ${unreadAfterReadAll.unread_count}`,
+    );
 
     const archived = await request<NotificationResponse>(
       'POST',
@@ -262,9 +309,16 @@ async function main(): Promise<void> {
     );
     assert(archived.notification_status === 'archived', 'archive did not set archived status');
 
-    const preference = await request<PreferenceResponse>('GET', '/my/notification-preferences', residentAlphaToken);
+    const preference = await request<PreferenceResponse>(
+      'GET',
+      '/my/notification-preferences',
+      residentAlphaToken,
+    );
     assert(preference.email_enabled === true, 'preference get did not return email enabled');
-    assert(preference.whatsapp_enabled === false, 'preference get did not return WhatsApp disabled');
+    assert(
+      preference.whatsapp_enabled === false,
+      'preference get did not return WhatsApp disabled',
+    );
 
     const updatedPreference = await request<PreferenceResponse>(
       'PATCH',
@@ -279,13 +333,23 @@ async function main(): Promise<void> {
       `/notifications/deliveries?property_id=${CORE_SEED_IDS.granadaProperty}&limit=50&offset=0`,
       adminToken,
     );
-    assert(deliveries.length >= 5, `admin delivery list expected at least 5, got ${deliveries.length}`);
     assert(
-      deliveries.every((delivery) => !delivery.recipient_address && !delivery.content_snapshot && !delivery.provider_secret),
+      deliveries.length >= 5,
+      `admin delivery list expected at least 5, got ${deliveries.length}`,
+    );
+    assert(
+      deliveries.every(
+        (delivery) =>
+          !delivery.recipient_address && !delivery.content_snapshot && !delivery.provider_secret,
+      ),
       'delivery response exposes raw recipient address, content snapshot, or provider secret',
     );
     assert(
-      deliveries.some((delivery) => delivery.recipient_address_masked && delivery.recipient_address_masked !== 'dev.resident.alpha@kostation.test'),
+      deliveries.some(
+        (delivery) =>
+          delivery.recipient_address_masked &&
+          delivery.recipient_address_masked !== 'dev.resident.alpha@kostation.test',
+      ),
       'delivery response did not expose a masked recipient address',
     );
 
@@ -309,8 +373,14 @@ async function main(): Promise<void> {
 
     const settings = await notificationSettings(client);
     assert(settings.notification_retention_days === 90, 'retention settings should be 90 days');
-    assert(settings.notification_email_enabled === true, 'Brevo/email should be enabled by default');
-    assert(settings.notification_whatsapp_enabled === false, 'Fonnte/WhatsApp should be disabled by default');
+    assert(
+      settings.notification_email_enabled === true,
+      'Brevo/email should be enabled by default',
+    );
+    assert(
+      settings.notification_whatsapp_enabled === false,
+      'Fonnte/WhatsApp should be disabled by default',
+    );
     assert(settings.notification_push_enabled === false, 'push should be disabled by default');
 
     await requestDenied('GET', '/notifications/deliveries', residentBravoToken);

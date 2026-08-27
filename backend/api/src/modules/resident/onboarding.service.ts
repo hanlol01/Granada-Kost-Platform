@@ -712,8 +712,22 @@ export class OnboardingService {
           );
         if (lead)
           await client.query(
-            `UPDATE booking_leads SET status='onboarding',resident_id=$2,onboarding_commitment_id=$3,updated_at=now() WHERE id=$1`,
-            [lead.id, residentId, commitment.rows[0].id],
+            `UPDATE booking_leads
+             SET status='onboarding',
+                 resident_id=$2,
+                 onboarding_commitment_id=$3,
+                 lease_id=$4,
+                 preferred_move_in_date=$5::date,
+                 updated_at=now()
+             WHERE id=$1 AND property_id=$6`,
+            [
+              lead.id,
+              residentId,
+              commitment.rows[0].id,
+              lease.rows[0].id,
+              dto.start_date,
+              dto.property_id,
+            ],
           );
         await this.audit.write(
           {

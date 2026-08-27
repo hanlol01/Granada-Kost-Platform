@@ -11,6 +11,7 @@ import {
   requestAdminBookingLeadPage,
   requestBookingLeadProgress,
   type BookingLeadCategory,
+  type BookingLeadDisplayStatus,
   type BookingLeadGender,
   type BookingLeadListFilters,
   type BookingLeadRecord,
@@ -26,9 +27,11 @@ export type {
   BookingLeadGender,
   BookingLeadRecord,
   BookingLeadStatus,
+  BookingLeadDisplayStatus,
   BookingLeadProgress,
   BookingLeadSource,
 } from "@/lib/admin-booking-lead";
+export { bookingLeadDisplayStatus } from "@/lib/admin-booking-lead";
 
 export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   new: "Baru",
@@ -42,6 +45,10 @@ export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   rejected: "Ditolak",
   expired: "Kedaluwarsa",
   cancelled: "Dibatalkan",
+};
+export const BOOKING_LEAD_DISPLAY_STATUS_LABEL: Record<BookingLeadDisplayStatus, string> = {
+  ...BOOKING_LEAD_STATUS_LABEL,
+  awaiting_activation: "Menunggu Aktivasi",
 };
 
 export const BOOKING_LEAD_CATEGORY_LABEL: Record<BookingLeadCategory, string> = {

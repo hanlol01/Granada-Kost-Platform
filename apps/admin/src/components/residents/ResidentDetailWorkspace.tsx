@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Pencil,
   ReceiptText,
+  RotateCcw,
   ShieldCheck,
   TriangleAlert,
   WalletCards,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/W06PaymentsWorkspace";
+import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
 import { FileUploadField } from "@/components/file/FileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
@@ -54,6 +56,7 @@ import {
 } from "@/hooks/useAdminW06Billing";
 import { useLeaseActivation } from "@/hooks/useLeaseActivation";
 import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
+import { useBookingLeadProgress } from "@/hooks/useBookingLeads";
 import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
 import { useResidentBilling } from "@/hooks/useAdminW06Billing";
 import type { ResidentBilling } from "@/lib/admin-w06-billing";
@@ -520,11 +523,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const navigate = useNavigate();
   const detail = useResidentDetail(residentId);
   const tenancy = useResidentTenancy(residentId);
+  const bookingProgress = useBookingLeadProgress(tenancy.data?.bookingLeadId ?? null);
   const billing = useResidentBilling(currentPropertyId, tenancy.data ? residentId : null);
   const activation = useLeaseActivation();
   const [editOpen, setEditOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
+  const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
   const transferPanelRef = useRef<HTMLElement | null>(null);
@@ -573,6 +578,14 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const canManage = hasPermission("resident.manage");
   const canActivate =
     hasPermission("lease.manage") && currentTenancy?.leaseStatus === "awaiting_activation";
+  const canCancelAwaitingActivation = Boolean(
+    hasPermission("room.manage") &&
+    currentTenancy?.bookingLeadId &&
+    currentTenancy.leaseStatus === "awaiting_activation" &&
+    bookingProgress.data?.paymentCommitment &&
+    bookingProgress.data.paymentCommitment.paymentType !== "full_settlement" &&
+    !bookingProgress.data.cancellation,
+  );
   const summary = billing.data?.summary;
   const settlement = billing.data?.contract_settlement ?? null;
   const canManageBilling = hasPermission("billing.manage");
@@ -616,6 +629,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           {canManage ? (
             <Button variant="info" className="min-h-11" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1 h-4 w-4" /> Edit
+            </Button>
+          ) : null}
+          {canCancelAwaitingActivation && currentTenancy?.bookingLeadId ? (
+            <Button
+              variant="destructive"
+              className="min-h-11"
+              onClick={() => setCancellationOpen(true)}
+            >
+              <RotateCcw className="mr-1 h-4 w-4" /> Batalkan dan Refund
             </Button>
           ) : null}
           {canActivate ? (
@@ -1017,6 +1039,23 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         residentName={resident.fullName}
         residentPhone={resident.phone}
       />
+      {currentTenancy?.bookingLeadId ? (
+        <BookingLeadCancellationDialog
+          open={cancellationOpen}
+          leadId={currentTenancy.bookingLeadId}
+          residentName={resident.fullName}
+          roomNumber={currentTenancy.roomNumber}
+          onOpenChange={setCancellationOpen}
+          onCancelled={async () => {
+            await Promise.all([
+              detail.refetch(),
+              tenancy.refetch(),
+              billing.refetch(),
+              bookingProgress.refetch(),
+            ]);
+          }}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirmActivation}
         onOpenChange={setConfirmActivation}

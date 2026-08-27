@@ -12,6 +12,7 @@ export type BookingLeadStatus =
   | "rejected"
   | "expired"
   | "cancelled";
+export type BookingLeadDisplayStatus = BookingLeadStatus | "awaiting_activation";
 export type BookingLeadCategory = "rukost" | "apartkost";
 export type BookingLeadGender = "male" | "female";
 export type BookingLeadFloorCode = "A" | "B";
@@ -39,6 +40,19 @@ export type BookingLeadRecord = {
   visitorAddress: string | null;
   visitorUniversity: string | null;
 };
+
+/**
+ * A lease is already a completed tenancy before its occupancy is activated.
+ * Keep the persisted booking-lead lifecycle intact while exposing the actual
+ * operational state required by the booking-lead workspace.
+ */
+export function bookingLeadDisplayStatus(
+  lead: Pick<BookingLeadRecord, "status" | "activeLeaseStartDate">,
+): BookingLeadDisplayStatus {
+  return lead.status === "onboarding" && lead.activeLeaseStartDate
+    ? "awaiting_activation"
+    : lead.status;
+}
 
 export type QuickBookingDraft = {
   visitorName: string;

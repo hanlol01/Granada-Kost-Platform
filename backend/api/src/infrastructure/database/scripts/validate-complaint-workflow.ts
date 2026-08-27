@@ -62,7 +62,9 @@ async function request<T>(
   const data = text ? JSON.parse(text) : {};
 
   if (response.status !== expectedStatus) {
-    throw new Error(`${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`);
+    throw new Error(
+      `${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`,
+    );
   }
 
   return data as T;
@@ -84,7 +86,10 @@ async function requestDenied(method: string, path: string, token: string): Promi
 }
 
 async function validationToken(client: PoolClient, email: string): Promise<string> {
-  const userResult = await client.query<{ id: string }>('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+  const userResult = await client.query<{ id: string }>(
+    'SELECT id FROM users WHERE lower(email) = lower($1)',
+    [email],
+  );
   const user = userResult.rows[0];
   if (!user) {
     throw new Error(`Validation user not found: ${email}. Run db:seed:dev first.`);
@@ -134,7 +139,7 @@ async function main(): Promise<void> {
   const pool = new Pool(databaseConfigFromEnv());
   const client = await pool.connect();
 
-  const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+  const adminToken = await validationToken(client, 'admin.diki@kostation.com');
   const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
   const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
   const technicianToken = await validationToken(client, 'dev.technician.budi@kostation.test');
@@ -145,33 +150,61 @@ async function main(): Promise<void> {
     `/complaint-categories?property_id=${CORE_SEED_IDS.granadaProperty}`,
     adminToken,
   );
-  assert(categories.length === 10, `complaint categories count expected 10, got ${categories.length}`);
+  assert(
+    categories.length === 10,
+    `complaint categories count expected 10, got ${categories.length}`,
+  );
 
   const acCategory = categories.find((category) => category.normalizedCode === 'ac');
-  const commonFacilityCategory = categories.find((category) => category.normalizedCode === 'common_facility');
+  const commonFacilityCategory = categories.find(
+    (category) => category.normalizedCode === 'common_facility',
+  );
   assert(acCategory, 'ac complaint category not found');
   assert(commonFacilityCategory, 'common_facility complaint category not found');
 
-  const ownComplaint = await request<ComplaintResponse>('POST', '/my/complaints', residentAlphaToken, {
-    category_id: acCategory.id,
-    title: `Validation AC complaint ${runSuffix}`,
-    description: 'Development validation complaint created by resident alpha.',
-  }, 201);
+  const ownComplaint = await request<ComplaintResponse>(
+    'POST',
+    '/my/complaints',
+    residentAlphaToken,
+    {
+      category_id: acCategory.id,
+      title: `Validation AC complaint ${runSuffix}`,
+      description: 'Development validation complaint created by resident alpha.',
+    },
+    201,
+  );
   assert(ownComplaint.id, 'resident complaint create did not return id');
 
-  const ownList = await request<ComplaintResponse[]>('GET', '/my/complaints?limit=50&offset=0', residentAlphaToken);
+  const ownList = await request<ComplaintResponse[]>(
+    'GET',
+    '/my/complaints?limit=50&offset=0',
+    residentAlphaToken,
+  );
   assert(
     ownList.some((complaint) => complaint.id === ownComplaint.id),
     'resident cannot see own complaint in list',
   );
 
-  const ownDetail = await request<ComplaintResponse>('GET', `/my/complaints/${ownComplaint.id}`, residentAlphaToken);
+  const ownDetail = await request<ComplaintResponse>(
+    'GET',
+    `/my/complaints/${ownComplaint.id}`,
+    residentAlphaToken,
+  );
   assert(ownDetail.id === ownComplaint.id, 'resident cannot read own complaint detail');
 
   await requestDenied('GET', `/my/complaints/${ownComplaint.id}`, residentBravoToken);
 
-  const acknowledged = await request<ComplaintResponse>('POST', `/complaints/${ownComplaint.id}/acknowledge`, adminToken, undefined, 201);
-  assert(acknowledged.complaintStatus === 'acknowledged', 'admin acknowledge did not set acknowledged status');
+  const acknowledged = await request<ComplaintResponse>(
+    'POST',
+    `/complaints/${ownComplaint.id}/acknowledge`,
+    adminToken,
+    undefined,
+    201,
+  );
+  assert(
+    acknowledged.complaintStatus === 'acknowledged',
+    'admin acknowledge did not set acknowledged status',
+  );
 
   const assignedComplaint = await request<ComplaintResponse>(
     'POST',
@@ -180,16 +213,25 @@ async function main(): Promise<void> {
     { assigned_to_user_id: CORE_SEED_IDS.devUsers.technicians.budi },
     201,
   );
-  assert(assignedComplaint.complaintStatus === 'in_progress', 'admin assign did not move complaint to in_progress');
+  assert(
+    assignedComplaint.complaintStatus === 'in_progress',
+    'admin assign did not move complaint to in_progress',
+  );
 
-  const workOrder = await request<WorkOrderResponse>('POST', '/work-orders', adminToken, {
-    property_id: CORE_SEED_IDS.granadaProperty,
-    complaint_id: ownComplaint.id,
-    work_order_code: `WO-VAL-${runSuffix}`,
-    title: `Validation work order ${runSuffix}`,
-    description: 'Development validation work order.',
-    priority: 'high',
-  }, 201);
+  const workOrder = await request<WorkOrderResponse>(
+    'POST',
+    '/work-orders',
+    adminToken,
+    {
+      property_id: CORE_SEED_IDS.granadaProperty,
+      complaint_id: ownComplaint.id,
+      work_order_code: `WO-VAL-${runSuffix}`,
+      title: `Validation work order ${runSuffix}`,
+      description: 'Development validation work order.',
+      priority: 'high',
+    },
+    201,
+  );
   assert(workOrder.workOrderStatus === 'open', 'work order create did not start as open');
 
   const assignedWorkOrder = await request<WorkOrderResponse>(
@@ -199,11 +241,20 @@ async function main(): Promise<void> {
     { assigned_to_user_id: CORE_SEED_IDS.devUsers.technicians.budi },
     201,
   );
-  assert(assignedWorkOrder.assignedToUserId === CORE_SEED_IDS.devUsers.technicians.budi, 'work order was not assigned to technician');
-
-  const technicianWorkOrders = await request<WorkOrderResponse[]>('GET', '/my/work-orders?limit=50&offset=0', technicianToken);
   assert(
-    technicianWorkOrders.every((item) => item.assignedToUserId === CORE_SEED_IDS.devUsers.technicians.budi),
+    assignedWorkOrder.assignedToUserId === CORE_SEED_IDS.devUsers.technicians.budi,
+    'work order was not assigned to technician',
+  );
+
+  const technicianWorkOrders = await request<WorkOrderResponse[]>(
+    'GET',
+    '/my/work-orders?limit=50&offset=0',
+    technicianToken,
+  );
+  assert(
+    technicianWorkOrders.every(
+      (item) => item.assignedToUserId === CORE_SEED_IDS.devUsers.technicians.budi,
+    ),
     'technician received unassigned work order in my/work-orders',
   );
   assert(
@@ -218,7 +269,10 @@ async function main(): Promise<void> {
     undefined,
     201,
   );
-  assert(startedWorkOrder.workOrderStatus === 'in_progress', 'technician start did not set in_progress');
+  assert(
+    startedWorkOrder.workOrderStatus === 'in_progress',
+    'technician start did not set in_progress',
+  );
 
   const completedWorkOrder = await request<WorkOrderResponse>(
     'POST',
@@ -227,17 +281,32 @@ async function main(): Promise<void> {
     undefined,
     201,
   );
-  assert(completedWorkOrder.workOrderStatus === 'completed', 'technician complete did not set completed');
+  assert(
+    completedWorkOrder.workOrderStatus === 'completed',
+    'technician complete did not set completed',
+  );
 
-  const verifiedWorkOrder = await request<WorkOrderResponse>('POST', `/work-orders/${workOrder.id}/verify`, adminToken, undefined, 201);
+  const verifiedWorkOrder = await request<WorkOrderResponse>(
+    'POST',
+    `/work-orders/${workOrder.id}/verify`,
+    adminToken,
+    undefined,
+    201,
+  );
   assert(verifiedWorkOrder.workOrderStatus === 'verified', 'admin verify did not set verified');
 
-  const commonAreaComplaint = await request<ComplaintResponse>('POST', '/my/complaints', residentAlphaToken, {
-    category_id: commonFacilityCategory.id,
-    title: `Validation common area ${runSuffix}`,
-    description: 'Development validation common area complaint.',
-    location_note: 'Validation common area lobby',
-  }, 201);
+  const commonAreaComplaint = await request<ComplaintResponse>(
+    'POST',
+    '/my/complaints',
+    residentAlphaToken,
+    {
+      category_id: commonFacilityCategory.id,
+      title: `Validation common area ${runSuffix}`,
+      description: 'Development validation common area complaint.',
+      location_note: 'Validation common area lobby',
+    },
+    201,
+  );
   assert(commonAreaComplaint.roomId === null, 'common area complaint should have room_id null');
   assert(commonAreaComplaint.locationNote, 'common area complaint should have location_note');
 

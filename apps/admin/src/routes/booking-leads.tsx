@@ -50,9 +50,11 @@ import { useArchiveBookingLead, useUpdateBookingLeadStatus } from "@/hooks/useBo
 import {
   allowedBookingLeadTransitions,
   BOOKING_LEAD_CATEGORY_LABEL,
+  BOOKING_LEAD_DISPLAY_STATUS_LABEL,
   BOOKING_LEAD_GENDER_LABEL,
   BOOKING_LEAD_SOURCE_LABEL,
   BOOKING_LEAD_STATUS_LABEL,
+  bookingLeadDisplayStatus,
   useBookingLeads,
   type BookingLeadCategory,
   type BookingLeadGender,
@@ -93,8 +95,11 @@ function WhatsAppIcon() {
   );
 }
 
-function LeadStatusBadge({ status }: { status: BookingLeadStatus }) {
-  return <BookingLeadStatusBadge label={BOOKING_LEAD_STATUS_LABEL[status]} status={status} />;
+function LeadStatusBadge({ lead }: { lead: BookingLeadRecord }) {
+  const status = bookingLeadDisplayStatus(lead);
+  return (
+    <BookingLeadStatusBadge label={BOOKING_LEAD_DISPLAY_STATUS_LABEL[status]} status={status} />
+  );
 }
 
 function LeadSourceBadge({ source }: { source: BookingLeadRecord["source"] }) {
@@ -121,12 +126,16 @@ function roomTarget(lead: BookingLeadRecord): string {
 }
 
 function moveInDate(lead: BookingLeadRecord): string {
-  if (lead.status === "leased") {
+  if (["awaiting_activation", "leased"].includes(bookingLeadDisplayStatus(lead))) {
     return lead.activeLeaseStartDate
       ? formatDate(lead.activeLeaseStartDate)
       : "Tanggal sewa belum tersedia";
   }
   return lead.preferredMoveInDate ? formatDate(lead.preferredMoveInDate) : "Belum ditentukan";
+}
+
+function isAwaitingActivation(lead: BookingLeadRecord): boolean {
+  return bookingLeadDisplayStatus(lead) === "awaiting_activation";
 }
 
 function whatsAppUrlFor(lead: BookingLeadRecord): string | null {
@@ -156,7 +165,7 @@ function BookingLeadsPage() {
     idempotencyKey: string;
   } | null>(null);
   const [holdIntent, setHoldIntent] = useState<{
-    mode: "create" | "release" | "cancel";
+    mode: "create" | "release";
     lead: BookingLeadRecord;
     hold: BookingLeadHoldRecord | null;
   } | null>(null);
@@ -240,7 +249,7 @@ function BookingLeadsPage() {
     Number(dateTo !== "");
   const filterSignature = [search, status, category, gender, source, dateFrom, dateTo].join("|");
   const filterCriteria = [
-    search ? `pencarian \"${search}\"` : "",
+    search ? `pencarian "${search}"` : "",
     status !== "all" ? `status: ${BOOKING_LEAD_STATUS_LABEL[status]}` : "",
     category !== "all" ? `kategori: ${BOOKING_LEAD_CATEGORY_LABEL[category]}` : "",
     gender !== "all" ? `jenis kelamin: ${BOOKING_LEAD_GENDER_LABEL[gender]}` : "",
@@ -268,10 +277,6 @@ function BookingLeadsPage() {
 
   const openHoldDialog = (lead: BookingLeadRecord) => {
     const hold = activeBookingLeadHold(holdCoverage, lead);
-    if (hold?.holdStatus === "committed" && lead.status === "onboarding") {
-      setHoldIntent({ mode: "cancel", lead, hold });
-      return;
-    }
     if (canReleaseBookingLeadHold({ ...holdAccess, lead, hold })) {
       setHoldIntent({ mode: "release", lead, hold });
       return;
@@ -575,6 +580,7 @@ function BookingLeadsPage() {
                     const transitions = allowedBookingLeadTransitions(lead.status);
                     const waUrl = whatsAppUrlFor(lead);
                     const activeHold = activeBookingLeadHold(holdCoverage, lead);
+                    const awaitingActivation = isAwaitingActivation(lead);
                     const canCreateHold = canCreateBookingLeadHold({
                       ...holdAccess,
                       propertyRollouts: user?.propertyRollouts,
@@ -586,11 +592,6 @@ function BookingLeadsPage() {
                       lead,
                       hold: activeHold,
                     });
-                    const canCancelCommittedHold = Boolean(
-                      activeHold?.holdStatus === "committed" &&
-                      lead.status === "onboarding" &&
-                      holdAccess.permissions.includes("room.manage"),
-                    );
                     return (
                       <tr
                         key={lead.id}
@@ -615,7 +616,7 @@ function BookingLeadsPage() {
                         <td className="px-4 py-3 text-muted-foreground">{moveInDate(lead)}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-col items-start gap-1.5">
-                            <LeadStatusBadge status={lead.status} />
+                            <LeadStatusBadge lead={lead} />
                             {activeHold ? (
                               <BookingLeadHoldStatus hold={activeHold} now={holdNow} compact />
                             ) : null}
@@ -633,31 +634,19 @@ function BookingLeadsPage() {
                             </Button>
                             {!holdsQuery.isPending &&
                             !holdsQuery.isError &&
-                            (canCreateHold || canReleaseHold || canCancelCommittedHold) ? (
+                            (canCreateHold || canReleaseHold) ? (
                               <Button
                                 className="min-h-11"
                                 size="sm"
-                                variant={
-                                  canReleaseHold
-                                    ? "outline"
-                                    : canCancelCommittedHold
-                                      ? "destructive"
-                                      : "default"
-                                }
+                                variant={canReleaseHold ? "outline" : "default"}
                                 onClick={() => openHoldDialog(lead)}
                               >
                                 {canReleaseHold ? (
                                   <Unlock aria-hidden="true" />
-                                ) : canCancelCommittedHold ? (
-                                  <RotateCcw aria-hidden="true" />
                                 ) : (
                                   <Lock aria-hidden="true" />
                                 )}
-                                {canReleaseHold
-                                  ? "Lepaskan"
-                                  : canCancelCommittedHold
-                                    ? "Batalkan / Refund"
-                                    : "Tahan Kamar"}
+                                {canReleaseHold ? "Lepaskan" : "Tahan Kamar"}
                               </Button>
                             ) : null}
                             {waUrl ? (
@@ -673,7 +662,10 @@ function BookingLeadsPage() {
                                 onSelect={(next) => queueStatusChange(lead, next)}
                               />
                             ) : null}
-                            {canManageOnboarding && activeHold && lead.status === "onboarding" ? (
+                            {canManageOnboarding &&
+                            activeHold &&
+                            lead.status === "onboarding" &&
+                            !awaitingActivation ? (
                               <Button
                                 className="min-h-11"
                                 size="sm"
@@ -718,6 +710,7 @@ function BookingLeadsPage() {
                 const transitions = allowedBookingLeadTransitions(lead.status);
                 const waUrl = whatsAppUrlFor(lead);
                 const activeHold = activeBookingLeadHold(holdCoverage, lead);
+                const awaitingActivation = isAwaitingActivation(lead);
                 const canCreateHold = canCreateBookingLeadHold({
                   ...holdAccess,
                   propertyRollouts: user?.propertyRollouts,
@@ -729,11 +722,6 @@ function BookingLeadsPage() {
                   lead,
                   hold: activeHold,
                 });
-                const canCancelCommittedHold = Boolean(
-                  activeHold?.holdStatus === "committed" &&
-                  lead.status === "onboarding" &&
-                  holdAccess.permissions.includes("room.manage"),
-                );
                 return (
                   <article key={lead.id} className="min-w-0 space-y-3 p-4">
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -744,7 +732,7 @@ function BookingLeadsPage() {
                           {lead.visitorPhone}
                         </p>
                       </div>
-                      <LeadStatusBadge status={lead.status} />
+                      <LeadStatusBadge lead={lead} />
                     </div>
                     <dl className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-sm">
                       <MobileFact
@@ -785,31 +773,19 @@ function BookingLeadsPage() {
                       </Button>
                       {!holdsQuery.isPending &&
                       !holdsQuery.isError &&
-                      (canCreateHold || canReleaseHold || canCancelCommittedHold) ? (
+                      (canCreateHold || canReleaseHold) ? (
                         <Button
                           className="min-h-11"
                           size="sm"
-                          variant={
-                            canReleaseHold
-                              ? "outline"
-                              : canCancelCommittedHold
-                                ? "destructive"
-                                : "default"
-                          }
+                          variant={canReleaseHold ? "outline" : "default"}
                           onClick={() => openHoldDialog(lead)}
                         >
                           {canReleaseHold ? (
                             <Unlock aria-hidden="true" />
-                          ) : canCancelCommittedHold ? (
-                            <RotateCcw aria-hidden="true" />
                           ) : (
                             <Lock aria-hidden="true" />
                           )}
-                          {canReleaseHold
-                            ? "Lepaskan"
-                            : canCancelCommittedHold
-                              ? "Batalkan / Refund"
-                              : "Tahan Kamar"}
+                          {canReleaseHold ? "Lepaskan" : "Tahan Kamar"}
                         </Button>
                       ) : null}
                       {waUrl ? (
@@ -825,7 +801,10 @@ function BookingLeadsPage() {
                           onSelect={(next) => queueStatusChange(lead, next)}
                         />
                       ) : null}
-                      {canManageOnboarding && activeHold && lead.status === "onboarding" ? (
+                      {canManageOnboarding &&
+                      activeHold &&
+                      lead.status === "onboarding" &&
+                      !awaitingActivation ? (
                         <Button
                           className="min-h-11"
                           size="sm"

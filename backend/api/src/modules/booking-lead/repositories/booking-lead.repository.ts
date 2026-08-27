@@ -393,7 +393,7 @@ export class BookingLeadRepository {
        LEFT JOIN leases active_lease
          ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
         AND active_lease.property_id = booking_leads.property_id
-        AND active_lease.lease_status = 'active'
+         AND active_lease.lease_status IN ('awaiting_activation','active')
        WHERE booking_leads.property_id = ANY($1::uuid[])
          AND booking_leads.archived_at IS NULL
          AND ($2::text IS NULL OR booking_leads.status = $2)
@@ -495,7 +495,7 @@ export class BookingLeadRepository {
          LEFT JOIN leases active_lease
            ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
           AND active_lease.property_id = booking_leads.property_id
-          AND active_lease.lease_status = 'active'
+          AND active_lease.lease_status IN ('awaiting_activation','active')
          WHERE ${where}
          ORDER BY booking_leads.created_at DESC, booking_leads.id DESC
          LIMIT $10 OFFSET $11`,

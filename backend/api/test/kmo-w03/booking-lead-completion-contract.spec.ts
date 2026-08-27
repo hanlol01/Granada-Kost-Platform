@@ -39,7 +39,7 @@ test('a paid booking lead promotes its hold so the 24-hour expiry cannot undo a 
   assert.doesNotMatch(holds, /WHERE id = \$1 AND hold_status IN \('active','committed'\)/);
 });
 
-test('a paid booking lead can be cancelled only before onboarding, with an immutable refund record', () => {
+test('Booking Fee or DP can be cancelled before activation with immutable refund and lease cancellation records', () => {
   const controller = source('src/modules/booking-lead/booking-lead-completion.controller.ts');
   const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
   const migration = source(
@@ -48,7 +48,10 @@ test('a paid booking lead can be cancelled only before onboarding, with an immut
   assert.match(controller, /cancel-payment-commitment/);
   assert.match(service, /BOOKING_LEAD_REFUND_UNAVAILABLE/);
   assert.match(service, /booking_lead_payment_commitment_refunds/);
-  assert.match(service, /commitment\.verification_status === 'verified'/);
+  assert.match(service, /!commitment\.materialized_onboarding_commitment_id/);
+  assert.match(service, /payment_type === 'full_settlement'/);
+  assert.match(service, /lease_status !== 'awaiting_activation'/);
+  assert.match(service, /cancelInitialOnboardingFinancialsInTransaction/);
   assert.match(service, /hold_status='released'/);
   assert.match(service, /status='cancelled'/);
   assert.match(migration, /booking_lead_payment_commitment_refunds/);
@@ -81,9 +84,12 @@ test('completion quote remains available after a paid hold is committed, even af
     },
     release: () => undefined,
   };
-  const service = new BookingLeadCompletionService({
-    client: { connect: async () => client },
-  } as never) as any;
+  const service = new BookingLeadCompletionService(
+    {
+      client: { connect: async () => client },
+    } as never,
+    {} as never,
+  ) as any;
   service.lockContext = async () => ({
     lead_id: 'lead-1',
     property_id: 'property-1',
@@ -129,9 +135,12 @@ test('completion quote remains available for a new lead with an active compatibl
     },
     release: () => undefined,
   };
-  const service = new BookingLeadCompletionService({
-    client: { connect: async () => client },
-  } as never) as any;
+  const service = new BookingLeadCompletionService(
+    {
+      client: { connect: async () => client },
+    } as never,
+    {} as never,
+  ) as any;
   service.lockContext = async () => ({
     lead_id: 'lead-1',
     property_id: 'property-1',
@@ -182,9 +191,12 @@ test('materialized completion context returns an actionable, property-scoped res
     },
     release: () => undefined,
   };
-  const service = new BookingLeadCompletionService({
-    client: { connect: async () => client },
-  } as never) as any;
+  const service = new BookingLeadCompletionService(
+    {
+      client: { connect: async () => client },
+    } as never,
+    {} as never,
+  ) as any;
   service.lockContext = async () => ({ lead_id: 'lead-1', property_id: 'property-1' });
   service.assertEligible = () => undefined;
 

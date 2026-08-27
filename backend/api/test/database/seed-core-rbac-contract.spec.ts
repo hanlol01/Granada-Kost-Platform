@@ -80,10 +80,11 @@ void test('dashboard roles receive the complete read permission tuple', () => {
 });
 
 void test('development admin account keeps the admin role', () => {
-  const adminUsers = DEV_USER_SEEDS.filter(({ email }) => email === 'dev.admin@kostation.test');
+  const adminUsers = DEV_USER_SEEDS.filter(({ email }) => email === 'admin.diki@kostation.com');
 
   assert.equal(adminUsers.length, 1);
   assert.equal(adminUsers[0].roleCode, 'admin');
+  assert.equal(adminUsers[0].displayName, 'Diki Karya Permana');
 });
 
 void test('fresh seed preserves exact W10 management and property_owner read-only authority', () => {

@@ -87,6 +87,7 @@ export type ResidentTenancy = {
   residentId: string;
   propertyId: string;
   leaseId: string;
+  bookingLeadId: string | null;
   leaseStatus: "awaiting_activation" | "active";
   roomNumber: string;
   kostTypeName: string;
@@ -403,6 +404,7 @@ export function parseResidentTenancy(
     "resident_id",
     "property_id",
     "lease_id",
+    "booking_lead_id",
     "lease_status",
     "room_number",
     "kost_type_name",
@@ -419,6 +421,7 @@ export function parseResidentTenancy(
     residentId,
     propertyId,
     leaseId: uuid(item.lease_id) as string,
+    bookingLeadId: uuid(item.booking_lead_id, true),
     leaseStatus: enumValue(item.lease_status, ["awaiting_activation", "active"] as const),
     roomNumber: text(item.room_number) as string,
     kostTypeName: text(item.kost_type_name) as string,

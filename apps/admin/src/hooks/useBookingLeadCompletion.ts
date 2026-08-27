@@ -12,6 +12,7 @@ import {
 } from "@/lib/admin-booking-lead-completion";
 import { bookingLeadListScopeKey } from "@/lib/admin-booking-lead";
 import { bookingHoldInvalidationKeys } from "@/lib/admin-booking-lead-hold";
+import { queryKeyContainsPropertyScope } from "@/lib/admin-ux-query-keys";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property";
 
@@ -132,7 +133,7 @@ export function useCompleteBookingLead() {
   };
 }
 
-/** Cancels and records a full refund only while the lead has not become a lease. */
+/** Cancels a Booking Fee/DP commitment before activation and refunds verified funds. */
 export function useCancelBookingLeadPaymentCommitment() {
   const { currentPropertyId } = useProperty();
   const queryClient = useQueryClient();
@@ -156,6 +157,10 @@ export function useCancelBookingLeadPaymentCommitment() {
         ...bookingHoldInvalidationKeys(variables.input.propertyId).map((queryKey) =>
           queryClient.invalidateQueries({ queryKey }),
         ),
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            queryKeyContainsPropertyScope(query.queryKey, variables.input.propertyId),
+        }),
       ]);
       toastMutationSuccess("Minat booking dibatalkan dan refund telah dicatat");
     },

@@ -79,13 +79,20 @@ async function request<T>(
   const data = text ? JSON.parse(text) : {};
 
   if (response.status !== expectedStatus) {
-    throw new Error(`${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`);
+    throw new Error(
+      `${method} ${path} expected ${expectedStatus}, got ${response.status}: ${text}`,
+    );
   }
 
   return data as T;
 }
 
-async function requestDenied(method: string, path: string, token: string, body?: unknown): Promise<number> {
+async function requestDenied(
+  method: string,
+  path: string,
+  token: string,
+  body?: unknown,
+): Promise<number> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
@@ -105,7 +112,10 @@ async function requestDenied(method: string, path: string, token: string, body?:
 }
 
 async function validationToken(client: PoolClient, email: string): Promise<string> {
-  const userResult = await client.query<{ id: string }>('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
+  const userResult = await client.query<{ id: string }>(
+    'SELECT id FROM users WHERE lower(email) = lower($1)',
+    [email],
+  );
   const user = userResult.rows[0];
   if (!user) {
     throw new Error(`Validation user not found: ${email}. Run db:seed:dev first.`);
@@ -175,7 +185,9 @@ async function cleanupValidationData(client: PoolClient): Promise<void> {
        AND parking_zones.zone_code LIKE 'VAL-%'`,
   );
   await client.query("DELETE FROM parking_zones WHERE zone_code LIKE 'VAL-%'");
-  await client.query('DELETE FROM vehicle_status_histories WHERE vehicle_id = $1', [crossVehicleId]);
+  await client.query('DELETE FROM vehicle_status_histories WHERE vehicle_id = $1', [
+    crossVehicleId,
+  ]);
   await client.query('DELETE FROM vehicles WHERE id = $1', [crossVehicleId]);
   await client.query('DELETE FROM residents WHERE id = $1', [crossResidentId]);
   await client.query('DELETE FROM property_settings WHERE property_id = $1', [crossPropertyId]);
@@ -249,29 +261,57 @@ async function main(): Promise<void> {
     await cleanupValidationData(client);
     await setupCrossPropertyVehicle(client);
 
-    const adminToken = await validationToken(client, 'dev.admin@kostation.test');
+    const adminToken = await validationToken(client, 'admin.diki@kostation.com');
     const residentAlphaToken = await validationToken(client, 'dev.resident.alpha@kostation.test');
     const residentBravoToken = await validationToken(client, 'dev.resident.bravo@kostation.test');
     const propertyOwnerToken = await validationToken(client, 'dev.property.owner@kostation.test');
 
-    const createdVehicle = await request<VehicleResponse>('POST', '/my/vehicles', residentAlphaToken, {
-      plate_number: `d   7777   val`,
-      vehicle_type: 'motorcycle',
-      brand: 'Honda Validation',
-      color: 'Black',
-      year: '2024',
-      notes: validationNote,
-    }, 201);
-    assert(createdVehicle.plateNumber === 'D 7777 VAL', 'plate normalization did not normalize whitespace/uppercase');
-    assert(createdVehicle.vehicleStatus === 'pending_approval', 'resident-created vehicle should be pending approval');
+    const createdVehicle = await request<VehicleResponse>(
+      'POST',
+      '/my/vehicles',
+      residentAlphaToken,
+      {
+        plate_number: `d   7777   val`,
+        vehicle_type: 'motorcycle',
+        brand: 'Honda Validation',
+        color: 'Black',
+        year: '2024',
+        notes: validationNote,
+      },
+      201,
+    );
+    assert(
+      createdVehicle.plateNumber === 'D 7777 VAL',
+      'plate normalization did not normalize whitespace/uppercase',
+    );
+    assert(
+      createdVehicle.vehicleStatus === 'pending_approval',
+      'resident-created vehicle should be pending approval',
+    );
 
-    const ownVehicles = await request<VehicleResponse[]>('GET', '/my/vehicles?limit=50&offset=0', residentAlphaToken);
-    assert(ownVehicles.some((vehicle) => vehicle.id === createdVehicle.id), 'resident cannot see own vehicle');
+    const ownVehicles = await request<VehicleResponse[]>(
+      'GET',
+      '/my/vehicles?limit=50&offset=0',
+      residentAlphaToken,
+    );
+    assert(
+      ownVehicles.some((vehicle) => vehicle.id === createdVehicle.id),
+      'resident cannot see own vehicle',
+    );
     await request<VehicleResponse>('GET', `/my/vehicles/${createdVehicle.id}`, residentAlphaToken);
     await requestDenied('GET', `/my/vehicles/${createdVehicle.id}`, residentBravoToken);
 
-    const approvedVehicle = await request<VehicleResponse>('POST', `/vehicles/${createdVehicle.id}/approve`, adminToken, undefined, 201);
-    assert(approvedVehicle.vehicleStatus === 'active', 'vehicle approval did not set active status');
+    const approvedVehicle = await request<VehicleResponse>(
+      'POST',
+      `/vehicles/${createdVehicle.id}/approve`,
+      adminToken,
+      undefined,
+      201,
+    );
+    assert(
+      approvedVehicle.vehicleStatus === 'active',
+      'vehicle approval did not set active status',
+    );
 
     const suspendedVehicle = await request<VehicleResponse>(
       'POST',
@@ -280,10 +320,22 @@ async function main(): Promise<void> {
       { reason: 'Development validation suspension' },
       201,
     );
-    assert(suspendedVehicle.vehicleStatus === 'suspended', 'vehicle suspension did not set suspended status');
+    assert(
+      suspendedVehicle.vehicleStatus === 'suspended',
+      'vehicle suspension did not set suspended status',
+    );
 
-    const reactivatedVehicle = await request<VehicleResponse>('POST', `/vehicles/${createdVehicle.id}/reactivate`, adminToken, undefined, 201);
-    assert(reactivatedVehicle.vehicleStatus === 'active', 'vehicle reactivation did not set active status');
+    const reactivatedVehicle = await request<VehicleResponse>(
+      'POST',
+      `/vehicles/${createdVehicle.id}/reactivate`,
+      adminToken,
+      undefined,
+      201,
+    );
+    assert(
+      reactivatedVehicle.vehicleStatus === 'active',
+      'vehicle reactivation did not set active status',
+    );
 
     const maxLimitStatus = await requestDenied('POST', '/my/vehicles', residentAlphaToken, {
       plate_number: `D 7778 VAL`,
@@ -294,22 +346,34 @@ async function main(): Promise<void> {
     });
     assert(maxLimitStatus === 400, `max vehicle limit should return 400, got ${maxLimitStatus}`);
 
-    const zone = await request<ParkingZoneResponse>('POST', '/parking/zones', adminToken, {
-      property_id: CORE_SEED_IDS.granadaProperty,
-      zone_code: `VAL-${runSuffix}`,
-      zone_name: `Validation Zone ${runSuffix}`,
-      zone_type: 'motorcycle',
-      capacity: 1,
-      location_description: 'Development validation zone',
-      sort_order: 99,
-    }, 201);
+    const zone = await request<ParkingZoneResponse>(
+      'POST',
+      '/parking/zones',
+      adminToken,
+      {
+        property_id: CORE_SEED_IDS.granadaProperty,
+        zone_code: `VAL-${runSuffix}`,
+        zone_name: `Validation Zone ${runSuffix}`,
+        zone_type: 'motorcycle',
+        capacity: 1,
+        location_description: 'Development validation zone',
+        sort_order: 99,
+      },
+      201,
+    );
     assert(zone.capacity === 1, 'parking zone capacity should be 1 for validation');
 
-    const slot = await request<ParkingSlotResponse>('POST', '/parking/slots', adminToken, {
-      zone_id: zone.id,
-      slot_number: 'VAL-01',
-      slot_type: 'motorcycle',
-    }, 201);
+    const slot = await request<ParkingSlotResponse>(
+      'POST',
+      '/parking/slots',
+      adminToken,
+      {
+        zone_id: zone.id,
+        slot_number: 'VAL-01',
+        slot_type: 'motorcycle',
+      },
+      201,
+    );
     assert(slot.slotStatus === 'available', 'created parking slot should start available');
 
     const capacityStatus = await requestDenied('POST', '/parking/slots', adminToken, {
@@ -317,7 +381,10 @@ async function main(): Promise<void> {
       slot_number: 'VAL-02',
       slot_type: 'motorcycle',
     });
-    assert(capacityStatus === 400, `parking capacity validation should return 400, got ${capacityStatus}`);
+    assert(
+      capacityStatus === 400,
+      `parking capacity validation should return 400, got ${capacityStatus}`,
+    );
 
     const assignedSlot = await request<ParkingSlotResponse>(
       'POST',
@@ -329,21 +396,38 @@ async function main(): Promise<void> {
     assert(assignedSlot.slotStatus === 'occupied', 'slot assignment did not set occupied status');
     assert(assignedSlot.vehicleId === createdVehicle.id, 'slot assignment did not attach vehicle');
 
-    const releasedSlot = await request<ParkingSlotResponse>('POST', `/parking/slots/${slot.id}/release`, adminToken, undefined, 201);
+    const releasedSlot = await request<ParkingSlotResponse>(
+      'POST',
+      `/parking/slots/${slot.id}/release`,
+      adminToken,
+      undefined,
+      201,
+    );
     assert(releasedSlot.slotStatus === 'available', 'slot release did not set available status');
     assert(releasedSlot.vehicleId === null, 'slot release did not clear vehicle');
 
-    const crossPropertyStatus = await requestDenied('POST', `/parking/slots/${slot.id}/assign`, adminToken, {
-      vehicle_id: crossVehicleId,
-    });
-    assert(crossPropertyStatus === 400, `cross-property parking assignment should return 400, got ${crossPropertyStatus}`);
+    const crossPropertyStatus = await requestDenied(
+      'POST',
+      `/parking/slots/${slot.id}/assign`,
+      adminToken,
+      {
+        vehicle_id: crossVehicleId,
+      },
+    );
+    assert(
+      crossPropertyStatus === 400,
+      `cross-property parking assignment should return 400, got ${crossPropertyStatus}`,
+    );
 
     const summary = await request<VehicleSummaryResponse>(
       'GET',
       `/property-owner/vehicles/summary?property_id=${CORE_SEED_IDS.granadaProperty}`,
       propertyOwnerToken,
     );
-    assert(summary.totalRegistered >= 9, 'property owner summary should expose aggregate vehicle counts');
+    assert(
+      summary.totalRegistered >= 9,
+      'property owner summary should expose aggregate vehicle counts',
+    );
     assert(summary.activeCount >= 1, 'property owner summary should include active vehicles');
 
     await requestDenied('GET', `/vehicles/${createdVehicle.id}`, propertyOwnerToken);

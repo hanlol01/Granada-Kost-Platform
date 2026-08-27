@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PropertyModule } from '../property/property.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { BillingModule } from '../billing/billing.module';
 import { BookingLeadController } from './booking-lead.controller';
 import { BookingLeadCompletionController } from './booking-lead-completion.controller';
 import { BookingLeadCompletionService } from './booking-lead-completion.service';
@@ -18,7 +19,7 @@ import { BookingLeadHoldRepository } from './repositories/booking-lead-hold.repo
 import { BookingLeadRepository } from './repositories/booking-lead.repository';
 
 @Module({
-  imports: [PropertyModule, RbacModule],
+  imports: [BillingModule, PropertyModule, RbacModule],
   controllers: [
     PublicBookingLeadController,
     BookingLeadController,

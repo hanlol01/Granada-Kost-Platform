@@ -60,6 +60,7 @@ type ResidentTenancyRow = {
   resident_id: string;
   property_id: string;
   lease_id: string;
+  booking_lead_id: string | null;
   lease_status: ResidentTenancyRecord['leaseStatus'];
   room_number: string;
   kost_type_name: string;
@@ -426,7 +427,7 @@ export class ResidentRepository {
     propertyId: string,
   ): Promise<ResidentTenancyRecord[]> {
     const result = await this.database.client.query<ResidentTenancyRow>(
-      `SELECT leases.resident_id,leases.property_id,leases.id AS lease_id,leases.lease_status,
+      `SELECT leases.resident_id,leases.property_id,leases.id AS lease_id,leases.booking_lead_id,leases.lease_status,
               rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
               buildings.building_code,leases.start_date::text,leases.end_date::text,
               leases.term_months,leases.payment_plan_type
@@ -445,6 +446,7 @@ export class ResidentRepository {
       residentId: row.resident_id,
       propertyId: row.property_id,
       leaseId: row.lease_id,
+      bookingLeadId: row.booking_lead_id,
       leaseStatus: row.lease_status,
       roomNumber: row.room_number,
       kostTypeName: row.kost_type_name,

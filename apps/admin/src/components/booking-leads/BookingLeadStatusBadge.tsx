@@ -7,7 +7,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import type { BookingLeadStatus } from "@/lib/admin-booking-lead";
+import type { BookingLeadDisplayStatus } from "@/lib/admin-booking-lead";
 import { cn } from "@/lib/utils";
 
 type StatusPresentation = {
@@ -15,7 +15,7 @@ type StatusPresentation = {
   icon: LucideIcon;
 };
 
-const STATUS_PRESENTATION: Record<BookingLeadStatus, StatusPresentation> = {
+const STATUS_PRESENTATION: Record<BookingLeadDisplayStatus, StatusPresentation> = {
   new: {
     className:
       "border-amber-600/35 bg-amber-100 text-amber-950 dark:border-amber-300/35 dark:bg-amber-300/15 dark:text-amber-100",
@@ -45,6 +45,11 @@ const STATUS_PRESENTATION: Record<BookingLeadStatus, StatusPresentation> = {
     className:
       "border-indigo-600/35 bg-indigo-100 text-indigo-950 dark:border-indigo-300/35 dark:bg-indigo-300/15 dark:text-indigo-100",
     icon: Handshake,
+  },
+  awaiting_activation: {
+    className:
+      "border-cyan-600/35 bg-cyan-100 text-cyan-950 dark:border-cyan-300/35 dark:bg-cyan-300/15 dark:text-cyan-100",
+    icon: Clock3,
   },
   leased: {
     className:
@@ -78,7 +83,7 @@ export function BookingLeadStatusBadge({
   label,
   className,
 }: {
-  status: BookingLeadStatus;
+  status: BookingLeadDisplayStatus;
   label: string;
   className?: string;
 }) {

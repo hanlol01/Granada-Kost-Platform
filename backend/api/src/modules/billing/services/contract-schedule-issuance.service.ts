@@ -126,6 +126,7 @@ export class ContractScheduleIssuanceService {
           input.paymentPlanType,
           commandFingerprint,
           input.actorUserId,
+          input.leaseId,
         ],
       );
       await client.query(

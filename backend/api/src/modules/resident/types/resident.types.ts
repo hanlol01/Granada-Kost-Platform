@@ -87,6 +87,7 @@ export type ResidentTenancyRecord = {
   residentId: string;
   propertyId: string;
   leaseId: string;
+  bookingLeadId: string | null;
   leaseStatus: 'awaiting_activation' | 'active';
   roomNumber: string;
   kostTypeName: string;

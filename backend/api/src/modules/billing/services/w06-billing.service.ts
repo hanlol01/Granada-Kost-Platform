@@ -210,6 +210,11 @@ type ReceiptDocumentRow = {
   paid_at: Date | null;
   resident_name: string;
   room_number: string;
+  lease_start: string;
+  lease_end: string | null;
+  property_name: string;
+  property_address: string;
+  issued_by_name: string | null;
   settles_rent_contract: boolean;
   allocations: Array<{ invoice_code: string; amount: string | number }>;
 };
@@ -255,6 +260,21 @@ export type InitialOnboardingPaymentSummary = {
     purpose: 'dp' | 'security_deposit';
     amount: number;
   }>;
+};
+
+export type CancelInitialOnboardingFinancialsInput = {
+  propertyId: string;
+  leaseId: string;
+  actorId: string;
+  reason: string;
+  context: RequestAuditContext;
+};
+
+export type CancelInitialOnboardingFinancialsSummary = {
+  refundedAmount: number;
+  reversalIds: string[];
+  rejectedPaymentIds: string[];
+  voidedInvoiceIds: string[];
 };
 
 const IDEMPOTENCY_MIN = 16;
@@ -952,6 +972,181 @@ export class W06BillingService {
       securityDepositVerifiedAmount: status === 'verified' ? input.securityDepositAmount : 0,
       receipts,
     };
+  }
+
+  async cancelInitialOnboardingFinancialsInTransaction(
+    client: PoolClient,
+    input: CancelInitialOnboardingFinancialsInput,
+  ): Promise<CancelInitialOnboardingFinancialsSummary> {
+    const reason = input.reason.trim();
+    const payments = await client.query<PaymentRow>(
+      `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,
+              payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes
+       FROM payments
+       WHERE property_id=$1 AND lease_id=$2
+         AND command_fingerprint LIKE 'onboarding:%'
+         AND payment_purpose IN ('dp','security_deposit')
+       ORDER BY id
+       FOR UPDATE`,
+      [input.propertyId, input.leaseId],
+    );
+    const reversalIds: string[] = [];
+    const rejectedPaymentIds: string[] = [];
+    const affectedInvoiceIds = new Set<string>();
+    let refundedAmount = 0;
+
+    for (const payment of payments.rows) {
+      if (payment.payment_status === 'pending_confirmation') {
+        await client.query(
+          `UPDATE payments SET payment_status='rejected',updated_at=now()
+           WHERE id=$1 AND property_id=$2 AND payment_status='pending_confirmation'`,
+          [payment.id, input.propertyId],
+        );
+        if (payment.proof_id)
+          await client.query(
+            `UPDATE payment_proofs
+             SET proof_status='rejected',reject_reason=$2,reviewed_by_user_id=$3,
+                 reviewed_at=now(),updated_at=now()
+             WHERE id=$1 AND property_id=$4 AND proof_status='pending_review'`,
+            [payment.proof_id, reason, input.actorId, input.propertyId],
+          );
+        rejectedPaymentIds.push(payment.id);
+        continue;
+      }
+      if (payment.payment_status !== 'verified') continue;
+
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM payment_reversals WHERE payment_id=$1 FOR UPDATE`,
+        [payment.id],
+      );
+      if (existing.rows[0]) {
+        reversalIds.push(existing.rows[0].id);
+        continue;
+      }
+      const allocations = await client.query<{
+        id: string;
+        invoice_id: string;
+        allocated_amount: string;
+      }>(
+        `SELECT id,invoice_id,allocated_amount FROM payment_allocations
+         WHERE payment_id=$1 ORDER BY invoice_id,id FOR UPDATE`,
+        [payment.id],
+      );
+      for (const allocation of allocations.rows) affectedInvoiceIds.add(allocation.invoice_id);
+      if (payment.payment_purpose === 'security_deposit') {
+        const balance = await this.depositBalance(client, input.leaseId);
+        if (balance < this.money(payment.amount))
+          throw new ConflictException({
+            code: 'DEPOSIT_REFUND_BALANCE_CONFLICT',
+            message: 'Security deposit balance is insufficient for cancellation refund',
+          });
+      }
+      const receiptId = await this.insertReceipt(
+        client,
+        input.propertyId,
+        null,
+        'reversal',
+        this.money(payment.amount),
+        input.actorId,
+        { payment_code: payment.payment_code, reason, source: 'booking_lead_cancellation' },
+      );
+      const reversal = await client.query<{ id: string }>(
+        `INSERT INTO payment_reversals(property_id,payment_id,reason,reversed_by_user_id,receipt_id)
+         VALUES($1,$2,$3,$4,$5) RETURNING id`,
+        [input.propertyId, payment.id, reason, input.actorId, receiptId],
+      );
+      const reversalId = reversal.rows[0].id;
+      for (const allocation of allocations.rows)
+        await client.query(
+          `INSERT INTO payment_reversal_allocations(
+             property_id,reversal_id,original_allocation_id,invoice_id,reversed_amount
+           ) VALUES($1,$2,$3,$4,$5)`,
+          [
+            input.propertyId,
+            reversalId,
+            allocation.id,
+            allocation.invoice_id,
+            allocation.allocated_amount,
+          ],
+        );
+      if (payment.payment_purpose === 'security_deposit')
+        await client.query(
+          `INSERT INTO lease_deposit_transactions(
+             property_id,lease_id,transaction_type,direction,amount,payment_id,reason_type,
+             reason,settlement_status,settled_at,settled_by_user_id,metadata,created_by_user_id,reversal_id
+           ) VALUES($1,$2,'refund','debit',$3,$4,'payment_reversal',$5,'settled',now(),$6,$7::jsonb,$6,$8)`,
+          [
+            input.propertyId,
+            input.leaseId,
+            payment.amount,
+            payment.id,
+            reason,
+            input.actorId,
+            JSON.stringify({ source: 'booking_lead_cancellation' }),
+            reversalId,
+          ],
+        );
+      refundedAmount += this.money(payment.amount);
+      reversalIds.push(reversalId);
+      await this.audit.write(
+        {
+          actorUserId: input.actorId,
+          propertyId: input.propertyId,
+          action: 'billing.payment_reversed',
+          resourceType: 'payment_reversal',
+          resourceId: reversalId,
+          afterData: {
+            payment_id: payment.id,
+            amount: this.money(payment.amount),
+            reason,
+            source: 'booking_lead_cancellation',
+          },
+          resultStatus: 'success',
+          ...input.context,
+        },
+        client,
+      );
+    }
+
+    for (const invoiceId of affectedInvoiceIds)
+      await this.reconcileInvoiceLifecycleInTransaction(client, input.propertyId, invoiceId);
+
+    const invoices = await client.query<{ id: string; installment_id: string | null; net: string }>(
+      `SELECT i.id,i.installment_id,COALESCE(activity.net,0) AS net
+       FROM invoices i
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
+         FROM payment_allocations pa
+         LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
+         WHERE pa.invoice_id=i.id
+       ) activity ON true
+       WHERE i.property_id=$1 AND i.lease_id=$2 AND i.invoice_status<>'void'
+       ORDER BY i.id
+       FOR UPDATE OF i`,
+      [input.propertyId, input.leaseId],
+    );
+    if (invoices.rows.some((invoice) => this.money(invoice.net) !== 0))
+      throw new ConflictException({
+        code: 'LEASE_CANCELLATION_HAS_UNREVERSED_PAYMENT',
+        message: 'The lease has payment activity that cannot be cancelled automatically',
+      });
+    const voidedInvoiceIds: string[] = [];
+    for (const invoice of invoices.rows) {
+      await client.query(
+        `UPDATE invoices SET invoice_status='void',voided_at=now(),voided_by_user_id=$2,
+             void_reason=$3,updated_at=now() WHERE id=$1`,
+        [invoice.id, input.actorId, reason],
+      );
+      if (invoice.installment_id)
+        await client.query(
+          `UPDATE lease_installments SET installment_status='void'
+           WHERE id=$1 AND invoice_id=$2`,
+          [invoice.installment_id, invoice.id],
+        );
+      voidedInvoiceIds.push(invoice.id);
+    }
+
+    return { refundedAmount, reversalIds, rejectedPaymentIds, voidedInvoiceIds };
   }
 
   async recordManualPayment(
@@ -2106,15 +2301,20 @@ export class W06BillingService {
       `SELECT receipt.receipt_code,receipt.amount,receipt.issued_at,
               payment.payment_code,payment.payment_method,payment.payment_purpose,payment.paid_at,
               resident.full_name AS resident_name,room.number AS room_number,
+              lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
+              property.name AS property_name,property.address AS property_address,
+              issuer.display_name AS issued_by_name,
               (COALESCE(rent_contract.fully_paid,false) AND latest_rent_payment.id=payment.id) AS settles_rent_contract,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'invoice_code',invoice.invoice_code,'amount',allocation.allocated_amount
               ) ORDER BY invoice.invoice_code) FILTER(WHERE allocation.id IS NOT NULL),'[]'::jsonb) AS allocations
        FROM payment_receipts receipt
-       JOIN payments payment ON payment.id=receipt.payment_id AND payment.property_id=receipt.property_id
-       JOIN residents resident ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
-       JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
-       JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+        JOIN payments payment ON payment.id=receipt.payment_id AND payment.property_id=receipt.property_id
+        JOIN properties property ON property.id=receipt.property_id
+        JOIN residents resident ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
+        JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
+        JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+        LEFT JOIN users issuer ON issuer.id=receipt.issued_by_user_id
        LEFT JOIN payment_allocations allocation ON allocation.payment_id=payment.id
        LEFT JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=payment.property_id
        LEFT JOIN LATERAL (
@@ -2147,7 +2347,7 @@ export class W06BillingService {
          LIMIT 1
        ) latest_rent_payment ON true
        WHERE receipt.id=$1 AND receipt.property_id=$2 AND receipt.receipt_kind='payment'
-       GROUP BY receipt.id,payment.id,resident.id,room.id,rent_contract.fully_paid,latest_rent_payment.id`,
+       GROUP BY receipt.id,payment.id,property.id,resident.id,lease.id,room.id,issuer.id,rent_contract.fully_paid,latest_rent_payment.id`,
       [receiptId, propertyId],
     );
     const row = result.rows[0];
@@ -2171,6 +2371,11 @@ export class W06BillingService {
         amount: this.money(allocation.amount),
       })),
       contractSettled: row.settles_rent_contract === true,
+      propertyName: row.property_name,
+      propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
+      leaseStart: row.lease_start,
+      leaseEnd: row.lease_end,
     });
   }
 

@@ -81,6 +81,7 @@ function tenancy() {
     resident_id: residentId,
     property_id: propertyId,
     lease_id: "33333333-3333-4333-8333-333333333333",
+    booking_lead_id: "44444444-4444-4444-8444-444444444444",
     lease_status: "awaiting_activation",
     room_number: "AK-18F-3A",
     kost_type_name: "Apart Kost",
@@ -256,6 +257,7 @@ test("pending activation is a valid resident projection while unknown states fai
 test("tenancy projection exposes an awaiting activation lease without claiming occupancy", () => {
   const parsed = parseResidentTenancy({ data: tenancy() }, propertyId, residentId);
   assert.equal(parsed?.leaseStatus, "awaiting_activation");
+  assert.equal(parsed?.bookingLeadId, "44444444-4444-4444-8444-444444444444");
   assert.equal(parsed?.roomNumber, "AK-18F-3A");
   assert.equal(parsed?.termMonths, 3);
 

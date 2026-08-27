@@ -55,7 +55,7 @@ test('repository list is property-aligned, repeatable-read, counted and determin
   assert.match(repository, /COUNT\(\*\)::int AS total/);
   assert.match(repository, /rooms\.property_id = booking_leads\.property_id/);
   assert.match(repository, /active_lease\.property_id = booking_leads\.property_id/);
-  assert.match(repository, /active_lease\.lease_status = 'active'/);
+  assert.match(repository, /active_lease\.lease_status IN \('awaiting_activation','active'\)/);
   assert.match(repository, /active_lease_start_date/);
   assert.match(repository, /ORDER BY booking_leads\.created_at DESC, booking_leads\.id DESC/);
 });

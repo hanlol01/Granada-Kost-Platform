@@ -58,16 +58,29 @@ function LoginPage() {
       <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] max-w-6xl overflow-hidden rounded-[2rem] border border-border/70 bg-card shadow-2xl shadow-black/10 sm:min-h-[calc(100dvh-3rem)] lg:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
         <section className="flex items-center justify-center px-7 py-12 sm:px-12 lg:px-16">
           <div className="w-full max-w-md">
-            <div className="mb-10" aria-label="Kostation">
+            <div
+              className="mb-10 flex w-full items-center justify-center gap-4"
+              aria-label="Granada Kostation"
+            >
               <img
-                src="/images/brand/kostation-logo-gold.png"
-                alt="Kostation"
-                className="block h-19 w-auto max-w-[18rem] object-contain object-left dark:hidden"
+                src="/images/auth/granda_biru.png"
+                alt="Granada"
+                className="block h-32 w-auto max-w-[18rem] object-contain object-center dark:hidden sm:h-36"
               />
               <img
-                src="/images/brand/kostation-logo-white.png"
+                src="/images/auth/kostation-logo-gold.png"
                 alt="Kostation"
-                className="hidden h-19 w-auto max-w-[18rem] object-contain object-left dark:block"
+                className="block h-9 w-auto max-w-[10rem] object-contain object-center dark:hidden sm:h-11"
+              />
+              <img
+                src="/images/auth/granada_putih.png"
+                alt="Granada"
+                className="hidden h-32 w-auto max-w-[18rem] object-contain object-center dark:block sm:h-36"
+              />
+              <img
+                src="/images/auth/kostation-logo-white.png"
+                alt="Kostation"
+                className="hidden h-9 w-auto max-w-[10rem] object-contain object-center dark:block sm:h-11"
               />
             </div>
             <div className="mb-8 space-y-2">

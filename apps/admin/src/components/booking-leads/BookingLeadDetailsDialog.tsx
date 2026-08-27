@@ -10,11 +10,13 @@ import {
   LockKeyhole,
   MonitorSmartphone,
   ReceiptText,
+  RotateCcw,
   Trash2,
   UserRoundCheck,
 } from "lucide-react";
 import { Download, FileCheck2 } from "lucide-react";
 import { BookingLeadStatusBadge } from "@/components/booking-leads/BookingLeadStatusBadge";
+import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,9 +28,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   BOOKING_LEAD_CATEGORY_LABEL,
+  BOOKING_LEAD_DISPLAY_STATUS_LABEL,
   BOOKING_LEAD_GENDER_LABEL,
   BOOKING_LEAD_SOURCE_LABEL,
   BOOKING_LEAD_STATUS_LABEL,
+  bookingLeadDisplayStatus,
   useBookingLeadProgress,
   type BookingLeadRecord,
   type BookingLeadProgress,
@@ -40,6 +44,7 @@ import {
 } from "@/lib/admin-booking-lead-completion";
 import { fetchFileBlob } from "@/lib/file-utils";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 type Props = {
   lead: BookingLeadRecord | null;
@@ -262,7 +267,9 @@ export function BookingLeadDetailsDialog({
   onArchive,
   archivePending = false,
 }: Props) {
+  const { user } = useAuth();
   const [archiveConfirmation, setArchiveConfirmation] = useState(false);
+  const [cancellationOpen, setCancellationOpen] = useState(false);
   const progressQuery = useBookingLeadProgress(open ? (lead?.id ?? null) : null);
   const progress = progressQuery.data;
   const cancellation = progress?.cancellation ?? null;
@@ -277,9 +284,18 @@ export function BookingLeadDetailsDialog({
   const canArchive = lead
     ? lead.status === "rejected" || lead.status === "expired" || lead.status === "cancelled"
     : false;
+  const canCancelAwaitingActivation = Boolean(
+    lead &&
+    user?.permissions.includes("room.manage") &&
+    !cancellation &&
+    progress?.paymentCommitment &&
+    progress.paymentCommitment.paymentType !== "full_settlement" &&
+    progress.tenancy?.leaseStatus === "awaiting_activation",
+  );
 
   useEffect(() => {
     setArchiveConfirmation(false);
+    setCancellationOpen(false);
   }, [lead?.id, open]);
 
   const leadJourney = useMemo(() => {
@@ -296,405 +312,451 @@ export function BookingLeadDetailsDialog({
   }, [progress]);
 
   if (!lead) return null;
+  const displayStatus = bookingLeadDisplayStatus(lead);
+  const tenancyStartDate = lead.activeLeaseStartDate ?? progress?.tenancy?.startDate ?? null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto p-0">
-        <div className="border-b border-border px-6 py-5">
-          <DialogHeader>
-            <div className="flex flex-wrap items-center gap-2 pr-8">
-              <DialogTitle>
-                {activeTenancy ? "Detail Penyewa Aktif" : "Detail calon penyewa"}
-              </DialogTitle>
-              <SourceBadge source={lead.source} />
-            </div>
-            <DialogDescription>{leadJourney}</DialogDescription>
-          </DialogHeader>
-        </div>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto p-0">
+          <div className="border-b border-border px-6 py-5">
+            <DialogHeader>
+              <div className="flex flex-wrap items-center gap-2 pr-8">
+                <DialogTitle>
+                  {activeTenancy ? "Detail Penyewa Aktif" : "Detail calon penyewa"}
+                </DialogTitle>
+                <SourceBadge source={lead.source} />
+              </div>
+              <DialogDescription>{leadJourney}</DialogDescription>
+            </DialogHeader>
+          </div>
 
-        <div className="space-y-6 px-6 py-5">
-          {cancellation ? (
-            <section
-              aria-label="Informasi pembatalan minat booking"
-              className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <CircleX className="h-5 w-5" aria-hidden="true" />
-                    <h2 className="text-base font-semibold">Minat booking telah dibatalkan</h2>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {rupiah.format(cancellation.refundAmount)} sudah dikembalikan melalui{" "}
-                    {cancellation.refundMethod === "cash" ? "Tunai" : "Transfer Bank"} pada{" "}
-                    {formatDate(cancellation.refundedAt)}. Kamar yang sebelumnya ditahan telah
-                    dilepas.
-                  </p>
-                  {cancellation.refundNote ? (
-                    <p className="mt-2 rounded-lg border border-border bg-background/70 p-3 text-sm text-foreground">
-                      {cancellation.refundNote}
-                    </p>
-                  ) : null}
-                  {cancellation.refundEvidenceFileIds.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Bukti refund tersimpan ({cancellation.refundEvidenceFileIds.length} file).
-                      </p>
-                      {cancellation.refundEvidenceFileIds.map((fileId, index) => (
-                        <Button
-                          key={fileId}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="min-h-9"
-                          onClick={() => void openEvidenceFile(fileId)}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Lihat bukti refund{" "}
-                          {cancellation.refundEvidenceFileIds.length > 1 ? index + 1 : ""}
-                        </Button>
-                      ))}
+          <div className="space-y-6 px-6 py-5">
+            {cancellation ? (
+              <section
+                aria-label="Informasi pembatalan minat booking"
+                className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <CircleX className="h-5 w-5" aria-hidden="true" />
+                      <h2 className="text-base font-semibold">Minat booking telah dibatalkan</h2>
                     </div>
-                  ) : (
-                    <p className="mt-2 text-xs font-medium text-muted-foreground">
-                      Tidak ada bukti file refund yang diunggah.
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {rupiah.format(cancellation.refundAmount)} sudah dikembalikan melalui{" "}
+                      {cancellation.refundMethod === "cash" ? "Tunai" : "Transfer Bank"} pada{" "}
+                      {formatDate(cancellation.refundedAt)}. Kamar yang sebelumnya ditahan telah
+                      dilepas.
                     </p>
-                  )}
+                    {cancellation.refundNote ? (
+                      <p className="mt-2 rounded-lg border border-border bg-background/70 p-3 text-sm text-foreground">
+                        {cancellation.refundNote}
+                      </p>
+                    ) : null}
+                    {cancellation.refundEvidenceFileIds.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Bukti refund tersimpan ({cancellation.refundEvidenceFileIds.length} file).
+                        </p>
+                        {cancellation.refundEvidenceFileIds.map((fileId, index) => (
+                          <Button
+                            key={fileId}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="min-h-9"
+                            onClick={() => void openEvidenceFile(fileId)}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Lihat bukti refund{" "}
+                            {cancellation.refundEvidenceFileIds.length > 1 ? index + 1 : ""}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">
+                        Tidak ada bukti file refund yang diunggah.
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="min-h-10 shrink-0"
+                    onClick={() =>
+                      cancellationPropertyId
+                        ? void downloadBookingLeadCancellationReceipt({
+                            propertyId: cancellationPropertyId,
+                            leadId: lead.id,
+                          })
+                        : undefined
+                    }
+                    disabled={!cancellationPropertyId}
+                  >
+                    <Download className="h-4 w-4" /> Unduh kuitansi refund
+                  </Button>
+                </div>
+              </section>
+            ) : null}
+
+            {progress?.paymentCommitment ? (
+              <section
+                aria-label="Dokumen pembayaran awal"
+                className="flex flex-col gap-3 rounded-xl border border-success/35 bg-success/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-success">
+                    <FileCheck2 className="h-5 w-5" aria-hidden="true" />
+                    <h2 className="text-base font-semibold">Dokumen pembayaran awal</h2>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Unduh dokumen resmi {PaymentTypeLabel(progress.paymentCommitment.paymentType)}{" "}
+                    untuk minat booking ini.
+                  </p>
                 </div>
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="success"
                   className="min-h-10 shrink-0"
                   onClick={() =>
-                    cancellationPropertyId
-                      ? void downloadBookingLeadCancellationReceipt({
-                          propertyId: cancellationPropertyId,
-                          leadId: lead.id,
-                        })
-                      : undefined
+                    void downloadBookingLeadCommitmentNote({
+                      propertyId: progress.propertyId,
+                      leadId: lead.id,
+                    })
                   }
-                  disabled={!cancellationPropertyId}
                 >
-                  <Download className="h-4 w-4" /> Unduh kuitansi refund
+                  <Download className="h-4 w-4" /> Unduh{" "}
+                  {progress.paymentCommitment.verificationStatus === "verified"
+                    ? "kuitansi pembayaran awal"
+                    : "nota pembayaran awal"}
                 </Button>
-              </div>
-            </section>
-          ) : null}
+              </section>
+            ) : null}
 
-          {progress?.paymentCommitment ? (
-            <section
-              aria-label="Dokumen pembayaran awal"
-              className="flex flex-col gap-3 rounded-xl border border-success/35 bg-success/5 p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-success">
-                  <FileCheck2 className="h-5 w-5" aria-hidden="true" />
-                  <h2 className="text-base font-semibold">Dokumen pembayaran awal</h2>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Unduh dokumen resmi {PaymentTypeLabel(progress.paymentCommitment.paymentType)}{" "}
-                  untuk minat booking ini.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="success"
-                className="min-h-10 shrink-0"
-                onClick={() =>
-                  void downloadBookingLeadCommitmentNote({
-                    propertyId: progress.propertyId,
-                    leadId: lead.id,
-                  })
-                }
+            {activeTenancy ? (
+              <section
+                aria-label="Aksi cepat penyewa aktif"
+                className="flex flex-col gap-3 rounded-xl border border-success/35 bg-success/5 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <Download className="h-4 w-4" /> Unduh{" "}
-                {progress.paymentCommitment.verificationStatus === "verified"
-                  ? "kuitansi pembayaran awal"
-                  : "nota pembayaran awal"}
-              </Button>
-            </section>
-          ) : null}
-
-          {activeTenancy ? (
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Aksi cepat penyewa aktif</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Buka detail operasional penghuni atau kamar tanpa meninggalkan konteks minat
+                    booking.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    className="min-h-11"
+                    type="button"
+                    variant="info"
+                    disabled={!progress?.tenancy?.residentId}
+                    onClick={() =>
+                      progress?.tenancy?.residentId && onViewResident?.(progress.tenancy.residentId)
+                    }
+                  >
+                    <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+                    <span>Lihat Detail Penghuni</span>
+                  </Button>
+                  <Button
+                    className="min-h-11"
+                    type="button"
+                    variant="info"
+                    disabled={!activeRoomNumber}
+                    onClick={() => activeRoomNumber && onViewRoom?.(activeRoomNumber)}
+                  >
+                    <House className="mr-2 h-4 w-4" aria-hidden="true" /> Lihat Detail Kamar
+                  </Button>
+                </div>
+              </section>
+            ) : null}
             <section
-              aria-label="Aksi cepat penyewa aktif"
-              className="flex flex-col gap-3 rounded-xl border border-success/35 bg-success/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+              aria-labelledby="booking-progress-heading"
+              className="rounded-xl border border-border bg-muted/10 p-4"
             >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">Aksi cepat penyewa aktif</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Buka detail operasional penghuni atau kamar tanpa meninggalkan konteks minat
-                  booking.
-                </p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2
+                    id="booking-progress-heading"
+                    className="text-base font-semibold text-foreground"
+                  >
+                    Progres minat booking
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Status hanya berubah berdasarkan hold, komitmen pembayaran, lease, dan occupancy
+                    yang tercatat.
+                  </p>
+                </div>
+                <BookingLeadStatusBadge
+                  label={BOOKING_LEAD_DISPLAY_STATUS_LABEL[displayStatus]}
+                  status={displayStatus}
+                />
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  className="min-h-11"
-                  type="button"
-                  variant="info"
-                  disabled={!progress?.tenancy?.residentId}
-                  onClick={() =>
-                    progress?.tenancy?.residentId && onViewResident?.(progress.tenancy.residentId)
-                  }
-                >
-                  <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
-                  <span>Lihat Detail Penghuni</span>
-                </Button>
-                <Button
-                  className="min-h-11"
-                  type="button"
-                  variant="info"
-                  disabled={!activeRoomNumber}
-                  onClick={() => activeRoomNumber && onViewRoom?.(activeRoomNumber)}
-                >
-                  <House className="mr-2 h-4 w-4" aria-hidden="true" /> Lihat Detail Kamar
-                </Button>
-              </div>
+              {progressQuery.isPending ? (
+                <div className="flex min-h-36 items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat progres...
+                </div>
+              ) : progressQuery.isError || !progress ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  Riwayat progres belum dapat dimuat. Informasi calon penyewa di bawah tetap
+                  tersedia.
+                  <Button
+                    className="ml-3 min-h-9"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void progressQuery.refetch()}
+                  >
+                    Coba lagi
+                  </Button>
+                </div>
+              ) : (
+                <ProgressTimeline progress={progress} />
+              )}
             </section>
-          ) : null}
-          <section
-            aria-labelledby="booking-progress-heading"
-            className="rounded-xl border border-border bg-muted/10 p-4"
-          >
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2
-                  id="booking-progress-heading"
-                  className="text-base font-semibold text-foreground"
-                >
-                  Progres minat booking
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Status hanya berubah berdasarkan hold, komitmen pembayaran, lease, dan occupancy
-                  yang tercatat.
-                </p>
-              </div>
-              <BookingLeadStatusBadge
-                label={BOOKING_LEAD_STATUS_LABEL[lead.status]}
-                status={lead.status}
-              />
-            </div>
-            {progressQuery.isPending ? (
-              <div className="flex min-h-36 items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat progres...
-              </div>
-            ) : progressQuery.isError || !progress ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                Riwayat progres belum dapat dimuat. Informasi calon penyewa di bawah tetap tersedia.
-                <Button
-                  className="ml-3 min-h-9"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void progressQuery.refetch()}
-                >
-                  Coba lagi
-                </Button>
-              </div>
-            ) : (
-              <ProgressTimeline progress={progress} />
-            )}
-          </section>
 
-          {progress ? (
-            <section aria-labelledby="payment-progress-heading">
-              <div className="mb-3 flex items-center gap-2">
-                <CircleDollarSign aria-hidden="true" className="h-4 w-4 text-primary" />
-                <h2
-                  id="payment-progress-heading"
-                  className="text-base font-semibold text-foreground"
-                >
-                  Ringkasan pembayaran dan sewa
-                </h2>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {progress ? (
+              <section aria-labelledby="payment-progress-heading">
+                <div className="mb-3 flex items-center gap-2">
+                  <CircleDollarSign aria-hidden="true" className="h-4 w-4 text-primary" />
+                  <h2
+                    id="payment-progress-heading"
+                    className="text-base font-semibold text-foreground"
+                  >
+                    Ringkasan pembayaran dan sewa
+                  </h2>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Detail
+                    label="Kredit sewa awal"
+                    value={
+                      progress.paymentCommitment
+                        ? rupiah.format(progress.paymentCommitment.rentCreditAmount)
+                        : "Belum dicatat"
+                    }
+                  />
+                  <Detail
+                    label="Total sewa kontrak"
+                    value={
+                      progress.tenancy
+                        ? rupiah.format(progress.tenancy.contractRentAmount)
+                        : "Belum dikomit"
+                    }
+                  />
+                  <Detail
+                    label="Pembayaran ledger"
+                    value={`${progress.paymentSummary.paymentCount} transaksi`}
+                  />
+                  <Detail
+                    label="Terverifikasi di ledger"
+                    value={rupiah.format(progress.paymentSummary.verifiedAmount)}
+                  />
+                </div>
+                <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <Detail
+                    label="Jenis dan metode pembayaran awal"
+                    value={
+                      progress.paymentCommitment
+                        ? `${PaymentTypeLabel(progress.paymentCommitment.paymentType)} · ${PaymentMethodLabel(progress.paymentCommitment.paymentMethod)}`
+                        : null
+                    }
+                  />
+                  <Detail
+                    label="Status pembayaran awal"
+                    value={
+                      progress.paymentCommitment
+                        ? progress.paymentCommitment.verificationStatus === "verified"
+                          ? "Terverifikasi"
+                          : "Menunggu konfirmasi"
+                        : null
+                    }
+                  />
+                  <Detail
+                    label="Security deposit tercatat"
+                    value={
+                      progress.paymentCommitment
+                        ? rupiah.format(progress.paymentCommitment.securityDepositAmount)
+                        : "Belum dicatat"
+                    }
+                  />
+                  <Detail
+                    label="Saldo security deposit"
+                    value={
+                      progress.tenancy
+                        ? rupiah.format(progress.paymentSummary.securityDepositBalance)
+                        : "Belum menjadi ledger"
+                    }
+                  />
+                  <Detail
+                    label="Menunggu konfirmasi di ledger"
+                    value={rupiah.format(progress.paymentSummary.pendingAmount)}
+                  />
+                  <Detail
+                    label="Status penyewaan"
+                    value={
+                      progress.tenancy
+                        ? progress.tenancy.occupancyStatus === "active"
+                          ? "Sudah dihuni"
+                          : "Menunggu aktivasi kamar"
+                        : "Belum menjadi penyewaan"
+                    }
+                  />
+                </dl>
+              </section>
+            ) : null}
+
+            <section aria-labelledby="lead-data-heading">
+              <h2 id="lead-data-heading" className="mb-3 text-base font-semibold text-foreground">
+                {activeTenancy ? "Data penyewa aktif" : "Data minat booking"}
+              </h2>
+              <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <Detail label="Calon Penyewa" value={lead.visitorName} />
+                <Detail label="Nomor WhatsApp" value={lead.visitorPhone} />
+                <Detail label="Kategori Kost" value={BOOKING_LEAD_CATEGORY_LABEL[lead.category]} />
+                <Detail label="Jenis Kelamin" value={BOOKING_LEAD_GENDER_LABEL[lead.gender]} />
+                <Detail label="Universitas/Pendidikan" value={lead.visitorUniversity} />
+                <div className="min-w-0 rounded-xl border border-border bg-muted/20 p-3">
+                  <dt className="text-xs font-medium text-muted-foreground">Sumber</dt>
+                  <dd className="mt-2">
+                    <SourceBadge source={lead.source} />
+                  </dd>
+                </div>
+                <Detail label="Kamar/Target" value={progress?.hold?.roomNumber ?? roomTarget} />
                 <Detail
-                  label="Kredit sewa awal"
+                  label={activeTenancy ? "Tanggal mulai sewa" : "Rencana Masuk"}
                   value={
-                    progress.paymentCommitment
-                      ? rupiah.format(progress.paymentCommitment.rentCreditAmount)
-                      : "Belum dicatat"
+                    ["awaiting_activation", "leased"].includes(displayStatus)
+                      ? tenancyStartDate
+                        ? formatDate(tenancyStartDate)
+                        : null
+                      : lead.preferredMoveInDate
+                        ? formatDate(lead.preferredMoveInDate)
+                        : null
                   }
                 />
                 <Detail
-                  label="Total sewa kontrak"
-                  value={
-                    progress.tenancy
-                      ? rupiah.format(progress.tenancy.contractRentAmount)
-                      : "Belum dikomit"
-                  }
+                  label="Status minat booking"
+                  value={BOOKING_LEAD_DISPLAY_STATUS_LABEL[displayStatus]}
                 />
-                <Detail
-                  label="Pembayaran ledger"
-                  value={`${progress.paymentSummary.paymentCount} transaksi`}
-                />
-                <Detail
-                  label="Terverifikasi di ledger"
-                  value={rupiah.format(progress.paymentSummary.verifiedAmount)}
-                />
-              </div>
-              <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <Detail
-                  label="Jenis dan metode pembayaran awal"
-                  value={
-                    progress.paymentCommitment
-                      ? `${PaymentTypeLabel(progress.paymentCommitment.paymentType)} · ${PaymentMethodLabel(progress.paymentCommitment.paymentMethod)}`
-                      : null
-                  }
-                />
-                <Detail
-                  label="Status pembayaran awal"
-                  value={
-                    progress.paymentCommitment
-                      ? progress.paymentCommitment.verificationStatus === "verified"
-                        ? "Terverifikasi"
-                        : "Menunggu konfirmasi"
-                      : null
-                  }
-                />
-                <Detail
-                  label="Security deposit tercatat"
-                  value={
-                    progress.paymentCommitment
-                      ? rupiah.format(progress.paymentCommitment.securityDepositAmount)
-                      : "Belum dicatat"
-                  }
-                />
-                <Detail
-                  label="Saldo security deposit"
-                  value={
-                    progress.tenancy
-                      ? rupiah.format(progress.paymentSummary.securityDepositBalance)
-                      : "Belum menjadi ledger"
-                  }
-                />
-                <Detail
-                  label="Menunggu konfirmasi di ledger"
-                  value={rupiah.format(progress.paymentSummary.pendingAmount)}
-                />
-                <Detail
-                  label="Status penyewaan"
-                  value={
-                    progress.tenancy
-                      ? progress.tenancy.occupancyStatus === "active"
-                        ? "Sudah dihuni"
-                        : "Menunggu aktivasi kamar"
-                      : "Belum menjadi penyewaan"
-                  }
-                />
+                <Detail label="Dicatat" value={formatDate(lead.createdAt)} />
+                <div className="sm:col-span-2">
+                  <Detail label="Alamat" value={lead.visitorAddress} />
+                </div>
+                <div className="sm:col-span-2">
+                  <Detail label="Catatan calon penyewa" value={lead.visitorMessage} />
+                </div>
               </dl>
             </section>
-          ) : null}
 
-          <section aria-labelledby="lead-data-heading">
-            <h2 id="lead-data-heading" className="mb-3 text-base font-semibold text-foreground">
-              {activeTenancy ? "Data penyewa aktif" : "Data minat booking"}
-            </h2>
-            <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
-              <Detail label="Calon Penyewa" value={lead.visitorName} />
-              <Detail label="Nomor WhatsApp" value={lead.visitorPhone} />
-              <Detail label="Kategori Kost" value={BOOKING_LEAD_CATEGORY_LABEL[lead.category]} />
-              <Detail label="Jenis Kelamin" value={BOOKING_LEAD_GENDER_LABEL[lead.gender]} />
-              <Detail label="Universitas/Pendidikan" value={lead.visitorUniversity} />
-              <div className="min-w-0 rounded-xl border border-border bg-muted/20 p-3">
-                <dt className="text-xs font-medium text-muted-foreground">Sumber</dt>
-                <dd className="mt-2">
-                  <SourceBadge source={lead.source} />
-                </dd>
-              </div>
-              <Detail label="Kamar/Target" value={progress?.hold?.roomNumber ?? roomTarget} />
-              <Detail
-                label={activeTenancy ? "Tanggal mulai sewa" : "Rencana Masuk"}
-                value={
-                  activeTenancy
-                    ? progress?.tenancy?.startDate
-                      ? formatDate(progress.tenancy.startDate)
-                      : null
-                    : lead.preferredMoveInDate
-                      ? formatDate(lead.preferredMoveInDate)
-                      : null
-                }
-              />
-              <Detail label="Status minat booking" value={BOOKING_LEAD_STATUS_LABEL[lead.status]} />
-              <Detail label="Dicatat" value={formatDate(lead.createdAt)} />
-              <div className="sm:col-span-2">
-                <Detail label="Alamat" value={lead.visitorAddress} />
-              </div>
-              <div className="sm:col-span-2">
-                <Detail label="Catatan calon penyewa" value={lead.visitorMessage} />
-              </div>
-            </dl>
-          </section>
-
-          {canArchive ? (
-            <section
-              aria-label="Pembersihan data minat booking terminal"
-              className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
-            >
-              {!archiveConfirmation ? (
+            {canCancelAwaitingActivation ? (
+              <section
+                aria-label="Pembatalan penyewaan sebelum aktivasi"
+                className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-destructive">
-                      <Trash2 aria-hidden="true" className="h-4 w-4" />
-                      <h2 className="text-sm font-semibold">Hapus dari daftar</h2>
+                      <RotateCcw aria-hidden="true" className="h-4 w-4" />
+                      <h2 className="text-sm font-semibold">Pembatalan sebelum aktivasi</h2>
                     </div>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      Lead {BOOKING_LEAD_STATUS_LABEL[lead.status].toLowerCase()} dapat
-                      disembunyikan dari antrean. Riwayat audit, pembayaran, refund, dan hold tetap
-                      dipertahankan.
+                      Booking Fee/DP masih dapat dibatalkan karena penyewaan berstatus Menunggu
+                      Aktivasi. Seluruh dana awal terverifikasi akan direfund.
                     </p>
                   </div>
                   <Button
                     type="button"
                     variant="destructive"
                     className="min-h-10 shrink-0"
-                    onClick={() => setArchiveConfirmation(true)}
+                    onClick={() => setCancellationOpen(true)}
                   >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" /> Hapus dari daftar
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" /> Batalkan dan Refund
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm leading-6 text-foreground">
-                    Hapus lead terminal ini dari daftar? Data akan diarsipkan dan tidak muncul lagi
-                    di antrean operasional. Riwayat transaksi dan audit tidak dihapus.
-                  </p>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="min-h-10"
-                      disabled={archivePending}
-                      onClick={() => setArchiveConfirmation(false)}
-                    >
-                      Batal
-                    </Button>
+              </section>
+            ) : null}
+
+            {canArchive ? (
+              <section
+                aria-label="Pembersihan data minat booking terminal"
+                className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
+              >
+                {!archiveConfirmation ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-destructive">
+                        <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        <h2 className="text-sm font-semibold">Hapus dari daftar</h2>
+                      </div>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Lead {BOOKING_LEAD_STATUS_LABEL[lead.status].toLowerCase()} dapat
+                        disembunyikan dari antrean. Riwayat audit, pembayaran, refund, dan hold
+                        tetap dipertahankan.
+                      </p>
+                    </div>
                     <Button
                       type="button"
                       variant="destructive"
-                      className="min-h-10"
-                      disabled={archivePending}
-                      onClick={() => void onArchive?.(lead)}
+                      className="min-h-10 shrink-0"
+                      onClick={() => setArchiveConfirmation(true)}
                     >
-                      {archivePending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      Hapus sekarang
+                      <Trash2 className="h-4 w-4" aria-hidden="true" /> Hapus dari daftar
                     </Button>
                   </div>
-                </div>
-              )}
-            </section>
-          ) : null}
-        </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm leading-6 text-foreground">
+                      Hapus lead terminal ini dari daftar? Data akan diarsipkan dan tidak muncul
+                      lagi di antrean operasional. Riwayat transaksi dan audit tidak dihapus.
+                    </p>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-10"
+                        disabled={archivePending}
+                        onClick={() => setArchiveConfirmation(false)}
+                      >
+                        Batal
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        className="min-h-10"
+                        disabled={archivePending}
+                        onClick={() => void onArchive?.(lead)}
+                      >
+                        {archivePending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        Hapus sekarang
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
+          </div>
 
-        <DialogFooter className="border-t border-border px-6 py-4">
-          <Button className="min-h-11" variant="secondary" onClick={() => onOpenChange(false)}>
-            Tutup
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="border-t border-border px-6 py-4">
+            <Button className="min-h-11" variant="secondary" onClick={() => onOpenChange(false)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <BookingLeadCancellationDialog
+        open={cancellationOpen}
+        leadId={lead.id}
+        residentName={lead.visitorName}
+        roomNumber={activeRoomNumber}
+        onOpenChange={setCancellationOpen}
+        onCancelled={async () => {
+          await progressQuery.refetch();
+        }}
+      />
+    </>
   );
 }

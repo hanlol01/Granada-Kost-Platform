@@ -100,6 +100,7 @@ export class ResidentController {
             resident_id: tenancy.residentId,
             property_id: tenancy.propertyId,
             lease_id: tenancy.leaseId,
+            booking_lead_id: tenancy.bookingLeadId,
             lease_status: tenancy.leaseStatus,
             room_number: tenancy.roomNumber,
             kost_type_name: tenancy.kostTypeName,

@@ -1087,8 +1087,8 @@ export const COMPLAINT_CATEGORY_SEEDS: ComplaintCategorySeedRecord[] = [
 export const DEV_USER_SEEDS: DevUserSeedRecord[] = [
   {
     id: CORE_SEED_IDS.devUsers.admin,
-    email: 'dev.admin@kostation.test',
-    displayName: 'Dev Admin Complaint',
+    email: 'admin.diki@kostation.com',
+    displayName: 'Diki Karya Permana',
     roleCode: 'admin',
   },
   {

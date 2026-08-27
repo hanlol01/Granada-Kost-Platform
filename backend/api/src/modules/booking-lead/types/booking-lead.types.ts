@@ -35,8 +35,9 @@ export type BookingLeadRecord = {
   preferredMoveInDate: string | null;
   /**
    * Projected only for the Admin queue. This is the authoritative lease
-   * start date once a booking lead has become an active tenancy; it is not
-   * the optional move-in preference captured when the lead was created.
+   * start date once a booking lead has become a tenancy awaiting activation
+   * or an active tenancy; it is not the optional move-in preference captured
+   * when the lead was created.
    */
   activeLeaseStartDate: string | null;
   status: BookingLeadStatus;

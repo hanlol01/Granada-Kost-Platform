@@ -830,13 +830,15 @@ async function seedDevelopmentSmartLockRuntime(client: PoolClient): Promise<void
 async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promise<void> {
   const staffPasswordHash = await argon2.hash('Demo123@');
   const technicianPasswordHash = await argon2.hash('Demo123@');
+  const adminPasswordHash = await argon2.hash('Granadakost2026');
 
   for (const user of DEV_USER_SEEDS) {
     await client.query(
       `INSERT INTO users (id, email, phone, password_hash, display_name, user_status, password_changed_at)
        VALUES ($1, $2, $3, $4, $5, 'active', now())
-       ON CONFLICT (email) DO UPDATE
-       SET phone = EXCLUDED.phone,
+       ON CONFLICT (id) DO UPDATE
+       SET email = EXCLUDED.email,
+           phone = EXCLUDED.phone,
            password_hash = EXCLUDED.password_hash,
            display_name = EXCLUDED.display_name,
            user_status = EXCLUDED.user_status,
@@ -846,7 +848,11 @@ async function seedDevelopmentComplaintAndMaintenance(client: PoolClient): Promi
         user.id,
         user.email,
         user.phone ?? null,
-        user.roleCode === 'technician' ? technicianPasswordHash : staffPasswordHash,
+        user.roleCode === 'admin'
+          ? adminPasswordHash
+          : user.roleCode === 'technician'
+            ? technicianPasswordHash
+            : staffPasswordHash,
         user.displayName,
       ],
     );

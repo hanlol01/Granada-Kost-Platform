@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   parseAdminBookingLeadPage,
+  bookingLeadDisplayStatus,
   requestArchiveAdminBookingLead,
   requestAdminBookingLeadPage,
   type BookingLeadRecord,
@@ -111,6 +112,28 @@ test("workspace uses canonical queue vocabulary and removes obsolete survey conv
   assert.match(page, /lead\.activeLeaseStartDate/);
 });
 
+test("completed tenancy is presented as awaiting activation and keeps its lease start date", () => {
+  const awaitingActivationLead: BookingLeadRecord = {
+    ...lead,
+    status: "onboarding",
+    preferredMoveInDate: "2026-08-21",
+    activeLeaseStartDate: "2026-08-21",
+  };
+  assert.equal(bookingLeadDisplayStatus(awaitingActivationLead), "awaiting_activation");
+  assert.equal(
+    bookingLeadDisplayStatus({ ...awaitingActivationLead, activeLeaseStartDate: null }),
+    "onboarding",
+  );
+
+  const page = source("routes/booking-leads.tsx");
+  assert.match(page, /bookingLeadDisplayStatus/);
+  assert.match(page, /!awaitingActivation/);
+
+  const onboarding = backendSource("api/src/modules/resident/onboarding.service.ts");
+  assert.match(onboarding, /lease_id=\$4/);
+  assert.match(onboarding, /preferred_move_in_date=\$5::date/);
+});
+
 test("active tenancy detail exposes property-safe fast links only from the progress projection", () => {
   const dialog = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
   const page = source("routes/booking-leads.tsx");
@@ -120,6 +143,20 @@ test("active tenancy detail exposes property-safe fast links only from the progr
   assert.match(dialog, /progress\.tenancy\.residentId/);
   assert.match(page, /to: "\/tenants\/\$residentId"/);
   assert.match(page, /to: "\/rooms\/\$roomNumber"/);
+});
+
+test("pre-activation refund is available only inside booking and resident details", () => {
+  const page = source("routes/booking-leads.tsx");
+  const leadDetail = source("components/booking-leads/BookingLeadDetailsDialog.tsx");
+  const residentDetail = source("components/residents/ResidentDetailWorkspace.tsx");
+  const cancellation = source("components/booking-leads/BookingLeadCancellationDialog.tsx");
+
+  assert.doesNotMatch(page, /Batalkan \/ Refund/);
+  assert.match(leadDetail, /paymentType !== "full_settlement"/);
+  assert.match(leadDetail, /leaseStatus === "awaiting_activation"/);
+  assert.match(residentDetail, /Batalkan dan Refund/);
+  assert.match(residentDetail, /currentTenancy\.bookingLeadId/);
+  assert.match(cancellation, /lease, kontrak, dan invoice/);
 });
 
 test("status mutation keeps property scope and one stable key per logical action", () => {

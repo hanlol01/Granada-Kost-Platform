@@ -20,7 +20,7 @@ export function UserMenu() {
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
 
-  const initials = (user?.name ?? user?.email ?? "U")
+  const initials = (user?.displayName ?? user?.name ?? user?.email ?? "U")
     .split(" ")
     .map((part) => part[0])
     .join("")
@@ -53,7 +53,7 @@ export function UserMenu() {
           </span>
           <span className="hidden text-left lg:block">
             <span className="block text-xs font-semibold leading-tight">
-              {user?.name ?? user?.email ?? "Pengguna"}
+              {user?.displayName ?? user?.name ?? user?.email ?? "Pengguna"}
             </span>
             <span className="block text-[10px] text-muted-foreground capitalize leading-tight">
               {primaryRole.replace("_", " ")}
@@ -63,7 +63,10 @@ export function UserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col gap-0.5">
-          <span className="text-sm">{user?.name ?? "Pengguna"}</span>
+          <span className="text-xs font-medium text-muted-foreground">Nama pengguna</span>
+          <span className="text-sm">
+            {user?.displayName ?? user?.name ?? user?.email ?? "Pengguna"}
+          </span>
           {user?.email ? <span className="text-xs text-muted-foreground">{user.email}</span> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

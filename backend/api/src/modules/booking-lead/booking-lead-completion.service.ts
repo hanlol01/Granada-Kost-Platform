@@ -11,7 +11,10 @@ import {
   createBillingReceiptPdf,
   type BillingReceiptDocument,
 } from '../billing/helpers/billing-document.helper';
-import { W06BillingService } from '../billing/services/w06-billing.service';
+import {
+  W06BillingService,
+  type CancelInitialOnboardingFinancialsSummary,
+} from '../billing/services/w06-billing.service';
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
 import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
 
@@ -177,6 +180,7 @@ type ProgressRow = {
   contract_rent_amount: string | number | null;
   occupancy_status: string | null;
   occupancy_started_at: string | Date | null;
+  activation_state: string | null;
 };
 
 export type BookingLeadProgressResponse = {
@@ -223,6 +227,7 @@ export type BookingLeadProgressResponse = {
     contract_rent_amount: number;
     occupancy_status: string | null;
     occupancy_started_at: string | null;
+    activation_state: string | null;
   } | null;
   payment_summary: {
     verified_amount: number;
@@ -364,7 +369,7 @@ export class BookingLeadCompletionService {
     }
   }
 
-  /** Cancels a Booking Fee/DP commitment only while its materialized lease awaits activation. */
+  /** Cancels a Booking Fee/DP commitment before rental completion or while its lease awaits activation. */
   async cancelPaymentCommitment(
     leadId: string,
     dto: CancelBookingLeadPaymentCommitmentDto,
@@ -422,37 +427,44 @@ export class BookingLeadCompletionService {
           message: 'A fully paid booking cannot be cancelled through the Booking Fee / DP flow',
         });
       }
-      if (!commitment.materialized_onboarding_commitment_id)
-        throw new ConflictException({
-          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
-          message: 'Cancellation is available after rental data reaches Awaiting Activation',
-        });
-      const target = await client.query<MaterializedOnboardingTargetRow>(
-        `SELECT oc.resident_id,oc.lease_id,l.lease_status,l.room_id
-         FROM onboarding_commitments oc
-         JOIN leases l ON l.id=oc.lease_id AND l.property_id=oc.property_id
-         WHERE oc.id=$1 AND oc.property_id=$2 AND oc.booking_lead_id=$3
-         FOR UPDATE OF oc,l`,
-        [commitment.materialized_onboarding_commitment_id, dto.property_id, leadId],
-      );
-      const materializedTarget = target.rows[0] ?? null;
-      if (!materializedTarget || materializedTarget.lease_status !== 'awaiting_activation') {
-        throw new ConflictException({
-          code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
-          message: 'Cancellation is only available while the lease is awaiting activation',
-        });
+      let materializedTarget: MaterializedOnboardingTargetRow | null = null;
+      if (commitment.materialized_onboarding_commitment_id) {
+        const target = await client.query<MaterializedOnboardingTargetRow>(
+          `SELECT oc.resident_id,oc.lease_id,l.lease_status,l.room_id
+           FROM onboarding_commitments oc
+           JOIN leases l ON l.id=oc.lease_id AND l.property_id=oc.property_id
+           WHERE oc.id=$1 AND oc.property_id=$2 AND oc.booking_lead_id=$3
+           FOR UPDATE OF oc,l`,
+          [commitment.materialized_onboarding_commitment_id, dto.property_id, leadId],
+        );
+        materializedTarget = target.rows[0] ?? null;
+        if (!materializedTarget || materializedTarget.lease_status !== 'awaiting_activation') {
+          throw new ConflictException({
+            code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
+            message: 'Cancellation is only available while the lease is awaiting activation',
+          });
+        }
       }
       // A pending bank transfer is not money received yet. The lead may still
       // be cancelled, but it must never create a financial refund for an
       // unverified amount.
-      const financialCancellation =
-        await this.billing.cancelInitialOnboardingFinancialsInTransaction(client, {
-          propertyId: dto.property_id,
-          leaseId: materializedTarget.lease_id,
-          actorId: actorUserId,
-          reason: dto.refund_note?.trim() || 'Pembatalan penyewaan sebelum aktivasi',
-          context: { correlationId },
-        });
+      const financialCancellation: CancelInitialOnboardingFinancialsSummary = materializedTarget
+        ? await this.billing.cancelInitialOnboardingFinancialsInTransaction(client, {
+            propertyId: dto.property_id,
+            leaseId: materializedTarget.lease_id,
+            actorId: actorUserId,
+            reason: dto.refund_note?.trim() || 'Pembatalan penyewaan sebelum aktivasi',
+            context: { correlationId },
+          })
+        : {
+            refundedAmount:
+              commitment.verification_status === 'verified'
+                ? Number(commitment.rent_credit_amount) + Number(commitment.security_deposit_amount)
+                : 0,
+            reversalIds: [],
+            rejectedPaymentIds: [],
+            voidedInvoiceIds: [],
+          };
       const refundAmount = financialCancellation.refundedAmount;
       const refundEvidenceFileIds = dto.refund_evidence_file_ids ?? [];
       if (
@@ -489,7 +501,7 @@ export class BookingLeadCompletionService {
           code: 'BOOKING_LEAD_REFUND_UNAVAILABLE',
           message: 'Refund could not be recorded',
         });
-      {
+      if (materializedTarget) {
         const reason = dto.refund_note?.trim() || 'Pembatalan penyewaan sebelum aktivasi';
         await client.query(
           `UPDATE lease_contract_settlements
@@ -526,14 +538,17 @@ export class BookingLeadCompletionService {
           ],
         );
         await client.query(
-          `UPDATE residents resident SET resident_status='inactive',updated_at=now()
+          `UPDATE residents resident
+           SET resident_status='archived',archive_reason=$3,
+               archive_source='pre_activation_cancellation',archived_at=now(),
+               archived_by_user_id=$4,updated_at=now()
            WHERE resident.id=$1 AND resident.property_id=$2
              AND NOT EXISTS (
                SELECT 1 FROM leases lease
                WHERE lease.resident_id=resident.id AND lease.property_id=resident.property_id
                  AND lease.lease_status IN ('awaiting_activation','active')
              )`,
-          [materializedTarget.resident_id, dto.property_id],
+          [materializedTarget.resident_id, dto.property_id, reason, actorUserId],
         );
       }
       const released = await client.query(
@@ -577,7 +592,7 @@ export class BookingLeadCompletionService {
         refund_method: dto.refund_method,
         refund_evidence_file_ids: refundEvidenceFileIds,
         refunded_at: this.iso(refund.refunded_at),
-        lease_id: materializedTarget.lease_id,
+        lease_id: materializedTarget?.lease_id ?? null,
         reversal_ids: financialCancellation.reversalIds,
         rejected_payment_ids: financialCancellation.rejectedPaymentIds,
         voided_invoice_ids: financialCancellation.voidedInvoiceIds,
@@ -904,7 +919,8 @@ export class BookingLeadCompletionService {
                 onboarding.status AS onboarding_status,onboarding.committed_at AS onboarding_committed_at,
                 lease.resident_id,lease.lease_status,lease.start_date AS lease_start_date,lease.end_date AS lease_end_date,
                 lease.term_months AS lease_term_months,lease.contract_rent_amount,
-                occupancy.occupancy_status,occupancy.start_date AS occupancy_started_at
+                occupancy.occupancy_status,occupancy.start_date AS occupancy_started_at,
+                activation.state AS activation_state
          FROM booking_leads lead
          LEFT JOIN rooms target_room
            ON target_room.id=lead.room_id AND target_room.property_id=lead.property_id
@@ -929,6 +945,8 @@ export class BookingLeadCompletionService {
           AND lease.property_id=lead.property_id
          LEFT JOIN occupancies occupancy
            ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lead.property_id
+         LEFT JOIN lease_activation_lifecycles activation
+           ON activation.lease_id=lease.id AND activation.property_id=lead.property_id
          WHERE lead.id=$1 AND lead.property_id=$2`,
         [leadId, propertyId],
       );
@@ -1047,6 +1065,7 @@ export class BookingLeadCompletionService {
             occupancy_started_at: row.occupancy_started_at
               ? this.date(row.occupancy_started_at)
               : null,
+            activation_state: row.activation_state,
           }
         : null,
       payment_summary: {
@@ -1196,6 +1215,11 @@ export class BookingLeadCompletionService {
   }
 
   private assertPayment(dto: CompleteBookingLeadDto, rentTotal: number): void {
+    if (dto.payment_type === 'down_payment' && dto.rent_credit_amount <= 0)
+      throw new BadRequestException({
+        code: 'DOWN_PAYMENT_AMOUNT_INVALID',
+        message: 'DP must be greater than Rp0',
+      });
     if (dto.payment_type === 'booking_fee' && dto.rent_credit_amount !== 1000000)
       throw new BadRequestException({
         code: 'BOOKING_FEE_AMOUNT_INVALID',

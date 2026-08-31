@@ -23,6 +23,7 @@ import { AdminBillingService } from './services/admin-billing.service';
 import { W06BillingService } from './services/w06-billing.service';
 import { ContractSettlementService } from './services/contract-settlement.service';
 import { ContractScheduleIssuanceService } from './services/contract-schedule-issuance.service';
+import { ContractSettlementLifecycleScheduler } from './services/contract-settlement-lifecycle.scheduler';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
@@ -40,6 +41,7 @@ import { ContractScheduleIssuanceService } from './services/contract-schedule-is
     W06BillingService,
     ContractSettlementService,
     ContractScheduleIssuanceService,
+    ContractSettlementLifecycleScheduler,
     BillingPeriodRepository,
     InvoiceRepository,
     PaymentRepository,

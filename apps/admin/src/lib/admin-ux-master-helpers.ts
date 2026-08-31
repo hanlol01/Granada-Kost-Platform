@@ -94,6 +94,7 @@ export function roomStructuralInputChanged(
 export const ROOM_STATUS_LABEL: Record<RoomStatus, string> = {
   vacant: "Kosong",
   reserved: "Dipesan",
+  awaiting_check_in: "Menunggu Check-in",
   occupied: "Terisi",
   maintenance: "Maintenance",
   inactive: "Tidak Aktif",
@@ -130,6 +131,7 @@ export function summarizeRoomInventory(
   const statusCounts: Record<RoomStatus, number> = {
     vacant: 0,
     reserved: 0,
+    awaiting_check_in: 0,
     occupied: 0,
     maintenance: 0,
     inactive: 0,

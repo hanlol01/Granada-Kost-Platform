@@ -294,8 +294,8 @@ export function ResidentOnboardingDialog({
         {mutationMatchesScope && mutation.data?.leaseStatus === "awaiting_activation" ? (
           <div className="grid gap-2 rounded border p-3">
             <p className="text-sm text-muted-foreground">
-              Komitmen onboarding selesai. Aktivasi lease adalah langkah terpisah dan akan membuat
-              occupancy aktif.
+              Komitmen onboarding selesai. Aktivasi lease adalah langkah terpisah yang mengaktifkan
+              kontrak dan mengikat kamar; occupancy baru dibuat setelah check-in fisik dikonfirmasi.
             </p>
             <Button
               variant="secondary"

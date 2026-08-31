@@ -264,8 +264,16 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
       },
     } as never,
     {
-      issueScheduleInTransaction: async (transactionClient: unknown) => {
+      issueScheduleInTransaction: async (
+        transactionClient: unknown,
+        input: { snapshotMonthlyPrice: number },
+      ) => {
         assert.equal(transactionClient, client);
+        assert.equal(
+          input.snapshotMonthlyPrice,
+          1_800_000,
+          'PostgreSQL BIGINT room prices must be normalized before schedule issuance',
+        );
         events.push('schedule');
         return { firstInvoiceId: FIRST_RENT_INVOICE_ID, installmentCount: 3 };
       },
@@ -334,7 +342,7 @@ function createActivationHarness(options: HarnessOptions = {}) {
                 data: {
                   leaseId: LEASE_ID,
                   leaseStatus: 'active',
-                  occupancyStatus: 'active',
+                  occupancyStatus: 'awaiting_check_in',
                   roomNumber: 'RK-01-01',
                 },
               },
@@ -346,17 +354,22 @@ function createActivationHarness(options: HarnessOptions = {}) {
         return { rows: [activationLease(options.roomOverrides)], rowCount: 1 };
       if (/AS activation_is_available/.test(normalized))
         return {
-          rows: [{ activation_is_available: options.activationAvailable ?? true }],
+          rows: [
+            {
+              activation_is_available: options.activationAvailable ?? true,
+              effective_is_valid: options.activationAvailable ?? true,
+            },
+          ],
           rowCount: 1,
         };
-      if (/AS dp_verified_amount/.test(normalized))
+      if (/AS verified_rent_credit/.test(normalized))
         return {
           rows: [
             {
-              dp_verified_amount: '5400000',
               deposit_balance: '1800000',
               first_due_date: '2026-08-01',
               first_invoice_status: 'partially_paid',
+              verified_rent_credit: '5400000',
             },
           ],
           rowCount: 1,
@@ -374,8 +387,8 @@ function createActivationHarness(options: HarnessOptions = {}) {
           rows: (options.leaseRows ?? []).map((id) => ({ id })),
           rowCount: options.leaseRows?.length ?? 0,
         };
-      if (/INSERT INTO occupancies/.test(normalized))
-        return { rows: [{ id: OCCUPANCY_ID }], rowCount: 1 };
+      if (/INSERT INTO lease_activation_lifecycles/.test(normalized))
+        return { rows: [{ id: 'activation-lifecycle-id' }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
   };
@@ -531,27 +544,30 @@ test('three-month full payment accepts Rp1.000.000 booking credit plus Rp4.400.0
   );
 });
 
-test('three-month DP plan records the 25% figure as a recommendation and accepts a lower agreed amount', async () => {
+test('three-month DP recommendation never bypasses the one-month initial-rent minimum', async () => {
   const harness = createOnboardingHarness({ expectedInitialRentCredit: 100_000 });
-  const response = await harness.service.commit(
-    actor as never,
-    {
-      ...onboardingDto,
-      term_months: 3,
-      billing_cycle: 'monthly',
-      payment_plan_type: 'monthly_installments',
-      dp_verified_amount: 100_000,
-      booking_fee_paid_amount: 0,
-      security_deposit_funded_amount: 0,
-      payment_method: 'cash',
-    },
-    IDEMPOTENCY_KEY,
-    {},
+  await assert.rejects(
+    harness.service.commit(
+      actor as never,
+      {
+        ...onboardingDto,
+        term_months: 3,
+        billing_cycle: 'monthly',
+        payment_plan_type: 'monthly_installments',
+        dp_verified_amount: 100_000,
+        booking_fee_paid_amount: 0,
+        security_deposit_funded_amount: 0,
+        payment_method: 'cash',
+      },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'ONBOARDING_FINANCIAL_OBLIGATION_UNMET',
   );
-
-  assert.equal(response.contractRentAmount, 5_400_000);
-  assert.equal(response.dpRequiredAmount, 1_350_000);
-  assert.equal(response.initialPayment.dpRecordedAmount, 100_000);
 });
 
 test('commercial calculation keeps DP and free security deposit separate and public lead cannot inject room', async () => {
@@ -602,6 +618,18 @@ test('onboarding reads the canonical category commercial version without legacy 
     [ROOM_ID, PROPERTY_ID, onboardingDto.start_date],
     'commercial authority must be selected for the final contractual start date',
   );
+});
+
+test('onboarding normalizes PostgreSQL BIGINT room prices before schedule issuance', async () => {
+  const harness = createOnboardingHarness({
+    roomOverrides: {
+      monthly_price: '1800000',
+      yearly_price: '21600000',
+      security_deposit_amount: '1800000',
+    },
+  });
+
+  await harness.service.commit(actor as never, onboardingDto, IDEMPOTENCY_KEY, {});
 });
 
 test('resident insert binds date of birth as a date and keeps address as text', async () => {
@@ -1015,7 +1043,7 @@ test('onboarding audit failure rolls back without outbox or idempotency completi
   );
 });
 
-test('activation rechecks the full tuple and creates occupancy only after all locks pass', async () => {
+test('activation rechecks the full tuple and leaves physical occupancy for check-in', async () => {
   const harness = createActivationHarness();
   const response = await harness.service.activate(
     actor as never,
@@ -1025,6 +1053,17 @@ test('activation rechecks the full tuple and creates occupancy only after all lo
     {},
   );
   assert.equal(response.data.leaseStatus, 'active');
+  assert.equal(response.data.occupancyStatus, 'awaiting_check_in');
+  assert.equal(
+    harness.queries.some(({ sql }) => /INSERT INTO occupancies/.test(sql)),
+    false,
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) =>
+      /UPDATE rooms SET room_status='awaiting_check_in'/.test(sql),
+    ),
+    true,
+  );
   assert.deepEqual(
     harness.events.filter((event) =>
       ['authorized', 'begin', 'audit', 'commit', 'release'].includes(event),
@@ -1037,7 +1076,7 @@ test('activation rechecks the full tuple and creates occupancy only after all lo
       if (/FROM booking_lead_holds/.test(sql)) return 'hold';
       if (/FROM occupancies/.test(sql)) return 'occupancy';
       if (/FROM leases/.test(sql) && /lease_status='active'/.test(sql)) return 'lease';
-      if (/INSERT INTO occupancies/.test(sql)) return 'mutation';
+      if (/UPDATE leases SET lease_status='active'/.test(sql)) return 'mutation';
       return null;
     })
     .filter(Boolean);
@@ -1081,7 +1120,7 @@ test('activation rejects a lease before its Jakarta start date without lifecycle
     activationWindow,
     'activation availability must be checked by the database business date',
   );
-  assert.deepEqual(activationWindow.params, [startDate]);
+  assert.deepEqual(activationWindow.params, [startDate, null, null]);
 });
 
 test('activation replay is exact and performs no tuple lookup or lifecycle mutation', async () => {

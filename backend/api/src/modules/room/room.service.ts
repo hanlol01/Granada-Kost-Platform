@@ -102,6 +102,13 @@ export class RoomService {
           'Room is awaiting transfer inspection; use POST /rooms/:roomId/inspection-resolution to resolve it',
       });
     }
+    if (before.roomStatus === 'awaiting_check_in') {
+      throw new ConflictException({
+        code: 'ROOM_CHECK_IN_LIFECYCLE_LOCKED',
+        message:
+          'Room is awaiting physical check-in and can only change through the lease check-in lifecycle',
+      });
+    }
     const updated = await this.rooms.updateRoomStatus(roomId, dto.status, user.id);
     if (!updated) {
       throw new NotFoundException({ code: 'ROOM_NOT_FOUND', message: 'Room not found' });

@@ -37,6 +37,7 @@ function residentListItem(status: string) {
     contract_settlement_due_date: null,
     contract_settlement_remaining_amount: 0,
     contract_settlement_checkpoint_required_amount: 0,
+    lease_expired_admin_action_required: false,
     resident_status: status,
     created_at: timestamp,
     updated_at: timestamp,
@@ -54,6 +55,11 @@ function residentDetail(status: string, dateOfBirth: string | null = null) {
     gender: null,
     account_status: "not_provisioned",
     resident_status: status,
+    archive_reason: null,
+    archive_source: null,
+    archived_at: null,
+    archived_by_user_id: null,
+    archived_by_name: null,
     active_lease: null,
     created_at: timestamp,
     updated_at: timestamp,
@@ -83,6 +89,11 @@ function tenancy() {
     lease_id: "33333333-3333-4333-8333-333333333333",
     booking_lead_id: "44444444-4444-4444-8444-444444444444",
     lease_status: "awaiting_activation",
+    activation_state: "scheduled",
+    occupancy_id: null,
+    room_status: "reserved",
+    activated_at: null,
+    checked_in_at: null,
     room_number: "AK-18F-3A",
     kost_type_name: "Apart Kost",
     building_code: "AK-18F",
@@ -199,7 +210,7 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   );
   assert.match(source, /Catatan pembayaran \(opsional\)/);
   assert.match(source, /filePurpose="payment_proof"/);
-  assert.match(source, /<FilePreview file=\{paymentEvidence\}/);
+  assert.match(source, /<FileUploadField[\s\S]*?value=\{paymentEvidence\}/);
   assert.match(source, /payment_method: paymentMethod/);
   assert.match(source, /payment_evidence_file_ids: paymentEvidence/);
   assert.match(source, /payment_note: paymentNote\.trim\(\) \|\| undefined/);
@@ -214,7 +225,8 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   assert.match(source, /Rekomendasi DP 25%/);
   assert.match(source, /paymentChoiceSelected/);
   assert.match(source, /paymentMethodSelected/);
-  assert.match(source, /paymentChoice === "full" \? amounts\.contractRent : 0/);
+  assert.match(source, /selectedRoom\?\.kostType\.monthlyPrice \?\? 0/);
+  assert.match(source, /Pembayaran awal wajib menutup minimal satu bulan sewa/);
   assert.match(source, /Jumlah pelunasan sewa/);
   assert.match(source, /Ringkasan Pembayaran/);
   assert.match(source, /Sisa pembayaran sewa/);

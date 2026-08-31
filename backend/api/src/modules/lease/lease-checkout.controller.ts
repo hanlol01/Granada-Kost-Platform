@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -9,6 +10,7 @@ import {
   Post,
   Req,
   Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -20,6 +22,7 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
+  ApproveLeaseCheckoutDto,
   CancelLeaseCheckoutDto,
   CompleteLeaseCheckoutDto,
   CreateLeaseCheckoutNoticeDto,
@@ -51,6 +54,22 @@ export class LeaseCheckoutController {
     return this.checkout.list(user, leaseId);
   }
 
+  @Get(':commandId/documents/:documentId/document')
+  @Header('Cache-Control', 'private, no-store')
+  async document(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Param('documentId') documentId: string,
+  ) {
+    const document = await this.checkout.documentFile(user, leaseId, commandId, documentId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Post()
   async notice(
     @CurrentUser() user: UserAccessContext,
@@ -71,13 +90,14 @@ export class LeaseCheckoutController {
     @CurrentUser() user: UserAccessContext,
     @Param('leaseId') leaseId: string,
     @Param('commandId') commandId: string,
+    @Body() dto: ApproveLeaseCheckoutDto,
     @Headers('idempotency-key') key: string | undefined,
     @Req() request: RequestWithCorrelationId,
     @Res({ passthrough: true }) response: Response,
   ) {
     return this.respond(
       response,
-      await this.checkout.schedule(user, leaseId, commandId, key, auditContext(request)),
+      await this.checkout.schedule(user, leaseId, commandId, dto, key, auditContext(request)),
     );
   }
 
@@ -131,6 +151,18 @@ export class LeaseCheckoutController {
     );
   }
 
+  @Post(':commandId/settlement-preview')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('lease.manage', 'billing.manage')
+  previewSettlement(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: CompleteLeaseCheckoutDto,
+  ) {
+    return this.checkout.previewSettlement(user, leaseId, commandId, dto);
+  }
+
   @Post(':commandId/refunds/:refundId/settle')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('lease.manage', 'billing.manage')
@@ -146,7 +178,15 @@ export class LeaseCheckoutController {
   ) {
     return this.respond(
       response,
-      await this.checkout.settleRefund(user, leaseId, commandId, refundId, dto, key, auditContext(request)),
+      await this.checkout.settleRefund(
+        user,
+        leaseId,
+        commandId,
+        refundId,
+        dto,
+        key,
+        auditContext(request),
+      ),
     );
   }
 
@@ -165,7 +205,15 @@ export class LeaseCheckoutController {
   ) {
     return this.respond(
       response,
-      await this.checkout.waiveRefund(user, leaseId, commandId, refundId, dto, key, auditContext(request)),
+      await this.checkout.waiveRefund(
+        user,
+        leaseId,
+        commandId,
+        refundId,
+        dto,
+        key,
+        auditContext(request),
+      ),
     );
   }
 

@@ -81,11 +81,12 @@ export function BookingLeadCancellationDialog({
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Batalkan penyewaan dan refund?</DialogTitle>
+          <DialogTitle>Batalkan minat booking dan refund?</DialogTitle>
           <DialogDescription>
-            Hanya Booking Fee/DP dengan status Menunggu Aktivasi yang dapat dibatalkan. Pembayaran
-            awal terverifikasi termasuk security deposit akan direfund; lease, kontrak, dan invoice
-            akan dibatalkan. Tindakan ini tidak tersedia untuk pelunasan penuh atau sewa aktif.
+            Booking Fee/DP dapat dibatalkan sebelum data penyewaan lengkap atau selama status
+            Menunggu Aktivasi. Pembayaran awal terverifikasi termasuk security deposit akan direfund
+            dan tahan kamar dilepas. Jika sudah terbentuk, lease, kontrak, dan invoice juga
+            dibatalkan. Tindakan ini tidak tersedia untuk pelunasan penuh atau sewa aktif.
           </DialogDescription>
         </DialogHeader>
 

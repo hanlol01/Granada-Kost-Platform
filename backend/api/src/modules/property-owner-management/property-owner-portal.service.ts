@@ -36,6 +36,7 @@ type OwnerListQuery = {
 const roomStatuses = [
   'vacant',
   'reserved',
+  'awaiting_check_in',
   'occupied',
   'maintenance',
   'inactive',
@@ -986,41 +987,54 @@ export class PropertyOwnerPortalService {
          FROM active_leases lease
          LEFT JOIN lease_deposit_transactions ledger ON ledger.property_id = lease.property_id AND ledger.lease_id = lease.id
          GROUP BY lease.id, lease.security_deposit_required_amount
-       ), settlement_projection AS (
-         SELECT lease.id AS lease_id,
-                settlement.state AS settlement_state,
-                settlement.original_due_at::text AS original_due_at,
-                COALESCE(settlement.extension_due_at, settlement.original_due_at)::text AS effective_due_at,
-                (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')::text AS checkpoint_due_at,
-                GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0)::text AS settlement_outstanding,
-                LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0))::text AS checkpoint_required,
-                GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0)::text AS checkpoint_received,
-                GREATEST(
-                  LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0))
-                    - GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0),
-                  0
-                )::text AS checkpoint_remaining,
-                CASE
-                  WHEN settlement.id IS NULL THEN 'not_available'
-                  WHEN LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) = 0 THEN 'not_required'
-                  WHEN GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0) >= LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) THEN 'met'
-                  WHEN now() > (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') THEN 'overdue'
-                  ELSE 'pending'
-                END AS checkpoint_status,
-                CASE
-                  WHEN GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0) = 0 THEN NULL
-                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at) IS NULL THEN NULL
-                  WHEN now() > COALESCE(settlement.extension_due_at, settlement.original_due_at) + INTERVAL '7 days' THEN 'D+7'
-                  WHEN now() > COALESCE(settlement.extension_due_at, settlement.original_due_at) THEN 'D+1'
-                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date THEN 'H-0'
-                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7 THEN 'H-7'
-                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 14 THEN 'H-14'
-                  WHEN COALESCE(settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 30 THEN 'H-30'
-                  ELSE NULL
-                END AS reminder_stage
-         FROM active_leases lease
-         LEFT JOIN lease_contract_settlements settlement ON settlement.property_id = lease.property_id AND settlement.lease_id = lease.id
-         LEFT JOIN invoices invoice ON invoice.id = settlement.invoice_id AND invoice.property_id = settlement.property_id
+        ), settlement_projection AS (
+          SELECT lease.id AS lease_id,
+                 settlement.state AS settlement_state,
+                 COALESCE(v2.original_due_at, settlement.original_due_at)::text AS original_due_at,
+                 COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::text AS effective_due_at,
+                 CASE WHEN v2.settlement_id IS NOT NULL THEN v2.effective_due_at::text
+                      ELSE (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')::text
+                  END AS checkpoint_due_at,
+                 COALESCE(v2.outstanding_amount, GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0))::text AS settlement_outstanding,
+                 COALESCE(v2.checkpoint_required_amount, LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)))::text AS checkpoint_required,
+                 CASE WHEN v2.settlement_id IS NOT NULL
+                      THEN GREATEST(v2.checkpoint_required_amount - v2.checkpoint_shortfall_amount, 0)::text
+                      ELSE GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0)::text
+                  END AS checkpoint_received,
+                 COALESCE(
+                   v2.checkpoint_shortfall_amount,
+                   GREATEST(
+                     LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0))
+                       - GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0),
+                     0
+                   )
+                 )::text AS checkpoint_remaining,
+                 CASE
+                   WHEN settlement.id IS NULL THEN 'not_available'
+                   WHEN v2.settlement_id IS NOT NULL AND v2.outstanding_amount = 0 THEN 'not_required'
+                   WHEN v2.settlement_id IS NOT NULL AND v2.checkpoint_shortfall_amount = 0 THEN 'met'
+                   WHEN v2.settlement_id IS NOT NULL AND now() > v2.effective_due_at THEN 'overdue'
+                   WHEN v2.settlement_id IS NOT NULL THEN 'pending'
+                   WHEN LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) = 0 THEN 'not_required'
+                   WHEN GREATEST(COALESCE(allocation.net, 0) - COALESCE(initial_credit.net, 0), 0) >= LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)) THEN 'met'
+                   WHEN now() > (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') THEN 'overdue'
+                   ELSE 'pending'
+                 END AS checkpoint_status,
+                 CASE
+                   WHEN COALESCE(v2.outstanding_amount, GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0)) = 0 THEN NULL
+                   WHEN COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at) IS NULL THEN NULL
+                   WHEN now() > COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at) + INTERVAL '7 days' THEN 'D+7'
+                   WHEN now() > COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at) THEN 'D+1'
+                   WHEN COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date THEN 'H-0'
+                   WHEN COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7 THEN 'H-7'
+                   WHEN COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 14 THEN 'H-14'
+                   WHEN COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 30 THEN 'H-30'
+                   ELSE NULL
+                 END AS reminder_stage
+          FROM active_leases lease
+          LEFT JOIN lease_contract_settlements settlement ON settlement.property_id = lease.property_id AND settlement.lease_id = lease.id
+          LEFT JOIN lease_settlement_v2_current_projection v2 ON v2.property_id = settlement.property_id AND v2.lease_id = settlement.lease_id AND v2.settlement_id = settlement.id
+          LEFT JOIN invoices invoice ON invoice.id = settlement.invoice_id AND invoice.property_id = settlement.property_id
          LEFT JOIN LATERAL (
            SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
            FROM payment_allocations pa

@@ -27,6 +27,7 @@ import { Route as CctvRouteImport } from './routes/cctv'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as BookingLeadsRouteImport } from './routes/booking-leads'
 import { Route as BookingRouteImport } from './routes/booking'
+import { Route as ActivityLogsRouteImport } from './routes/activity-logs'
 import { Route as AccessHistoryRouteImport } from './routes/access-history'
 import { Route as RoomsRouteRouteImport } from './routes/rooms/route'
 import { Route as PenyewaanRouteRouteImport } from './routes/penyewaan/route'
@@ -145,6 +146,11 @@ const BookingLeadsRoute = BookingLeadsRouteImport.update({
 const BookingRoute = BookingRouteImport.update({
   id: '/booking',
   path: '/booking',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ActivityLogsRoute = ActivityLogsRouteImport.update({
+  id: '/activity-logs',
+  path: '/activity-logs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccessHistoryRoute = AccessHistoryRouteImport.update({
@@ -309,6 +315,7 @@ export interface FileRoutesByFullPath {
   '/penyewaan': typeof PenyewaanRouteRouteWithChildren
   '/rooms': typeof RoomsRouteRouteWithChildren
   '/access-history': typeof AccessHistoryRoute
+  '/activity-logs': typeof ActivityLogsRoute
   '/booking': typeof BookingRoute
   '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
@@ -356,6 +363,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/access-history': typeof AccessHistoryRoute
+  '/activity-logs': typeof ActivityLogsRoute
   '/booking': typeof BookingRoute
   '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
@@ -404,6 +412,7 @@ export interface FileRoutesById {
   '/penyewaan': typeof PenyewaanRouteRouteWithChildren
   '/rooms': typeof RoomsRouteRouteWithChildren
   '/access-history': typeof AccessHistoryRoute
+  '/activity-logs': typeof ActivityLogsRoute
   '/booking': typeof BookingRoute
   '/booking-leads': typeof BookingLeadsRoute
   '/bookings': typeof BookingsRoute
@@ -455,6 +464,7 @@ export interface FileRouteTypes {
     | '/penyewaan'
     | '/rooms'
     | '/access-history'
+    | '/activity-logs'
     | '/booking'
     | '/booking-leads'
     | '/bookings'
@@ -502,6 +512,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/access-history'
+    | '/activity-logs'
     | '/booking'
     | '/booking-leads'
     | '/bookings'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
     | '/penyewaan'
     | '/rooms'
     | '/access-history'
+    | '/activity-logs'
     | '/booking'
     | '/booking-leads'
     | '/bookings'
@@ -599,6 +611,7 @@ export interface RootRouteChildren {
   PenyewaanRouteRoute: typeof PenyewaanRouteRouteWithChildren
   RoomsRouteRoute: typeof RoomsRouteRouteWithChildren
   AccessHistoryRoute: typeof AccessHistoryRoute
+  ActivityLogsRoute: typeof ActivityLogsRoute
   BookingRoute: typeof BookingRoute
   BookingLeadsRoute: typeof BookingLeadsRoute
   BookingsRoute: typeof BookingsRoute
@@ -747,6 +760,13 @@ declare module '@tanstack/react-router' {
       path: '/booking'
       fullPath: '/booking'
       preLoaderRoute: typeof BookingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/activity-logs': {
+      id: '/activity-logs'
+      path: '/activity-logs'
+      fullPath: '/activity-logs'
+      preLoaderRoute: typeof ActivityLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/access-history': {
@@ -1062,6 +1082,7 @@ const rootRouteChildren: RootRouteChildren = {
   PenyewaanRouteRoute: PenyewaanRouteRouteWithChildren,
   RoomsRouteRoute: RoomsRouteRouteWithChildren,
   AccessHistoryRoute: AccessHistoryRoute,
+  ActivityLogsRoute: ActivityLogsRoute,
   BookingRoute: BookingRoute,
   BookingLeadsRoute: BookingLeadsRoute,
   BookingsRoute: BookingsRoute,

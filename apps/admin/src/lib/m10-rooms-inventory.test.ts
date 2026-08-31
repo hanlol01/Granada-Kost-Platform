@@ -236,6 +236,7 @@ test("authoritative summary ignores page rows and includes active plus inactive 
     statusCounts: {
       vacant: 80,
       reserved: 0,
+      awaiting_check_in: 0,
       occupied: 83,
       maintenance: 0,
       inactive: 0,

@@ -116,6 +116,56 @@ export type CheckoutCommand = {
   noticeRecordedDate: string;
   noticeReason: string;
   noticeExceptionReason: string | null;
+  exitType: "resident_early_termination" | "normal_expiry" | null;
+  requestSource: string | null;
+  noticeDays: number | null;
+  missingNoticeDays: number | null;
+  paymentPeriodDays: number | null;
+  dailyRateAmount: number | null;
+  recommendedShortNoticeCharge: number | null;
+  approvedShortNoticeCharge: number | null;
+  shortNoticeWaiverReason: string | null;
+  approvedAt: string | null;
+  physicalCheckoutConfirmedAt: string | null;
+  actualCheckoutDate: string | null;
+  inspectionRoomStatus: "inspection_required" | "maintenance" | null;
+  finalSettlementId: string | null;
+  recommendedRefundAmount: number | null;
+  finalRefundAmount: number | null;
+  finalRentRefundAmount: number | null;
+  finalDepositRefundAmount: number | null;
+  refundAdjustmentAmount: number | null;
+  amountDue: number | null;
+  settlementDecisionStatus: "refund_pending" | "amount_due" | "closed" | null;
+  exitRefundId: string | null;
+  exitRefundAmount: number | null;
+  exitRefundStatus: "pending" | "settled" | "waived" | "reversed" | null;
+  exitRefundDueDate: string | null;
+  documents?: Array<{
+    id: string;
+    documentCode: string;
+    documentKind: "checkout_handover" | "final_settlement" | "refund_receipt";
+    issuedAt: string;
+  }>;
+};
+
+export type CheckoutSettlementQuote = {
+  contractRentAmount: number;
+  verifiedRentPaymentAmount: number;
+  existingInvoiceCreditAmount: number;
+  recognizedRentCreditAmount: number;
+  earnedRentAmount: number;
+  earnedRentAmountDueBeforeDepositOffset: number;
+  contractOutstandingAmount: number;
+  approvedShortNoticeCharge: number;
+  rentRefundableAmount: number;
+  rentAmountDueBeforeDepositOffset: number;
+  depositLiabilityAmount: number;
+  depositDeductionAmount: number;
+  depositRentOffsetAmount: number;
+  refundableDepositAmount: number;
+  recommendedRefundAmount: number;
+  amountDue: number;
 };
 
 export type LeaseBillingSummary = {

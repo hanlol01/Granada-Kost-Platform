@@ -33,6 +33,7 @@ import { OnboardingModule } from './modules/resident/onboarding.module';
 import { PropertyOwnerManagementModule } from './modules/property-owner-management/property-owner-management.module';
 import { ReminderModule } from './modules/reminder/reminder.module';
 import { ExpenseModule } from './modules/expense/expense.module';
+import { ActivityLogModule } from './modules/activity-log/activity-log.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ExpenseModule } from './modules/expense/expense.module';
     NotificationModule,
     ReminderModule,
     ExpenseModule,
+    ActivityLogModule,
     SmartLockModule,
     FileModule,
     PaymentGatewayModule,

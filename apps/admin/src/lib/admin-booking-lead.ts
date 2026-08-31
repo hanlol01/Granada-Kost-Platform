@@ -54,6 +54,21 @@ export function bookingLeadDisplayStatus(
     : lead.status;
 }
 
+export function canCancelBookingLeadPaymentCommitment(
+  progress: BookingLeadProgress | null | undefined,
+  canManageRooms: boolean,
+): boolean {
+  return Boolean(
+    canManageRooms &&
+    progress?.leadStatus === "onboarding" &&
+    progress.hold?.status === "committed" &&
+    progress.paymentCommitment &&
+    progress.paymentCommitment.paymentType !== "full_settlement" &&
+    !progress.cancellation &&
+    (!progress.tenancy || progress.tenancy.leaseStatus === "awaiting_activation"),
+  );
+}
+
 export type QuickBookingDraft = {
   visitorName: string;
   gender: BookingLeadGender | "";
@@ -133,6 +148,7 @@ export type BookingLeadProgress = {
     contractRentAmount: number;
     occupancyStatus: string | null;
     occupancyStartedAt: string | null;
+    activationState: string | null;
   } | null;
   paymentSummary: {
     verifiedAmount: number;
@@ -515,6 +531,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
       "contract_rent_amount",
       "end_date",
       "lease_status",
+      "activation_state",
       "occupancy_started_at",
       "occupancy_status",
       "resident_id",
@@ -621,6 +638,7 @@ export function parseBookingLeadProgress(value: unknown, propertyId: string): Bo
           contractRentAmount: requiredNonNegativeInteger(tenancy, "contract_rent_amount"),
           occupancyStatus: nullableNonEmptyString(tenancy, "occupancy_status"),
           occupancyStartedAt: nullableDateOnly(tenancy, "occupancy_started_at"),
+          activationState: nullableNonEmptyString(tenancy, "activation_state"),
         }
       : null,
     paymentSummary: {

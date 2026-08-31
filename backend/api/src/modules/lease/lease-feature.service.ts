@@ -17,6 +17,7 @@ type FeatureFlagRow = {
   lease_renewal: boolean;
   lease_renewal_scheduler: boolean;
   lease_checkout: boolean;
+  lease_activation_scheduler: boolean;
 };
 
 /**
@@ -124,6 +125,24 @@ export class LeaseFeatureService {
     return result.rows.map((row) => row.property_id);
   }
 
+  async activationSchedulerEnabledPropertyIds(client?: QueryClient): Promise<string[]> {
+    const queryable: QueryClient = client ?? this.leases;
+    const result = await queryable.query<{ property_id: string }>(
+      `SELECT property_id
+       FROM property_feature_flags
+       WHERE admin_ux_read = true
+         AND lease_write = true
+         AND lease_activation_scheduler = true
+       ORDER BY property_id`,
+    );
+    return result.rows.map((row) => row.property_id);
+  }
+
+  async isActivationSchedulerEnabled(propertyId: string, client?: QueryClient): Promise<boolean> {
+    const flags = await this.readFlags(propertyId, client, Boolean(client));
+    return flags.admin_ux_read && flags.lease_write && flags.lease_activation_scheduler;
+  }
+
   async isSchedulerEnabled(propertyId: string, client?: QueryClient): Promise<boolean> {
     const flags = await this.readFlags(propertyId, client, Boolean(client));
     return (
@@ -142,7 +161,7 @@ export class LeaseFeatureService {
     const queryable: QueryClient = client ?? this.leases;
     const result = await queryable.query<FeatureFlagRow>(
       `SELECT property_id, admin_ux_read, lease_write, lease_transfer, lease_billing_scheduler,
-              lease_renewal, lease_renewal_scheduler, lease_checkout
+              lease_renewal, lease_renewal_scheduler, lease_checkout, lease_activation_scheduler
        FROM property_feature_flags
        WHERE property_id = $1${lock ? ' FOR SHARE' : ''}`,
       [propertyId],
@@ -157,6 +176,7 @@ export class LeaseFeatureService {
         lease_renewal: false,
         lease_renewal_scheduler: false,
         lease_checkout: false,
+        lease_activation_scheduler: false,
       }
     );
   }

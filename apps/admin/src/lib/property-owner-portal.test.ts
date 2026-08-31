@@ -323,6 +323,22 @@ void test("owner portal has an Admin-aligned read-only application shell", () =>
   );
 });
 
+void test("M8 Owner collection view exposes the canonical checkpoint projection read-only", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+  const assetDetail = source("components/property-owner-portal/PropertyOwnerAssetDetailPage.tsx");
+
+  for (const label of ["Minimum checkpoint", "Kredit checkpoint", "Kekurangan checkpoint"]) {
+    assert.match(portalComponent, new RegExp(label));
+    assert.match(assetDetail, new RegExp(label));
+  }
+  assert.match(portalComponent, /item\.settlement\.checkpoint\.dueAt/);
+  assert.match(assetDetail, /collectionItem\.settlement\.checkpoint\.dueAt/);
+  assert.doesNotMatch(
+    `${portalComponent}\n${assetDetail}`,
+    /useMutation|payment_proof|storage_path|bank_account/i,
+  );
+});
+
 void test("owner occupancy detail route renders through its parent outlet", () => {
   const occupancyLayout = source("routes/property-owners/portal/occupancy/route.tsx");
   const occupancyIndex = source("routes/property-owners/portal/occupancy/index.tsx");
@@ -361,7 +377,10 @@ void test("E5 dashboard finance snapshot is report-only and comes from the owner
   );
   assert.match(portalComponent, /to="\/property-owners\/portal\/finance"/);
   assert.match(portalComponent, /Ringkasan keuangan belum tersedia/);
-  assert.doesNotMatch(portalComponent, /propertyOwnerPortalApi\.(?:create|update|archive|assign|release)/);
+  assert.doesNotMatch(
+    portalComponent,
+    /propertyOwnerPortalApi\.(?:create|update|archive|assign|release)/,
+  );
 });
 
 void test("E5 account page exposes safe identity, read-only scope, and Owner navigation", () => {

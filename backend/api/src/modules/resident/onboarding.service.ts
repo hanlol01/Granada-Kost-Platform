@@ -39,9 +39,9 @@ type RoomRow = {
   kost_type_category: 'rukost' | 'apartkost';
   kost_type_status: 'active' | 'inactive';
   kost_type_deleted_at: string | null;
-  monthly_price: number;
-  yearly_price: number;
-  security_deposit_amount: number;
+  monthly_price: number | string;
+  yearly_price: number | string;
+  security_deposit_amount: number | string;
 };
 type OnboardingHoldRow = {
   id: string;
@@ -477,11 +477,13 @@ export class OnboardingService {
           dto.property_id,
           context,
         );
+        const monthlyPrice = Number(room.monthly_price);
+        const yearlyPrice = Number(room.yearly_price);
         let commercial: ReturnType<typeof calculateOnboardingCommercial>;
         try {
           commercial = calculateOnboardingCommercial(
-            Number(room.monthly_price),
-            Number(room.yearly_price),
+            monthlyPrice,
+            yearlyPrice,
             dto.billing_cycle,
             dto.term_months,
           );
@@ -550,13 +552,14 @@ export class OnboardingService {
         // credit too, while security deposit remains a separate liability.
         if (
           !Number.isSafeInteger(initialRentCredit) ||
-          initialRentCredit < 0 ||
+          initialRentCredit < monthlyPrice ||
           initialRentCredit > contractRent ||
           effectiveSecurityDeposit < 0
         )
           throw new ConflictException({
             code: 'ONBOARDING_FINANCIAL_OBLIGATION_UNMET',
-            message: 'Initial rent credit or security deposit amount is invalid for commitment',
+            message:
+              'Initial rent credit must cover at least one full month and the security deposit amount must be valid',
           });
         const endDate = new Date(`${dto.start_date}T00:00:00.000Z`);
         endDate.setUTCMonth(endDate.getUTCMonth() + dto.term_months);
@@ -597,8 +600,8 @@ export class OnboardingService {
             dto.start_date,
             endDate.toISOString().slice(0, 10),
             dto.billing_cycle,
-            room.monthly_price,
-            room.yearly_price,
+            monthlyPrice,
+            yearlyPrice,
             depositRequired,
             room.room_number,
             room.kost_type_name,
@@ -656,7 +659,7 @@ export class OnboardingService {
           paymentPlanType: contractPaymentPlan,
           contractRentAmount: contractRent,
           billingCycle: dto.billing_cycle,
-          snapshotMonthlyPrice: room.monthly_price,
+          snapshotMonthlyPrice: monthlyPrice,
           snapshotRoomNumber: room.room_number,
           snapshotBuildingCode: room.building_code,
           snapshotCategoryName: room.kost_type_name,

@@ -97,6 +97,9 @@ test('W07C service keeps approval, W06-credit authorization, and cutover distinc
   assert.match(cutover, /SET lease_status='ended'/);
   assert.match(cutover, /SET lease_status='active',occupancy_id=\$2/);
   assert.match(cutover, /UPDATE lease_contract_settlements settlement/);
+  assert.match(cutover, /final_checkpoint\.checkpoint_code='final_settlement'/);
+  assert.match(cutover, /original_due_at=\$2/);
+  assert.match(cutover, /RENEWAL_CONTRACT_SETTLEMENT_POLICY_INCOMPLETE/);
   assert.doesNotMatch(cutover, /UPDATE rooms SET room_status='vacant'/);
   // Distinct contiguous occupancy records: the predecessor occupancy is closed
   // and a new successor occupancy is opened in the same transaction.

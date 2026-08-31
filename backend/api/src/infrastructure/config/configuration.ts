@@ -43,6 +43,10 @@ export default () => ({
     transferSchedulerProcessEnabled:
       process.env.LEASE_TRANSFER_SCHEDULER_PROCESS_ENABLED === 'true',
     renewalSchedulerProcessEnabled: process.env.LEASE_RENEWAL_SCHEDULER_PROCESS_ENABLED === 'true',
+    activationSchedulerProcessEnabled:
+      process.env.LEASE_ACTIVATION_SCHEDULER_PROCESS_ENABLED === 'true',
+    settlementSchedulerProcessEnabled:
+      process.env.LEASE_SETTLEMENT_SCHEDULER_PROCESS_ENABLED === 'true',
   },
   notification: {
     brevoApiKey: process.env.BREVO_API_KEY,

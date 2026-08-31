@@ -2,6 +2,8 @@
 // Lifecycle commands always wait for a server response and receive the
 // Idempotency-Key owned by the submitting UI intent.
 import { adminUxV2Requester, type AdminUxQueryValue } from "./admin-ux-api";
+import { getAccessToken } from "./api";
+import { env } from "./env";
 import { mapV2Data, mapV2Page, type V2DataEnvelope, type V2ListEnvelope } from "./admin-ux-mapper";
 import type {
   BillingCycle,
@@ -21,6 +23,7 @@ import type {
   RenewalCommand,
   RenewalEligibility,
   CheckoutCommand,
+  CheckoutSettlementQuote,
 } from "./admin-ux-lease-types";
 
 export type LeasePageInput = { propertyId: string; limit?: number; offset?: number };
@@ -53,14 +56,40 @@ export type LeaseCloseInput = {
 };
 
 export type CheckoutNoticeInput = {
+  exitType: "resident_early_termination" | "normal_expiry";
   effectiveDate: string;
   reason: string;
   noticeExceptionReason?: string;
+};
+export type CheckoutApprovalInput = {
+  approvedShortNoticeCharge: number;
+  shortNoticeWaiverReason?: string;
 };
 export type CheckoutHandoverInput = {
   keyAccessConfirmed: boolean;
   inventoryConfirmed: boolean;
   parkingConfirmed: boolean;
+  inventoryItems: Array<{
+    name: string;
+    expectedQuantity: number;
+    returnedQuantity: number;
+    condition: "complete" | "partial" | "damaged" | "missing" | "not_applicable";
+    notes?: string;
+  }>;
+  keyAccessItems: Array<{
+    name: string;
+    expectedQuantity: number;
+    returnedQuantity: number;
+    status: "returned" | "partial" | "damaged" | "missing" | "not_applicable";
+    notes?: string;
+  }>;
+  utilityReadings?: Array<{
+    utilityType: string;
+    meterNumber?: string;
+    checkoutReading: string;
+    unit: string;
+    outstandingUsageNotes?: string;
+  }>;
   keyAccessFileIds?: string[];
   inventoryFileIds?: string[];
   parkingFileIds?: string[];
@@ -74,8 +103,45 @@ export type CheckoutInspectionInput = {
 export type CheckoutCompleteInput = {
   roomStatusAfter: "inspection_required" | "maintenance";
   damageDeductions?: { amount: number; reason: string; evidenceFileId: string }[];
+  depositRentOffsetAmount?: number;
+  depositRentOffsetReason?: string;
+  depositRentOffsetEvidenceFileId?: string;
+  finalRefundAmount?: number;
+  refundAdjustmentReason?: string;
+  refundAdjustmentEvidenceFileId?: string;
   refundReason?: string;
 };
+
+export type CheckoutRefundSettlementInput = {
+  paymentMethod: "cash" | "bank_transfer" | "qris" | "ewallet" | "other";
+  externalReference: string;
+  evidenceFileId: string;
+  notes?: string;
+};
+
+export async function downloadLeaseExitDocument(
+  leaseId: string,
+  commandId: string,
+  documentId: string,
+  documentCode: string,
+) {
+  const token = getAccessToken();
+  const response = await fetch(
+    `${env.VITE_API_BASE_URL}/leases/${encodeURIComponent(leaseId)}/checkout/${encodeURIComponent(commandId)}/documents/${encodeURIComponent(documentId)}/document`,
+    {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  );
+  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+    throw new Error(`Dokumen checkout gagal diunduh (HTTP ${response.status}).`);
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "dokumen-checkout"}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 export type DepositCollectInput = {
   transactionType: "collection" | "top_up";
@@ -465,6 +531,7 @@ export const adminUxLeaseApi = {
         adminUxV2Requester.post<V2DataEnvelope<unknown>>(
           "/leases/" + encodeURIComponent(leaseId) + "/checkout",
           {
+            exit_type: input.exitType,
             effective_date: input.effectiveDate,
             reason: input.reason.trim(),
             notice_exception_reason: text(input.noticeExceptionReason),
@@ -472,7 +539,12 @@ export const adminUxLeaseApi = {
           { idempotencyKey },
         ),
       ),
-    schedule: (leaseId: string, commandId: string, idempotencyKey: string) =>
+    schedule: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutApprovalInput,
+      idempotencyKey: string,
+    ) =>
       data<{ checkout: CheckoutCommand }>(
         adminUxV2Requester.post<V2DataEnvelope<unknown>>(
           "/leases/" +
@@ -480,7 +552,10 @@ export const adminUxLeaseApi = {
             "/checkout/" +
             encodeURIComponent(commandId) +
             "/schedule",
-          {},
+          {
+            approved_short_notice_charge: input.approvedShortNoticeCharge,
+            short_notice_waiver_reason: text(input.shortNoticeWaiverReason),
+          },
           { idempotencyKey },
         ),
       ),
@@ -501,6 +576,27 @@ export const adminUxLeaseApi = {
             key_access_confirmed: input.keyAccessConfirmed,
             inventory_confirmed: input.inventoryConfirmed,
             parking_confirmed: input.parkingConfirmed,
+            inventory_items: input.inventoryItems.map((item) => ({
+              name: item.name.trim(),
+              expected_quantity: item.expectedQuantity,
+              returned_quantity: item.returnedQuantity,
+              condition: item.condition,
+              notes: text(item.notes),
+            })),
+            key_access_items: input.keyAccessItems.map((item) => ({
+              name: item.name.trim(),
+              expected_quantity: item.expectedQuantity,
+              returned_quantity: item.returnedQuantity,
+              status: item.status,
+              notes: text(item.notes),
+            })),
+            utility_readings: input.utilityReadings?.map((reading) => ({
+              utility_type: reading.utilityType.trim(),
+              meter_number: text(reading.meterNumber),
+              checkout_reading: reading.checkoutReading.trim(),
+              unit: reading.unit.trim(),
+              outstanding_usage_notes: text(reading.outstandingUsageNotes),
+            })),
             key_access_file_ids: input.keyAccessFileIds,
             inventory_file_ids: input.inventoryFileIds,
             parking_file_ids: input.parkingFileIds,
@@ -536,7 +632,14 @@ export const adminUxLeaseApi = {
       input: CheckoutCompleteInput,
       idempotencyKey: string,
     ) =>
-      data<{ checkout: CheckoutCommand; refundDueDate: string | null }>(
+      data<{
+        checkout: CheckoutCommand;
+        refundDueDate: string | null;
+        refundTransactionId: string | null;
+        finalSettlementId: string | null;
+        invoiceCreditAmount: number;
+        amountDue: number;
+      }>(
         adminUxV2Requester.post<V2DataEnvelope<unknown>>(
           "/leases/" +
             encodeURIComponent(leaseId) +
@@ -550,8 +653,78 @@ export const adminUxLeaseApi = {
               reason: item.reason,
               evidence_file_id: item.evidenceFileId,
             })),
+            deposit_rent_offset_amount: input.depositRentOffsetAmount,
+            deposit_rent_offset_reason: text(input.depositRentOffsetReason),
+            deposit_rent_offset_evidence_file_id: input.depositRentOffsetEvidenceFileId,
+            final_refund_amount: input.finalRefundAmount,
+            refund_adjustment_reason: text(input.refundAdjustmentReason),
+            refund_adjustment_evidence_file_id: input.refundAdjustmentEvidenceFileId,
             refund_reason: text(input.refundReason),
           },
+          { idempotencyKey },
+        ),
+      ),
+    previewSettlement: (leaseId: string, commandId: string, input: CheckoutCompleteInput) =>
+      data<{ quote: CheckoutSettlementQuote }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/settlement-preview",
+          {
+            room_status_after: input.roomStatusAfter,
+            damage_deductions: input.damageDeductions?.map((item) => ({
+              amount: item.amount,
+              reason: item.reason,
+              evidence_file_id: item.evidenceFileId,
+            })),
+            deposit_rent_offset_amount: input.depositRentOffsetAmount,
+          },
+        ),
+      ),
+    settleRefund: (
+      leaseId: string,
+      commandId: string,
+      refundId: string,
+      input: CheckoutRefundSettlementInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ refundId: string; settlementStatus: string; lateSettlement: boolean }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/refunds/" +
+            encodeURIComponent(refundId) +
+            "/settle",
+          {
+            payment_method: input.paymentMethod,
+            external_reference: input.externalReference.trim(),
+            evidence_file_id: input.evidenceFileId,
+            notes: text(input.notes),
+          },
+          { idempotencyKey },
+        ),
+      ),
+    waiveRefund: (
+      leaseId: string,
+      commandId: string,
+      refundId: string,
+      reason: string,
+      idempotencyKey: string,
+    ) =>
+      data<{ refundId: string; settlementStatus: string; lateSettlement: boolean }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/refunds/" +
+            encodeURIComponent(refundId) +
+            "/waive",
+          { reason: reason.trim() },
           { idempotencyKey },
         ),
       ),

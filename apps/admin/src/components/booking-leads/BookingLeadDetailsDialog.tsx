@@ -33,6 +33,7 @@ import {
   BOOKING_LEAD_SOURCE_LABEL,
   BOOKING_LEAD_STATUS_LABEL,
   bookingLeadDisplayStatus,
+  canCancelBookingLeadPaymentCommitment,
   useBookingLeadProgress,
   type BookingLeadRecord,
   type BookingLeadProgress,
@@ -117,6 +118,11 @@ function PaymentMethodLabel(
 
 function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
   const occupied = progress.tenancy?.occupancyStatus === "active";
+  const awaitingPhysicalCheckIn =
+    progress.tenancy?.leaseStatus === "active" &&
+    ["awaiting_check_in", "check_in_confirmation_required"].includes(
+      progress.tenancy.activationState ?? "",
+    );
   const cancelled = progress.leadStatus === "cancelled";
   const cancellation = progress.cancellation;
   const steps = [
@@ -191,14 +197,20 @@ function ProgressTimeline({ progress }: { progress: BookingLeadProgress }) {
             icon: House,
             title: occupied
               ? "Sudah dihuni"
-              : progress.tenancy
-                ? "Menunggu aktivasi kamar"
-                : "Kamar belum dihuni",
+              : awaitingPhysicalCheckIn
+                ? "Sewa aktif, menunggu check-in"
+                : progress.tenancy
+                  ? "Menunggu aktivasi kamar"
+                  : "Kamar belum dihuni",
             detail: occupied
               ? `Aktif sejak ${formatDate(progress.tenancy?.occupancyStartedAt ?? progress.tenancy!.startDate)}`
-              : progress.tenancy
-                ? "Aktivasi kamar adalah perintah terpisah setelah kewajiban terverifikasi."
-                : "Occupancy belum dibuat.",
+              : awaitingPhysicalCheckIn
+                ? progress.tenancy?.activationState === "check_in_confirmation_required"
+                  ? "Tanggal check-in telah lewat dan memerlukan konfirmasi Admin; kamar tetap terikat."
+                  : "Kontrak sudah aktif dan kamar terikat, tetapi occupancy belum dibuat sampai check-in fisik dikonfirmasi."
+                : progress.tenancy
+                  ? "Aktivasi kamar adalah perintah terpisah setelah kewajiban terverifikasi."
+                  : "Occupancy belum dibuat.",
             done: occupied,
             current: Boolean(progress.tenancy && !occupied),
           },
@@ -284,13 +296,9 @@ export function BookingLeadDetailsDialog({
   const canArchive = lead
     ? lead.status === "rejected" || lead.status === "expired" || lead.status === "cancelled"
     : false;
-  const canCancelAwaitingActivation = Boolean(
-    lead &&
-    user?.permissions.includes("room.manage") &&
-    !cancellation &&
-    progress?.paymentCommitment &&
-    progress.paymentCommitment.paymentType !== "full_settlement" &&
-    progress.tenancy?.leaseStatus === "awaiting_activation",
+  const canCancelInitialPayment = canCancelBookingLeadPaymentCommitment(
+    progress,
+    Boolean(lead && user?.permissions.includes("room.manage")),
   );
 
   useEffect(() => {
@@ -305,6 +313,14 @@ export function BookingLeadDetailsDialog({
     }
     if (progress.tenancy?.occupancyStatus === "active") {
       return "Data ini telah melewati proses minat booking dan penghuni sudah menempati kamar.";
+    }
+    if (
+      progress.tenancy?.leaseStatus === "active" &&
+      ["awaiting_check_in", "check_in_confirmation_required"].includes(
+        progress.tenancy.activationState ?? "",
+      )
+    ) {
+      return "Kontrak penyewaan sudah aktif dan kamar tetap terikat, tetapi check-in fisik belum dikonfirmasi.";
     }
     if (progress.tenancy) return "Penyewaan telah dikomit dan masih menunggu aktivasi kamar.";
     if (progress.onboarding) return "Data penyewaan sedang menunggu pembentukan lease.";
@@ -597,7 +613,14 @@ export function BookingLeadDetailsDialog({
                       progress.tenancy
                         ? progress.tenancy.occupancyStatus === "active"
                           ? "Sudah dihuni"
-                          : "Menunggu aktivasi kamar"
+                          : progress.tenancy.leaseStatus === "active" &&
+                              ["awaiting_check_in", "check_in_confirmation_required"].includes(
+                                progress.tenancy.activationState ?? "",
+                              )
+                            ? progress.tenancy.activationState === "check_in_confirmation_required"
+                              ? "Sewa aktif · perlu konfirmasi check-in"
+                              : "Sewa aktif · menunggu check-in"
+                            : "Menunggu aktivasi kamar"
                         : "Belum menjadi penyewaan"
                     }
                   />
@@ -648,7 +671,7 @@ export function BookingLeadDetailsDialog({
               </dl>
             </section>
 
-            {canCancelAwaitingActivation ? (
+            {canCancelInitialPayment ? (
               <section
                 aria-label="Pembatalan penyewaan sebelum aktivasi"
                 className="rounded-xl border border-destructive/35 bg-destructive/5 p-4"
@@ -657,11 +680,12 @@ export function BookingLeadDetailsDialog({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-destructive">
                       <RotateCcw aria-hidden="true" className="h-4 w-4" />
-                      <h2 className="text-sm font-semibold">Pembatalan sebelum aktivasi</h2>
+                      <h2 className="text-sm font-semibold">Refund pembayaran awal</h2>
                     </div>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      Booking Fee/DP masih dapat dibatalkan karena penyewaan berstatus Menunggu
-                      Aktivasi. Seluruh dana awal terverifikasi akan direfund.
+                      {progress?.tenancy
+                        ? "Booking Fee/DP masih dapat dibatalkan karena penyewaan berstatus Menunggu Aktivasi. Seluruh dana awal terverifikasi akan direfund."
+                        : "Booking Fee/DP dapat dibatalkan sebelum data penyewaan dilengkapi. Seluruh dana awal terverifikasi akan direfund dan tahan kamar dilepas."}
                     </p>
                   </div>
                   <Button

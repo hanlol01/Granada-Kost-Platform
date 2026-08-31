@@ -31,6 +31,7 @@ const labels: Record<string, string> = {
   not_available: "Belum tersedia",
   vacant: "Kosong",
   reserved: "Dipesan",
+  awaiting_check_in: "Menunggu check-in",
   occupied: "Terisi",
   maintenance: "Perawatan",
   inactive: "Tidak aktif",

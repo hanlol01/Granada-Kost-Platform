@@ -70,6 +70,20 @@ export class MyBillingController {
     return this.w06.myReceipt(user, receiptId);
   }
 
+  @Get('receipts/:receiptId/document')
+  @Header('Cache-Control', 'private, no-store')
+  async receiptDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('receiptId') receiptId: string,
+  ) {
+    const document = await this.w06.myReceiptDocument(user, receiptId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Get('billing/invoices/:invoiceId/document')
   @Header('Cache-Control', 'private, no-store')
   async invoiceDocument(

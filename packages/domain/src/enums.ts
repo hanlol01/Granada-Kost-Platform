@@ -10,7 +10,13 @@ export const ROLE_CODES = [
 ] as const;
 export type RoleCode = (typeof ROLE_CODES)[number];
 
-export const ROOM_STATUSES = ["vacant", "occupied", "maintenance", "reserved"] as const;
+export const ROOM_STATUSES = [
+  "vacant",
+  "reserved",
+  "awaiting_check_in",
+  "occupied",
+  "maintenance",
+] as const;
 export type RoomStatus = (typeof ROOM_STATUSES)[number];
 
 export const INVOICE_STATUSES = [

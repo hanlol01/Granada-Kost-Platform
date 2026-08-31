@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowUpRight,
+  Archive,
   BadgeInfo,
   Bell,
   Building2,
@@ -17,6 +18,7 @@ import {
   FileText,
   Landmark,
   KeyRound,
+  LogIn,
   MessageSquare,
   Pencil,
   ReceiptText,
@@ -52,9 +54,10 @@ import {
   useCancelLeaseTermination,
   useExtendContractSettlement,
   useFinalizeLeaseTermination,
+  useRecordLeasePaymentPromise,
   useStartLeaseTermination,
 } from "@/hooks/useAdminW06Billing";
-import { useLeaseActivation } from "@/hooks/useLeaseActivation";
+import { useLeaseActivation, useLeaseCheckIn } from "@/hooks/useLeaseActivation";
 import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
 import { useBookingLeadProgress } from "@/hooks/useBookingLeads";
 import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
@@ -63,6 +66,7 @@ import type { ResidentBilling } from "@/lib/admin-w06-billing";
 import { downloadAdminReceiptDocument } from "@/lib/admin-w06-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
 import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
+import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
 import { newIdempotencyKey } from "@/lib/idempotency";
@@ -122,6 +126,7 @@ function settlementStatusLabel(
     termination_pending: "Pemberhentian diproses",
     terminated: "Sewa dihentikan",
     paid: "Lunas",
+    cancelled: "Dibatalkan pra-aktivasi",
   }[status];
 }
 
@@ -524,11 +529,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const detail = useResidentDetail(residentId);
   const tenancy = useResidentTenancy(residentId);
   const bookingProgress = useBookingLeadProgress(tenancy.data?.bookingLeadId ?? null);
-  const billing = useResidentBilling(currentPropertyId, tenancy.data ? residentId : null);
+  const billing = useResidentBilling(currentPropertyId, residentId);
   const activation = useLeaseActivation();
+  const checkIn = useLeaseCheckIn();
   const [editOpen, setEditOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
+  const [confirmCheckIn, setConfirmCheckIn] = useState(false);
   const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
@@ -578,6 +585,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const canManage = hasPermission("resident.manage");
   const canActivate =
     hasPermission("lease.manage") && currentTenancy?.leaseStatus === "awaiting_activation";
+  const canConfirmCheckIn = Boolean(
+    hasPermission("lease.manage") &&
+    currentTenancy?.leaseStatus === "active" &&
+    currentTenancy.occupancyId === null &&
+    (currentTenancy.activationState === "awaiting_check_in" ||
+      currentTenancy.activationState === "check_in_confirmation_required"),
+  );
   const canCancelAwaitingActivation = Boolean(
     hasPermission("room.manage") &&
     currentTenancy?.bookingLeadId &&
@@ -595,7 +609,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
     transferFlagEnabled &&
     hasRole("admin") &&
     hasPermission("lease.manage") &&
-    currentTenancy?.leaseStatus === "active";
+    currentTenancy?.leaseStatus === "active" &&
+    currentTenancy.occupancyId !== null;
   const paymentAllocationLabels =
     billing.data && settlement
       ? contractPaymentAllocationLabels(billing.data.payments, settlement)
@@ -645,6 +660,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               startDate={currentTenancy.startDate}
               onActivate={() => setConfirmActivation(true)}
             />
+          ) : null}
+          {canConfirmCheckIn ? (
+            <Button className="min-h-11" onClick={() => setConfirmCheckIn(true)}>
+              <LogIn className="mr-1 h-4 w-4" /> Konfirmasi Check-in
+            </Button>
           ) : null}
           {canTransferEntry && currentTenancy ? (
             <Button
@@ -724,6 +744,39 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           </CardContent>
         </Card>
 
+        {resident.residentStatus === "archived" ? (
+          <NoticeAlert
+            tone="info"
+            attention="subtle"
+            title="Data penghuni diarsipkan"
+            description={
+              <DefinitionGrid
+                rows={[
+                  ["Alasan", resident.archiveReason ?? "Alasan arsip tidak tersedia"],
+                  [
+                    "Sumber",
+                    resident.archiveSource === "pre_activation_cancellation"
+                      ? "Pembatalan pra-aktivasi"
+                      : "Arsip data historis",
+                  ],
+                  [
+                    "Diarsipkan pada",
+                    resident.archivedAt
+                      ? formatResidentDetailTimestamp(resident.archivedAt)
+                      : "Waktu tidak tersedia",
+                  ],
+                  [
+                    "Diproses oleh",
+                    resident.archivedByName ??
+                      resident.archivedByUserId ??
+                      "Sistem/migrasi historis",
+                  ],
+                ]}
+              />
+            }
+          />
+        ) : null}
+
         <section aria-labelledby="tenancy-summary" className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
           <Card>
             <CardHeader>
@@ -744,10 +797,41 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                       "Status penyewaan",
                       currentTenancy.leaseStatus === "active" ? "Aktif" : "Menunggu aktivasi",
                     ],
+                    [
+                      "Status check-in",
+                      currentTenancy.activationState === "checked_in"
+                        ? "Sudah check-in"
+                        : currentTenancy.activationState === "check_in_confirmation_required"
+                          ? "Perlu konfirmasi check-in"
+                          : currentTenancy.activationState === "awaiting_check_in"
+                            ? "Menunggu check-in fisik"
+                            : currentTenancy.activationState === "activation_attention_required"
+                              ? "Perlu tindakan aktivasi"
+                              : currentTenancy.activationState === "scheduled"
+                                ? "Aktivasi terjadwal"
+                                : "Belum tersedia",
+                    ],
                     ["Tanggal mulai", formatResidentDetailDate(currentTenancy.startDate)],
                     ["Tanggal berakhir", formatResidentDetailDate(currentTenancy.endDate)],
                     ["Durasi sewa", `${currentTenancy.termMonths} bulan`],
                     ["Skema pelunasan", paymentPlan[currentTenancy.paymentPlanType]],
+                  ]}
+                />
+              ) : billing.data ? (
+                <DefinitionGrid
+                  rows={[
+                    ["No unit kamar", billing.data.lease.room_number],
+                    [
+                      "Status penyewaan",
+                      billing.data.lease.status === "cancelled"
+                        ? "Dibatalkan pra-aktivasi"
+                        : billing.data.lease.status === "transferred"
+                          ? "Dipindahkan"
+                          : "Selesai / historis",
+                    ],
+                    ["Tanggal mulai", formatResidentDetailDate(billing.data.lease.start_date)],
+                    ["Tanggal berakhir", formatResidentDetailDate(billing.data.lease.end_date)],
+                    ["Total sewa kontrak", rupiah(billing.data.lease.contract_rent)],
                   ]}
                 />
               ) : (
@@ -876,7 +960,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {billing.data && settlement ? (
+              {billing.data && settlement && settlement.status !== "cancelled" ? (
                 <ContractInvoicePanel
                   data={billing.data}
                   propertyId={currentPropertyId}
@@ -1005,6 +1089,113 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               )}
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Landmark className="h-4 w-4 text-primary" /> Timeline finansial
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {billing.data?.financial_timeline.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-muted-foreground">
+                      <tr>
+                        <th className="pb-2">Waktu</th>
+                        <th className="pb-2">Aktivitas</th>
+                        <th className="pb-2">Referensi</th>
+                        <th className="pb-2">Arah</th>
+                        <th className="pb-2 text-right">Nominal</th>
+                        <th className="pb-2">Status</th>
+                        <th className="pb-2">Sumber / pencatat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {billing.data.financial_timeline.map((event) => (
+                        <tr
+                          key={`${event.event_type}:${event.id}`}
+                          className="border-t border-border"
+                        >
+                          <td className="py-3 whitespace-nowrap">
+                            {formatResidentDetailTimestamp(event.occurred_at)}
+                          </td>
+                          <td className="max-w-80 py-3">
+                            <p className="font-medium">{financialEventLabel(event.event_type)}</p>
+                            {event.note ? (
+                              <p className="mt-1 whitespace-normal text-xs text-muted-foreground">
+                                {event.note}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="py-3">{event.reference ?? "Tidak ada"}</td>
+                          <td className="py-3">{financialDirectionLabel(event.direction)}</td>
+                          <td className="py-3 text-right font-semibold">{rupiah(event.amount)}</td>
+                          <td className="py-3">{financialStatusLabel(event.status)}</td>
+                          <td className="py-3">
+                            <p>{financialSourceLabel(event.source)}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{event.actor_name}</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <HonestEmpty
+                  icon={<Landmark className="h-5 w-5" />}
+                  title="Belum ada peristiwa finansial"
+                  description="Pembayaran, reversal, deposit, penyesuaian, dan refund akan tersusun kronologis di sini."
+                />
+              )}
+            </CardContent>
+          </Card>
+          {billing.data?.exit_documents.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Archive className="h-4 w-4 text-primary" /> Dokumen checkout dan penyelesaian
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {billing.data.exit_documents.map((document) => (
+                  <div
+                    key={document.id}
+                    className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium">
+                        {
+                          {
+                            checkout_handover: "Berita acara checkout",
+                            final_settlement: "Rincian penyelesaian akhir",
+                            refund_receipt: "Kuitansi refund",
+                          }[document.document_kind]
+                        }
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {document.document_code} Â·{" "}
+                        {formatResidentDetailTimestamp(document.issued_at)}
+                      </p>
+                    </div>
+                    <Button
+                      className="min-h-11"
+                      variant="outline"
+                      onClick={() =>
+                        void downloadLeaseExitDocument(
+                          billing.data!.lease.id,
+                          document.checkout_command_id,
+                          document.id,
+                          document.document_code,
+                        )
+                      }
+                    >
+                      <Download className="mr-1.5 h-4 w-4" /> Unduh PDF
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
         </section>
 
         <section className="grid gap-5 md:grid-cols-3" aria-label="Operasional terkait">
@@ -1060,7 +1251,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         open={confirmActivation}
         onOpenChange={setConfirmActivation}
         title="Aktivasi kamar dan penyewaan"
-        description="Aktivasi membuat occupancy aktif dan menandai kamar sebagai dihuni. Lanjutkan hanya setelah kewajiban awal telah diperiksa."
+        description="Aktivasi membuat kontrak sewa aktif dan mengikat kamar dalam status menunggu check-in. Occupancy baru dibuat setelah check-in fisik dikonfirmasi."
         confirmLabel="Aktivasi sekarang"
         pending={activation.isPending}
         onConfirm={async () => {
@@ -1070,6 +1261,23 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             idempotencyKey: newIdempotencyKey(),
           });
           setConfirmActivation(false);
+          await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
+        }}
+      />
+      <ConfirmDialog
+        open={confirmCheckIn}
+        onOpenChange={setConfirmCheckIn}
+        title="Konfirmasi check-in fisik"
+        description="Konfirmasi ini membuat occupancy aktif dan menandai kamar sebagai dihuni. Pastikan penghuni benar-benar telah menerima kamar."
+        confirmLabel="Konfirmasi check-in"
+        pending={checkIn.isPending}
+        onConfirm={async () => {
+          if (!currentTenancy) return;
+          await checkIn.mutateAsync({
+            leaseId: currentTenancy.leaseId,
+            idempotencyKey: newIdempotencyKey(),
+          });
+          setConfirmCheckIn(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
         }}
       />
@@ -1246,11 +1454,11 @@ function LoadingPage() {
 
 function DefinitionGrid({ rows }: { rows: Array<[string, ReactNode]> }) {
   return (
-    <dl className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+    <dl className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
       {rows.map(([label, value]) => (
         <div key={label} className="min-w-0 rounded-lg bg-muted/35 p-3">
           <dt className="text-xs text-muted-foreground">{label}</dt>
-          <dd className="mt-1 break-words font-medium">{value}</dd>
+          <dd className="mt-1 min-w-0 break-words font-medium">{value}</dd>
         </div>
       ))}
     </dl>
@@ -1312,6 +1520,56 @@ function paymentPurposeLabel(
   if (purpose === "security_deposit") return "Security deposit";
   if (purpose === "other_charge") return "Tagihan lainnya";
   return "Pembayaran";
+}
+
+function financialEventLabel(event: ResidentBilling["financial_timeline"][number]["event_type"]) {
+  return {
+    payment_recorded: "Pembayaran dicatat",
+    payment_reversed: "Pembayaran direversal",
+    booking_refund: "Refund pembatalan pra-aktivasi",
+    deposit_collected: "Saldo security deposit bertambah",
+    deposit_deducted: "Potongan security deposit",
+    deposit_refunded: "Pengembalian security deposit",
+    invoice_adjustment: "Penyesuaian tagihan saat checkout",
+    exit_refund: "Refund penyelesaian checkout",
+  }[event];
+}
+
+function financialDirectionLabel(
+  direction: ResidentBilling["financial_timeline"][number]["direction"],
+) {
+  return {
+    inbound: "Dana masuk",
+    outbound: "Dana keluar",
+    adjustment: "Penyesuaian ledger",
+  }[direction];
+}
+
+function financialStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending_confirmation: "Menunggu konfirmasi",
+    verified: "Terverifikasi",
+    rejected: "Ditolak",
+    reversed: "Direversal",
+    pending: "Menunggu proses",
+    settled: "Selesai",
+    waived: "Dihapuskan",
+  };
+  return labels[status] ?? status.replaceAll("_", " ");
+}
+
+function financialSourceLabel(source: string) {
+  const labels: Record<string, string> = {
+    manual_transfer: "Transfer manual",
+    audited_cash: "Penerimaan tunai",
+    payment_reversal: "Koreksi pembayaran",
+    deposit_ledger: "Ledger security deposit",
+    lease_exit: "Penyelesaian checkout",
+    lease_exit_refund: "Refund checkout",
+    pre_activation_cancellation: "Pembatalan pra-aktivasi",
+    w06_verified_payment: "Pembayaran terverifikasi",
+  };
+  return labels[source] ?? source.replaceAll("_", " ");
 }
 
 function paymentAllocationLabel(
@@ -1393,6 +1651,7 @@ function SettlementStatusPill({
     termination_pending: "bg-warning/15 text-warning",
     terminated: "bg-muted text-muted-foreground",
     paid: "bg-success/15 text-success",
+    cancelled: "bg-muted text-muted-foreground",
   }[status];
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>
@@ -1442,7 +1701,12 @@ function ContractSettlementSummary({
         <div>
           <p className="text-sm font-semibold">Pelunasan sewa kontrak</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Pelunasan kontrak dijadwalkan dua bulan sejak kamar diaktivasi.
+            Jadwal mengikuti checkpoint dan durasi kontrak yang tersimpan pada penyewaan ini.
+          </p>
+          <p className="mt-1 text-xs font-medium text-primary">
+            {settlement.policy_version === "legacy_v1"
+              ? "Kebijakan kontrak lama (Legacy V1)"
+              : "Kebijakan checkpoint kontrak (V2)"}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1452,6 +1716,7 @@ function ContractSettlementSummary({
               propertyId={propertyId}
               receiptId={finalPayment.receipt_id}
               paymentCode={finalPayment.payment_code}
+              documentKind="settlement"
               isContractSettled
             />
           ) : null}
@@ -1492,6 +1757,19 @@ function ContractSettlementSummary({
         <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm">
           <p className="font-medium text-primary">Perpanjangan pelunasan tercatat</p>
           <p className="mt-1 text-muted-foreground">{settlement.extension_reason}</p>
+        </div>
+      ) : null}
+      {settlement.payment_promise ? (
+        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
+          <p className="font-medium text-warning">Janji bayar tercatat</p>
+          <p className="mt-1 text-muted-foreground">
+            {rupiah(settlement.payment_promise.promised_amount)} pada{" "}
+            {formatResidentDetailDate(settlement.payment_promise.promised_payment_date)}.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{settlement.payment_promise.note}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Catatan ini tidak menghapus status terlambat dan bukan perpanjangan tenggat.
+          </p>
         </div>
       ) : null}
       {!settlement.admin_action_required && settlement.outstanding_amount > 0 ? (
@@ -1674,7 +1952,17 @@ function ContractInvoicePanel({
             onChanged={onChanged}
           />
         ) : null}
-        {canManageTermination && settlement.full_payment_required && !termination ? (
+        {canManageTermination &&
+        !termination &&
+        ["overdue", "extended", "admin_action_required"].includes(settlement.status) ? (
+          <RecordPaymentPromiseDialog
+            leaseId={data.lease.id}
+            propertyId={propertyId}
+            suggestedAmount={settlement.checkpoint_shortfall_amount}
+            onChanged={onChanged}
+          />
+        ) : null}
+        {canManageTermination && settlement.termination_eligible && !termination ? (
           <StartTerminationDialog
             leaseId={data.lease.id}
             propertyId={propertyId}
@@ -1804,6 +2092,124 @@ function ExtendSettlementDialog({
             onClick={submit}
           >
             {mutation.isPending ? "Menyimpan..." : "Simpan perpanjangan"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RecordPaymentPromiseDialog({
+  leaseId,
+  propertyId,
+  suggestedAmount,
+  onChanged,
+}: {
+  leaseId: string;
+  propertyId: string | null;
+  suggestedAmount: number;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(String(suggestedAmount));
+  const [promisedDate, setPromisedDate] = useState("");
+  const [note, setNote] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
+  const mutation = useRecordLeasePaymentPromise(propertyId);
+  const numericAmount = Number(amount);
+  const valid =
+    Boolean(propertyId) &&
+    Number.isSafeInteger(numericAmount) &&
+    numericAmount > 0 &&
+    Boolean(promisedDate) &&
+    note.trim().length >= 3;
+  const submit = () => {
+    if (!propertyId || !valid) return;
+    mutation.mutate(
+      {
+        leaseId,
+        input: {
+          property_id: propertyId,
+          promised_amount: numericAmount,
+          promised_payment_date: promisedDate,
+          note: note.trim(),
+        },
+        idempotencyKey,
+      },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          setPromisedDate("");
+          setNote("");
+          setIdempotencyKey(newIdempotencyKey());
+          onChanged();
+        },
+      },
+    );
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setAmount(String(suggestedAmount));
+      }}
+    >
+      <Button className="min-h-11" variant="outline" onClick={() => setOpen(true)}>
+        <MessageSquare className="mr-2 h-4 w-4" /> Catat janji bayar
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Catat janji bayar penghuni</DialogTitle>
+          <DialogDescription>
+            Catatan operasional ini tidak mengubah status overdue, saldo, tenggat, atau kelayakan
+            tindakan Admin. Gunakan perpanjangan resmi bila tenggat memang diubah.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <label className="block text-sm font-medium">
+            Nominal yang dijanjikan
+            <Input
+              className="mt-2 min-h-11"
+              inputMode="numeric"
+              type="number"
+              min={1}
+              max={Number.MAX_SAFE_INTEGER}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            Tanggal rencana pembayaran
+            <Input
+              className="mt-2 min-h-11"
+              type="date"
+              value={promisedDate}
+              onChange={(event) => setPromisedDate(event.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            Catatan komunikasi
+            <textarea
+              className="mt-2 min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={2000}
+            />
+          </label>
+          {mutation.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Janji bayar belum dapat dicatat. Pastikan checkpoint telah terlambat dan nominal tidak
+              melebihi sisa kontrak.
+            </p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
+            Batal
+          </Button>
+          <Button className="min-h-11" disabled={mutation.isPending || !valid} onClick={submit}>
+            {mutation.isPending ? "Menyimpan..." : "Simpan janji bayar"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2231,7 +2637,7 @@ function PaymentDetailDialog({
       <Button className="min-h-9" size="sm" variant="info" onClick={() => setOpen(true)}>
         Rincian
       </Button>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-4xl overflow-y-auto sm:max-h-none sm:overflow-visible">
         <DialogHeader>
           <DialogTitle>
             {isContractSettled ? "Kuitansi pelunasan kontrak" : "Rincian pembayaran"}
@@ -2259,6 +2665,17 @@ function PaymentDetailDialog({
                 ? formatResidentDetailTimestamp(payment.verified_at)
                 : "Belum diverifikasi",
             ],
+            ...(payment.reversal_id
+              ? ([
+                  ["Alasan reversal", payment.reversal_reason ?? "Alasan tidak tersedia"],
+                  [
+                    "Direversal pada",
+                    payment.reversed_at
+                      ? formatResidentDetailTimestamp(payment.reversed_at)
+                      : "Waktu tidak tersedia",
+                  ],
+                ] as Array<[string, ReactNode]>)
+              : []),
             [
               "Alokasi",
               payment.allocations.length
@@ -2269,19 +2686,33 @@ function PaymentDetailDialog({
             ],
           ]}
         />
-        <DialogFooter>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
           {payment.receipt_id && propertyId ? (
             <ReceiptDownloadButton
               propertyId={propertyId}
               receiptId={payment.receipt_id}
               paymentCode={payment.payment_code}
+              documentKind="payment"
               isContractSettled={isContractSettled}
             />
           ) : null}
-          <Button className="min-h-11" variant="secondary" onClick={() => setOpen(false)}>
+          {payment.reversal_receipt_id && propertyId ? (
+            <ReceiptDownloadButton
+              propertyId={propertyId}
+              receiptId={payment.reversal_receipt_id}
+              paymentCode={`${payment.payment_code}-REVERSAL`}
+              documentKind="refund"
+              isContractSettled={false}
+            />
+          ) : null}
+          <Button
+            className="min-h-11 justify-self-end"
+            variant="secondary"
+            onClick={() => setOpen(false)}
+          >
             Tutup
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -2291,11 +2722,13 @@ function ReceiptDownloadButton({
   propertyId,
   receiptId,
   paymentCode,
+  documentKind,
   isContractSettled,
 }: {
   propertyId: string | null;
   receiptId: string;
   paymentCode: string;
+  documentKind: "payment" | "refund" | "settlement";
   isContractSettled: boolean;
 }) {
   const [downloading, setDownloading] = useState(false);
@@ -2315,15 +2748,21 @@ function ReceiptDownloadButton({
   };
 
   return (
-    <span className="inline-flex flex-col items-end gap-1">
+    <span className="inline-flex w-full min-w-0 flex-col items-stretch gap-1">
       <Button
-        className="min-h-9"
+        className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
         variant="success"
         disabled={!propertyId || downloading}
         onClick={download}
       >
         <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
-        {downloading ? "Menyiapkan..." : isContractSettled ? "Kuitansi lunas" : "Unduh kuitansi"}
+        {downloading
+          ? "Menyiapkan..."
+          : documentKind === "refund"
+            ? "Unduh kuitansi refund"
+            : documentKind === "settlement"
+              ? "Unduh kuitansi pelunasan"
+              : "Unduh kuitansi pembayaran"}
       </Button>
       {error ? (
         <span role="alert" className="text-xs text-destructive">

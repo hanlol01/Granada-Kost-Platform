@@ -27,6 +27,7 @@ export type W06ProofStatus = "pending_review" | "verified" | "rejected" | "expir
 export type MyW06ContractSettlement = {
   id: string;
   invoice_id: string;
+  policy_version: "legacy_v1" | "lease_settlement_v2";
   status:
     | "awaiting_activation"
     | "open"
@@ -53,11 +54,20 @@ export type MyW06ContractSettlement = {
   };
   deposit_offset_amount: number;
   outstanding_amount: number;
-  reminder_stage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
+  checkpoint_shortfall_amount: number;
+  reminder_stage: "H-30" | "H-14" | "H-7" | "H-3" | "H-1" | "H-0" | "D+1" | "D+7" | null;
   admin_action_required: boolean;
+  termination_eligible: boolean;
   partial_payment_allowed: boolean;
   full_payment_required: boolean;
   extension_available: boolean;
+  payment_promise: {
+    id: string;
+    promised_amount: number;
+    promised_payment_date: string;
+    note: string;
+    recorded_at: string;
+  } | null;
   termination_case: {
     id: string;
     status: "pending" | "cancelled" | "checked_out";
@@ -71,7 +81,7 @@ export type MyW06Billing = {
     property_id: string;
     resident_name?: string;
     room_number?: string;
-    status: "awaiting_activation" | "active";
+    status: "awaiting_activation" | "active" | "ended";
     start_date: string;
     end_date: string;
     payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
@@ -118,6 +128,35 @@ export type MyW06Billing = {
     reversal_id: string | null;
     receipt_id: string | null;
     allocations: Array<{ invoice_id: string; amount: number }>;
+  }>;
+  financial_timeline: Array<{
+    id: string;
+    event_type:
+      | "payment_recorded"
+      | "payment_reversed"
+      | "booking_refund"
+      | "deposit_collected"
+      | "deposit_deducted"
+      | "deposit_refunded"
+      | "invoice_adjustment"
+      | "exit_refund";
+    occurred_at: string;
+    amount: number;
+    direction: "inbound" | "outbound" | "adjustment";
+    status: string;
+    reference: string | null;
+    subtype: string | null;
+    source: string;
+    note: string | null;
+    actor_name: string;
+    receipt_id: string | null;
+    exit_document_id: string | null;
+  }>;
+  exit_documents: Array<{
+    id: string;
+    document_code: string;
+    document_kind: "checkout_handover" | "final_settlement" | "refund_receipt";
+    issued_at: string;
   }>;
   proofs: Array<{
     id: string;
@@ -323,6 +362,7 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
     [
       "id",
       "invoice_id",
+      "policy_version",
       "status",
       "activated_at",
       "original_due_at",
@@ -335,11 +375,14 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
       "first_payment_checkpoint",
       "deposit_offset_amount",
       "outstanding_amount",
+      "checkpoint_shortfall_amount",
       "reminder_stage",
       "admin_action_required",
+      "termination_eligible",
       "partial_payment_allowed",
       "full_payment_required",
       "extension_available",
+      "payment_promise",
       "termination_case",
     ],
     "Pelunasan kontrak",
@@ -367,6 +410,20 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
       planned_checkout_date: date(termination.planned_checkout_date, "Tanggal checkout"),
     };
   });
+  const paymentPromise = nullable(record.payment_promise, (entry) => {
+    const promise = object(
+      entry,
+      ["id", "promised_amount", "promised_payment_date", "note", "recorded_at"],
+      "Janji bayar",
+    );
+    return {
+      id: uuid(promise.id, "ID janji bayar"),
+      promised_amount: integer(promise.promised_amount, "Nominal janji bayar"),
+      promised_payment_date: date(promise.promised_payment_date, "Tanggal janji bayar"),
+      note: text(promise.note, "Catatan janji bayar"),
+      recorded_at: timestamp(promise.recorded_at, "Waktu pencatatan janji bayar"),
+    };
+  });
   const boolean = (entry: unknown, label: string) => {
     if (typeof entry !== "boolean") return fail(label);
     return entry;
@@ -374,6 +431,11 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
   return {
     id: uuid(record.id, "ID pelunasan kontrak"),
     invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
+    policy_version: oneOf(
+      record.policy_version,
+      ["legacy_v1", "lease_settlement_v2"] as const,
+      "Versi kebijakan pelunasan",
+    ),
     status: oneOf(
       record.status,
       [
@@ -421,13 +483,23 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
     },
     deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit"),
     outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
+    checkpoint_shortfall_amount: integer(
+      record.checkpoint_shortfall_amount,
+      "Kekurangan checkpoint",
+    ),
     reminder_stage: nullable(record.reminder_stage, (entry) =>
-      oneOf(entry, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "Tahap pengingat"),
+      oneOf(
+        entry,
+        ["H-30", "H-14", "H-7", "H-3", "H-1", "H-0", "D+1", "D+7"] as const,
+        "Tahap pengingat",
+      ),
     ),
     admin_action_required: boolean(record.admin_action_required, "Kebutuhan tindakan admin"),
+    termination_eligible: boolean(record.termination_eligible, "Kelayakan pemberhentian"),
     partial_payment_allowed: boolean(record.partial_payment_allowed, "Izin pembayaran sebagian"),
     full_payment_required: boolean(record.full_payment_required, "Kewajiban pelunasan penuh"),
     extension_available: boolean(record.extension_available, "Izin perpanjangan"),
+    payment_promise: paymentPromise,
     termination_case: terminationCase,
   };
 }
@@ -436,7 +508,7 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
   const envelope = object(value, ["data"], "Respons billing");
   const data = objectWithOptional(
     envelope.data,
-    ["lease", "summary", "invoices", "payments", "proofs"],
+    ["lease", "summary", "invoices", "payments", "financial_timeline", "exit_documents", "proofs"],
     ["contract_settlement"],
     "Data billing",
   );
@@ -487,7 +559,11 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
         lease.resident_name === undefined ? undefined : text(lease.resident_name, "Nama penghuni"),
       room_number:
         lease.room_number === undefined ? undefined : text(lease.room_number, "Nomor kamar"),
-      status: oneOf(lease.status, ["awaiting_activation", "active"] as const, "Status kontrak"),
+      status: oneOf(
+        lease.status,
+        ["awaiting_activation", "active", "ended"] as const,
+        "Status kontrak",
+      ),
       start_date: date(lease.start_date, "Mulai kontrak"),
       end_date: date(lease.end_date, "Akhir kontrak"),
       payment_plan: oneOf(
@@ -554,6 +630,86 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       "Daftar invoice",
     ),
     payments: list(data.payments, payment, "Daftar pembayaran"),
+    financial_timeline: list(
+      data.financial_timeline,
+      (value) => {
+        const event = object(
+          value,
+          [
+            "id",
+            "event_type",
+            "occurred_at",
+            "amount",
+            "direction",
+            "status",
+            "reference",
+            "subtype",
+            "source",
+            "note",
+            "actor_name",
+            "receipt_id",
+            "exit_document_id",
+          ],
+          "Peristiwa finansial",
+        );
+        return {
+          id: uuid(event.id, "ID peristiwa finansial"),
+          event_type: oneOf(
+            event.event_type,
+            [
+              "payment_recorded",
+              "payment_reversed",
+              "booking_refund",
+              "deposit_collected",
+              "deposit_deducted",
+              "deposit_refunded",
+              "invoice_adjustment",
+              "exit_refund",
+            ] as const,
+            "Jenis peristiwa finansial",
+          ),
+          occurred_at: timestamp(event.occurred_at, "Waktu peristiwa finansial"),
+          amount: integer(event.amount, "Nominal peristiwa finansial"),
+          direction: oneOf(
+            event.direction,
+            ["inbound", "outbound", "adjustment"] as const,
+            "Arah peristiwa finansial",
+          ),
+          status: text(event.status, "Status peristiwa finansial"),
+          reference: nullable(event.reference, (entry) => text(entry, "Referensi finansial")),
+          subtype: nullable(event.subtype, (entry) => text(entry, "Subjenis finansial")),
+          source: text(event.source, "Sumber peristiwa finansial"),
+          note: nullable(event.note, (entry) => text(entry, "Catatan peristiwa finansial")),
+          actor_name: text(event.actor_name, "Pencatat peristiwa finansial"),
+          receipt_id: nullable(event.receipt_id, (entry) => uuid(entry, "ID kuitansi finansial")),
+          exit_document_id: nullable(event.exit_document_id, (entry) =>
+            uuid(entry, "ID dokumen checkout finansial"),
+          ),
+        };
+      },
+      "Timeline finansial",
+    ),
+    exit_documents: list(
+      data.exit_documents,
+      (value) => {
+        const document = object(
+          value,
+          ["id", "document_code", "document_kind", "issued_at"],
+          "Dokumen checkout",
+        );
+        return {
+          id: uuid(document.id, "ID dokumen checkout"),
+          document_code: text(document.document_code, "Kode dokumen checkout"),
+          document_kind: oneOf(
+            document.document_kind,
+            ["checkout_handover", "final_settlement", "refund_receipt"] as const,
+            "Jenis dokumen checkout",
+          ),
+          issued_at: timestamp(document.issued_at, "Waktu dokumen checkout"),
+        };
+      },
+      "Daftar dokumen checkout",
+    ),
     proofs: list(
       data.proofs,
       (value) => {
@@ -680,4 +836,36 @@ export async function downloadMyInvoiceDocument(invoiceId: string, invoiceCode: 
   anchor.download = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}.pdf`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+async function downloadMyPdf(path: string, code: string, fallback: string) {
+  const token = getAccessToken();
+  const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+    throw new Error(`Dokumen PDF gagal diunduh (HTTP ${response.status}).`);
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${code.replace(/[^a-z0-9_-]+/gi, "-") || fallback}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function downloadMyReceiptDocument(receiptId: string, receiptCode: string) {
+  return downloadMyPdf(
+    `/my/receipts/${encodeURIComponent(receiptId)}/document`,
+    receiptCode,
+    "kuitansi",
+  );
+}
+
+export function downloadMyLeaseExitDocument(documentId: string, documentCode: string) {
+  return downloadMyPdf(
+    `/my/lease-exit-documents/${encodeURIComponent(documentId)}/document`,
+    documentCode,
+    "dokumen-checkout",
+  );
 }

@@ -60,7 +60,15 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   floor_code?: 'A' | 'B';
 
   @IsOptional()
-  @IsIn(['vacant', 'reserved', 'occupied', 'maintenance', 'inactive', 'requires_review'])
+  @IsIn([
+    'vacant',
+    'reserved',
+    'awaiting_check_in',
+    'occupied',
+    'maintenance',
+    'inactive',
+    'requires_review',
+  ])
   status?: string;
 
   @IsOptional()

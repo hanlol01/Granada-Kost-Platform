@@ -17,6 +17,7 @@ export type MasterStatus = "active" | "inactive";
 export type RoomStatus =
   | "vacant"
   | "reserved"
+  | "awaiting_check_in"
   | "occupied"
   | "maintenance"
   | "inactive"
@@ -501,6 +502,7 @@ function isRoomStatus(value: unknown): value is RoomStatus {
   return (
     value === "vacant" ||
     value === "reserved" ||
+    value === "awaiting_check_in" ||
     value === "occupied" ||
     value === "maintenance" ||
     value === "inactive" ||

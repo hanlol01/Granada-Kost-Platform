@@ -193,6 +193,14 @@ export const adminUxQueryKeys = {
     unreadCount: (propertyId: string, filters: QueryFilters = {}) =>
       scoped("notificationUnreadCount", propertyId, normalizeQueryFilters(filters)),
   },
+  activityLogs: {
+    list: (propertyId: string, filters: QueryFilters = {}) =>
+      scoped("activityLogs", propertyId, normalizePagination(filters)),
+    detail: (propertyId: string, activityId: string) =>
+      scoped("activityLog", propertyId, activityId),
+    actors: (propertyId: string, filters: QueryFilters = {}) =>
+      scoped("activityLogActors", propertyId, normalizeQueryFilters(filters)),
+  },
   settings: {
     profile: (propertyId: string) => ["settings", "property", propertyId] as const,
     preference: (userId: string) => ["settings", "preference", userId] as const,
@@ -276,6 +284,8 @@ export function invalidationKeysFor(
         ["leaseResidentOptions", propertyId],
         ["roomAvailability", propertyId],
         adminUxQueryKeys.residents.all(propertyId),
+        ["booking-leads", "list", { propertyId }],
+        ["booking-leads", "progress", { propertyId }],
         adminUxQueryKeys.invoices.all(propertyId),
         adminUxQueryKeys.dashboard.summary(propertyId),
         ["notificationUnreadCount", propertyId],

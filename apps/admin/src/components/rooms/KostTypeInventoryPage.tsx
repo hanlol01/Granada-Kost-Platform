@@ -118,6 +118,7 @@ const EMPTY_ROOM_ITEMS: RoomInventory[] = [];
 const STATUS_TONE: Record<RoomInventory["status"], string> = {
   vacant: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
   reserved: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  awaiting_check_in: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
   occupied: "border-blue-500/30 bg-blue-500/10 text-blue-300",
   maintenance: "border-orange-500/30 bg-orange-500/10 text-orange-300",
   inactive: "border-slate-700 bg-slate-800 text-slate-300",
@@ -1786,7 +1787,10 @@ function RoomStatusDialog({
     RoomInventory,
     {
       roomId: string;
-      status: Exclude<RoomInventory["status"], "occupied" | "reserved">;
+      status: Extract<
+        RoomInventory["status"],
+        "vacant" | "maintenance" | "inactive" | "requires_review"
+      >;
       reason: string;
     }
   >("room", "Status operasional kamar diperbarui", (propertyId, values, key) => {

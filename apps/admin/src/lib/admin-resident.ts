@@ -9,20 +9,30 @@ export type ResidentStatus = "draft" | "pending_activation" | "active" | "inacti
 export type ResidentAccountStatus = "active" | "inactive" | "suspended" | "not_provisioned";
 export type RentPaymentStatus =
   | "none"
+  | "pending_verification"
   | "booking_fee"
   | "down_payment"
+  | "initial_month_payment"
   | "partial_payment"
-  | "paid_in_full";
+  | "paid_in_full"
+  | "reversed_refunded"
+  | "outstanding_balance";
 export type ContractSettlementStage =
   | "none"
   | "awaiting_activation"
   | "checkpoint_one_pending"
   | "checkpoint_one_met"
+  | "checkpoint_two_pending"
+  | "checkpoint_two_met"
   | "final_settlement_due"
   | "overdue"
+  | "overdue_grace"
+  | "extended"
   | "admin_action_required"
+  | "termination_eligible"
   | "termination_pending"
-  | "paid_in_full";
+  | "paid_in_full"
+  | "preactivation_cancelled";
 
 export type ResidentListRecord = {
   id: string;
@@ -39,6 +49,7 @@ export type ResidentListRecord = {
   contractSettlementDueDate: string | null;
   contractSettlementRemainingAmount: number;
   contractSettlementCheckpointRequiredAmount: number;
+  leaseExpiredAdminActionRequired: boolean;
   residentStatus: ResidentStatus;
   createdAt: string;
   updatedAt: string;
@@ -68,6 +79,11 @@ export type ResidentDetail = Omit<
   parentPhone: string | null;
   maritalStatus: string | null;
   emergencyPhone: string | null;
+  archiveReason: string | null;
+  archiveSource: string | null;
+  archivedAt: string | null;
+  archivedByUserId: string | null;
+  archivedByName: string | null;
   emergencyContacts: Array<{
     id: string;
     contactName: string;
@@ -89,6 +105,17 @@ export type ResidentTenancy = {
   leaseId: string;
   bookingLeadId: string | null;
   leaseStatus: "awaiting_activation" | "active";
+  activationState:
+    | "scheduled"
+    | "activation_attention_required"
+    | "awaiting_check_in"
+    | "check_in_confirmation_required"
+    | "checked_in"
+    | null;
+  occupancyId: string | null;
+  roomStatus: string;
+  activatedAt: string | null;
+  checkedInAt: string | null;
   roomNumber: string;
   kostTypeName: string;
   buildingCode: string;
@@ -210,6 +237,7 @@ const LIST_KEYS = [
   "contract_settlement_due_date",
   "contract_settlement_remaining_amount",
   "contract_settlement_checkpoint_required_amount",
+  "lease_expired_admin_action_required",
   "resident_status",
   "created_at",
   "updated_at",
@@ -235,27 +263,41 @@ function parseListRecord(value: unknown): ResidentListRecord {
     ]),
     rentPaymentStatus: enumValue(item.rent_payment_status, [
       "none",
+      "pending_verification",
       "booking_fee",
       "down_payment",
+      "initial_month_payment",
       "partial_payment",
       "paid_in_full",
+      "reversed_refunded",
+      "outstanding_balance",
     ]),
     contractSettlementStage: enumValue(item.contract_settlement_stage, [
       "none",
       "awaiting_activation",
       "checkpoint_one_pending",
       "checkpoint_one_met",
+      "checkpoint_two_pending",
+      "checkpoint_two_met",
       "final_settlement_due",
       "overdue",
+      "overdue_grace",
+      "extended",
       "admin_action_required",
+      "termination_eligible",
       "termination_pending",
       "paid_in_full",
+      "preactivation_cancelled",
     ]),
     contractSettlementDueDate: date(item.contract_settlement_due_date, true),
     contractSettlementRemainingAmount: integer(item.contract_settlement_remaining_amount),
     contractSettlementCheckpointRequiredAmount: integer(
       item.contract_settlement_checkpoint_required_amount,
     ),
+    leaseExpiredAdminActionRequired:
+      typeof item.lease_expired_admin_action_required === "boolean"
+        ? item.lease_expired_admin_action_required
+        : invalid(),
     residentStatus: enumValue(item.resident_status, [
       "draft",
       "pending_activation",
@@ -302,6 +344,11 @@ export function parseResidentDetail(value: unknown, expectedPropertyId: string):
     "gender",
     "account_status",
     "resident_status",
+    "archive_reason",
+    "archive_source",
+    "archived_at",
+    "archived_by_user_id",
+    "archived_by_name",
     "active_lease",
     "created_at",
     "updated_at",
@@ -370,6 +417,7 @@ export function parseResidentDetail(value: unknown, expectedPropertyId: string):
     leaseStart: null,
     leaseEnd: null,
     leaseAuthorityCount: 0,
+    leaseExpiredAdminActionRequired: false,
     university: text(item.university, true),
     ktpNumber: text(item.ktp_number, true),
     dateOfBirth: date(item.date_of_birth, true),
@@ -383,6 +431,11 @@ export function parseResidentDetail(value: unknown, expectedPropertyId: string):
     parentPhone: text(item.parent_phone, true),
     maritalStatus: text(item.marital_status, true),
     emergencyPhone: text(item.emergency_phone, true),
+    archiveReason: text(item.archive_reason, true),
+    archiveSource: text(item.archive_source, true),
+    archivedAt: item.archived_at === null ? null : timestamp(item.archived_at),
+    archivedByUserId: uuid(item.archived_by_user_id, true),
+    archivedByName: text(item.archived_by_name, true),
     emergencyContacts,
     ktpDocument,
     profilePhotoFileId: uuid(item.profile_photo_file_id, true),
@@ -406,6 +459,11 @@ export function parseResidentTenancy(
     "lease_id",
     "booking_lead_id",
     "lease_status",
+    "activation_state",
+    "occupancy_id",
+    "room_status",
+    "activated_at",
+    "checked_in_at",
     "room_number",
     "kost_type_name",
     "building_code",
@@ -423,6 +481,20 @@ export function parseResidentTenancy(
     leaseId: uuid(item.lease_id) as string,
     bookingLeadId: uuid(item.booking_lead_id, true),
     leaseStatus: enumValue(item.lease_status, ["awaiting_activation", "active"] as const),
+    activationState:
+      item.activation_state === null
+        ? null
+        : enumValue(item.activation_state, [
+            "scheduled",
+            "activation_attention_required",
+            "awaiting_check_in",
+            "check_in_confirmation_required",
+            "checked_in",
+          ] as const),
+    occupancyId: uuid(item.occupancy_id, true),
+    roomStatus: text(item.room_status) as string,
+    activatedAt: item.activated_at === null ? null : timestamp(item.activated_at),
+    checkedInAt: item.checked_in_at === null ? null : timestamp(item.checked_in_at),
     roomNumber: text(item.room_number) as string,
     kostTypeName: text(item.kost_type_name) as string,
     buildingCode: text(item.building_code) as string,

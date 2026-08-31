@@ -1084,23 +1084,63 @@ export class LeaseRenewalService {
         code: 'RENEWAL_LIFECYCLE_CONFLICT',
         message: 'Successor could not be activated for renewal',
       });
-    const settlement = await client.query(
-      `WITH activation AS (SELECT now() AS activated_at)
-       UPDATE lease_contract_settlements settlement
-          SET state='open',
-              activated_at=activation.activated_at,
-              original_due_at=(
-                (((activation.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '2 months'
-                  + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')
-              ),
-              updated_at=now()
-         FROM activation
+    const settlementAuthority = await client.query<{
+      id: string;
+      policy_snapshot_id: string | null;
+      final_checkpoint_due_at: Date | null;
+    }>(
+      `SELECT settlement.id,
+              settlement.policy_snapshot_id,
+              final_checkpoint.due_at AS final_checkpoint_due_at
+         FROM lease_contract_settlements settlement
+         LEFT JOIN lease_settlement_checkpoints final_checkpoint
+           ON final_checkpoint.property_id=settlement.property_id
+          AND final_checkpoint.lease_id=settlement.lease_id
+          AND final_checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+          AND final_checkpoint.checkpoint_code='final_settlement'
         WHERE settlement.property_id=$1
           AND settlement.lease_id=$2
           AND settlement.invoice_id=$3
-          AND settlement.state='awaiting_activation'`,
+          AND settlement.state='awaiting_activation'
+        FOR UPDATE OF settlement`,
       [command.property_id, successor.id, command.first_invoice_id],
     );
+    if (settlementAuthority.rowCount !== 1 || !settlementAuthority.rows[0])
+      throw new ConflictException({
+        code: 'RENEWAL_CONTRACT_SETTLEMENT_NOT_READY',
+        message: 'Successor contract settlement is not awaiting activation',
+      });
+    const settlementAuthorityRow = settlementAuthority.rows[0];
+    if (
+      settlementAuthorityRow.policy_snapshot_id &&
+      !settlementAuthorityRow.final_checkpoint_due_at
+    )
+      throw new ConflictException({
+        code: 'RENEWAL_CONTRACT_SETTLEMENT_POLICY_INCOMPLETE',
+        message: 'Successor contract settlement final checkpoint is missing',
+      });
+    const settlement = settlementAuthorityRow.policy_snapshot_id
+      ? await client.query(
+          `UPDATE lease_contract_settlements
+              SET state='open',activated_at=now(),original_due_at=$2,updated_at=now()
+            WHERE id=$1 AND state='awaiting_activation'`,
+          [settlementAuthorityRow.id, settlementAuthorityRow.final_checkpoint_due_at],
+        )
+      : await client.query(
+          `WITH activation AS (SELECT now() AS activated_at)
+           UPDATE lease_contract_settlements settlement
+              SET state='open',
+                  activated_at=activation.activated_at,
+                  original_due_at=(
+                    (((activation.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '2 months'
+                      + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')
+                  ),
+                  updated_at=now()
+             FROM activation
+            WHERE settlement.id=$1
+              AND settlement.state='awaiting_activation'`,
+          [settlementAuthorityRow.id],
+        );
     if (settlement.rowCount !== 1)
       throw new ConflictException({
         code: 'RENEWAL_CONTRACT_SETTLEMENT_NOT_READY',

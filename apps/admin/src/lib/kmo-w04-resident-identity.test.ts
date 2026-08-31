@@ -31,6 +31,7 @@ function listItem() {
     contract_settlement_due_date: null,
     contract_settlement_remaining_amount: 0,
     contract_settlement_checkpoint_required_amount: 0,
+    lease_expired_admin_action_required: false,
     resident_status: "active",
     created_at: "2026-07-31T00:00:00.000Z",
     updated_at: "2026-07-31T00:00:00.000Z",
@@ -48,6 +49,11 @@ function detail() {
     gender: "female",
     account_status: "not_provisioned",
     resident_status: "active",
+    archive_reason: null,
+    archive_source: null,
+    archived_at: null,
+    archived_by_user_id: null,
+    archived_by_name: null,
     active_lease: null,
     created_at: "2026-07-31T00:00:00.000Z",
     updated_at: "2026-07-31T00:00:00.000Z",
@@ -85,6 +91,7 @@ test("resident list parser preserves exact property-scoped pagination without li
   assert.equal("email" in parsed.data[0], false);
   assert.equal("ktpNumber" in parsed.data[0], false);
   assert.equal(parsed.data[0].rentPaymentStatus, "none");
+  assert.equal(parsed.data[0].leaseExpiredAdminActionRequired, false);
 
   for (const invalid of [
     { data: [listItem()], meta: { limit: 20, offset: 0 } },
@@ -107,6 +114,43 @@ test("resident list parser preserves exact property-scoped pagination without li
   ]) {
     assert.throws(() => parseResidentPage(invalid, PROPERTY_ID));
   }
+});
+
+test("resident lifecycle parser preserves archive, refund, and operational-exception states", () => {
+  const archived = parseResidentPage(
+    {
+      data: [
+        {
+          ...listItem(),
+          resident_status: "archived",
+          rent_payment_status: "reversed_refunded",
+          contract_settlement_stage: "preactivation_cancelled",
+        },
+      ],
+      meta: { limit: 20, offset: 0, total: 1 },
+    },
+    PROPERTY_ID,
+  );
+  assert.equal(archived.data[0].residentStatus, "archived");
+  assert.equal(archived.data[0].rentPaymentStatus, "reversed_refunded");
+  assert.equal(archived.data[0].contractSettlementStage, "preactivation_cancelled");
+
+  const historicalDetail = parseResidentDetail(
+    {
+      data: {
+        ...detail(),
+        resident_status: "archived",
+        archive_reason: "Dibatalkan Pra-Aktivasi",
+        archive_source: "pre_activation_cancellation",
+        archived_at: "2026-08-29T08:00:00.000+07:00",
+        archived_by_user_id: ID,
+        archived_by_name: "Admin Kostation",
+      },
+    },
+    PROPERTY_ID,
+  );
+  assert.equal(historicalDetail.archiveReason, "Dibatalkan Pra-Aktivasi");
+  assert.equal(historicalDetail.archivedByName, "Admin Kostation");
 });
 
 test("resident detail parser accepts full identity authority and rejects password, token or unknown fields", () => {

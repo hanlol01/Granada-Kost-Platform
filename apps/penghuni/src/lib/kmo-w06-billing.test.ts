@@ -90,6 +90,23 @@ function response() {
           allocations: [{ invoice_id: invoiceId, amount: 1_800_000 }],
         },
       ],
+      financial_timeline: [
+        {
+          id: paymentId,
+          event_type: "payment_recorded",
+          occurred_at: "2026-07-31T10:00:00.000Z",
+          amount: 1_800_000,
+          direction: "inbound",
+          status: "verified",
+          reference: "PAY-W06-001",
+          subtype: "dp",
+          source: "manual_transfer",
+          note: null,
+          actor_name: "Pengelola",
+          receipt_id: receiptId,
+          exit_document_id: null,
+        },
+      ],
       proofs: [
         {
           id: proofId,
@@ -102,6 +119,7 @@ function response() {
           reject_reason: null,
         },
       ],
+      exit_documents: [],
     },
   };
 }
@@ -111,6 +129,7 @@ test("W06 Penghuni parser accepts the exact self-scoped billing contract", () =>
   assert.equal(billing.lease.property_id, propertyId);
   assert.equal(billing.summary.deposit_balance, 1_800_000);
   assert.equal(billing.payments[0].allocations[0].amount, 1_800_000);
+  assert.equal(billing.financial_timeline[0].actor_name, "Pengelola");
   assert.equal("resident_id" in billing.lease, false);
   const pending = response();
   pending.data.payments[0].payment_status = "pending_confirmation";
@@ -132,6 +151,7 @@ test("W11C Penghuni parser accepts the current billing projection", () => {
   current.data.contract_settlement = {
     id: leaseId,
     invoice_id: invoiceId,
+    policy_version: "lease_settlement_v2",
     status: "open",
     activated_at: "2026-08-01T00:00:00.000Z",
     original_due_at: "2026-10-09T16:59:59.999Z",
@@ -150,17 +170,21 @@ test("W11C Penghuni parser accepts the current billing projection", () => {
     },
     deposit_offset_amount: 0,
     outstanding_amount: 19_800_000,
+    checkpoint_shortfall_amount: 1_800_000,
     reminder_stage: "H-30",
     admin_action_required: false,
+    termination_eligible: false,
     partial_payment_allowed: true,
     full_payment_required: false,
     extension_available: false,
+    payment_promise: null,
     termination_case: null,
   };
   const billing = parseMyW06Billing(current);
   assert.equal(billing.lease.room_number, "AK-05-03");
   assert.equal(billing.contract_settlement?.first_payment_checkpoint.status, "pending");
   assert.equal(billing.contract_settlement?.outstanding_amount, 19_800_000);
+  assert.equal(billing.contract_settlement?.policy_version, "lease_settlement_v2");
 });
 
 test("W06 Penghuni parser rejects extra fields, prototypes, malformed dates, UUIDs, timestamps, and money", () => {
@@ -365,6 +389,10 @@ test("W11C Penghuni billing is account-scoped and exposes no resident payment mu
   assert.match(route, /security_deposit/);
   assert.match(route, /Informasi pembayaran resmi/);
   assert.match(route, /Pembayaran tidak dilakukan melalui aplikasi ini/);
+  assert.match(route, /Checkpoint pembayaran/);
+  assert.match(route, /Timeline finansial/);
+  assert.match(route, /Janji bayar tidak\s+.*mengubah status jatuh tempo/);
+  assert.match(route, /Dokumen terkait tersedia pada bagian dokumen resmi penyewaan/);
   assert.match(route, /downloadMyInvoiceDocument/);
   assert.match(
     readFileSync(new URL("./penghuni-w06-billing.ts", import.meta.url), "utf8"),

@@ -47,6 +47,7 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
   const queries: string[] = [];
   const client = {
     query: async (statement: string, params: readonly unknown[] = []) => {
+      await Promise.resolve();
       const normalized = statement.replace(/\s+/g, ' ').trim();
       queries.push(normalized);
       if (/SELECT id FROM properties/.test(normalized))
@@ -82,6 +83,12 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
         )
       )
         return { rows: [{ passed: options.deadlinePassed ?? true }], rowCount: 1 };
+      if (
+        /SELECT \$1::timestamptz \+ \(\$2::int \* INTERVAL '1 day'\) > now\(\) AS valid/.test(
+          normalized,
+        )
+      )
+        return { rows: [{ valid: true }], rowCount: 1 };
       if (/UPDATE lease_contract_settlements SET extension_due_at/.test(normalized))
         return { rows: [{ extension_due_at: new Date('2026-03-15T00:00:00.000Z') }], rowCount: 1 };
       if (/INSERT INTO lease_termination_cases/.test(normalized))
@@ -98,7 +105,10 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
           rowCount: 1,
         };
       if (/FROM files WHERE/.test(normalized)) return { rows: [{ id: params[0] }], rowCount: 1 };
-      if (/FROM lease_deposit_transactions/.test(normalized) && /SELECT COALESCE\(sum/.test(normalized))
+      if (
+        /FROM lease_deposit_transactions/.test(normalized) &&
+        /SELECT COALESCE\(sum/.test(normalized)
+      )
         return {
           rows: [{ balance: String(options.depositBalance ?? 0) }],
           rowCount: 1,
@@ -125,10 +135,14 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
       },
     } as never,
     {
-      assertCanReadProperty: async () => events.push('authorized'),
+      assertCanReadProperty: async () => {
+        await Promise.resolve();
+        events.push('authorized');
+      },
     } as never,
     {
       write: async (_input: unknown, transactionClient: unknown) => {
+        await Promise.resolve();
         assert.equal(transactionClient, client);
         events.push('audit');
         if (options.auditFailure) throw options.auditFailure;
@@ -140,6 +154,7 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
         propertyId: string,
         invoiceId: string,
       ) => {
+        await Promise.resolve();
         assert.equal(transactionClient, client);
         assert.equal(propertyId, PROPERTY_ID);
         assert.equal(invoiceId, INVOICE_ID);
@@ -172,7 +187,7 @@ function errorCode(error: unknown) {
   return (error as { getResponse: () => { code: string } }).getResponse().code;
 }
 
-test('migration 030 remains manifest-bound and preserves prior invoice credits when a deposit offsets arrears', () => {
+void test('migration 030 remains manifest-bound and preserves prior invoice credits when a deposit offsets arrears', () => {
   const entry = MIGRATION_MANIFEST.find(
     (item) => item.version === '030_contract_settlement_termination.sql',
   );
@@ -197,7 +212,7 @@ test('migration 030 remains manifest-bound and preserves prior invoice credits w
   assert.doesNotMatch(migration, /DELETE FROM (leases|occupancies|payments|invoices)/i);
 });
 
-test('the admin role can record a contract-rent payment from the resident detail workspace', () => {
+void test('the admin role can record a contract-rent payment from the resident detail workspace', () => {
   const rbacSeed = readFileSync(
     resolve(root, 'src/infrastructure/database/seeds/001_rbac_seed.sql'),
     'utf8',
@@ -206,7 +221,7 @@ test('the admin role can record a contract-rent payment from the resident detail
   assert.match(rbacSeed, /\('admin', 'billing\.manage'\)/);
 });
 
-test('resident billing applies the installment filter before casting its next due date', () => {
+void test('resident billing applies the installment filter before casting its next due date', () => {
   assert.equal(
     residentBillingProjection.includes(
       "(min(due_date) FILTER(WHERE installment_status IN('scheduled','issued','partially_paid')))::text AS next_due",
@@ -221,7 +236,7 @@ test('resident billing applies the installment filter before casting its next du
   );
 });
 
-test('one 14-day extension is transaction-scoped, audited, and only possible after the original due date', async () => {
+void test('one 14-day extension is transaction-scoped, audited, and only possible after the original due date', async () => {
   const harness = contractSettlementHarness();
   const result = await harness.service.extend(
     adminActor as never,
@@ -265,7 +280,7 @@ test('one 14-day extension is transaction-scoped, audited, and only possible aft
   );
 });
 
-test('the partial-payment window closing starts a termination case without evicting the resident or changing the room', async () => {
+void test('the partial-payment window closing starts a termination case without evicting the resident or changing the room', async () => {
   const harness = contractSettlementHarness({ deadlinePassed: true, outstanding: 8_100_000 });
   const result = await harness.service.startTermination(
     adminActor as never,
@@ -300,7 +315,7 @@ test('the partial-payment window closing starts a termination case without evict
   );
 });
 
-test('resident billing settlement projection derives checkpoint, deadline, arrears, and reminders from the PostgreSQL snapshot time', () => {
+void test('resident billing settlement projection derives checkpoint, deadline, arrears, and reminders from the PostgreSQL snapshot time', () => {
   const service = new W06BillingService({} as never, {} as never, {} as never);
   const project = (
     service as unknown as {
@@ -344,15 +359,12 @@ test('resident billing settlement projection derives checkpoint, deadline, arrea
   assert.equal(afterPartialWindow.admin_action_required, true);
   assert.equal(afterPartialWindow.full_payment_required, true);
   assert.doesNotMatch(
-    readFileSync(
-      resolve(root, 'src/modules/billing/services/w06-billing.service.ts'),
-      'utf8',
-    ),
+    readFileSync(resolve(root, 'src/modules/billing/services/w06-billing.service.ts'), 'utf8'),
     /Date\.now\(\)/,
   );
 });
 
-test('termination deposit offset reconciles only canonical W06 invoice/installment lifecycle without payment or Owner-finance writes', async () => {
+void test('termination deposit offset reconciles only canonical W06 invoice/installment lifecycle without payment or Owner-finance writes', async () => {
   const harness = contractSettlementHarness({
     terminationPending: true,
     outstanding: 8_100_000,
@@ -374,15 +386,21 @@ test('termination deposit offset reconciles only canonical W06 invoice/installme
   assert.equal(result.data.deposit_offset_amount, 1_800_000);
   assert.equal(harness.events.includes('w06_reconciled'), true);
   assert.equal(
-    harness.queries.some((query) => /UPDATE invoices SET credit_amount=credit_amount\+\$2/.test(query)),
+    harness.queries.some((query) =>
+      /UPDATE invoices SET credit_amount=credit_amount\+\$2/.test(query),
+    ),
     true,
   );
   assert.equal(
-    harness.queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)),
+    harness.queries.some((query) =>
+      /INSERT INTO payment_allocations|INSERT INTO payments/.test(query),
+    ),
     false,
   );
   assert.equal(
-    harness.queries.some((query) => /property_owner_(earnings|entitlements|settlements|payouts)/.test(query)),
+    harness.queries.some((query) =>
+      /property_owner_(earnings|entitlements|settlements|payouts)/.test(query),
+    ),
     false,
   );
   assert.equal(
@@ -391,10 +409,11 @@ test('termination deposit offset reconciles only canonical W06 invoice/installme
   );
 });
 
-test('the canonical W06 reconciliation derives invoice and installment state from credit plus allocations without payment or Owner-finance writes', async () => {
+void test('the canonical W06 reconciliation derives invoice and installment state from credit plus allocations without payment or Owner-finance writes', async () => {
   const queries: string[] = [];
   const client = {
     query: async (statement: string, params: readonly unknown[] = []) => {
+      await Promise.resolve();
       queries.push(statement.replace(/\s+/g, ' ').trim());
       assert.deepEqual(params, [INVOICE_ID, PROPERTY_ID]);
       return { rows: [], rowCount: 1 };
@@ -412,14 +431,19 @@ test('the canonical W06 reconciliation derives invoice and installment state fro
   );
   assert.match(queries[1], /UPDATE lease_installments/);
   assert.match(queries[2], /lease_contract_settlements/);
-  assert.equal(queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)), false);
   assert.equal(
-    queries.some((query) => /property_owner_(earnings|entitlements|settlements|payouts)/.test(query)),
+    queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)),
+    false,
+  );
+  assert.equal(
+    queries.some((query) =>
+      /property_owner_(earnings|entitlements|settlements|payouts)/.test(query),
+    ),
     false,
   );
 });
 
-test('termination is rejected before the partial-payment window closes and audit failure rolls back its case', async () => {
+void test('termination is rejected before the partial-payment window closes and audit failure rolls back its case', async () => {
   const beforeDeadline = contractSettlementHarness({ deadlinePassed: false });
   await assert.rejects(
     beforeDeadline.service.startTermination(

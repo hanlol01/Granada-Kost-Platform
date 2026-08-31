@@ -125,9 +125,11 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
         ? "Memuat tarif kamar yang ditahan."
         : quote.isError || !quote.data
           ? "Tarif kamar yang ditahan belum dapat dimuat. Tutup dialog lalu periksa kembali status hold kamar."
-          : paymentType === "down_payment" && displayedCredit > totalRent
-            ? `DP tidak boleh melebihi total sewa ${formatIDR(totalRent)}.`
-            : null;
+          : paymentType === "down_payment" && displayedCredit <= 0
+            ? "DP harus lebih besar dari Rp0."
+            : paymentType === "down_payment" && displayedCredit > totalRent
+              ? `DP tidak boleh melebihi total sewa ${formatIDR(totalRent)}.`
+              : null;
 
   useEffect(() => {
     if (submitAttempted && error) {
@@ -402,13 +404,16 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                     value={displayedCredit}
                     readOnly={paymentType !== "down_payment"}
                     onValueChange={setRentCredit}
-                    error={paymentType === "down_payment" && displayedCredit > totalRent}
+                    error={
+                      paymentType === "down_payment" &&
+                      (displayedCredit <= 0 || displayedCredit > totalRent)
+                    }
                   />
                   <span className="font-normal text-muted-foreground">
                     {paymentType === "booking_fee"
                       ? "Nilai tetap Rp1.000.000 dan menjadi kredit sewa."
                       : paymentType === "down_payment"
-                        ? `Rekomendasi 25%: ${formatIDR(suggestedDp)}. Nilai lebih kecil tetap dapat dicatat.`
+                        ? `Rekomendasi 25%: ${formatIDR(suggestedDp)}. Nominal di atas Rp0 tetap dapat dicatat.`
                         : "Nilai pelunasan dihitung otomatis dari total sewa."}
                   </span>
                 </label>

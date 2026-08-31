@@ -569,14 +569,16 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
   );
 
   const sql = calls.find((value) => value.includes('owner_collection_progress')) ?? '';
-  assert.match(sql, /leases\.lease_status = 'active'/);
+  assert.match(sql, /lease\.lease_status = 'active'/);
   assert.match(sql, /invoice\.lease_id = lease\.id/);
   assert.match(sql, /payment_allocations/);
   assert.match(sql, /lease_deposit_transactions/);
+  assert.match(sql, /lease_settlement_v2_current_projection v2/);
   assert.match(
     sql,
-    /COALESCE\(settlement\.extension_due_at, settlement\.original_due_at\)::text AS effective_due_at/,
+    /COALESCE\(v2\.effective_due_at, settlement\.extension_due_at, settlement\.original_due_at\)::text AS effective_due_at/,
   );
+  assert.match(sql, /v2\.checkpoint_shortfall_amount/);
   assert.match(sql, /checkpoint_remaining/);
   assert.doesNotMatch(sql, /payment_proofs|storage_path|residents\.(phone|email|nik)/i);
 });

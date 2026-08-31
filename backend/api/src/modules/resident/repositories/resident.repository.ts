@@ -34,12 +34,18 @@ type ResidentRow = {
   profile_photo_file_id: string | null;
   gender: ResidentRecord['gender'];
   resident_status: ResidentRecord['residentStatus'];
+  archive_reason?: string | null;
+  archive_source?: string | null;
+  archived_at?: Date | null;
+  archived_by_user_id?: string | null;
+  archived_by_name?: string | null;
   account_status?: ResidentRecord['accountStatus'];
   rent_payment_status?: ResidentRecord['rentPaymentStatus'];
   contract_settlement_stage?: ResidentRecord['contractSettlementStage'];
   contract_settlement_due_date?: string | null;
   contract_settlement_remaining_amount?: string;
   contract_settlement_checkpoint_required_amount?: string;
+  lease_expired_admin_action_required?: boolean;
   room_number?: string | null;
   lease_start?: string | null;
   lease_end?: string | null;
@@ -62,6 +68,11 @@ type ResidentTenancyRow = {
   lease_id: string;
   booking_lead_id: string | null;
   lease_status: ResidentTenancyRecord['leaseStatus'];
+  activation_state: ResidentTenancyRecord['activationState'];
+  occupancy_id: string | null;
+  room_status: string;
+  activated_at: Date | null;
+  checked_in_at: Date | null;
   room_number: string;
   kost_type_name: string;
   building_code: string;
@@ -118,129 +129,37 @@ export class ResidentRepository {
               university, faculty, major, cohort, instagram, parent_name, parent_phone, marital_status,
               residents.emergency_phone, residents.ktp_file_id, residents.profile_photo_file_id,
               residents.gender, residents.resident_status, residents.created_at, residents.updated_at,
+              residents.archive_reason,residents.archive_source,residents.archived_at,
+              residents.archived_by_user_id,archive_user.display_name AS archived_by_name,
               COALESCE(users.user_status, 'not_provisioned') AS account_status,
-              CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.room_number END AS room_number,
-              CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.start_date END AS lease_start,
-              CASE WHEN lease_authority.authority_count = 1 THEN lease_authority.end_date END AS lease_end,
-              COALESCE(lease_authority.authority_count, 0)::text AS lease_authority_count,
-              COALESCE(payment_authority.rent_payment_status, 'none') AS rent_payment_status,
-              COALESCE(payment_authority.contract_settlement_stage, 'none') AS contract_settlement_stage,
-              payment_authority.contract_settlement_due_date,
-              COALESCE(payment_authority.contract_settlement_remaining_amount, 0)::text
+              projection.room_number,projection.lease_start::text,projection.lease_end::text,
+              COALESCE(projection.lease_authority_count,0)::text AS lease_authority_count,
+              COALESCE(projection.rent_payment_status,'none') AS rent_payment_status,
+              COALESCE(projection.contract_settlement_stage,'none') AS contract_settlement_stage,
+              projection.contract_settlement_due_date,
+              COALESCE(projection.contract_settlement_remaining_amount,0)::text
                 AS contract_settlement_remaining_amount,
-              COALESCE(payment_authority.contract_settlement_checkpoint_required_amount, 0)::text
-                AS contract_settlement_checkpoint_required_amount
+              COALESCE(projection.contract_settlement_checkpoint_required_amount,0)::text
+                AS contract_settlement_checkpoint_required_amount,
+              COALESCE(projection.lease_expired_admin_action_required,false)
+                AS lease_expired_admin_action_required
        FROM residents
        LEFT JOIN users ON users.id = residents.user_id
-        LEFT JOIN LATERAL (
-          SELECT count(*)::integer AS authority_count,
-                 min(leases.id::text) AS lease_id,
-                 min(rooms.number) AS room_number,
-                 min(leases.start_date)::text AS start_date,
-                 min(leases.end_date)::text AS end_date,
-                 min(leases.lease_status::text) AS lease_status
-          FROM leases
-          JOIN rooms ON rooms.id = leases.room_id
-                    AND rooms.property_id = leases.property_id
-          WHERE leases.resident_id = residents.id
-            AND leases.property_id = residents.property_id
-            AND leases.lease_status IN ('awaiting_activation', 'active')
-        ) AS lease_authority ON TRUE
-       LEFT JOIN LATERAL (
-         WITH authority AS (
-           SELECT settlement.id AS settlement_id,settlement.state,settlement.activated_at,
-                  settlement.original_due_at,settlement.extension_due_at,
-                  invoice.total_amount,invoice.credit_amount,lease.snapshot_monthly_price,
-                  COALESCE(commitment.dp_verified_amount,0) AS dp_verified_amount,
-                  COALESCE(commitment.booking_fee_paid_amount,0) AS booking_fee_paid_amount,
-                  termination.id AS termination_case_id,
-                  COALESCE(allocation.net,0) AS allocated_amount,
-                  COALESCE(initial_payment.net,0) AS initial_payment_allocated
-             FROM leases AS lease
-             LEFT JOIN onboarding_commitments AS commitment
-               ON commitment.id = lease.onboarding_commitment_id
-              AND commitment.property_id = lease.property_id
-              AND commitment.resident_id = lease.resident_id
-             LEFT JOIN lease_contract_settlements AS settlement
-               ON settlement.lease_id = lease.id
-              AND settlement.property_id = lease.property_id
-             LEFT JOIN invoices AS invoice
-               ON invoice.id = settlement.invoice_id
-              AND invoice.property_id = settlement.property_id
-             LEFT JOIN LATERAL (
-               SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
-                        - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
-                 FROM payment_allocations payment_allocation
-                 LEFT JOIN payment_reversal_allocations reversal_allocation
-                   ON reversal_allocation.original_allocation_id=payment_allocation.id
-                WHERE payment_allocation.invoice_id=invoice.id
-             ) allocation ON true
-             LEFT JOIN LATERAL (
-               SELECT COALESCE(sum(payment_allocation.allocated_amount)
-                        FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0)
-                        - COALESCE(sum(reversal_allocation.reversed_amount)
-                        FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0) AS net
-                 FROM payment_allocations payment_allocation
-                 JOIN payments payment ON payment.id=payment_allocation.payment_id
-                 LEFT JOIN payment_reversal_allocations reversal_allocation
-                   ON reversal_allocation.original_allocation_id=payment_allocation.id
-                WHERE payment_allocation.invoice_id=invoice.id
-             ) initial_payment ON true
-             LEFT JOIN lease_termination_cases termination
-               ON termination.settlement_id=settlement.id AND termination.status='pending'
-            WHERE lease.id = lease_authority.lease_id::uuid
-              AND lease.property_id = residents.property_id
-         ), computed AS (
-           SELECT authority.*,
-                  GREATEST(COALESCE(total_amount,0)-COALESCE(credit_amount,0)-allocated_amount,0)
-                    AS remaining_amount,
-                  LEAST(COALESCE(snapshot_monthly_price,0),
-                    GREATEST(COALESCE(total_amount,0)-initial_payment_allocated,0))
-                    AS checkpoint_required_amount,
-                  GREATEST(allocated_amount-initial_payment_allocated,0) AS checkpoint_paid_amount,
-                  (((activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month'
-                    + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')
-                    AS checkpoint_due_at,
-                  COALESCE(extension_due_at,original_due_at) AS final_due_at
-             FROM authority
-         )
-         SELECT CASE
-           WHEN state = 'paid' OR remaining_amount=0 THEN 'paid_in_full'
-           WHEN allocated_amount > initial_payment_allocated THEN 'partial_payment'
-           WHEN dp_verified_amount > 0 THEN 'down_payment'
-           WHEN booking_fee_paid_amount > 0 THEN 'booking_fee'
-           ELSE 'none'
-         END::text AS rent_payment_status,
-         CASE
-           WHEN settlement_id IS NULL THEN CASE WHEN lease_authority.lease_status='awaiting_activation' THEN 'awaiting_activation' ELSE 'none' END
-           WHEN state='awaiting_activation' THEN 'awaiting_activation'
-           WHEN state='paid' OR remaining_amount=0 THEN 'paid_in_full'
-           WHEN termination_case_id IS NOT NULL THEN 'termination_pending'
-           WHEN now() > CASE WHEN extension_due_at IS NULL THEN final_due_at + INTERVAL '7 days' ELSE final_due_at END THEN 'admin_action_required'
-           WHEN now() > final_due_at THEN 'overdue'
-           WHEN checkpoint_required_amount>checkpoint_paid_amount AND now()>checkpoint_due_at THEN 'overdue'
-           WHEN checkpoint_required_amount>checkpoint_paid_amount THEN 'checkpoint_one_pending'
-           WHEN now()>=checkpoint_due_at THEN 'final_settlement_due'
-           ELSE 'checkpoint_one_met'
-         END::text AS contract_settlement_stage,
-         TO_CHAR((CASE
-           WHEN settlement_id IS NOT NULL AND checkpoint_required_amount>checkpoint_paid_amount AND now()<=checkpoint_due_at THEN checkpoint_due_at
-           ELSE final_due_at
-         END) AT TIME ZONE 'Asia/Jakarta','YYYY-MM-DD') AS contract_settlement_due_date,
-         remaining_amount AS contract_settlement_remaining_amount,
-         checkpoint_required_amount AS contract_settlement_checkpoint_required_amount
-         FROM computed
-       ) AS payment_authority ON lease_authority.authority_count = 1
+       LEFT JOIN users archive_user ON archive_user.id=residents.archived_by_user_id
+       LEFT JOIN resident_admin_lifecycle_projection projection
+         ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
        WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR residents.property_id = $2)
-         AND ($3::text IS NULL OR residents.resident_status = $3)
+         AND (($3::text IS NULL AND residents.resident_status IN ('active','pending_activation'))
+              OR residents.resident_status = $3)
          AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
-         AND ($5::text IS NULL OR payment_authority.rent_payment_status = $5)
+         AND ($5::text IS NULL OR projection.rent_payment_status = $5)
          AND ($6::text IS NULL OR residents.gender = $6)
          AND (
            $7::text IS NULL
-           OR ($7 = 'none' AND COALESCE(lease_authority.authority_count, 0) = 0)
-           OR ($7 <> 'none' AND lease_authority.authority_count = 1 AND lease_authority.lease_status = $7)
+           OR ($7 = 'none' AND COALESCE(projection.lease_authority_count, 0) = 0)
+           OR ($7 <> 'none' AND projection.lease_authority_count = 1
+               AND projection.projected_lease_status = $7)
          )
          AND (
            $8::text IS NULL
@@ -250,15 +169,15 @@ export class ResidentRepository {
            OR residents.university ILIKE '%' || $8 || '%'
            OR residents.faculty ILIKE '%' || $8 || '%'
            OR residents.major ILIKE '%' || $8 || '%'
-           OR lease_authority.room_number ILIKE '%' || $8 || '%'
+           OR projection.room_number ILIKE '%' || $8 || '%'
          )
          AND ($9::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date >= $9::date)
          AND ($10::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date <= $10::date)
-         AND ($11::text IS NULL OR payment_authority.contract_settlement_stage = $11)
+         AND ($11::text IS NULL OR projection.contract_settlement_stage = $11)
          AND ($12::integer IS NULL OR (
-           payment_authority.contract_settlement_due_date IS NOT NULL
-           AND payment_authority.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
-           AND payment_authority.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $12::integer
+           projection.contract_settlement_due_date IS NOT NULL
+           AND projection.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+           AND projection.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $12::integer
          ))
        ORDER BY residents.created_at DESC, residents.id DESC
        LIMIT $13 OFFSET $14`,
@@ -287,96 +206,20 @@ export class ResidentRepository {
       `SELECT count(*)::text AS total
        FROM residents
        LEFT JOIN users ON users.id = residents.user_id
-       LEFT JOIN LATERAL (
-          SELECT count(*)::integer AS authority_count,
-                 min(leases.id::text) AS lease_id,
-                 min(rooms.number) AS room_number,
-                 min(leases.lease_status::text) AS lease_status
-          FROM leases
-          JOIN rooms ON rooms.id = leases.room_id
-                    AND rooms.property_id = leases.property_id
-          WHERE leases.resident_id = residents.id
-            AND leases.property_id = residents.property_id
-            AND leases.lease_status IN ('awaiting_activation', 'active')
-        ) AS lease_authority ON TRUE
-       LEFT JOIN LATERAL (
-         WITH authority AS (
-           SELECT settlement.id AS settlement_id,settlement.state,settlement.activated_at,
-                  settlement.original_due_at,settlement.extension_due_at,
-                  invoice.total_amount,invoice.credit_amount,lease.snapshot_monthly_price,
-                  COALESCE(commitment.dp_verified_amount,0) AS dp_verified_amount,
-                  COALESCE(commitment.booking_fee_paid_amount,0) AS booking_fee_paid_amount,
-                  termination.id AS termination_case_id,
-                  COALESCE(allocation.net,0) AS allocated_amount,
-                  COALESCE(initial_payment.net,0) AS initial_payment_allocated
-             FROM leases AS lease
-             LEFT JOIN onboarding_commitments AS commitment
-               ON commitment.id=lease.onboarding_commitment_id
-              AND commitment.property_id=lease.property_id
-              AND commitment.resident_id=lease.resident_id
-             LEFT JOIN lease_contract_settlements AS settlement
-               ON settlement.lease_id=lease.id AND settlement.property_id=lease.property_id
-             LEFT JOIN invoices AS invoice
-               ON invoice.id=settlement.invoice_id AND invoice.property_id=settlement.property_id
-             LEFT JOIN LATERAL (
-               SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
-                 FROM payment_allocations pa
-                 LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
-                WHERE pa.invoice_id=invoice.id
-             ) allocation ON true
-             LEFT JOIN LATERAL (
-               SELECT COALESCE(sum(pa.allocated_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0)
-                      -COALESCE(sum(pra.reversed_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'),0) AS net
-                 FROM payment_allocations pa
-                 JOIN payments payment ON payment.id=pa.payment_id
-                 LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
-                WHERE pa.invoice_id=invoice.id
-             ) initial_payment ON true
-             LEFT JOIN lease_termination_cases termination
-               ON termination.settlement_id=settlement.id AND termination.status='pending'
-            WHERE lease.id=lease_authority.lease_id::uuid
-              AND lease.property_id=residents.property_id
-         ), computed AS (
-           SELECT authority.*,
-                  GREATEST(COALESCE(total_amount,0)-COALESCE(credit_amount,0)-allocated_amount,0) AS remaining_amount,
-                  LEAST(COALESCE(snapshot_monthly_price,0),GREATEST(COALESCE(total_amount,0)-initial_payment_allocated,0)) AS checkpoint_required_amount,
-                  GREATEST(allocated_amount-initial_payment_allocated,0) AS checkpoint_paid_amount,
-                  (((activated_at AT TIME ZONE 'Asia/Jakarta')::date+INTERVAL '1 month'+INTERVAL '1 day'-INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta') AS checkpoint_due_at,
-                  COALESCE(extension_due_at,original_due_at) AS final_due_at
-             FROM authority
-         )
-         SELECT CASE
-           WHEN state='paid' OR remaining_amount=0 THEN 'paid_in_full'
-           WHEN allocated_amount>initial_payment_allocated THEN 'partial_payment'
-           WHEN dp_verified_amount>0 THEN 'down_payment'
-           WHEN booking_fee_paid_amount>0 THEN 'booking_fee'
-           ELSE 'none'
-         END::text AS rent_payment_status,
-         CASE
-           WHEN settlement_id IS NULL THEN CASE WHEN lease_authority.lease_status='awaiting_activation' THEN 'awaiting_activation' ELSE 'none' END
-           WHEN state='awaiting_activation' THEN 'awaiting_activation'
-           WHEN state='paid' OR remaining_amount=0 THEN 'paid_in_full'
-           WHEN termination_case_id IS NOT NULL THEN 'termination_pending'
-           WHEN now()>CASE WHEN extension_due_at IS NULL THEN final_due_at+INTERVAL '7 days' ELSE final_due_at END THEN 'admin_action_required'
-           WHEN now()>final_due_at THEN 'overdue'
-           WHEN checkpoint_required_amount>checkpoint_paid_amount AND now()>checkpoint_due_at THEN 'overdue'
-           WHEN checkpoint_required_amount>checkpoint_paid_amount THEN 'checkpoint_one_pending'
-           WHEN now()>=checkpoint_due_at THEN 'final_settlement_due'
-           ELSE 'checkpoint_one_met'
-         END::text AS contract_settlement_stage,
-         TO_CHAR((CASE WHEN settlement_id IS NOT NULL AND checkpoint_required_amount>checkpoint_paid_amount AND now()<=checkpoint_due_at THEN checkpoint_due_at ELSE final_due_at END) AT TIME ZONE 'Asia/Jakarta','YYYY-MM-DD') AS contract_settlement_due_date
-         FROM computed
-       ) AS payment_authority ON lease_authority.authority_count = 1
+       LEFT JOIN resident_admin_lifecycle_projection projection
+         ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
        WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR residents.property_id = $2)
-         AND ($3::text IS NULL OR residents.resident_status = $3)
+         AND (($3::text IS NULL AND residents.resident_status IN ('active','pending_activation'))
+              OR residents.resident_status = $3)
          AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
-         AND ($5::text IS NULL OR payment_authority.rent_payment_status = $5)
+         AND ($5::text IS NULL OR projection.rent_payment_status = $5)
          AND ($6::text IS NULL OR residents.gender = $6)
          AND (
            $7::text IS NULL
-           OR ($7 = 'none' AND COALESCE(lease_authority.authority_count, 0) = 0)
-           OR ($7 <> 'none' AND lease_authority.authority_count = 1 AND lease_authority.lease_status = $7)
+           OR ($7 = 'none' AND COALESCE(projection.lease_authority_count, 0) = 0)
+           OR ($7 <> 'none' AND projection.lease_authority_count = 1
+               AND projection.projected_lease_status = $7)
          )
          AND (
            $8::text IS NULL
@@ -386,15 +229,15 @@ export class ResidentRepository {
            OR residents.university ILIKE '%' || $8 || '%'
            OR residents.faculty ILIKE '%' || $8 || '%'
            OR residents.major ILIKE '%' || $8 || '%'
-           OR lease_authority.room_number ILIKE '%' || $8 || '%'
+           OR projection.room_number ILIKE '%' || $8 || '%'
          )
          AND ($9::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date >= $9::date)
          AND ($10::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date <= $10::date)
-         AND ($11::text IS NULL OR payment_authority.contract_settlement_stage=$11)
+         AND ($11::text IS NULL OR projection.contract_settlement_stage=$11)
          AND ($12::integer IS NULL OR (
-           payment_authority.contract_settlement_due_date IS NOT NULL
-           AND payment_authority.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
-           AND payment_authority.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$12::integer
+           projection.contract_settlement_due_date IS NOT NULL
+           AND projection.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+           AND projection.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$12::integer
          ))`,
       [
         propertyIds === undefined ? null : propertyIds,
@@ -428,6 +271,8 @@ export class ResidentRepository {
   ): Promise<ResidentTenancyRecord[]> {
     const result = await this.database.client.query<ResidentTenancyRow>(
       `SELECT leases.resident_id,leases.property_id,leases.id AS lease_id,leases.booking_lead_id,leases.lease_status,
+              lifecycle.state AS activation_state,leases.occupancy_id,rooms.room_status,
+              lifecycle.activated_at,lifecycle.checked_in_at,
               rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
               buildings.building_code,leases.start_date::text,leases.end_date::text,
               leases.term_months,leases.payment_plan_type
@@ -435,6 +280,8 @@ export class ResidentRepository {
        JOIN rooms ON rooms.id=leases.room_id AND rooms.property_id=leases.property_id
        JOIN room_buildings AS buildings
          ON buildings.id=rooms.building_id AND buildings.property_id=leases.property_id
+       LEFT JOIN lease_activation_lifecycles AS lifecycle
+         ON lifecycle.lease_id=leases.id AND lifecycle.property_id=leases.property_id
        WHERE leases.resident_id=$1
          AND leases.property_id=$2
          AND leases.lease_status IN ('awaiting_activation','active')
@@ -448,6 +295,11 @@ export class ResidentRepository {
       leaseId: row.lease_id,
       bookingLeadId: row.booking_lead_id,
       leaseStatus: row.lease_status,
+      activationState: row.activation_state,
+      occupancyId: row.occupancy_id,
+      roomStatus: row.room_status,
+      activatedAt: row.activated_at,
+      checkedInAt: row.checked_in_at,
       roomNumber: row.room_number,
       kostTypeName: row.kost_type_name,
       buildingCode: row.building_code,
@@ -468,10 +320,18 @@ export class ResidentRepository {
               residents.place_of_birth, residents.address,
               university, faculty, major, cohort, instagram, parent_name, parent_phone, marital_status,
               residents.emergency_phone, residents.ktp_file_id, residents.profile_photo_file_id,
-              residents.gender, residents.resident_status, residents.created_at, residents.updated_at,
-              COALESCE(users.user_status, 'not_provisioned') AS account_status
+              residents.gender, residents.resident_status,residents.archive_reason,
+              residents.archive_source,residents.archived_at,residents.archived_by_user_id,
+              archive_user.display_name AS archived_by_name,
+              residents.created_at, residents.updated_at,
+              COALESCE(users.user_status, 'not_provisioned') AS account_status,
+              COALESCE(projection.lease_expired_admin_action_required,false)
+                AS lease_expired_admin_action_required
        FROM residents
        LEFT JOIN users ON users.id = residents.user_id
+       LEFT JOIN users archive_user ON archive_user.id=residents.archived_by_user_id
+       LEFT JOIN resident_admin_lifecycle_projection projection
+         ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
        WHERE residents.id = $1
          AND ($2::uuid IS NULL OR residents.property_id = $2)`,
       [id, propertyId],
@@ -792,6 +652,11 @@ export class ResidentRepository {
       profilePhotoFileId: row.profile_photo_file_id,
       gender: row.gender,
       residentStatus: row.resident_status,
+      archiveReason: row.archive_reason ?? null,
+      archiveSource: row.archive_source ?? null,
+      archivedAt: row.archived_at ?? null,
+      archivedByUserId: row.archived_by_user_id ?? null,
+      archivedByName: row.archived_by_name ?? null,
       accountStatus: row.account_status ?? (row.user_id ? 'active' : 'not_provisioned'),
       rentPaymentStatus: row.rent_payment_status ?? 'none',
       contractSettlementStage: row.contract_settlement_stage ?? 'none',
@@ -800,6 +665,7 @@ export class ResidentRepository {
       contractSettlementCheckpointRequiredAmount: Number(
         row.contract_settlement_checkpoint_required_amount ?? 0,
       ),
+      leaseExpiredAdminActionRequired: row.lease_expired_admin_action_required ?? false,
       roomNumber: row.room_number ?? null,
       leaseStart: row.lease_start ?? null,
       leaseEnd: row.lease_end ?? null,

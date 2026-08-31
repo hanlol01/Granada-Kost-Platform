@@ -103,13 +103,29 @@ export function RentPaymentStatusPill({
 }) {
   const presentation: Record<RentPaymentStatus, { label: string; className: string }> = {
     none: { label: "Belum ada pembayaran", className: "bg-muted text-muted-foreground" },
+    pending_verification: {
+      label: "Menunggu verifikasi",
+      className: "bg-warning/15 text-warning",
+    },
     booking_fee: {
       label: "Booking fee",
       className: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
     },
     down_payment: { label: "DP / uang muka", className: "bg-primary-soft text-primary" },
+    initial_month_payment: {
+      label: "Pembayaran awal 1 bulan",
+      className: "bg-primary-soft text-primary",
+    },
     partial_payment: { label: "Bayar sebagian", className: "bg-warning/15 text-warning" },
     paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+    reversed_refunded: {
+      label: "Direversal / Refund",
+      className: "bg-destructive/15 text-destructive",
+    },
+    outstanding_balance: {
+      label: "Ada saldo tunggakan",
+      className: "bg-destructive/15 text-destructive",
+    },
   };
   const current = presentation[status];
   return (
@@ -134,9 +150,20 @@ export function SettlementStagePill({
       label: "Checkpoint 1 terpenuhi",
       className: "bg-success/15 text-success",
     },
+    checkpoint_two_pending: { label: "Checkpoint 2", className: "bg-primary-soft text-primary" },
+    checkpoint_two_met: {
+      label: "Checkpoint 2 terpenuhi",
+      className: "bg-success/15 text-success",
+    },
     final_settlement_due: { label: "Pelunasan akhir", className: "bg-warning/15 text-warning" },
-    overdue: { label: "Tunggakan", className: "bg-destructive/15 text-destructive" },
+    overdue: { label: "Tunggakan checkpoint", className: "bg-destructive/15 text-destructive" },
+    overdue_grace: { label: "Masa toleransi", className: "bg-warning/15 text-warning" },
+    extended: { label: "Perpanjangan aktif", className: "bg-primary-soft text-primary" },
     admin_action_required: {
+      label: "Tindakan admin diperlukan",
+      className: "bg-destructive/15 text-destructive",
+    },
+    termination_eligible: {
       label: "Tindakan admin diperlukan",
       className: "bg-destructive/15 text-destructive",
     },
@@ -145,6 +172,10 @@ export function SettlementStagePill({
       className: "bg-destructive/15 text-destructive",
     },
     paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+    preactivation_cancelled: {
+      label: "Dibatalkan pra-aktivasi",
+      className: "bg-muted text-muted-foreground",
+    },
   };
   const current = presentation[stage];
   return (
@@ -252,7 +283,7 @@ function TenantsPage() {
     createdTo,
   ].join("|");
   const filterCriteria = [
-    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    q.trim() ? `pencarian "${q.trim()}"` : "",
     residentStatus !== "all"
       ? `status penghuni: ${
           {
@@ -267,10 +298,14 @@ function TenantsPage() {
     rentPaymentStatus !== "all"
       ? `status pembayaran: ${
           {
+            pending_verification: "Menunggu verifikasi",
             booking_fee: "Booking fee",
             down_payment: "DP / uang muka",
+            initial_month_payment: "Pembayaran awal 1 bulan",
             partial_payment: "Bayar sebagian",
             paid_in_full: "Lunas",
+            reversed_refunded: "Direversal / Refund",
+            outstanding_balance: "Ada saldo tunggakan",
           }[rentPaymentStatus]
         }`
       : "",
@@ -292,11 +327,17 @@ function TenantsPage() {
             awaiting_activation: "Menunggu aktivasi",
             checkpoint_one_pending: "Checkpoint 1",
             checkpoint_one_met: "Checkpoint 1 terpenuhi",
+            checkpoint_two_pending: "Checkpoint 2",
+            checkpoint_two_met: "Checkpoint 2 terpenuhi",
             final_settlement_due: "Pelunasan akhir",
-            overdue: "Tunggakan",
+            overdue: "Tunggakan checkpoint",
+            overdue_grace: "Masa toleransi",
+            extended: "Perpanjangan aktif",
             admin_action_required: "Tindakan admin diperlukan",
+            termination_eligible: "Pemberhentian tersedia",
             termination_pending: "Dalam proses pemberhentian",
             paid_in_full: "Lunas",
+            preactivation_cancelled: "Dibatalkan pra-aktivasi",
             none: "Belum ada penyewaan",
           }[settlementStage]
         }`
@@ -384,7 +425,7 @@ function TenantsPage() {
                 <SelectValue placeholder="Status penghuni" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua status penghuni</SelectItem>
+                <SelectItem value="all">Operasional (aktif & menunggu aktivasi)</SelectItem>
                 <SelectItem value="pending_activation">Menunggu aktivasi</SelectItem>
                 <SelectItem value="active">Aktif</SelectItem>
                 <SelectItem value="inactive">Nonaktif</SelectItem>
@@ -436,10 +477,14 @@ function TenantsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua status pembayaran</SelectItem>
+                <SelectItem value="pending_verification">Menunggu verifikasi</SelectItem>
                 <SelectItem value="booking_fee">Booking fee</SelectItem>
                 <SelectItem value="down_payment">DP / uang muka</SelectItem>
+                <SelectItem value="initial_month_payment">Pembayaran awal 1 bulan</SelectItem>
                 <SelectItem value="partial_payment">Bayar sebagian</SelectItem>
                 <SelectItem value="paid_in_full">Lunas</SelectItem>
+                <SelectItem value="reversed_refunded">Direversal / Refund</SelectItem>
+                <SelectItem value="outstanding_balance">Ada saldo tunggakan</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -491,11 +536,16 @@ function TenantsPage() {
                 <SelectItem value="awaiting_activation">Menunggu aktivasi</SelectItem>
                 <SelectItem value="checkpoint_one_pending">Checkpoint 1</SelectItem>
                 <SelectItem value="checkpoint_one_met">Checkpoint 1 terpenuhi</SelectItem>
+                <SelectItem value="checkpoint_two_pending">Checkpoint 2</SelectItem>
+                <SelectItem value="checkpoint_two_met">Checkpoint 2 terpenuhi</SelectItem>
                 <SelectItem value="final_settlement_due">Pelunasan akhir</SelectItem>
-                <SelectItem value="overdue">Tunggakan</SelectItem>
+                <SelectItem value="overdue">Tunggakan checkpoint</SelectItem>
+                <SelectItem value="overdue_grace">Masa toleransi</SelectItem>
+                <SelectItem value="extended">Perpanjangan aktif</SelectItem>
                 <SelectItem value="admin_action_required">Tindakan admin diperlukan</SelectItem>
                 <SelectItem value="termination_pending">Dalam proses pemberhentian</SelectItem>
                 <SelectItem value="paid_in_full">Lunas</SelectItem>
+                <SelectItem value="preactivation_cancelled">Dibatalkan pra-aktivasi</SelectItem>
               </SelectContent>
             </Select>
             <div className="grid grid-cols-2 gap-2 xl:col-span-2">
@@ -632,13 +682,18 @@ function TenantsPage() {
                               Tenggat: {formatResidentDate(resident.contractSettlementDueDate)}
                             </p>
                           ) : null}
+                          {resident.leaseExpiredAdminActionRequired ? (
+                            <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
+                              Masa sewa berakhir â€” tindakan admin
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <ResidentStatusPill status={resident.residentStatus} />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button asChild variant="info" size="sm" className="min-h-11">
+                        <Button asChild variant="default" size="sm" className="min-h-11">
                           <Link
                             to="/tenants/$residentId"
                             params={{ residentId: resident.id }}
@@ -672,6 +727,11 @@ function TenantsPage() {
                     <div className="mt-2 flex flex-wrap gap-2">
                       <RentPaymentStatusPill status={resident.rentPaymentStatus} />
                       <SettlementStagePill stage={resident.contractSettlementStage} />
+                      {resident.leaseExpiredAdminActionRequired ? (
+                        <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
+                          Masa sewa berakhir â€” tindakan admin
+                        </span>
+                      ) : null}
                       <ResidentStatusPill status={resident.residentStatus} />
                     </div>
                   </div>

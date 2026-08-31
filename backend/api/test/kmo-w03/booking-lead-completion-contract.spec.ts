@@ -48,7 +48,7 @@ test('Booking Fee or DP can be cancelled before activation with immutable refund
   assert.match(controller, /cancel-payment-commitment/);
   assert.match(service, /BOOKING_LEAD_REFUND_UNAVAILABLE/);
   assert.match(service, /booking_lead_payment_commitment_refunds/);
-  assert.match(service, /!commitment\.materialized_onboarding_commitment_id/);
+  assert.match(service, /commitment\.materialized_onboarding_commitment_id/);
   assert.match(service, /payment_type === 'full_settlement'/);
   assert.match(service, /lease_status !== 'awaiting_activation'/);
   assert.match(service, /cancelInitialOnboardingFinancialsInTransaction/);
@@ -56,6 +56,88 @@ test('Booking Fee or DP can be cancelled before activation with immutable refund
   assert.match(service, /status='cancelled'/);
   assert.match(migration, /booking_lead_payment_commitment_refunds/);
   assert.match(migration, /hold_status IN \('active', 'committed'\)/);
+});
+
+test('verified Booking Fee or DP can be refunded before rental data creates a lease', async () => {
+  const queries: string[] = [];
+  const client = {
+    query: async (statement: string) => {
+      queries.push(statement);
+      if (statement.includes('FROM booking_lead_payment_commitments')) {
+        return {
+          rows: [
+            {
+              id: 'commitment-1',
+              property_id: 'property-1',
+              booking_lead_id: 'lead-1',
+              hold_id: 'hold-1',
+              room_id: 'room-1',
+              payment_type: 'down_payment',
+              rent_credit_amount: 1_000_000,
+              security_deposit_amount: 500_000,
+              payment_method: 'cash',
+              verification_status: 'verified',
+              payment_note: null,
+              payment_evidence_file_ids: [],
+              start_date: '2026-09-01',
+              term_months: 3,
+              end_date: '2026-12-01',
+              billing_cycle: 'monthly',
+              payment_plan_type: 'monthly_installments',
+              materialized_onboarding_commitment_id: null,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (statement.includes('INSERT INTO booking_lead_payment_commitment_refunds')) {
+        return { rows: [{ id: 'refund-1', refunded_at: '2026-08-27T01:00:00.000Z' }], rowCount: 1 };
+      }
+      if (statement.includes("UPDATE booking_lead_holds SET hold_status='released'")) {
+        return { rows: [{ room_id: 'room-1' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release: () => undefined,
+  };
+  let billingCancellationCalled = false;
+  const service = new BookingLeadCompletionService(
+    { client: { connect: async () => client } } as never,
+    {
+      cancelInitialOnboardingFinancialsInTransaction: async () => {
+        billingCancellationCalled = true;
+        return {
+          refundedAmount: 0,
+          reversalIds: [],
+          rejectedPaymentIds: [],
+          voidedInvoiceIds: [],
+        };
+      },
+    } as never,
+  ) as any;
+  service.idempotencyKey = () => 'refund-key';
+  service.claim = async () => null;
+  service.completeClaim = async () => undefined;
+  service.assertPaymentEvidence = async () => undefined;
+  service.lockContext = async () => ({
+    lead_status: 'onboarding',
+    hold_status: 'committed',
+    hold_id: 'hold-1',
+    room_id: 'room-1',
+  });
+
+  const result = await service.cancelPaymentCommitment(
+    'lead-1',
+    { property_id: 'property-1', refund_method: 'cash', refund_note: 'Batal sebelum sewa' },
+    'admin-1',
+    'refund-key',
+  );
+
+  assert.equal(result.data.refund_amount, 1_500_000);
+  assert.equal(result.data.lease_id, null);
+  assert.equal(billingCancellationCalled, false);
+  assert.ok(queries.includes('COMMIT'));
+  assert.ok(queries.some((statement) => statement.includes("status='cancelled'")));
 });
 
 test('completion quote is a property-authorized active-hold read model', () => {
@@ -231,6 +313,11 @@ test('payment amount cannot exceed the server-calculated contract rent', () => {
   };
 
   assert.doesNotThrow(() => service.assertPayment(downPayment, 5_400_000));
+  assert.throws(
+    () => service.assertPayment({ ...downPayment, rent_credit_amount: 0 }, 5_400_000),
+    (error: { response?: { code?: string } }) =>
+      error.response?.code === 'DOWN_PAYMENT_AMOUNT_INVALID',
+  );
   assert.throws(
     () => service.assertPayment({ ...downPayment, rent_credit_amount: 5_400_001 }, 5_400_000),
     (error: { response?: { code?: string } }) =>

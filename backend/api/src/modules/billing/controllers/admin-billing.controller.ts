@@ -38,6 +38,7 @@ import {
   CancelLeaseTerminationDto,
   ExtendContractSettlementDto,
   FinalizeLeaseTerminationDto,
+  RecordLeasePaymentPromiseDto,
   StartLeaseTerminationDto,
 } from '../dto/contract-settlement.dto';
 import { ContractSettlementService } from '../services/contract-settlement.service';
@@ -242,6 +243,25 @@ export class AdminBillingController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.contractSettlements.extend(user, leaseId, dto, key, auditContext(user, request));
+  }
+
+  @Post('billing/leases/:leaseId/contract-settlement/payment-promise')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  recordLeasePaymentPromise(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: RecordLeasePaymentPromiseDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.contractSettlements.recordPaymentPromise(
+      user,
+      leaseId,
+      dto,
+      key,
+      auditContext(user, request),
+    );
   }
 
   @Post('billing/leases/:leaseId/contract-settlement/termination')

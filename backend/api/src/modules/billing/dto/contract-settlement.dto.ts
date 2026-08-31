@@ -20,6 +20,13 @@ export class ExtendContractSettlementDto {
   @IsString() @MinLength(3) @MaxLength(1000) reason!: string;
 }
 
+export class RecordLeasePaymentPromiseDto {
+  @IsUUID('4') property_id!: string;
+  @IsInt() @Min(1) @Max(MAX_MONEY) promised_amount!: number;
+  @IsDateString() promised_payment_date!: string;
+  @IsString() @MinLength(3) @MaxLength(2000) note!: string;
+}
+
 export class StartLeaseTerminationDto {
   @IsUUID('4') property_id!: string;
   @IsString() @MinLength(3) @MaxLength(1000) reason!: string;

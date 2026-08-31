@@ -7,7 +7,14 @@ export type RoomCategoryRouteSearch = {
   q: string;
   building_id?: string;
   floor_code?: "A" | "B";
-  status?: "vacant" | "reserved" | "occupied" | "maintenance" | "inactive" | "requires_review";
+  status?:
+    | "vacant"
+    | "reserved"
+    | "awaiting_check_in"
+    | "occupied"
+    | "maintenance"
+    | "inactive"
+    | "requires_review";
   gender_policy?: "male" | "female";
   active_occupancy?: boolean;
   reconciliation_state?: "normal" | "requires_review";

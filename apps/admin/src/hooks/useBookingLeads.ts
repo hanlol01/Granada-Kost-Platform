@@ -31,7 +31,10 @@ export type {
   BookingLeadProgress,
   BookingLeadSource,
 } from "@/lib/admin-booking-lead";
-export { bookingLeadDisplayStatus } from "@/lib/admin-booking-lead";
+export {
+  bookingLeadDisplayStatus,
+  canCancelBookingLeadPaymentCommitment,
+} from "@/lib/admin-booking-lead";
 
 export const BOOKING_LEAD_STATUS_LABEL: Record<BookingLeadStatus, string> = {
   new: "Baru",

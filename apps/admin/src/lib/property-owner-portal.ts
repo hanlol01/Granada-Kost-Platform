@@ -12,6 +12,7 @@ export type OwnerKostType = "rukost" | "apartkost";
 type RoomStatus =
   | "vacant"
   | "reserved"
+  | "awaiting_check_in"
   | "occupied"
   | "maintenance"
   | "inactive"
@@ -513,7 +514,15 @@ export function parseOwnerPortal(value: unknown): OwnerPortal {
         roomCode: string(asset.room_code, "asset.room_code"),
         roomStatus: enumValue<RoomStatus>(
           asset.room_status,
-          ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+          [
+            "vacant",
+            "reserved",
+            "awaiting_check_in",
+            "occupied",
+            "maintenance",
+            "inactive",
+            "requires_review",
+          ],
           "asset.room_status",
         ),
         kostType: enumValue<OwnerKostType>(
@@ -669,7 +678,15 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
     roomCode: string(root.room_code, "asset_detail.room_code"),
     roomStatus: enumValue<RoomStatus>(
       root.room_status,
-      ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+      [
+        "vacant",
+        "reserved",
+        "awaiting_check_in",
+        "occupied",
+        "maintenance",
+        "inactive",
+        "requires_review",
+      ],
       "asset_detail.room_status",
     ),
     kostType: enumValue<OwnerKostType>(
@@ -779,7 +796,15 @@ export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
       roomCode: string(row.room_code, "resource.room_code"),
       roomStatus: enumValue<RoomStatus>(
         row.room_status,
-        ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+        [
+          "vacant",
+          "reserved",
+          "awaiting_check_in",
+          "occupied",
+          "maintenance",
+          "inactive",
+          "requires_review",
+        ],
         "resource.room_status",
       ),
       kostType: enumValue<OwnerKostType>(
@@ -980,7 +1005,15 @@ export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupanc
       roomCode: string(room.room_code, "occupancy_resident_detail.room.room_code"),
       roomStatus: enumValue(
         room.room_status,
-        ["vacant", "reserved", "occupied", "maintenance", "inactive", "requires_review"],
+        [
+          "vacant",
+          "reserved",
+          "awaiting_check_in",
+          "occupied",
+          "maintenance",
+          "inactive",
+          "requires_review",
+        ],
         "occupancy_resident_detail.room.room_status",
       ),
       kostType: enumValue(

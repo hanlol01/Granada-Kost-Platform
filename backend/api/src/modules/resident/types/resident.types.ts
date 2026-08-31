@@ -8,10 +8,14 @@ export type ResidentGender = 'male' | 'female' | 'other';
 /** Rent-only Admin projection; deposits and unverified transfers never qualify. */
 export type ResidentRentPaymentStatus =
   | 'none'
+  | 'pending_verification'
   | 'booking_fee'
   | 'down_payment'
+  | 'initial_month_payment'
   | 'partial_payment'
-  | 'paid_in_full';
+  | 'paid_in_full'
+  | 'reversed_refunded'
+  | 'outstanding_balance';
 
 /**
  * Server-owned operational projection of the contract-settlement timeline.
@@ -24,11 +28,17 @@ export type ResidentContractSettlementStage =
   | 'awaiting_activation'
   | 'checkpoint_one_pending'
   | 'checkpoint_one_met'
+  | 'checkpoint_two_pending'
+  | 'checkpoint_two_met'
   | 'final_settlement_due'
   | 'overdue'
+  | 'overdue_grace'
+  | 'extended'
   | 'admin_action_required'
+  | 'termination_eligible'
   | 'termination_pending'
-  | 'paid_in_full';
+  | 'paid_in_full'
+  | 'preactivation_cancelled';
 
 export type EmergencyContactRecord = {
   id: string;
@@ -62,12 +72,18 @@ export type ResidentRecord = {
   profilePhotoFileId: string | null;
   gender: ResidentGender | null;
   residentStatus: ResidentStatus;
+  archiveReason: string | null;
+  archiveSource: string | null;
+  archivedAt: Date | null;
+  archivedByUserId: string | null;
+  archivedByName: string | null;
   accountStatus: 'active' | 'inactive' | 'suspended' | 'not_provisioned';
   rentPaymentStatus: ResidentRentPaymentStatus;
   contractSettlementStage: ResidentContractSettlementStage;
   contractSettlementDueDate: string | null;
   contractSettlementRemainingAmount: number;
   contractSettlementCheckpointRequiredAmount: number;
+  leaseExpiredAdminActionRequired: boolean;
   roomNumber: string | null;
   leaseStart: string | null;
   leaseEnd: string | null;
@@ -89,6 +105,17 @@ export type ResidentTenancyRecord = {
   leaseId: string;
   bookingLeadId: string | null;
   leaseStatus: 'awaiting_activation' | 'active';
+  activationState:
+    | 'scheduled'
+    | 'activation_attention_required'
+    | 'awaiting_check_in'
+    | 'check_in_confirmation_required'
+    | 'checked_in'
+    | null;
+  occupancyId: string | null;
+  roomStatus: string;
+  activatedAt: Date | null;
+  checkedInAt: Date | null;
   roomNumber: string;
   kostTypeName: string;
   buildingCode: string;

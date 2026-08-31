@@ -53,6 +53,9 @@ function workspacePayment(status = "pending_confirmation") {
     verified_at: null,
     reversal_id: null,
     receipt_id: null,
+    reversal_receipt_id: null,
+    reversal_reason: null,
+    reversed_at: null,
     allocations: [{ invoice_id: invoiceId, amount: 1_800_000 }],
     resident_id: residentId,
     lease_id: leaseId,
@@ -370,6 +373,11 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /pending_confirmation/);
   assert.match(workspace, /useVerifyPayment/);
   assert.match(workspace, /useRejectPayment/);
+  assert.match(workspace, /value="corrections"/);
+  assert.match(workspace, /Koreksi & Refund/);
+  assert.match(workspace, /function CorrectionPanel/);
+  assert.match(workspace, /reversal_reason/);
+  assert.match(workspace, /Dokumen reversal/);
   assert.match(workspace, /Penghuni/);
   assert.match(workspace, /data\.lease\.resident_name/);
   assert.match(workspace, /Kamar/);
@@ -409,6 +417,10 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /Keterangan pembayaran/);
   assert.match(residentDetail, /Pembayaran awal sewa/);
   assert.match(residentDetail, /Pembayaran tambahan yang sudah diterima/);
+  assert.match(residentDetail, /Timeline finansial/);
+  assert.match(residentDetail, /financial_timeline/);
+  assert.match(residentDetail, /Pembayaran, reversal, deposit, penyesuaian, dan refund/);
+  assert.match(residentDetail, /Sumber \/ pencatat/);
   assert.match(residentDetail, /Pembayaran awal sewa \(DP\)/);
   assert.match(residentDetail, /Pembayaran untuk sewa kontrak/);
   assert.match(residentDetail, /Bayar sebagian untuk pelunasan sewa kontrak/);

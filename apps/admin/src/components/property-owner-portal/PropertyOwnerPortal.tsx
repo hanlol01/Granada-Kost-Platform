@@ -59,6 +59,7 @@ import {
 const statusLabel: Record<string, string> = {
   vacant: "Kosong",
   reserved: "Dipesan",
+  awaiting_check_in: "Menunggu check-in",
   occupied: "Terisi",
   maintenance: "Perawatan",
   inactive: "Tidak aktif",
@@ -140,9 +141,14 @@ const labelOf = (value: string | null | undefined): string =>
   value ? (statusLabel[value] ?? value) : "Tidak aktif";
 
 function StatusPill({ value }: { value: string | null | undefined }) {
-  const warning = ["maintenance", "requires_review", "on_hold", "urgent", "high"].includes(
-    value ?? "",
-  );
+  const warning = [
+    "awaiting_check_in",
+    "maintenance",
+    "requires_review",
+    "on_hold",
+    "urgent",
+    "high",
+  ].includes(value ?? "");
   const muted = ["vacant", "inactive", "ended", "cancelled", "archived", "low"].includes(
     value ?? "",
   );
@@ -697,6 +703,7 @@ function Assets({ portal }: { portal: OwnerPortal }) {
                     <SelectItem value="all">Semua status</SelectItem>
                     <SelectItem value="vacant">Kosong</SelectItem>
                     <SelectItem value="reserved">Dipesan</SelectItem>
+                    <SelectItem value="awaiting_check_in">Menunggu check-in</SelectItem>
                     <SelectItem value="occupied">Terisi</SelectItem>
                     <SelectItem value="maintenance">Perawatan</SelectItem>
                     <SelectItem value="inactive">Tidak aktif</SelectItem>
@@ -1038,10 +1045,22 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 />
                 <FinanceRow label="Checkpoint" value={labelOf(item.settlement.checkpoint.status)} />
                 <FinanceRow
-                  label="Batas pelunasan"
+                  label="Minimum checkpoint"
+                  value={formatOwnerMoney(item.settlement.checkpoint.requiredAmount)}
+                />
+                <FinanceRow
+                  label="Kredit checkpoint"
+                  value={formatOwnerMoney(item.settlement.checkpoint.receivedAmount)}
+                />
+                <FinanceRow
+                  label="Kekurangan checkpoint"
+                  value={formatOwnerMoney(item.settlement.checkpoint.remainingAmount)}
+                />
+                <FinanceRow
+                  label="Tenggat checkpoint berjalan"
                   value={
-                    item.settlement.effectiveDueAt
-                      ? localDate(item.settlement.effectiveDueAt)
+                    item.settlement.checkpoint.dueAt
+                      ? localDate(item.settlement.checkpoint.dueAt)
                       : "Tidak tercatat"
                   }
                 />

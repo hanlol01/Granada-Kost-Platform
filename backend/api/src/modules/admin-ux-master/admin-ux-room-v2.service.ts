@@ -472,7 +472,8 @@ export class AdminUxRoomV2Service {
     if (!['maintenance', 'inactive', 'requires_review', 'vacant'].includes(dto.status)) {
       throw new UnprocessableEntityException({
         code: 'ROOM_STATUS_MANAGED_BY_LEASE',
-        message: 'Occupied and reserved status cannot be set through the room endpoint.',
+        message:
+          'Occupied, reserved, and awaiting-check-in statuses are managed by the lease lifecycle.',
       });
     }
     const movingToVacant = dto.status === 'vacant';

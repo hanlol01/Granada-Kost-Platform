@@ -4,6 +4,7 @@ import {
   extendContractSettlement,
   finalizeLeaseTermination,
   rejectPayment,
+  recordLeasePaymentPromise,
   startLeaseTermination,
 } from "@/lib/admin-w06-billing";
 import { adminUxQueryKeys, queryKeyContainsPropertyScope } from "@/lib/admin-ux-query-keys";
@@ -29,6 +30,7 @@ import {
   type CancelLeaseTerminationInput,
   type ContractSettlementExtensionInput,
   type FinalizeLeaseTerminationInput,
+  type LeasePaymentPromiseInput,
   type OtherChargeInput,
   type StartLeaseTerminationInput,
   type ManualPaymentInput,
@@ -366,6 +368,20 @@ export function useExtendContractSettlement(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       extendContractSettlement(variables.leaseId, variables.input, variables.idempotencyKey),
+  );
+}
+
+export function useRecordLeasePaymentPromise(propertyId: string | null) {
+  type Variables = {
+    leaseId: string;
+    input: LeasePaymentPromiseInput;
+    idempotencyKey: string;
+  };
+  return useScopedW06Mutation<Variables, Awaited<ReturnType<typeof recordLeasePaymentPromise>>>(
+    propertyId,
+    (variables) => variables.input.property_id,
+    (variables) =>
+      recordLeasePaymentPromise(variables.leaseId, variables.input, variables.idempotencyKey),
   );
 }
 

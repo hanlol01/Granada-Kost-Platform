@@ -5,9 +5,11 @@ import test from "node:test";
 import {
   parseAdminBookingLeadPage,
   bookingLeadDisplayStatus,
+  canCancelBookingLeadPaymentCommitment,
   requestArchiveAdminBookingLead,
   requestAdminBookingLeadPage,
   type BookingLeadRecord,
+  type BookingLeadProgress,
 } from "./admin-booking-lead";
 
 const PROPERTY_ID = "11111111-1111-4111-8111-111111111111";
@@ -152,11 +154,89 @@ test("pre-activation refund is available only inside booking and resident detail
   const cancellation = source("components/booking-leads/BookingLeadCancellationDialog.tsx");
 
   assert.doesNotMatch(page, /Batalkan \/ Refund/);
-  assert.match(leadDetail, /paymentType !== "full_settlement"/);
-  assert.match(leadDetail, /leaseStatus === "awaiting_activation"/);
+  assert.match(leadDetail, /canCancelBookingLeadPaymentCommitment/);
+  assert.match(leadDetail, /Refund pembayaran awal/);
   assert.match(residentDetail, /Batalkan dan Refund/);
   assert.match(residentDetail, /currentTenancy\.bookingLeadId/);
   assert.match(cancellation, /lease, kontrak, dan invoice/);
+});
+
+test("Booking Fee or DP can be refunded before rental data is completed", () => {
+  const progress: BookingLeadProgress = {
+    propertyId: PROPERTY_ID,
+    source: "admin_quick_entry",
+    leadStatus: "onboarding",
+    recordedAt: "2026-08-27T01:00:00.000Z",
+    targetRoomNumber: "RK-A-01",
+    hold: {
+      status: "committed",
+      roomNumber: "RK-A-01",
+      startsAt: "2026-08-27T01:00:00.000Z",
+      expiresAt: "2026-08-28T01:00:00.000Z",
+      releasedAt: null,
+      releaseReason: null,
+    },
+    paymentCommitment: {
+      id: "33333333-3333-4333-8333-333333333333",
+      paymentType: "down_payment",
+      rentCreditAmount: 1_000_000,
+      securityDepositAmount: 500_000,
+      paymentMethod: "cash",
+      verificationStatus: "verified",
+      startDate: "2026-09-01",
+      endDate: "2026-12-01",
+      termMonths: 3,
+      materializedAt: null,
+    },
+    cancellation: null,
+    onboarding: null,
+    tenancy: null,
+    paymentSummary: {
+      verifiedAmount: 0,
+      pendingAmount: 0,
+      paymentCount: 0,
+      securityDepositBalance: 0,
+    },
+  };
+
+  assert.equal(canCancelBookingLeadPaymentCommitment(progress, true), true);
+  assert.equal(
+    canCancelBookingLeadPaymentCommitment(
+      {
+        ...progress,
+        tenancy: {
+          residentId: "44444444-4444-4444-8444-444444444444",
+          leaseStatus: "awaiting_activation",
+          startDate: "2026-09-01",
+          endDate: "2026-12-01",
+          termMonths: 3,
+          contractRentAmount: 5_400_000,
+          occupancyStatus: null,
+          occupancyStartedAt: null,
+          activationState: null,
+        },
+      },
+      true,
+    ),
+    true,
+  );
+  assert.equal(canCancelBookingLeadPaymentCommitment(progress, false), false);
+  assert.equal(
+    canCancelBookingLeadPaymentCommitment(
+      {
+        ...progress,
+        paymentCommitment: { ...progress.paymentCommitment!, paymentType: "full_settlement" },
+      },
+      true,
+    ),
+    false,
+  );
+});
+
+test("initial DP input warns and blocks a zero amount", () => {
+  const dialog = source("components/booking-leads/CompleteBookingLeadDialog.tsx");
+  assert.match(dialog, /DP harus lebih besar dari Rp0\./);
+  assert.match(dialog, /paymentType === "down_payment" && displayedCredit <= 0/);
 });
 
 test("status mutation keeps property scope and one stable key per logical action", () => {

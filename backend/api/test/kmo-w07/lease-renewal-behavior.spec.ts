@@ -13,8 +13,15 @@ const SUCCESSOR_OCCUPANCY_ID = '6a6a6a6a-6a6a-4a6a-8a6a-6a6a6a6a6a6a';
 const COMMAND_ID = '77777777-7777-4777-8777-777777777777';
 const INVOICE_ID = '88888888-8888-4888-8888-888888888888';
 const USER_ID = '99999999-9999-4999-8999-999999999999';
+const SETTLEMENT_ID = 'abababab-abab-4bab-8bab-abababababab';
+const POLICY_SNAPSHOT_ID = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
 
-type Options = { verifiedCredit?: number; today?: string; failActivation?: boolean };
+type Options = {
+  verifiedCredit?: number;
+  today?: string;
+  failActivation?: boolean;
+  legacySettlement?: boolean;
+};
 
 function normalize(sql: string) {
   return sql.replace(/\s+/g, ' ').trim();
@@ -32,6 +39,7 @@ function serviceHarness(options: Options = {}) {
   let predecessorCheckOutDate: string | null = null;
   let successorOccupancyStartDate: string | null = null;
   let successorCheckInDate: string | null = null;
+  let settlementOriginalDueAt: unknown = null;
   const snapshot = {
     term_months: 12,
     billing_cycle: 'monthly',
@@ -189,7 +197,26 @@ function serviceHarness(options: Options = {}) {
         writes.push('successor-active');
         return { rows: [], rowCount: 1 };
       }
+      if (/SELECT settlement\.id, settlement\.policy_snapshot_id/.test(q))
+        return {
+          rows: [
+            {
+              id: SETTLEMENT_ID,
+              policy_snapshot_id: options.legacySettlement ? null : POLICY_SNAPSHOT_ID,
+              final_checkpoint_due_at: options.legacySettlement
+                ? null
+                : new Date('2027-01-01T16:59:59.999Z'),
+            },
+          ],
+          rowCount: 1,
+        };
+      if (/UPDATE lease_contract_settlements SET state='open'/.test(q)) {
+        settlementOriginalDueAt = params[1];
+        writes.push('settlement-open');
+        return { rows: [], rowCount: 1 };
+      }
       if (/UPDATE lease_contract_settlements settlement/.test(q)) {
+        settlementOriginalDueAt = 'legacy-two-month-rule';
         writes.push('settlement-open');
         return { rows: [], rowCount: 1 };
       }
@@ -236,6 +263,7 @@ function serviceHarness(options: Options = {}) {
       successorOccupancyStartDate,
       successorCheckInDate,
     }),
+    settlementOriginalDueAt: () => settlementOriginalDueAt,
   };
 }
 
@@ -266,6 +294,17 @@ test('W07C authorized activation closes predecessor occupancy and opens a distin
   );
   assert.ok(harness.writes.includes('occupancy-checkout'));
   assert.ok(harness.writes.includes('occupancy-checkin'));
+  assert.equal(
+    (harness.settlementOriginalDueAt() as Date).toISOString(),
+    '2027-01-01T16:59:59.999Z',
+  );
+});
+
+test('W07C legacy successor settlement retains the pre-policy two-month fallback', async () => {
+  const harness = serviceHarness({ legacySettlement: true });
+  const result = await harness.service.executeAuthorizedRenewal(COMMAND_ID, 'run-legacy');
+  assert.deepEqual(result, { state: 'activated', late: false });
+  assert.equal(harness.settlementOriginalDueAt(), 'legacy-two-month-rule');
 });
 
 test('W07C late execution retains the effective-date occupancy boundary without overlap', async () => {

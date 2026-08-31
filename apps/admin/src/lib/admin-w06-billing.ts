@@ -64,6 +64,9 @@ export type BillingPayment = {
   verified_at: string | null;
   reversal_id: string | null;
   receipt_id: string | null;
+  reversal_receipt_id: string | null;
+  reversal_reason: string | null;
+  reversed_at: string | null;
   allocations: BillingAllocation[];
 };
 export type BillingWorkspacePayment = BillingPayment & {
@@ -117,7 +120,7 @@ export type ResidentBilling = {
     resident_id: string;
     resident_name: string;
     room_number: string;
-    status: "awaiting_activation" | "active";
+    status: "awaiting_activation" | "active" | "completed" | "ended" | "cancelled" | "transferred";
     start_date: string;
     end_date: string;
     payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
@@ -143,6 +146,7 @@ export type ResidentBilling = {
   contract_settlement: {
     id: string;
     invoice_id: string;
+    policy_version: "legacy_v1" | "lease_settlement_v2";
     status:
       | "awaiting_activation"
       | "open"
@@ -151,7 +155,8 @@ export type ResidentBilling = {
       | "admin_action_required"
       | "termination_pending"
       | "terminated"
-      | "paid";
+      | "paid"
+      | "cancelled";
     activated_at: string | null;
     original_due_at: string | null;
     extension_due_at: string | null;
@@ -169,11 +174,20 @@ export type ResidentBilling = {
     };
     deposit_offset_amount: number;
     outstanding_amount: number;
-    reminder_stage: "H-30" | "H-14" | "H-7" | "H-0" | "D+1" | "D+7" | null;
+    checkpoint_shortfall_amount: number;
+    reminder_stage: "H-30" | "H-14" | "H-7" | "H-3" | "H-1" | "H-0" | "D+1" | "D+7" | null;
     admin_action_required: boolean;
+    termination_eligible: boolean;
     partial_payment_allowed: boolean;
     full_payment_required: boolean;
     extension_available: boolean;
+    payment_promise: {
+      id: string;
+      promised_amount: number;
+      promised_payment_date: string;
+      note: string;
+      recorded_at: string;
+    } | null;
     termination_case: {
       id: string;
       status: "pending" | "cancelled" | "checked_out";
@@ -192,6 +206,36 @@ export type ResidentBilling = {
     coverage_end: string;
   }>;
   payments: BillingPayment[];
+  financial_timeline: Array<{
+    id: string;
+    event_type:
+      | "payment_recorded"
+      | "payment_reversed"
+      | "booking_refund"
+      | "deposit_collected"
+      | "deposit_deducted"
+      | "deposit_refunded"
+      | "invoice_adjustment"
+      | "exit_refund";
+    occurred_at: string;
+    amount: number;
+    direction: "inbound" | "outbound" | "adjustment";
+    status: string;
+    reference: string | null;
+    subtype: string | null;
+    source: string;
+    note: string | null;
+    actor_name: string;
+    receipt_id: string | null;
+    exit_document_id: string | null;
+  }>;
+  exit_documents: Array<{
+    id: string;
+    checkout_command_id: string;
+    document_code: string;
+    document_kind: "checkout_handover" | "final_settlement" | "refund_receipt";
+    issued_at: string;
+  }>;
   proofs: Array<{
     id: string;
     invoice_id: string;
@@ -248,6 +292,13 @@ export type ContractSettlementExtensionInput = {
   property_id: string;
   extension_days: number;
   reason: string;
+};
+
+export type LeasePaymentPromiseInput = {
+  property_id: string;
+  promised_amount: number;
+  promised_payment_date: string;
+  note: string;
 };
 
 export type StartLeaseTerminationInput = {
@@ -362,6 +413,9 @@ function payment(value: unknown): BillingPayment {
       "verified_at",
       "reversal_id",
       "receipt_id",
+      "reversal_receipt_id",
+      "reversal_reason",
+      "reversed_at",
       "allocations",
     ],
     "pembayaran",
@@ -380,6 +434,11 @@ function payment(value: unknown): BillingPayment {
     verified_at: nullable(record.verified_at, (item) => timestamp(item, "Waktu verifikasi")),
     reversal_id: nullable(record.reversal_id, (item) => uuid(item, "ID reversal")),
     receipt_id: nullable(record.receipt_id, (item) => uuid(item, "ID kuitansi")),
+    reversal_receipt_id: nullable(record.reversal_receipt_id, (item) =>
+      uuid(item, "ID kuitansi reversal"),
+    ),
+    reversal_reason: nullable(record.reversal_reason, (item) => text(item, "Alasan reversal")),
+    reversed_at: nullable(record.reversed_at, (item) => timestamp(item, "Waktu reversal")),
     allocations: record.allocations.map(allocation),
   };
 }
@@ -420,6 +479,9 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
       "verified_at",
       "reversal_id",
       "receipt_id",
+      "reversal_receipt_id",
+      "reversal_reason",
+      "reversed_at",
       "allocations",
       "resident_id",
       "lease_id",
@@ -444,6 +506,9 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
     verified_at: record.verified_at,
     reversal_id: record.reversal_id,
     receipt_id: record.receipt_id,
+    reversal_receipt_id: record.reversal_receipt_id,
+    reversal_reason: record.reversal_reason,
+    reversed_at: record.reversed_at,
     allocations: record.allocations,
   });
   return {
@@ -552,7 +617,16 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
   const envelope = object(value, ["data"], "detail billing penghuni");
   const data = object(
     envelope.data,
-    ["lease", "summary", "contract_settlement", "invoices", "payments", "proofs"],
+    [
+      "lease",
+      "summary",
+      "contract_settlement",
+      "invoices",
+      "payments",
+      "financial_timeline",
+      "exit_documents",
+      "proofs",
+    ],
     "detail billing penghuni",
   );
   const lease = object(
@@ -591,7 +665,13 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     ],
     "ringkasan billing",
   );
-  if (!Array.isArray(data.invoices) || !Array.isArray(data.payments) || !Array.isArray(data.proofs))
+  if (
+    !Array.isArray(data.invoices) ||
+    !Array.isArray(data.payments) ||
+    !Array.isArray(data.financial_timeline) ||
+    !Array.isArray(data.exit_documents) ||
+    !Array.isArray(data.proofs)
+  )
     throw new Error("Riwayat billing tidak valid.");
   const settlement = nullable(data.contract_settlement, (item) => {
     const record = object(
@@ -599,6 +679,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       [
         "id",
         "invoice_id",
+        "policy_version",
         "status",
         "activated_at",
         "original_due_at",
@@ -611,11 +692,14 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         "first_payment_checkpoint",
         "deposit_offset_amount",
         "outstanding_amount",
+        "checkpoint_shortfall_amount",
         "reminder_stage",
         "admin_action_required",
+        "termination_eligible",
         "partial_payment_allowed",
         "full_payment_required",
         "extension_available",
+        "payment_promise",
         "termination_case",
       ],
       "pelunasan kontrak",
@@ -636,6 +720,20 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         planned_checkout_date: date(termination.planned_checkout_date, "Tanggal checkout rencana"),
       };
     });
+    const paymentPromise = nullable(record.payment_promise, (value) => {
+      const promise = object(
+        value,
+        ["id", "promised_amount", "promised_payment_date", "note", "recorded_at"],
+        "janji bayar",
+      );
+      return {
+        id: uuid(promise.id, "ID janji bayar"),
+        promised_amount: integer(promise.promised_amount, "Nominal janji bayar"),
+        promised_payment_date: date(promise.promised_payment_date, "Tanggal janji bayar"),
+        note: text(promise.note, "Catatan janji bayar"),
+        recorded_at: timestamp(promise.recorded_at, "Waktu pencatatan janji bayar"),
+      };
+    });
     const boolean = (value: unknown, label: string) => {
       if (typeof value !== "boolean") throw new Error(`${label} tidak valid.`);
       return value;
@@ -654,6 +752,11 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     return {
       id: uuid(record.id, "ID pelunasan kontrak"),
       invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
+      policy_version: oneOf(
+        record.policy_version,
+        ["legacy_v1", "lease_settlement_v2"] as const,
+        "Versi kebijakan pelunasan",
+      ),
       status: oneOf(
         record.status,
         [
@@ -665,6 +768,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
           "termination_pending",
           "terminated",
           "paid",
+          "cancelled",
         ] as const,
         "Status pelunasan kontrak",
       ),
@@ -705,13 +809,23 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       },
       deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit sewa"),
       outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
+      checkpoint_shortfall_amount: integer(
+        record.checkpoint_shortfall_amount,
+        "Kekurangan checkpoint",
+      ),
       reminder_stage: nullable(record.reminder_stage, (value) =>
-        oneOf(value, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "Tahap pengingat"),
+        oneOf(
+          value,
+          ["H-30", "H-14", "H-7", "H-3", "H-1", "H-0", "D+1", "D+7"] as const,
+          "Tahap pengingat",
+        ),
       ),
       admin_action_required: boolean(record.admin_action_required, "Kebutuhan tindakan admin"),
+      termination_eligible: boolean(record.termination_eligible, "Kelayakan pemberhentian"),
       partial_payment_allowed: boolean(record.partial_payment_allowed, "Izin pembayaran sebagian"),
       full_payment_required: boolean(record.full_payment_required, "Kewajiban pelunasan penuh"),
       extension_available: boolean(record.extension_available, "Izin perpanjangan"),
+      payment_promise: paymentPromise,
       termination_case: terminationCase,
     };
   });
@@ -721,7 +835,18 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       resident_id: uuid(lease.resident_id, "ID penghuni"),
       resident_name: text(lease.resident_name, "Nama penghuni"),
       room_number: text(lease.room_number, "Nomor kamar"),
-      status: oneOf(lease.status, ["awaiting_activation", "active"] as const, "Status sewa"),
+      status: oneOf(
+        lease.status,
+        [
+          "awaiting_activation",
+          "active",
+          "completed",
+          "ended",
+          "cancelled",
+          "transferred",
+        ] as const,
+        "Status sewa",
+      ),
       start_date: date(lease.start_date, "Tanggal mulai"),
       end_date: date(lease.end_date, "Tanggal selesai"),
       payment_plan: oneOf(
@@ -753,6 +878,79 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     contract_settlement: settlement,
     invoices: data.invoices.map(invoice),
     payments: data.payments.map(payment),
+    financial_timeline: data.financial_timeline.map((item) => {
+      const event = object(
+        item,
+        [
+          "id",
+          "event_type",
+          "occurred_at",
+          "amount",
+          "direction",
+          "status",
+          "reference",
+          "subtype",
+          "source",
+          "note",
+          "actor_name",
+          "receipt_id",
+          "exit_document_id",
+        ],
+        "peristiwa finansial",
+      );
+      return {
+        id: uuid(event.id, "ID peristiwa finansial"),
+        event_type: oneOf(
+          event.event_type,
+          [
+            "payment_recorded",
+            "payment_reversed",
+            "booking_refund",
+            "deposit_collected",
+            "deposit_deducted",
+            "deposit_refunded",
+            "invoice_adjustment",
+            "exit_refund",
+          ] as const,
+          "Jenis peristiwa finansial",
+        ),
+        occurred_at: timestamp(event.occurred_at, "Waktu peristiwa finansial"),
+        amount: integer(event.amount, "Nominal peristiwa finansial"),
+        direction: oneOf(
+          event.direction,
+          ["inbound", "outbound", "adjustment"] as const,
+          "Arah peristiwa finansial",
+        ),
+        status: text(event.status, "Status peristiwa finansial"),
+        reference: nullable(event.reference, (value) => text(value, "Referensi finansial")),
+        subtype: nullable(event.subtype, (value) => text(value, "Subjenis finansial")),
+        source: text(event.source, "Sumber peristiwa finansial"),
+        note: nullable(event.note, (value) => text(value, "Catatan peristiwa finansial")),
+        actor_name: text(event.actor_name, "Pencatat peristiwa finansial"),
+        receipt_id: nullable(event.receipt_id, (value) => uuid(value, "ID kuitansi finansial")),
+        exit_document_id: nullable(event.exit_document_id, (value) =>
+          uuid(value, "ID dokumen checkout finansial"),
+        ),
+      };
+    }),
+    exit_documents: data.exit_documents.map((item) => {
+      const document = object(
+        item,
+        ["id", "checkout_command_id", "document_code", "document_kind", "issued_at"],
+        "dokumen checkout",
+      );
+      return {
+        id: uuid(document.id, "ID dokumen checkout"),
+        checkout_command_id: uuid(document.checkout_command_id, "ID perintah checkout"),
+        document_code: text(document.document_code, "Kode dokumen checkout"),
+        document_kind: oneOf(
+          document.document_kind,
+          ["checkout_handover", "final_settlement", "refund_receipt"] as const,
+          "Jenis dokumen checkout",
+        ),
+        issued_at: timestamp(document.issued_at, "Waktu dokumen checkout"),
+      };
+    }),
     proofs: data.proofs.map((item) => {
       const proof = object(
         item,
@@ -1150,6 +1348,19 @@ export async function extendContractSettlement(
 ) {
   return requester.post<unknown>(
     `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/extend`,
+    input,
+    { idempotencyKey },
+  );
+}
+
+export async function recordLeasePaymentPromise(
+  leaseId: string,
+  input: LeasePaymentPromiseInput,
+  idempotencyKey: string,
+  requester: Requester = adminUxV2Requester,
+) {
+  return requester.post<unknown>(
+    `/admin/billing/leases/${encodeURIComponent(leaseId)}/contract-settlement/payment-promise`,
     input,
     { idempotencyKey },
   );

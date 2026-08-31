@@ -107,18 +107,28 @@ export class DashboardRepository {
        ),
        active_allocations AS (
          SELECT payment_allocations.invoice_id,
-                sum(payment_allocations.allocated_amount) AS allocated_amount
+                sum(
+                  payment_allocations.allocated_amount
+                  - COALESCE(reversal.reversed_amount,0)
+                ) AS allocated_amount
          FROM payment_allocations
          JOIN invoices ON invoices.id = payment_allocations.invoice_id
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(payment_reversal_allocations.reversed_amount),0)
+                    AS reversed_amount
+           FROM payment_reversal_allocations
+           WHERE payment_reversal_allocations.original_allocation_id = payment_allocations.id
+         ) reversal ON true
          WHERE $2::boolean
            AND invoices.property_id = $1::uuid
-           AND payment_allocations.allocation_status = 'active'
          GROUP BY payment_allocations.invoice_id
        ),
        open_invoices AS (
          SELECT invoices.due_date,
                 GREATEST(
-                  invoices.total_amount - COALESCE(active_allocations.allocated_amount, 0),
+                  invoices.total_amount
+                    - invoices.credit_amount
+                    - COALESCE(active_allocations.allocated_amount, 0),
                   0
                 ) AS outstanding_amount
          FROM invoices

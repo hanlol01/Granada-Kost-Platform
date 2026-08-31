@@ -333,10 +333,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const paymentChoiceSelected = !bookingFeeLocked || bookingFeePaymentChoiceSelected;
   const paymentMethodSelected = !bookingFeeLocked || bookingFeePaymentMethodSelected;
   const creditedRentAmount = Math.min(amounts.contractRent, totalRentCredit);
-  // The 25% figure is a recommendation that pre-fills the DP field, not a
-  // blocking obligation. A full-payment selection remains an exact settlement
-  // of the contract rent.
-  const requiredInitialRent = paymentChoice === "full" ? amounts.contractRent : 0;
+  // The 25% figure remains a recommendation, while the activation policy now
+  // requires at least one full month of rent credit before commitment.
+  const requiredInitialRent =
+    paymentChoice === "full" ? amounts.contractRent : (selectedRoom?.kostType.monthlyPrice ?? 0);
   const endDate = calculateLeaseEndDate(startDate, termMonths);
   const eligibleRooms = eligibleVacantRooms(
     rooms.data?.items ?? [],
@@ -393,11 +393,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ? "Kredit pembayaran dari Minat Booking lebih besar dari total sewa periode baru. Batalkan atau sesuaikan Minat Booking terlebih dahulu."
       : bookingFeeExceedsRent
         ? "Booking fee tidak boleh melebihi total sewa kontrak."
-        : paymentChoice !== "full" || creditedRentAmount >= requiredInitialRent
+        : creditedRentAmount >= requiredInitialRent
           ? ""
-          : `Pelunasan sewa masih kurang ${currency(
-              Math.max(0, amounts.contractRent - creditedRentAmount),
-            )}.`,
+          : paymentChoice === "full"
+            ? `Pelunasan sewa masih kurang ${currency(
+                Math.max(0, amounts.contractRent - creditedRentAmount),
+              )}.`
+            : `Pembayaran awal wajib menutup minimal satu bulan sewa. Masih kurang ${currency(
+                Math.max(0, requiredInitialRent - creditedRentAmount),
+              )}.`,
     bookingFee: bookingFeeBelowMinimum
       ? `Booking fee bila diisi minimal ${currency(MINIMUM_BOOKING_FEE)} atau Rp0.`
       : bookingFeeExceedsRent
@@ -450,7 +454,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaidRent(
       Math.max(
         0,
-        (paymentChoice === "full" ? nextAmounts.contractRent : nextAmounts.minimumDp) - bookingFee,
+        (paymentChoice === "full"
+          ? nextAmounts.contractRent
+          : Math.max(nextAmounts.minimumDp, room.kostType.monthlyPrice)) - bookingFee,
       ),
     );
     setAttemptedSubmit(false);
@@ -466,7 +472,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setPaidRent(
         Math.max(
           0,
-          (paymentChoice === "full" ? nextAmounts.contractRent : nextAmounts.minimumDp) -
+          (paymentChoice === "full"
+            ? nextAmounts.contractRent
+            : Math.max(nextAmounts.minimumDp, selectedRoom?.kostType.monthlyPrice ?? 0)) -
             bookingFee,
         ),
       );
@@ -483,7 +491,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setBookingFeePaymentMethodSelected(false);
     }
     if (!initialPaymentLocked) {
-      const required = value === "full" ? amounts.contractRent : amounts.minimumDp;
+      const required =
+        value === "full"
+          ? amounts.contractRent
+          : Math.max(amounts.minimumDp, selectedRoom?.kostType.monthlyPrice ?? 0);
       setPaidRent(Math.max(0, required - bookingFee));
     }
     setAttemptedSubmit(false);
@@ -521,7 +532,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const changeBookingFee = (value: number) => {
     setBookingFee(value);
     setPaidRent(
-      Math.max(0, (paymentChoice === "full" ? amounts.contractRent : amounts.minimumDp) - value),
+      Math.max(
+        0,
+        (paymentChoice === "full"
+          ? amounts.contractRent
+          : Math.max(amounts.minimumDp, selectedRoom?.kostType.monthlyPrice ?? 0)) - value,
+      ),
     );
     setAttemptedSubmit(false);
     setConfirmed(false);
@@ -1697,7 +1713,7 @@ function RoomAndPaymentStep({
                       <p className="text-xs text-muted-foreground">
                         {paymentChoice === "full"
                           ? `Terhitung otomatis: total sewa dikurangi booking fee ${currency(bookingFee)}.`
-                          : `Rekomendasi DP 25% adalah ${currency(amounts.minimumDp)}. Booking fee menjadi kredit sewa dan diperhitungkan sebagai kredit DP; nominal DP dapat disesuaikan sesuai kesepakatan.`}
+                          : `Rekomendasi DP 25% adalah ${currency(amounts.minimumDp)}. Booking fee menjadi kredit sewa; total pembayaran awal boleh disesuaikan, tetapi wajib menutup minimal satu bulan sewa.`}
                       </p>
                       {errors?.paidRent ? (
                         <p className="text-xs text-destructive" role="alert">

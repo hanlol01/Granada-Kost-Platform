@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -400,6 +401,9 @@ export class CloseLeaseDto {
 }
 
 export class CreateLeaseCheckoutNoticeDto {
+  @IsIn(['resident_early_termination', 'normal_expiry'])
+  exit_type!: 'resident_early_termination' | 'normal_expiry';
+
   @IsDateString()
   effective_date!: string;
 
@@ -413,6 +417,94 @@ export class CreateLeaseCheckoutNoticeDto {
   notice_exception_reason?: string;
 }
 
+export class ApproveLeaseCheckoutDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  approved_short_notice_charge!: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  short_notice_waiver_reason?: string;
+}
+
+export class LeaseCheckoutInventoryItemDto {
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  expected_quantity!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  returned_quantity!: number;
+
+  @IsIn(['complete', 'partial', 'damaged', 'missing', 'not_applicable'])
+  condition!: 'complete' | 'partial' | 'damaged' | 'missing' | 'not_applicable';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  notes?: string;
+}
+
+export class LeaseCheckoutAccessItemDto {
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  expected_quantity!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  returned_quantity!: number;
+
+  @IsIn(['returned', 'partial', 'damaged', 'missing', 'not_applicable'])
+  status!: 'returned' | 'partial' | 'damaged' | 'missing' | 'not_applicable';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  notes?: string;
+}
+
+export class LeaseCheckoutUtilityReadingDto {
+  @IsString()
+  @Length(1, 120)
+  utility_type!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  meter_number?: string;
+
+  @IsString()
+  @Length(1, 80)
+  checkout_reading!: string;
+
+  @IsString()
+  @Length(1, 40)
+  unit!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  outstanding_usage_notes?: string;
+}
+
 export class RecordLeaseCheckoutHandoverDto {
   @IsBoolean()
   key_access_confirmed!: boolean;
@@ -422,6 +514,27 @@ export class RecordLeaseCheckoutHandoverDto {
 
   @IsBoolean()
   parking_confirmed!: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => LeaseCheckoutInventoryItemDto)
+  inventory_items?: LeaseCheckoutInventoryItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => LeaseCheckoutAccessItemDto)
+  key_access_items?: LeaseCheckoutAccessItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => LeaseCheckoutUtilityReadingDto)
+  utility_readings?: LeaseCheckoutUtilityReadingDto[];
 
   @IsOptional()
   @IsArray()
@@ -484,6 +597,36 @@ export class CompleteLeaseCheckoutDto {
   damage_deductions?: CheckoutDamageDeductionDto[];
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  deposit_rent_offset_amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 2000)
+  deposit_rent_offset_reason?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  deposit_rent_offset_evidence_file_id?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  final_refund_amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 2000)
+  refund_adjustment_reason?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  refund_adjustment_evidence_file_id?: string;
+
+  @IsOptional()
   @IsString()
   @Length(1, 2000)
   refund_reason?: string;
@@ -504,6 +647,10 @@ export class SettleRefundDto {
   external_reference!: string;
 
   @IsOptional()
+  @IsUUID('4')
+  evidence_file_id?: string;
+
+  @IsOptional()
   @IsString()
   @Length(1, 2000)
   notes?: string;
@@ -511,6 +658,6 @@ export class SettleRefundDto {
 
 export class WaiveRefundDto {
   @IsString()
-  @Length(1, 2000)
+  @Length(3, 2000)
   reason!: string;
 }

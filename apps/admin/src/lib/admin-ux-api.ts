@@ -246,7 +246,14 @@ export type RoomInventory = {
   number: string;
   roomCode?: string | null;
   buildingId: string;
-  roomStatus: "vacant" | "reserved" | "occupied" | "maintenance" | "inactive" | "requires_review";
+  roomStatus:
+    | "vacant"
+    | "reserved"
+    | "awaiting_check_in"
+    | "occupied"
+    | "maintenance"
+    | "inactive"
+    | "requires_review";
   publicVisible: boolean;
   kostType?: Pick<
     KostType,

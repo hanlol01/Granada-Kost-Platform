@@ -17,6 +17,7 @@ import {
   Lock,
   MessageSquareWarning,
   ReceiptText,
+  ScrollText,
   Settings,
   Users,
 } from "lucide-react";
@@ -52,6 +53,7 @@ export type AdminRouteId =
   | "complaints"
   | "reports"
   | "notifications"
+  | "activity-logs"
   | "reminder-workspace"
   | "reminder-history"
   | "settings"
@@ -452,6 +454,16 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
       readCapabilities: ["notification.manage"],
     },
     navigation: { sidebar: true, mobilePriority: 100 },
+  },
+  {
+    id: "activity-logs",
+    to: "/activity-logs",
+    label: "Log Aktivitas",
+    section: "lainnya",
+    order: 142,
+    icon: ScrollText,
+    access: { roles: ["admin"], readCapabilities: ["activity_log.read"] },
+    navigation: { sidebar: true },
   },
   {
     id: "reminder-workspace",

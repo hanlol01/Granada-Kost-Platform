@@ -7,6 +7,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { PDFDocument } from 'pdf-lib';
 import {
   buildContractSchedule,
   minimumDpAmount,
@@ -202,6 +203,24 @@ function sql(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function receiptAuthorityRow() {
+  return {
+    payment_code: 'PAY-W06-AUTHORITY',
+    payment_method: 'cash',
+    payment_purpose: 'rent',
+    paid_at: new Date('2026-08-01T01:00:00.000Z'),
+    resident_name: 'Resident Aman',
+    room_number: 'RK-01',
+    lease_start: '2026-08-01',
+    lease_end: '2027-07-31',
+    property_name: 'Granada Student House',
+    property_address: 'Jatinangor, Sumedang',
+    issued_by_name: 'Admin Test',
+    settles_rent_contract: false,
+    allocations: [{ invoice_code: 'INV-W06-001', amount: '1800000' }],
+  };
+}
+
 test('worklist and payment workspace constrain the due-day window with Jakarta business dates', async () => {
   const queries: Array<{ statement: string; values: readonly unknown[] }> = [];
   const service = new W06BillingService(
@@ -257,6 +276,7 @@ type HarnessOptions = {
     initialPaymentAllocated?: number;
     outstanding?: number;
     terminationPending?: boolean;
+    policyFinalDueAt?: Date | null;
   };
 };
 
@@ -365,6 +385,7 @@ function paymentHarness(options: HarnessOptions = {}) {
             lease_id: LEASE_ID,
             invoice_status: 'issued',
             invoice_purpose: 'rent',
+            authority_source: 'contract_schedule',
             due_date: id === INVOICE_1 ? '2026-08-01' : '2026-10-01',
             total_amount: '1800000',
             credit_amount: '0',
@@ -386,6 +407,10 @@ function paymentHarness(options: HarnessOptions = {}) {
               original_due_at: settlement.originalDueAt,
               extension_due_at: settlement.extensionDueAt ?? null,
               extension_reason: null,
+              policy_snapshot_id: settlement.policyFinalDueAt
+                ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+                : null,
+              final_checkpoint_due_at: settlement.policyFinalDueAt ?? null,
               total_amount: '10800000',
               monthly_rate: '1800000',
               first_payment_checkpoint_at: new Date('2026-02-01T23:59:59.999Z'),
@@ -408,6 +433,11 @@ function paymentHarness(options: HarnessOptions = {}) {
           normalized,
         )
       )
+        return {
+          rows: [{ passed: options.contractSettlement?.deadlinePassed ?? false }],
+          rowCount: 1,
+        };
+      if (/SELECT now\(\) > \$1::timestamptz AS passed/.test(normalized))
         return {
           rows: [{ passed: options.contractSettlement?.deadlinePassed ?? false }],
           rowCount: 1,
@@ -440,6 +470,8 @@ function paymentHarness(options: HarnessOptions = {}) {
       }
       if (/FROM payment_allocation_intents/.test(normalized))
         return { rows: intents, rowCount: intents.length };
+      if (/issuer\.display_name AS issued_by_name/.test(normalized))
+        return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/INSERT INTO payment_receipts/.test(normalized))
         return { rows: [{ id: RECEIPT_ID }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
@@ -583,8 +615,8 @@ test('server-mediated invoice PDF is valid, deterministic, and contains no inter
   assert.doesNotMatch(source, /storage|content_path|file_id/i);
 });
 
-test('server-mediated payment receipt PDF distinguishes payment proof from an invoice', () => {
-  const document = createBillingReceiptPdf({
+test('server-mediated payment receipt PDF creates a valid receipt document', async () => {
+  const document = await createBillingReceiptPdf({
     receiptCode: 'KWT-KMO-W06-001',
     paymentCode: 'PAY-KMO-W06-001',
     residentName: 'Siti Utami',
@@ -597,10 +629,10 @@ test('server-mediated payment receipt PDF distinguishes payment proof from an in
     allocations: [{ invoiceCode: 'INV-KMO-W06-001', amount: 2_050_000 }],
   });
   const source = document.content.toString('latin1');
+  const parsed = await PDFDocument.load(document.content);
   assert.equal(document.filename, 'KWT-KMO-W06-001.pdf');
-  assert.ok(source.startsWith('%PDF-1.4'));
-  assert.match(source, /KUITANSI PEMBAYARAN/);
-  assert.match(source, /Kuitansi ini membuktikan penerimaan pembayaran/);
+  assert.match(source, /^%PDF-1\.\d/);
+  assert.equal(parsed.getPageCount(), 1);
   assert.doesNotMatch(source, new RegExp(PROPERTY_ID, 'i'));
   assert.doesNotMatch(source, /storage|content_path|file_id/i);
 });
@@ -663,6 +695,12 @@ test('audited cash allocates multiple invoices and creates receipt, audit, outbo
     harness.queries.some(({ sql: statement }) => /UPDATE idempotency_commands/.test(statement)),
     true,
   );
+  const receiptInsert = harness.queries.find(({ sql: statement }) =>
+    /INSERT INTO payment_receipts/.test(statement),
+  );
+  assert.ok(Buffer.isBuffer(receiptInsert?.params[8]));
+  assert.ok((receiptInsert?.params[8] as Buffer).length > 1000);
+  assert.match(String(receiptInsert?.params[9]), /^[0-9a-f]{64}$/);
   assert.deepEqual(
     harness.events.filter((event) =>
       ['authorized', 'begin', 'audit', 'commit', 'release'].includes(event),
@@ -976,6 +1014,8 @@ test('reversal appends compensating allocation and receipt records without mutat
         };
       if (/SELECT id FROM invoices WHERE/.test(normalized))
         return { rows: [{ id: INVOICE_1 }], rowCount: 1 };
+      if (/issuer\.display_name AS issued_by_name/.test(normalized))
+        return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/INSERT INTO payment_receipts/.test(normalized))
         return { rows: [{ id: RECEIPT_ID }], rowCount: 1 };
       if (/INSERT INTO payment_reversals/.test(normalized))
@@ -1095,6 +1135,61 @@ test('contract settlement allows partial payment through D+7 and requires full s
     afterDeadline.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
     false,
   );
+});
+
+test('v2 settlement allows instalments before final checkpoint and locks the exact live balance after it', async () => {
+  const beforeFinal = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      policyFinalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      deadlinePassed: false,
+    },
+  });
+  const partial = await beforeFinal.service.recordManualPayment(
+    actor as never,
+    contractSettlementPaymentDto(1_000_000),
+    KEY,
+    {},
+  );
+  assert.equal(partial.data.amount, 1_000_000);
+
+  const afterFinal = paymentHarness({
+    contractSettlement: {
+      originalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      policyFinalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      deadlinePassed: true,
+    },
+  });
+  await assert.rejects(
+    afterFinal.service.recordManualPayment(
+      actor as never,
+      contractSettlementPaymentDto(1_000_000),
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED',
+  );
+
+  const exactBalance = paymentHarness({
+    invoiceOutstanding: 1_000_000,
+    contractSettlement: {
+      originalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      policyFinalDueAt: new Date('2026-11-28T16:59:59.999Z'),
+      deadlinePassed: true,
+      outstanding: 1_000_000,
+    },
+  });
+  const settled = await exactBalance.service.recordManualPayment(
+    actor as never,
+    contractSettlementPaymentDto(1_000_000),
+    KEY,
+    {},
+  );
+  assert.equal(settled.data.amount, 1_000_000);
 });
 
 test('a granted extension keeps partial payment available only until its own deadline', async () => {

@@ -1,10 +1,14 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import {
   buildContractSchedule,
   type ContractPaymentPlan,
 } from '../helpers/contract-schedule.helper';
+import {
+  buildLeaseSettlementPolicySchedule,
+  SUPPORTED_LEASE_SETTLEMENT_TERMS,
+} from '../helpers/lease-settlement-policy.helper';
 
 /**
  * Canonical, transactional W05/W06 contract-schedule issuance authority.
@@ -57,6 +61,11 @@ export class ContractScheduleIssuanceService {
     client: PoolClient,
     input: ContractScheduleIssuanceInput,
   ): Promise<ContractScheduleIssuanceResult> {
+    if (!SUPPORTED_LEASE_SETTLEMENT_TERMS.includes(input.termMonths as 3 | 6 | 12))
+      throw new UnprocessableEntityException({
+        code: 'LEASE_SETTLEMENT_TERM_NOT_SUPPORTED',
+        message: 'New lease settlement supports only 3, 6, or 12 month terms',
+      });
     const schedule = buildContractSchedule({
       startDate: input.startDate,
       termMonths: input.termMonths,
@@ -151,13 +160,92 @@ export class ContractScheduleIssuanceService {
         code: 'CONTRACT_SCHEDULE_FIRST_INVOICE_MISSING',
         message: 'Initial rent invoice could not be issued',
       });
-    // The due date is deliberately assigned only at activation. A committed or
-    // approved schedule is not an occupancy and must not start the two-month
-    // settlement clock before check-in.
+    const settlementPolicy = buildLeaseSettlementPolicySchedule({
+      leaseStartDate: input.startDate,
+      termMonths: input.termMonths,
+      monthlyRentAmount: input.snapshotMonthlyPrice,
+    });
+    const policySnapshotId = randomUUID();
     await client.query(
-      `INSERT INTO lease_contract_settlements(property_id,lease_id,invoice_id,state)
-       VALUES($1,$2,$3,'awaiting_activation')`,
-      [input.propertyId, input.leaseId, firstInvoiceId],
+      `INSERT INTO lease_settlement_policy_snapshots(
+         id,property_id,lease_id,policy_version,term_months,checkpoint_anchor_day,
+         monthly_rent_amount,initial_month_minimum_amount,final_settlement_offset_months,
+         grace_period_days,maximum_extension_days,early_termination_notice_days,created_by_user_id
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,3,14,14,$10)`,
+      [
+        policySnapshotId,
+        input.propertyId,
+        input.leaseId,
+        settlementPolicy.policyVersion,
+        input.termMonths,
+        settlementPolicy.checkpointAnchorDay,
+        input.snapshotMonthlyPrice,
+        settlementPolicy.initialMonthMinimumAmount,
+        settlementPolicy.finalSettlementOffsetMonths,
+        input.actorUserId,
+      ],
+    );
+    for (const checkpoint of settlementPolicy.checkpoints) {
+      const checkpointId = randomUUID();
+      await client.query(
+        `INSERT INTO lease_settlement_checkpoints(
+           id,property_id,lease_id,policy_snapshot_id,checkpoint_code,checkpoint_sequence,
+           settlement_mode,due_at,minimum_required_amount
+         ) VALUES(
+           $1,$2,$3,$4,$5,$6,$7,
+           (($8::date + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta'),
+           $9
+         )`,
+        [
+          checkpointId,
+          input.propertyId,
+          input.leaseId,
+          policySnapshotId,
+          checkpoint.code,
+          checkpoint.sequence,
+          checkpoint.settlementMode,
+          checkpoint.dueDate,
+          checkpoint.minimumRequiredAmount,
+        ],
+      );
+      await client.query(
+        `INSERT INTO lease_settlement_checkpoint_events(
+           property_id,lease_id,checkpoint_id,event_type,actor_user_id,metadata
+         ) VALUES($1,$2,$3,'scheduled',$4,$5::jsonb)`,
+        [
+          input.propertyId,
+          input.leaseId,
+          checkpointId,
+          input.actorUserId,
+          JSON.stringify({
+            policy_version: settlementPolicy.policyVersion,
+            checkpoint_code: checkpoint.code,
+            due_date: checkpoint.dueDate,
+            settlement_mode: checkpoint.settlementMode,
+            minimum_required_amount: checkpoint.minimumRequiredAmount,
+          }),
+        ],
+      );
+    }
+    // The due date is deliberately assigned only at activation. A committed or
+    // approved schedule is not an occupancy. The v2 checkpoints retain their
+    // commercial date anchor, while their actionable status is projected only
+    // after the lease becomes active.
+    await client.query(
+      `INSERT INTO lease_contract_settlements(
+         property_id,lease_id,invoice_id,state,policy_snapshot_id
+       ) VALUES($1,$2,$3,'awaiting_activation',$4)`,
+      [input.propertyId, input.leaseId, firstInvoiceId, policySnapshotId],
+    );
+    await client.query(
+      `INSERT INTO lease_activation_lifecycles(
+         property_id,lease_id,state,cutoff_at,check_in_due_at
+       ) VALUES(
+         $1,$2,'scheduled',
+         (($3::date + TIME '00:05') AT TIME ZONE 'Asia/Jakarta'),
+         (($3::date + 1 + TIME '00:05') AT TIME ZONE 'Asia/Jakarta')
+       )`,
+      [input.propertyId, input.leaseId, input.startDate],
     );
     return { firstInvoiceId, installmentCount: schedule.length };
   }

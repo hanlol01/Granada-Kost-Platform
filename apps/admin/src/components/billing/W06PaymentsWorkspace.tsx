@@ -84,7 +84,7 @@ import { useProperty } from "@/lib/property/useProperty";
 import { ReminderComposerDialog } from "./ReminderComposerDialog";
 import { ReminderTemplateDialog } from "./ReminderTemplateDialog";
 
-type WorkspaceTab = "unpaid" | "paid" | "pending" | "other";
+type WorkspaceTab = "unpaid" | "paid" | "pending" | "corrections" | "other";
 
 export function W06PaymentsWorkspace() {
   const { user } = useAuth();
@@ -146,6 +146,7 @@ export function W06PaymentsWorkspace() {
     "pending_confirmation",
     paymentFilters,
   );
+  const reversedPayments = useBillingPayments(currentPropertyId, "reversed", paymentFilters);
   const proofs = useBillingProofs(currentPropertyId, "pending_review");
   const detail = useResidentBilling(currentPropertyId, selectedResidentId);
   const activeFilterCount =
@@ -222,7 +223,7 @@ export function W06PaymentsWorkspace() {
           description="Pembayaran tunai langsung terverifikasi. Transfer bank memerlukan bukti dan verifikasi sebelum mengurangi kewajiban sewa."
         />
         <Tabs value={tab} onValueChange={(value) => setTab(value as WorkspaceTab)}>
-          <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-xl border border-primary/20 bg-primary/10 p-1 sm:grid-cols-2 xl:grid-cols-4">
+          <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-xl border border-primary/20 bg-primary/10 p-1 sm:grid-cols-2 xl:grid-cols-5">
             <TabsTrigger
               className="min-h-12 w-full whitespace-normal px-3 text-center font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
               value="unpaid"
@@ -240,6 +241,12 @@ export function W06PaymentsWorkspace() {
               value="pending"
             >
               Pembayaran Menunggu Konfirmasi
+            </TabsTrigger>
+            <TabsTrigger
+              className="min-h-12 w-full whitespace-normal px-3 text-center font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+              value="corrections"
+            >
+              Koreksi & Refund
             </TabsTrigger>
             <TabsTrigger
               className="min-h-12 w-full whitespace-normal px-3 text-center font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -480,6 +487,70 @@ export function W06PaymentsWorkspace() {
                   currentPropertyId ? { propertyId: currentPropertyId, residentId } : null,
                 )
               }
+            />
+          </TabsContent>
+
+          <TabsContent value="corrections" className="space-y-4">
+            <PaymentFilterBar
+              search={paymentSearch}
+              method={paymentMethod}
+              purpose={paymentPurpose}
+              dueWithinDays={dueWithinDaysInput}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              onSearch={(value) => {
+                setPaymentSearch(value);
+                setPaymentOffset(0);
+              }}
+              onMethod={(value) => {
+                setPaymentMethod(value);
+                setPaymentOffset(0);
+              }}
+              onPurpose={(value) => {
+                setPaymentPurpose(value);
+                setPaymentOffset(0);
+              }}
+              onDueWithinDays={(value) => {
+                setDueWithinDaysInput(value);
+                setPaymentOffset(0);
+              }}
+              onQuickThirtyDays={() => {
+                setDueWithinDaysInput("30");
+                setPaymentOffset(0);
+              }}
+              onDateFromChange={(value) => {
+                setDateFrom(value);
+                setPaymentOffset(0);
+              }}
+              onDateToChange={(value) => {
+                setDateTo(value);
+                setPaymentOffset(0);
+              }}
+              onReset={() => {
+                setPaymentSearch("");
+                setPaymentMethod("");
+                setPaymentPurpose("");
+                setDueWithinDaysInput("");
+                setDateFrom("");
+                setDateTo("");
+                setPaymentOffset(0);
+              }}
+            />
+            {!reversedPayments.isFetching && !reversedPayments.isError ? (
+              <FilterResultNotice
+                key={`corrections:${paymentFilterSignature}`}
+                entityLabel="koreksi pembayaran"
+                resultCount={reversedPayments.data?.meta.total ?? 0}
+                activeFilterCount={paymentActiveFilterCount}
+                searchTerm={deferredPaymentSearch}
+                criteria={paymentFilterCriteria}
+              />
+            ) : null}
+            <CorrectionPanel
+              query={reversedPayments}
+              propertyId={currentPropertyId}
+              onOffset={setPaymentOffset}
             />
           </TabsContent>
 
@@ -1785,6 +1856,116 @@ function PaidPanel({
                       ) : (
                         <span className="text-xs text-muted-foreground">Belum diterbitkan</span>
                       )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <PageButtons
+        offset={query.data.meta.offset}
+        limit={query.data.meta.limit}
+        total={query.data.meta.total}
+        onOffset={onOffset}
+      />
+      <AdminReceiptDialog
+        propertyId={propertyId}
+        receiptId={receiptId}
+        onClose={() => setReceiptId(null)}
+      />
+    </div>
+  );
+}
+
+function CorrectionPanel({
+  query,
+  propertyId,
+  onOffset,
+}: {
+  query: ReturnType<typeof useBillingPayments>;
+  propertyId: string | null;
+  onOffset: (offset: number) => void;
+}) {
+  const [receiptId, setReceiptId] = useState<string | null>(null);
+  if (query.isPending) return <LoadingState label="Memuat koreksi dan refund..." />;
+  if (query.isError)
+    return (
+      <ErrorState
+        title="Riwayat koreksi tidak dapat dimuat"
+        error={query.error}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  if (!query.data?.data.length)
+    return (
+      <EmptyState
+        icon={<RotateCcw className="h-5 w-5" />}
+        title="Belum ada koreksi pembayaran"
+        description="Reversal dan refund pembayaran yang tercatat akan muncul di sini."
+      />
+    );
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardContent className="overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Penghuni / Kamar</TableHead>
+                <TableHead>Pembayaran awal</TableHead>
+                <TableHead>Koreksi</TableHead>
+                <TableHead>Alasan</TableHead>
+                <TableHead className="text-right">Nominal</TableHead>
+                <TableHead className="text-right">Dokumen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {query.data.data.map((payment) => (
+                <TableRow key={payment.id}>
+                  <TableCell>
+                    <p className="font-medium">{payment.resident_name}</p>
+                    <p className="text-xs text-muted-foreground">Kamar {payment.room_number}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="font-medium">{payment.payment_code}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu tidak tersedia"}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status="reversed" />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {payment.reversed_at ? timeOnly(payment.reversed_at) : "Waktu tidak tersedia"}
+                    </p>
+                  </TableCell>
+                  <TableCell className="max-w-72 whitespace-normal">
+                    {payment.reversal_reason ?? "Alasan koreksi tidak tersedia"}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold">
+                    {formatIDR(payment.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex min-w-56 flex-wrap justify-end gap-2">
+                      {payment.receipt_id ? (
+                        <Button
+                          className="min-h-11"
+                          variant="outline"
+                          onClick={() => setReceiptId(payment.receipt_id)}
+                        >
+                          Kuitansi awal
+                        </Button>
+                      ) : null}
+                      {payment.reversal_receipt_id ? (
+                        <Button
+                          className="min-h-11"
+                          variant="info"
+                          onClick={() => setReceiptId(payment.reversal_receipt_id)}
+                        >
+                          Dokumen reversal
+                        </Button>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>

@@ -1,6 +1,7 @@
 export type RoomStatus =
   | 'vacant'
   | 'reserved'
+  | 'awaiting_check_in'
   | 'occupied'
   | 'maintenance'
   | 'inactive'

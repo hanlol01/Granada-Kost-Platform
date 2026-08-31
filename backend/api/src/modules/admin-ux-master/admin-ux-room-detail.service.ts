@@ -544,7 +544,9 @@ export class AdminUxRoomDetailService {
         public_visible: Boolean(room.public_visible),
         notes: operationalRoomNotes(room.import_notes),
         structural_edit_locked:
-          ['reserved', 'occupied', 'maintenance', 'requires_review'].includes(status) ||
+          ['reserved', 'awaiting_check_in', 'occupied', 'maintenance', 'requires_review'].includes(
+            status,
+          ) ||
           Boolean(occupancy || lease) ||
           Boolean(room.active_hold_exists) ||
           Boolean(room.active_maintenance_exists) ||

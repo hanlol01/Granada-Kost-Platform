@@ -12,7 +12,12 @@ import {
   type OnboardingPayload,
 } from "./admin-onboarding";
 import { adminUxV2Requester } from "./admin-ux-api";
-import { parseLeaseActivation, requestLeaseActivation } from "./admin-lease-activation";
+import {
+  parseLeaseActivation,
+  parseLeaseCheckIn,
+  requestLeaseActivation,
+  requestLeaseCheckIn,
+} from "./admin-lease-activation";
 import {
   createOnboardingIdempotencyLedger,
   isOnboardingRequestCurrent,
@@ -225,7 +230,12 @@ test("activation stays a separate explicit command with an exact response envelo
     async (path, body, options) => {
       calls.push({ path, body, key: options.idempotencyKey });
       return {
-        data: { leaseId, leaseStatus: "active", occupancyStatus: "active", roomNumber: "RK-01-01" },
+        data: {
+          leaseId,
+          leaseStatus: "active",
+          occupancyStatus: "awaiting_check_in",
+          roomNumber: "RK-01-01",
+        },
       };
     },
     leaseId,
@@ -233,10 +243,49 @@ test("activation stays a separate explicit command with an exact response envelo
     "w05-activation-key-0001",
   );
   assert.equal(result.leaseStatus, "active");
+  assert.equal(result.occupancyStatus, "awaiting_check_in");
   assert.equal(calls[0].path, `/leases/${leaseId}/activate`);
   assert.deepEqual(calls[0].body, { property_id: id });
   assert.equal(calls[0].key, "w05-activation-key-0001");
   assert.throws(() => parseLeaseActivation({ data: { leaseId, leaseStatus: "active" } }));
+});
+
+test("physical check-in is a separate exact command that creates occupancy", async () => {
+  const leaseId = "22222222-2222-4222-8222-222222222222";
+  const occupancyId = "33333333-3333-4333-8333-333333333333";
+  const calls: Array<{ path: string; body: object; key: string }> = [];
+  const result = await requestLeaseCheckIn(
+    async (path, body, options) => {
+      calls.push({ path, body, key: options.idempotencyKey });
+      return {
+        data: {
+          leaseId,
+          occupancyId,
+          occupancyStatus: "active",
+          roomStatus: "occupied",
+          checkedInAt: "2026-08-29T03:00:00.000Z",
+        },
+      };
+    },
+    leaseId,
+    id,
+    "w05-check-in-key-0001",
+  );
+  assert.equal(result.occupancyId, occupancyId);
+  assert.equal(calls[0].path, `/leases/${leaseId}/check-in`);
+  assert.deepEqual(calls[0].body, { property_id: id });
+  assert.equal(calls[0].key, "w05-check-in-key-0001");
+  assert.throws(() =>
+    parseLeaseCheckIn({
+      data: {
+        leaseId,
+        occupancyId,
+        occupancyStatus: "active",
+        roomStatus: "awaiting_check_in",
+        checkedInAt: "2026-08-29T03:00:00.000Z",
+      },
+    }),
+  );
 });
 
 test("credential is separated before mutation cache while receipt remains available once", () => {

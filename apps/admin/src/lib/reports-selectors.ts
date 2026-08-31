@@ -36,6 +36,7 @@ export function selectOccupancySummary(rooms: readonly RoomRecord[]): OccupancyS
   const counts: Record<RoomStatus, number> = {
     vacant: 0,
     reserved: 0,
+    awaiting_check_in: 0,
     occupied: 0,
     maintenance: 0,
     inactive: 0,

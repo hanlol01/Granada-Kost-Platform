@@ -25,7 +25,16 @@ export class ListResidentsQueryDto {
   account_status?: string;
 
   @IsOptional()
-  @IsIn(['booking_fee', 'down_payment', 'partial_payment', 'paid_in_full'])
+  @IsIn([
+    'pending_verification',
+    'booking_fee',
+    'down_payment',
+    'initial_month_payment',
+    'partial_payment',
+    'paid_in_full',
+    'reversed_refunded',
+    'outstanding_balance',
+  ])
   rent_payment_status?: string;
 
   @IsOptional()
@@ -41,11 +50,17 @@ export class ListResidentsQueryDto {
     'awaiting_activation',
     'checkpoint_one_pending',
     'checkpoint_one_met',
+    'checkpoint_two_pending',
+    'checkpoint_two_met',
     'final_settlement_due',
     'overdue',
+    'overdue_grace',
+    'extended',
     'admin_action_required',
+    'termination_eligible',
     'termination_pending',
     'paid_in_full',
+    'preactivation_cancelled',
   ])
   contract_settlement_stage?: string;
 

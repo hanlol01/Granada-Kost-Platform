@@ -471,15 +471,12 @@ export function RoomDiscoveryFilters({
 }) {
   const [searchText, setSearchText] = useState(search.q);
   useEffect(() => setSearchText(search.q), [search.q]);
-  useEffect(() => {
-    const nextQuery = searchText.trim();
+  const handleSearchInput = (value: string) => {
+    setSearchText(value);
+    const nextQuery = value.trim();
     if (nextQuery === search.q) return;
-
-    const searchTimer = window.setTimeout(() => {
-      onSearchChange({ q: nextQuery, offset: 0 });
-    }, 300);
-    return () => window.clearTimeout(searchTimer);
-  }, [onSearchChange, search.q, searchText]);
+    onSearchChange({ q: nextQuery, offset: 0 });
+  };
 
   const applySearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -496,7 +493,7 @@ export function RoomDiscoveryFilters({
               aria-label="Cari kamar"
               placeholder={`Cari ${category ? KOST_TYPE_LABEL[category].toLowerCase() : "kamar, bangunan, tipe, atau penghuni"}...`}
               value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
+              onChange={(event) => handleSearchInput(event.target.value)}
             />
           </div>
         </form>

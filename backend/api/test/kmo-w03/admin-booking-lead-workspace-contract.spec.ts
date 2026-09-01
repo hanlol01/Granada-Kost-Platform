@@ -30,6 +30,7 @@ const lead = (status: BookingLeadRecord['status'] = 'new'): BookingLeadRecord =>
   visitorUniversity: null,
   visitorMessage: null,
   preferredMoveInDate: null,
+  paymentCommitmentStartDate: null,
   activeLeaseStartDate: null,
   status,
   source: 'public_kamar',
@@ -55,6 +56,8 @@ test('repository list is property-aligned, repeatable-read, counted and determin
   assert.match(repository, /COUNT\(\*\)::int AS total/);
   assert.match(repository, /rooms\.property_id = booking_leads\.property_id/);
   assert.match(repository, /active_lease\.property_id = booking_leads\.property_id/);
+  assert.match(repository, /payment_commitment\.property_id = booking_leads\.property_id/);
+  assert.match(repository, /payment_commitment_start_date/);
   assert.match(repository, /active_lease\.lease_status IN \('awaiting_activation','active'\)/);
   assert.match(repository, /active_lease_start_date/);
   assert.match(repository, /ORDER BY booking_leads\.created_at DESC, booking_leads\.id DESC/);
@@ -109,6 +112,7 @@ test('Admin projection remains a strict PII-minimized whitelist', () => {
   assert.doesNotMatch(response, /metadata:|createdByUserId:|consentAt:|visitorEmail:/);
   assert.match(response, /roomNumber/);
   assert.match(response, /publicGroupKey/);
+  assert.match(response, /paymentCommitmentStartDate/);
   assert.match(response, /activeLeaseStartDate/);
 });
 

@@ -309,13 +309,18 @@ export class OnboardingService {
          JOIN LATERAL (
            SELECT monthly_price,annual_contract_value,security_deposit_months
            FROM kost_type_commercial_versions
-           WHERE kost_type_id=kt.id AND effective_date<=$3::date
-           ORDER BY effective_date DESC,id DESC
+           WHERE kost_type_id=kt.id
+             AND (effective_date<=$3::date OR $4::boolean)
+           ORDER BY
+             CASE WHEN effective_date<=$3::date THEN 0 ELSE 1 END,
+             CASE WHEN effective_date<=$3::date THEN effective_date END DESC,
+             effective_date ASC,
+             id ASC
            LIMIT 1
          ) kcv ON true
          WHERE r.id=$1 AND r.property_id=$2
          FOR UPDATE OF r,rb,kt`,
-          [roomId, dto.property_id, dto.start_date],
+          [roomId, dto.property_id, dto.start_date, leadPaymentCommitment !== null],
         );
         const room = roomResult.rows[0];
         if (!room)

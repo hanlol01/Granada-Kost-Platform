@@ -30,12 +30,14 @@ const LEAD_A = '44444444-4444-4444-8444-444444444444';
 const ACTOR_A = '55555555-5555-4555-8555-555555555555';
 
 const ADMIN_RESPONSE_KEYS = [
+  'activeLeaseStartDate',
   'buildingCode',
   'category',
   'createdAt',
   'floorCode',
   'gender',
   'id',
+  'paymentCommitmentStartDate',
   'preferredMoveInDate',
   'propertyId',
   'publicGroupKey',
@@ -94,6 +96,8 @@ function lead(overrides: Partial<BookingLeadRecord> = {}): BookingLeadRecord {
     visitorUniversity: 'Universitas Contoh',
     visitorMessage: null,
     preferredMoveInDate: null,
+    paymentCommitmentStartDate: null,
+    activeLeaseStartDate: null,
     status: 'new',
     source: 'admin_quick_entry',
     metadata: null,
@@ -341,6 +345,8 @@ test('Admin create derives room facts, normalizes phone, returns whitelist, and 
     visitorUniversity: 'Universitas Contoh',
     visitorMessage: null,
     preferredMoveInDate: null,
+    paymentCommitmentStartDate: null,
+    activeLeaseStartDate: null,
     status: 'new',
     source: 'admin_quick_entry',
     createdAt: new Date('2026-07-28T00:00:00.000Z'),

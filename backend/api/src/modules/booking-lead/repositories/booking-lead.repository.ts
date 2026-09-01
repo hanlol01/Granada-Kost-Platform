@@ -22,6 +22,7 @@ type BookingLeadRow = {
   property_id: string;
   room_id: string | null;
   room_number?: string | null;
+  payment_commitment_start_date?: string | Date | null;
   active_lease_start_date?: string | Date | null;
   category: BookingLeadCategory;
   gender: BookingLeadGender;
@@ -382,6 +383,7 @@ export class BookingLeadRepository {
     const result = await this.database.client.query<BookingLeadRow>(
       `SELECT ${this.columns('booking_leads')},
               rooms.number AS room_number,
+              payment_commitment.start_date::text AS payment_commitment_start_date,
               active_lease.start_date::text AS active_lease_start_date
        FROM booking_leads
        LEFT JOIN rooms
@@ -390,6 +392,9 @@ export class BookingLeadRepository {
        LEFT JOIN onboarding_commitments onboarding
          ON onboarding.id = booking_leads.onboarding_commitment_id
         AND onboarding.property_id = booking_leads.property_id
+       LEFT JOIN booking_lead_payment_commitments payment_commitment
+         ON payment_commitment.booking_lead_id = booking_leads.id
+        AND payment_commitment.property_id = booking_leads.property_id
        LEFT JOIN leases active_lease
          ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
         AND active_lease.property_id = booking_leads.property_id
@@ -484,6 +489,7 @@ export class BookingLeadRepository {
       const rows = await client.query<BookingLeadRow>(
         `SELECT ${this.columns('booking_leads')},
               rooms.number AS room_number,
+              payment_commitment.start_date::text AS payment_commitment_start_date,
               active_lease.start_date::text AS active_lease_start_date
          FROM booking_leads
          LEFT JOIN rooms
@@ -492,6 +498,9 @@ export class BookingLeadRepository {
          LEFT JOIN onboarding_commitments onboarding
            ON onboarding.id = booking_leads.onboarding_commitment_id
           AND onboarding.property_id = booking_leads.property_id
+         LEFT JOIN booking_lead_payment_commitments payment_commitment
+           ON payment_commitment.booking_lead_id = booking_leads.id
+          AND payment_commitment.property_id = booking_leads.property_id
          LEFT JOIN leases active_lease
            ON active_lease.id = COALESCE(booking_leads.lease_id, onboarding.lease_id)
           AND active_lease.property_id = booking_leads.property_id
@@ -706,6 +715,7 @@ export class BookingLeadRepository {
       visitorUniversity: row.visitor_university,
       visitorMessage: row.visitor_message,
       preferredMoveInDate: this.dateOnly(row.preferred_move_in_date),
+      paymentCommitmentStartDate: this.dateOnly(row.payment_commitment_start_date ?? null),
       activeLeaseStartDate: this.dateOnly(row.active_lease_start_date ?? null),
       status: row.status,
       source: row.source,

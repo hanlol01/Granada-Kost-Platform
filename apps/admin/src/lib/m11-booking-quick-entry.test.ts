@@ -280,6 +280,7 @@ const record = {
   visitorPhone: "6281234567890",
   visitorMessage: null,
   preferredMoveInDate: null,
+  paymentCommitmentStartDate: null,
   activeLeaseStartDate: null,
   status: "new",
   source: "admin_quick_entry",
@@ -412,11 +413,11 @@ test("payload remains the exact seven-key server-authority contract", () => {
   }
 });
 
-test("parser accepts only the exact 20-field record and copies its whitelist", () => {
+test("parser accepts only the exact 21-field record and copies its whitelist", () => {
   const parsed = parseAdminBookingLead(record);
   assert.deepEqual(parsed, record);
   assert.notEqual(parsed, record);
-  assert.equal(Object.keys(parsed).length, 20);
+  assert.equal(Object.keys(parsed).length, 21);
 });
 
 test("parser rejects missing, extra, invalid enum, and invalid nullability", async () => {
@@ -435,6 +436,7 @@ test("parser rejects missing, extra, invalid enum, and invalid nullability", asy
     { ...record, buildingCode: "" },
     { ...record, visitorUniversity: "" },
     { ...record, preferredMoveInDate: "2026-02-30" },
+    { ...record, paymentCommitmentStartDate: "2026-02-30" },
     { ...record, createdAt: "not-a-timestamp" },
     { ...record, visitorAddress: undefined },
   ]) {

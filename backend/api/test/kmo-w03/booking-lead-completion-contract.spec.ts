@@ -150,6 +150,26 @@ test('completion quote is a property-authorized active-hold read model', () => {
   assert.match(service, /this\.assertEligible\(value, value\.lead_status === 'onboarding'\)/);
 });
 
+test('commercial authority uses the lease start date and preserves completed pre-cutover leads', () => {
+  const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
+
+  assert.match(
+    service,
+    /this\.lockContext\(\s*client,\s*leadId,\s*dto\.property_id,\s*true,\s*dto\.start_date,?\s*\)/,
+    'a new payment commitment must be priced against its requested lease start date',
+  );
+  assert.match(
+    service,
+    /OR lead\.status = 'onboarding'/,
+    'only an already-completed lead may fall back to the initial commercial version',
+  );
+  assert.match(
+    service,
+    /CASE\s+WHEN commercial_version\.effective_date <= commercial_effective\.target_date\s+THEN 0\s+ELSE 1\s+END/,
+    'an effective historical version must win before the onboarding compatibility fallback',
+  );
+});
+
 test('progress projection keeps a property-scoped active tenancy resident and lease start date', () => {
   const service = source('src/modules/booking-lead/booking-lead-completion.service.ts');
   assert.match(service, /lease\.resident_id/);

@@ -273,7 +273,7 @@ export class BookingLeadCompletionService {
         return replay;
       }
 
-      const context = await this.lockContext(client, leadId, dto.property_id);
+      const context = await this.lockContext(client, leadId, dto.property_id, true, dto.start_date);
       this.assertEligible(context);
       const rentTotal = this.contractRent(context, dto);
       this.assertPayment(dto, rentTotal);
@@ -1096,7 +1096,35 @@ export class BookingLeadCompletionService {
        LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=lead.property_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=lead.property_id
        LEFT JOIN kost_types kost_type ON kost_type.id=room.kost_type_id AND kost_type.property_id=lead.property_id
-       LEFT JOIN kost_type_commercial_versions commercial ON commercial.kost_type_id=kost_type.id AND commercial.effective_date <= COALESCE($3::date, (now() AT TIME ZONE 'Asia/Jakarta')::date)
+       CROSS JOIN LATERAL (
+         SELECT COALESCE(
+           $3::date,
+           (now() AT TIME ZONE 'Asia/Jakarta')::date
+         ) AS target_date
+       ) commercial_effective
+       LEFT JOIN LATERAL (
+         SELECT commercial_version.monthly_price,
+                commercial_version.annual_contract_value,
+                commercial_version.effective_date
+           FROM kost_type_commercial_versions commercial_version
+          WHERE commercial_version.kost_type_id=kost_type.id
+            AND (
+              commercial_version.effective_date <= commercial_effective.target_date
+              OR lead.status = 'onboarding'
+            )
+          ORDER BY
+            CASE
+              WHEN commercial_version.effective_date <= commercial_effective.target_date
+                THEN 0
+              ELSE 1
+            END,
+            CASE
+              WHEN commercial_version.effective_date <= commercial_effective.target_date
+                THEN commercial_version.effective_date
+            END DESC,
+            commercial_version.effective_date ASC
+          LIMIT 1
+       ) commercial ON true
        WHERE lead.id=$1 AND lead.property_id=$2
        ORDER BY commercial.effective_date DESC NULLS LAST
        LIMIT 1${lock ? ' FOR UPDATE OF lead' : ''}`,

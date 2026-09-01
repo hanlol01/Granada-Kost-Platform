@@ -683,6 +683,7 @@ export class BookingLeadService {
       visitorUniversity: lead.visitorUniversity,
       visitorMessage: lead.visitorMessage,
       preferredMoveInDate: lead.preferredMoveInDate,
+      paymentCommitmentStartDate: lead.paymentCommitmentStartDate,
       activeLeaseStartDate: lead.activeLeaseStartDate,
       status: lead.status,
       source: lead.source,

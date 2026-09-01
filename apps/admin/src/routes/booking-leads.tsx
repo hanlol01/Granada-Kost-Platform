@@ -55,6 +55,7 @@ import {
   BOOKING_LEAD_SOURCE_LABEL,
   BOOKING_LEAD_STATUS_LABEL,
   bookingLeadDisplayStatus,
+  bookingLeadEffectiveMoveInDate,
   useBookingLeads,
   type BookingLeadCategory,
   type BookingLeadGender,
@@ -131,7 +132,8 @@ function moveInDate(lead: BookingLeadRecord): string {
       ? formatDate(lead.activeLeaseStartDate)
       : "Tanggal sewa belum tersedia";
   }
-  return lead.preferredMoveInDate ? formatDate(lead.preferredMoveInDate) : "Belum ditentukan";
+  const plannedMoveInDate = bookingLeadEffectiveMoveInDate(lead);
+  return plannedMoveInDate ? formatDate(plannedMoveInDate) : "Belum ditentukan";
 }
 
 function isAwaitingActivation(lead: BookingLeadRecord): boolean {

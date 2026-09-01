@@ -541,4 +541,13 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_audit_logs_property_actor_time') IS NOT NULL",
     ],
   },
+  {
+    version: '057_property_university_catalog.sql',
+    checksumSha256: 'c90d0928226ee23bf17a5b2d490bbf48381428e053cd60e98b5ba326e6608af9',
+    sentinels: [
+      "to_regclass('public.property_universities') IS NOT NULL",
+      "to_regclass('public.uq_property_universities_property_normalized') IS NOT NULL",
+      "to_regclass('public.idx_property_universities_property_name') IS NOT NULL",
+    ],
+  },
 ] as const;

@@ -7,11 +7,25 @@ import { ResidentController } from './resident.controller';
 import { ResidentRepository } from './repositories/resident.repository';
 import { ResidentAccountService } from './resident-account.service';
 import { ResidentService } from './resident.service';
+import { UniversityRepository } from './repositories/university.repository';
+import { UniversityService } from './university.service';
 
 @Module({
   imports: [FileModule, PropertyModule, RbacModule],
   controllers: [ResidentController, MyResidentContextController],
-  providers: [ResidentRepository, ResidentService, ResidentAccountService],
-  exports: [ResidentRepository, ResidentService, ResidentAccountService],
+  providers: [
+    ResidentRepository,
+    ResidentService,
+    ResidentAccountService,
+    UniversityRepository,
+    UniversityService,
+  ],
+  exports: [
+    ResidentRepository,
+    ResidentService,
+    ResidentAccountService,
+    UniversityRepository,
+    UniversityService,
+  ],
 })
 export class ResidentModule {}

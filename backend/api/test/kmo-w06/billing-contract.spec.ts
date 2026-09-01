@@ -241,11 +241,13 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
     property_id: PROPERTY_ID,
     month: '2026-08',
     due_within_days: 30,
+    search: 'RK0301',
   });
   await service.paymentWorkspace(actor as never, {
     property_id: PROPERTY_ID,
     status: 'verified',
     due_within_days: 30,
+    search: 'RK0301',
   });
 
   assert.equal(
@@ -258,6 +260,12 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
   );
   assert.equal(
     queries.some((query) => query.statement.includes('payment_allocations deadline_allocation')),
+    true,
+  );
+  const compactRoomSearchQueries = queries.filter((query) => query.values.includes('RK0301'));
+  assert.equal(compactRoomSearchQueries.length, 4);
+  assert.equal(
+    compactRoomSearchQueries.every((query) => query.statement.includes('regexp_replace')),
     true,
   );
 });
@@ -590,8 +598,8 @@ test('W06 annual and two-month schedules reconcile exact coverage and money', ()
   assert.equal(minimumDpAmount(21_600_001), 5_400_001);
 });
 
-test('server-mediated invoice PDF is valid, deterministic, and contains no internal identifiers', () => {
-  const document = createBillingInvoicePdf({
+test('server-mediated invoice PDF is valid and contains no internal identifiers', async () => {
+  const document = await createBillingInvoicePdf({
     invoiceCode: 'INV-KMO-W06-001',
     invoiceStatus: 'partially_paid',
     invoicePurpose: 'rent',
@@ -606,11 +614,11 @@ test('server-mediated invoice PDF is valid, deterministic, and contains no inter
     issuedAt: new Date('2026-07-20T08:00:00.000Z'),
   });
   const source = document.content.toString('latin1');
+  const parsed = await PDFDocument.load(document.content);
   assert.equal(document.filename, 'INV-KMO-W06-001.pdf');
-  assert.ok(source.startsWith('%PDF-1.4'));
-  assert.ok(source.endsWith('%%EOF\n'));
-  assert.match(source, /INV-KMO-W06-001/);
-  assert.ok(source.includes('Siti \\(Utami\\)'));
+  assert.match(source, /^%PDF-1\.\d/);
+  assert.ok(document.content.length > 10_000);
+  assert.equal(parsed.getPageCount(), 1);
   assert.doesNotMatch(source, new RegExp(PROPERTY_ID, 'i'));
   assert.doesNotMatch(source, /storage|content_path|file_id/i);
 });

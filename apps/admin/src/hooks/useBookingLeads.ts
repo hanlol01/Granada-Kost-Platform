@@ -33,6 +33,7 @@ export type {
 } from "@/lib/admin-booking-lead";
 export {
   bookingLeadDisplayStatus,
+  bookingLeadEffectiveMoveInDate,
   canCancelBookingLeadPaymentCommitment,
 } from "@/lib/admin-booking-lead";
 

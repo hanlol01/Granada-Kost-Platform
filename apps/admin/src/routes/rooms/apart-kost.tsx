@@ -84,6 +84,7 @@ function ApartKostRoute() {
       }}
       onSearchChange={(next) =>
         navigate({
+          resetScroll: false,
           search: (current) => ({
             q: Object.prototype.hasOwnProperty.call(next, "q") ? (next.q ?? "") : current.q,
             building_id: Object.prototype.hasOwnProperty.call(next, "buildingId")

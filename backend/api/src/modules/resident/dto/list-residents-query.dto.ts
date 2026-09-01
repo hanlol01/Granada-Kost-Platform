@@ -72,6 +72,13 @@ export class ListResidentsQueryDto {
   settlement_due_within_days?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  lease_end_within_days?: number;
+
+  @IsOptional()
   @IsString()
   q?: string;
 

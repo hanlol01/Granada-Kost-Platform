@@ -626,6 +626,36 @@ test('property-scoped resident lookup carries the property predicate to SQL', as
   assert.match(calls[0].sql, /residents\.property_id = \$2/);
   assert.deepEqual(calls[0].params, [RESIDENT_ID, PROPERTY_ID]);
 });
+
+test('resident search matches compact room numbers against formatted room numbers', async () => {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const repository = new ResidentRepository({
+    client: {
+      query: async (sql: string, params: unknown[]) => {
+        calls.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      },
+    },
+  } as never);
+
+  await repository.list({ property_id: PROPERTY_ID, q: 'RK0301' } as never);
+  await repository.count({ property_id: PROPERTY_ID, q: 'RK0301' } as never);
+
+  assert.equal(calls.length, 2);
+  assert.equal(
+    calls.every((call) => call.params.includes('RK0301')),
+    true,
+  );
+  assert.equal(
+    calls.every((call) => call.sql.includes('regexp_replace')),
+    true,
+  );
+  assert.equal(
+    calls.every((call) => !call.sql.includes('projection.room_number ILIKE')),
+    true,
+  );
+});
+
 test('migration and source freeze identity uniqueness, one-time receipt and W05 boundary', () => {
   const migration = readFileSync(
     resolve(

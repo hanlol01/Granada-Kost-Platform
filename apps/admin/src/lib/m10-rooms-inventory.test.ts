@@ -373,3 +373,18 @@ test("sidebar scrollbars remain visible, thin, and theme-aware", () => {
   assert.match(styles, /\.app-scrollbar::?-webkit-scrollbar/);
   assert.doesNotMatch(styles, /scrollbar-width:\s*none|scrollbar[^{}]*display:\s*none/s);
 });
+
+test("room search navigation preserves the viewport while filters update", () => {
+  for (const routePath of [
+    "routes/rooms/index.tsx",
+    "routes/rooms/rumah-kost.tsx",
+    "routes/rooms/apart-kost.tsx",
+  ]) {
+    const route = readAdminSource(routePath);
+    assert.match(
+      route,
+      /navigate\(\{[\s\S]*?resetScroll:\s*false[\s\S]*?search:/,
+      `${routePath} must disable scroll reset when updating room filters`,
+    );
+  }
+});

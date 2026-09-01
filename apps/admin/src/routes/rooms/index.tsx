@@ -97,6 +97,7 @@ function RoomsPage() {
     const categoryChanged =
       Object.prototype.hasOwnProperty.call(next, "category") && next.category !== search.category;
     void navigate({
+      resetScroll: false,
       search: (current) => ({
         ...current,
         ...next,

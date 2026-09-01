@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   parseAdminBookingLeadPage,
   bookingLeadDisplayStatus,
+  bookingLeadEffectiveMoveInDate,
   canCancelBookingLeadPaymentCommitment,
   requestArchiveAdminBookingLead,
   requestAdminBookingLeadPage,
@@ -31,6 +32,7 @@ const lead: BookingLeadRecord = {
   visitorUniversity: "Universitas Demo",
   visitorMessage: null,
   preferredMoveInDate: "2026-08-10",
+  paymentCommitmentStartDate: null,
   activeLeaseStartDate: null,
   status: "new",
   source: "public_kamar",
@@ -111,6 +113,7 @@ test("workspace uses canonical queue vocabulary and removes obsolete survey conv
   assert.match(page, /Belum dipilih/);
   assert.match(page, /min-h-11/);
   assert.match(page, /function moveInDate/);
+  assert.match(page, /bookingLeadEffectiveMoveInDate\(lead\)/);
   assert.match(page, /lead\.activeLeaseStartDate/);
 });
 
@@ -134,6 +137,21 @@ test("completed tenancy is presented as awaiting activation and keeps its lease 
   const onboarding = backendSource("api/src/modules/resident/onboarding.service.ts");
   assert.match(onboarding, /lease_id=\$4/);
   assert.match(onboarding, /preferred_move_in_date=\$5::date/);
+});
+
+test("paid onboarding uses its committed start date as the planned move-in date", () => {
+  const paidOnboardingLead: BookingLeadRecord = {
+    ...lead,
+    status: "onboarding",
+    preferredMoveInDate: null,
+    paymentCommitmentStartDate: "2026-09-01",
+    activeLeaseStartDate: null,
+  };
+  assert.equal(bookingLeadEffectiveMoveInDate(paidOnboardingLead), "2026-09-01");
+  assert.equal(
+    bookingLeadEffectiveMoveInDate({ ...paidOnboardingLead, activeLeaseStartDate: "2026-09-02" }),
+    "2026-09-02",
+  );
 });
 
 test("active tenancy detail exposes property-safe fast links only from the progress projection", () => {

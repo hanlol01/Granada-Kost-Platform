@@ -39,6 +39,18 @@ import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
 type TenantRouteSearch = { flow?: "new-lease"; bookingLeadId?: string };
+type DeadlineTarget = "settlement" | "lease_end";
+
+const DEADLINE_DAY_OPTIONS = [7, 14, 30] as const;
+
+const deadlineTargetCopy: Record<DeadlineTarget, { resultLabel: string }> = {
+  settlement: {
+    resultLabel: "tenggat checkpoint",
+  },
+  lease_end: {
+    resultLabel: "masa sewa berakhir",
+  },
+};
 
 function validateSearch(raw: Record<string, unknown>): TenantRouteSearch {
   const bookingLeadId =
@@ -223,7 +235,8 @@ function TenantsPage() {
   const [settlementStage, setSettlementStage] = useState<
     Exclude<ContractSettlementStage, "none"> | "all"
   >("all");
-  const [settlementDueWithinDays, setSettlementDueWithinDays] = useState("");
+  const [deadlineTarget, setDeadlineTarget] = useState<DeadlineTarget>("settlement");
+  const [deadlineWithinDays, setDeadlineWithinDays] = useState("");
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
   const [offset, setOffset] = useState(0);
@@ -243,7 +256,13 @@ function TenantsPage() {
     tenancyStatus: tenancyStatus === "all" ? undefined : tenancyStatus,
     settlementStage: settlementStage === "all" ? undefined : settlementStage,
     settlementDueWithinDays:
-      settlementDueWithinDays === "" ? undefined : Number(settlementDueWithinDays),
+      deadlineTarget === "settlement" && deadlineWithinDays !== ""
+        ? Number(deadlineWithinDays)
+        : undefined,
+    leaseEndWithinDays:
+      deadlineTarget === "lease_end" && deadlineWithinDays !== ""
+        ? Number(deadlineWithinDays)
+        : undefined,
     createdFrom: createdFrom || undefined,
     createdTo: createdTo || undefined,
     limit: PAGE_SIZE,
@@ -258,7 +277,7 @@ function TenantsPage() {
     gender !== "all" ||
     tenancyStatus !== "all" ||
     settlementStage !== "all" ||
-    settlementDueWithinDays !== "" ||
+    deadlineWithinDays !== "" ||
     Boolean(createdFrom) ||
     Boolean(createdTo);
   const activeFilterCount =
@@ -268,7 +287,7 @@ function TenantsPage() {
     Number(gender !== "all") +
     Number(tenancyStatus !== "all") +
     Number(settlementStage !== "all") +
-    Number(settlementDueWithinDays !== "") +
+    Number(deadlineWithinDays !== "") +
     Number(Boolean(createdFrom)) +
     Number(Boolean(createdTo));
   const filterSignature = [
@@ -278,7 +297,8 @@ function TenantsPage() {
     gender,
     tenancyStatus,
     settlementStage,
-    settlementDueWithinDays,
+    deadlineTarget,
+    deadlineWithinDays,
     createdFrom,
     createdTo,
   ].join("|");
@@ -342,7 +362,9 @@ function TenantsPage() {
           }[settlementStage]
         }`
       : "",
-    settlementDueWithinDays !== "" ? `tenggat dalam ${settlementDueWithinDays} hari` : "",
+    deadlineWithinDays !== ""
+      ? `${deadlineTargetCopy[deadlineTarget].resultLabel} dalam ${deadlineWithinDays} hari`
+      : "",
     createdFrom && createdTo
       ? `dibuat ${formatResidentDate(createdFrom)} sampai ${formatResidentDate(createdTo)}`
       : createdFrom
@@ -363,7 +385,8 @@ function TenantsPage() {
     setGender("all");
     setTenancyStatus("all");
     setSettlementStage("all");
-    setSettlementDueWithinDays("");
+    setDeadlineTarget("settlement");
+    setDeadlineWithinDays("");
     setCreatedFrom("");
     setCreatedTo("");
     setOffset(0);
@@ -548,43 +571,82 @@ function TenantsPage() {
                 <SelectItem value="preactivation_cancelled">Dibatalkan pra-aktivasi</SelectItem>
               </SelectContent>
             </Select>
-            <div className="grid grid-cols-2 gap-2 xl:col-span-2">
+            <div className="grid gap-2 md:col-span-2 sm:grid-cols-2 xl:col-span-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
+              <Select
+                value={deadlineTarget}
+                onValueChange={(value) => {
+                  setDeadlineTarget(value as DeadlineTarget);
+                  setOffset(0);
+                }}
+              >
+                <SelectTrigger className="min-h-11" aria-label="Sasaran tenggat yang dipantau">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="settlement">Tenggat checkpoint pembayaran</SelectItem>
+                  <SelectItem value="lease_end">Akhir masa sewa</SelectItem>
+                </SelectContent>
+              </Select>
               <div className="relative">
                 <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                {deadlineWithinDays === "" ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                  >
+                    Tenggat maksimal (hari)
+                  </span>
+                ) : null}
                 <Input
                   type="number"
                   min="0"
                   max="3650"
                   inputMode="numeric"
-                  value={settlementDueWithinDays}
+                  value={deadlineWithinDays}
                   onChange={(event) => {
                     const next = event.target.value;
                     if (next === "" || (/^\d+$/.test(next) && Number(next) <= 3650)) {
-                      setSettlementDueWithinDays(next);
+                      setDeadlineWithinDays(next);
                       setOffset(0);
                     }
                   }}
                   placeholder="Tenggat ≤ hari"
-                  className="min-h-11 pl-9"
-                  aria-label="Tenggat pelunasan dalam hari"
+                  className="min-h-11 pl-9 placeholder:text-transparent"
+                  aria-label="Tenggat maksimal dalam hari"
                 />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-11 border-primary/40 text-primary hover:bg-primary-soft"
-                onClick={() => {
-                  setSettlementDueWithinDays("30");
-                  setOffset(0);
-                }}
+              <div
+                className="grid grid-cols-3 gap-2 sm:col-span-2 xl:col-span-1"
+                role="group"
+                aria-label="Pilihan cepat jangka waktu tenggat"
               >
-                Cek 30 Hari Lagi
-              </Button>
+                {DEADLINE_DAY_OPTIONS.map((days) => {
+                  const value = String(days);
+                  const selected = deadlineWithinDays === value;
+                  return (
+                    <Button
+                      key={days}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      className="min-h-11 px-2"
+                      aria-pressed={selected}
+                      aria-label={`${days} hari`}
+                      title={`${days} hari`}
+                      onClick={() => {
+                        setDeadlineWithinDays(selected ? "" : value);
+                        setOffset(0);
+                      }}
+                    >
+                      {days}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
             <Button
               type="button"
               variant="destructive"
-              className="min-h-11"
+              className="min-h-11 md:col-span-2 xl:col-start-6 xl:col-span-1"
               disabled={!hasFilter}
               onClick={resetFilters}
             >
@@ -670,7 +732,14 @@ function TenantsPage() {
                       <td className="px-4 py-3 font-medium">{resident.fullName}</td>
                       <td className="px-4 py-3">{resident.roomNumber ?? "Belum ditempatkan"}</td>
                       <td className="px-4 py-3">{resident.university ?? "Belum diisi"}</td>
-                      <td className="px-4 py-3">{leaseDuration(resident)}</td>
+                      <td className="px-4 py-3">
+                        <p>{leaseDuration(resident)}</p>
+                        {deadlineTarget === "lease_end" && deadlineWithinDays !== "" && resident.leaseEnd ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Akhir sewa: {formatResidentDate(resident.leaseEnd)}
+                          </p>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3">
                         <RentPaymentStatusPill status={resident.rentPaymentStatus} />
                       </td>
@@ -679,7 +748,7 @@ function TenantsPage() {
                           <SettlementStagePill stage={resident.contractSettlementStage} />
                           {resident.contractSettlementDueDate ? (
                             <p className="text-xs text-muted-foreground">
-                              Tenggat: {formatResidentDate(resident.contractSettlementDueDate)}
+                              Tenggat checkpoint: {formatResidentDate(resident.contractSettlementDueDate)}
                             </p>
                           ) : null}
                           {resident.leaseExpiredAdminActionRequired ? (
@@ -724,6 +793,18 @@ function TenantsPage() {
                     <p className="text-xs text-muted-foreground">
                       {resident.roomNumber ?? "Belum ditempatkan"} · {leaseDuration(resident)}
                     </p>
+                    {deadlineWithinDays !== "" &&
+                    (deadlineTarget === "settlement"
+                      ? resident.contractSettlementDueDate
+                      : resident.leaseEnd) ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {deadlineTarget === "settlement" ? "Tenggat checkpoint" : "Akhir sewa"}: {formatResidentDate(
+                          deadlineTarget === "settlement"
+                            ? resident.contractSettlementDueDate!
+                            : resident.leaseEnd!,
+                        )}
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
                       <RentPaymentStatusPill status={resident.rentPaymentStatus} />
                       <SettlementStagePill stage={resident.contractSettlementStage} />

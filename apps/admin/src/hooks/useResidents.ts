@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { adminUxQueryKeys } from "@/lib/admin-ux-query-keys";
 import {
@@ -30,6 +30,7 @@ export type UseResidentsFilters = {
   tenancyStatus?: "awaiting_activation" | "active" | "none";
   settlementStage?: Exclude<ContractSettlementStage, "none">;
   settlementDueWithinDays?: number;
+  leaseEndWithinDays?: number;
   createdFrom?: string;
   createdTo?: string;
   q?: string;
@@ -53,6 +54,7 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
             tenancy_status: filters.tenancyStatus,
             contract_settlement_stage: filters.settlementStage,
             settlement_due_within_days: filters.settlementDueWithinDays,
+            lease_end_within_days: filters.leaseEndWithinDays,
             created_from: filters.createdFrom,
             created_to: filters.createdTo,
             q: filters.q?.trim() || undefined,
@@ -65,6 +67,7 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
       );
     },
     enabled: Boolean(currentPropertyId),
+    placeholderData: keepPreviousData,
   });
 }
 

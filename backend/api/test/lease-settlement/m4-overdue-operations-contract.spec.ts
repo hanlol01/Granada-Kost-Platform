@@ -199,6 +199,9 @@ void test('resident list and filters consume the authoritative V2 settlement pro
   );
   assert.equal((repository.match(/resident_admin_lifecycle_projection/g) ?? []).length, 3);
   assert.match(lifecycleProjection, /LEFT JOIN lease_settlement_v2_current_projection v2/);
+  assert.match(query, /lease_end_within_days/);
+  assert.match(repository, /projection\.lease_end IS NOT NULL/);
+  assert.match(repository, /CASE WHEN \$13::integer IS NOT NULL THEN projection\.lease_end/);
   for (const stage of [
     'checkpoint_two_pending',
     'checkpoint_two_met',

@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -81,10 +80,12 @@ import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property/useProperty";
+import { cn } from "@/lib/utils";
 import { ReminderComposerDialog } from "./ReminderComposerDialog";
 import { ReminderTemplateDialog } from "./ReminderTemplateDialog";
 
 type WorkspaceTab = "unpaid" | "paid" | "pending" | "corrections" | "other";
+const PAYMENT_DEADLINE_OPTIONS = [7, 14, 30] as const;
 
 export function W06PaymentsWorkspace() {
   const { user } = useAuth();
@@ -95,7 +96,7 @@ export function W06PaymentsWorkspace() {
   });
   const [month, setMonth] = useState(jakartaMonth());
   const [search, setSearch] = useState("");
-  const deferredSearch = useDeferredValue(search.trim());
+  const normalizedSearch = search.trim();
   const [invoiceStatus, setInvoiceStatus] = useState<"" | "issued" | "partially_paid" | "overdue">(
     "",
   );
@@ -109,9 +110,13 @@ export function W06PaymentsWorkspace() {
   const hasInvalidDueWithinDays = dueWithinDaysInput !== "" && dueWithinDays === undefined;
   const [offset, setOffset] = useState(0);
   const [paymentSearch, setPaymentSearch] = useState("");
-  const deferredPaymentSearch = useDeferredValue(paymentSearch.trim());
+  const normalizedPaymentSearch = paymentSearch.trim();
   const [paymentMethod, setPaymentMethod] = useState<"" | W06PaymentMethod>("");
   const [paymentPurpose, setPaymentPurpose] = useState<"" | W06PaymentPurpose>("");
+  const [paymentDueWithinDaysInput, setPaymentDueWithinDaysInput] = useState("");
+  const paymentDueWithinDays = parseDueWithinDays(paymentDueWithinDaysInput);
+  const hasInvalidPaymentDueWithinDays =
+    paymentDueWithinDaysInput !== "" && paymentDueWithinDays === undefined;
   const [paymentOffset, setPaymentOffset] = useState(0);
   const [selection, setSelection] = useState<{ propertyId: string; residentId: string } | null>(
     null,
@@ -124,7 +129,7 @@ export function W06PaymentsWorkspace() {
   const worklist = useBillingWorklist(currentPropertyId, {
     month,
     offset,
-    search: deferredSearch,
+    search: normalizedSearch,
     status: invoiceStatus || undefined,
     sort: invoiceSort,
     dueWithinDays,
@@ -133,10 +138,10 @@ export function W06PaymentsWorkspace() {
   });
   const paymentFilters = {
     offset: paymentOffset,
-    search: deferredPaymentSearch || undefined,
+    search: normalizedPaymentSearch || undefined,
     method: paymentMethod || undefined,
     purpose: paymentPurpose || undefined,
-    dueWithinDays,
+    dueWithinDays: tab === "pending" ? paymentDueWithinDays : undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
   };
@@ -150,7 +155,7 @@ export function W06PaymentsWorkspace() {
   const proofs = useBillingProofs(currentPropertyId, "pending_review");
   const detail = useResidentBilling(currentPropertyId, selectedResidentId);
   const activeFilterCount =
-    Number(Boolean(deferredSearch)) +
+    Number(Boolean(normalizedSearch)) +
     Number(month !== jakartaMonth()) +
     Number(Boolean(invoiceStatus)) +
     Number(invoiceSort !== "due_date_asc") +
@@ -158,16 +163,16 @@ export function W06PaymentsWorkspace() {
     Number(Boolean(dateFrom)) +
     Number(Boolean(dateTo));
   const paymentActiveFilterCount =
-    Number(Boolean(deferredPaymentSearch)) +
+    Number(Boolean(normalizedPaymentSearch)) +
     Number(Boolean(paymentMethod)) +
     Number(Boolean(paymentPurpose)) +
-    Number(Boolean(dueWithinDaysInput)) +
+    Number(tab === "pending" && Boolean(paymentDueWithinDaysInput)) +
     Number(Boolean(dateFrom)) +
     Number(Boolean(dateTo));
-  const filterSignature = `${month}:${deferredSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
-  const paymentFilterSignature = `${deferredPaymentSearch}:${paymentMethod}:${paymentPurpose}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
+  const filterSignature = `${month}:${normalizedSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
+  const paymentFilterSignature = `${tab}:${normalizedPaymentSearch}:${paymentMethod}:${paymentPurpose}:${paymentDueWithinDaysInput}:${dateFrom}:${dateTo}`;
   const invoiceFilterCriteria = [
-    deferredSearch ? `pencarian "${deferredSearch}"` : "",
+    normalizedSearch ? `pencarian "${normalizedSearch}"` : "",
     month !== jakartaMonth() ? `periode: ${monthLabel(month)}` : "",
     invoiceStatus
       ? `status tagihan: ${
@@ -185,10 +190,12 @@ export function W06PaymentsWorkspace() {
     dateRangeFilterLabel(dateFrom, dateTo),
   ].filter(Boolean);
   const paymentFilterCriteria = [
-    deferredPaymentSearch ? `pencarian "${deferredPaymentSearch}"` : "",
+    normalizedPaymentSearch ? `pencarian "${normalizedPaymentSearch}"` : "",
     paymentMethod ? `metode: ${methodLabel(paymentMethod)}` : "",
     paymentPurpose ? `jenis pembayaran: ${purposeLabel(paymentPurpose)}` : "",
-    dueWithinDaysInput ? `tenggat jatuh tempo dalam ${dueWithinDaysInput} hari` : "",
+    tab === "pending" && paymentDueWithinDaysInput
+      ? `tenggat jatuh tempo dalam ${paymentDueWithinDaysInput} hari`
+      : "",
     dateRangeFilterLabel(dateFrom, dateTo),
   ].filter(Boolean);
 
@@ -222,7 +229,16 @@ export function W06PaymentsWorkspace() {
           title="Perhatikan pencatatan pembayaran"
           description="Pembayaran tunai langsung terverifikasi. Transfer bank memerlukan bukti dan verifikasi sebelum mengurangi kewajiban sewa."
         />
-        <Tabs value={tab} onValueChange={(value) => setTab(value as WorkspaceTab)}>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as WorkspaceTab);
+            // Detail billing is contextual to the list that opened it. Clear it
+            // immediately when the operator moves to another billing tab so a
+            // previous resident's detail cannot remain visible out of context.
+            setSelection(null);
+          }}
+        >
           <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-xl border border-primary/20 bg-primary/10 p-1 sm:grid-cols-2 xl:grid-cols-5">
             <TabsTrigger
               className="min-h-12 w-full whitespace-normal px-3 text-center font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -307,14 +323,11 @@ export function W06PaymentsWorkspace() {
                 <option value="resident_asc">Nama penghuni A–Z</option>
               </select>
               <DeadlineWindowFilter
+                className="xl:col-span-2"
                 value={dueWithinDaysInput}
                 invalid={hasInvalidDueWithinDays}
                 onChange={(value) => {
                   setDueWithinDaysInput(value);
-                  setOffset(0);
-                }}
-                onQuickThirtyDays={() => {
-                  setDueWithinDaysInput("30");
                   setOffset(0);
                 }}
                 canReset={activeFilterCount > 0}
@@ -348,7 +361,7 @@ export function W06PaymentsWorkspace() {
                 entityLabel="tagihan"
                 resultCount={worklist.data?.meta.total ?? 0}
                 activeFilterCount={activeFilterCount}
-                searchTerm={deferredSearch}
+                searchTerm={normalizedSearch}
                 criteria={invoiceFilterCriteria}
               />
             ) : null}
@@ -367,13 +380,14 @@ export function W06PaymentsWorkspace() {
 
           <TabsContent value="paid" className="space-y-4">
             <PaymentFilterBar
+              showDueWithinDays={false}
               search={paymentSearch}
               method={paymentMethod}
               purpose={paymentPurpose}
-              dueWithinDays={dueWithinDaysInput}
+              dueWithinDays={paymentDueWithinDaysInput}
               dateFrom={dateFrom}
               dateTo={dateTo}
-              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              dueWithinDaysInvalid={hasInvalidPaymentDueWithinDays}
               onSearch={(value) => {
                 setPaymentSearch(value);
                 setPaymentOffset(0);
@@ -387,11 +401,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
-                setDueWithinDaysInput(value);
-                setPaymentOffset(0);
-              }}
-              onQuickThirtyDays={() => {
-                setDueWithinDaysInput("30");
+                setPaymentDueWithinDaysInput(value);
                 setPaymentOffset(0);
               }}
               onDateFromChange={(value) => {
@@ -406,7 +416,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentSearch("");
                 setPaymentMethod("");
                 setPaymentPurpose("");
-                setDueWithinDaysInput("");
+                setPaymentDueWithinDaysInput("");
                 setDateFrom("");
                 setDateTo("");
                 setPaymentOffset(0);
@@ -418,7 +428,7 @@ export function W06PaymentsWorkspace() {
                 entityLabel="pembayaran terverifikasi"
                 resultCount={paid.data?.meta.total ?? 0}
                 activeFilterCount={paymentActiveFilterCount}
-                searchTerm={deferredPaymentSearch}
+                searchTerm={normalizedPaymentSearch}
                 criteria={paymentFilterCriteria}
               />
             ) : null}
@@ -427,13 +437,14 @@ export function W06PaymentsWorkspace() {
 
           <TabsContent value="pending" className="space-y-4">
             <PaymentFilterBar
+              showDueWithinDays
               search={paymentSearch}
               method={paymentMethod}
               purpose={paymentPurpose}
-              dueWithinDays={dueWithinDaysInput}
+              dueWithinDays={paymentDueWithinDaysInput}
               dateFrom={dateFrom}
               dateTo={dateTo}
-              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              dueWithinDaysInvalid={hasInvalidPaymentDueWithinDays}
               onSearch={(value) => {
                 setPaymentSearch(value);
                 setPaymentOffset(0);
@@ -447,11 +458,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
-                setDueWithinDaysInput(value);
-                setPaymentOffset(0);
-              }}
-              onQuickThirtyDays={() => {
-                setDueWithinDaysInput("30");
+                setPaymentDueWithinDaysInput(value);
                 setPaymentOffset(0);
               }}
               onDateFromChange={(value) => {
@@ -466,7 +473,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentSearch("");
                 setPaymentMethod("");
                 setPaymentPurpose("");
-                setDueWithinDaysInput("");
+                setPaymentDueWithinDaysInput("");
                 setDateFrom("");
                 setDateTo("");
                 setPaymentOffset(0);
@@ -492,13 +499,14 @@ export function W06PaymentsWorkspace() {
 
           <TabsContent value="corrections" className="space-y-4">
             <PaymentFilterBar
+              showDueWithinDays={false}
               search={paymentSearch}
               method={paymentMethod}
               purpose={paymentPurpose}
-              dueWithinDays={dueWithinDaysInput}
+              dueWithinDays={paymentDueWithinDaysInput}
               dateFrom={dateFrom}
               dateTo={dateTo}
-              dueWithinDaysInvalid={hasInvalidDueWithinDays}
+              dueWithinDaysInvalid={hasInvalidPaymentDueWithinDays}
               onSearch={(value) => {
                 setPaymentSearch(value);
                 setPaymentOffset(0);
@@ -512,11 +520,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
-                setDueWithinDaysInput(value);
-                setPaymentOffset(0);
-              }}
-              onQuickThirtyDays={() => {
-                setDueWithinDaysInput("30");
+                setPaymentDueWithinDaysInput(value);
                 setPaymentOffset(0);
               }}
               onDateFromChange={(value) => {
@@ -531,7 +535,7 @@ export function W06PaymentsWorkspace() {
                 setPaymentSearch("");
                 setPaymentMethod("");
                 setPaymentPurpose("");
-                setDueWithinDaysInput("");
+                setPaymentDueWithinDaysInput("");
                 setDateFrom("");
                 setDateTo("");
                 setPaymentOffset(0);
@@ -543,7 +547,7 @@ export function W06PaymentsWorkspace() {
                 entityLabel="koreksi pembayaran"
                 resultCount={reversedPayments.data?.meta.total ?? 0}
                 activeFilterCount={paymentActiveFilterCount}
-                searchTerm={deferredPaymentSearch}
+                searchTerm={normalizedPaymentSearch}
                 criteria={paymentFilterCriteria}
               />
             ) : null}
@@ -556,14 +560,8 @@ export function W06PaymentsWorkspace() {
 
           <TabsContent value="other" className="space-y-4">
             <div className="rounded-xl border border-border bg-card p-4">
-              <DeadlineWindowFilter
-                value={dueWithinDaysInput}
-                invalid={hasInvalidDueWithinDays}
-                disabled
-                onChange={() => undefined}
-                onQuickThirtyDays={() => undefined}
-              />
-              <p className="mt-3 text-sm text-muted-foreground">
+              <p className="text-sm font-semibold">Filter jatuh tempo tidak tersedia</p>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Biaya lain tidak memakai tenggat pelunasan kontrak, sehingga filter hari tidak
                 diterapkan pada tab ini.
               </p>
@@ -591,6 +589,7 @@ export function W06PaymentsWorkspace() {
 }
 
 function PaymentFilterBar({
+  showDueWithinDays = false,
   search,
   method,
   purpose,
@@ -602,11 +601,11 @@ function PaymentFilterBar({
   onMethod,
   onPurpose,
   onDueWithinDays,
-  onQuickThirtyDays,
   onDateFromChange,
   onDateToChange,
   onReset,
 }: {
+  showDueWithinDays?: boolean;
   search: string;
   method: "" | W06PaymentMethod;
   purpose: "" | W06PaymentPurpose;
@@ -618,13 +617,17 @@ function PaymentFilterBar({
   onMethod: (value: "" | W06PaymentMethod) => void;
   onPurpose: (value: "" | W06PaymentPurpose) => void;
   onDueWithinDays: (value: string) => void;
-  onQuickThirtyDays: () => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   onReset: () => void;
 }) {
   const hasFilters = Boolean(
-    search.trim() || method || purpose || dueWithinDays || dateFrom || dateTo,
+    search.trim() ||
+      method ||
+      purpose ||
+      (showDueWithinDays && dueWithinDays) ||
+      dateFrom ||
+      dateTo,
   );
   return (
     <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-4">
@@ -660,12 +663,14 @@ function PaymentFilterBar({
         <option value="security_deposit">Security deposit</option>
         <option value="other_charge">Tagihan lainnya</option>
       </select>
-      <DeadlineWindowFilter
-        value={dueWithinDays}
-        invalid={dueWithinDaysInvalid}
-        onChange={onDueWithinDays}
-        onQuickThirtyDays={onQuickThirtyDays}
-      />
+      {showDueWithinDays ? (
+        <DeadlineWindowFilter
+          className="xl:col-span-2"
+          value={dueWithinDays}
+          invalid={dueWithinDaysInvalid}
+          onChange={onDueWithinDays}
+        />
+      ) : null}
       <DateRangeFilter
         from={dateFrom}
         to={dateTo}
@@ -675,7 +680,7 @@ function PaymentFilterBar({
       <Button
         type="button"
         variant="destructive"
-        className="min-h-11 w-full"
+        className="min-h-11 w-full xl:col-span-2"
         disabled={!hasFilters}
         onClick={onReset}
       >
@@ -729,23 +734,21 @@ function DateRangeFilter({
 function DeadlineWindowFilter({
   value,
   invalid,
-  disabled = false,
   onChange,
-  onQuickThirtyDays,
+  className,
   canReset = false,
   onReset,
 }: {
   value: string;
   invalid: boolean;
-  disabled?: boolean;
   onChange: (value: string) => void;
-  onQuickThirtyDays: () => void;
+  className?: string;
   canReset?: boolean;
   onReset?: () => void;
 }) {
   return (
-    <div className="min-w-0 space-y-2">
-      <div className="space-y-2">
+    <div className={cn("min-w-0 space-y-2", className)}>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="relative min-w-0">
           <Input
             className="min-h-11 pr-12"
@@ -755,7 +758,6 @@ function DeadlineWindowFilter({
             max={365}
             step={1}
             value={value}
-            disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
             placeholder="Tenggat ≤ hari"
             aria-label="Jatuh tempo dalam berapa hari lagi"
@@ -765,29 +767,42 @@ function DeadlineWindowFilter({
             hari
           </span>
         </div>
-        <div className={onReset ? "grid grid-cols-1 gap-2 sm:grid-cols-2" : undefined}>
-          <Button
-            type="button"
-            variant={value === "30" ? "default" : "info"}
-            className="min-h-11 w-full px-3 text-xs font-semibold"
-            disabled={disabled}
-            onClick={onQuickThirtyDays}
-          >
-            Cek 30 Hari Lagi
-          </Button>
-          {onReset ? (
-            <Button
-              type="button"
-              variant="destructive"
-              className="min-h-11 w-full px-3 text-xs font-semibold"
-              disabled={disabled || !canReset}
-              onClick={onReset}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
-            </Button>
-          ) : null}
+        <div
+          className="grid grid-cols-3 gap-2"
+          role="group"
+          aria-label="Pilihan cepat jatuh tempo"
+        >
+          {PAYMENT_DEADLINE_OPTIONS.map((days) => {
+            const dayValue = String(days);
+            const selected = value === dayValue;
+            return (
+              <Button
+                key={days}
+                type="button"
+                variant={selected ? "default" : "info"}
+                className="min-h-11 w-full px-2 text-xs font-semibold"
+                aria-pressed={selected}
+                aria-label={`${days} hari`}
+                title={`${days} hari`}
+                onClick={() => onChange(selected ? "" : dayValue)}
+              >
+                {days}
+              </Button>
+            );
+          })}
         </div>
       </div>
+      {onReset ? (
+        <Button
+          type="button"
+          variant="destructive"
+          className="min-h-11 w-full px-3 text-xs font-semibold"
+          disabled={!canReset}
+          onClick={onReset}
+        >
+          <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
+        </Button>
+      ) : null}
       {invalid ? (
         <p className="text-xs text-destructive">Masukkan 0 sampai 365 hari.</p>
       ) : (

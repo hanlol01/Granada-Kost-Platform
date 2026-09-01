@@ -145,6 +145,78 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
     },
   });
   assert.equal(receipt.snapshot.allocations[0].amount, 1_800_000);
+
+  const canonicalReceipt = parseBillingReceipt({
+    data: {
+      id: paymentId,
+      receipt_code: "RCT-W06-BRANDED",
+      receipt_kind: "payment",
+      amount: 1_800_000,
+      issued_at: "2026-07-31T10:05:00.000Z",
+      snapshot: {
+        payment_code: "PAY-W06-001",
+        payment_method: "bank_transfer",
+        payment_purpose: "rent",
+        lease_id: leaseId,
+        allocations: [{ invoice_id: invoiceId, amount: 1_800_000 }],
+        document: {
+          receipt_code: "RCT-W06-BRANDED",
+          receipt_kind: "payment",
+          amount: 1_800_000,
+          issued_at: "2026-07-31T10:05:00.000Z",
+          payment_code: "PAY-W06-001",
+          payment_method: "bank_transfer",
+          payment_purpose: "rent",
+          paid_at: "2026-07-31T10:00:00.000Z",
+          resident_name: "Farhan",
+          room_number: "RK-03-01",
+          lease_start: "2026-07-31",
+          lease_end: "2026-10-31",
+          property_name: "Granada Student House",
+          property_address: "Jatinangor, Sumedang",
+          issued_by_name: "Diki Karya Permana",
+          settles_rent_contract: false,
+          allocations: [{ invoice_code: "INV-W06-001", amount: 1_800_000 }],
+        },
+      },
+    },
+  });
+  assert.equal(canonicalReceipt.receipt_code, "RCT-W06-BRANDED");
+
+  const reversalReceipt = parseBillingReceipt({
+    data: {
+      id: paymentId,
+      receipt_code: "RCT-W06-REVERSAL",
+      receipt_kind: "reversal",
+      amount: 1_800_000,
+      issued_at: "2026-08-01T10:05:00.000Z",
+      snapshot: {
+        payment_code: "PAY-W06-001",
+        reason: "Koreksi pembayaran",
+        document: {
+          receipt_code: "RCT-W06-REVERSAL",
+          receipt_kind: "reversal",
+          amount: 1_800_000,
+          issued_at: "2026-08-01T10:05:00.000Z",
+          payment_code: "PAY-W06-001",
+          payment_method: "bank_transfer",
+          payment_purpose: "rent",
+          paid_at: "2026-08-01T10:05:00.000Z",
+          resident_name: "Farhan",
+          room_number: "RK-03-01",
+          lease_start: "2026-07-31",
+          lease_end: "2026-10-31",
+          property_name: "Granada Student House",
+          property_address: "Jatinangor, Sumedang",
+          issued_by_name: "Diki Karya Permana",
+          settles_rent_contract: false,
+          allocations: [{ invoice_code: "INV-W06-001", amount: 1_800_000 }],
+        },
+      },
+    },
+  });
+  assert.equal(reversalReceipt.receipt_kind, "reversal");
+  assert.equal(reversalReceipt.snapshot.payment_method, "bank_transfer");
 });
 
 test("W06 Admin parsers fail closed on extra fields, custom prototypes, invalid dates, UUIDs, and money", () => {
@@ -360,6 +432,7 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
     new URL("../components/billing/W06PaymentsWorkspace.tsx", import.meta.url),
     "utf8",
   );
+  const hook = readFileSync(new URL("../hooks/useAdminW06Billing.ts", import.meta.url), "utf8");
   assert.match(route, /W06PaymentsWorkspace/);
   assert.doesNotMatch(`${route}\n${workspace}`, /usePaymentGateway|OnlinePayment|QRIS|ewallet/i);
   assert.match(workspace, /security_deposit/);
@@ -369,6 +442,9 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /settles_rent_contract/);
   assert.match(workspace, /Sewa kontrak lunas/);
   assert.match(workspace, /scrollIntoView/);
+  assert.doesNotMatch(workspace, /useDeferredValue/);
+  assert.match(workspace, /const normalizedSearch = search\.trim\(\)/);
+  assert.match(workspace, /const normalizedPaymentSearch = paymentSearch\.trim\(\)/);
   assert.doesNotMatch(workspace, /Kuitansi tersedia/);
   assert.match(workspace, /pending_confirmation/);
   assert.match(workspace, /useVerifyPayment/);
@@ -382,10 +458,12 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /data\.lease\.resident_name/);
   assert.match(workspace, /Kamar/);
   assert.match(workspace, /data\.lease\.room_number/);
+  assert.match(hook, /placeholderData:\s*keepPreviousData/);
   assert.match(workspace, /Durasi sewa/);
   assert.match(workspace, /aria-label="Konteks kontrak penghuni"/);
   assert.match(workspace, /sm:grid-cols-3/);
   assert.match(workspace, /variant="destructive"[\s\S]{0,160}Tutup detail/);
+  assert.match(workspace, /onValueChange=\{\(value\) => \{[\s\S]{0,320}setSelection\(null\)/);
   const apiSource = readFileSync(new URL("./admin-w06-billing.ts", import.meta.url), "utf8");
   assert.match(apiSource, /billing\/invoices\/.*\/document/);
   assert.match(apiSource, /billing\/receipts\/.*\/document/);

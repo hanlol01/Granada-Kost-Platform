@@ -34,6 +34,11 @@ export type BookingLeadRecord = {
   visitorMessage: string | null;
   preferredMoveInDate: string | null;
   /**
+   * Contractual planned move-in date recorded when the initial payment is
+   * committed, before a lease has been materialized for the lead.
+   */
+  paymentCommitmentStartDate: string | null;
+  /**
    * Projected only for the Admin queue. This is the authoritative lease
    * start date once a booking lead has become a tenancy awaiting activation
    * or an active tenancy; it is not the optional move-in preference captured

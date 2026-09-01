@@ -1,5 +1,6 @@
 // M4 property-scoped React Query hooks for Admin UX master data.
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -191,6 +192,7 @@ export function useM4RoomInventory(filters: RoomInventoryFilters = {}) {
         offset: Number(normalized.offset),
       }),
     enabled: Boolean(currentPropertyId),
+    placeholderData: keepPreviousData,
   });
 }
 

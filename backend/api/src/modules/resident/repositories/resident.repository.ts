@@ -105,6 +105,16 @@ export type PropertyOwnerResidentSummary = {
   status: ResidentRecord['residentStatus'];
 };
 
+/**
+ * Room numbers are displayed with separators (for example, `RK-03-01`), but
+ * search should also work when an operator enters the compact form
+ * (`RK0301`). Keep the normalization in SQL so list and count queries use the
+ * exact same matching rule and the API remains the source of truth.
+ */
+function normalizedRoomSearchSql(column: string, parameter: string): string {
+  return `NULLIF(regexp_replace(COALESCE(${column}, ''), '[^[:alnum:]]', '', 'g'), '') ILIKE '%' || NULLIF(regexp_replace(COALESCE(${parameter}::text, ''), '[^[:alnum:]]', '', 'g'), '') || '%'`;
+}
+
 export function residentPropertyMembershipSql(userParameter: '$1' | '$2'): string {
   return `EXISTS (
     SELECT 1
@@ -169,7 +179,7 @@ export class ResidentRepository {
            OR residents.university ILIKE '%' || $8 || '%'
            OR residents.faculty ILIKE '%' || $8 || '%'
            OR residents.major ILIKE '%' || $8 || '%'
-           OR projection.room_number ILIKE '%' || $8 || '%'
+           OR ${normalizedRoomSearchSql('projection.room_number', '$8')}
          )
          AND ($9::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date >= $9::date)
          AND ($10::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date <= $10::date)
@@ -179,8 +189,16 @@ export class ResidentRepository {
            AND projection.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
            AND projection.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $12::integer
          ))
-       ORDER BY residents.created_at DESC, residents.id DESC
-       LIMIT $13 OFFSET $14`,
+         AND ($13::integer IS NULL OR (
+           projection.lease_end IS NOT NULL
+           AND projection.lease_end::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+           AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $13::integer
+         ))
+       ORDER BY
+         CASE WHEN $12::integer IS NOT NULL THEN projection.contract_settlement_due_date END ASC NULLS LAST,
+         CASE WHEN $13::integer IS NOT NULL THEN projection.lease_end END ASC NULLS LAST,
+         residents.created_at DESC,residents.id DESC
+       LIMIT $14 OFFSET $15`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -194,6 +212,7 @@ export class ResidentRepository {
         query.created_to ?? null,
         query.contract_settlement_stage ?? null,
         query.settlement_due_within_days ?? null,
+        query.lease_end_within_days ?? null,
         Math.min(Math.max(query.limit ?? 20, 1), 100),
         Math.max(query.offset ?? 0, 0),
       ],
@@ -229,7 +248,7 @@ export class ResidentRepository {
            OR residents.university ILIKE '%' || $8 || '%'
            OR residents.faculty ILIKE '%' || $8 || '%'
            OR residents.major ILIKE '%' || $8 || '%'
-           OR projection.room_number ILIKE '%' || $8 || '%'
+           OR ${normalizedRoomSearchSql('projection.room_number', '$8')}
          )
          AND ($9::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date >= $9::date)
          AND ($10::date IS NULL OR (residents.created_at AT TIME ZONE 'Asia/Jakarta')::date <= $10::date)
@@ -238,6 +257,11 @@ export class ResidentRepository {
            projection.contract_settlement_due_date IS NOT NULL
            AND projection.contract_settlement_due_date::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
            AND projection.contract_settlement_due_date::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$12::integer
+         ))
+         AND ($13::integer IS NULL OR (
+           projection.lease_end IS NOT NULL
+           AND projection.lease_end::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+           AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$13::integer
          ))`,
       [
         propertyIds === undefined ? null : propertyIds,
@@ -252,6 +276,7 @@ export class ResidentRepository {
         query.created_to ?? null,
         query.contract_settlement_stage ?? null,
         query.settlement_due_within_days ?? null,
+        query.lease_end_within_days ?? null,
       ],
     );
     return Number(result.rows[0]?.total ?? 0);

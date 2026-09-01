@@ -14,7 +14,7 @@ import type {
   W06PaymentPurpose,
   W06PaymentStatus,
 } from "@/lib/admin-w06-billing";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getBillingWorklist,
   getBillingPayments,
@@ -163,6 +163,7 @@ export function useBillingWorklist(
         signal,
       ),
     enabled: Boolean(propertyId),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -216,6 +217,7 @@ export function useBillingPayments(
         signal,
       ),
     enabled: Boolean(propertyId),
+    placeholderData: keepPreviousData,
   });
 }
 

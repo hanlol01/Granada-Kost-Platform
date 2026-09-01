@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { FileUploadField, type FileUploadReference } from "@/components/file/FileUploadField";
+import { UniversityCombobox } from "@/components/forms/UniversityCombobox";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -310,7 +311,19 @@ export function ResidentFormDialog({
                 optional
                 error={form.formState.errors.university?.message}
               >
-                <Input {...form.register("university")} disabled={pending} />
+                <UniversityCombobox
+                  id="resident-university"
+                  value={form.watch("university") ?? ""}
+                  propertyId={currentPropertyId}
+                  disabled={pending}
+                  aria-invalid={Boolean(form.formState.errors.university)}
+                  onChange={(value) =>
+                    form.setValue("university", value, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
               </Field>
               <Field label="Angkatan" optional error={form.formState.errors.cohort?.message}>
                 <Input {...form.register("cohort")} disabled={pending} />

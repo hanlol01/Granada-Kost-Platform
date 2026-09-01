@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { UniversityCombobox } from "@/components/forms/UniversityCombobox";
 import { useCreateAdminBookingLead } from "@/hooks/useBookingLeadMutations";
 import {
   canCreateAdminBookingLead,
@@ -233,16 +234,16 @@ export function QuickBookingDialog({ room, open, onOpenChange }: Props) {
             />
           </Field>
           <Field id="quick-booking-university" label="Universitas" error={errors.visitorUniversity}>
-            <Input
+            <UniversityCombobox
               id="quick-booking-university"
               value={draft.visitorUniversity}
-              maxLength={160}
+              propertyId={currentPropertyId}
               disabled={pending}
               aria-invalid={Boolean(errors.visitorUniversity)}
               aria-describedby={
                 errors.visitorUniversity ? "quick-booking-university-error" : undefined
               }
-              onChange={(event) => update("visitorUniversity", event.target.value)}
+              onChange={(value) => update("visitorUniversity", value)}
             />
           </Field>
           <Field

@@ -30,6 +30,7 @@ export type BookingLeadRecord = {
   visitorPhone: string;
   visitorMessage: string | null;
   preferredMoveInDate: string | null;
+  paymentCommitmentStartDate: string | null;
   activeLeaseStartDate: string | null;
   status: BookingLeadStatus;
   source: BookingLeadSource;
@@ -52,6 +53,19 @@ export function bookingLeadDisplayStatus(
   return lead.status === "onboarding" && lead.activeLeaseStartDate
     ? "awaiting_activation"
     : lead.status;
+}
+
+/**
+ * The date recorded with the initial payment becomes operative once a booking
+ * is completed, until onboarding has created the authoritative lease date.
+ */
+export function bookingLeadEffectiveMoveInDate(
+  lead: Pick<
+    BookingLeadRecord,
+    "activeLeaseStartDate" | "paymentCommitmentStartDate" | "preferredMoveInDate"
+  >,
+): string | null {
+  return lead.activeLeaseStartDate ?? lead.paymentCommitmentStartDate ?? lead.preferredMoveInDate;
 }
 
 export function canCancelBookingLeadPaymentCommitment(
@@ -208,6 +222,7 @@ const RESPONSE_KEYS = [
   "floorCode",
   "gender",
   "id",
+  "paymentCommitmentStartDate",
   "preferredMoveInDate",
   "propertyId",
   "publicGroupKey",
@@ -397,6 +412,7 @@ export function parseAdminBookingLead(value: unknown): BookingLeadRecord {
     visitorPhone: requiredString(source, "visitorPhone"),
     visitorMessage: nullableString(source, "visitorMessage"),
     preferredMoveInDate: nullableDateOnly(source, "preferredMoveInDate"),
+    paymentCommitmentStartDate: nullableDateOnly(source, "paymentCommitmentStartDate"),
     activeLeaseStartDate: nullableDateOnly(source, "activeLeaseStartDate"),
     status,
     source: leadSource,

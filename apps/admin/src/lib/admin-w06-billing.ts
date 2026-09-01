@@ -83,14 +83,14 @@ export type BillingWorkspacePayment = BillingPayment & {
 export type BillingReceipt = {
   id: string;
   receipt_code: string;
-  receipt_kind: "payment";
+  receipt_kind: "payment" | "reversal";
   amount: number;
   issued_at: string;
   snapshot: {
     payment_code: string;
     payment_method: W06PaymentMethod;
     payment_purpose: W06PaymentPurpose;
-    lease_id: string;
+    lease_id: string | null;
     allocations: BillingAllocation[];
   };
 };
@@ -1008,24 +1008,109 @@ export function parseBillingReceipt(value: unknown): BillingReceipt {
     ["id", "receipt_code", "receipt_kind", "amount", "issued_at", "snapshot"],
     "kuitansi",
   );
+  const receiptKind = oneOf(
+    receipt.receipt_kind,
+    ["payment", "reversal"] as const,
+    "Jenis kuitansi",
+  );
+  const receiptCode = text(receipt.receipt_code, "Kode kuitansi");
+  const receiptAmount = integer(receipt.amount, "Nominal kuitansi");
+  const rawSnapshot = receipt.snapshot;
+  if (typeof rawSnapshot !== "object" || rawSnapshot === null || Array.isArray(rawSnapshot))
+    throw new Error("Respons snapshot kuitansi tidak valid.");
+  const hasDocument = Object.prototype.hasOwnProperty.call(rawSnapshot, "document");
   const snapshot = object(
-    receipt.snapshot,
-    ["payment_code", "payment_method", "payment_purpose", "lease_id", "allocations"],
+    rawSnapshot,
+    receiptKind === "payment"
+      ? hasDocument
+        ? ["payment_code", "payment_method", "payment_purpose", "lease_id", "allocations", "document"]
+        : ["payment_code", "payment_method", "payment_purpose", "lease_id", "allocations"]
+      : Object.prototype.hasOwnProperty.call(rawSnapshot, "source")
+        ? ["payment_code", "reason", "source", "document"]
+        : ["payment_code", "reason", "document"],
     "snapshot kuitansi",
   );
-  if (!Array.isArray(snapshot.allocations)) throw new Error("Alokasi kuitansi tidak valid.");
+
+  let paymentCode: string;
+  let paymentMethod: W06PaymentMethod;
+  let paymentPurpose: W06PaymentPurpose;
+  let leaseId: string | null = null;
+  let allocations: BillingAllocation[] = [];
+
+  if (hasDocument) {
+    const document = object(
+      snapshot.document,
+      [
+        "receipt_code",
+        "receipt_kind",
+        "amount",
+        "issued_at",
+        "payment_code",
+        "payment_method",
+        "payment_purpose",
+        "paid_at",
+        "resident_name",
+        "room_number",
+        "lease_start",
+        "lease_end",
+        "property_name",
+        "property_address",
+        "issued_by_name",
+        "settles_rent_contract",
+        "allocations",
+      ],
+      "dokumen kuitansi",
+    );
+    if (!Array.isArray(document.allocations)) throw new Error("Alokasi dokumen kuitansi tidak valid.");
+    if (text(document.receipt_code, "Kode dokumen kuitansi") !== receiptCode)
+      throw new Error("Kode dokumen kuitansi tidak konsisten.");
+    if (oneOf(document.receipt_kind, ["payment", "reversal"] as const, "Jenis dokumen kuitansi") !== receiptKind)
+      throw new Error("Jenis dokumen kuitansi tidak konsisten.");
+    if (integer(document.amount, "Nominal dokumen kuitansi") !== receiptAmount)
+      throw new Error("Nominal dokumen kuitansi tidak konsisten.");
+    timestamp(document.issued_at, "Waktu dokumen kuitansi");
+    nullable(document.paid_at, (item) => timestamp(item, "Waktu pembayaran kuitansi"));
+    text(document.resident_name, "Nama penghuni kuitansi");
+    text(document.room_number, "Nomor kamar kuitansi");
+    nullable(document.lease_start, (item) => date(item, "Tanggal mulai sewa kuitansi"));
+    nullable(document.lease_end, (item) => date(item, "Tanggal akhir sewa kuitansi"));
+    text(document.property_name, "Nama properti kuitansi");
+    nullable(document.property_address, (item) => text(item, "Alamat properti kuitansi"));
+    nullable(document.issued_by_name, (item) => text(item, "Penerbit kuitansi"));
+    flag(document.settles_rent_contract, "Status pelunasan kontrak kuitansi");
+    document.allocations.forEach((item) => {
+      const documentAllocation = object(item, ["invoice_code", "amount"], "alokasi dokumen kuitansi");
+      text(documentAllocation.invoice_code, "Kode invoice dokumen kuitansi");
+      integer(documentAllocation.amount, "Nominal alokasi dokumen kuitansi");
+    });
+    paymentCode = text(document.payment_code, "Kode pembayaran kuitansi");
+    paymentMethod = oneOf(document.payment_method, W06_PAYMENT_METHODS, "Metode kuitansi");
+    paymentPurpose = oneOf(document.payment_purpose, W06_PAYMENT_PURPOSES, "Tujuan kuitansi");
+    if (receiptKind === "payment") {
+      leaseId = uuid(snapshot.lease_id, "ID kontrak kuitansi");
+      if (!Array.isArray(snapshot.allocations)) throw new Error("Alokasi kuitansi tidak valid.");
+      allocations = snapshot.allocations.map(allocation);
+    }
+  } else {
+    if (!Array.isArray(snapshot.allocations)) throw new Error("Alokasi kuitansi tidak valid.");
+    paymentCode = text(snapshot.payment_code, "Kode pembayaran kuitansi");
+    paymentMethod = oneOf(snapshot.payment_method, W06_PAYMENT_METHODS, "Metode kuitansi");
+    paymentPurpose = oneOf(snapshot.payment_purpose, W06_PAYMENT_PURPOSES, "Tujuan kuitansi");
+    leaseId = uuid(snapshot.lease_id, "ID kontrak kuitansi");
+    allocations = snapshot.allocations.map(allocation);
+  }
   return {
     id: uuid(receipt.id, "ID kuitansi"),
-    receipt_code: text(receipt.receipt_code, "Kode kuitansi"),
-    receipt_kind: oneOf(receipt.receipt_kind, ["payment"] as const, "Jenis kuitansi"),
-    amount: integer(receipt.amount, "Nominal kuitansi"),
+    receipt_code: receiptCode,
+    receipt_kind: receiptKind,
+    amount: receiptAmount,
     issued_at: timestamp(receipt.issued_at, "Waktu kuitansi"),
     snapshot: {
-      payment_code: text(snapshot.payment_code, "Kode pembayaran kuitansi"),
-      payment_method: oneOf(snapshot.payment_method, W06_PAYMENT_METHODS, "Metode kuitansi"),
-      payment_purpose: oneOf(snapshot.payment_purpose, W06_PAYMENT_PURPOSES, "Tujuan kuitansi"),
-      lease_id: uuid(snapshot.lease_id, "ID kontrak kuitansi"),
-      allocations: snapshot.allocations.map(allocation),
+      payment_code: paymentCode,
+      payment_method: paymentMethod,
+      payment_purpose: paymentPurpose,
+      lease_id: leaseId,
+      allocations,
     },
   };
 }

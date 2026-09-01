@@ -185,13 +185,20 @@ test("room discovery surfaces use theme-aware cards, controls, and table contras
 
 test("search is automatic and every filter resets the server offset", () => {
   const page = source("components/rooms/KostTypeInventoryPage.tsx");
+  const hooks = source("hooks/useAdminUxMaster.ts");
   const controls = page.slice(
     page.indexOf("export function RoomDiscoveryFilters"),
     page.indexOf("export function Pagination"),
   );
   assert.match(controls, /onSubmit=\{applySearch\}/);
-  assert.match(controls, /window\.setTimeout/);
+  assert.match(controls, /const handleSearchInput = \(value: string\) =>/);
+  assert.doesNotMatch(controls, /window\.setTimeout/);
   assert.match(controls, /onSearchChange\(\{ q: nextQuery, offset: 0 \}\)/);
+  assert.match(controls, /onChange=\{\(event\) => handleSearchInput\(event\.target\.value\)\}/);
+  assert.match(
+    section(hooks, "export function useM4RoomInventory", "export function useRoomDetailByNumber"),
+    /placeholderData:\s*keepPreviousData/,
+  );
   assert.doesNotMatch(controls, />Cari</);
   for (const anchor of [
     "value={search.buildingId",

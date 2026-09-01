@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Download, Loader2 } from "lucide-react";
 import { FileUploadField } from "@/components/file/FileUploadField";
+import { UniversityCombobox } from "@/components/forms/UniversityCombobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -258,9 +259,11 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                 <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
                   Universitas / pendidikan{" "}
                   <span className="font-normal text-muted-foreground">(opsional)</span>
-                  <Input
+                  <UniversityCombobox
+                    id="complete-booking-lead-university"
                     value={visitorUniversity}
-                    onChange={(event) => setVisitorUniversity(event.target.value)}
+                    propertyId={currentPropertyId}
+                    onChange={setVisitorUniversity}
                   />
                 </label>
               </div>
@@ -502,7 +505,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
           {receipt ? (
             <>
               <Button
-                variant="outline"
+                variant="success"
                 onClick={() =>
                   currentPropertyId && lead
                     ? void downloadBookingLeadCommitmentNote({
@@ -516,7 +519,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                 <Download className="mr-2 h-4 w-4" /> Unduh{" "}
                 {receipt.verificationStatus === "verified" ? "kuitansi" : "nota pembayaran"}
               </Button>
-              <Button variant="secondary" onClick={() => onOpenChange(false)}>
+              <Button variant="destructive" onClick={() => onOpenChange(false)}>
                 Tutup dan kembali ke Minat Booking
               </Button>
               <Button onClick={() => onComplete(lead!.id, receipt)}>Lengkapi Data Penyewaan</Button>

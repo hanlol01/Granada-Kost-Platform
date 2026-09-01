@@ -615,8 +615,18 @@ test('onboarding reads the canonical category commercial version without legacy 
   );
   assert.deepEqual(
     roomAuthority.params,
-    [ROOM_ID, PROPERTY_ID, onboardingDto.start_date],
+    [ROOM_ID, PROPERTY_ID, onboardingDto.start_date, false],
     'commercial authority must be selected for the final contractual start date',
+  );
+  assert.match(
+    roomAuthority.sql,
+    /effective_date<=\$3::date OR \$4::boolean/,
+    'the initial commercial version fallback must be explicitly gated by a paid lead commitment',
+  );
+  assert.match(
+    roomAuthority.sql,
+    /CASE WHEN effective_date<=\$3::date THEN 0 ELSE 1 END/,
+    'a commercial version effective on the lease date must always win over the compatibility fallback',
   );
 });
 

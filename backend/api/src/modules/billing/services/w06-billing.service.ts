@@ -258,6 +258,9 @@ type InvoiceDocumentRow = {
   total_amount: string;
   outstanding_amount: string;
   issued_at: Date | null;
+  property_name: string;
+  property_address: string | null;
+  issued_by_name: string | null;
 };
 type ReceiptDocumentRow = {
   receipt_code: string;
@@ -345,6 +348,11 @@ export type CancelInitialOnboardingFinancialsSummary = {
 const IDEMPOTENCY_MIN = 16;
 const IDEMPOTENCY_MAX = 128;
 
+/** Match formatted room numbers (e.g. RK-03-01) from compact input (RK0301). */
+function normalizedRoomSearchSql(column: string, parameter: string): string {
+  return `NULLIF(regexp_replace(COALESCE(${column}, ''), '[^[:alnum:]]', '', 'g'), '') ILIKE '%' || NULLIF(regexp_replace(COALESCE(${parameter}::text, ''), '[^[:alnum:]]', '', 'g'), '') || '%'`;
+}
+
 @Injectable()
 export class W06BillingService {
   constructor(
@@ -395,7 +403,7 @@ export class W06BillingService {
         )
         AND ($3::text IS NULL
           OR i.snapshot_resident_name ILIKE '%'||$3||'%'
-          OR i.snapshot_room_number ILIKE '%'||$3||'%'
+          OR ${normalizedRoomSearchSql('i.snapshot_room_number', '$3')}
           OR i.snapshot_building_code ILIKE '%'||$3||'%'
           OR i.invoice_code ILIKE '%'||$3||'%')
         AND ($5::int IS NULL OR (
@@ -514,7 +522,7 @@ export class W06BillingService {
            AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)
            AND ($3::text IS NULL
              OR resident.full_name ILIKE '%'||$3||'%'
-             OR room.number ILIKE '%'||$3||'%'
+             OR ${normalizedRoomSearchSql('room.number', '$3')}
              OR p.payment_code ILIKE '%'||$3||'%'
              OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
             AND ($4::text IS NULL OR p.payment_method=$4)
@@ -609,7 +617,7 @@ export class W06BillingService {
            AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)
            AND ($3::text IS NULL
              OR resident.full_name ILIKE '%'||$3||'%'
-             OR room.number ILIKE '%'||$3||'%'
+             OR ${normalizedRoomSearchSql('room.number', '$3')}
              OR p.payment_code ILIKE '%'||$3||'%'
              OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
             AND ($4::text IS NULL OR p.payment_method=$4)
@@ -3048,8 +3056,12 @@ export class W06BillingService {
                    COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
                    COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,
                    invoice.due_date::text,invoice.total_amount,invoice.issued_at,
+                   property.name AS property_name,property.address AS property_address,
+                   issuer.display_name AS issued_by_name,
                    GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount
               FROM invoices invoice
+              JOIN properties property ON property.id=invoice.property_id
+              LEFT JOIN users issuer ON issuer.id=invoice.created_by_user_id
               LEFT JOIN LATERAL (
                 SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
                        - COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
@@ -3060,7 +3072,7 @@ export class W06BillingService {
               ) allocation ON true`;
   }
 
-  private renderInvoiceDocument(row: InvoiceDocumentRow): BillingInvoiceDocument {
+  private renderInvoiceDocument(row: InvoiceDocumentRow): Promise<BillingInvoiceDocument> {
     return createBillingInvoicePdf({
       invoiceCode: row.invoice_code,
       invoiceStatus: this.publicInvoiceStatus(row.invoice_status),
@@ -3074,6 +3086,9 @@ export class W06BillingService {
       totalAmount: this.money(row.total_amount),
       outstandingAmount: this.money(row.outstanding_amount),
       issuedAt: row.issued_at,
+      propertyName: row.property_name,
+      propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
     });
   }
 

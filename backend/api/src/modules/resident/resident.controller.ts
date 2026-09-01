@@ -20,13 +20,17 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import { CreateResidentDto } from './dto/create-resident.dto';
+import { CreateUniversityDto } from './dto/create-university.dto';
+import { ListUniversitiesQueryDto } from './dto/list-universities-query.dto';
 import { ListResidentsQueryDto } from './dto/list-residents-query.dto';
 import { ProvisionResidentAccountDto } from './dto/provision-resident-account.dto';
 import { UpdateResidentStatusDto } from './dto/update-resident-status.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { ResidentService } from './resident.service';
 import { ResidentAccountService } from './resident-account.service';
+import { UniversityService } from './university.service';
 import { ResidentRecord } from './types/resident.types';
+import { UniversityRecord } from './types/university.types';
 
 /**
  * PostgreSQL DATE values must remain date-only on the V2 wire contract. Nest
@@ -44,6 +48,7 @@ export class ResidentController {
   constructor(
     private readonly residents: ResidentService,
     private readonly accounts: ResidentAccountService,
+    private readonly universities: UniversityService,
   ) {}
 
   @Get()
@@ -65,6 +70,38 @@ export class ResidentController {
       offset,
       total,
     );
+  }
+
+  @Get('universities')
+  @RequirePermissions('resident.read')
+  async listUniversities(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListUniversitiesQueryDto,
+  ) {
+    const result = await this.universities.list(user, query);
+    return v2List(
+      result.records.map((record) => this.toV2University(record)),
+      result.limit,
+      result.offset,
+      result.total,
+    );
+  }
+
+  @Post('universities')
+  @RequirePermissions('resident.manage')
+  async createUniversity(
+    @CurrentUser() user: UserAccessContext,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+    @Body() dto: CreateUniversityDto,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const university = await this.universities.create(
+      user,
+      propertyId,
+      dto,
+      this.contextFromRequest(request),
+    );
+    return v2Data(this.toV2University(university));
   }
 
   @Post()
@@ -292,6 +329,16 @@ export class ResidentController {
           }
         : null,
       profile_photo_file_id: resident.profilePhotoFileId,
+    };
+  }
+
+  private toV2University(university: UniversityRecord) {
+    return {
+      id: university.id,
+      property_id: university.propertyId,
+      name: university.name,
+      created_at: university.createdAt,
+      updated_at: university.updatedAt,
     };
   }
 

@@ -2,7 +2,10 @@
 import { z } from "zod";
 
 export const FrontendEnvSchema = z.object({
-  VITE_API_BASE_URL: z.string().url().default("http://localhost:3000/api/v1"),
+  // API authority must be provided explicitly by every build environment.
+  // Keep development defaults only in each app's .env.example, never in the
+  // runtime schema: Vite statically embeds this module into production bundles.
+  VITE_API_BASE_URL: z.string().url(),
   VITE_APP_NAME: z.string().default("Granada Kost"),
   VITE_ADMIN_WHATSAPP_PHONE: z.string().default("6281234567890"),
   // Public room listing WhatsApp CTA destination (M16E).
@@ -46,6 +49,7 @@ export function resolveFeatureFlags(env: FrontendEnv): ResolvedFeatureFlags {
 }
 
 export function parseFrontendEnv(raw: Record<string, unknown>): FrontendEnv {
-  // Throws ZodError if invalid in dev; callers may choose to fall back to defaults in prod.
+  // Throws ZodError if invalid. Production callers must fail fast rather than
+  // silently compiling or running against an unintended API endpoint.
   return FrontendEnvSchema.parse(raw);
 }

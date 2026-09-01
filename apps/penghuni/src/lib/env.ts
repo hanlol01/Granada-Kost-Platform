@@ -8,14 +8,12 @@ function readRawEnv(): Record<string, unknown> {
 
 function load(): FrontendEnv {
   const raw = readRawEnv();
-  const isDev = raw.DEV === true || raw.MODE === "development";
   try {
     return parseFrontendEnv(raw);
-  } catch (err) {
-    if (isDev) throw err;
-    // eslint-disable-next-line no-console
-    console.error("[env] Invalid VITE_* configuration. Falling back to defaults.", err);
-    return parseFrontendEnv({});
+  } catch {
+    throw new Error(
+      "[env] Invalid frontend configuration: VITE_API_BASE_URL is required and must be an absolute API URL.",
+    );
   }
 }
 

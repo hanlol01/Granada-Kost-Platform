@@ -55,7 +55,7 @@ void test('M10 rollout keeps historical settlements on legacy rules and snapshot
 });
 
 void test('M10 Admin and Penghuni display the effective policy version while Owner stays read-only', () => {
-  const adminParser = repositorySource('apps/admin/src/lib/admin-w06-billing.ts');
+  const adminParser = repositorySource('apps/admin/src/lib/admin-billing.ts');
   const adminUi = repositorySource(
     'apps/admin/src/components/residents/ResidentDetailWorkspace.tsx',
   );

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../infrastructure/database/database.service';
+import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import type { NormalizedWebhookEvent } from './providers/payment-gateway-provider.interface';
 import {
   CreatePaymentTransactionInput,
@@ -52,6 +53,7 @@ type PaymentWebhookEventRow = {
 type InvoiceSettlementRow = {
   id: string;
   invoice_status: string;
+  invoice_purpose: 'rent' | 'other_charge';
   paid_at: Date | null;
   total_amount: string;
 };
@@ -220,7 +222,9 @@ export class PaymentGatewayRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async createWebhookEvent(input: CreatePaymentWebhookEventInput): Promise<WebhookEventCreateResult> {
+  async createWebhookEvent(
+    input: CreatePaymentWebhookEventInput,
+  ): Promise<WebhookEventCreateResult> {
     const result = await this.database.client.query<PaymentWebhookEventRow>(
       `INSERT INTO payment_webhook_events (
          provider, event_id, provider_order_id, payload_hash, status,
@@ -305,7 +309,9 @@ export class PaymentGatewayRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async applyNonPaidWebhookStatus(event: NormalizedWebhookEvent): Promise<PaymentTransactionRecord | null> {
+  async applyNonPaidWebhookStatus(
+    event: NormalizedWebhookEvent,
+  ): Promise<PaymentTransactionRecord | null> {
     const result = await this.database.client.query<PaymentTransactionRow>(
       `UPDATE payment_transactions
        SET status = CASE
@@ -337,7 +343,10 @@ export class PaymentGatewayRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async settlePaidWebhook(event: NormalizedWebhookEvent, webhookEventId: string): Promise<PaidWebhookSettlementResult> {
+  async settlePaidWebhook(
+    event: NormalizedWebhookEvent,
+    webhookEventId: string,
+  ): Promise<PaidWebhookSettlementResult> {
     const client = await this.database.client.connect();
     try {
       await client.query('BEGIN');
@@ -352,12 +361,22 @@ export class PaymentGatewayRepository {
       if (!transactionRow) {
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_STATUS_REQUIRES_REVIEW', 'unknown_order'),
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_STATUS_REQUIRES_REVIEW',
+            'unknown_order',
+          ),
           sanitizedMetadata: { reason: 'unknown_order' },
           processed: true,
         });
         await client.query('COMMIT');
-        return { outcome: 'unknown_order', reason: 'unknown_order', transaction: null, invoiceId: null, propertyId: null };
+        return {
+          outcome: 'unknown_order',
+          reason: 'unknown_order',
+          transaction: null,
+          invoiceId: null,
+          propertyId: null,
+        };
       }
 
       const transaction = this.map(transactionRow);
@@ -380,10 +399,18 @@ export class PaymentGatewayRepository {
 
       const invoice = await this.lockInvoice(client, transaction.invoiceId);
       if (!invoice) {
-        const updated = await this.markTransactionRequiresReviewWithClient(client, event, 'invoice_not_found');
+        const updated = await this.markTransactionRequiresReviewWithClient(
+          client,
+          event,
+          'invoice_not_found',
+        );
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_STATUS_REQUIRES_REVIEW', 'invoice_not_found'),
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_STATUS_REQUIRES_REVIEW',
+            'invoice_not_found',
+          ),
           sanitizedMetadata: { reason: 'invoice_not_found' },
           processed: true,
         });
@@ -398,10 +425,18 @@ export class PaymentGatewayRepository {
       }
 
       if (invoice.invoice_status === 'paid' || invoice.paid_at) {
-        const updated = await this.markTransactionRequiresReviewWithClient(client, event, 'invoice_already_paid_conflict');
+        const updated = await this.markTransactionRequiresReviewWithClient(
+          client,
+          event,
+          'invoice_already_paid_conflict',
+        );
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_INVOICE_ALREADY_PAID', 'invoice_already_paid_conflict'),
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_INVOICE_ALREADY_PAID',
+            'invoice_already_paid_conflict',
+          ),
           sanitizedMetadata: { reason: 'invoice_already_paid_conflict' },
           processed: true,
         });
@@ -416,10 +451,18 @@ export class PaymentGatewayRepository {
       }
 
       if (invoice.invoice_status === 'void') {
-        const updated = await this.markTransactionRequiresReviewWithClient(client, event, 'invoice_void_conflict');
+        const updated = await this.markTransactionRequiresReviewWithClient(
+          client,
+          event,
+          'invoice_void_conflict',
+        );
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_STATUS_REQUIRES_REVIEW', 'invoice_void_conflict'),
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_STATUS_REQUIRES_REVIEW',
+            'invoice_void_conflict',
+          ),
           sanitizedMetadata: { reason: 'invoice_void_conflict' },
           processed: true,
         });
@@ -441,10 +484,18 @@ export class PaymentGatewayRepository {
         [transaction.invoiceId, transaction.id],
       );
       if (paidSibling.rows[0]) {
-        const updated = await this.markTransactionRequiresReviewWithClient(client, event, 'invoice_paid_transaction_conflict');
+        const updated = await this.markTransactionRequiresReviewWithClient(
+          client,
+          event,
+          'invoice_paid_transaction_conflict',
+        );
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_INVOICE_ALREADY_PAID', 'invoice_paid_transaction_conflict'),
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_INVOICE_ALREADY_PAID',
+            'invoice_paid_transaction_conflict',
+          ),
           sanitizedMetadata: { reason: 'invoice_paid_transaction_conflict' },
           processed: true,
         });
@@ -458,13 +509,28 @@ export class PaymentGatewayRepository {
         };
       }
 
-      const outstanding = await this.invoiceOutstandingAmount(client, transaction.invoiceId, Number(invoice.total_amount));
+      const outstanding = await this.invoiceOutstandingAmount(
+        client,
+        transaction.invoiceId,
+        Number(invoice.total_amount),
+      );
       if (outstanding !== transaction.amount) {
-        const updated = await this.markTransactionRequiresReviewWithClient(client, event, 'invoice_outstanding_mismatch');
+        const updated = await this.markTransactionRequiresReviewWithClient(
+          client,
+          event,
+          'invoice_outstanding_mismatch',
+        );
         await this.markWebhookEventWithClient(client, webhookEventId, {
           status: 'requires_review',
-          normalizedResult: this.webhookResult(event, 'PAYMENT_AMOUNT_MISMATCH', 'invoice_outstanding_mismatch'),
-          sanitizedMetadata: { reason: 'invoice_outstanding_mismatch', outstandingAmount: outstanding },
+          normalizedResult: this.webhookResult(
+            event,
+            'PAYMENT_AMOUNT_MISMATCH',
+            'invoice_outstanding_mismatch',
+          ),
+          sanitizedMetadata: {
+            reason: 'invoice_outstanding_mismatch',
+            outstandingAmount: outstanding,
+          },
           processed: true,
         });
         await client.query('COMMIT');
@@ -501,13 +567,19 @@ export class PaymentGatewayRepository {
       );
       const updatedTransaction = this.map(updatedTransactionResult.rows[0]);
 
-      const paymentCode = this.gatewayPaymentCode(event.providerOrderId);
+      const isOtherCharge = invoice.invoice_purpose === 'other_charge';
+      const paymentCode = await nextFinancialTransactionCode(
+        client,
+        'TRX',
+        isOtherCharge ? 'TAGIHAN-LAIN' : 'SEWA',
+        paidAt,
+      );
       const paymentResult = await client.query<{ id: string }>(
         `INSERT INTO payments (
            property_id, resident_id, payment_code, payment_method, payment_status,
-           amount, paid_at, verified_at, received_by_user_id, reference_number, notes
+           amount, paid_at, verified_at, received_by_user_id, reference_number, notes, payment_purpose
          )
-         VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6, NULL, $7, $8)
+         VALUES ($1, $2, $3, $4, 'verified', $5, $6, $6, NULL, $7, $8, $9)
          ON CONFLICT (property_id, payment_code) DO UPDATE
          SET reference_number = COALESCE(payments.reference_number, EXCLUDED.reference_number),
              notes = COALESCE(payments.notes, EXCLUDED.notes),
@@ -522,6 +594,7 @@ export class PaymentGatewayRepository {
           paidAt,
           event.providerTransactionId ?? event.providerOrderId,
           'Midtrans sandbox webhook settlement',
+          isOtherCharge ? 'other_charge' : 'rent',
         ],
       );
       const paymentId = paymentResult.rows[0].id;
@@ -643,9 +716,12 @@ export class PaymentGatewayRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  private async lockInvoice(client: PoolClient, invoiceId: string): Promise<InvoiceSettlementRow | null> {
+  private async lockInvoice(
+    client: PoolClient,
+    invoiceId: string,
+  ): Promise<InvoiceSettlementRow | null> {
     const result = await client.query<InvoiceSettlementRow>(
-      `SELECT id, invoice_status, paid_at, total_amount
+      `SELECT id, invoice_status, invoice_purpose, paid_at, total_amount
        FROM invoices
        WHERE id = $1
        FOR UPDATE`,
@@ -654,7 +730,11 @@ export class PaymentGatewayRepository {
     return result.rows[0] ?? null;
   }
 
-  private async invoiceOutstandingAmount(client: PoolClient, invoiceId: string, totalAmount: number): Promise<number> {
+  private async invoiceOutstandingAmount(
+    client: PoolClient,
+    invoiceId: string,
+    totalAmount: number,
+  ): Promise<number> {
     const result = await client.query<{ allocated_amount: string }>(
       `SELECT COALESCE(sum(allocated_amount), 0) AS allocated_amount
        FROM payment_allocations
@@ -664,7 +744,11 @@ export class PaymentGatewayRepository {
     return Math.max(totalAmount - Number(result.rows[0]?.allocated_amount ?? 0), 0);
   }
 
-  private webhookResult(event: NormalizedWebhookEvent, code?: string, reason?: string): Record<string, unknown> {
+  private webhookResult(
+    event: NormalizedWebhookEvent,
+    code?: string,
+    reason?: string,
+  ): Record<string, unknown> {
     return {
       provider: event.provider,
       providerOrderId: event.providerOrderId,
@@ -681,7 +765,10 @@ export class PaymentGatewayRepository {
     };
   }
 
-  private webhookTransactionMetadata(event: NormalizedWebhookEvent, reason: string): Record<string, unknown> {
+  private webhookTransactionMetadata(
+    event: NormalizedWebhookEvent,
+    reason: string,
+  ): Record<string, unknown> {
     return this.sanitizeMetadata({
       providerTransactionId: event.providerTransactionId,
       providerStatus: event.normalizedStatus,
@@ -699,12 +786,14 @@ export class PaymentGatewayRepository {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
-  private gatewayPaymentCode(providerOrderId: string): string {
-    return `GW-${providerOrderId}`.slice(0, 80);
-  }
-
-  private billingPaymentMethod(paymentMethod: string | null): 'bank_transfer' | 'qris' | 'ewallet' | 'other' {
-    if (paymentMethod === 'bank_transfer' || paymentMethod === 'qris' || paymentMethod === 'ewallet') {
+  private billingPaymentMethod(
+    paymentMethod: string | null,
+  ): 'bank_transfer' | 'qris' | 'ewallet' | 'other' {
+    if (
+      paymentMethod === 'bank_transfer' ||
+      paymentMethod === 'qris' ||
+      paymentMethod === 'ewallet'
+    ) {
       return paymentMethod;
     }
     return 'other';

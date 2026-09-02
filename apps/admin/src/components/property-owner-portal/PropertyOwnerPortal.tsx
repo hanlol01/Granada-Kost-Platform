@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  ArrowLeft,
   ArrowRight,
   Building2,
   ChevronDown,
@@ -73,7 +74,7 @@ const statusLabel: Record<string, string> = {
   transferred: "Dialihkan",
   recognized: "Diakui",
   reversed: "Dibatalkan",
-  reversal: "Pembalikan",
+  reversal: "Pembatalan",
   refund: "Pengembalian",
   transfer_proration: "Prorata pengalihan",
   clawback: "Koreksi penarikan",
@@ -783,26 +784,28 @@ function Assets({ portal }: { portal: OwnerPortal }) {
               </CardContent>
             </Card>
           )}
-          {assetsQuery.data && assetsQuery.data.total > pageSize ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
+          {assetsQuery.data && assetsQuery.data.total > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
               <span className="text-muted-foreground">
                 Menampilkan {offset + 1}–{Math.min(offset + pageSize, assetsQuery.data.total)} dari{" "}
                 {assetsQuery.data.total} aset
               </span>
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - pageSize))}
                 >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                   Sebelumnya
                 </Button>
                 <Button
-                  variant="outline"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset + pageSize >= assetsQuery.data.total}
                   onClick={() => setOffset(offset + pageSize)}
                 >
                   Berikutnya
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>
@@ -1181,7 +1184,7 @@ function Finance({
           <Metric
             label="Payout tercatat"
             value={formatOwnerMoney(finance.summary.paidOut)}
-            description="Payout atau pembalikan yang tercatat"
+            description="Payout atau pembatalan yang tercatat"
             icon={CheckCircle2}
           />
         </div>
@@ -2195,26 +2198,28 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
           )}
         </div>
       )}
-      {occupancy.data && occupancy.data.total > pageSize ? (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
+      {occupancy.data && occupancy.data.total > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
           <span className="text-muted-foreground">
             Menampilkan {offset + 1}–{Math.min(offset + pageSize, occupancy.data.total)} dari{" "}
             {occupancy.data.total} kamar
           </span>
           <div className="flex gap-2">
             <Button
-              variant="outline"
+              className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={offset === 0}
               onClick={() => setOffset(Math.max(0, offset - pageSize))}
             >
+              <ArrowLeft className="size-4" aria-hidden="true" />
               Sebelumnya
             </Button>
             <Button
-              variant="outline"
+              className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={offset + pageSize >= occupancy.data.total}
               onClick={() => setOffset(offset + pageSize)}
             >
               Berikutnya
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           </div>
         </div>

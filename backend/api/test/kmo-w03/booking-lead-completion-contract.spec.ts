@@ -63,6 +63,9 @@ test('verified Booking Fee or DP can be refunded before rental data creates a le
   const client = {
     query: async (statement: string) => {
       queries.push(statement);
+      if (statement.includes('next_financial_transaction_code')) {
+        return { rows: [{ code: 'REF-20260827-000001-DP' }], rowCount: 1 };
+      }
       if (statement.includes('FROM booking_lead_payment_commitments')) {
         return {
           rows: [

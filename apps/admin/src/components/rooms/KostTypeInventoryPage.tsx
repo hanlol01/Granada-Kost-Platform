@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  ArrowLeft,
+  ArrowRight,
   BedDouble,
   Building2,
   CalendarPlus,
@@ -688,25 +690,27 @@ export function Pagination({
   total: number;
   onChange: (offset: number) => void;
 }) {
-  if (total <= limit && offset <= 0) return null;
+  if (total <= 0) return null;
   const display = getRoomPaginationDisplay(offset, limit, total);
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-slate-400">
-      <span>{display.label}</span>
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+      <span>{display.isEmptyPage ? display.label : `Menampilkan ${display.label}`}</span>
       <div className="flex gap-2">
         <Button
-          variant="outline"
+          className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
           disabled={offset <= 0}
           onClick={() => onChange(Math.max(0, offset - limit))}
         >
+          <ArrowLeft className="size-4" aria-hidden="true" />
           Sebelumnya
         </Button>
         <Button
-          variant="outline"
+          className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
           disabled={offset + limit >= total}
           onClick={() => onChange(offset + limit)}
         >
           Berikutnya
+          <ArrowRight className="size-4" aria-hidden="true" />
         </Button>
       </div>
     </div>

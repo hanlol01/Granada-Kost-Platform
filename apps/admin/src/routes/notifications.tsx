@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bell, Search } from "lucide-react";
 import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state/EmptyState";
@@ -196,9 +196,10 @@ function NotificationsPage() {
           {query.data.meta.offset > 0 ? (
             <div className="flex justify-end">
               <Button
-                variant="outline"
+                className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={() => setOffset(query.data.meta.offset - query.data.meta.limit)}
               >
+                <ArrowLeft className="size-4" aria-hidden="true" />
                 Sebelumnya
               </Button>
             </div>
@@ -300,18 +301,20 @@ function NotificationsPage() {
             </p>
             <div className="flex gap-2">
               <Button
-                variant="outline"
+                className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={query.data.meta.offset === 0}
                 onClick={() => setOffset(query.data.meta.offset - query.data.meta.limit)}
               >
+                <ArrowLeft className="size-4" aria-hidden="true" />
                 Sebelumnya
               </Button>
               <Button
-                variant="outline"
+                className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={query.data.meta.offset + query.data.meta.limit >= query.data.meta.total}
                 onClick={() => setOffset(query.data.meta.offset + query.data.meta.limit)}
               >
                 Berikutnya
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
             </div>
           </div>

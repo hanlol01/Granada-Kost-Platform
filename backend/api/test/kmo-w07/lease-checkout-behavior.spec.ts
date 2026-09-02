@@ -44,6 +44,7 @@ function harness(options: Options = {}) {
   const queries: string[] = [];
   let state = options.state ?? 'settlement_pending';
   let documentSequence = 0;
+  let documentNumberSequence = 0;
   const command = () => ({
     id: COMMAND_ID,
     property_id: PROPERTY_ID,
@@ -284,6 +285,25 @@ function harness(options: Options = {}) {
           rowCount: 1,
         };
       if (/reason_type='checkout_damage'/.test(q)) return { rows: [], rowCount: 0 };
+      if (/SELECT next_billing_document_number/.test(q)) {
+        documentNumberSequence += 1;
+        const segment =
+          params[1] === 'checkout_handover'
+            ? 'BAST-KELUAR'
+            : params[1] === 'final_settlement'
+              ? 'RINCIAN-AKHIR'
+              : 'REFUND-KELUAR';
+        return {
+          rows: [
+            {
+              document_code: `${String(documentNumberSequence).padStart(3, '0')}-09/${segment}/GSH1/2026`,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (/SELECT next_financial_transaction_code/.test(q))
+        return { rows: [{ code: 'REF-20260827-000001-CHECKOUT' }], rowCount: 1 };
       if (/INSERT INTO lease_exit_documents/.test(q)) {
         documentSequence += 1;
         return {

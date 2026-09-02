@@ -206,11 +206,11 @@ test("M7-B2 hooks use only approved GET paths and enforce property/access cache 
 test("M7-B2 compatibility stays read-only while W06 makes manual billing the live payments route", async () => {
   const source = await readFile(new URL("../routes/payments.tsx", import.meta.url), "utf8");
   const workspace = await readFile(
-    new URL("../components/billing/W06PaymentsWorkspace.tsx", import.meta.url),
+    new URL("../components/billing/PaymentsWorkspace.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /W06PaymentsWorkspace/);
+  assert.match(source, /PaymentsWorkspace/);
   assert.match(workspace, /bank_transfer/);
   assert.match(workspace, /security_deposit/);
   assert.doesNotMatch(`${source}\n${workspace}`, /usePaymentGateway|OnlinePayment|QRIS|ewallet/i);

@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -130,6 +130,12 @@ export class AdminBillingWorklistQueryDto extends PaginationQueryDto {
 
 export class AdminBillingScopeQueryDto {
   @IsUUID('4') property_id!: string;
+}
+
+export class AdminBillingDocumentSearchQueryDto extends PaginationQueryDto {
+  @IsUUID('4') property_id!: string;
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString() @MinLength(2) @MaxLength(100) q!: string;
 }
 
 export class AdminW06PaymentsQueryDto extends PaginationQueryDto {

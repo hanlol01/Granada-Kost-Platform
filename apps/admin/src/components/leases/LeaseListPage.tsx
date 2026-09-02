@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
+  ArrowLeft,
+  ArrowRight,
   CalendarClock,
   CircleDollarSign,
   DoorOpen,
@@ -442,26 +444,28 @@ function Pagination({
   total: number;
   onChange: (offset: number) => void;
 }) {
-  if (total <= limit) return null;
+  if (total <= 0) return null;
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-slate-400">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
       <span>
-        {offset + 1}–{Math.min(total, offset + limit)} dari {total} lease
+        Menampilkan {offset + 1}–{Math.min(total, offset + limit)} dari {total} lease
       </span>
       <div className="flex gap-2">
         <Button
-          variant="outline"
+          className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
           disabled={offset <= 0}
           onClick={() => onChange(Math.max(0, offset - limit))}
         >
+          <ArrowLeft className="size-4" aria-hidden="true" />
           Sebelumnya
         </Button>
         <Button
-          variant="outline"
+          className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
           disabled={offset + limit >= total}
           onClick={() => onChange(offset + limit)}
         >
           Berikutnya
+          <ArrowRight className="size-4" aria-hidden="true" />
         </Button>
       </div>
     </div>

@@ -169,6 +169,8 @@ function transferHarness(options: TransferOptions = {}) {
 
       if (/SELECT \(now\(\) AT TIME ZONE 'Asia\/Jakarta'\)/.test(q))
         return { rows: [{ today }], rowCount: 1 };
+      if (/SELECT next_financial_transaction_code/.test(q))
+        return { rows: [{ code: 'TRX-20260825-000001-TAMBAH-DEPOSIT' }], rowCount: 1 };
       if (/^SELECT property_id FROM leases WHERE id = \$1$/.test(q))
         return { rows: [{ property_id: PROPERTY_ID }], rowCount: 1 };
       if (/FROM lease_transfer_commands WHERE id = \$1 FOR UPDATE/.test(q))
@@ -351,6 +353,13 @@ function transferHarness(options: TransferOptions = {}) {
         });
         record();
         return { rows: [], rowCount: 1 };
+      }
+      if (/INSERT INTO payments/.test(q)) {
+        record();
+        return {
+          rows: [{ id: 'deposit-payment', payment_code: String(params[2]) }],
+          rowCount: 1,
+        };
       }
       if (/WITH totals AS/.test(q)) {
         record();

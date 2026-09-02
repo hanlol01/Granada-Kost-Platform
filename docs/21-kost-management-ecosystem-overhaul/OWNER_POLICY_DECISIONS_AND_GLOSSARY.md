@@ -343,7 +343,7 @@ The persistence value may be English snake case; UI uses the Indonesian label.
 | `void` | Dibatalkan |
 | `pending_confirmation` | Menunggu Konfirmasi |
 | `verified` | Terkonfirmasi |
-| `reversed` | Dibalikkan |
+| `reversed` | Dibatalkan |
 | `archived` | Diarsipkan |
 
 ## 8. Conflict and Supersession Register

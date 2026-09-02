@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  ArrowRight,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -545,19 +546,21 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant="outline"
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset === 0}
                   onClick={() => setOffset((current) => Math.max(0, current - PAGE_SIZE))}
                 >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                   Sebelumnya
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset + PAGE_SIZE >= (owners.data?.meta.total ?? 0)}
                   onClick={() => setOffset((current) => current + PAGE_SIZE)}
                 >
                   Berikutnya
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </footer>

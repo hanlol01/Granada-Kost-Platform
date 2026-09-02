@@ -1,4 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { W06PaymentsWorkspace } from "@/components/billing/W06PaymentsWorkspace";
+import { PaymentsWorkspace } from "@/components/billing/PaymentsWorkspace";
 
-export const Route = createFileRoute("/payments")({ component: W06PaymentsWorkspace });
+export const Route = createFileRoute("/payments")({ component: PaymentsWorkspace });

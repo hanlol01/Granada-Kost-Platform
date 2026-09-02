@@ -1042,8 +1042,8 @@ export class PropertyOwnerPortalService {
            WHERE pa.invoice_id = invoice.id
          ) allocation ON true
          LEFT JOIN LATERAL (
-           SELECT COALESCE(sum(pa.allocated_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'), 0)
-                    - COALESCE(sum(pra.reversed_amount) FILTER (WHERE payment.payment_code LIKE 'PAY-ONB-%'), 0) AS net
+            SELECT COALESCE(sum(pa.allocated_amount) FILTER (WHERE payment.command_fingerprint LIKE 'onboarding:%'), 0)
+                     - COALESCE(sum(pra.reversed_amount) FILTER (WHERE payment.command_fingerprint LIKE 'onboarding:%'), 0) AS net
            FROM payment_allocations pa
            JOIN payments payment ON payment.id = pa.payment_id
            LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id

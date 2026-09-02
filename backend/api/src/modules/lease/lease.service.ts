@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import { UserAccessContext } from '../iam/types/iam.types';
 import {
   CloseLeaseDto,
@@ -1237,9 +1238,9 @@ export class LeaseService {
         const waive = status === 'waived' ? (dto as WaiveRefundDto) : null;
         await client.query(
           `INSERT INTO lease_refund_settlements (
-           property_id, deposit_transaction_id, settlement_status, payment_method, external_reference,
-           reason, settled_by_user_id, metadata
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+            property_id, deposit_transaction_id, settlement_status, payment_method, external_reference,
+            reason, settled_by_user_id, metadata, transaction_code
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
           [
             propertyId,
             refund.id,
@@ -1251,6 +1252,9 @@ export class LeaseService {
             JSON.stringify(
               status === 'settled' ? { notes_present: Boolean(settlement?.notes) } : {},
             ),
+            status === 'settled'
+              ? await nextFinancialTransactionCode(client, 'REF', 'CHECKOUT')
+              : null,
           ],
         );
         const updatedResult = await client.query<DepositLedgerRow>(
@@ -1733,14 +1737,17 @@ export class LeaseService {
     payment: NonNullable<CollectDepositDto['payment']>,
     actorUserId: string,
   ): Promise<PaymentRow> {
-    const paymentCode =
-      payment.payment_code?.trim() ||
-      `DPT-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
+    const paymentCode = await nextFinancialTransactionCode(
+      client,
+      'TRX',
+      'DEPOSIT',
+      payment.paid_at ?? null,
+    );
     const result = await client.query<PaymentRow>(
       `INSERT INTO payments (
-         property_id, resident_id, payment_code, payment_method, payment_status, amount,
+         property_id, resident_id, payment_code, payment_method, payment_status, payment_purpose, amount,
          paid_at, verified_at, received_by_user_id, verified_by_user_id, reference_number, notes
-       ) VALUES ($1, $2, $3, $4, 'verified', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9)
+       ) VALUES ($1, $2, $3, $4, 'verified', 'security_deposit', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9)
        RETURNING id, payment_code`,
       [
         propertyId,
@@ -1750,7 +1757,7 @@ export class LeaseService {
         amount,
         payment.paid_at ?? null,
         actorUserId,
-        payment.reference_number?.trim() ?? null,
+        payment.reference_number?.trim() ?? payment.payment_code?.trim() ?? null,
         payment.notes?.trim() ?? null,
       ],
     );

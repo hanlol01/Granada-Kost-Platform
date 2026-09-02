@@ -23,6 +23,7 @@ import { ListAdminPaymentsQueryDto } from '../dto/list-admin-payments-query.dto'
 import { AdminBillingService } from '../services/admin-billing.service';
 import {
   AdminBillingScopeQueryDto,
+  AdminBillingDocumentSearchQueryDto,
   AdminBillingWorklistQueryDto,
   AdminW06PaymentsQueryDto,
   AdminW06ProofsQueryDto,
@@ -69,6 +70,14 @@ export class AdminBillingController {
   @Get('billing/current')
   current(@CurrentUser() user: UserAccessContext, @Query() query: AdminBillingWorklistQueryDto) {
     return this.w06.currentWorklist(user, query);
+  }
+
+  @Get('billing/documents/search')
+  documents(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: AdminBillingDocumentSearchQueryDto,
+  ) {
+    return this.w06.searchDocuments(user, query);
   }
 
   @Get('billing/payments')

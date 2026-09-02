@@ -15,6 +15,8 @@ import {
 import { accessLogs } from "@/lib/mock-data";
 import {
   Search,
+  ArrowLeft,
+  ArrowRight,
   Download,
   Lock,
   Unlock,
@@ -274,26 +276,37 @@ function AccessHistoryPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
-            <p>
-              Halaman {page} dari {totalPages}
-            </p>
-            <div className="flex gap-1.5">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3">
+              <p>
+                Menampilkan {paged.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, filtered.length)} dari {filtered.length} data
+              </p>
+              <Badge
+                variant="outline"
+                className="rounded-full border-amber-400/50 bg-amber-400/15 px-3 py-1 font-semibold text-amber-700 shadow-sm shadow-amber-400/20 dark:text-amber-300"
+              >
+                Halaman {page} dari {totalPages}
+              </Badge>
+            </div>
+            <div className="flex gap-2">
               <Button
                 size="sm"
-                variant="outline"
+                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
               >
+                <ArrowLeft className="size-4" aria-hidden="true" />
                 Sebelumnya
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
               >
                 Berikutnya
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
             </div>
           </div>

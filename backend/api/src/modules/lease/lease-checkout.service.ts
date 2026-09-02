@@ -6,13 +6,14 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import {
   createLeaseExitOfficialDocumentPdf,
   type LeaseExitOfficialDocumentKind,
   type LeaseExitOfficialDocumentSnapshot,
 } from '../billing/helpers/billing-document.helper';
+import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import { UserAccessContext } from '../iam/types/iam.types';
 import {
@@ -154,6 +155,7 @@ type ExitDocumentContextRow = {
   refund_due_date: string | null;
   refund_payment_method: string | null;
   refund_external_reference: string | null;
+  refund_transaction_code: string | null;
   refund_settled_at: Date | null;
 };
 
@@ -1528,6 +1530,10 @@ export class LeaseCheckoutService {
         const late = row.refund_due_date !== null && today > row.refund_due_date;
         const settled = status === 'settled' ? (dto as SettleRefundDto) : null;
         const waived = status === 'waived' ? (dto as WaiveRefundDto) : null;
+        const transactionCode =
+          status === 'settled'
+            ? await nextFinancialTransactionCode(client, 'REF', 'CHECKOUT')
+            : null;
         if (checkout.exit_type) {
           if (status === 'settled' && !settled?.evidence_file_id)
             throw new UnprocessableEntityException({
@@ -1539,7 +1545,7 @@ export class LeaseCheckoutService {
           await client.query(
             `UPDATE lease_exit_refunds
              SET refund_status=$2,payment_method=$3,external_reference=$4,evidence_file_id=$5,
-                 settlement_reason=$6,settled_by_user_id=$7,settled_at=now()
+                  settlement_reason=$6,settled_by_user_id=$7,settled_at=now(),transaction_code=$8
              WHERE id=$1`,
             [
               refundId,
@@ -1549,6 +1555,7 @@ export class LeaseCheckoutService {
               settled?.evidence_file_id ?? null,
               status === 'settled' ? settled?.notes?.trim() || null : waived?.reason.trim(),
               user.id,
+              transactionCode,
             ],
           );
           if (settled?.evidence_file_id)
@@ -1592,8 +1599,8 @@ export class LeaseCheckoutService {
           );
         } else {
           await client.query(
-            `INSERT INTO lease_refund_settlements(property_id,deposit_transaction_id,settlement_status,payment_method,external_reference,reason,settled_by_user_id,metadata)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+            `INSERT INTO lease_refund_settlements(property_id,deposit_transaction_id,settlement_status,payment_method,external_reference,reason,settled_by_user_id,metadata,transaction_code)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
             [
               propertyId,
               refundId,
@@ -1603,6 +1610,7 @@ export class LeaseCheckoutService {
               waived?.reason.trim() ?? null,
               user.id,
               JSON.stringify({ checkout_command_id: commandId, late_settlement: late }),
+              transactionCode,
             ],
           );
           await client.query(
@@ -1714,9 +1722,10 @@ export class LeaseCheckoutService {
               settlement.refund_adjustment_amount,settlement.refund_adjustment_reason,
               settlement.amount_due,settlement.decision_status,
               refund.refund_status,refund.refund_due_date::text AS refund_due_date,
-              refund.payment_method AS refund_payment_method,
-              refund.external_reference AS refund_external_reference,
-              refund.settled_at AS refund_settled_at
+               refund.payment_method AS refund_payment_method,
+               refund.external_reference AS refund_external_reference,
+               refund.transaction_code AS refund_transaction_code,
+               refund.settled_at AS refund_settled_at
        FROM lease_exit_final_settlements settlement
        JOIN lease_checkout_commands command
          ON command.id=settlement.checkout_command_id AND command.property_id=settlement.property_id
@@ -1892,14 +1901,23 @@ export class LeaseCheckoutService {
         due_date: authority.refund_due_date,
         payment_method: authority.refund_payment_method,
         external_reference: authority.refund_external_reference,
+        transaction_code: authority.refund_transaction_code,
         settled_at: authority.refund_settled_at?.toISOString() ?? null,
       },
     };
     const records: ExitDocumentRecord[] = [];
     for (const kind of kinds) {
-      const prefix =
-        kind === 'checkout_handover' ? 'CHK' : kind === 'final_settlement' ? 'FST' : 'RFD';
-      const documentCode = `${prefix}-${randomUUID().replaceAll('-', '').slice(0, 14).toUpperCase()}`;
+      const documentKind = kind === 'refund_receipt' ? 'checkout_refund' : kind;
+      const numberResult = await client.query<{ document_code: string }>(
+        `SELECT next_billing_document_number($1,$2,$3) AS document_code`,
+        [checkout.property_id, documentKind, authority.issued_at],
+      );
+      const documentCode = numberResult.rows[0]?.document_code;
+      if (!documentCode)
+        throw new ConflictException({
+          code: 'LEASE_EXIT_DOCUMENT_NUMBER_UNAVAILABLE',
+          message: 'Official lease-exit document number could not be issued',
+        });
       const snapshot: LeaseExitOfficialDocumentSnapshot = {
         document_code: documentCode,
         document_kind: kind,

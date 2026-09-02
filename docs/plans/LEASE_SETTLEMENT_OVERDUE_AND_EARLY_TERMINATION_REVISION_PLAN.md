@@ -490,13 +490,13 @@ the lease lifecycle:
 - `Pembayaran Awal 1 Bulan`;
 - `Bayar Sebagian`;
 - `Lunas`;
-- `Direversal / Refund`; and
+- `Dibatalkan / Direfund`; and
 - `Ada Saldo Tunggakan` where an approved financial balance remains due.
 
 The historical fact that a payment was received must not disappear just because
 its net amount later becomes zero after refund. For example, LUTFI's refunded
 pre-activation payment must not be displayed as merely `Belum Ada Pembayaran`.
-When the archived record is opened, it should show `Direversal / Refund`, the
+When the archived record is opened, it should show `Dibatalkan / Direfund`, the
 original amount and receipt, the refund amount/document, and the resulting net
 balance.
 

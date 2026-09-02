@@ -1,4 +1,5 @@
 import { apiClient, getAccessToken } from "@/lib/api";
+import { fetchPreviewAndDownload } from "@/lib/document-download";
 import { env } from "@/lib/env";
 import {
   ownerPortalRouteRegistry,
@@ -360,7 +361,13 @@ export type OwnerCollectionProgress = {
       installmentPaid: number;
       installmentNextDueDate: string | null;
     };
-    securityDeposit: { required: Money; collected: Money; deducted: Money; refunded: Money; balance: Money };
+    securityDeposit: {
+      required: Money;
+      collected: Money;
+      deducted: Money;
+      refunded: Money;
+      balance: Money;
+    };
     settlement: {
       state: string | null;
       originalDueAt: string | null;
@@ -1646,66 +1653,212 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
   const root = exact(value, ["summary", "items"], "collection_progress");
   const summary = exact(
     root.summary,
-    ["active_lease_count", "overdue_lease_count", "h7_lease_count", "checkpoint_attention_count", "rent_outstanding"],
+    [
+      "active_lease_count",
+      "overdue_lease_count",
+      "h7_lease_count",
+      "checkpoint_attention_count",
+      "rent_outstanding",
+    ],
     "collection_progress.summary",
   );
   return {
     summary: {
-      activeLeaseCount: count(summary.active_lease_count, "collection_progress.summary.active_lease_count"),
-      overdueLeaseCount: count(summary.overdue_lease_count, "collection_progress.summary.overdue_lease_count"),
+      activeLeaseCount: count(
+        summary.active_lease_count,
+        "collection_progress.summary.active_lease_count",
+      ),
+      overdueLeaseCount: count(
+        summary.overdue_lease_count,
+        "collection_progress.summary.overdue_lease_count",
+      ),
       h7LeaseCount: count(summary.h7_lease_count, "collection_progress.summary.h7_lease_count"),
       checkpointAttentionCount: count(
         summary.checkpoint_attention_count,
         "collection_progress.summary.checkpoint_attention_count",
       ),
-      rentOutstanding: money(summary.rent_outstanding, "collection_progress.summary.rent_outstanding"),
+      rentOutstanding: money(
+        summary.rent_outstanding,
+        "collection_progress.summary.rent_outstanding",
+      ),
     },
     items: list(root.items, "collection_progress.items", (value) => {
-      const item = exact(value, ["room", "resident", "lease", "billing", "security_deposit", "settlement"], "collection_progress.item");
-      const room = exact(item.room, ["code", "building_code", "building_name"], "collection_progress.item.room");
+      const item = exact(
+        value,
+        ["room", "resident", "lease", "billing", "security_deposit", "settlement"],
+        "collection_progress.item",
+      );
+      const room = exact(
+        item.room,
+        ["code", "building_code", "building_name"],
+        "collection_progress.item.room",
+      );
       const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
-      const lease = exact(item.lease, ["status", "start_date", "end_date"], "collection_progress.item.lease");
-      const billing = exact(item.billing, ["state", "rent_invoiced", "rent_verified", "rent_outstanding", "invoice_count", "overdue_count", "h7_count", "next_due_date", "installment_total", "installment_paid", "installment_next_due_date"], "collection_progress.item.billing");
-      const deposit = exact(item.security_deposit, ["required", "collected", "deducted", "refunded", "balance"], "collection_progress.item.security_deposit");
-      const settlement = exact(item.settlement, ["state", "original_due_at", "effective_due_at", "outstanding_amount", "reminder_stage", "checkpoint"], "collection_progress.item.settlement");
-      const checkpoint = exact(settlement.checkpoint, ["due_at", "required_amount", "received_amount", "remaining_amount", "status"], "collection_progress.item.settlement.checkpoint");
-      const nullableDate = (input: unknown, field: string) => input === null ? null : date(input, field);
+      const lease = exact(
+        item.lease,
+        ["status", "start_date", "end_date"],
+        "collection_progress.item.lease",
+      );
+      const billing = exact(
+        item.billing,
+        [
+          "state",
+          "rent_invoiced",
+          "rent_verified",
+          "rent_outstanding",
+          "invoice_count",
+          "overdue_count",
+          "h7_count",
+          "next_due_date",
+          "installment_total",
+          "installment_paid",
+          "installment_next_due_date",
+        ],
+        "collection_progress.item.billing",
+      );
+      const deposit = exact(
+        item.security_deposit,
+        ["required", "collected", "deducted", "refunded", "balance"],
+        "collection_progress.item.security_deposit",
+      );
+      const settlement = exact(
+        item.settlement,
+        [
+          "state",
+          "original_due_at",
+          "effective_due_at",
+          "outstanding_amount",
+          "reminder_stage",
+          "checkpoint",
+        ],
+        "collection_progress.item.settlement",
+      );
+      const checkpoint = exact(
+        settlement.checkpoint,
+        ["due_at", "required_amount", "received_amount", "remaining_amount", "status"],
+        "collection_progress.item.settlement.checkpoint",
+      );
+      const nullableDate = (input: unknown, field: string) =>
+        input === null ? null : date(input, field);
       return {
-        room: { code: string(room.code, "collection_progress.item.room.code"), buildingCode: string(room.building_code, "collection_progress.item.room.building_code"), buildingName: string(room.building_name, "collection_progress.item.room.building_name") },
-        resident: { displayName: string(resident.display_name, "collection_progress.item.resident.display_name") },
-        lease: { status: enumValue(lease.status, ["active"] as const, "collection_progress.item.lease.status"), startDate: date(lease.start_date, "collection_progress.item.lease.start_date"), endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date") },
+        room: {
+          code: string(room.code, "collection_progress.item.room.code"),
+          buildingCode: string(room.building_code, "collection_progress.item.room.building_code"),
+          buildingName: string(room.building_name, "collection_progress.item.room.building_name"),
+        },
+        resident: {
+          displayName: string(
+            resident.display_name,
+            "collection_progress.item.resident.display_name",
+          ),
+        },
+        lease: {
+          status: enumValue(
+            lease.status,
+            ["active"] as const,
+            "collection_progress.item.lease.status",
+          ),
+          startDate: date(lease.start_date, "collection_progress.item.lease.start_date"),
+          endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date"),
+        },
         billing: {
-          state: enumValue(billing.state, ["not_available", "current", "partially_paid", "settled", "overdue"] as const, "collection_progress.item.billing.state"),
-          rentInvoiced: money(billing.rent_invoiced, "collection_progress.item.billing.rent_invoiced"),
-          rentVerified: money(billing.rent_verified, "collection_progress.item.billing.rent_verified"),
-          rentOutstanding: money(billing.rent_outstanding, "collection_progress.item.billing.rent_outstanding"),
-          invoiceCount: count(billing.invoice_count, "collection_progress.item.billing.invoice_count"),
-          overdueCount: count(billing.overdue_count, "collection_progress.item.billing.overdue_count"),
+          state: enumValue(
+            billing.state,
+            ["not_available", "current", "partially_paid", "settled", "overdue"] as const,
+            "collection_progress.item.billing.state",
+          ),
+          rentInvoiced: money(
+            billing.rent_invoiced,
+            "collection_progress.item.billing.rent_invoiced",
+          ),
+          rentVerified: money(
+            billing.rent_verified,
+            "collection_progress.item.billing.rent_verified",
+          ),
+          rentOutstanding: money(
+            billing.rent_outstanding,
+            "collection_progress.item.billing.rent_outstanding",
+          ),
+          invoiceCount: count(
+            billing.invoice_count,
+            "collection_progress.item.billing.invoice_count",
+          ),
+          overdueCount: count(
+            billing.overdue_count,
+            "collection_progress.item.billing.overdue_count",
+          ),
           h7Count: count(billing.h7_count, "collection_progress.item.billing.h7_count"),
-          nextDueDate: nullableDate(billing.next_due_date, "collection_progress.item.billing.next_due_date"),
-          installmentTotal: count(billing.installment_total, "collection_progress.item.billing.installment_total"),
-          installmentPaid: count(billing.installment_paid, "collection_progress.item.billing.installment_paid"),
-          installmentNextDueDate: nullableDate(billing.installment_next_due_date, "collection_progress.item.billing.installment_next_due_date"),
+          nextDueDate: nullableDate(
+            billing.next_due_date,
+            "collection_progress.item.billing.next_due_date",
+          ),
+          installmentTotal: count(
+            billing.installment_total,
+            "collection_progress.item.billing.installment_total",
+          ),
+          installmentPaid: count(
+            billing.installment_paid,
+            "collection_progress.item.billing.installment_paid",
+          ),
+          installmentNextDueDate: nullableDate(
+            billing.installment_next_due_date,
+            "collection_progress.item.billing.installment_next_due_date",
+          ),
         },
         securityDeposit: {
           required: money(deposit.required, "collection_progress.item.security_deposit.required"),
-          collected: money(deposit.collected, "collection_progress.item.security_deposit.collected"),
+          collected: money(
+            deposit.collected,
+            "collection_progress.item.security_deposit.collected",
+          ),
           deducted: money(deposit.deducted, "collection_progress.item.security_deposit.deducted"),
           refunded: money(deposit.refunded, "collection_progress.item.security_deposit.refunded"),
           balance: money(deposit.balance, "collection_progress.item.security_deposit.balance"),
         },
         settlement: {
           state: nullableString(settlement.state, "collection_progress.item.settlement.state"),
-          originalDueAt: nullableString(settlement.original_due_at, "collection_progress.item.settlement.original_due_at"),
-          effectiveDueAt: nullableString(settlement.effective_due_at, "collection_progress.item.settlement.effective_due_at"),
-          outstandingAmount: money(settlement.outstanding_amount, "collection_progress.item.settlement.outstanding_amount"),
-          reminderStage: settlement.reminder_stage === null ? null : enumValue(settlement.reminder_stage, ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const, "collection_progress.item.settlement.reminder_stage"),
+          originalDueAt: nullableString(
+            settlement.original_due_at,
+            "collection_progress.item.settlement.original_due_at",
+          ),
+          effectiveDueAt: nullableString(
+            settlement.effective_due_at,
+            "collection_progress.item.settlement.effective_due_at",
+          ),
+          outstandingAmount: money(
+            settlement.outstanding_amount,
+            "collection_progress.item.settlement.outstanding_amount",
+          ),
+          reminderStage:
+            settlement.reminder_stage === null
+              ? null
+              : enumValue(
+                  settlement.reminder_stage,
+                  ["H-30", "H-14", "H-7", "H-0", "D+1", "D+7"] as const,
+                  "collection_progress.item.settlement.reminder_stage",
+                ),
           checkpoint: {
-            dueAt: nullableString(checkpoint.due_at, "collection_progress.item.settlement.checkpoint.due_at"),
-            requiredAmount: money(checkpoint.required_amount, "collection_progress.item.settlement.checkpoint.required_amount"),
-            receivedAmount: money(checkpoint.received_amount, "collection_progress.item.settlement.checkpoint.received_amount"),
-            remainingAmount: money(checkpoint.remaining_amount, "collection_progress.item.settlement.checkpoint.remaining_amount"),
-            status: enumValue(checkpoint.status, ["not_available", "not_required", "met", "pending", "overdue"] as const, "collection_progress.item.settlement.checkpoint.status"),
+            dueAt: nullableString(
+              checkpoint.due_at,
+              "collection_progress.item.settlement.checkpoint.due_at",
+            ),
+            requiredAmount: money(
+              checkpoint.required_amount,
+              "collection_progress.item.settlement.checkpoint.required_amount",
+            ),
+            receivedAmount: money(
+              checkpoint.received_amount,
+              "collection_progress.item.settlement.checkpoint.received_amount",
+            ),
+            remainingAmount: money(
+              checkpoint.remaining_amount,
+              "collection_progress.item.settlement.checkpoint.remaining_amount",
+            ),
+            status: enumValue(
+              checkpoint.status,
+              ["not_available", "not_required", "met", "pending", "overdue"] as const,
+              "collection_progress.item.settlement.checkpoint.status",
+            ),
           },
         },
       };
@@ -1736,20 +1889,26 @@ export const propertyOwnerPortalApi = {
       .get<unknown>("/my/property-owner/finance", { query: { period } })
       .then(parseOwnerFinance),
   collectionProgress: () =>
-    apiClient.get<unknown>("/my/property-owner/collection-progress").then(parseOwnerCollectionProgress),
+    apiClient
+      .get<unknown>("/my/property-owner/collection-progress")
+      .then(parseOwnerCollectionProgress),
 };
 export async function downloadOwnerReport(period: string, format: "pdf" | "xlsx"): Promise<void> {
-  const token = getAccessToken();
   const query = new URLSearchParams({ period, format });
-  const response = await fetch(
-    `${env.VITE_API_BASE_URL}/my/property-owner/reports/export?${query}`,
-    { credentials: "include", headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+  await fetchPreviewAndDownload(
+    async () => {
+      const token = getAccessToken();
+      const response = await fetch(
+        `${env.VITE_API_BASE_URL}/my/property-owner/reports/export?${query}`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
+      if (!response.ok) throw new Error(`Owner report export failed (HTTP ${response.status}).`);
+      return response;
+    },
+    `owner-report-${period}.${format}`,
+    { preview: format === "pdf" },
   );
-  if (!response.ok) throw new Error(`Owner report export failed (HTTP ${response.status}).`);
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `owner-report-${period}.${format}`;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import { UserAccessContext } from '../iam/types/iam.types';
 import {
   CancelScheduledTransferDto,
@@ -1679,14 +1680,17 @@ export class LeaseTransferService {
         message: 'A verified deposit payment requires a code or reference',
       });
     }
-    const paymentCode =
-      payment.payment_code?.trim() ||
-      `TRF-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
+    const paymentCode = await nextFinancialTransactionCode(
+      client,
+      'TRX',
+      'TAMBAH-DEPOSIT',
+      payment.paid_at ?? null,
+    );
     const result = await client.query<PaymentRow>(
       `INSERT INTO payments (
-         property_id, resident_id, payment_code, payment_method, payment_status, amount,
+         property_id, resident_id, payment_code, payment_method, payment_status, payment_purpose, amount,
          paid_at, verified_at, received_by_user_id, verified_by_user_id, reference_number, notes
-       ) VALUES ($1, $2, $3, $4, 'verified', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9)
+       ) VALUES ($1, $2, $3, $4, 'verified', 'security_deposit', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9)
        RETURNING id, payment_code`,
       [
         propertyId,
@@ -1696,7 +1700,7 @@ export class LeaseTransferService {
         amount,
         payment.paid_at ?? null,
         actorUserId,
-        payment.reference_number?.trim() ?? null,
+        payment.reference_number?.trim() ?? payment.payment_code?.trim() ?? null,
         payment.notes?.trim() ?? null,
       ],
     );

@@ -138,6 +138,7 @@ function snapshot(
       due_date: '2026-10-12',
       payment_method: kind === 'refund_receipt' ? 'bank_transfer' : null,
       external_reference: kind === 'refund_receipt' ? 'TRX-REFUND-001' : null,
+      transaction_code: kind === 'refund_receipt' ? 'REF-20261003-000001-CHECKOUT' : null,
       settled_at: kind === 'refund_receipt' ? '2026-10-03T03:00:00.000Z' : null,
     },
   };

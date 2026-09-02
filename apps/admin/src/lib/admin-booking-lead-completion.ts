@@ -1,6 +1,7 @@
 import { ApiError } from "@granada-kost/domain";
 import { getAccessToken } from "@/lib/api";
 import { adminUxV2Requester } from "./admin-ux-api";
+import { fetchPreviewAndDownload } from "./document-download";
 import { env } from "./env";
 
 export type LeadInitialPaymentType = "booking_fee" | "down_payment" | "full_settlement";
@@ -95,32 +96,18 @@ export type BookingLeadPaymentCommitmentRefund = {
 };
 
 async function openAndDownloadBookingLeadPdf(path: string, filename: string): Promise<void> {
-  // Open synchronously so browser popup protection does not block the document preview.
-  const previewTab = window.open("about:blank", "_blank");
-  if (previewTab) previewTab.opener = null;
-  const token = getAccessToken();
-  const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/pdf",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!response.ok) {
-    previewTab?.close();
-    throw new Error("Dokumen kuitansi belum dapat dimuat. Coba lagi.");
-  }
-  const url = URL.createObjectURL(await response.blob());
-  if (previewTab) previewTab.location.replace(url);
-  else window.location.assign(url);
-
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
+      credentials: "include",
+      headers: {
+        Accept: "application/pdf",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) throw new Error("Dokumen kuitansi belum dapat dimuat. Coba lagi.");
+    return response;
+  }, filename);
 }
 
 export function downloadBookingLeadCommitmentNote(input: {

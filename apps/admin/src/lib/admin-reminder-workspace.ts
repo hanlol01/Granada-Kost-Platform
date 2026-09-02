@@ -1,5 +1,5 @@
 import { adminUxV2Requester, type AdminUxV2Requester } from "@/lib/admin-ux-api";
-import type { BillingWorklist } from "@/lib/admin-w06-billing";
+import type { BillingWorklist } from "@/lib/admin-billing";
 
 export type ReminderMilestone = "h60" | "h30" | "h14";
 export type ReminderWorkspaceLease = {

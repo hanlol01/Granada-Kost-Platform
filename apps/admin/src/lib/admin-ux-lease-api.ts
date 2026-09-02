@@ -3,6 +3,7 @@
 // Idempotency-Key owned by the submitting UI intent.
 import { adminUxV2Requester, type AdminUxQueryValue } from "./admin-ux-api";
 import { getAccessToken } from "./api";
+import { fetchPreviewAndDownload } from "./document-download";
 import { env } from "./env";
 import { mapV2Data, mapV2Page, type V2DataEnvelope, type V2ListEnvelope } from "./admin-ux-mapper";
 import type {
@@ -125,22 +126,20 @@ export async function downloadLeaseExitDocument(
   documentId: string,
   documentCode: string,
 ) {
-  const token = getAccessToken();
-  const response = await fetch(
-    `${env.VITE_API_BASE_URL}/leases/${encodeURIComponent(leaseId)}/checkout/${encodeURIComponent(commandId)}/documents/${encodeURIComponent(documentId)}/document`,
-    {
-      credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    },
-  );
-  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
-    throw new Error(`Dokumen checkout gagal diunduh (HTTP ${response.status}).`);
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "dokumen-checkout"}.pdf`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const filename = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "dokumen-checkout"}.pdf`;
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/leases/${encodeURIComponent(leaseId)}/checkout/${encodeURIComponent(commandId)}/documents/${encodeURIComponent(documentId)}/document`,
+      {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Dokumen checkout gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, filename);
 }
 
 export type DepositCollectInput = {

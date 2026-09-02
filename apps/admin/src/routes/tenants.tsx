@@ -1,5 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
+  ArrowLeft,
+  ArrowRight,
   CalendarPlus,
   Clock3,
   Eye,
@@ -131,7 +133,7 @@ export function RentPaymentStatusPill({
     partial_payment: { label: "Bayar sebagian", className: "bg-warning/15 text-warning" },
     paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
     reversed_refunded: {
-      label: "Direversal / Refund",
+      label: "Dibatalkan / Direfund",
       className: "bg-destructive/15 text-destructive",
     },
     outstanding_balance: {
@@ -324,7 +326,7 @@ function TenantsPage() {
             initial_month_payment: "Pembayaran awal 1 bulan",
             partial_payment: "Bayar sebagian",
             paid_in_full: "Lunas",
-            reversed_refunded: "Direversal / Refund",
+            reversed_refunded: "Dibatalkan / Direfund",
             outstanding_balance: "Ada saldo tunggakan",
           }[rentPaymentStatus]
         }`
@@ -506,7 +508,7 @@ function TenantsPage() {
                 <SelectItem value="initial_month_payment">Pembayaran awal 1 bulan</SelectItem>
                 <SelectItem value="partial_payment">Bayar sebagian</SelectItem>
                 <SelectItem value="paid_in_full">Lunas</SelectItem>
-                <SelectItem value="reversed_refunded">Direversal / Refund</SelectItem>
+                <SelectItem value="reversed_refunded">Dibatalkan / Direfund</SelectItem>
                 <SelectItem value="outstanding_balance">Ada saldo tunggakan</SelectItem>
               </SelectContent>
             </Select>
@@ -627,8 +629,8 @@ function TenantsPage() {
                     <Button
                       key={days}
                       type="button"
-                      variant={selected ? "default" : "outline"}
-                      className="min-h-11 px-2"
+                      variant="info"
+                      className={cn("min-h-11 px-2", selected && "border-primary bg-primary/20")}
                       aria-pressed={selected}
                       aria-label={`${days} hari`}
                       title={`${days} hari`}
@@ -734,7 +736,9 @@ function TenantsPage() {
                       <td className="px-4 py-3">{resident.university ?? "Belum diisi"}</td>
                       <td className="px-4 py-3">
                         <p>{leaseDuration(resident)}</p>
-                        {deadlineTarget === "lease_end" && deadlineWithinDays !== "" && resident.leaseEnd ? (
+                        {deadlineTarget === "lease_end" &&
+                        deadlineWithinDays !== "" &&
+                        resident.leaseEnd ? (
                           <p className="mt-1 text-xs text-muted-foreground">
                             Akhir sewa: {formatResidentDate(resident.leaseEnd)}
                           </p>
@@ -748,7 +752,8 @@ function TenantsPage() {
                           <SettlementStagePill stage={resident.contractSettlementStage} />
                           {resident.contractSettlementDueDate ? (
                             <p className="text-xs text-muted-foreground">
-                              Tenggat checkpoint: {formatResidentDate(resident.contractSettlementDueDate)}
+                              Tenggat checkpoint:{" "}
+                              {formatResidentDate(resident.contractSettlementDueDate)}
                             </p>
                           ) : null}
                           {resident.leaseExpiredAdminActionRequired ? (
@@ -798,7 +803,8 @@ function TenantsPage() {
                       ? resident.contractSettlementDueDate
                       : resident.leaseEnd) ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {deadlineTarget === "settlement" ? "Tenggat checkpoint" : "Akhir sewa"}: {formatResidentDate(
+                        {deadlineTarget === "settlement" ? "Tenggat checkpoint" : "Akhir sewa"}:{" "}
+                        {formatResidentDate(
                           deadlineTarget === "settlement"
                             ? resident.contractSettlementDueDate!
                             : resident.leaseEnd!,
@@ -821,24 +827,25 @@ function TenantsPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4">
               <p className="text-xs text-muted-foreground">
-                {offset + 1}–{Math.min(offset + list.length, total)} dari {total} penghuni
+                Menampilkan {offset + 1}–{Math.min(offset + list.length, total)} dari {total}{" "}
+                penghuni
               </p>
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
-                  className="min-h-11"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset === 0}
                   onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                 >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                   Sebelumnya
                 </Button>
                 <Button
-                  variant="outline"
-                  className="min-h-11"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset + PAGE_SIZE >= total}
                   onClick={() => setOffset(offset + PAGE_SIZE)}
                 >
                   Berikutnya
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>

@@ -324,7 +324,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             />
             {detail.ownership.ownerProfileId ? (
               <div className="mt-5 flex flex-wrap gap-3 border-t border-foreground/10 pt-4">
-                <Button variant="outline" className="min-h-11" asChild>
+                <Button variant="info" className="min-h-11" asChild>
                   <Link
                     to="/property-owners/$ownerId"
                     params={{ ownerId: detail.ownership.ownerProfileId }}

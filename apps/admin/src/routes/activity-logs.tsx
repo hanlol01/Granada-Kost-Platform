@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state/EmptyState";
@@ -41,7 +41,7 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   lease: "Penyewaan & checkout",
   room_occupancy: "Kamar & hunian",
   inspection: "Inspeksi",
-  refund: "Refund & reversal",
+  refund: "Refund & pembatalan",
   notification: "Notifikasi",
   other: "Lainnya",
 };
@@ -304,15 +304,15 @@ function ActivityLogsPage() {
             />
           )}
 
-          {query.data && query.data.meta.total > PAGE_LIMIT ? (
-            <div className="flex items-center justify-between gap-3">
+          {query.data && query.data.meta.total > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                {offset + 1}–{Math.min(offset + PAGE_LIMIT, query.data.meta.total)} dari{" "}
+                Menampilkan {offset + 1}–{Math.min(offset + PAGE_LIMIT, query.data.meta.total)} dari{" "}
                 {query.data.meta.total}
               </p>
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset === 0}
                   onClick={() =>
                     setPagination({
@@ -321,16 +321,18 @@ function ActivityLogsPage() {
                     })
                   }
                 >
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                   Sebelumnya
                 </Button>
                 <Button
-                  variant="outline"
+                  className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={offset + PAGE_LIMIT >= query.data.meta.total}
                   onClick={() =>
                     setPagination({ propertyId: currentPropertyId, offset: offset + PAGE_LIMIT })
                   }
                 >
                   Berikutnya
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>
@@ -364,7 +366,13 @@ function ActivityTable({
             {total} event cocok · terbaru lebih dahulu
           </p>
         </div>
-        <Badge variant="outline">Halaman {Math.floor(offset / PAGE_LIMIT) + 1}</Badge>
+        <Badge
+          variant="outline"
+          className="rounded-full border-amber-400/50 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-700 shadow-sm shadow-amber-400/20 dark:text-amber-300"
+        >
+          Halaman {Math.floor(offset / PAGE_LIMIT) + 1} dari{" "}
+          {Math.max(1, Math.ceil(total / PAGE_LIMIT))}
+        </Badge>
       </div>
       <div className="overflow-x-auto rounded-2xl border bg-card">
         <table className="w-full min-w-[1080px] text-left text-sm">
@@ -754,7 +762,7 @@ function resourceTypeLabel(type: string) {
     booking_lead: "Minat booking",
     payment: "Pembayaran",
     payment_proof: "Bukti pembayaran",
-    payment_reversal: "Pembalikan pembayaran",
+    payment_reversal: "Pembatalan pembayaran",
     invoice: "Invoice",
     lease: "Penyewaan",
     lease_checkout_command: "Proses check-out",

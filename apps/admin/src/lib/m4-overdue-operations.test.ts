@@ -7,8 +7,8 @@ const root = join(import.meta.dirname, "..");
 const source = (path: string) => readFileSync(join(root, path), "utf8");
 
 void test("Admin exposes audited extension, promise-to-pay, and manual termination boundaries", () => {
-  const api = source("lib/admin-w06-billing.ts");
-  const hook = source("hooks/useAdminW06Billing.ts");
+  const api = source("lib/admin-billing.ts");
+  const hook = source("hooks/useAdminBilling.ts");
   const workspace = source("components/residents/ResidentDetailWorkspace.tsx");
   assert.match(api, /contract-settlement\/payment-promise/);
   assert.match(hook, /useRecordLeasePaymentPromise/);

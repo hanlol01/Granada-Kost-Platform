@@ -86,20 +86,23 @@ export class PaymentRepository {
   async record(input: RecordPaymentInput): Promise<PaymentRecord> {
     const result = await this.database.client.query<PaymentRow>(
       `INSERT INTO payments (
-         property_id, resident_id, payment_code, payment_method, payment_status,
-         amount, paid_at, received_by_user_id, reference_number, notes
-       )
-       VALUES ($1, $2, $3, $4, 'verified', $5, COALESCE($6, now()), $7, $8, $9)
-       RETURNING ${this.paymentColumns()}`,
+          property_id, resident_id, payment_code, payment_method, payment_status,
+          amount, paid_at, received_by_user_id, reference_number, notes, payment_purpose
+        )
+        VALUES (
+          $1, $2, next_financial_transaction_code('TRX','SEWA',COALESCE($5::timestamptz,now())),
+          $3, 'verified', $4, COALESCE($5::timestamptz,now()), $6, COALESCE($7,$8), $9, 'rent'
+        )
+        RETURNING ${this.paymentColumns()}`,
       [
         input.propertyId,
         input.residentId ?? null,
-        input.paymentCode,
         input.paymentMethod,
         input.amount,
         input.paidAt ?? null,
         input.receivedByUserId ?? null,
         input.referenceNumber ?? null,
+        input.paymentCode,
         input.notes ?? null,
       ],
     );

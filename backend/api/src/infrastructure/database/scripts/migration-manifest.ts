@@ -550,4 +550,29 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_property_universities_property_name') IS NOT NULL",
     ],
   },
+  {
+    version: '058_formal_billing_document_numbers.sql',
+    checksumSha256: '628b14f15d2f8d0e612e1ffda27cfadc7e2b3d2f7c699eba5846f9f4f1518ad7',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='properties' AND column_name='document_code' AND is_nullable='NO')",
+      "to_regclass('public.billing_document_sequences') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='next_billing_document_number')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='receipt_code' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitment_refunds' AND column_name='receipt_code' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_invoices_formal_number' AND tgrelid=to_regclass('public.invoices') AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '059_formal_financial_transaction_codes.sql',
+    checksumSha256: '94cc8a71ba36698112aa13ccc01ae75580a5131bf70f5afc62c5d4164a292bbc',
+    sentinels: [
+      "to_regclass('public.financial_transaction_sequences') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='next_financial_transaction_code')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='transaction_code')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitment_refunds' AND column_name='transaction_code')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='payment_reversals' AND column_name='transaction_code')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_exit_refunds' AND column_name='transaction_code')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_refund_settlements' AND column_name='transaction_code')",
+    ],
+  },
 ] as const;

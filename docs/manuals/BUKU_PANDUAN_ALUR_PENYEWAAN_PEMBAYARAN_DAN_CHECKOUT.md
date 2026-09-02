@@ -395,14 +395,14 @@ Status Pembayaran menjelaskan posisi uang yang telah dicatat. Status ini berbeda
 | Pembayaran Awal 1 Bulan | Pembayaran sewa awal minimal satu bulan telah terverifikasi dan dialokasikan.                |
 | Bayar Sebagian          | Ada pembayaran sewa, tetapi jumlahnya belum memenuhi kewajiban saat ini.                     |
 | Lunas                   | Seluruh kewajiban pembayaran yang berlaku telah terpenuhi.                                   |
-| Direversal/Refund       | Pembayaran sebelumnya telah dibalikkan atau dikembalikan. Riwayat aslinya tetap tersedia.    |
+| Dibatalkan/Direfund     | Pembayaran sebelumnya telah dibatalkan atau dananya dikembalikan. Riwayat aslinya tetap tersedia. |
 | Ada Saldo Tunggakan     | Setelah perhitungan, masih ada jumlah yang wajib dibayar.                                    |
 
 ### Hal penting
 
 - **Bayar Sebagian** tidak berarti checkpoint terpenuhi.
 - **Lunas** tidak selalu berarti penghuni sudah check-out atau kamar sudah tersedia.
-- **Direversal/Refund** tidak berarti pembayaran sebelumnya hilang. Pembayaran awal, reversal, refund, dan saldo akhirnya tetap terlihat dalam riwayat.
+- **Dibatalkan/Direfund** tidak berarti pembayaran sebelumnya hilang. Pembayaran awal, pembatalan, refund, dan saldo akhirnya tetap terlihat dalam riwayat.
 
 ---
 

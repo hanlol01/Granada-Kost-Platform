@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   Eye,
   Globe2,
   Inbox,
@@ -853,24 +855,24 @@ function BookingLeadsPage() {
               ? "0 lead"
               : offset >= meta.total
                 ? `Tidak ada lead di halaman ini · ${meta.total} lead total`
-                : `${offset + 1}–${Math.min(offset + meta.limit, meta.total)} dari ${meta.total} lead`}
+                : `Menampilkan ${offset + 1}–${Math.min(offset + meta.limit, meta.total)} dari ${meta.total} lead`}
           </p>
           <div className="flex gap-2">
             <Button
-              className="min-h-11"
-              variant="outline"
+              className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={offset === 0 || leadsQuery.isFetching}
               onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
             >
+              <ArrowLeft className="size-4" aria-hidden="true" />
               Sebelumnya
             </Button>
             <Button
-              className="min-h-11"
-              variant="outline"
+              className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={offset + PAGE_SIZE >= meta.total || leadsQuery.isFetching}
               onClick={() => setOffset(offset + PAGE_SIZE)}
             >
               Berikutnya
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           </div>
         </div>

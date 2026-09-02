@@ -120,12 +120,12 @@ test("M7 billing requests are GET-only and property-scoped", async () => {
 test("M7 billing route delegates to the W06 workspace with isolated states and property authority", async () => {
   const route = await readFile(resolve(root, "routes/payments.tsx"), "utf8");
   const workspace = await readFile(
-    resolve(root, "components/billing/W06PaymentsWorkspace.tsx"),
+    resolve(root, "components/billing/PaymentsWorkspace.tsx"),
     "utf8",
   );
-  const hook = await readFile(resolve(root, "hooks/useAdminW06Billing.ts"), "utf8");
+  const hook = await readFile(resolve(root, "hooks/useAdminBilling.ts"), "utf8");
   assert.match(route, /createFileRoute\(['"]\/payments['"]\)/);
-  assert.match(route, /W06PaymentsWorkspace/);
+  assert.match(route, /PaymentsWorkspace/);
   assert.match(workspace, /ForbiddenState/);
   assert.match(workspace, /LoadingState/);
   assert.match(workspace, /ErrorState/);

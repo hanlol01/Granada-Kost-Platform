@@ -1,4 +1,5 @@
 import { apiClient, getAccessToken } from "@/lib/api";
+import { fetchPreviewAndDownload } from "@/lib/document-download";
 import { env } from "@/lib/env";
 
 export const W06_INVOICE_STATUSES = [
@@ -9,7 +10,15 @@ export const W06_INVOICE_STATUSES = [
   "overdue",
   "void",
 ] as const;
-export const W06_PAYMENT_PURPOSES = ["rent", "dp", "security_deposit", "other_charge"] as const;
+export const W06_PAYMENT_PURPOSES = [
+  "rent",
+  "dp",
+  "booking_fee",
+  "down_payment",
+  "full_settlement",
+  "security_deposit",
+  "other_charge",
+] as const;
 export const W06_PAYMENT_METHODS = ["bank_transfer", "cash"] as const;
 
 export type W06InvoiceStatus = (typeof W06_INVOICE_STATUSES)[number];
@@ -819,39 +828,34 @@ export async function submitMyW06Proof(
 }
 
 export async function downloadMyInvoiceDocument(invoiceId: string, invoiceCode: string) {
-  const token = getAccessToken();
-  const response = await fetch(
-    `${env.VITE_API_BASE_URL}/my/billing/invoices/${encodeURIComponent(invoiceId)}/document`,
-    {
-      credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    },
-  );
-  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
-    throw new Error(`Dokumen invoice gagal diunduh (HTTP ${response.status}).`);
-
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}.pdf`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const filename = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}.pdf`;
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/my/billing/invoices/${encodeURIComponent(invoiceId)}/document`,
+      {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Dokumen invoice gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, filename);
 }
 
 async function downloadMyPdf(path: string, code: string, fallback: string) {
-  const token = getAccessToken();
-  const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
-    credentials: "include",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
-    throw new Error(`Dokumen PDF gagal diunduh (HTTP ${response.status}).`);
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${code.replace(/[^a-z0-9_-]+/gi, "-") || fallback}.pdf`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const filename = `${code.replace(/[^a-z0-9_-]+/gi, "-") || fallback}.pdf`;
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(`${env.VITE_API_BASE_URL}${path}`, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Dokumen PDF gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, filename);
 }
 
 export function downloadMyReceiptDocument(receiptId: string, receiptCode: string) {

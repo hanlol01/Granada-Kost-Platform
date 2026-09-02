@@ -56,7 +56,7 @@ export type OnboardingResponse = {
     securityDepositVerifiedAmount: number;
     receipts: Array<{
       id: string;
-      purpose: "dp" | "security_deposit";
+      purpose: "booking_fee" | "down_payment" | "full_settlement" | "security_deposit";
       amount: number;
     }>;
   };
@@ -144,7 +144,9 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
         Object.keys(item).sort().join(",") === "amount,id,purpose" &&
         typeof item.id === "string" &&
         UUID.test(item.id) &&
-        ["dp", "security_deposit"].includes(item.purpose as string) &&
+        ["booking_fee", "down_payment", "full_settlement", "security_deposit"].includes(
+          item.purpose as string,
+        ) &&
         Number.isSafeInteger(item.amount) &&
         (item.amount as number) > 0
       );

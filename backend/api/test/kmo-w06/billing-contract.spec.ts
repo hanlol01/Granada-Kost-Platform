@@ -105,6 +105,9 @@ void test('resident self billing derives scope from resident identity without a 
           if (normalized.includes('FROM lease_installments')) {
             return Promise.resolve({ rows: [{ total: '0', paid: '0', next_due: null }] });
           }
+          if (normalized.includes('SELECT timeline.*')) {
+            return Promise.resolve({ rows: [] });
+          }
           if (normalized.includes('FROM lease_deposit_transactions')) {
             return Promise.resolve({
               rows: [{ collected: '0', deducted: '0', refunded: '0', balance: '0' }],
@@ -276,8 +279,13 @@ type HarnessOptions = {
   invoiceOutstanding?: number;
   replayFingerprint?: string;
   paymentStatus?: 'pending_confirmation' | 'verified' | 'rejected';
+  paymentPurpose?: 'rent' | 'dp';
+  paymentCode?: string;
+  commandFingerprint?: string | null;
   initialIntents?: Array<{ invoice_id: string; intended_amount: string }>;
   contractSettlement?: {
+    state?: 'awaiting_activation' | 'open';
+    activatedAt?: Date | null;
     originalDueAt: Date;
     extensionDueAt?: Date | null;
     deadlinePassed: boolean;
@@ -294,12 +302,25 @@ function paymentHarness(options: HarnessOptions = {}) {
   const intents: Array<{ invoice_id: string; intended_amount: string }> = [
     ...(options.initialIntents ?? []),
   ];
+  let receiptNumberSequence = 0;
+  let transactionNumberSequence = 0;
   const client = {
     query: async (statement: string, params: readonly unknown[] = []) => {
       const normalized = sql(statement);
       queries.push({ sql: normalized, params });
       if (/SELECT id FROM properties/.test(normalized))
         return { rows: [{ id: PROPERTY_ID }], rowCount: 1 };
+      if (/SELECT next_financial_transaction_code/.test(normalized)) {
+        transactionNumberSequence += 1;
+        return {
+          rows: [
+            {
+              code: `TRX-20260801-${String(transactionNumberSequence).padStart(6, '0')}-SEWA`,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
       if (/INSERT INTO idempotency_commands/.test(normalized))
         return options.replayFingerprint === undefined
           ? { rows: [{ id: 'command' }], rowCount: 1 }
@@ -359,16 +380,17 @@ function paymentHarness(options: HarnessOptions = {}) {
               property_id: PROPERTY_ID,
               resident_id: RESIDENT_ID,
               lease_id: LEASE_ID,
-              payment_code: 'PAY-W06-PENDING',
+              payment_code: options.paymentCode ?? 'PAY-W06-PENDING',
               payment_method: 'bank_transfer',
               payment_status: options.paymentStatus ?? 'pending_confirmation',
-              payment_purpose: 'rent',
+              payment_purpose: options.paymentPurpose ?? 'rent',
               amount: '3600000',
               paid_at: new Date('2026-08-01T01:00:00.000Z'),
               verified_at: null,
               proof_id: null,
               reference_number: 'MANUAL-001',
               notes: null,
+              command_fingerprint: options.commandFingerprint ?? null,
             },
           ],
           rowCount: 1,
@@ -409,9 +431,12 @@ function paymentHarness(options: HarnessOptions = {}) {
           rows: [
             {
               id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-              state: 'open',
+              state: settlement.state ?? 'open',
               invoice_id: INVOICE_1,
-              activated_at: new Date('2026-01-01T00:00:00.000Z'),
+              activated_at:
+                settlement.activatedAt === undefined
+                  ? new Date('2026-01-01T00:00:00.000Z')
+                  : settlement.activatedAt,
               original_due_at: settlement.originalDueAt,
               extension_due_at: settlement.extensionDueAt ?? null,
               extension_reason: null,
@@ -478,6 +503,17 @@ function paymentHarness(options: HarnessOptions = {}) {
       }
       if (/FROM payment_allocation_intents/.test(normalized))
         return { rows: intents, rowCount: intents.length };
+      if (/SELECT next_billing_document_number/.test(normalized)) {
+        receiptNumberSequence += 1;
+        return {
+          rows: [
+            {
+              document_code: `${String(receiptNumberSequence).padStart(3, '0')}-08/SEWA-KOST/GSH1/2026`,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
       if (/issuer\.display_name AS issued_by_name/.test(normalized))
         return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/INSERT INTO payment_receipts/.test(normalized))
@@ -786,6 +822,93 @@ test('manual transfer verification consumes pending confirmation in one transact
   );
 });
 
+test('pre-activation DP transfer can be verified before automatic lease activation', async () => {
+  const harness = paymentHarness({
+    paymentPurpose: 'dp',
+    invoiceOutstanding: 3_600_000,
+    initialIntents: [{ invoice_id: INVOICE_1, intended_amount: '3600000' }],
+    contractSettlement: {
+      state: 'awaiting_activation',
+      activatedAt: null,
+      originalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+      deadlinePassed: false,
+      policyFinalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+    },
+  });
+
+  const result = await harness.service.verifyManualPayment(
+    actor as never,
+    PAYMENT_ID,
+    { property_id: PROPERTY_ID },
+    KEY,
+    {},
+  );
+
+  assert.equal(result.data.payment_status, 'verified');
+  assert.equal(result.data.payment_purpose, 'dp');
+  assert.equal(result.data.receipt_id, RECEIPT_ID);
+});
+
+test('pre-activation full settlement created by onboarding can be verified', async () => {
+  const harness = paymentHarness({
+    paymentPurpose: 'rent',
+    paymentCode: 'TRX-20260902-000001-LUNAS',
+    commandFingerprint: `onboarding:${'a'.repeat(64)}:full_settlement:0`,
+    invoiceOutstanding: 3_600_000,
+    initialIntents: [{ invoice_id: INVOICE_1, intended_amount: '3600000' }],
+    contractSettlement: {
+      state: 'awaiting_activation',
+      activatedAt: null,
+      originalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+      deadlinePassed: false,
+      policyFinalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+    },
+  });
+
+  const result = await harness.service.verifyManualPayment(
+    actor as never,
+    PAYMENT_ID,
+    { property_id: PROPERTY_ID },
+    KEY,
+    {},
+  );
+
+  assert.equal(result.data.payment_status, 'verified');
+  assert.equal(result.data.payment_purpose, 'rent');
+  assert.equal(result.data.receipt_id, RECEIPT_ID);
+});
+
+test('ordinary rent transfer remains blocked before lease activation', async () => {
+  const harness = paymentHarness({
+    paymentPurpose: 'rent',
+    commandFingerprint: null,
+    invoiceOutstanding: 1_800_000,
+    initialIntents: [{ invoice_id: INVOICE_1, intended_amount: '1800000' }],
+    contractSettlement: {
+      state: 'awaiting_activation',
+      activatedAt: null,
+      originalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+      deadlinePassed: false,
+      policyFinalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+    },
+  });
+
+  await assert.rejects(
+    harness.service.verifyManualPayment(
+      actor as never,
+      PAYMENT_ID,
+      { property_id: PROPERTY_ID },
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'CONTRACT_SETTLEMENT_NOT_ACTIVE',
+  );
+});
+
 test('manual transfer rejection is terminal without allocation, receipt, or verification effects', async () => {
   const harness = paymentHarness();
   const result = await harness.service.rejectManualPayment(
@@ -894,33 +1017,25 @@ test('DP distribution is deterministic oldest-first and rejects a claim above re
   );
 });
 
-test('onboarding may record a zero DP when the 25% amount is only a recommendation', async () => {
+test('onboarding refuses an empty initial rent payment collection', async () => {
   const harness = paymentHarness();
-  const result = await harness.service.recordInitialOnboardingPaymentsInTransaction(
-    harness.client as never,
-    {
+  await assert.rejects(
+    harness.service.recordInitialOnboardingPaymentsInTransaction(harness.client as never, {
       propertyId: PROPERTY_ID,
       residentId: RESIDENT_ID,
       leaseId: LEASE_ID,
       firstRentInvoiceId: INVOICE_1,
-      method: 'cash',
-      dpAmount: 0,
-      securityDepositAmount: 0,
-      evidenceFileIds: [],
+      rentPayments: [],
       commandFingerprint: 'a'.repeat(64),
       actor: actor as never,
       context: {},
-    },
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'ONBOARDING_RENT_PAYMENT_REQUIRED',
   );
-  assert.deepEqual(result, {
-    method: 'cash',
-    status: 'verified',
-    dpRecordedAmount: 0,
-    securityDepositRecordedAmount: 0,
-    dpVerifiedAmount: 0,
-    securityDepositVerifiedAmount: 0,
-    receipts: [],
-  });
   assert.equal(
     harness.queries.some(({ sql: statement }) => /INSERT INTO payments/.test(statement)),
     false,
@@ -936,16 +1051,23 @@ test('verified onboarding cash returns the receipt reference needed by the succe
       residentId: RESIDENT_ID,
       leaseId: LEASE_ID,
       firstRentInvoiceId: INVOICE_1,
-      method: 'cash',
-      dpAmount: 1_000_000,
-      securityDepositAmount: 0,
-      evidenceFileIds: [],
+      rentPayments: [
+        {
+          classification: 'down_payment',
+          amount: 1_000_000,
+          method: 'cash',
+          status: 'verified',
+          evidenceFileIds: [],
+        },
+      ],
       commandFingerprint: 'b'.repeat(64),
       actor: actor as never,
       context: {},
     },
   );
-  assert.deepEqual(result.receipts, [{ id: RECEIPT_ID, purpose: 'dp', amount: 1_000_000 }]);
+  assert.deepEqual(result.receipts, [
+    { id: RECEIPT_ID, purpose: 'down_payment', amount: 1_000_000 },
+  ]);
 });
 
 test('reversal appends compensating allocation and receipt records without mutating original authority', async () => {
@@ -1022,6 +1144,16 @@ test('reversal appends compensating allocation and receipt records without mutat
         };
       if (/SELECT id FROM invoices WHERE/.test(normalized))
         return { rows: [{ id: INVOICE_1 }], rowCount: 1 };
+      if (/SELECT next_billing_document_number/.test(normalized))
+        return {
+          rows: [{ document_code: '001-08/PEMBATALAN-REFUND/GSH1/2026' }],
+          rowCount: 1,
+        };
+      if (/SELECT next_financial_transaction_code/.test(normalized))
+        return {
+          rows: [{ code: 'BTL-20260802-000001-CANCEL' }],
+          rowCount: 1,
+        };
       if (/issuer\.display_name AS issued_by_name/.test(normalized))
         return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/INSERT INTO payment_receipts/.test(normalized))

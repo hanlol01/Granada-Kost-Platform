@@ -12,6 +12,10 @@ import {
   type BillingReceiptDocument,
 } from '../billing/helpers/billing-document.helper';
 import {
+  nextFinancialTransactionCode,
+  type FinancialTransactionPurpose,
+} from '../billing/helpers/financial-transaction-code.helper';
+import {
   W06BillingService,
   type CancelInitialOnboardingFinancialsSummary,
 } from '../billing/services/w06-billing.service';
@@ -51,6 +55,8 @@ type CommitmentRow = {
   hold_id: string;
   room_id: string;
   payment_type: string;
+  receipt_code: string;
+  transaction_code: string | null;
   rent_credit_amount: string | number;
   security_deposit_amount: string | number;
   payment_method: string;
@@ -97,6 +103,7 @@ export type BookingLeadCompletionContext = {
 
 export type LeadPaymentCommitmentResponse = {
   id: string;
+  transaction_code: string | null;
   property_id: string;
   booking_lead_id: string;
   hold_id: string;
@@ -288,12 +295,33 @@ export class BookingLeadCompletionService {
       );
       const inserted = await client.query<CommitmentRow>(
         `INSERT INTO booking_lead_payment_commitments(
-           property_id, booking_lead_id, hold_id, room_id, payment_type,
-           rent_credit_amount, security_deposit_amount, payment_method, verification_status,
-           payment_note, payment_evidence_file_ids, start_date, term_months, end_date,
-           billing_cycle, payment_plan_type, created_by_user_id
-         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::uuid[],$12::date,$13,$14::date,$15,$16,$17)
-         RETURNING *`,
+            property_id, booking_lead_id, hold_id, room_id, payment_type, receipt_code, transaction_code,
+            rent_credit_amount, security_deposit_amount, payment_method, verification_status,
+            payment_note, payment_evidence_file_ids, start_date, term_months, end_date,
+            billing_cycle, payment_plan_type, created_by_user_id
+          ) VALUES(
+            $1,$2,$3,$4,$5,
+            next_billing_document_number(
+              $1,
+              CASE $5
+                WHEN 'booking_fee' THEN 'receipt_booking_fee'
+                WHEN 'down_payment' THEN 'receipt_down_payment'
+                ELSE 'receipt_full_settlement'
+              END,
+              now()
+            ),
+            next_financial_transaction_code(
+              'TRX',
+              CASE $5
+                WHEN 'booking_fee' THEN 'BOOKING'
+                WHEN 'down_payment' THEN 'DP'
+                ELSE 'LUNAS'
+              END,
+              now()
+            ),
+            $6,$7,$8,$9,$10,$11::uuid[],$12::date,$13,$14::date,$15,$16,$17
+          )
+          RETURNING *`,
         [
           dto.property_id,
           leadId,
@@ -478,11 +506,32 @@ export class BookingLeadCompletionService {
         });
       }
       await this.assertPaymentEvidence(client, refundEvidenceFileIds, dto.property_id, actorUserId);
-      const inserted = await client.query<{ id: string; refunded_at: string | Date }>(
+      const refundTransactionPurpose: FinancialTransactionPurpose = materializedTarget
+        ? 'SEWA'
+        : commitment.payment_type === 'booking_fee'
+          ? 'BOOKING'
+          : commitment.payment_type === 'down_payment'
+            ? 'DP'
+          : 'LUNAS';
+      const refundTransactionCode = await nextFinancialTransactionCode(
+        client,
+        refundAmount > 0 ? 'REF' : 'BTL',
+        refundAmount > 0 ? refundTransactionPurpose : 'CANCEL',
+      );
+      const inserted = await client.query<{
+        id: string;
+        receipt_code: string;
+        refunded_at: string | Date;
+      }>(
         `INSERT INTO booking_lead_payment_commitment_refunds(
-           property_id,booking_lead_id,commitment_id,hold_id,refund_amount,refund_method,refund_note,refund_evidence_file_ids,refunded_by_user_id
-         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         RETURNING id,refunded_at`,
+           property_id,booking_lead_id,commitment_id,hold_id,receipt_code,transaction_code,
+           refund_amount,refund_method,refund_note,refund_evidence_file_ids,refunded_by_user_id
+          ) VALUES(
+            $1,$2,$3,$4,next_billing_document_number($1,'receipt_booking_refund',now()),
+            $10,
+            $5,$6,$7,$8,$9
+         )
+         RETURNING id,receipt_code,refunded_at`,
         [
           dto.property_id,
           leadId,
@@ -493,6 +542,7 @@ export class BookingLeadCompletionService {
           dto.refund_note ?? null,
           refundEvidenceFileIds,
           actorUserId,
+          refundTransactionCode,
         ],
       );
       const refund = inserted.rows[0];
@@ -588,6 +638,7 @@ export class BookingLeadCompletionService {
       const snapshot = {
         refund_id: refund.id,
         commitment_id: commitment.id,
+        transaction_code: refundTransactionCode,
         refund_amount: refundAmount,
         refund_method: dto.refund_method,
         refund_evidence_file_ids: refundEvidenceFileIds,
@@ -783,6 +834,8 @@ export class BookingLeadCompletionService {
   ): Promise<BillingReceiptDocument> {
     const result = await this.database.client.query<{
       commitment_id: string;
+      receipt_code: string;
+      transaction_code: string | null;
       payment_type: string;
       payment_method: string;
       verification_status: string;
@@ -790,21 +843,27 @@ export class BookingLeadCompletionService {
       created_at: Date;
       visitor_name: string;
       room_number: string;
+      building_code: string | null;
       start_date: string;
       end_date: string | null;
       property_name: string;
       property_address: string;
+      issued_by_name: string | null;
     }>(
-      `SELECT commitment.id AS commitment_id,commitment.payment_type,commitment.payment_method,
+      `SELECT commitment.id AS commitment_id,commitment.receipt_code,commitment.transaction_code,
+              commitment.payment_type,commitment.payment_method,
               commitment.verification_status,commitment.rent_credit_amount,commitment.created_at,
-              lead.visitor_name,room.number AS room_number,
+              lead.visitor_name,room.number AS room_number,building.building_code AS building_code,
               commitment.start_date::text AS start_date,commitment.end_date::text AS end_date,
-              property.name AS property_name,property.address AS property_address
+              property.name AS property_name,property.address AS property_address,
+              issuer.display_name AS issued_by_name
          FROM booking_lead_payment_commitments commitment
          JOIN properties property ON property.id=commitment.property_id
          JOIN booking_leads lead ON lead.id=commitment.booking_lead_id
            AND lead.property_id=commitment.property_id
          JOIN rooms room ON room.id=commitment.room_id AND room.property_id=commitment.property_id
+         LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
+         LEFT JOIN users issuer ON issuer.id=commitment.created_by_user_id
         WHERE commitment.booking_lead_id=$1 AND commitment.property_id=$2`,
       [leadId, propertyId],
     );
@@ -815,23 +874,31 @@ export class BookingLeadCompletionService {
         message: 'Initial booking payment document is unavailable',
       });
     const verified = row.verification_status === 'verified';
+    const documentSubject =
+      row.payment_type === 'booking_fee'
+        ? 'BOOKING FEE / TAHAN KAMAR'
+        : row.payment_type === 'down_payment'
+          ? 'DOWN PAYMENT / UANG MUKA'
+          : 'PELUNASAN SEWA';
     return createBillingReceiptPdf({
-      receiptCode: `RCT-BKG-${this.documentSuffix(row.commitment_id)}`,
-      paymentCode: `BKG-${this.documentSuffix(row.commitment_id)}`,
+      receiptCode: row.receipt_code,
+      paymentCode: row.transaction_code ?? `BKG-${this.documentSuffix(row.commitment_id)}`,
       paymentMethod: row.payment_method,
       paymentPurpose: row.payment_type,
       residentName: row.visitor_name,
       roomNumber: row.room_number,
+      buildingCode: row.building_code,
       amount: Number(row.rent_credit_amount),
       paidAt: verified ? row.created_at : null,
       issuedAt: row.created_at,
       allocations: [],
-      documentTitle: verified ? 'KUITANSI PEMBAYARAN AWAL' : 'NOTA PEMBAYARAN AWAL',
+      documentTitle: `${verified ? 'KUITANSI' : 'NOTA'} ${documentSubject}`,
       documentFootnote: verified
         ? 'Kuitansi ini membuktikan penerimaan pembayaran awal sebelum data penyewaan dikomit.'
         : 'Nota ini belum membuktikan penerimaan dana sampai transfer diverifikasi admin.',
       propertyName: row.property_name,
       propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
       leaseStart: row.start_date,
       leaseEnd: row.end_date,
     });
@@ -843,24 +910,33 @@ export class BookingLeadCompletionService {
   ): Promise<BillingReceiptDocument> {
     const result = await this.database.client.query<{
       refund_id: string;
+      receipt_code: string;
+      transaction_code: string | null;
       refund_amount: string | number;
       refund_method: string;
       refund_note: string | null;
       refunded_at: Date;
       visitor_name: string;
       room_number: string | null;
+      building_code: string | null;
       property_name: string;
       property_address: string;
+      issued_by_name: string | null;
     }>(
-      `SELECT refund.id AS refund_id,refund.refund_amount,refund.refund_method,refund.refund_note,
-              refund.refunded_at,lead.visitor_name,room.number AS room_number
-              ,property.name AS property_name,property.address AS property_address
+      `SELECT refund.id AS refund_id,refund.receipt_code,refund.transaction_code,
+               refund.refund_amount,refund.refund_method,refund.refund_note,
+               refund.refunded_at,lead.visitor_name,room.number AS room_number,
+               building.building_code AS building_code
+               ,property.name AS property_name,property.address AS property_address,
+               issuer.display_name AS issued_by_name
          FROM booking_lead_payment_commitment_refunds refund
          JOIN properties property ON property.id=refund.property_id
          JOIN booking_leads lead ON lead.id=refund.booking_lead_id
            AND lead.property_id=refund.property_id
          JOIN booking_lead_holds hold ON hold.id=refund.hold_id AND hold.property_id=refund.property_id
          LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=refund.property_id
+         LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
+         LEFT JOIN users issuer ON issuer.id=refund.refunded_by_user_id
         WHERE refund.booking_lead_id=$1 AND refund.property_id=$2`,
       [leadId, propertyId],
     );
@@ -871,12 +947,13 @@ export class BookingLeadCompletionService {
         message: 'Cancellation document is unavailable',
       });
     return createBillingReceiptPdf({
-      receiptCode: `RCT-CNL-${this.documentSuffix(row.refund_id)}`,
-      paymentCode: `CNL-${this.documentSuffix(row.refund_id)}`,
+      receiptCode: row.receipt_code,
+      paymentCode: row.transaction_code ?? `CNL-${this.documentSuffix(row.refund_id)}`,
       paymentMethod: row.refund_method,
       paymentPurpose: 'payment_commitment_refund',
       residentName: row.visitor_name,
       roomNumber: row.room_number ?? 'Kamar tahanan dibatalkan',
+      buildingCode: row.building_code,
       amount: Number(row.refund_amount),
       paidAt: row.refunded_at,
       issuedAt: row.refunded_at,
@@ -887,6 +964,7 @@ export class BookingLeadCompletionService {
         'Dokumen ini mencatat pengembalian pembayaran awal setelah minat booking dibatalkan.',
       propertyName: row.property_name,
       propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
     });
   }
 
@@ -1390,6 +1468,7 @@ export class BookingLeadCompletionService {
   response(row: CommitmentRow): LeadPaymentCommitmentResponse {
     return {
       id: row.id,
+      transaction_code: row.transaction_code,
       property_id: row.property_id,
       booking_lead_id: row.booking_lead_id,
       hold_id: row.hold_id,

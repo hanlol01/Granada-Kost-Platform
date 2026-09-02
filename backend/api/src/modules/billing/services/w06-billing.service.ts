@@ -13,6 +13,7 @@ import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { RequestAuditContext } from '../../property/types/property.types';
 import {
+  AdminBillingDocumentSearchQueryDto,
   AdminBillingWorklistQueryDto,
   AdminW06PaymentsQueryDto,
   AdminW06ProofsQueryDto,
@@ -32,6 +33,10 @@ import {
   type BillingInvoiceDocument,
   type BillingReceiptDocument,
 } from '../helpers/billing-document.helper';
+import {
+  nextFinancialTransactionCode,
+  type FinancialTransactionPurpose,
+} from '../helpers/financial-transaction-code.helper';
 import {
   projectLeaseSettlementV2,
   type LeaseSettlementCheckpointInput,
@@ -53,7 +58,7 @@ type LeaseTupleRow = {
   snapshot_monthly_price: string;
   snapshot_room_number: string;
   snapshot_kost_type_name: string;
-  building_code: string;
+  building_code: string | null;
   resident_name: string;
   remaining_days: number;
 };
@@ -73,6 +78,7 @@ type PaymentRow = {
   proof_id: string | null;
   reference_number: string | null;
   notes: string | null;
+  command_fingerprint: string | null;
 };
 
 type InvoiceLockRow = {
@@ -106,6 +112,7 @@ type PaymentProjectionRow = {
   reversed_at: Date | null;
   allocations: Array<{ invoice_id: string; amount: string | number }>;
 };
+type PublicPaymentPurpose = W06PaymentPurpose | 'booking_fee' | 'down_payment' | 'full_settlement';
 type FinancialTimelineRow = {
   id: string;
   event_type:
@@ -273,12 +280,15 @@ type ReceiptDocumentRow = {
   paid_at: Date | null;
   resident_name: string;
   room_number: string;
+  building_code: string;
   lease_start: string;
   lease_end: string | null;
   property_name: string;
   property_address: string;
   issued_by_name: string | null;
   settles_rent_contract: boolean;
+  booking_payment_type?: 'booking_fee' | 'down_payment' | 'full_settlement' | null;
+  booking_receipt_code?: string | null;
   reversal_reason: string | null;
   allocations: Array<{ invoice_code: string; amount: string | number }>;
 };
@@ -286,6 +296,29 @@ type ReceiptAuthorityRow = Omit<
   ReceiptDocumentRow,
   'receipt_code' | 'receipt_kind' | 'amount' | 'issued_at' | 'reversal_reason'
 >;
+type BillingDocumentSearchRow = {
+  id: string;
+  document_type:
+    | 'invoice'
+    | 'payment_receipt'
+    | 'payment_reversal_receipt'
+    | 'booking_payment_receipt'
+    | 'booking_refund_receipt'
+    | 'checkout_handover'
+    | 'final_settlement'
+    | 'checkout_refund_receipt';
+  document_code: string;
+  title: string;
+  resident_name: string;
+  room_number: string | null;
+  issued_at: Date;
+  amount: string | null;
+  status: string;
+  booking_lead_id: string | null;
+  lease_id: string | null;
+  checkout_command_id: string | null;
+  total: string;
+};
 type ReplayRow = {
   request_fingerprint: string;
   command_status: string;
@@ -301,16 +334,38 @@ type SafePaymentResult = {
   receipt_id: string | null;
 };
 
+export type InitialOnboardingRentPaymentClassification =
+  | 'booking_fee'
+  | 'down_payment'
+  | 'full_settlement';
+
+export type InitialOnboardingRentPaymentInput = {
+  classification: InitialOnboardingRentPaymentClassification;
+  amount: number;
+  method: 'bank_transfer' | 'cash';
+  status: 'pending_confirmation' | 'verified';
+  evidenceFileIds: string[];
+  paymentNote?: string;
+  paidAt?: string | Date;
+  transactionCode?: string | null;
+};
+
+export type InitialOnboardingDepositPaymentInput = {
+  amount: number;
+  method: 'bank_transfer' | 'cash';
+  status: 'pending_confirmation' | 'verified';
+  evidenceFileIds: string[];
+  paymentNote?: string;
+  paidAt?: string | Date;
+};
+
 export type InitialOnboardingPaymentInput = {
   propertyId: string;
   residentId: string;
   leaseId: string;
   firstRentInvoiceId: string;
-  method: 'bank_transfer' | 'cash';
-  dpAmount: number;
-  securityDepositAmount: number;
-  evidenceFileIds: string[];
-  paymentNote?: string;
+  rentPayments: InitialOnboardingRentPaymentInput[];
+  securityDepositPayment?: InitialOnboardingDepositPaymentInput;
   commandFingerprint: string;
   actor: UserAccessContext;
   context: RequestAuditContext;
@@ -325,7 +380,7 @@ export type InitialOnboardingPaymentSummary = {
   securityDepositVerifiedAmount: number;
   receipts: Array<{
     id: string;
-    purpose: 'dp' | 'security_deposit';
+    purpose: InitialOnboardingRentPaymentClassification | 'security_deposit';
     amount: number;
   }>;
 };
@@ -457,6 +512,226 @@ export class W06BillingService {
         outstanding_amount: this.money(row.outstanding_amount),
       })),
       meta: { limit, offset, total: Number(count.rows[0]?.total ?? 0), month },
+    };
+  }
+
+  async searchDocuments(user: UserAccessContext, query: AdminBillingDocumentSearchQueryDto) {
+    await this.properties.assertCanReadProperty(user, query.property_id);
+    const search = query.q.trim();
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const result = await this.database.client.query<BillingDocumentSearchRow>(
+      `WITH document_rows AS (
+         SELECT invoice.id,
+                'invoice'::text AS document_type,
+                invoice.invoice_code AS document_code,
+                CASE invoice.invoice_purpose
+                  WHEN 'other_charge' THEN 'Invoice tagihan lainnya'
+                  ELSE 'Invoice tagihan sewa kost'
+                END AS title,
+                invoice.snapshot_resident_name AS resident_name,
+                invoice.snapshot_room_number AS room_number,
+                COALESCE(invoice.issued_at,invoice.created_at) AS issued_at,
+                invoice.total_amount AS amount,
+                invoice.invoice_status AS status,
+                NULL::uuid AS booking_lead_id,
+                invoice.lease_id,
+                NULL::uuid AS checkout_command_id,
+                concat_ws(' ',invoice.invoice_code,invoice.snapshot_resident_name,
+                  invoice.snapshot_room_number,invoice.snapshot_building_code) AS search_text
+           FROM invoices invoice
+          WHERE invoice.property_id=$1
+            AND invoice.invoice_status<>'draft'
+
+         UNION ALL
+
+         SELECT receipt.id,
+                CASE receipt.receipt_kind
+                  WHEN 'reversal' THEN 'payment_reversal_receipt'
+                  ELSE 'payment_receipt'
+                END AS document_type,
+                receipt.receipt_code AS document_code,
+                CASE
+                  WHEN receipt.receipt_kind='reversal' THEN 'Invoice pembatalan sewa & refund'
+                   WHEN payment.payment_code LIKE 'TRX-%-BOOKING' THEN 'Kuitansi Booking Fee / tahan kamar'
+                   WHEN payment.payment_code LIKE 'TRX-%-LUNAS'
+                     OR payment.payment_code LIKE 'TRX-%-PELUNASAN-AWAL' THEN 'Kuitansi pelunasan sewa'
+                   WHEN payment.payment_purpose='dp' THEN 'Kuitansi DP / uang muka'
+                  WHEN payment.payment_purpose='security_deposit' THEN 'Kuitansi security deposit'
+                  WHEN payment.payment_purpose='other_charge' THEN 'Kuitansi tagihan lainnya'
+                  ELSE 'Kuitansi pembayaran sewa'
+                END AS title,
+                resident.full_name AS resident_name,
+                room.number AS room_number,
+                receipt.issued_at,
+                receipt.amount,
+                CASE
+                  WHEN receipt.receipt_kind='reversal' THEN 'refunded'
+                  WHEN reversal.id IS NOT NULL THEN 'reversed'
+                  ELSE payment.payment_status
+                END AS status,
+                NULL::uuid AS booking_lead_id,
+                payment.lease_id,
+                NULL::uuid AS checkout_command_id,
+                concat_ws(' ',receipt.receipt_code,payment.payment_code,
+                  receipt_reversal.transaction_code,
+                  payment.reference_number,resident.full_name,room.number,
+                  building.building_code,COALESCE((
+                    SELECT string_agg(invoice.invoice_code,' ' ORDER BY invoice.invoice_code)
+                      FROM payment_allocations allocation
+                      JOIN invoices invoice ON invoice.id=allocation.invoice_id
+                     WHERE allocation.payment_id=payment.id
+                  ),'')) AS search_text
+           FROM payment_receipts receipt
+           LEFT JOIN payments direct_payment
+             ON direct_payment.id=receipt.payment_id AND direct_payment.property_id=receipt.property_id
+           LEFT JOIN payment_reversals receipt_reversal
+             ON receipt_reversal.receipt_id=receipt.id
+           JOIN payments payment
+             ON payment.id=COALESCE(direct_payment.id,receipt_reversal.payment_id)
+            AND payment.property_id=receipt.property_id
+           LEFT JOIN payment_reversals reversal ON reversal.payment_id=payment.id
+           JOIN residents resident
+             ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
+           JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
+           JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+           LEFT JOIN room_buildings building
+             ON building.id=room.building_id AND building.property_id=room.property_id
+          WHERE receipt.property_id=$1
+
+         UNION ALL
+
+         SELECT commitment.id,
+                'booking_payment_receipt'::text AS document_type,
+                commitment.receipt_code AS document_code,
+                CASE commitment.payment_type
+                  WHEN 'booking_fee' THEN 'Kuitansi biaya booking'
+                  WHEN 'down_payment' THEN 'Kuitansi DP / uang muka'
+                  ELSE 'Kuitansi pelunasan sewa'
+                END AS title,
+                lead.visitor_name AS resident_name,
+                room.number AS room_number,
+                commitment.created_at AS issued_at,
+                commitment.rent_credit_amount AS amount,
+                commitment.verification_status AS status,
+                commitment.booking_lead_id,
+                NULL::uuid AS lease_id,
+                NULL::uuid AS checkout_command_id,
+                concat_ws(' ',commitment.receipt_code,commitment.transaction_code,
+                  lead.visitor_name,lead.visitor_phone,
+                  room.number,building.building_code) AS search_text
+           FROM booking_lead_payment_commitments commitment
+           JOIN booking_leads lead
+             ON lead.id=commitment.booking_lead_id AND lead.property_id=commitment.property_id
+           JOIN rooms room ON room.id=commitment.room_id AND room.property_id=commitment.property_id
+           LEFT JOIN room_buildings building
+             ON building.id=room.building_id AND building.property_id=room.property_id
+           WHERE commitment.property_id=$1
+             AND commitment.materialized_onboarding_commitment_id IS NULL
+
+         UNION ALL
+
+         SELECT refund.id,
+                'booking_refund_receipt'::text AS document_type,
+                refund.receipt_code AS document_code,
+                'Kuitansi refund minat booking' AS title,
+                lead.visitor_name AS resident_name,
+                room.number AS room_number,
+                refund.refunded_at AS issued_at,
+                refund.refund_amount AS amount,
+                'refunded' AS status,
+                refund.booking_lead_id,
+                NULL::uuid AS lease_id,
+                NULL::uuid AS checkout_command_id,
+                concat_ws(' ',refund.receipt_code,refund.transaction_code,
+                  lead.visitor_name,lead.visitor_phone,
+                  room.number,building.building_code) AS search_text
+           FROM booking_lead_payment_commitment_refunds refund
+           JOIN booking_leads lead
+             ON lead.id=refund.booking_lead_id AND lead.property_id=refund.property_id
+           JOIN booking_lead_holds hold
+             ON hold.id=refund.hold_id AND hold.property_id=refund.property_id
+           LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=refund.property_id
+           LEFT JOIN room_buildings building
+             ON building.id=room.building_id AND building.property_id=room.property_id
+          WHERE refund.property_id=$1
+
+         UNION ALL
+
+         SELECT document.id,
+                CASE document.document_kind
+                  WHEN 'checkout_handover' THEN 'checkout_handover'
+                  WHEN 'final_settlement' THEN 'final_settlement'
+                  ELSE 'checkout_refund_receipt'
+                END AS document_type,
+                document.document_code,
+                CASE document.document_kind
+                  WHEN 'checkout_handover' THEN 'Berita acara serah terima keluar'
+                  WHEN 'final_settlement' THEN 'Rincian akhir penyewaan'
+                  ELSE 'Kuitansi refund checkout'
+                END AS title,
+                resident.full_name AS resident_name,
+                room.number AS room_number,
+                document.issued_at,
+                CASE document.document_kind
+                  WHEN 'refund_receipt' THEN
+                    NULLIF(document.safe_snapshot#>>'{settlement,final_refund_amount}','')::bigint
+                  ELSE NULL
+                END AS amount,
+                'issued' AS status,
+                NULL::uuid AS booking_lead_id,
+                document.lease_id,
+                document.checkout_command_id,
+                concat_ws(' ',document.document_code,
+                  document.safe_snapshot#>>'{refund,transaction_code}',resident.full_name,room.number,
+                  building.building_code) AS search_text
+           FROM lease_exit_documents document
+           JOIN residents resident
+             ON resident.id=document.resident_id AND resident.property_id=document.property_id
+           JOIN leases lease ON lease.id=document.lease_id AND lease.property_id=document.property_id
+           JOIN rooms room ON room.id=lease.room_id AND room.property_id=document.property_id
+           LEFT JOIN room_buildings building
+             ON building.id=room.building_id AND building.property_id=room.property_id
+          WHERE document.property_id=$1
+       ), matching AS (
+         SELECT *,
+                CASE WHEN regexp_replace(upper(document_code),'[^A-Z0-9]','','g')
+                           = regexp_replace(upper($2),'[^A-Z0-9]','','g')
+                     THEN 1 ELSE 0 END AS exact_match
+           FROM document_rows
+          WHERE search_text ILIKE '%'||$2||'%'
+             OR regexp_replace(upper(search_text),'[^A-Z0-9]','','g') LIKE
+                '%'||regexp_replace(upper($2),'[^A-Z0-9]','','g')||'%'
+       )
+       SELECT id,document_type,document_code,title,resident_name,room_number,
+              issued_at,amount,status,booking_lead_id,lease_id,checkout_command_id,
+              count(*) OVER()::text AS total
+         FROM matching
+        ORDER BY exact_match DESC,issued_at DESC,document_code ASC
+        LIMIT $3 OFFSET $4`,
+      [query.property_id, search, limit, offset],
+    );
+    return {
+      data: result.rows.map((row) => ({
+        id: row.id,
+        document_type: row.document_type,
+        document_code: row.document_code,
+        title: row.title,
+        resident_name: row.resident_name,
+        room_number: row.room_number,
+        issued_at: row.issued_at.toISOString(),
+        amount: row.amount === null ? null : this.money(row.amount),
+        status: row.status,
+        booking_lead_id: row.booking_lead_id,
+        lease_id: row.lease_id,
+        checkout_command_id: row.checkout_command_id,
+      })),
+      meta: {
+        limit,
+        offset,
+        total: Number(result.rows[0]?.total ?? 0),
+        query: search,
+      },
     };
   }
 
@@ -924,15 +1199,26 @@ export class W06BillingService {
     client: PoolClient,
     input: InitialOnboardingPaymentInput,
   ): Promise<InitialOnboardingPaymentSummary> {
-    if (!Number.isSafeInteger(input.dpAmount) || input.dpAmount < 0)
+    if (input.rentPayments.length === 0)
       throw new BadRequestException({
-        code: 'ONBOARDING_DP_AMOUNT_INVALID',
-        message: 'Initial DP must be a non-negative exact amount',
+        code: 'ONBOARDING_RENT_PAYMENT_REQUIRED',
+        message: 'At least one initial rent payment is required',
       });
-    if (!Number.isSafeInteger(input.securityDepositAmount) || input.securityDepositAmount < 0)
+    for (const payment of input.rentPayments) {
+      if (!Number.isSafeInteger(payment.amount) || payment.amount <= 0)
+        throw new BadRequestException({
+          code: 'ONBOARDING_RENT_PAYMENT_AMOUNT_INVALID',
+          message: 'Initial rent payment must be a positive exact amount',
+        });
+    }
+    if (
+      input.securityDepositPayment &&
+      (!Number.isSafeInteger(input.securityDepositPayment.amount) ||
+        input.securityDepositPayment.amount <= 0)
+    )
       throw new BadRequestException({
         code: 'ONBOARDING_SECURITY_DEPOSIT_INVALID',
-        message: 'Security deposit must be a non-negative exact amount',
+        message: 'Security deposit must be a positive exact amount',
       });
     if (!/^[a-f0-9]{64}$/i.test(input.commandFingerprint))
       throw new BadRequestException({
@@ -946,59 +1232,92 @@ export class W06BillingService {
       input.leaseId,
       input.residentId,
     );
-    await this.validateEvidence(
-      client,
-      input.evidenceFileIds,
-      input.propertyId,
-      input.actor.id,
-      input.method === 'bank_transfer',
-    );
-
-    const status = input.method === 'cash' ? 'verified' : 'pending_confirmation';
     const payments: Array<{
-      purpose: Extract<W06PaymentPurpose, 'dp' | 'security_deposit'>;
+      purpose: Extract<W06PaymentPurpose, 'rent' | 'dp' | 'security_deposit'>;
+      classification: InitialOnboardingRentPaymentClassification | 'security_deposit';
       amount: number;
+      method: 'bank_transfer' | 'cash';
+      status: 'pending_confirmation' | 'verified';
+      evidenceFileIds: string[];
+      paymentNote?: string;
+      paidAt?: string | Date;
+      transactionCode?: string | null;
       allocations: Array<{ invoice_id: string; amount: number }>;
-    }> = [];
+    }> = input.rentPayments.map((payment) => ({
+      purpose: payment.classification === 'full_settlement' ? 'rent' : 'dp',
+      classification: payment.classification,
+      amount: payment.amount,
+      method: payment.method,
+      status: payment.status,
+      evidenceFileIds: payment.evidenceFileIds,
+      paymentNote: payment.paymentNote,
+      paidAt: payment.paidAt,
+      transactionCode: payment.transactionCode,
+      allocations: [{ invoice_id: input.firstRentInvoiceId, amount: payment.amount }],
+    }));
     const receipts: InitialOnboardingPaymentSummary['receipts'] = [];
-    if (input.dpAmount > 0)
-      payments.push({
-        purpose: 'dp',
-        amount: input.dpAmount,
-        allocations: [{ invoice_id: input.firstRentInvoiceId, amount: input.dpAmount }],
-      });
-    if (input.securityDepositAmount > 0)
+    if (input.securityDepositPayment)
       payments.push({
         purpose: 'security_deposit',
-        amount: input.securityDepositAmount,
+        classification: 'security_deposit',
+        amount: input.securityDepositPayment.amount,
+        method: input.securityDepositPayment.method,
+        status: input.securityDepositPayment.status,
+        evidenceFileIds: input.securityDepositPayment.evidenceFileIds,
+        paymentNote: input.securityDepositPayment.paymentNote,
+        paidAt: input.securityDepositPayment.paidAt,
         allocations: [],
       });
 
-    for (const item of payments) {
+    for (const [index, item] of payments.entries()) {
+      await this.validateEvidence(
+        client,
+        item.evidenceFileIds,
+        input.propertyId,
+        input.actor.id,
+        item.method === 'bank_transfer',
+      );
       const invoiceRows = await this.lockAndValidateInvoices(
         client,
         lease,
         item.allocations,
         item.purpose,
       );
-      const childFingerprint = `onboarding:${input.commandFingerprint}:${item.purpose}`;
+      const childFingerprint = `onboarding:${input.commandFingerprint}:${item.classification}:${index}`;
+      const transactionPurpose: FinancialTransactionPurpose =
+        item.classification === 'booking_fee'
+          ? 'BOOKING'
+          : item.classification === 'full_settlement'
+            ? 'LUNAS'
+            : item.classification === 'security_deposit'
+              ? 'DEPOSIT'
+              : 'DP';
+      const paymentCode =
+        item.transactionCode ??
+        (await nextFinancialTransactionCode(
+          client,
+          'TRX',
+          transactionPurpose,
+          item.paidAt ?? null,
+        ));
       const payment = await client.query<PaymentRow>(
         `INSERT INTO payments(property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,received_by_user_id,verified_by_user_id,verified_at,reference_number,notes,authority_source,command_fingerprint)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9::uuid,CASE WHEN $6='verified' THEN $9::uuid ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,NULL,$10,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$11)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($12::timestamptz,now()),$9::uuid,CASE WHEN $6='verified' THEN $9::uuid ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,NULL,$10,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$11)
          ON CONFLICT(property_id,command_fingerprint) WHERE command_fingerprint IS NOT NULL DO NOTHING
          RETURNING id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes`,
         [
           input.propertyId,
           input.residentId,
           input.leaseId,
-          `PAY-ONB-${input.commandFingerprint.slice(0, 16).toUpperCase()}-${item.purpose === 'dp' ? 'DP' : 'DEP'}`,
-          input.method,
-          status,
+          paymentCode,
+          item.method,
+          item.status,
           item.purpose,
           item.amount,
           input.actor.id,
-          input.paymentNote?.trim() || null,
+          item.paymentNote?.trim() || null,
           childFingerprint,
+          item.paidAt ?? null,
         ],
       );
       if (!payment.rows[0])
@@ -1011,12 +1330,12 @@ export class W06BillingService {
         client,
         payment.rows[0].id,
         input.propertyId,
-        input.evidenceFileIds,
-        input.method,
+        item.evidenceFileIds,
+        item.method,
         input.actor.id,
       );
       const receiptId =
-        status === 'verified'
+        item.status === 'verified'
           ? await this.applyVerifiedEffects(
               client,
               payment.rows[0],
@@ -1029,7 +1348,7 @@ export class W06BillingService {
       if (receiptId)
         receipts.push({
           id: receiptId,
-          purpose: item.purpose,
+          purpose: item.classification,
           amount: item.amount,
         });
       await this.audit.write(
@@ -1037,7 +1356,7 @@ export class W06BillingService {
           actorUserId: input.actor.id,
           propertyId: input.propertyId,
           action:
-            status === 'verified'
+            item.status === 'verified'
               ? 'billing.onboarding_cash_recorded'
               : 'billing.onboarding_transfer_recorded',
           resourceType: 'payment',
@@ -1059,21 +1378,33 @@ export class W06BillingService {
         input.context,
         {
           payment_id: payment.rows[0].id,
-          payment_status: status,
+          payment_status: item.status,
           payment_purpose: item.purpose,
+          payment_classification: item.classification,
           amount: item.amount,
           source: 'resident_onboarding',
         },
       );
     }
 
+    const rentRecordedAmount = input.rentPayments.reduce(
+      (total, payment) => total + payment.amount,
+      0,
+    );
+    const rentVerifiedAmount = input.rentPayments.reduce(
+      (total, payment) => total + (payment.status === 'verified' ? payment.amount : 0),
+      0,
+    );
+    const deposit = input.securityDepositPayment;
     return {
-      method: input.method,
-      status,
-      dpRecordedAmount: input.dpAmount,
-      securityDepositRecordedAmount: input.securityDepositAmount,
-      dpVerifiedAmount: status === 'verified' ? input.dpAmount : 0,
-      securityDepositVerifiedAmount: status === 'verified' ? input.securityDepositAmount : 0,
+      method: input.rentPayments.at(-1)?.method ?? deposit?.method ?? 'cash',
+      status: payments.every((payment) => payment.status === 'verified')
+        ? 'verified'
+        : 'pending_confirmation',
+      dpRecordedAmount: rentRecordedAmount,
+      securityDepositRecordedAmount: deposit?.amount ?? 0,
+      dpVerifiedAmount: rentVerifiedAmount,
+      securityDepositVerifiedAmount: deposit?.status === 'verified' ? deposit.amount : 0,
       receipts,
     };
   }
@@ -1145,6 +1476,7 @@ export class W06BillingService {
             message: 'Security deposit balance is insufficient for cancellation refund',
           });
       }
+      const reversalTransactionCode = await nextFinancialTransactionCode(client, 'BTL', 'CANCEL');
       const receiptId = await this.insertReceipt(
         client,
         input.propertyId,
@@ -1154,11 +1486,12 @@ export class W06BillingService {
         input.actorId,
         { payment_code: payment.payment_code, reason, source: 'booking_lead_cancellation' },
         payment.id,
+        reversalTransactionCode,
       );
       const reversal = await client.query<{ id: string }>(
-        `INSERT INTO payment_reversals(property_id,payment_id,reason,reversed_by_user_id,receipt_id)
-         VALUES($1,$2,$3,$4,$5) RETURNING id`,
-        [input.propertyId, payment.id, reason, input.actorId, receiptId],
+        `INSERT INTO payment_reversals(property_id,payment_id,reason,reversed_by_user_id,receipt_id,transaction_code)
+         VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [input.propertyId, payment.id, reason, input.actorId, receiptId, reversalTransactionCode],
       );
       const reversalId = reversal.rows[0].id;
       for (const allocation of allocations.rows)
@@ -1319,7 +1652,7 @@ export class W06BillingService {
         dto.allocations,
         dto.payment_purpose,
       );
-      await this.assertContractSettlementPaymentEligibility(
+      const settlesContract = await this.assertContractSettlementPaymentEligibility(
         client,
         lease,
         dto.payment_purpose,
@@ -1327,6 +1660,13 @@ export class W06BillingService {
         invoiceRows,
       );
       const status = dto.method === 'cash' ? 'verified' : 'pending_confirmation';
+      const paidAt = dto.paid_at ?? null;
+      const paymentCode = await nextFinancialTransactionCode(
+        client,
+        'TRX',
+        this.financialPurpose(dto.payment_purpose, settlesContract),
+        paidAt,
+      );
       const payment = await client.query<PaymentRow>(
         `INSERT INTO payments(property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,received_by_user_id,verified_by_user_id,verified_at,reference_number,notes,authority_source,command_fingerprint)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz,now()),$10::uuid,CASE WHEN $6='verified' THEN $10::uuid ELSE NULL END,CASE WHEN $6='verified' THEN now() ELSE NULL END,$11,$12,CASE WHEN $5='cash' THEN 'audited_cash' ELSE 'manual_transfer' END,$13)
@@ -1336,12 +1676,12 @@ export class W06BillingService {
           dto.property_id,
           dto.resident_id,
           dto.lease_id,
-          this.paymentCode(),
+          paymentCode,
           dto.method,
           status,
           dto.payment_purpose,
           effectiveAmount,
-          dto.paid_at ?? null,
+          paidAt,
           user.id,
           dto.reference_number?.trim() || null,
           dto.note?.trim() || null,
@@ -1446,7 +1786,7 @@ export class W06BillingService {
         scope.rows[0].resident_id,
       );
       const paymentResult = await client.query<PaymentRow>(
-        `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes
+        `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes,command_fingerprint
          FROM payments WHERE id=$1 AND property_id=$2 FOR UPDATE`,
         [paymentId, dto.property_id],
       );
@@ -1463,6 +1803,8 @@ export class W06BillingService {
           code: 'PAYMENT_METHOD_NOT_VERIFIABLE',
           message: 'Only a bank transfer can be verified',
         });
+      const isPreActivationOnboardingPayment =
+        payment.command_fingerprint?.startsWith('onboarding:') === true;
       const evidence = await client.query(
         `SELECT id FROM payment_evidence_files WHERE payment_id=$1 ORDER BY id FOR UPDATE`,
         [payment.id],
@@ -1502,6 +1844,7 @@ export class W06BillingService {
           amount: this.money(item.intended_amount),
         })),
         invoiceRows,
+        isPreActivationOnboardingPayment,
       );
       await client.query(
         `UPDATE payments SET payment_status='verified',verified_by_user_id=$2,verified_at=now(),updated_at=now() WHERE id=$1 AND payment_status='pending_confirmation'`,
@@ -1788,13 +2131,25 @@ export class W06BillingService {
         allocations,
         proof.payment_purpose,
       );
+      const settlesContract = await this.assertContractSettlementPaymentEligibility(
+        client,
+        lease,
+        proof.payment_purpose,
+        allocations,
+        invoiceRows,
+      );
+      const paymentCode = await nextFinancialTransactionCode(
+        client,
+        'TRX',
+        this.financialPurpose(proof.payment_purpose, settlesContract),
+      );
       const paymentResult = await client.query<PaymentRow>(
         `INSERT INTO payments(property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,received_by_user_id,verified_by_user_id,verified_at,proof_id,notes,authority_source,command_fingerprint) VALUES($1,$2,$3,$4,'bank_transfer','verified',$5,$6,now(),$7,$7,now(),$8,$9,'manual_transfer',$10) RETURNING id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes`,
         [
           dto.property_id,
           proof.resident_id,
           lease.id,
-          this.paymentCode(),
+          paymentCode,
           proof.payment_purpose,
           amount,
           user.id,
@@ -2025,6 +2380,7 @@ export class W06BillingService {
             message: 'Deposit balance is insufficient for payment reversal',
           });
       }
+      const reversalTransactionCode = await nextFinancialTransactionCode(client, 'BTL', 'CANCEL');
       const receipt = await this.insertReceipt(
         client,
         dto.property_id,
@@ -2034,10 +2390,11 @@ export class W06BillingService {
         user.id,
         { payment_code: payment.payment_code, reason: dto.reason.trim() },
         payment.id,
+        reversalTransactionCode,
       );
       const reversal = await client.query<{ id: string; reversed_at: Date }>(
-        `INSERT INTO payment_reversals(property_id,payment_id,reason,reversed_by_user_id,receipt_id) VALUES($1,$2,$3,$4,$5) RETURNING id,reversed_at`,
-        [dto.property_id, payment.id, dto.reason.trim(), user.id, receipt],
+        `INSERT INTO payment_reversals(property_id,payment_id,reason,reversed_by_user_id,receipt_id,transaction_code) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,reversed_at`,
+        [dto.property_id, payment.id, dto.reason.trim(), user.id, receipt, reversalTransactionCode],
       );
       for (const allocation of allocations.rows)
         await client.query(
@@ -2457,12 +2814,16 @@ export class W06BillingService {
     // return the exact persisted PDF bytes above.
     const result = await this.database.client.query<ReceiptDocumentRow>(
       `SELECT receipt.receipt_code,receipt.receipt_kind,receipt.amount,receipt.issued_at,
-              payment.payment_code,payment.payment_method,payment.payment_purpose,
+              COALESCE(reversal.transaction_code,payment.payment_code) AS payment_code,
+              payment.payment_method,payment.payment_purpose,
               COALESCE(reversal.reversed_at,payment.paid_at) AS paid_at,
               resident.full_name AS resident_name,room.number AS room_number,
-              lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
-              property.name AS property_name,property.address AS property_address,
-              issuer.display_name AS issued_by_name,
+              building.building_code AS building_code,
+               lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
+               property.name AS property_name,property.address AS property_address,
+               issuer.display_name AS issued_by_name,
+               booking_commitment.payment_type AS booking_payment_type,
+               booking_commitment.receipt_code AS booking_receipt_code,
               (receipt.receipt_kind='payment' AND COALESCE(rent_contract.fully_paid,false)
                 AND latest_rent_payment.id=payment.id) AS settles_rent_contract,
               reversal.reason AS reversal_reason,
@@ -2480,7 +2841,11 @@ export class W06BillingService {
         JOIN residents resident ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
         JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
         JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
         LEFT JOIN users issuer ON issuer.id=receipt.issued_by_user_id
+        LEFT JOIN booking_lead_payment_commitments booking_commitment
+          ON booking_commitment.property_id=payment.property_id
+         AND booking_commitment.transaction_code=payment.payment_code
        LEFT JOIN payment_allocations allocation ON allocation.payment_id=payment.id
        LEFT JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=payment.property_id
        LEFT JOIN LATERAL (
@@ -2514,8 +2879,8 @@ export class W06BillingService {
        ) latest_rent_payment ON true
        WHERE receipt.id=$1 AND receipt.property_id=$2
          AND receipt.receipt_kind IN ('payment','reversal')
-       GROUP BY receipt.id,payment.id,reversal.id,property.id,resident.id,lease.id,room.id,
-                issuer.id,rent_contract.fully_paid,latest_rent_payment.id`,
+        GROUP BY receipt.id,payment.id,reversal.id,property.id,resident.id,lease.id,room.id,building.id,
+                 issuer.id,booking_commitment.id,rent_contract.fully_paid,latest_rent_payment.id`,
       [receiptId, propertyId],
     );
     const row = result.rows[0];
@@ -2529,21 +2894,30 @@ export class W06BillingService {
 
   private createReceiptDocument(row: ReceiptDocumentRow): Promise<BillingReceiptDocument> {
     const reversal = row.receipt_kind === 'reversal';
+    const paymentClassification =
+      row.booking_payment_type ??
+      (row.payment_code.endsWith('-BOOKING')
+        ? 'booking_fee'
+        : row.payment_code.endsWith('-LUNAS') || row.payment_code.endsWith('-PELUNASAN-AWAL')
+          ? 'full_settlement'
+          : row.payment_purpose === 'dp'
+            ? 'down_payment'
+            : row.payment_purpose);
     const paymentTitle =
-      row.payment_purpose === 'booking_fee'
-        ? 'KUITANSI BOOKING FEE'
-        : row.payment_purpose === 'dp'
+      paymentClassification === 'booking_fee'
+        ? 'KUITANSI BOOKING FEE / TAHAN KAMAR'
+        : paymentClassification === 'down_payment'
           ? 'KUITANSI DOWN PAYMENT / UANG MUKA'
-          : row.payment_purpose === 'security_deposit'
+          : paymentClassification === 'security_deposit'
             ? 'KUITANSI SECURITY DEPOSIT'
-            : row.settles_rent_contract
-              ? 'KUITANSI PELUNASAN AKHIR SEWA'
+            : paymentClassification === 'full_settlement'
+              ? 'KUITANSI PELUNASAN SEWA'
               : undefined;
     return createBillingReceiptPdf({
       receiptCode: row.receipt_code,
       paymentCode: row.payment_code,
       paymentMethod: row.payment_method,
-      paymentPurpose: row.payment_purpose,
+      paymentPurpose: paymentClassification,
       residentName: row.resident_name,
       roomNumber: row.room_number,
       amount: this.money(row.amount),
@@ -2559,10 +2933,11 @@ export class W06BillingService {
       issuedByName: row.issued_by_name,
       leaseStart: row.lease_start,
       leaseEnd: row.lease_end,
-      documentTitle: reversal ? 'DOKUMEN KOREKSI / REVERSAL PEMBAYARAN' : paymentTitle,
+      documentTitle: reversal ? 'INVOICE PEMBATALAN SEWA & REFUND' : paymentTitle,
       paymentDescription: reversal
-        ? `Koreksi pembayaran ${row.payment_code} · ${row.reversal_reason ?? 'Reversal pembayaran tercatat'}`
+        ? `Pembatalan sewa & refund ${row.payment_code} · ${row.reversal_reason ?? 'Pembayaran dibatalkan'}`
         : undefined,
+      buildingCode: row.building_code,
       transactionDirection: reversal ? 'correction' : 'incoming',
     });
   }
@@ -2718,7 +3093,7 @@ export class W06BillingService {
                    WHERE reversal_allocation.original_allocation_id=payment_allocation.id
                 ) reversal ON true
                WHERE payment_allocation.invoice_id=authority_invoice.id
-                 AND payment.payment_code LIKE 'PAY-ONB-%'
+                  AND payment.command_fingerprint LIKE 'onboarding:%'
             ) legacy_initial_payment ON true
             LEFT JOIN LATERAL (
               SELECT COALESCE(sum(invoice_ledger.credit_amount),0) AS credit_amount,
@@ -2751,7 +3126,7 @@ export class W06BillingService {
                            WHERE reversal_allocation.original_allocation_id=payment_allocation.id
                         ) reversal ON true
                        WHERE payment_allocation.invoice_id=contract_invoice.id
-                         AND payment.payment_code LIKE 'PAY-ONB-%'
+                          AND payment.command_fingerprint LIKE 'onboarding:%'
                     ) initial_payment ON true
                    WHERE contract_invoice.property_id=settlement.property_id
                      AND contract_invoice.lease_id=settlement.lease_id
@@ -2849,7 +3224,7 @@ export class W06BillingService {
                     payment.amount,
                     'outbound'::text,
                     'settled'::text,
-                    payment.payment_code,
+                    COALESCE(reversal.transaction_code,payment.payment_code),
                     payment.payment_purpose,
                     'payment_reversal'::text,
                     reversal.reason,
@@ -2874,7 +3249,7 @@ export class W06BillingService {
                     deposit.amount,
                     CASE deposit.direction WHEN 'credit' THEN 'inbound' ELSE 'outbound' END,
                     deposit.settlement_status,
-                    deposit.external_reference,
+                    COALESCE(refund_settlement.transaction_code,deposit.external_reference),
                     deposit.transaction_type,
                     COALESCE(deposit.reason_type,'deposit_ledger'),
                     deposit.reason,
@@ -2882,6 +3257,8 @@ export class W06BillingService {
                     NULL::uuid,
                     NULL::uuid
                FROM lease_deposit_transactions deposit
+               LEFT JOIN lease_refund_settlements refund_settlement
+                 ON refund_settlement.deposit_transaction_id=deposit.id
                LEFT JOIN users actor
                  ON actor.id=COALESCE(deposit.settled_by_user_id,deposit.created_by_user_id)
               WHERE deposit.property_id=$1 AND deposit.lease_id=$2
@@ -2925,7 +3302,7 @@ export class W06BillingService {
                     exit_refund.amount,
                     'outbound'::text,
                     exit_refund.refund_status,
-                    exit_refund.external_reference,
+                    COALESCE(exit_refund.transaction_code,exit_refund.external_reference),
                     exit_refund.payment_method,
                     'lease_exit_refund'::text,
                     exit_refund.settlement_reason,
@@ -2948,7 +3325,7 @@ export class W06BillingService {
                     booking_refund.refund_amount,
                     'outbound'::text,
                     'settled'::text,
-                    NULL::text,
+                    booking_refund.transaction_code,
                     booking_refund.refund_method,
                     'pre_activation_cancellation'::text,
                     booking_refund.refund_note,
@@ -3055,9 +3432,9 @@ export class W06BillingService {
                    invoice.snapshot_building_code,
                    COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
                    COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,
-                   invoice.due_date::text,invoice.total_amount,invoice.issued_at,
-                   property.name AS property_name,property.address AS property_address,
-                   issuer.display_name AS issued_by_name,
+                    invoice.due_date::text,invoice.total_amount,invoice.issued_at,
+                    property.name AS property_name,property.address AS property_address,
+                    issuer.display_name AS issued_by_name,
                    GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount
               FROM invoices invoice
               JOIN properties property ON property.id=invoice.property_id
@@ -3103,8 +3480,9 @@ export class W06BillingService {
     purpose: W06PaymentPurpose,
     allocations: Array<{ invoice_id: string; amount: number }>,
     invoiceRows: InvoiceLockRow[],
-  ): Promise<void> {
-    if (purpose !== 'rent' && purpose !== 'dp') return;
+    allowPreActivationRent = false,
+  ): Promise<boolean> {
+    if (purpose !== 'rent' && purpose !== 'dp') return false;
     const settlementResult = await client.query<ContractSettlementProjectionRow>(
       `SELECT settlement.id,settlement.state,settlement.invoice_id,
               settlement.activated_at,settlement.original_due_at,
@@ -3185,7 +3563,7 @@ export class W06BillingService {
         message: 'Contract settlement authority requires reconciliation',
       });
     const settlement = settlementResult.rows[0];
-    if (!settlement) return;
+    if (!settlement) return false;
 
     if (!allocations.length)
       throw new ConflictException({
@@ -3203,10 +3581,13 @@ export class W06BillingService {
           ? 'Rent payment may allocate only to this lease contract schedule'
           : 'Legacy rent payment must allocate only to its settlement invoice',
       });
-    if (settlement.state === 'awaiting_activation')
+    // DP and rent payments created by the onboarding command are valid
+    // pre-activation funding. Ordinary rent payments still begin only after
+    // the room and contract settlement have been activated.
+    if (settlement.state === 'awaiting_activation' && purpose !== 'dp' && !allowPreActivationRent)
       throw new ConflictException({
         code: 'CONTRACT_SETTLEMENT_NOT_ACTIVE',
-        message: 'Contract settlement starts only after room activation',
+        message: 'Rent payment starts only after room activation',
       });
     if (settlement.state === 'terminated' || settlement.state === 'cancelled')
       throw new ConflictException({
@@ -3255,6 +3636,7 @@ export class W06BillingService {
         message: 'At final settlement, the remaining contract-rent balance must be paid in full',
         details: { outstanding_amount: outstanding },
       });
+    return purpose === 'rent' && requested === outstanding;
   }
 
   private projectContractSettlement(row: ContractSettlementProjectionRow) {
@@ -4027,6 +4409,7 @@ export class W06BillingService {
     actorId: string,
     snapshot: Record<string, unknown>,
     sourcePaymentId = paymentId,
+    transactionCode?: string,
   ) {
     if (!sourcePaymentId)
       throw new ConflictException({
@@ -4035,10 +4418,13 @@ export class W06BillingService {
       });
     const authorityResult = await client.query<ReceiptAuthorityRow>(
       `SELECT payment.payment_code,payment.payment_method,payment.payment_purpose,payment.paid_at,
-              resident.full_name AS resident_name,room.number AS room_number,
-              lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
-              property.name AS property_name,property.address AS property_address,
-              issuer.display_name AS issued_by_name,
+               resident.full_name AS resident_name,room.number AS room_number,
+               building.building_code AS building_code,
+               lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
+               property.name AS property_name,property.address AS property_address,
+               issuer.display_name AS issued_by_name,
+               booking_commitment.payment_type AS booking_payment_type,
+               booking_commitment.receipt_code AS booking_receipt_code,
               (COALESCE(rent_contract.fully_paid,false)
                 AND latest_rent_payment.id=payment.id) AS settles_rent_contract,
               COALESCE(jsonb_agg(jsonb_build_object(
@@ -4050,7 +4436,11 @@ export class W06BillingService {
          ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
        JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
        JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+       LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
        LEFT JOIN users issuer ON issuer.id=$3
+       LEFT JOIN booking_lead_payment_commitments booking_commitment
+         ON booking_commitment.property_id=payment.property_id
+        AND booking_commitment.transaction_code=payment.payment_code
        LEFT JOIN payment_allocations allocation ON allocation.payment_id=payment.id
        LEFT JOIN invoices invoice
          ON invoice.id=allocation.invoice_id AND invoice.property_id=payment.property_id
@@ -4088,8 +4478,9 @@ export class W06BillingService {
          LIMIT 1
        ) latest_rent_payment ON true
        WHERE payment.id=$1 AND payment.property_id=$2
-       GROUP BY payment.id,property.id,resident.id,lease.id,room.id,issuer.id,
-                rent_contract.fully_paid,latest_rent_payment.id`,
+       GROUP BY payment.id,property.id,resident.id,lease.id,room.id,building.id,issuer.id,
+                booking_commitment.id,
+                 rent_contract.fully_paid,latest_rent_payment.id`,
       [sourcePaymentId, propertyId, actorId],
     );
     const authority = authorityResult.rows[0];
@@ -4098,10 +4489,41 @@ export class W06BillingService {
         code: 'RECEIPT_DOCUMENT_AUTHORITY_INVALID',
         message: 'Receipt document authority is unavailable',
       });
-    const receiptCode = `RCT-${randomUUID().replaceAll('-', '').slice(0, 14).toUpperCase()}`;
     const issuedAt = new Date();
+    const documentKind =
+      kind === 'reversal'
+        ? 'receipt_reversal'
+        : authority.booking_payment_type === 'booking_fee'
+          ? 'receipt_booking_fee'
+          : authority.booking_payment_type === 'down_payment'
+            ? 'receipt_down_payment'
+            : authority.booking_payment_type === 'full_settlement'
+              ? 'receipt_full_settlement'
+              : authority.payment_purpose === 'dp'
+                ? 'receipt_down_payment'
+                : authority.payment_purpose === 'security_deposit'
+                  ? 'receipt_security_deposit'
+                  : authority.payment_purpose === 'other_charge'
+                    ? 'receipt_other_charge'
+                    : authority.settles_rent_contract
+                      ? 'receipt_final_settlement'
+                      : 'receipt_rent';
+    const numberResult =
+      kind === 'payment' && authority.booking_receipt_code
+        ? { rows: [{ document_code: authority.booking_receipt_code }] }
+        : await client.query<{ document_code: string }>(
+            `SELECT next_billing_document_number($1,$2,$3) AS document_code`,
+            [propertyId, documentKind, issuedAt],
+          );
+    const receiptCode = numberResult.rows[0]?.document_code;
+    if (!receiptCode)
+      throw new ConflictException({
+        code: 'RECEIPT_DOCUMENT_NUMBER_UNAVAILABLE',
+        message: 'Receipt document number could not be issued',
+      });
     const receiptRow: ReceiptDocumentRow = {
       ...authority,
+      payment_code: transactionCode ?? authority.payment_code,
       receipt_code: receiptCode,
       receipt_kind: kind,
       amount: String(amount),
@@ -4118,13 +4540,14 @@ export class W06BillingService {
         receipt_kind: kind,
         amount,
         issued_at: issuedAt.toISOString(),
-        payment_code: authority.payment_code,
+        payment_code: transactionCode ?? authority.payment_code,
         payment_method: authority.payment_method,
-        payment_purpose: authority.payment_purpose,
+        payment_purpose: authority.booking_payment_type ?? authority.payment_purpose,
         paid_at:
           kind === 'reversal' ? issuedAt.toISOString() : (authority.paid_at?.toISOString() ?? null),
         resident_name: authority.resident_name,
         room_number: authority.room_number,
+        building_code: authority.building_code,
         lease_start: authority.lease_start,
         lease_end: authority.lease_end,
         property_name: authority.property_name,
@@ -4237,8 +4660,14 @@ export class W06BillingService {
   private fingerprint(value: unknown) {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
   }
-  private paymentCode() {
-    return `PAY-${randomUUID().replaceAll('-', '').slice(0, 14).toUpperCase()}`;
+  private financialPurpose(
+    purpose: W06PaymentPurpose,
+    settlesContract: boolean,
+  ): FinancialTransactionPurpose {
+    if (purpose === 'security_deposit') return 'DEPOSIT';
+    if (purpose === 'other_charge') return 'TAGIHAN-LAIN';
+    if (purpose === 'dp') return 'DP';
+    return settlesContract ? 'LUNAS' : 'SEWA';
   }
   private allocationTotal(allocations: Array<{ amount: number }>) {
     let total = 0n;
@@ -4306,7 +4735,7 @@ export class W06BillingService {
       payment_code: row.payment_code,
       payment_method: row.payment_method,
       payment_status: row.reversal_id ? 'reversed' : row.payment_status,
-      payment_purpose: row.payment_purpose,
+      payment_purpose: this.publicPaymentPurpose(row.payment_code, row.payment_purpose),
       amount: this.money(row.amount),
       paid_at: row.paid_at?.toISOString() ?? null,
       verified_at: row.verified_at?.toISOString() ?? null,
@@ -4317,6 +4746,16 @@ export class W06BillingService {
       reversed_at: row.reversed_at?.toISOString() ?? null,
       allocations,
     };
+  }
+  private publicPaymentPurpose(
+    paymentCode: string,
+    purpose: string | null,
+  ): PublicPaymentPurpose | null {
+    if (paymentCode.endsWith('-BOOKING')) return 'booking_fee';
+    if (paymentCode.endsWith('-LUNAS') || paymentCode.endsWith('-PELUNASAN-AWAL'))
+      return 'full_settlement';
+    if (purpose === 'dp') return 'down_payment';
+    return purpose as PublicPaymentPurpose | null;
   }
   private sanitizeWorkspacePayment(row: PaymentWorkspaceRow) {
     const payment = this.sanitizePaymentDetail(row);

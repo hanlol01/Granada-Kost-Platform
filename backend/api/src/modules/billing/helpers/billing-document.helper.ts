@@ -49,6 +49,7 @@ export type BillingReceiptDocumentData = {
   documentFootnote?: string;
   propertyName?: string;
   propertyAddress?: string | null;
+  buildingCode?: string | null;
   issuedByName?: string | null;
   leaseStart?: string | Date | null;
   leaseEnd?: string | Date | null;
@@ -172,6 +173,7 @@ export type LeaseExitOfficialDocumentSnapshot = {
     due_date: string | null;
     payment_method: string | null;
     external_reference: string | null;
+    transaction_code: string | null;
     settled_at: string | null;
   };
 };
@@ -195,19 +197,22 @@ export async function createBillingInvoicePdf(
   const page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const [granada, kostation, ptSonSmart] = await Promise.all([
+  const italic = await document.embedFont(StandardFonts.HelveticaBoldOblique);
+  const [granada, kostation, ptSonSmart, tandatangan] = await Promise.all([
     document.embedPng(receiptAsset('granada.png')),
     document.embedPng(receiptAsset('kostation.png')),
     document.embedPng(receiptAsset('pt-son-smart.png')),
+    document.embedPng(receiptAsset('tandatangan.png')),
   ]);
-  const navy = rgb(0.07, 0.18, 0.36);
-  const softNavy = rgb(0.27, 0.3, 0.52);
-  const outstandingRed = rgb(0.78, 0.08, 0.08);
-  const muted = rgb(0.35, 0.39, 0.47);
+  const black = rgb(0, 0, 0);
+  const navy = black;
+  const softNavy = black;
+  const muted = black;
+  const terbilangRed = rgb(0.78, 0.08, 0.08);
   const border = rgb(0.79, 0.82, 0.86);
   const pageWidth = page.getWidth();
 
-  drawContainedImage(page, granada, 34, 724, 150, 88);
+  drawContainedImage(page, granada, 34, 708, 150, 116);
   drawContainedImage(page, kostation, 214, 758, 168, 34);
   drawContainedImage(page, ptSonSmart, 465, 740, 78, 52);
 
@@ -231,7 +236,8 @@ export async function createBillingInvoicePdf(
   });
 
   page.drawLine({ start: { x: 52, y: 720 }, end: { x: 543, y: 720 }, thickness: 1.5, color: navy });
-  const title = data.invoicePurpose === 'rent' ? 'INVOICE TAGIHAN SEWA KOST' : 'INVOICE TAGIHAN LAINNYA';
+  const title =
+    data.invoicePurpose === 'rent' ? 'INVOICE TAGIHAN SEWA KOST' : 'INVOICE TAGIHAN LAINNYA';
   const titleWidth = bold.widthOfTextAtSize(title, 14);
   page.drawText(title, {
     x: (pageWidth - titleWidth) / 2,
@@ -263,7 +269,7 @@ export async function createBillingInvoicePdf(
     ['Total tagihan', idr(data.totalAmount)],
     ['Untuk pembayaran', data.invoicePurpose === 'rent' ? 'Sewa kamar' : 'Tagihan lainnya'],
     ['Periode', `${receiptDate(data.coverageStart)} s.d. ${receiptDate(data.coverageEnd)}`],
-    ['Kamar No.', data.roomNumber],
+    ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Jatuh tempo', receiptDate(data.dueDate, true)],
     ['Status invoice', statusLabels[data.invoiceStatus] ?? label(data.invoiceStatus)],
     ['Sudah dibayarkan', idr(Math.max(0, paidAmount))],
@@ -283,13 +289,13 @@ export async function createBillingInvoicePdf(
         y: y - 10 - index * 13,
         size: 10,
         font: regular,
-        color: labelText === 'Sisa tagihan' && data.outstandingAmount > 0 ? outstandingRed : navy,
+        color: navy,
       });
     });
     y -= rowHeight;
   }
 
-  const terbilangLines = wrapText(bold, terbilang(data.totalAmount), 10, 422);
+  const terbilangLines = wrapText(italic, terbilang(data.totalAmount), 10, 422);
   const terbilangHeight = 34 + terbilangLines.length * 13;
   y -= 8;
   page.drawRectangle({
@@ -307,12 +313,12 @@ export async function createBillingInvoicePdf(
       x: 96,
       y: y - 34 - index * 13,
       size: 10,
-      font: bold,
-      color: outstandingRed,
+      font: italic,
+      color: terbilangRed,
     });
   });
 
-  const footerY = Math.max(90, y - terbilangHeight - 68);
+  const footerY = Math.max(120, y - terbilangHeight - 90);
   const issuer = data.issuedByName?.trim() || `Pengelola ${data.propertyName ?? 'Kostation'}`;
   page.drawText('Jatinangor Sumedang,', {
     x: 52,
@@ -328,8 +334,8 @@ export async function createBillingInvoicePdf(
     font: regular,
     color: navy,
   });
-  drawContainedImage(page, kostation, 52, footerY - 4, 100, 22);
-  page.drawText(`(${issuer})`, { x: 52, y: footerY - 18, size: 9, font: bold, color: navy });
+  drawContainedImage(page, tandatangan, 52, footerY - 72, 101, 88);
+  page.drawText(issuer, { x: 52, y: footerY - 88, size: 9, font: bold, color: navy });
 
   const safeCode = data.invoiceCode.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'invoice';
   return { filename: `${safeCode}.pdf`, content: Buffer.from(await document.save()) };
@@ -338,6 +344,8 @@ export async function createBillingInvoicePdf(
 const receiptPurpose: Record<string, string> = {
   rent: 'Pembayaran sewa',
   dp: 'DP / uang muka sewa',
+  down_payment: 'DP / uang muka sewa',
+  full_settlement: 'Pelunasan sewa penuh',
   security_deposit: 'Security deposit',
   other_charge: 'Tagihan lainnya',
   booking_fee: 'Booking fee / tahan kamar',
@@ -378,6 +386,24 @@ function receiptPeriod(
 ) {
   if (!start) return 'Sesuai alokasi tagihan';
   return `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
+}
+
+function formatRoomDescription(roomNumber: string, buildingCode?: string | null): string {
+  const normalizedRoom = roomNumber.trim();
+  const fullMatch = normalizedRoom.match(/^(RK|AK)[-_](\d{1,3})[-_](\d{1,3})$/i);
+  const building = (fullMatch?.[1] ?? buildingCode ?? '').trim().toUpperCase();
+  const segments = fullMatch
+    ? [fullMatch[2], fullMatch[3]]
+    : normalizedRoom.split(/[-_\s]+/).filter(Boolean);
+
+  if (/^(RK|AK)$/.test(building) && segments.length >= 2) {
+    const room = segments[segments.length - 2];
+    const unit = segments[segments.length - 1];
+    const propertyType = building === 'RK' ? 'Rumah Kost' : 'Apart Kost';
+    return `${propertyType} · Kamar No.${room}, Unit ${unit}`;
+  }
+
+  return normalizedRoom || '-';
 }
 
 function terbilang(value: number): string {
@@ -460,19 +486,22 @@ export async function createBillingReceiptPdf(
   const page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const [granada, kostation, ptSonSmart] = await Promise.all([
+  const italic = await document.embedFont(StandardFonts.HelveticaBoldOblique);
+  const [granada, kostation, ptSonSmart, tandatangan] = await Promise.all([
     document.embedPng(receiptAsset('granada.png')),
     document.embedPng(receiptAsset('kostation.png')),
     document.embedPng(receiptAsset('pt-son-smart.png')),
+    document.embedPng(receiptAsset('tandatangan.png')),
   ]);
-  const navy = rgb(0.07, 0.18, 0.36);
-  const softNavy = rgb(0.27, 0.3, 0.52);
+  const black = rgb(0, 0, 0);
+  const navy = black;
+  const softNavy = black;
   const terbilangRed = rgb(0.78, 0.08, 0.08);
-  const muted = rgb(0.35, 0.39, 0.47);
+  const muted = black;
   const border = rgb(0.79, 0.82, 0.86);
   const pageWidth = page.getWidth();
 
-  drawContainedImage(page, granada, 34, 724, 150, 88);
+  drawContainedImage(page, granada, 34, 708, 150, 116);
   drawContainedImage(page, kostation, 214, 758, 168, 34);
   drawContainedImage(page, ptSonSmart, 465, 740, 78, 52);
 
@@ -505,7 +534,7 @@ export async function createBillingReceiptPdf(
     font: bold,
     color: navy,
   });
-  const receiptCode = `Nomor Kwitansi: ${data.receiptCode}`;
+  const receiptCode = `Nomor Kuitansi : ${data.receiptCode}`;
   const receiptCodeWidth = bold.widthOfTextAtSize(receiptCode, 9);
   page.drawText(receiptCode, {
     x: (pageWidth - receiptCodeWidth) / 2,
@@ -532,15 +561,16 @@ export async function createBillingReceiptPdf(
     data.transactionDirection === 'outgoing'
       ? 'Telah dibayarkan kepada'
       : data.transactionDirection === 'correction'
-        ? 'Koreksi pembayaran milik'
+        ? 'Dikembalikan kepada'
         : 'Telah diterima dari';
   const rows: Array<[string, string]> = [
     [partyLabel, data.residentName],
+    ['Kode transaksi', data.paymentCode],
     ['Uang sejumlah', idr(data.amount)],
     ['Untuk pembayaran', paymentDescription],
     ['Tanggal pembayaran', receiptDate(data.paidAt, true)],
     ['Periode sewa', receiptPeriod(data.leaseStart, data.leaseEnd)],
-    ['Kamar No.', data.roomNumber],
+    ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Pembayaran via', method],
   ];
   let y = 642;
@@ -556,7 +586,7 @@ export async function createBillingReceiptPdf(
     y -= rowHeight;
   }
 
-  const terbilangLines = wrapText(bold, terbilang(data.amount), 10, 422);
+  const terbilangLines = wrapText(italic, terbilang(data.amount), 10, 422);
   const terbilangHeight = 34 + terbilangLines.length * 13;
   y -= 8;
   page.drawRectangle({
@@ -574,12 +604,12 @@ export async function createBillingReceiptPdf(
       x: 96,
       y: y - 34 - index * 13,
       size: 10,
-      font: bold,
+      font: italic,
       color: terbilangRed,
     });
   });
 
-  const footerY = Math.max(102, y - terbilangHeight - 72);
+  const footerY = Math.max(120, y - terbilangHeight - 92);
   const issuer = data.issuedByName?.trim() || `Pengelola ${data.propertyName ?? 'Kostation'}`;
   page.drawText('Jatinangor Sumedang,', {
     x: 52,
@@ -595,8 +625,8 @@ export async function createBillingReceiptPdf(
     font: regular,
     color: navy,
   });
-  drawContainedImage(page, kostation, 52, footerY - 4, 100, 22);
-  page.drawText(`(${issuer})`, { x: 52, y: footerY - 18, size: 9, font: bold, color: navy });
+  drawContainedImage(page, tandatangan, 52, footerY - 72, 101, 88);
+  page.drawText(issuer, { x: 52, y: footerY - 88, size: 9, font: bold, color: navy });
 
   const safeCode = data.receiptCode.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
   return { filename: `${safeCode}.pdf`, content: Buffer.from(await document.save()) };
@@ -638,7 +668,10 @@ export async function createLeaseExitOfficialDocumentPdf(
   if (kind === 'refund_receipt') {
     return createBillingReceiptPdf({
       receiptCode: snapshot.document_code,
-      paymentCode: snapshot.refund.external_reference ?? snapshot.document_code,
+      paymentCode:
+        snapshot.refund.transaction_code ??
+        snapshot.refund.external_reference ??
+        snapshot.document_code,
       paymentMethod: snapshot.refund.payment_method ?? 'other',
       paymentPurpose: 'active_lease_refund',
       residentName: snapshot.resident.name,
@@ -651,6 +684,7 @@ export async function createLeaseExitOfficialDocumentPdf(
       paymentDescription: `Pengembalian dana ${exitTypeLabel(snapshot.lease.exit_type).toLowerCase()} · ${snapshot.document_code}`,
       propertyName: snapshot.property.name,
       propertyAddress: snapshot.property.address,
+      buildingCode: snapshot.room.building_code,
       issuedByName: snapshot.authority.checkout_confirmed_by,
       leaseStart: snapshot.lease.start_date,
       leaseEnd: snapshot.lease.planned_end_date,
@@ -661,14 +695,16 @@ export async function createLeaseExitOfficialDocumentPdf(
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const [granada, kostation, ptSonSmart] = await Promise.all([
+  const [granada, kostation, ptSonSmart, tandatangan] = await Promise.all([
     document.embedPng(receiptAsset('granada.png')),
     document.embedPng(receiptAsset('kostation.png')),
     document.embedPng(receiptAsset('pt-son-smart.png')),
+    document.embedPng(receiptAsset('tandatangan.png')),
   ]);
-  const navy = rgb(0.07, 0.18, 0.36);
-  const softNavy = rgb(0.27, 0.3, 0.52);
-  const muted = rgb(0.35, 0.39, 0.47);
+  const black = rgb(0, 0, 0);
+  const navy = black;
+  const softNavy = black;
+  const muted = black;
   const border = rgb(0.79, 0.82, 0.86);
   const pale = rgb(0.98, 0.985, 0.99);
   const pageWidth = 595.28;
@@ -683,7 +719,7 @@ export async function createLeaseExitOfficialDocumentPdf(
 
   const addPage = () => {
     page = document.addPage([595.28, 841.89]);
-    drawContainedImage(page, granada, 34, 724, 150, 88);
+    drawContainedImage(page, granada, 34, 708, 150, 116);
     drawContainedImage(page, kostation, 214, 758, 168, 34);
     drawContainedImage(page, ptSonSmart, 465, 740, 78, 52);
     const addressLines = wrapText(
@@ -772,7 +808,7 @@ export async function createLeaseExitOfficialDocumentPdf(
   row('Jenis keluar', exitTypeLabel(snapshot.lease.exit_type));
   row('Penghuni', snapshot.resident.name);
   row('Properti', snapshot.property.name);
-  row('Gedung / kamar', `${snapshot.room.building_code} / ${snapshot.room.number}`);
+  row('Gedung / kamar', formatRoomDescription(snapshot.room.number, snapshot.room.building_code));
   row('Kategori kamar', snapshot.room.category_name);
   row(
     'Periode kontrak',
@@ -885,8 +921,10 @@ export async function createLeaseExitOfficialDocumentPdf(
   row('Status refund', snapshot.refund.status ? label(snapshot.refund.status) : 'Tidak ada refund');
   if (snapshot.refund.due_date)
     row('Target pembayaran refund', receiptDate(snapshot.refund.due_date));
+  if (snapshot.refund.transaction_code)
+    row('Kode transaksi refund', snapshot.refund.transaction_code);
   if (snapshot.refund.external_reference)
-    row('Referensi refund', snapshot.refund.external_reference);
+    row('Referensi eksternal refund', snapshot.refund.external_reference);
 
   section(kind === 'checkout_handover' ? 'H. Konfirmasi dan distribusi' : 'D. Ketentuan dokumen');
   row(
@@ -904,7 +942,7 @@ export async function createLeaseExitOfficialDocumentPdf(
         : 'Kewajiban final settlement telah ditutup.',
   );
 
-  ensure(92);
+  ensure(145);
   page.drawText('Jatinangor Sumedang,', { x: 52, y: y - 8, size: 9, font: regular, color: navy });
   page.drawText('Pengelola Granada Student House by Kostation,', {
     x: 52,
@@ -913,10 +951,10 @@ export async function createLeaseExitOfficialDocumentPdf(
     font: regular,
     color: navy,
   });
-  drawContainedImage(page, kostation, 52, y - 55, 100, 22);
-  page.drawText(`(${snapshot.authority.checkout_confirmed_by})`, {
+  drawContainedImage(page, tandatangan, 52, y - 114, 101, 88);
+  page.drawText(snapshot.authority.checkout_confirmed_by, {
     x: 52,
-    y: y - 70,
+    y: y - 130,
     size: 9,
     font: bold,
     color: navy,

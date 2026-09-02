@@ -508,7 +508,7 @@ function FinancialTimeline({
       <SectionHeading
         id="financial-timeline-heading"
         title="Timeline finansial"
-        description="Urutan uang masuk, koreksi, deposit, dan refund. Riwayat lama tetap dipertahankan ketika ada pembalikan atau penyesuaian."
+        description="Urutan uang masuk, koreksi, deposit, dan refund. Riwayat lama tetap dipertahankan ketika ada pembatalan atau penyesuaian."
       />
       <div className="mt-3 space-y-3">
         {billing.financial_timeline.length ? (
@@ -830,7 +830,7 @@ function PaymentBadge({ status }: { status: MyW06Billing["payments"][number]["pa
     verified: "Terverifikasi",
     pending_confirmation: "Menunggu konfirmasi",
     rejected: "Ditolak",
-    reversed: "Dibalik",
+    reversed: "Dibatalkan",
   } as const;
   const classes = {
     verified: "border-success/30 bg-success/10 text-success",
@@ -874,7 +874,7 @@ function SettlementBadge({ status }: { status: Settlement["status"] }) {
 function financialEventLabel(eventType: FinancialEvent["event_type"]) {
   const labels: Record<FinancialEvent["event_type"], string> = {
     payment_recorded: "Pembayaran dicatat",
-    payment_reversed: "Pembayaran dibalik",
+    payment_reversed: "Pembayaran dibatalkan",
     booking_refund: "Refund pra-aktivasi",
     deposit_collected: "Security deposit diterima",
     deposit_deducted: "Potongan security deposit",
@@ -896,7 +896,7 @@ function financialAmount(direction: FinancialEvent["direction"], amount: number)
 function financialStatusLabel(status: string) {
   const labels: Record<string, string> = {
     verified: "Terverifikasi",
-    reversed: "Dibalik",
+    reversed: "Dibatalkan",
     refunded: "Dikembalikan",
     recorded: "Tercatat",
     approved: "Disetujui",
@@ -1005,6 +1005,9 @@ function purposeLabel(value: W06PaymentPurpose | null) {
       {
         rent: "Sewa",
         dp: "DP sewa",
+        booking_fee: "Booking Fee / tahan kamar",
+        down_payment: "DP / uang muka sewa",
+        full_settlement: "Pelunasan sewa penuh",
         security_deposit: "Deposit keamanan",
         other_charge: "Tagihan lainnya",
       } as Record<string, string>

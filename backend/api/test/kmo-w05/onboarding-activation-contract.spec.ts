@@ -237,28 +237,51 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
       recordInitialOnboardingPaymentsInTransaction: async (
         transactionClient: unknown,
         input: {
-          method: 'cash' | 'bank_transfer';
-          dpAmount: number;
-          securityDepositAmount: number;
-          paymentNote?: string;
+          rentPayments: Array<{
+            classification: 'booking_fee' | 'down_payment' | 'full_settlement';
+            amount: number;
+            method: 'cash' | 'bank_transfer';
+            status: 'verified' | 'pending_confirmation';
+          }>;
+          securityDepositPayment?: {
+            amount: number;
+            method: 'cash' | 'bank_transfer';
+            status: 'verified' | 'pending_confirmation';
+          };
         },
       ) => {
         assert.equal(transactionClient, client);
+        const recordedRentAmount = input.rentPayments.reduce(
+          (total, payment) => total + payment.amount,
+          0,
+        );
         assert.equal(
-          input.dpAmount,
+          recordedRentAmount,
           options.expectedInitialRentCredit ??
             onboardingDto.dp_verified_amount +
               (options.expectedBookingFeeAmount ?? onboardingDto.booking_fee_paid_amount ?? 0),
-          'booking fee must become rent credit before the W06 DP allocation is recorded',
+          'booking fee and subsequent rent payment must remain distinct while preserving total credit',
         );
         events.push('payment');
+        const verifiedRentAmount = input.rentPayments.reduce(
+          (total, payment) => total + (payment.status === 'verified' ? payment.amount : 0),
+          0,
+        );
         return {
-          method: input.method,
-          status: input.method === 'cash' ? 'verified' : 'pending_confirmation',
-          dpRecordedAmount: input.dpAmount,
-          securityDepositRecordedAmount: input.securityDepositAmount,
-          dpVerifiedAmount: input.method === 'cash' ? input.dpAmount : 0,
-          securityDepositVerifiedAmount: input.method === 'cash' ? input.securityDepositAmount : 0,
+          method:
+            input.rentPayments.at(-1)?.method ?? input.securityDepositPayment?.method ?? 'cash',
+          status:
+            input.rentPayments.every((payment) => payment.status === 'verified') &&
+            (!input.securityDepositPayment || input.securityDepositPayment.status === 'verified')
+              ? 'verified'
+              : 'pending_confirmation',
+          dpRecordedAmount: recordedRentAmount,
+          securityDepositRecordedAmount: input.securityDepositPayment?.amount ?? 0,
+          dpVerifiedAmount: verifiedRentAmount,
+          securityDepositVerifiedAmount:
+            input.securityDepositPayment?.status === 'verified'
+              ? input.securityDepositPayment.amount
+              : 0,
           receipts: [],
         };
       },
@@ -902,11 +925,23 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
     residentId: RESIDENT_ID,
     leaseId: LEASE_ID,
     firstRentInvoiceId: FIRST_RENT_INVOICE_ID,
-    method: 'bank_transfer',
-    dpAmount: 5_400_000,
-    securityDepositAmount: 300_000,
-    evidenceFileIds: [PAYMENT_EVIDENCE_ID],
-    paymentNote: 'Transfer dari rekening orang tua',
+    rentPayments: [
+      {
+        classification: 'full_settlement',
+        amount: 5_400_000,
+        method: 'bank_transfer',
+        status: 'pending_confirmation',
+        evidenceFileIds: [PAYMENT_EVIDENCE_ID],
+        paymentNote: 'Transfer dari rekening orang tua',
+      },
+    ],
+    securityDepositPayment: {
+      amount: 300_000,
+      method: 'bank_transfer',
+      status: 'pending_confirmation',
+      evidenceFileIds: [PAYMENT_EVIDENCE_ID],
+      paymentNote: 'Transfer dari rekening orang tua',
+    },
     commandFingerprint: 'a'.repeat(64),
     actor: actor as never,
     context: {},
@@ -931,7 +966,7 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
   );
   assert.deepEqual(
     paymentWrites.map(({ params }) => params[6]),
-    ['dp', 'security_deposit'],
+    ['rent', 'security_deposit'],
   );
   assert.equal(
     paymentWrites.every(({ params }) => params[5] === 'pending_confirmation'),
@@ -1069,9 +1104,7 @@ test('activation rechecks the full tuple and leaves physical occupancy for check
     false,
   );
   assert.equal(
-    harness.queries.some(({ sql }) =>
-      /UPDATE rooms SET room_status='awaiting_check_in'/.test(sql),
-    ),
+    harness.queries.some(({ sql }) => /UPDATE rooms SET room_status='awaiting_check_in'/.test(sql)),
     true,
   );
   assert.deepEqual(

@@ -24,7 +24,7 @@ export type OnboardingCommitmentResponse = {
     securityDepositVerifiedAmount: number;
     receipts: Array<{
       id: string;
-      purpose: 'dp' | 'security_deposit';
+      purpose: 'booking_fee' | 'down_payment' | 'full_settlement' | 'security_deposit';
       amount: number;
     }>;
   };

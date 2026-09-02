@@ -42,7 +42,7 @@ import { useResidentOnboarding } from "@/hooks/useResidentOnboarding";
 import { useFileDelete, useFileUpload } from "@/hooks/useFileUpload";
 import type { LeaseRoomOption } from "@/lib/admin-ux-lease-types";
 import type { OnboardingPayload } from "@/lib/admin-onboarding";
-import { downloadAdminReceiptDocument } from "@/lib/admin-w06-billing";
+import { downloadAdminReceiptDocument } from "@/lib/admin-billing";
 import {
   calculateLeaseEndDate,
   formatDateWithDashes,
@@ -841,16 +841,19 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                     <Button
                       key={receipt.id}
                       type="button"
-                      variant={receipt.purpose === "dp" ? "success" : "outline"}
+                      variant={receipt.purpose === "security_deposit" ? "outline" : "success"}
                       onClick={() => {
                         if (!currentPropertyId) return;
                         setReceiptDownloadError(null);
                         void downloadAdminReceiptDocument(
                           currentPropertyId,
                           receipt.id,
-                          receipt.purpose === "dp"
-                            ? "kuitansi-pembayaran-sewa-awal"
-                            : "kuitansi-security-deposit",
+                          {
+                            booking_fee: "kuitansi-booking-fee",
+                            down_payment: "kuitansi-down-payment",
+                            full_settlement: "kuitansi-pelunasan-sewa",
+                            security_deposit: "kuitansi-security-deposit",
+                          }[receipt.purpose],
                         ).catch((error: unknown) =>
                           setReceiptDownloadError(
                             error instanceof Error ? error.message : "Kuitansi gagal diunduh.",
@@ -859,9 +862,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                       }}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      {receipt.purpose === "dp"
-                        ? "Unduh kuitansi pembayaran sewa"
-                        : "Unduh kuitansi security deposit"}
+                      Unduh kuitansi{" "}
+                      {
+                        {
+                          booking_fee: "Booking Fee",
+                          down_payment: "DP / uang muka",
+                          full_settlement: "pelunasan sewa",
+                          security_deposit: "security deposit",
+                        }[receipt.purpose]
+                      }
                     </Button>
                   ))}
                 </div>
@@ -1578,7 +1587,7 @@ function RoomAndPaymentStep({
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Pembayaran awal</CardTitle>
+              <CardTitle>Pemenuhan pembayaran sebelum aktivasi</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {bookingFeeLocked ? (

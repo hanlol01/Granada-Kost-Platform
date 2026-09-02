@@ -29,7 +29,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { RecordPaymentDialog } from "@/components/billing/W06PaymentsWorkspace";
+import { RecordPaymentDialog } from "@/components/billing/PaymentsWorkspace";
 import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
 import { FileUploadField } from "@/components/file/FileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
@@ -56,14 +56,14 @@ import {
   useFinalizeLeaseTermination,
   useRecordLeasePaymentPromise,
   useStartLeaseTermination,
-} from "@/hooks/useAdminW06Billing";
+} from "@/hooks/useAdminBilling";
 import { useLeaseActivation, useLeaseCheckIn } from "@/hooks/useLeaseActivation";
 import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
 import { useBookingLeadProgress } from "@/hooks/useBookingLeads";
 import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
-import { useResidentBilling } from "@/hooks/useAdminW06Billing";
-import type { ResidentBilling } from "@/lib/admin-w06-billing";
-import { downloadAdminReceiptDocument } from "@/lib/admin-w06-billing";
+import { useResidentBilling } from "@/hooks/useAdminBilling";
+import type { ResidentBilling } from "@/lib/admin-billing";
+import { downloadAdminReceiptDocument } from "@/lib/admin-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
 import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
 import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
@@ -1516,6 +1516,9 @@ function paymentPurposeLabel(
     }
     return "Pembayaran Sewa";
   }
+  if (purpose === "booking_fee") return "Booking Fee / tahan kamar";
+  if (purpose === "full_settlement") return "Pelunasan Sewa Penuh";
+  if (purpose === "down_payment") return "DP / uang muka sewa";
   if (purpose === "dp") return "DP / uang muka sewa";
   if (purpose === "security_deposit") return "Security deposit";
   if (purpose === "other_charge") return "Tagihan lainnya";
@@ -1525,7 +1528,7 @@ function paymentPurposeLabel(
 function financialEventLabel(event: ResidentBilling["financial_timeline"][number]["event_type"]) {
   return {
     payment_recorded: "Pembayaran dicatat",
-    payment_reversed: "Pembayaran direversal",
+    payment_reversed: "Pembayaran dibatalkan",
     booking_refund: "Refund pembatalan pra-aktivasi",
     deposit_collected: "Saldo security deposit bertambah",
     deposit_deducted: "Potongan security deposit",
@@ -1550,7 +1553,7 @@ function financialStatusLabel(status: string) {
     pending_confirmation: "Menunggu konfirmasi",
     verified: "Terverifikasi",
     rejected: "Ditolak",
-    reversed: "Direversal",
+    reversed: "Dibatalkan",
     pending: "Menunggu proses",
     settled: "Selesai",
     waived: "Dihapuskan",
@@ -1633,7 +1636,7 @@ function paymentStatusLabel(status: ResidentBilling["payments"][number]["payment
     pending_confirmation: "Menunggu konfirmasi",
     verified: "Terverifikasi",
     rejected: "Ditolak",
-    reversed: "Dibalikkan",
+    reversed: "Dibatalkan",
   }[status];
 }
 
@@ -2667,9 +2670,12 @@ function PaymentDetailDialog({
             ],
             ...(payment.reversal_id
               ? ([
-                  ["Alasan reversal", payment.reversal_reason ?? "Alasan tidak tersedia"],
                   [
-                    "Direversal pada",
+                    "Alasan pembatalan pembayaran",
+                    payment.reversal_reason ?? "Alasan tidak tersedia",
+                  ],
+                  [
+                    "Dibatalkan pada",
                     payment.reversed_at
                       ? formatResidentDetailTimestamp(payment.reversed_at)
                       : "Waktu tidak tersedia",

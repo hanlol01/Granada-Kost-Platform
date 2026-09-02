@@ -57,6 +57,8 @@ type LeadPaymentCommitmentRow = {
   hold_id: string;
   room_id: string;
   payment_type: 'booking_fee' | 'down_payment' | 'full_settlement';
+  receipt_code: string;
+  transaction_code: string | null;
   rent_credit_amount: string | number;
   security_deposit_amount: string | number;
   payment_method: 'cash' | 'bank_transfer';
@@ -69,6 +71,7 @@ type LeadPaymentCommitmentRow = {
   billing_cycle: 'monthly' | 'yearly';
   payment_plan_type: 'monthly_installments' | 'two_month_installments' | 'annual_full';
   materialized_onboarding_commitment_id: string | null;
+  created_at: Date;
 };
 type ExistingResidentRow = {
   id: string;
@@ -247,12 +250,12 @@ export class OnboardingService {
               message: 'A current room hold is required before onboarding',
             });
           const paymentCommitmentResult = await client.query<LeadPaymentCommitmentRow>(
-            `SELECT id,property_id,booking_lead_id,hold_id,room_id,payment_type,
+            `SELECT id,property_id,booking_lead_id,hold_id,room_id,payment_type,receipt_code,transaction_code,
                     rent_credit_amount::bigint AS rent_credit_amount,
                     security_deposit_amount::bigint AS security_deposit_amount,
                     payment_method,verification_status,payment_note,payment_evidence_file_ids,
                     start_date::text,term_months,end_date::text,billing_cycle,payment_plan_type,
-                    materialized_onboarding_commitment_id
+                    materialized_onboarding_commitment_id,created_at
              FROM booking_lead_payment_commitments
              WHERE booking_lead_id=$1 AND property_id=$2
              FOR UPDATE`,
@@ -518,18 +521,6 @@ export class OnboardingService {
             ? dto.security_deposit_funded_amount
             : (leadSecurityDeposit ?? 0)
           : dto.security_deposit_funded_amount;
-        const effectivePaymentMethod =
-          leadPaymentCommitment && !isBookingFeeLead
-            ? leadPaymentCommitment.payment_method
-            : dto.payment_method;
-        const effectivePaymentEvidenceIds =
-          leadPaymentCommitment && !isBookingFeeLead
-            ? leadPaymentCommitment.payment_evidence_file_ids
-            : (dto.payment_evidence_file_ids ?? []);
-        const effectivePaymentNote =
-          leadPaymentCommitment && !isBookingFeeLead
-            ? leadPaymentCommitment.payment_note
-            : dto.payment_note;
         if (
           leadPaymentCommitment &&
           (bookingFeeAmount !== leadBookingFee ||
@@ -547,6 +538,86 @@ export class OnboardingService {
         // Do not silently drop either credit before W06 allocates it to rent.
         const recordedBookingFeeAmount = leadPaymentCommitment ? leadBookingFee : bookingFeeAmount;
         const initialRentCredit = effectiveDpAmount + recordedBookingFeeAmount;
+        const currentPaymentStatus =
+          dto.payment_method === 'cash' ? ('verified' as const) : ('pending_confirmation' as const);
+        const rentPayments = [] as Array<{
+          classification: 'booking_fee' | 'down_payment' | 'full_settlement';
+          amount: number;
+          method: 'cash' | 'bank_transfer';
+          status: 'verified' | 'pending_confirmation';
+          evidenceFileIds: string[];
+          paymentNote?: string;
+          paidAt?: Date;
+          transactionCode?: string | null;
+        }>;
+        if (leadPaymentCommitment) {
+          rentPayments.push({
+            classification: leadPaymentCommitment.payment_type,
+            amount: leadRentCredit ?? 0,
+            method: leadPaymentCommitment.payment_method,
+            status: leadPaymentCommitment.verification_status,
+            evidenceFileIds: leadPaymentCommitment.payment_evidence_file_ids,
+            paymentNote: leadPaymentCommitment.payment_note ?? undefined,
+            paidAt: leadPaymentCommitment.created_at,
+            transactionCode: leadPaymentCommitment.transaction_code,
+          });
+          if (isBookingFeeLead && effectiveDpAmount > 0)
+            rentPayments.push({
+              classification:
+                initialRentCredit === contractRent ? 'full_settlement' : 'down_payment',
+              amount: effectiveDpAmount,
+              method: dto.payment_method,
+              status: currentPaymentStatus,
+              evidenceFileIds: dto.payment_evidence_file_ids ?? [],
+              paymentNote: dto.payment_note,
+            });
+        } else {
+          if (recordedBookingFeeAmount > 0)
+            rentPayments.push({
+              classification: 'booking_fee',
+              amount: recordedBookingFeeAmount,
+              method: dto.payment_method,
+              status: currentPaymentStatus,
+              evidenceFileIds: dto.payment_evidence_file_ids ?? [],
+              paymentNote: dto.payment_note,
+            });
+          if (effectiveDpAmount > 0)
+            rentPayments.push({
+              classification:
+                initialRentCredit === contractRent ? 'full_settlement' : 'down_payment',
+              amount: effectiveDpAmount,
+              method: dto.payment_method,
+              status: currentPaymentStatus,
+              evidenceFileIds: dto.payment_evidence_file_ids ?? [],
+              paymentNote: dto.payment_note,
+            });
+        }
+        const securityDepositPayment =
+          effectiveSecurityDeposit > 0
+            ? {
+                amount: effectiveSecurityDeposit,
+                method:
+                  leadPaymentCommitment && !isBookingFeeLead
+                    ? leadPaymentCommitment.payment_method
+                    : dto.payment_method,
+                status:
+                  leadPaymentCommitment && !isBookingFeeLead
+                    ? leadPaymentCommitment.verification_status
+                    : currentPaymentStatus,
+                evidenceFileIds:
+                  leadPaymentCommitment && !isBookingFeeLead
+                    ? leadPaymentCommitment.payment_evidence_file_ids
+                    : (dto.payment_evidence_file_ids ?? []),
+                paymentNote:
+                  (leadPaymentCommitment && !isBookingFeeLead
+                    ? leadPaymentCommitment.payment_note
+                    : dto.payment_note) ?? undefined,
+                paidAt:
+                  leadPaymentCommitment && !isBookingFeeLead
+                    ? leadPaymentCommitment.created_at
+                    : undefined,
+              }
+            : undefined;
         // W07A models every newly committed lease as one contract-rent
         // obligation. The UI may still use the familiar DP/full-payment choices,
         // but those choices describe the amount received today, not a recurring
@@ -679,15 +750,20 @@ export class OnboardingService {
             residentId,
             leaseId: lease.rows[0].id,
             firstRentInvoiceId,
-            method: effectivePaymentMethod,
-            dpAmount: initialRentCredit,
-            securityDepositAmount: effectiveSecurityDeposit,
-            evidenceFileIds: effectivePaymentEvidenceIds,
-            paymentNote: effectivePaymentNote ?? undefined,
+            rentPayments,
+            securityDepositPayment,
             commandFingerprint: fingerprint,
             actor,
             context,
           },
+        );
+        const verifiedNonBookingRentAmount = rentPayments.reduce(
+          (total, payment) =>
+            total +
+            (payment.classification !== 'booking_fee' && payment.status === 'verified'
+              ? payment.amount
+              : 0),
+          0,
         );
         await client.query(
           `UPDATE onboarding_commitments
@@ -695,7 +771,7 @@ export class OnboardingService {
          WHERE id=$1 AND property_id=$4`,
           [
             commitment.rows[0].id,
-            initialPayment.dpVerifiedAmount,
+            verifiedNonBookingRentAmount,
             initialPayment.securityDepositVerifiedAmount,
             dto.property_id,
           ],

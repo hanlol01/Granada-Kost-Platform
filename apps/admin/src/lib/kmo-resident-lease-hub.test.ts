@@ -182,6 +182,14 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
     new URL("../components/ui/image-upload-field.tsx", import.meta.url),
     "utf8",
   );
+  const fileUpload = await readFile(
+    new URL("../components/file/FileUploadField.tsx", import.meta.url),
+    "utf8",
+  );
+  const evidenceUpload = await readFile(
+    new URL("../components/file/EvidenceFileUploadField.tsx", import.meta.url),
+    "utf8",
+  );
   const onboarding = await readFile(new URL("./admin-onboarding.ts", import.meta.url), "utf8");
 
   assert.match(source, /\["Penghuni & Penyewaan", "Pilih Kamar Kost"\]\.map/);
@@ -209,10 +217,23 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
     /aria-pressed=\{paymentMethodSelected && paymentMethod === "bank_transfer"\}/,
   );
   assert.match(source, /Catatan pembayaran \(opsional\)/);
-  assert.match(source, /filePurpose="payment_proof"/);
-  assert.match(source, /<FileUploadField[\s\S]*?value=\{paymentEvidence\}/);
+  assert.match(source, /Email untuk akses Penghuni \(opsional\)/);
+  assert.match(source, /visitor_email: resident\.email\.trim\(\) \|\| undefined/);
+  assert.match(source, /Login WhatsApp: \$\{resident\.phone\.trim\(\)\}/);
+  assert.match(source, /<EvidenceFileUploadField[\s\S]*?values=\{paymentEvidence\}/);
+  assert.match(evidenceUpload, /maxFiles = 5/);
+  assert.match(evidenceUpload, /\{values\.length\} dari maksimal \{maxFiles\} file/);
+  assert.match(evidenceUpload, /compact=\{values\.length > 0\}/);
+  assert.match(source, /invalid=\{Boolean\(errors\?\.paymentEvidence\)\}/);
+  assert.match(
+    source,
+    /const transferEvidenceRequired = paymentMethod === "bank_transfer" && !initialPaymentLocked/,
+  );
+  assert.match(source, /\(!transferEvidenceRequired \|\| paymentEvidence\.length > 0\)/);
+  assert.match(fileUpload, /aria-invalid=\{invalid \|\| undefined\}/);
+  assert.match(fileUpload, /data-validation-target=\{invalid \? "true" : undefined\}/);
   assert.match(source, /payment_method: paymentMethod/);
-  assert.match(source, /payment_evidence_file_ids: paymentEvidence/);
+  assert.match(source, /paymentEvidence\.map\(\(file\) => file\.id\)/);
   assert.match(source, /payment_note: paymentNote\.trim\(\) \|\| undefined/);
   assert.match(source, /Menunggu konfirmasi/);
   assert.match(source, /Security deposit[\s\S]*?Opsional, bebas diisi, dan terpisah dari DP/);
@@ -347,6 +368,18 @@ test("new lease form permits historical dates, requires only operational identit
     termMonths: 3,
   });
   assert.deepEqual(errors, {});
+
+  assert.deepEqual(
+    validateNewLeaseDraft({
+      fullName: "Calon Penghuni",
+      phone: "081234567890",
+      email: "",
+      gender: "female",
+      startDate: "2024-09-03",
+      termMonths: 3,
+    }),
+    {},
+  );
 
   assert.deepEqual(
     validateNewLeaseDraft({

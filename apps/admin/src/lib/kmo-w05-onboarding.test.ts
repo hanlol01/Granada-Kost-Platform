@@ -71,6 +71,7 @@ const response = {
 const payload: OnboardingPayload = {
   property_id: id,
   visitor_name: "Resident",
+  visitor_phone: "081111111111",
   gender: "female",
   start_date: "2026-08-01",
   term_months: 12,

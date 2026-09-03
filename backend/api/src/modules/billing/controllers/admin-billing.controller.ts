@@ -132,6 +132,21 @@ export class AdminBillingController {
     });
   }
 
+  @Get('billing/contract-paid-documents/:documentId/document')
+  @Header('Cache-Control', 'private, no-store')
+  async contractPaidDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('documentId') documentId: string,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    const document = await this.w06.contractPaidDocument(user, query.property_id, documentId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Get('billing/invoices/:invoiceId/document')
   @Header('Cache-Control', 'private, no-store')
   async invoiceDocument(

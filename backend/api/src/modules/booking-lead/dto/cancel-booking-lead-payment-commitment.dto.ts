@@ -1,6 +1,7 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsIn,
   IsOptional,
@@ -34,7 +35,8 @@ export class CancelBookingLeadPaymentCommitmentDto {
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   refund_evidence_file_ids?: string[];
 }

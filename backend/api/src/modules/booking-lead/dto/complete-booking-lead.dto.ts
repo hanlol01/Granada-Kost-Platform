@@ -1,5 +1,7 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsDateString,
   IsIn,
@@ -52,6 +54,8 @@ export class CompleteBookingLeadDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   payment_evidence_file_ids?: string[];
 

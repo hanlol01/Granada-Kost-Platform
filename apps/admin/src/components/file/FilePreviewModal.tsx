@@ -118,7 +118,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
               />
             )}
             <div className="mt-2 flex justify-center">
-              <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenNewTab}>
+              <Button variant="info" size="sm" className="gap-2" onClick={handleOpenNewTab}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 Buka di tab baru
               </Button>
@@ -129,7 +129,7 @@ export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
         {/* Download button */}
         {file && (
           <div className="flex justify-end border-t px-4 py-3">
-            <Button variant="ghost" size="sm" className="gap-2 text-xs" onClick={handleDownload}>
+            <Button variant="success" size="sm" className="gap-2 text-xs" onClick={handleDownload}>
               <Download className="h-3.5 w-3.5" />
               Download
             </Button>

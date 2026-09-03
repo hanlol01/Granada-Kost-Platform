@@ -401,12 +401,12 @@ export class OnboardingService {
             code: 'ROOM_RESERVATION_UNVERIFIED',
             message: 'Reserved room requires an active compatible hold',
           });
-        const identityPhone = lead?.visitor_phone ?? dto.visitor_phone ?? null;
-        const identityEmail = lead?.visitor_email ?? dto.visitor_email ?? null;
-        if (!dto.resident_id && !identityPhone && !identityEmail)
+        const identityPhone = dto.visitor_phone?.trim() || lead?.visitor_phone?.trim() || null;
+        const identityEmail = dto.visitor_email?.trim() || lead?.visitor_email?.trim() || null;
+        if (!dto.resident_id && !identityPhone)
           throw new BadRequestException({
-            code: 'RESIDENT_IDENTITY_REQUIRED',
-            message: 'A resident identity or contact-backed lead is required',
+            code: 'RESIDENT_PHONE_REQUIRED',
+            message: 'A resident WhatsApp phone number is required',
           });
         if (!dto.resident_id)
           await this.assertNewResidentIdentityAvailable(client, dto.property_id, {

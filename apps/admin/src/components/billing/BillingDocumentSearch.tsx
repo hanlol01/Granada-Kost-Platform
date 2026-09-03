@@ -27,6 +27,7 @@ import {
 } from "@/lib/admin-booking-lead-completion";
 import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
 import {
+  downloadAdminContractPaidDocument,
   downloadAdminInvoiceDocument,
   downloadAdminReceiptDocument,
   W06_PAGE_SIZE,
@@ -95,6 +96,8 @@ export function BillingDocumentSearch({ propertyId }: { propertyId: string | nul
         document.document_type === "payment_reversal_receipt"
       ) {
         await downloadAdminReceiptDocument(propertyId, document.id, document.document_code);
+      } else if (document.document_type === "contract_paid_confirmation") {
+        await downloadAdminContractPaidDocument(propertyId, document.id, document.document_code);
       } else if (document.document_type === "booking_payment_receipt") {
         if (!document.booking_lead_id) throw new Error("Referensi minat booking tidak tersedia.");
         await downloadBookingLeadCommitmentNote({
@@ -417,7 +420,7 @@ function statusLabel(status: string) {
     {
       draft: "Draf",
       issued: "Terbit",
-      partially_paid: "Dibayar sebagian",
+      partially_paid: "Outstanding",
       paid: "Lunas",
       overdue: "Terlambat",
       void: "Dibatalkan",
@@ -426,6 +429,7 @@ function statusLabel(status: string) {
       rejected: "Ditolak",
       reversed: "Dibatalkan",
       refunded: "Direfund",
+      invalidated: "Tidak berlaku",
     }[status] ?? status.replaceAll("_", " ")
   );
 }
@@ -433,7 +437,7 @@ function statusLabel(status: string) {
 function statusClass(status: string) {
   if (["paid", "verified", "issued"].includes(status))
     return "border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-  if (["overdue", "rejected", "void", "reversed", "refunded"].includes(status))
+  if (["overdue", "rejected", "void", "reversed", "refunded", "invalidated"].includes(status))
     return "border-destructive/35 bg-destructive/10 text-destructive";
   return "border-amber-500/35 bg-amber-500/10 text-amber-600 dark:text-amber-400";
 }

@@ -16,7 +16,7 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Button } from "@/components/ui/button";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { ImageUploadField } from "@/components/ui/image-upload-field";
@@ -208,7 +208,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [securityDeposit, setSecurityDeposit] = useState(0);
   const [bookingFee, setBookingFee] = useState(0);
   const [paymentNote, setPaymentNote] = useState("");
-  const [paymentEvidence, setPaymentEvidence] = useState<FileResponse | null>(null);
+  const [paymentEvidence, setPaymentEvidence] = useState<FileResponse[]>([]);
   const [paymentEvidenceBusy, setPaymentEvidenceBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
@@ -281,7 +281,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setSecurityDeposit(0);
     setBookingFee(0);
     setPaymentNote("");
-    setPaymentEvidence(null);
+    setPaymentEvidence([]);
     setPaymentEvidenceBusy(false);
     setKtpDocumentError(null);
     setServerStageOneErrors({});
@@ -333,6 +333,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const paymentChoiceSelected = !bookingFeeLocked || bookingFeePaymentChoiceSelected;
   const paymentMethodSelected = !bookingFeeLocked || bookingFeePaymentMethodSelected;
   const creditedRentAmount = Math.min(amounts.contractRent, totalRentCredit);
+  const transferEvidenceRequired = paymentMethod === "bank_transfer" && !initialPaymentLocked;
   // The 25% figure remains a recommendation, while the activation policy now
   // requires at least one full month of rent credit before commitment.
   const requiredInitialRent =
@@ -383,7 +384,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     paymentChoiceSelected &&
     paymentMethodSelected &&
     creditedRentAmount >= requiredInitialRent &&
-    (Boolean(bookingLeadId) || paymentMethod === "cash" || Boolean(paymentEvidence)) &&
+    (!transferEvidenceRequired || paymentEvidence.length > 0) &&
     !paymentEvidenceBusy &&
     confirmed;
 
@@ -409,7 +410,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         : "",
     paymentEvidence: paymentEvidenceBusy
       ? "Tunggu sampai bukti transfer selesai diproses."
-      : bookingLeadId || paymentMethod === "cash" || paymentEvidence
+      : !transferEvidenceRequired || paymentEvidence.length > 0
         ? ""
         : "Bukti transfer wajib diunggah.",
     paymentChoice: paymentChoiceSelected
@@ -560,7 +561,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       room_id: selectedRoom.id,
       visitor_name: resident.fullName.trim(),
       visitor_phone: resident.phone.trim(),
-      visitor_email: resident.email.trim(),
+      visitor_email: resident.email.trim() || undefined,
       gender: resident.gender,
       place_of_birth: resident.placeOfBirth.trim() || undefined,
       date_of_birth: resident.dateOfBirth || undefined,
@@ -584,7 +585,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       security_deposit_funded_amount: securityDeposit,
       booking_fee_paid_amount: bookingFee || undefined,
       payment_method: paymentMethod,
-      payment_evidence_file_ids: paymentEvidence ? [paymentEvidence.id] : undefined,
+      payment_evidence_file_ids:
+        paymentEvidence.length > 0 ? paymentEvidence.map((file) => file.id) : undefined,
       payment_note: paymentNote.trim() || undefined,
       notes: resident.notes.trim() || undefined,
     };
@@ -766,15 +768,17 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                 <dl className="mt-4 grid gap-3 rounded-lg border border-warning/25 bg-background/70 p-4 sm:grid-cols-2">
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Email login
+                      Nomor WhatsApp · login utama
                     </dt>
-                    <dd className="mt-1 break-all font-medium">{resident.email.trim()}</dd>
+                    <dd className="mt-1 font-medium">{resident.phone.trim()}</dd>
                   </div>
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Nomor WhatsApp
+                      Email · opsional
                     </dt>
-                    <dd className="mt-1 font-medium">{resident.phone.trim()}</dd>
+                    <dd className="mt-1 break-all font-medium">
+                      {resident.email.trim() || "Belum diisi"}
+                    </dd>
                   </div>
                 </dl>
                 <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -811,7 +815,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                         `Halo ${resident.fullName.trim()},`,
                         "",
                         "Berikut kredensial sementara aplikasi Penghuni Kostation:",
-                        `Login: ${resident.email.trim() || resident.phone.trim()}`,
+                        `Login WhatsApp: ${resident.phone.trim()}`,
                         `Password sementara: ${temporaryPassword}`,
                         "",
                         "Silakan masuk dan segera ganti password saat diminta. Jangan bagikan kredensial ini kepada orang lain.",
@@ -1321,9 +1325,9 @@ function ResidentAndLeaseStep({
             numeric: true,
             maxLength: 20,
           })}
-          {input("email", "Email untuk akses Penghuni", {
+          {input("email", "Email untuk akses Penghuni (opsional)", {
             type: "email",
-            required: true,
+            hint: "Dapat dilengkapi kemudian pada data penghuni.",
             maxLength: 254,
           })}
           <div className="space-y-2">
@@ -1477,8 +1481,8 @@ function RoomAndPaymentStep({
   paymentNote: string;
   setPaymentNote: (value: string) => void;
   propertyId: string;
-  paymentEvidence: FileResponse | null;
-  onPaymentEvidenceChange: (file: FileResponse | null) => void;
+  paymentEvidence: FileResponse[];
+  onPaymentEvidenceChange: (files: FileResponse[]) => void;
   onPaymentEvidenceBusyChange: (busy: boolean) => void;
   paidRent: number;
   setPaidRent: (value: number) => void;
@@ -1709,23 +1713,24 @@ function RoomAndPaymentStep({
                   </div>
                   {paymentMethod === "bank_transfer" && !initialPaymentLocked ? (
                     <div className="space-y-2">
-                      <FileUploadField
+                      <EvidenceFileUploadField
                         propertyId={propertyId}
-                        filePurpose="payment_proof"
                         label="Bukti transfer"
                         description="Wajib untuk Transfer Bank. Unggah JPG, PNG, WebP, atau PDF; foto besar dikompresi otomatis. Gunakan Lihat untuk memastikan bukti sudah benar."
                         required
-                        value={paymentEvidence}
+                        invalid={Boolean(errors?.paymentEvidence)}
+                        errorId="payment-evidence-error"
+                        values={paymentEvidence}
                         onChange={onPaymentEvidenceChange}
                         onBusyChange={onPaymentEvidenceBusyChange}
                         disabled={!propertyId}
-                        capture="environment"
                         className="rounded-xl border border-border bg-muted/20 p-4"
                       />
                       {errors?.paymentEvidence ? (
                         <p
                           className="text-xs text-destructive"
                           data-validation-target="true"
+                          id="payment-evidence-error"
                           role="alert"
                           tabIndex={-1}
                         >

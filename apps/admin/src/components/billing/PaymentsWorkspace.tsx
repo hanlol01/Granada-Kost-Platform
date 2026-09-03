@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { FileResponse } from "@granada-kost/domain";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
@@ -182,7 +182,7 @@ export function PaymentsWorkspace() {
       ? `status tagihan: ${
           {
             issued: "Belum dibayar",
-            partially_paid: "Dibayar sebagian",
+            partially_paid: "Outstanding",
             overdue: "Terlambat",
           }[invoiceStatus]
         }`
@@ -329,7 +329,7 @@ export function PaymentsWorkspace() {
               >
                 <option value="">Semua status tagihan</option>
                 <option value="issued">Belum dibayar</option>
-                <option value="partially_paid">Dibayar sebagian</option>
+                <option value="partially_paid">Outstanding</option>
                 <option value="overdue">Terlambat</option>
               </select>
               <select
@@ -1353,7 +1353,7 @@ export function RecordPaymentDialog({
   const [depositAmount, setDepositAmount] = useState(0);
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
-  const [evidenceFile, setEvidenceFile] = useState<FileResponse | null>(null);
+  const [evidenceFiles, setEvidenceFiles] = useState<FileResponse[]>([]);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const mutation = useRecordManualPayment(propertyId);
   const resetPaymentMutation = mutation.reset;
@@ -1396,7 +1396,7 @@ export function RecordPaymentDialog({
     allocations,
     reference,
     note,
-    evidenceFileId: evidenceFile?.id ?? null,
+    evidenceFileIds: evidenceFiles.map((file) => file.id),
     contractSettlementInvoiceId,
     contractSettlementMode,
     settlementChoice,
@@ -1409,7 +1409,7 @@ export function RecordPaymentDialog({
     setDepositAmount(0);
     setReference("");
     setNote("");
-    setEvidenceFile(null);
+    setEvidenceFiles([]);
     setEvidenceBusy(false);
     setSettlementChoice("partial");
     resetPaymentMutation();
@@ -1447,7 +1447,8 @@ export function RecordPaymentDialog({
           amount,
           reference_number: reference || undefined,
           note: note || undefined,
-          evidence_file_ids: evidenceFile ? [evidenceFile.id] : undefined,
+          evidence_file_ids:
+            evidenceFiles.length > 0 ? evidenceFiles.map((file) => file.id) : undefined,
           allocations: purpose === "security_deposit" ? [] : allocations,
         },
         idempotencyKey: key.current.key,
@@ -1727,9 +1728,8 @@ export function RecordPaymentDialog({
               </div>
             ) : null}
             {propertyId ? (
-              <FileUploadField
+              <EvidenceFileUploadField
                 propertyId={propertyId}
-                filePurpose="payment_proof"
                 label={
                   method === "bank_transfer"
                     ? "Bukti transfer (wajib)"
@@ -1740,8 +1740,8 @@ export function RecordPaymentDialog({
                     ? "Pilih bukti pembayaran transfer. File dapat dilihat, diganti, atau dihapus sebelum pembayaran disimpan."
                     : "Lampirkan bila tersedia sebagai bukti penerimaan pembayaran tunai."
                 }
-                value={evidenceFile}
-                onChange={setEvidenceFile}
+                values={evidenceFiles}
+                onChange={setEvidenceFiles}
                 onBusyChange={setEvidenceBusy}
                 required={method === "bank_transfer"}
               />
@@ -1794,7 +1794,7 @@ export function RecordPaymentDialog({
                 (isContractSettlement &&
                   contractSettlementInvoice !== null &&
                   amount > contractSettlementInvoice.outstanding_amount) ||
-                (method === "bank_transfer" && !evidenceFile)
+                (method === "bank_transfer" && evidenceFiles.length === 0)
               }
               onClick={submit}
             >
@@ -2322,7 +2322,7 @@ function OtherChargePanel({
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState(0);
   const [dueDate, setDueDate] = useState("");
-  const [evidenceFile, setEvidenceFile] = useState<FileResponse | null>(null);
+  const [evidenceFiles, setEvidenceFiles] = useState<FileResponse[]>([]);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const mutation = useCreateOtherCharge(propertyId);
   const key = useLogicalKey(
@@ -2333,7 +2333,7 @@ function OtherChargePanel({
       description,
       amount,
       dueDate,
-      evidenceFileId: evidenceFile?.id ?? null,
+      evidenceFileIds: evidenceFiles.map((file) => file.id),
     }),
   );
   if (!detail)
@@ -2407,13 +2407,13 @@ function OtherChargePanel({
               onChange={(value) => setDueDate(value ?? "")}
             />
             {category === "documented_damage" && propertyId ? (
-              <FileUploadField
+              <EvidenceFileUploadField
                 propertyId={propertyId}
                 filePurpose="complaint_attachment"
                 label="Bukti kerusakan"
                 description="Lampirkan foto atau dokumen kerusakan. Gambar besar akan dikompresi otomatis."
-                value={evidenceFile}
-                onChange={setEvidenceFile}
+                values={evidenceFiles}
+                onChange={setEvidenceFiles}
                 onBusyChange={setEvidenceBusy}
                 required
               />
@@ -2433,7 +2433,7 @@ function OtherChargePanel({
                   description.trim().length < 3 ||
                   amount <= 0 ||
                   !dueDate ||
-                  (category === "documented_damage" && !evidenceFile)
+                  (category === "documented_damage" && evidenceFiles.length === 0)
                 }
                 onClick={() => {
                   if (!propertyId) return;
@@ -2448,8 +2448,8 @@ function OtherChargePanel({
                         amount,
                         due_date: dueDate,
                         evidence_file_ids:
-                          category === "documented_damage" && evidenceFile
-                            ? [evidenceFile.id]
+                          category === "documented_damage" && evidenceFiles.length > 0
+                            ? evidenceFiles.map((file) => file.id)
                             : undefined,
                       },
                       idempotencyKey: key.current.key,
@@ -2589,7 +2589,7 @@ function StatusBadge({ status }: { status: string }) {
   const label: Record<string, string> = {
     draft: "Draft",
     issued: "Diterbitkan",
-    partially_paid: "Dibayar sebagian",
+    partially_paid: "Outstanding",
     paid: "Lunas",
     overdue: "Terlambat",
     void: "Void",

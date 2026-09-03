@@ -37,6 +37,7 @@ import {
 } from "@/hooks/useResidents";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseEnabled } from "@/lib/features";
+import { formatIDR } from "@/lib/format";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
@@ -130,7 +131,7 @@ export function RentPaymentStatusPill({
       label: "Pembayaran awal 1 bulan",
       className: "bg-primary-soft text-primary",
     },
-    partial_payment: { label: "Bayar sebagian", className: "bg-warning/15 text-warning" },
+    partial_payment: { label: "Outstanding", className: "bg-warning/15 text-warning" },
     paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
     reversed_refunded: {
       label: "Dibatalkan / Direfund",
@@ -148,6 +149,23 @@ export function RentPaymentStatusPill({
     >
       {current.label}
     </span>
+  );
+}
+
+function RentPaymentStatusSummary({ resident }: { resident: ResidentListRecord }) {
+  const showsRemainingBalance =
+    resident.rentPaymentStatus === "partial_payment" &&
+    resident.contractSettlementRemainingAmount > 0;
+
+  return (
+    <div className="space-y-1.5">
+      <RentPaymentStatusPill status={resident.rentPaymentStatus} />
+      {showsRemainingBalance ? (
+        <p className="text-xs font-semibold text-foreground">
+          Sisa: {formatIDR(resident.contractSettlementRemainingAmount)}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -324,7 +342,7 @@ function TenantsPage() {
             booking_fee: "Booking fee",
             down_payment: "DP / uang muka",
             initial_month_payment: "Pembayaran awal 1 bulan",
-            partial_payment: "Bayar sebagian",
+            partial_payment: "Outstanding",
             paid_in_full: "Lunas",
             reversed_refunded: "Dibatalkan / Direfund",
             outstanding_balance: "Ada saldo tunggakan",
@@ -506,7 +524,7 @@ function TenantsPage() {
                 <SelectItem value="booking_fee">Booking fee</SelectItem>
                 <SelectItem value="down_payment">DP / uang muka</SelectItem>
                 <SelectItem value="initial_month_payment">Pembayaran awal 1 bulan</SelectItem>
-                <SelectItem value="partial_payment">Bayar sebagian</SelectItem>
+                <SelectItem value="partial_payment">Outstanding</SelectItem>
                 <SelectItem value="paid_in_full">Lunas</SelectItem>
                 <SelectItem value="reversed_refunded">Dibatalkan / Direfund</SelectItem>
                 <SelectItem value="outstanding_balance">Ada saldo tunggakan</SelectItem>
@@ -745,7 +763,7 @@ function TenantsPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
-                        <RentPaymentStatusPill status={resident.rentPaymentStatus} />
+                        <RentPaymentStatusSummary resident={resident} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="space-y-1.5">
@@ -812,7 +830,7 @@ function TenantsPage() {
                       </p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <RentPaymentStatusPill status={resident.rentPaymentStatus} />
+                      <RentPaymentStatusSummary resident={resident} />
                       <SettlementStagePill stage={resident.contractSettlementStage} />
                       {resident.leaseExpiredAdminActionRequired ? (
                         <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">

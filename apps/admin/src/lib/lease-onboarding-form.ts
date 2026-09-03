@@ -139,7 +139,8 @@ export function validateNewLeaseDraft(input: NewLeaseDraftValidationInput): NewL
   } else if (input.phone.trim().length > 20) {
     errors.phone = "Nomor Telepon / WhatsApp maksimal 20 digit.";
   }
-  if (!/^\S+@\S+\.\S+$/.test(input.email.trim()) || input.email.trim().length > 254) {
+  const email = input.email.trim();
+  if (email && (!/^\S+@\S+\.\S+$/.test(email) || email.length > 254)) {
     errors.email = "Email untuk akses Penghuni tidak valid.";
   }
   if (!input.gender) errors.gender = "Jenis kelamin wajib dipilih.";

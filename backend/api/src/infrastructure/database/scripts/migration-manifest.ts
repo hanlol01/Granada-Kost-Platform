@@ -575,4 +575,26 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_refund_settlements' AND column_name='transaction_code')",
     ],
   },
+  {
+    version: '060_financial_evidence_multi_file.sql',
+    checksumSha256: '572dba0efcb231b612a052e7dd4fa3c7859d56ee57e3e0a53461646843b11f52',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_termination_cases' AND column_name='damage_evidence_file_ids' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_termination_cases' AND column_name='refund_evidence_file_ids' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_termination_damage_evidence_limit' AND conrelid=to_regclass('public.lease_termination_cases'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_termination_refund_evidence_limit' AND conrelid=to_regclass('public.lease_termination_cases'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_lead_payment_commitment_refunds_evidence_limit_check' AND conrelid=to_regclass('public.booking_lead_payment_commitment_refunds') AND pg_get_constraintdef(oid) LIKE '%<= 5%')",
+    ],
+  },
+  {
+    version: '061_contract_paid_official_document.sql',
+    checksumSha256: '5eb42cf6e10b3f140f12300ff6f8ff07212a5d3149bb9d949fedca8717c76ac4',
+    sentinels: [
+      "to_regclass('public.lease_contract_paid_documents') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='issue_contract_paid_document')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_contract_paid_documents_code_unique' AND conrelid=to_regclass('public.lease_contract_paid_documents'))",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_scope' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_immutable' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
+    ],
+  },
 ] as const;

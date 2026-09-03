@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -49,9 +52,15 @@ export class FinalizeLeaseTerminationDto {
   @MinLength(3)
   @MaxLength(1000)
   damage_reason?: string;
-  @ValidateIf((dto: FinalizeLeaseTerminationDto) => dto.damage_deduction_amount > 0)
+  @IsOptional()
   @IsUUID('4')
   damage_evidence_file_id?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  damage_evidence_file_ids?: string[];
   @IsInt() @Min(0) @Max(MAX_MONEY) refund_amount = 0;
   @ValidateIf((dto: FinalizeLeaseTerminationDto) => dto.refund_amount > 0)
   @IsIn(['cash', 'bank_transfer'])
@@ -60,7 +69,13 @@ export class FinalizeLeaseTerminationDto {
   @IsDateString()
   refunded_at?: string;
   @IsString() @MaxLength(1000) @IsOptional() refund_note?: string;
-  @ValidateIf((dto: FinalizeLeaseTerminationDto) => dto.refund_amount > 0)
+  @IsOptional()
   @IsUUID('4')
   refund_evidence_file_id?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  refund_evidence_file_ids?: string[];
 }

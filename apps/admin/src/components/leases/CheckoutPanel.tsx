@@ -9,7 +9,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,7 +57,7 @@ type DamageDraft = {
   key: number;
   amount: string;
   reason: string;
-  evidence: FileResponse | null;
+  evidence: FileResponse[];
   busy: boolean;
 };
 
@@ -120,20 +120,18 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
   const [nextDamageKey, setNextDamageKey] = useState(1);
   const [depositOffsetAmount, setDepositOffsetAmount] = useState("0");
   const [depositOffsetReason, setDepositOffsetReason] = useState("");
-  const [depositOffsetEvidence, setDepositOffsetEvidence] = useState<FileResponse | null>(null);
+  const [depositOffsetEvidence, setDepositOffsetEvidence] = useState<FileResponse[]>([]);
   const [depositOffsetEvidenceBusy, setDepositOffsetEvidenceBusy] = useState(false);
   const [settlementQuote, setSettlementQuote] = useState<CheckoutSettlementQuote | null>(null);
   const [finalRefundAmount, setFinalRefundAmount] = useState("0");
   const [refundAdjustmentReason, setRefundAdjustmentReason] = useState("");
-  const [refundAdjustmentEvidence, setRefundAdjustmentEvidence] = useState<FileResponse | null>(
-    null,
-  );
+  const [refundAdjustmentEvidence, setRefundAdjustmentEvidence] = useState<FileResponse[]>([]);
   const [refundAdjustmentEvidenceBusy, setRefundAdjustmentEvidenceBusy] = useState(false);
   const [refundMethod, setRefundMethod] = useState<
     "cash" | "bank_transfer" | "qris" | "ewallet" | "other"
   >("bank_transfer");
   const [refundReference, setRefundReference] = useState("");
-  const [refundEvidence, setRefundEvidence] = useState<FileResponse | null>(null);
+  const [refundEvidence, setRefundEvidence] = useState<FileResponse[]>([]);
   const [refundEvidenceBusy, setRefundEvidenceBusy] = useState(false);
   const [refundNotes, setRefundNotes] = useState("");
   const [refundWaiverReason, setRefundWaiverReason] = useState("");
@@ -197,7 +195,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     damages.map((item) => ({
       amount: Number(item.amount),
       reason: item.reason.trim(),
-      evidenceFileId: item.evidence?.id ?? "",
+      evidenceFileIds: item.evidence.map((file) => file.id),
     }));
 
   const settlementInput = (includeFinalDecision: boolean) => ({
@@ -205,12 +203,14 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     damageDeductions: damageInput(),
     depositRentOffsetAmount: Number(depositOffsetAmount || 0),
     depositRentOffsetReason: depositOffsetReason.trim() || undefined,
-    depositRentOffsetEvidenceFileId: depositOffsetEvidence?.id,
+    depositRentOffsetEvidenceFileIds: depositOffsetEvidence.map((file) => file.id),
     finalRefundAmount: includeFinalDecision ? Number(finalRefundAmount || 0) : undefined,
     refundAdjustmentReason: includeFinalDecision
       ? refundAdjustmentReason.trim() || undefined
       : undefined,
-    refundAdjustmentEvidenceFileId: includeFinalDecision ? refundAdjustmentEvidence?.id : undefined,
+    refundAdjustmentEvidenceFileIds: includeFinalDecision
+      ? refundAdjustmentEvidence.map((file) => file.id)
+      : undefined,
   });
 
   const previewSettlement = () => {
@@ -224,7 +224,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
       setSettlementQuote(result.quote);
       setFinalRefundAmount(String(result.quote.recommendedRefundAmount));
       setRefundAdjustmentReason("");
-      setRefundAdjustmentEvidence(null);
+      setRefundAdjustmentEvidence([]);
     });
   };
 
@@ -238,7 +238,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
   };
 
   const settleExitRefund = () => {
-    if (!command?.exitRefundId || !refundEvidence) return;
+    if (!command?.exitRefundId || refundEvidence.length === 0) return;
     return perform(async () => {
       await adminUxLeaseApi.checkout.settleRefund(
         leaseId,
@@ -247,7 +247,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
         {
           paymentMethod: refundMethod,
           externalReference: refundReference,
-          evidenceFileId: refundEvidence.id,
+          evidenceFileIds: refundEvidence.map((file) => file.id),
           notes: refundNotes || undefined,
         },
         key(),
@@ -397,14 +397,20 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     (approvedCharge < recommendedCharge && waiverReason.trim().length < 3);
   const damageInvalid = damages.some((item) => {
     const amount = Number(item.amount);
-    return !Number.isSafeInteger(amount) || amount <= 0 || !item.reason.trim() || !item.evidence;
+    return (
+      !Number.isSafeInteger(amount) ||
+      amount <= 0 ||
+      !item.reason.trim() ||
+      item.evidence.length === 0
+    );
   });
   const damageUploadBusy = damages.some((item) => item.busy);
   const offsetAmount = Number(depositOffsetAmount || 0);
   const offsetInvalid =
     !Number.isSafeInteger(offsetAmount) ||
     offsetAmount < 0 ||
-    (offsetAmount > 0 && (depositOffsetReason.trim().length < 3 || !depositOffsetEvidence));
+    (offsetAmount > 0 &&
+      (depositOffsetReason.trim().length < 3 || depositOffsetEvidence.length === 0));
   const finalRefund = Number(finalRefundAmount || 0);
   const finalRefundInvalid =
     !settlementQuote ||
@@ -413,11 +419,12 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     finalRefund > settlementQuote.recommendedRefundAmount ||
     (finalRefund !== settlementQuote.recommendedRefundAmount &&
       (refundAdjustmentReason.trim().length < 3 ||
-        !refundAdjustmentEvidence ||
+        refundAdjustmentEvidence.length === 0 ||
         refundAdjustmentEvidenceBusy));
   const settlementDraftInvalid =
     damageInvalid || damageUploadBusy || offsetInvalid || depositOffsetEvidenceBusy;
-  const refundSettlementInvalid = !refundReference.trim() || !refundEvidence || refundEvidenceBusy;
+  const refundSettlementInvalid =
+    !refundReference.trim() || refundEvidence.length === 0 || refundEvidenceBusy;
   const next =
     command?.state === "notice_received"
       ? "Setujui & jadwalkan checkout"
@@ -1022,7 +1029,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                             key: nextDamageKey,
                             amount: "",
                             reason: "",
-                            evidence: null,
+                            evidence: [],
                             busy: false,
                           },
                         ]);
@@ -1069,13 +1076,12 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                           }}
                         />
                       </label>
-                      <FileUploadField
+                      <EvidenceFileUploadField
                         className="md:col-span-2"
                         propertyId={command.propertyId}
-                        filePurpose="payment_proof"
                         label={`Bukti potongan ${index + 1}`}
                         description="Foto atau dokumen hasil inspeksi kamar."
-                        value={item.evidence}
+                        values={item.evidence}
                         onChange={(evidence) => {
                           setDamages((current) =>
                             current.map((draft) =>
@@ -1134,15 +1140,14 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                           }}
                         />
                       </label>
-                      <FileUploadField
+                      <EvidenceFileUploadField
                         className="md:col-span-2"
                         propertyId={command.propertyId}
-                        filePurpose="payment_proof"
                         label="Bukti persetujuan offset deposit"
                         description="Wajib. Deposit tidak pernah otomatis digunakan untuk menutup sewa."
-                        value={depositOffsetEvidence}
-                        onChange={(file) => {
-                          setDepositOffsetEvidence(file);
+                        values={depositOffsetEvidence}
+                        onChange={(files) => {
+                          setDepositOffsetEvidence(files);
                           setSettlementQuote(null);
                         }}
                         onBusyChange={setDepositOffsetEvidenceBusy}
@@ -1230,12 +1235,11 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                             onChange={(event) => setRefundAdjustmentReason(event.target.value)}
                           />
                         </label>
-                        <FileUploadField
+                        <EvidenceFileUploadField
                           propertyId={command.propertyId}
-                          filePurpose="payment_proof"
                           label="Bukti penyesuaian refund"
                           description="Wajib saat keputusan Admin lebih rendah dari rekomendasi sistem."
-                          value={refundAdjustmentEvidence}
+                          values={refundAdjustmentEvidence}
                           onChange={setRefundAdjustmentEvidence}
                           onBusyChange={setRefundAdjustmentEvidenceBusy}
                           required
@@ -1373,12 +1377,11 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                         />
                       </label>
                     </div>
-                    <FileUploadField
+                    <EvidenceFileUploadField
                       propertyId={command.propertyId}
-                      filePurpose="payment_proof"
                       label="Bukti pembayaran refund"
                       description="Wajib sebelum refund dinyatakan selesai."
-                      value={refundEvidence}
+                      values={refundEvidence}
                       onChange={setRefundEvidence}
                       onBusyChange={setRefundEvidenceBusy}
                       required

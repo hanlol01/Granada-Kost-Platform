@@ -310,7 +310,8 @@ test("Admin workspace freezes operational columns, scoped pagination, and the re
   assert.match(route, /title=\{`\$\{days\} hari`\}/);
   assert.match(route, /Booking fee/);
   assert.match(route, /DP \/ uang muka/);
-  assert.match(route, /Bayar sebagian/);
+  assert.match(route, /Outstanding/);
+  assert.match(route, /Sisa: \{formatIDR\(resident\.contractSettlementRemainingAmount\)\}/);
   assert.match(route, /Lunas/);
   assert.match(route, /createFileRoute\("\/tenants"\)/);
   assert.match(route, /routeId === "\/tenants\/\$residentId"/);

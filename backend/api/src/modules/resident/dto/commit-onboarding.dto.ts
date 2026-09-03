@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsDateString,
   IsEmail,
@@ -17,6 +18,10 @@ import {
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const optionalTrim = ({ value }: { value: unknown }) => {
+  const normalized = trim({ value });
+  return normalized === '' ? undefined : normalized;
+};
 
 export class CommitOnboardingDto {
   @IsUUID('4') property_id!: string;
@@ -24,8 +29,8 @@ export class CommitOnboardingDto {
   @IsUUID('4') @IsOptional() room_id?: string;
   @IsUUID('4') @IsOptional() resident_id?: string;
   @Transform(trim) @IsString() @MaxLength(160) visitor_name!: string;
-  @IsOptional() @Transform(trim) @IsNumberString() @MaxLength(20) visitor_phone?: string;
-  @IsOptional() @Transform(trim) @IsEmail() @MaxLength(254) visitor_email?: string;
+  @Transform(trim) @IsNumberString() @MaxLength(20) visitor_phone!: string;
+  @IsOptional() @Transform(optionalTrim) @IsEmail() @MaxLength(254) visitor_email?: string;
   @Transform(trim) @IsString() @IsIn(['male', 'female']) @MaxLength(40) gender!: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(120) place_of_birth?: string;
   @IsOptional() @IsDateString() date_of_birth?: string;
@@ -54,7 +59,8 @@ export class CommitOnboardingDto {
   @IsInt() @Min(0) @IsOptional() booking_fee_paid_amount?: number;
   @IsIn(['cash', 'bank_transfer']) payment_method!: 'cash' | 'bank_transfer';
   @IsArray()
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   @IsOptional()
   payment_evidence_file_ids?: string[];

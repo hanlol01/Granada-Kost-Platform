@@ -103,20 +103,20 @@ export type CheckoutInspectionInput = {
 };
 export type CheckoutCompleteInput = {
   roomStatusAfter: "inspection_required" | "maintenance";
-  damageDeductions?: { amount: number; reason: string; evidenceFileId: string }[];
+  damageDeductions?: { amount: number; reason: string; evidenceFileIds: string[] }[];
   depositRentOffsetAmount?: number;
   depositRentOffsetReason?: string;
-  depositRentOffsetEvidenceFileId?: string;
+  depositRentOffsetEvidenceFileIds?: string[];
   finalRefundAmount?: number;
   refundAdjustmentReason?: string;
-  refundAdjustmentEvidenceFileId?: string;
+  refundAdjustmentEvidenceFileIds?: string[];
   refundReason?: string;
 };
 
 export type CheckoutRefundSettlementInput = {
   paymentMethod: "cash" | "bank_transfer" | "qris" | "ewallet" | "other";
   externalReference: string;
-  evidenceFileId: string;
+  evidenceFileIds: string[];
   notes?: string;
 };
 
@@ -650,14 +650,14 @@ export const adminUxLeaseApi = {
             damage_deductions: input.damageDeductions?.map((item) => ({
               amount: item.amount,
               reason: item.reason,
-              evidence_file_id: item.evidenceFileId,
+              evidence_file_ids: item.evidenceFileIds,
             })),
             deposit_rent_offset_amount: input.depositRentOffsetAmount,
             deposit_rent_offset_reason: text(input.depositRentOffsetReason),
-            deposit_rent_offset_evidence_file_id: input.depositRentOffsetEvidenceFileId,
+            deposit_rent_offset_evidence_file_ids: input.depositRentOffsetEvidenceFileIds,
             final_refund_amount: input.finalRefundAmount,
             refund_adjustment_reason: text(input.refundAdjustmentReason),
-            refund_adjustment_evidence_file_id: input.refundAdjustmentEvidenceFileId,
+            refund_adjustment_evidence_file_ids: input.refundAdjustmentEvidenceFileIds,
             refund_reason: text(input.refundReason),
           },
           { idempotencyKey },
@@ -676,7 +676,7 @@ export const adminUxLeaseApi = {
             damage_deductions: input.damageDeductions?.map((item) => ({
               amount: item.amount,
               reason: item.reason,
-              evidence_file_id: item.evidenceFileId,
+              evidence_file_ids: item.evidenceFileIds,
             })),
             deposit_rent_offset_amount: input.depositRentOffsetAmount,
           },
@@ -701,7 +701,7 @@ export const adminUxLeaseApi = {
           {
             payment_method: input.paymentMethod,
             external_reference: input.externalReference.trim(),
-            evidence_file_id: input.evidenceFileId,
+            evidence_file_ids: input.evidenceFileIds,
             notes: text(input.notes),
           },
           { idempotencyKey },

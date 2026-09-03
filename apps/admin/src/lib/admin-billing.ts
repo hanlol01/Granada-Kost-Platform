@@ -41,6 +41,7 @@ export const BILLING_DOCUMENT_SEARCH_TYPES = [
   "payment_reversal_receipt",
   "booking_payment_receipt",
   "booking_refund_receipt",
+  "contract_paid_confirmation",
   "checkout_handover",
   "final_settlement",
   "checkout_refund_receipt",
@@ -91,7 +92,7 @@ export type BillingAllocation = { invoice_id: string; amount: number };
 export type BillingEvidence = {
   id: string;
   original_filename: string;
-  mime_type: "image/jpeg" | "image/png" | "application/pdf";
+  mime_type: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
   file_size_bytes: number;
   content_path: string;
 };
@@ -223,6 +224,12 @@ export type ResidentBilling = {
     partial_payment_allowed: boolean;
     full_payment_required: boolean;
     extension_available: boolean;
+    paid_document: {
+      id: string;
+      document_code: string;
+      issued_at: string;
+      status: "issued" | "invalidated";
+    } | null;
     payment_promise: {
       id: string;
       promised_amount: number;
@@ -361,12 +368,12 @@ export type FinalizeLeaseTerminationInput = {
   room_status_after_checkout: "vacant" | "maintenance";
   damage_deduction_amount: number;
   damage_reason?: string;
-  damage_evidence_file_id?: string;
+  damage_evidence_file_ids?: string[];
   refund_amount: number;
   refund_method?: "cash" | "bank_transfer";
   refunded_at?: string;
   refund_note?: string;
-  refund_evidence_file_id?: string;
+  refund_evidence_file_ids?: string[];
 };
 
 type Requester = Pick<AdminUxV2Requester, "get" | "post">;
@@ -499,7 +506,7 @@ function evidence(value: unknown): BillingEvidence {
     original_filename: text(file.original_filename, "Nama file"),
     mime_type: oneOf(
       file.mime_type,
-      ["image/jpeg", "image/png", "application/pdf"] as const,
+      ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const,
       "MIME file",
     ),
     file_size_bytes: integer(file.file_size_bytes, "Ukuran file"),
@@ -793,6 +800,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         "partial_payment_allowed",
         "full_payment_required",
         "extension_available",
+        "paid_document",
         "payment_promise",
         "termination_case",
       ],
@@ -826,6 +834,23 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         promised_payment_date: date(promise.promised_payment_date, "Tanggal janji bayar"),
         note: text(promise.note, "Catatan janji bayar"),
         recorded_at: timestamp(promise.recorded_at, "Waktu pencatatan janji bayar"),
+      };
+    });
+    const paidDocument = nullable(record.paid_document, (value) => {
+      const document = object(
+        value,
+        ["id", "document_code", "issued_at", "status"],
+        "bukti pelunasan kontrak",
+      );
+      return {
+        id: uuid(document.id, "ID bukti pelunasan kontrak"),
+        document_code: text(document.document_code, "Nomor bukti pelunasan kontrak"),
+        issued_at: timestamp(document.issued_at, "Waktu penerbitan bukti pelunasan kontrak"),
+        status: oneOf(
+          document.status,
+          ["issued", "invalidated"] as const,
+          "Status bukti pelunasan kontrak",
+        ),
       };
     });
     const boolean = (value: unknown, label: string) => {
@@ -919,6 +944,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       partial_payment_allowed: boolean(record.partial_payment_allowed, "Izin pembayaran sebagian"),
       full_payment_required: boolean(record.full_payment_required, "Kewajiban pelunasan penuh"),
       extension_available: boolean(record.extension_available, "Izin perpanjangan"),
+      paid_document: paidDocument,
       payment_promise: paymentPromise,
       termination_case: terminationCase,
     };
@@ -1300,7 +1326,7 @@ export function parseBillingProofs(value: unknown): BillingPage<BillingProof> {
             original_filename: text(file.original_filename, "Nama file"),
             mime_type: oneOf(
               file.mime_type,
-              ["image/jpeg", "image/png", "application/pdf"] as const,
+              ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const,
               "MIME file",
             ),
             file_size_bytes: integer(file.file_size_bytes, "Ukuran file"),
@@ -1658,6 +1684,28 @@ export async function downloadAdminReceiptDocument(
     );
     if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
       throw new Error(`Dokumen kuitansi gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, filename);
+}
+
+export async function downloadAdminContractPaidDocument(
+  propertyId: string,
+  documentId: string,
+  documentCode: string,
+) {
+  const query = new URLSearchParams({ property_id: propertyId });
+  const filename = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "bukti-kontrak-lunas"}.pdf`;
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/admin/billing/contract-paid-documents/${encodeURIComponent(documentId)}/document?${query}`,
+      {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Bukti pelunasan kontrak gagal diunduh (HTTP ${response.status}).`);
     return response;
   }, filename);
 }

@@ -30,6 +30,10 @@ type FileUploadFieldProps = {
   disabled?: boolean;
   capture?: "user" | "environment";
   className?: string;
+  /** Marks the visible dropzone as invalid so form validation can focus it. */
+  invalid?: boolean;
+  /** Optional id of an external validation message for assistive technology. */
+  errorId?: string;
   onBusyChange?: (busy: boolean) => void;
   /** Explicitly prepare image files before upload for this field. */
   compressImages?: boolean;
@@ -38,6 +42,8 @@ type FileUploadFieldProps = {
    * existing private file from being deleted before the parent mutation saves.
    */
   deleteOnRemove?: boolean;
+  /** Uses a shorter add-file surface after another evidence file already exists. */
+  compact?: boolean;
 };
 
 function policySummary(purpose: FilePurpose): string {
@@ -67,9 +73,12 @@ export function FileUploadField({
   disabled = false,
   capture,
   className,
+  invalid = false,
+  errorId,
   onBusyChange,
   compressImages,
   deleteOnRemove = true,
+  compact = false,
 }: FileUploadFieldProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,7 +236,9 @@ export function FileUploadField({
           role="button"
           tabIndex={busy ? -1 : 0}
           aria-disabled={busy}
-          aria-describedby={`${inputId}-hint`}
+          aria-invalid={invalid || undefined}
+          aria-describedby={`${inputId}-hint${invalid && errorId ? ` ${errorId}` : ""}`}
+          data-validation-target={invalid ? "true" : undefined}
           onClick={() => inputRef.current?.click()}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -248,12 +259,19 @@ export function FileUploadField({
           }}
           className={cn(
             "group flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/20 px-5 py-7 text-center outline-none transition-colors",
+            compact && "min-h-0 flex-row justify-start px-4 py-3 text-left",
             "hover:border-primary/55 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             isDragging && "border-primary bg-primary/10",
             busy && "cursor-not-allowed opacity-60",
+            invalid && "border-destructive bg-destructive/5 ring-1 ring-destructive/30",
           )}
         >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background shadow-sm">
+          <span
+            className={cn(
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm",
+              compact && "h-9 w-9",
+            )}
+          >
             {policy.allowedMimeTypes.includes("application/pdf") ? (
               <FileText className="h-5 w-5 text-primary" aria-hidden="true" />
             ) : (
@@ -261,9 +279,13 @@ export function FileUploadField({
             )}
           </span>
           <div>
-            <p className="text-sm font-semibold text-foreground">Klik untuk memilih file</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              atau seret dan lepaskan file di area ini
+            <p className="text-sm font-semibold text-foreground">
+              {compact ? "Tambah file bukti" : "Klik untuk memilih file"}
+            </p>
+            <p className={cn("mt-1 text-xs text-muted-foreground", compact && "mt-0.5")}>
+              {compact
+                ? "Pilih atau seret file ke area ini"
+                : "atau seret dan lepaskan file di area ini"}
             </p>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Clock3, Loader2, LockKeyhole, RotateCcw, Unlock } from "lucide-react";
 import type { FileResponse } from "@granada-kost/domain";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -117,7 +117,7 @@ export function BookingLeadHoldDialog({
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const [refundMethod, setRefundMethod] = useState<"cash" | "bank_transfer">("cash");
   const [refundNote, setRefundNote] = useState("");
-  const [refundEvidence, setRefundEvidence] = useState<FileResponse | null>(null);
+  const [refundEvidence, setRefundEvidence] = useState<FileResponse[]>([]);
   const [refundEvidenceBusy, setRefundEvidenceBusy] = useState(false);
   const availableRooms = useM6LeaseAvailableRooms();
   const compatibleRooms = useMemo(
@@ -164,7 +164,7 @@ export function BookingLeadHoldDialog({
       resetCancel();
       setRefundMethod("cash");
       setRefundNote("");
-      setRefundEvidence(null);
+      setRefundEvidence([]);
       setRefundEvidenceBusy(false);
       return;
     }
@@ -223,7 +223,8 @@ export function BookingLeadHoldDialog({
             propertyId,
             refundMethod,
             refundNote,
-            refundEvidenceFileIds: refundEvidence ? [refundEvidence.id] : undefined,
+            refundEvidenceFileIds:
+              refundEvidence.length > 0 ? refundEvidence.map((file) => file.id) : undefined,
           },
         });
       } else if (mode === "create") {
@@ -398,16 +399,15 @@ export function BookingLeadHoldDialog({
                 <option value="bank_transfer">Transfer Bank</option>
               </select>
             </label>
-            <FileUploadField
+            <EvidenceFileUploadField
               propertyId={currentPropertyId ?? ""}
-              filePurpose="payment_proof"
               label="Bukti refund"
               description={
                 refundMethod === "bank_transfer"
                   ? "Wajib untuk refund Transfer Bank. Unggah JPG, PNG, WebP, atau PDF sebagai bukti pengembalian dana."
                   : "Opsional untuk refund Tunai. Unggah bukti jika tersedia."
               }
-              value={refundEvidence}
+              values={refundEvidence}
               onChange={setRefundEvidence}
               onBusyChange={setRefundEvidenceBusy}
               required={refundMethod === "bank_transfer"}
@@ -444,7 +444,7 @@ export function BookingLeadHoldDialog({
               !accessAllowed ||
               pending ||
               refundEvidenceBusy ||
-              (cancelMode && refundMethod === "bank_transfer" && !refundEvidence) ||
+              (cancelMode && refundMethod === "bank_transfer" && refundEvidence.length === 0) ||
               (createMode && lead.source === "public_kamar" && !selectedRoomId)
             }
           >

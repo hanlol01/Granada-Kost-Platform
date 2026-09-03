@@ -62,6 +62,7 @@ export function ResidentOnboardingDialog({
     Number(dp) >= requiredDp &&
     Number.isFinite(Number(deposit)) &&
     Number(deposit) >= 0;
+  const loginPhone = manual ? phone.trim() : (lead?.visitorPhone.trim() ?? "");
   useEffect(() => {
     setName(lead?.visitorName ?? "");
     setStart(lead?.preferredMoveInDate ?? "");
@@ -92,14 +93,22 @@ export function ResidentOnboardingDialog({
   const mutationNotice =
     mutation.error && mutationMatchesScope ? onboardingErrorNotice(mutation.error) : null;
   const submit = () => {
-    if (!currentPropertyId || !name.trim() || !start || !roomId || !financialAuthorityReady) return;
+    if (
+      !currentPropertyId ||
+      !name.trim() ||
+      !start ||
+      !roomId ||
+      !financialAuthorityReady ||
+      !loginPhone
+    )
+      return;
     setTemporaryPassword(null);
     mutation.mutate({
       property_id: currentPropertyId,
       booking_lead_id: lead?.id,
       room_id: roomId,
       visitor_name: name.trim(),
-      visitor_phone: manual && phone.trim() ? phone.trim() : undefined,
+      visitor_phone: loginPhone,
       visitor_email: manual && email.trim() ? email.trim() : undefined,
       gender,
       start_date: start,
@@ -162,8 +171,9 @@ export function ResidentOnboardingDialog({
               </select>
             </label>
             <label className="grid gap-1 text-sm">
-              Nomor telepon login
+              Nomor Telepon / WhatsApp login *
               <Input
+                required
                 value={phone}
                 onChange={(event) => {
                   clearTransientResult();
@@ -266,7 +276,7 @@ export function ResidentOnboardingDialog({
             !roomId ||
             !dp ||
             !financialAuthorityReady ||
-            (manual && !phone.trim() && !email.trim())
+            !loginPhone
           }
           onClick={submit}
         >

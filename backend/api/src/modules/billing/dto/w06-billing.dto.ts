@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsDateString,
   IsIn,
@@ -39,7 +40,8 @@ export class RecordManualPaymentDto {
   @IsString() @MaxLength(100) @IsOptional() reference_number?: string;
   @IsString() @MaxLength(500) @IsOptional() note?: string;
   @IsArray()
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   @IsOptional()
   evidence_file_ids?: string[];
@@ -98,7 +100,8 @@ export class CreateOtherChargeDto {
   @IsDateString() due_date!: string;
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   @ValidateIf((value: CreateOtherChargeDto) => value.category === 'documented_damage')
   evidence_file_ids?: string[];
@@ -134,8 +137,13 @@ export class AdminBillingScopeQueryDto {
 
 export class AdminBillingDocumentSearchQueryDto extends PaginationQueryDto {
   @IsUUID('4') property_id!: string;
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString() @MinLength(2) @MaxLength(100) q!: string;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  q!: string;
 }
 
 export class AdminW06PaymentsQueryDto extends PaginationQueryDto {

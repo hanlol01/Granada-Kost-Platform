@@ -50,8 +50,13 @@ const CODE_NOTICES: Readonly<Record<string, OnboardingErrorNotice>> = {
     step: 2,
   },
   RESIDENT_IDENTITY_REQUIRED: {
-    title: "Kontak penghuni belum lengkap",
-    description: "Isi nomor telepon atau email yang dapat digunakan sebagai identitas penghuni.",
+    title: "Nomor WhatsApp belum diisi",
+    description: "Isi Nomor Telepon / WhatsApp sebagai identitas login utama Penghuni.",
+    step: 1,
+  },
+  RESIDENT_PHONE_REQUIRED: {
+    title: "Nomor WhatsApp belum diisi",
+    description: "Isi Nomor Telepon / WhatsApp sebagai identitas login utama Penghuni.",
     step: 1,
   },
   RESIDENT_PHONE_INVALID: {

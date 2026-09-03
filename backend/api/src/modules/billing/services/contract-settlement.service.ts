@@ -667,18 +667,21 @@ export class ContractSettlementService {
           dto.property_id,
           settlement.id,
         );
+        const damageEvidence = this.evidenceIds(
+          dto.damage_evidence_file_ids,
+          dto.damage_evidence_file_id,
+        );
+        const refundEvidence = this.evidenceIds(
+          dto.refund_evidence_file_ids,
+          dto.refund_evidence_file_id,
+        );
         await this.assertEvidence(
           client,
           dto.property_id,
-          dto.damage_evidence_file_id,
+          damageEvidence,
           dto.damage_deduction_amount > 0,
         );
-        await this.assertEvidence(
-          client,
-          dto.property_id,
-          dto.refund_evidence_file_id,
-          dto.refund_amount > 0,
-        );
+        await this.assertEvidence(client, dto.property_id, refundEvidence, dto.refund_amount > 0);
         await client.query(
           `SELECT id
              FROM lease_deposit_transactions
@@ -766,9 +769,12 @@ export class ContractSettlementService {
               leaseId,
               dto.damage_deduction_amount,
               dto.damage_reason!.trim(),
-              dto.damage_evidence_file_id,
+              damageEvidence[0],
               actor.id,
-              JSON.stringify({ termination_case_id: termination.id }),
+              JSON.stringify({
+                termination_case_id: termination.id,
+                evidence_file_ids: damageEvidence,
+              }),
             ],
           );
         if (dto.refund_amount > 0)
@@ -783,12 +789,13 @@ export class ContractSettlementService {
               dto.refund_amount,
               dto.refund_note?.trim() ||
                 `Security-deposit refund for termination ${termination.id}`,
-              dto.refund_evidence_file_id,
+              refundEvidence[0],
               actor.id,
               JSON.stringify({
                 termination_case_id: termination.id,
                 method: dto.refund_method,
                 refunded_at: dto.refunded_at,
+                evidence_file_ids: refundEvidence,
               }),
             ],
           );
@@ -797,9 +804,9 @@ export class ContractSettlementService {
               SET status='checked_out',checkout_by_user_id=$2,checked_out_at=now(),
                   inspection_notes=$3,room_status_after_checkout=$4,
                   outstanding_rent_before_settlement=$5,deposit_offset_amount=$6,
-                  damage_deduction_amount=$7,damage_reason=$8,damage_evidence_file_id=$9,
-                  refund_amount=$10,refund_method=$11,refunded_at=$12::timestamptz,
-                  refund_note=$13,refund_evidence_file_id=$14,updated_at=now()
+                  damage_deduction_amount=$7,damage_reason=$8,damage_evidence_file_id=$9,damage_evidence_file_ids=$10,
+                  refund_amount=$11,refund_method=$12,refunded_at=$13::timestamptz,
+                  refund_note=$14,refund_evidence_file_id=$15,refund_evidence_file_ids=$16,updated_at=now()
             WHERE id=$1 AND status='pending'`,
           [
             termination.id,
@@ -810,12 +817,14 @@ export class ContractSettlementService {
             rentOffset,
             dto.damage_deduction_amount,
             dto.damage_reason?.trim() || null,
-            dto.damage_evidence_file_id ?? null,
+            damageEvidence[0] ?? null,
+            damageEvidence,
             dto.refund_amount,
             dto.refund_method ?? null,
             dto.refunded_at ?? null,
             dto.refund_note?.trim() || null,
-            dto.refund_evidence_file_id ?? null,
+            refundEvidence[0] ?? null,
+            refundEvidence,
           ],
         );
         await client.query(
@@ -1006,19 +1015,35 @@ export class ContractSettlementService {
   private async assertEvidence(
     client: PoolClient,
     propertyId: string,
-    fileId: string | undefined,
+    fileIds: string[],
     required: boolean,
   ) {
-    if (!required) return;
-    const file = await client.query<{ id: string }>(
-      `SELECT id FROM files WHERE id=$1 AND property_id=$2 AND is_deleted=false FOR KEY SHARE`,
-      [fileId, propertyId],
+    if (!required && !fileIds.length) return;
+    if (required && !fileIds.length)
+      throw new ConflictException({
+        code: 'LEASE_TERMINATION_EVIDENCE_INVALID',
+        message: 'At least one safe property-scoped evidence file is required',
+      });
+    const files = await client.query<{ id: string }>(
+      `SELECT id FROM files WHERE id=ANY($1::uuid[]) AND property_id=$2 AND is_deleted=false FOR KEY SHARE`,
+      [fileIds, propertyId],
     );
-    if (file.rowCount !== 1)
+    if (files.rowCount !== fileIds.length)
       throw new ConflictException({
         code: 'LEASE_TERMINATION_EVIDENCE_INVALID',
         message: 'A safe property-scoped evidence file is required',
       });
+  }
+
+  private evidenceIds(fileIds?: string[], legacyFileId?: string): string[] {
+    const raw = [...(fileIds ?? []), ...(legacyFileId ? [legacyFileId] : [])];
+    const unique = [...new Set(raw)];
+    if (unique.length !== raw.length || unique.length > 5)
+      throw new BadRequestException({
+        code: 'LEASE_TERMINATION_EVIDENCE_INVALID',
+        message: 'Evidence must be unique and contain no more than five files',
+      });
+    return unique;
   }
 
   /**

@@ -787,7 +787,16 @@ export class LeaseCheckoutService {
             message: 'Damage deductions exceed remaining deposit balance',
           });
         for (const deduction of damage) {
-          await this.assertFiles(client, checkout.property_id, [deduction.evidence_file_id]);
+          const deductionEvidence = this.evidenceIds(
+            deduction.evidence_file_ids,
+            deduction.evidence_file_id,
+          );
+          if (!deductionEvidence.length)
+            throw new UnprocessableEntityException({
+              code: 'CHECKOUT_DAMAGE_EVIDENCE_REQUIRED',
+              message: 'A damage deduction requires at least one evidence file',
+            });
+          await this.assertFiles(client, checkout.property_id, deductionEvidence);
           const entry = await client.query<{ id: string }>(
             `INSERT INTO lease_deposit_transactions(property_id,lease_id,transaction_type,direction,amount,reason_type,reason,evidence_file_id,settlement_status,settled_at,settled_by_user_id,metadata,created_by_user_id)
            VALUES($1,$2,'deduction','debit',$3,'checkout_damage',$4,$5,'settled',now(),$6,$7::jsonb,$6) RETURNING id`,
@@ -796,19 +805,15 @@ export class LeaseCheckoutService {
               lease.id,
               deduction.amount,
               deduction.reason.trim(),
-              deduction.evidence_file_id,
+              deductionEvidence[0],
               user.id,
               JSON.stringify({ checkout_command_id: checkout.id }),
             ],
           );
-          await this.insertEvidence(
-            client,
-            checkout,
-            'damage',
-            [deduction.evidence_file_id],
-            user.id,
-            { deposit_transaction_id: entry.rows[0].id, amount: deduction.amount },
-          );
+          await this.insertEvidence(client, checkout, 'damage', deductionEvidence, user.id, {
+            deposit_transaction_id: entry.rows[0].id,
+            amount: deduction.amount,
+          });
         }
         let refundAmount = balance - credited - damageTotal;
         let refundId: string | null = null;
@@ -821,14 +826,17 @@ export class LeaseCheckoutService {
         if (checkout.exit_type) {
           const depositOffset = dto.deposit_rent_offset_amount ?? 0;
           const offsetReason = dto.deposit_rent_offset_reason?.trim() || null;
-          const offsetEvidence = dto.deposit_rent_offset_evidence_file_id ?? null;
-          if (depositOffset > 0 && (!offsetReason || !offsetEvidence))
+          const offsetEvidence = this.evidenceIds(
+            dto.deposit_rent_offset_evidence_file_ids,
+            dto.deposit_rent_offset_evidence_file_id,
+          );
+          if (depositOffset > 0 && (!offsetReason || !offsetEvidence.length))
             throw new UnprocessableEntityException({
               code: 'CHECKOUT_DEPOSIT_OFFSET_EVIDENCE_REQUIRED',
               message: 'A deposit-to-rent offset requires a reason and evidence',
             });
-          if (offsetEvidence)
-            await this.assertFiles(client, checkout.property_id, [offsetEvidence]);
+          if (offsetEvidence.length)
+            await this.assertFiles(client, checkout.property_id, offsetEvidence);
           const quote = this.buildFinalSettlementQuote(
             checkout,
             lease,
@@ -854,7 +862,7 @@ export class LeaseCheckoutService {
               user.id,
               {
                 reason: offsetReason!,
-                evidenceFileId: offsetEvidence!,
+                evidenceFileId: offsetEvidence[0],
               },
             );
             credited = offsetCredits.reduce((sum, row) => sum + row.amount, 0);
@@ -871,28 +879,24 @@ export class LeaseCheckoutService {
                   lease.id,
                   standaloneOffset,
                   offsetReason,
-                  offsetEvidence,
+                  offsetEvidence[0],
                   user.id,
                   JSON.stringify({ checkout_command_id: checkout.id }),
                 ],
               );
-            await this.insertEvidence(
-              client,
-              checkout,
-              'deposit_offset',
-              [offsetEvidence!],
-              user.id,
-              {
-                amount: depositOffset,
-                invoice_credit_amount: credited,
-                final_settlement_offset_amount: standaloneOffset,
-                reason: offsetReason,
-              },
-            );
+            await this.insertEvidence(client, checkout, 'deposit_offset', offsetEvidence, user.id, {
+              amount: depositOffset,
+              invoice_credit_amount: credited,
+              final_settlement_offset_amount: standaloneOffset,
+              reason: offsetReason,
+            });
           }
           const finalRefund = dto.final_refund_amount ?? quote.recommendedRefundAmount;
           const adjustmentReason = dto.refund_adjustment_reason?.trim() || null;
-          const adjustmentEvidence = dto.refund_adjustment_evidence_file_id ?? null;
+          const adjustmentEvidence = this.evidenceIds(
+            dto.refund_adjustment_evidence_file_ids,
+            dto.refund_adjustment_evidence_file_id,
+          );
           if (!Number.isSafeInteger(finalRefund) || finalRefund < 0)
             throw new UnprocessableEntityException({
               code: 'CHECKOUT_FINAL_REFUND_INVALID',
@@ -905,14 +909,14 @@ export class LeaseCheckoutService {
             });
           if (
             finalRefund !== quote.recommendedRefundAmount &&
-            (!adjustmentReason || !adjustmentEvidence)
+            (!adjustmentReason || !adjustmentEvidence.length)
           )
             throw new UnprocessableEntityException({
               code: 'CHECKOUT_REFUND_ADJUSTMENT_AUTHORITY_REQUIRED',
               message: 'Changing the recommended refund requires a reason and evidence',
             });
-          if (adjustmentEvidence)
-            await this.assertFiles(client, checkout.property_id, [adjustmentEvidence]);
+          if (adjustmentEvidence.length)
+            await this.assertFiles(client, checkout.property_id, adjustmentEvidence);
           refundAmount = finalRefund;
           finalDepositRefundAmount = Math.min(finalRefund, quote.refundableDepositAmount);
           finalRentRefundAmount = finalRefund - finalDepositRefundAmount;
@@ -961,29 +965,22 @@ export class LeaseCheckoutService {
               finalDepositRefundAmount,
               refundAdjustmentAmount,
               adjustmentReason,
-              adjustmentEvidence,
+              adjustmentEvidence[0] ?? null,
               quote.amountDue,
               decisionStatus,
               user.id,
             ],
           );
           finalSettlementId = settlement.rows[0].id;
-          await this.insertEvidence(
-            client,
-            checkout,
-            'settlement',
-            adjustmentEvidence ? [adjustmentEvidence] : [],
-            user.id,
-            {
-              final_settlement_id: finalSettlementId,
-              recommended_refund_amount: quote.recommendedRefundAmount,
-              final_refund_amount: finalRefund,
-              final_rent_refund_amount: finalRentRefundAmount,
-              final_deposit_refund_amount: finalDepositRefundAmount,
-              refund_adjustment_amount: refundAdjustmentAmount,
-              amount_due: quote.amountDue,
-            },
-          );
+          await this.insertEvidence(client, checkout, 'settlement', adjustmentEvidence, user.id, {
+            final_settlement_id: finalSettlementId,
+            recommended_refund_amount: quote.recommendedRefundAmount,
+            final_refund_amount: finalRefund,
+            final_rent_refund_amount: finalRentRefundAmount,
+            final_deposit_refund_amount: finalDepositRefundAmount,
+            refund_adjustment_amount: refundAdjustmentAmount,
+            amount_due: quote.amountDue,
+          });
           const depositAdjustmentAmount = quote.refundableDepositAmount - finalDepositRefundAmount;
           if (depositAdjustmentAmount > 0)
             await client.query(
@@ -1535,13 +1532,15 @@ export class LeaseCheckoutService {
             ? await nextFinancialTransactionCode(client, 'REF', 'CHECKOUT')
             : null;
         if (checkout.exit_type) {
-          if (status === 'settled' && !settled?.evidence_file_id)
+          const refundEvidence = settled
+            ? this.evidenceIds(settled.evidence_file_ids, settled.evidence_file_id)
+            : [];
+          if (status === 'settled' && !refundEvidence.length)
             throw new UnprocessableEntityException({
               code: 'CHECKOUT_REFUND_EVIDENCE_REQUIRED',
               message: 'Settling an exit refund requires payout evidence',
             });
-          if (settled?.evidence_file_id)
-            await this.assertFiles(client, propertyId, [settled.evidence_file_id]);
+          if (refundEvidence.length) await this.assertFiles(client, propertyId, refundEvidence);
           await client.query(
             `UPDATE lease_exit_refunds
              SET refund_status=$2,payment_method=$3,external_reference=$4,evidence_file_id=$5,
@@ -1552,25 +1551,18 @@ export class LeaseCheckoutService {
               status,
               settled?.payment_method ?? null,
               settled?.external_reference ?? null,
-              settled?.evidence_file_id ?? null,
+              refundEvidence[0] ?? null,
               status === 'settled' ? settled?.notes?.trim() || null : waived?.reason.trim(),
               user.id,
               transactionCode,
             ],
           );
-          if (settled?.evidence_file_id)
-            await this.insertEvidence(
-              client,
-              checkout,
-              'refund',
-              [settled.evidence_file_id],
-              user.id,
-              {
-                refund_id: refundId,
-                payment_method: settled.payment_method,
-                external_reference: settled.external_reference,
-              },
-            );
+          if (refundEvidence.length)
+            await this.insertEvidence(client, checkout, 'refund', refundEvidence, user.id, {
+              refund_id: refundId,
+              payment_method: settled?.payment_method ?? null,
+              external_reference: settled?.external_reference ?? null,
+            });
           if (row.deposit_transaction_id) {
             const depositDisposition = await client.query(
               `UPDATE lease_deposit_transactions
@@ -2258,6 +2250,21 @@ export class LeaseCheckoutService {
         `INSERT INTO lease_checkout_evidence(property_id,checkout_command_id,evidence_category,file_id,metadata,recorded_by_user_id) VALUES($1,$2,$3,$4,$5::jsonb,$6)`,
         [checkout.property_id, checkout.id, category, fileId, JSON.stringify(metadata), actorId],
       );
+  }
+  private evidenceIds(fileIds?: string[], legacyFileId?: string): string[] {
+    const raw = [...(fileIds ?? []), ...(legacyFileId ? [legacyFileId] : [])];
+    const unique = [...new Set(raw)];
+    if (unique.length !== raw.length)
+      throw new BadRequestException({
+        code: 'CHECKOUT_EVIDENCE_DUPLICATE',
+        message: 'Checkout evidence file ids must be unique',
+      });
+    if (unique.length > 5)
+      throw new BadRequestException({
+        code: 'CHECKOUT_EVIDENCE_LIMIT_EXCEEDED',
+        message: 'A maximum of five evidence files is allowed',
+      });
+    return unique;
   }
   private async assertFiles(client: PoolClient, propertyId: string, ids: string[]) {
     if (!ids.length) return;

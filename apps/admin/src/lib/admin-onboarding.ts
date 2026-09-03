@@ -3,7 +3,7 @@ export type OnboardingPayload = {
   booking_lead_id?: string;
   room_id?: string;
   visitor_name: string;
-  visitor_phone?: string;
+  visitor_phone: string;
   visitor_email?: string;
   gender: "male" | "female";
   place_of_birth?: string;

@@ -30,8 +30,10 @@ import { CreateMyPaymentProofDto } from '../dto/create-my-payment-proof.dto';
 import {
   createBillingInvoicePdf,
   createBillingReceiptPdf,
+  createContractPaidDocumentPdf,
   type BillingInvoiceDocument,
   type BillingReceiptDocument,
+  type ContractPaidDocumentSnapshot,
 } from '../helpers/billing-document.helper';
 import {
   nextFinancialTransactionCode,
@@ -304,6 +306,7 @@ type BillingDocumentSearchRow = {
     | 'payment_reversal_receipt'
     | 'booking_payment_receipt'
     | 'booking_refund_receipt'
+    | 'contract_paid_confirmation'
     | 'checkout_handover'
     | 'final_settlement'
     | 'checkout_refund_receipt';
@@ -318,6 +321,16 @@ type BillingDocumentSearchRow = {
   lease_id: string | null;
   checkout_command_id: string | null;
   total: string;
+};
+type ContractPaidDocumentProjectionRow = {
+  id: string;
+  document_code: string;
+  issued_at: Date;
+  invalidated_at: Date | null;
+};
+type ContractPaidDocumentStoredRow = ContractPaidDocumentProjectionRow & {
+  safe_snapshot: ContractPaidDocumentSnapshot;
+  invalidation_reason: string | null;
 };
 type ReplayRow = {
   request_fingerprint: string;
@@ -654,7 +667,30 @@ export class W06BillingService {
            LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=refund.property_id
            LEFT JOIN room_buildings building
              ON building.id=room.building_id AND building.property_id=room.property_id
-          WHERE refund.property_id=$1
+         WHERE refund.property_id=$1
+
+         UNION ALL
+
+         SELECT paid_document.id,
+                'contract_paid_confirmation'::text AS document_type,
+                paid_document.document_code,
+                'Bukti pelunasan kontrak sewa' AS title,
+                paid_document.safe_snapshot->>'residentName' AS resident_name,
+                paid_document.safe_snapshot->>'roomNumber' AS room_number,
+                paid_document.issued_at,
+                NULLIF(paid_document.safe_snapshot->>'contractRentAmount','')::bigint AS amount,
+                CASE WHEN paid_document.invalidated_at IS NULL
+                     THEN 'issued' ELSE 'invalidated' END AS status,
+                NULL::uuid AS booking_lead_id,
+                paid_document.lease_id,
+                NULL::uuid AS checkout_command_id,
+                concat_ws(' ',paid_document.document_code,
+                  paid_document.safe_snapshot->>'residentName',
+                  paid_document.safe_snapshot->>'roomNumber',
+                  paid_document.safe_snapshot->>'buildingCode',
+                  paid_document.safe_snapshot->'transactionCodes') AS search_text
+           FROM lease_contract_paid_documents paid_document
+          WHERE paid_document.property_id=$1
 
          UNION ALL
 
@@ -1548,6 +1584,14 @@ export class W06BillingService {
 
     for (const invoiceId of affectedInvoiceIds)
       await this.reconcileInvoiceLifecycleInTransaction(client, input.propertyId, invoiceId);
+    if (reversalIds.length)
+      await this.invalidateContractPaidDocumentIfReopened(
+        client,
+        input.propertyId,
+        input.leaseId,
+        reversalIds.at(-1)!,
+        reason,
+      );
 
     const invoices = await client.query<{ id: string; installment_id: string | null; net: string }>(
       `SELECT i.id,i.installment_id,COALESCE(activity.net,0) AS net
@@ -2109,7 +2153,9 @@ export class W06BillingService {
             file.property_id !== dto.property_id ||
             file.file_purpose !== 'payment_proof' ||
             file.is_deleted !== false ||
-            !['image/jpeg', 'image/png', 'application/pdf'].includes(file.mime_type ?? '') ||
+            !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(
+              file.mime_type ?? '',
+            ) ||
             this.money(file.file_size_bytes ?? '0') <= 0 ||
             this.money(file.file_size_bytes ?? '0') > 5_242_880,
         )
@@ -2423,6 +2469,13 @@ export class W06BillingService {
         );
       for (const invoiceId of invoiceIds)
         await this.reconcileInvoiceLifecycleInTransaction(client, dto.property_id, invoiceId);
+      await this.invalidateContractPaidDocumentIfReopened(
+        client,
+        dto.property_id,
+        lease.id,
+        reversal.rows[0].id,
+        dto.reason.trim(),
+      );
       const result = {
         reversal_id: reversal.rows[0].id,
         payment_id: payment.id,
@@ -2763,6 +2816,35 @@ export class W06BillingService {
     return this.renderReceiptDocument(propertyId, receiptId);
   }
 
+  async contractPaidDocument(
+    user: UserAccessContext,
+    propertyId: string,
+    documentId: string,
+  ): Promise<BillingReceiptDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const result = await this.database.client.query<ContractPaidDocumentStoredRow>(
+      `SELECT id,document_code,issued_at,invalidated_at,safe_snapshot,invalidation_reason
+         FROM lease_contract_paid_documents
+        WHERE id=$1 AND property_id=$2`,
+      [documentId, propertyId],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new NotFoundException({
+        code: 'CONTRACT_PAID_DOCUMENT_NOT_FOUND',
+        message: 'Contract paid document not found',
+      });
+    return createContractPaidDocumentPdf(
+      row.safe_snapshot,
+      row.invalidated_at
+        ? {
+            invalidatedAt: row.invalidated_at.toISOString(),
+            reason: row.invalidation_reason ?? 'kewajiban pembayaran kontrak dibuka kembali',
+          }
+        : null,
+    );
+  }
+
   async myReceiptDocument(
     user: UserAccessContext,
     receiptId: string,
@@ -3011,6 +3093,7 @@ export class W06BillingService {
       proofResult,
       installmentResult,
       settlementResult,
+      contractPaidDocumentResult,
       exitDocumentResult,
       financialTimelineResult,
     ] = await Promise.all([
@@ -3177,6 +3260,14 @@ export class W06BillingService {
            LEFT JOIN lease_termination_cases termination
              ON termination.settlement_id=settlement.id AND termination.status='pending'
           WHERE settlement.property_id=$1 AND settlement.lease_id=$2`,
+        [lease.property_id, lease.id],
+      ),
+      client.query<ContractPaidDocumentProjectionRow>(
+        `SELECT id,document_code,issued_at,invalidated_at
+           FROM lease_contract_paid_documents
+          WHERE property_id=$1 AND lease_id=$2
+          ORDER BY (invalidated_at IS NULL) DESC,issued_at DESC,id DESC
+          LIMIT 1`,
         [lease.property_id, lease.id],
       ),
       client.query<{
@@ -3354,7 +3445,26 @@ export class W06BillingService {
       .reduce((sum, row) => sum + row.outstanding_amount, 0);
     const progress = installmentResult.rows[0] ?? { total: '0', paid: '0', next_due: null };
     const settlement = settlementResult.rows[0] ?? null;
-    const contractSettlement = settlement ? this.projectContractSettlement(settlement) : null;
+    const paidDocument = contractPaidDocumentResult.rows[0] ?? null;
+    const contractSettlement = settlement
+      ? {
+          ...this.projectContractSettlement(settlement),
+          ...(view === 'admin'
+            ? {
+                paid_document: paidDocument
+                  ? {
+                      id: paidDocument.id,
+                      document_code: paidDocument.document_code,
+                      issued_at: paidDocument.issued_at.toISOString(),
+                      status: paidDocument.invalidated_at
+                        ? ('invalidated' as const)
+                        : ('issued' as const),
+                    }
+                  : null,
+              }
+            : {}),
+        }
+      : null;
     return {
       lease: {
         id: lease.id,
@@ -4130,7 +4240,7 @@ export class W06BillingService {
       }
     }
     await this.syncOnboardingFinancialProjection(client, lease);
-    return this.insertReceipt(
+    const receiptId = await this.insertReceipt(
       client,
       lease.property_id,
       payment.id,
@@ -4145,6 +4255,14 @@ export class W06BillingService {
         allocations: receiptAllocations,
       },
     );
+    if (payment.payment_purpose === 'rent' || payment.payment_purpose === 'dp')
+      await client.query(`SELECT issue_contract_paid_document($1,$2,$3,$4)`, [
+        lease.property_id,
+        lease.id,
+        payment.id,
+        actorId,
+      ]);
+    return receiptId;
   }
 
   /**
@@ -4231,6 +4349,45 @@ export class W06BillingService {
                AND reconciled_invoice.lease_id=settlement.lease_id
           )`,
       [invoiceId, propertyId],
+    );
+  }
+
+  private async invalidateContractPaidDocumentIfReopened(
+    client: PoolClient,
+    propertyId: string,
+    leaseId: string,
+    reversalId: string,
+    reason: string,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE lease_contract_paid_documents paid_document
+          SET invalidated_at=now(),
+              invalidated_by_reversal_id=$3,
+              invalidation_reason=$4
+        WHERE paid_document.property_id=$1
+          AND paid_document.lease_id=$2
+          AND paid_document.invalidated_at IS NULL
+          AND EXISTS (
+            SELECT 1
+              FROM invoices invoice
+              LEFT JOIN LATERAL (
+                SELECT COALESCE(sum(payment_allocation.allocated_amount
+                         - COALESCE(reversal.reversed_amount,0)),0) AS net
+                  FROM payment_allocations payment_allocation
+                  LEFT JOIN LATERAL (
+                    SELECT COALESCE(sum(reversal_allocation.reversed_amount),0) AS reversed_amount
+                      FROM payment_reversal_allocations reversal_allocation
+                     WHERE reversal_allocation.original_allocation_id=payment_allocation.id
+                  ) reversal ON true
+                 WHERE payment_allocation.invoice_id=invoice.id
+              ) allocation ON true
+             WHERE invoice.property_id=$1
+               AND invoice.lease_id=$2
+               AND invoice.invoice_purpose='rent'
+               AND invoice.invoice_status<>'void'
+               AND GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0)>0
+          )`,
+      [propertyId, leaseId, reversalId, reason],
     );
   }
 
@@ -4340,7 +4497,7 @@ export class W06BillingService {
       });
     if (!ids.length) return;
     const files = await client.query<{ id: string }>(
-      `SELECT id FROM files WHERE id=ANY($1::uuid[]) AND property_id=$2 AND uploader_user_id=$3 AND file_purpose=$4 AND is_deleted=false AND mime_type IN('image/jpeg','image/png','application/pdf') AND file_size_bytes BETWEEN 1 AND 5242880 ORDER BY id FOR UPDATE`,
+      `SELECT id FROM files WHERE id=ANY($1::uuid[]) AND property_id=$2 AND uploader_user_id=$3 AND file_purpose=$4 AND is_deleted=false AND mime_type IN('image/jpeg','image/png','image/webp','application/pdf') AND file_size_bytes BETWEEN 1 AND 5242880 ORDER BY id FOR UPDATE`,
       [ids, propertyId, uploaderId, filePurpose],
     );
     if (files.rows.length !== ids.length)

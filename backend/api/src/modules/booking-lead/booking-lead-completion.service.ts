@@ -287,6 +287,12 @@ export class BookingLeadCompletionService {
       const endDate = await this.endDate(client, dto.start_date, dto.term_months);
       const verificationStatus =
         dto.payment_method === 'cash' ? 'verified' : 'pending_confirmation';
+      if (dto.payment_method === 'bank_transfer' && !dto.payment_evidence_file_ids?.length) {
+        throw new BadRequestException({
+          code: 'BOOKING_LEAD_PAYMENT_EVIDENCE_REQUIRED',
+          message: 'Bank transfer requires at least one payment evidence file',
+        });
+      }
       await this.assertPaymentEvidence(
         client,
         dto.payment_evidence_file_ids ?? [],
@@ -512,7 +518,7 @@ export class BookingLeadCompletionService {
           ? 'BOOKING'
           : commitment.payment_type === 'down_payment'
             ? 'DP'
-          : 'LUNAS';
+            : 'LUNAS';
       const refundTransactionCode = await nextFinancialTransactionCode(
         client,
         refundAmount > 0 ? 'REF' : 'BTL',

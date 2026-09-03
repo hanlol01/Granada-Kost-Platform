@@ -31,7 +31,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/PaymentsWorkspace";
 import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
@@ -62,8 +62,11 @@ import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
 import { useBookingLeadProgress } from "@/hooks/useBookingLeads";
 import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
 import { useResidentBilling } from "@/hooks/useAdminBilling";
-import type { ResidentBilling } from "@/lib/admin-billing";
-import { downloadAdminReceiptDocument } from "@/lib/admin-billing";
+import {
+  downloadAdminContractPaidDocument,
+  downloadAdminReceiptDocument,
+  type ResidentBilling,
+} from "@/lib/admin-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
 import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
 import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
@@ -615,17 +618,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
     billing.data && settlement
       ? contractPaymentAllocationLabels(billing.data.payments, settlement)
       : new Map<string, string>();
-  const contractSettlementReceipt =
-    settlement?.status === "paid" && billing.data
-      ? ([...billing.data.payments]
-          .reverse()
-          .find(
-            (payment) =>
-              payment.receipt_id &&
-              paymentAllocationLabels.get(payment.id) === "Pelunasan penuh sewa kontrak",
-          ) ?? null)
-      : null;
-
   return (
     <AppShell
       title="Detail Penghuni"
@@ -857,7 +849,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   settlement={settlement}
                   summary={summary}
                   propertyId={currentPropertyId}
-                  finalPayment={contractSettlementReceipt}
                 />
               ) : summary ? (
                 <DefinitionGrid
@@ -1684,12 +1675,10 @@ function ContractSettlementSummary({
   settlement,
   summary,
   propertyId,
-  finalPayment,
 }: {
   settlement: NonNullable<ResidentBilling["contract_settlement"]>;
   summary: ResidentBilling["summary"];
   propertyId: string | null;
-  finalPayment: ResidentBilling["payments"][number] | null;
 }) {
   const dueLabel = settlement.effective_due_at
     ? formatResidentDetailTimestamp(settlement.effective_due_at)
@@ -1714,13 +1703,12 @@ function ContractSettlementSummary({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <SettlementStatusPill status={settlement.status} />
-          {finalPayment?.receipt_id && propertyId ? (
-            <ReceiptDownloadButton
+          {settlement.outstanding_amount === 0 &&
+          settlement.paid_document?.status === "issued" &&
+          propertyId ? (
+            <ContractPaidDocumentDownloadButton
               propertyId={propertyId}
-              receiptId={finalPayment.receipt_id}
-              paymentCode={finalPayment.payment_code}
-              documentKind="settlement"
-              isContractSettled
+              document={settlement.paid_document}
             />
           ) : null}
         </div>
@@ -2412,12 +2400,12 @@ function FinalizeTerminationDialog({
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [damageAmount, setDamageAmount] = useState(0);
   const [damageReason, setDamageReason] = useState("");
-  const [damageEvidence, setDamageEvidence] = useState<FileResponse | null>(null);
+  const [damageEvidence, setDamageEvidence] = useState<FileResponse[]>([]);
   const [damageEvidenceBusy, setDamageEvidenceBusy] = useState(false);
   const [refundMethod, setRefundMethod] = useState<"cash" | "bank_transfer">("bank_transfer");
   const [refundedAt, setRefundedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [refundNote, setRefundNote] = useState("");
-  const [refundEvidence, setRefundEvidence] = useState<FileResponse | null>(null);
+  const [refundEvidence, setRefundEvidence] = useState<FileResponse[]>([]);
   const [refundEvidenceBusy, setRefundEvidenceBusy] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const mutation = useFinalizeLeaseTermination(propertyId);
@@ -2435,13 +2423,14 @@ function FinalizeTerminationDialog({
           room_status_after_checkout: roomOutcome,
           damage_deduction_amount: damageAmount,
           damage_reason: damageAmount > 0 ? damageReason : undefined,
-          damage_evidence_file_id: damageAmount > 0 ? (damageEvidence?.id ?? undefined) : undefined,
+          damage_evidence_file_ids:
+            damageAmount > 0 ? damageEvidence.map((file) => file.id) : undefined,
           refund_amount: estimatedRefund,
           refund_method: estimatedRefund > 0 ? refundMethod : undefined,
           refunded_at: estimatedRefund > 0 ? refundedAt : undefined,
           refund_note: estimatedRefund > 0 ? refundNote || undefined : undefined,
-          refund_evidence_file_id:
-            estimatedRefund > 0 ? (refundEvidence?.id ?? undefined) : undefined,
+          refund_evidence_file_ids:
+            estimatedRefund > 0 ? refundEvidence.map((file) => file.id) : undefined,
         },
         idempotencyKey,
       },
@@ -2520,12 +2509,11 @@ function FinalizeTerminationDialog({
                   />
                 </label>
                 {propertyId ? (
-                  <FileUploadField
+                  <EvidenceFileUploadField
                     propertyId={propertyId}
-                    filePurpose="payment_proof"
                     label="Bukti kerusakan"
                     description="Wajib bila ada potongan kerusakan. File dapat dilihat kembali sebelum checkout diselesaikan."
-                    value={damageEvidence}
+                    values={damageEvidence}
                     onChange={setDamageEvidence}
                     onBusyChange={setDamageEvidenceBusy}
                     required
@@ -2579,12 +2567,11 @@ function FinalizeTerminationDialog({
                 />
               </label>
               {propertyId ? (
-                <FileUploadField
+                <EvidenceFileUploadField
                   propertyId={propertyId}
-                  filePurpose="payment_proof"
                   label="Bukti pengembalian deposit"
                   description="Wajib sebagai bukti pengembalian kepada penghuni."
-                  value={refundEvidence}
+                  values={refundEvidence}
                   onChange={setRefundEvidence}
                   onBusyChange={setRefundEvidenceBusy}
                   required
@@ -2610,8 +2597,8 @@ function FinalizeTerminationDialog({
               mutation.isPending ||
               damageEvidenceBusy ||
               refundEvidenceBusy ||
-              (damageAmount > 0 && (!damageReason.trim() || !damageEvidence)) ||
-              (estimatedRefund > 0 && (!refundEvidence || !refundedAt))
+              (damageAmount > 0 && (!damageReason.trim() || damageEvidence.length === 0)) ||
+              (estimatedRefund > 0 && (refundEvidence.length === 0 || !refundedAt))
             }
             onClick={submit}
           >
@@ -2721,6 +2708,48 @@ function PaymentDetailDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ContractPaidDocumentDownloadButton({
+  propertyId,
+  document,
+}: {
+  propertyId: string;
+  document: NonNullable<NonNullable<ResidentBilling["contract_settlement"]>["paid_document"]>;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const download = () => {
+    if (downloading) return;
+    setDownloading(true);
+    setError(false);
+    void downloadAdminContractPaidDocument(propertyId, document.id, document.document_code)
+      .catch(() => setError(true))
+      .finally(() => setDownloading(false));
+  };
+
+  return (
+    <span className="inline-flex w-full min-w-0 flex-col items-stretch gap-1">
+      <Button
+        className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
+        variant="success"
+        disabled={downloading}
+        onClick={download}
+      >
+        <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        {downloading ? "Menyiapkan..." : "Unduh bukti kontrak lunas"}
+      </Button>
+      <span className="text-center text-[11px] text-muted-foreground">
+        {document.document_code}
+      </span>
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          Bukti pelunasan kontrak belum dapat diunduh.
+        </span>
+      ) : null}
+    </span>
   );
 }
 

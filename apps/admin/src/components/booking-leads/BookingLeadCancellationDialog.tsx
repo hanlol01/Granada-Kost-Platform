@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FileResponse } from "@granada-kost/domain";
 import { Loader2, RotateCcw } from "lucide-react";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,7 +38,7 @@ export function BookingLeadCancellationDialog({
   const submissionKey = useRef<string | null>(null);
   const [refundMethod, setRefundMethod] = useState<"cash" | "bank_transfer">("cash");
   const [refundNote, setRefundNote] = useState("");
-  const [refundEvidence, setRefundEvidence] = useState<FileResponse | null>(null);
+  const [refundEvidence, setRefundEvidence] = useState<FileResponse[]>([]);
   const [refundEvidenceBusy, setRefundEvidenceBusy] = useState(false);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export function BookingLeadCancellationDialog({
     submissionKey.current = null;
     setRefundMethod("cash");
     setRefundNote("");
-    setRefundEvidence(null);
+    setRefundEvidence([]);
     setRefundEvidenceBusy(false);
     resetCancellation();
   }, [open, resetCancellation]);
@@ -63,7 +63,8 @@ export function BookingLeadCancellationDialog({
           propertyId: currentPropertyId,
           refundMethod,
           refundNote,
-          refundEvidenceFileIds: refundEvidence ? [refundEvidence.id] : undefined,
+          refundEvidenceFileIds:
+            refundEvidence.length > 0 ? refundEvidence.map((file) => file.id) : undefined,
         },
       });
       submissionKey.current = null;
@@ -114,16 +115,15 @@ export function BookingLeadCancellationDialog({
               <option value="bank_transfer">Transfer Bank</option>
             </select>
           </label>
-          <FileUploadField
+          <EvidenceFileUploadField
             propertyId={currentPropertyId ?? ""}
-            filePurpose="payment_proof"
             label="Bukti refund"
             description={
               refundMethod === "bank_transfer"
                 ? "Wajib untuk refund Transfer Bank. Unggah JPG, PNG, WebP, atau PDF."
                 : "Opsional untuk refund Tunai."
             }
-            value={refundEvidence}
+            values={refundEvidence}
             onChange={setRefundEvidence}
             onBusyChange={setRefundEvidenceBusy}
             required={refundMethod === "bank_transfer"}
@@ -152,7 +152,9 @@ export function BookingLeadCancellationDialog({
             variant="destructive"
             onClick={() => void submit()}
             disabled={
-              pending || refundEvidenceBusy || (refundMethod === "bank_transfer" && !refundEvidence)
+              pending ||
+              refundEvidenceBusy ||
+              (refundMethod === "bank_transfer" && refundEvidence.length === 0)
             }
           >
             {pending ? (

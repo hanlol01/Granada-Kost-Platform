@@ -465,6 +465,7 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
   const valid = {
     property_id: '11111111-1111-4111-8111-111111111111',
     visitor_name: 'Resident',
+    visitor_phone: '081111111111',
     gender: 'female',
     start_date: '2026-08-01',
     term_months: 3,
@@ -485,6 +486,20 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
     ).length,
     0,
   );
+  const withoutEmail = plainToInstance(CommitOnboardingDto, {
+    ...valid,
+    visitor_email: '   ',
+  });
+  assert.equal(
+    (
+      await validate(withoutEmail, {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      })
+    ).length,
+    0,
+  );
+  assert.equal(withoutEmail.visitor_email, undefined);
   for (const input of [
     { ...valid, user_id: 'x' },
     { ...valid, term_months: 2 },
@@ -725,6 +740,30 @@ test('onboarding rejects duplicate resident contact before any resident or lease
       ['authorized', 'begin', 'rollback', 'release'].includes(event),
     ),
     ['authorized', 'begin', 'rollback', 'release'],
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) => /INSERT INTO residents|INSERT INTO leases/.test(sql)),
+    false,
+  );
+});
+
+test('onboarding requires a WhatsApp phone while email remains optional', async () => {
+  const harness = createOnboardingHarness();
+  await assert.rejects(
+    harness.service.commit(
+      actor as never,
+      { ...onboardingDto, visitor_phone: '' },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error && 'getResponse' in error);
+      assert.deepEqual((error as { getResponse: () => unknown }).getResponse(), {
+        code: 'RESIDENT_PHONE_REQUIRED',
+        message: 'A resident WhatsApp phone number is required',
+      });
+      return true;
+    },
   );
   assert.equal(
     harness.queries.some(({ sql }) => /INSERT INTO residents|INSERT INTO leases/.test(sql)),

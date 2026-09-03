@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 
 import {
   ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -582,8 +583,16 @@ export class CheckoutDamageDeductionDto {
   @Length(1, 2000)
   reason!: string;
 
+  @IsOptional()
   @IsUUID('4')
-  evidence_file_id!: string;
+  evidence_file_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  evidence_file_ids?: string[];
 }
 
 export class CompleteLeaseCheckoutDto {
@@ -612,6 +621,13 @@ export class CompleteLeaseCheckoutDto {
   deposit_rent_offset_evidence_file_id?: string;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  deposit_rent_offset_evidence_file_ids?: string[];
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -625,6 +641,13 @@ export class CompleteLeaseCheckoutDto {
   @IsOptional()
   @IsUUID('4')
   refund_adjustment_evidence_file_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  refund_adjustment_evidence_file_ids?: string[];
 
   @IsOptional()
   @IsString()
@@ -649,6 +672,13 @@ export class SettleRefundDto {
   @IsOptional()
   @IsUUID('4')
   evidence_file_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  evidence_file_ids?: string[];
 
   @IsOptional()
   @IsString()

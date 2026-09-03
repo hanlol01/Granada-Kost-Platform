@@ -62,7 +62,7 @@ test("M5 Admin checkout previews authoritative settlement and requires refund ev
   assert.match(api, /\/settlement-preview/);
   assert.match(api, /deposit_rent_offset_amount: input\.depositRentOffsetAmount/);
   assert.match(api, /final_refund_amount: input\.finalRefundAmount/);
-  assert.match(api, /evidence_file_id: input\.evidenceFileId/);
+  assert.match(api, /evidence_file_ids: input\.evidenceFileIds/);
   assert.match(types, /recommendedRefundAmount: number/);
   assert.match(panel, /Hitung rekomendasi final/);
   assert.match(panel, /Deposit tidak pernah otomatis digunakan/);

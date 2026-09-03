@@ -55,11 +55,39 @@ export type BillingReceiptDocumentData = {
   leaseEnd?: string | Date | null;
   transactionDirection?: 'incoming' | 'outgoing' | 'correction';
   paymentDescription?: string;
+  /** Overrides the standard receipt number caption for non-transaction documents. */
+  documentNumberLabel?: string;
+  /** Replaces the standard receipt rows while retaining the canonical visual layout. */
+  detailRows?: Array<[string, string]>;
+  /** Displays a prominent state immediately below the document number. */
+  documentStatusNote?: string;
 };
 
 export type BillingReceiptDocument = {
   filename: string;
   content: Buffer;
+};
+
+export type ContractPaidDocumentSnapshot = {
+  documentCode: string;
+  residentName: string;
+  roomNumber: string;
+  buildingCode: string | null;
+  leaseStart: string;
+  leaseEnd: string;
+  contractRentAmount: number;
+  initialRentCredit: number;
+  additionalRentPayments: number;
+  contractAdjustmentAmount: number;
+  totalRentReceived: number;
+  totalSettledAmount: number;
+  outstandingAmount: number;
+  settledAt: string;
+  issuedAt: string;
+  transactionCodes: string[];
+  propertyName: string;
+  propertyAddress: string | null;
+  issuedByName: string | null;
 };
 
 export type LeaseExitOfficialDocumentKind =
@@ -534,7 +562,7 @@ export async function createBillingReceiptPdf(
     font: bold,
     color: navy,
   });
-  const receiptCode = `Nomor Kuitansi : ${data.receiptCode}`;
+  const receiptCode = `${data.documentNumberLabel ?? 'Nomor Kuitansi'} : ${data.receiptCode}`;
   const receiptCodeWidth = bold.widthOfTextAtSize(receiptCode, 9);
   page.drawText(receiptCode, {
     x: (pageWidth - receiptCodeWidth) / 2,
@@ -543,6 +571,17 @@ export async function createBillingReceiptPdf(
     font: bold,
     color: navy,
   });
+
+  if (data.documentStatusNote) {
+    const statusWidth = bold.widthOfTextAtSize(data.documentStatusNote, 9);
+    page.drawText(data.documentStatusNote, {
+      x: (pageWidth - statusWidth) / 2,
+      y: 660,
+      size: 9,
+      font: bold,
+      color: terbilangRed,
+    });
+  }
 
   const allocationText = data.allocations.length
     ? data.allocations
@@ -563,7 +602,7 @@ export async function createBillingReceiptPdf(
       : data.transactionDirection === 'correction'
         ? 'Dikembalikan kepada'
         : 'Telah diterima dari';
-  const rows: Array<[string, string]> = [
+  const rows: Array<[string, string]> = data.detailRows ?? [
     [partyLabel, data.residentName],
     ['Kode transaksi', data.paymentCode],
     ['Uang sejumlah', idr(data.amount)],
@@ -573,7 +612,7 @@ export async function createBillingReceiptPdf(
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Pembayaran via', method],
   ];
-  let y = 642;
+  let y = data.documentStatusNote ? 626 : 642;
   for (const [labelText, value] of rows) {
     const valueLines = wrapText(regular, value, 10, 258);
     const rowHeight = Math.max(22, valueLines.length * 13 + 6);
@@ -630,6 +669,60 @@ export async function createBillingReceiptPdf(
 
   const safeCode = data.receiptCode.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
   return { filename: `${safeCode}.pdf`, content: Buffer.from(await document.save()) };
+}
+
+export function createContractPaidDocumentPdf(
+  data: ContractPaidDocumentSnapshot,
+  invalidation?: { invalidatedAt: string; reason: string } | null,
+): Promise<BillingReceiptDocument> {
+  const transactionReferences = data.transactionCodes.length
+    ? data.transactionCodes.join(', ')
+    : 'Sesuai riwayat pembayaran terverifikasi';
+  const period = receiptPeriod(data.leaseStart, data.leaseEnd);
+
+  return createBillingReceiptPdf({
+    receiptCode: data.documentCode,
+    paymentCode: transactionReferences,
+    paymentMethod: 'other',
+    paymentPurpose: 'rent',
+    residentName: data.residentName,
+    roomNumber: data.roomNumber,
+    amount: data.contractRentAmount,
+    paidAt: data.settledAt,
+    issuedAt: new Date(data.issuedAt),
+    allocations: [],
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    buildingCode: data.buildingCode,
+    issuedByName: data.issuedByName,
+    leaseStart: data.leaseStart,
+    leaseEnd: data.leaseEnd,
+    documentTitle: 'BUKTI PELUNASAN KONTRAK SEWA',
+    documentNumberLabel: 'Nomor Dokumen',
+    documentStatusNote: invalidation ? 'STATUS DOKUMEN: DIBATALKAN' : undefined,
+    detailRows: [
+      ['Nama penghuni', data.residentName],
+      ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
+      ['Periode sewa', period],
+      ['Total sewa kontrak', idr(data.contractRentAmount)],
+      ['Pembayaran awal', idr(data.initialRentCredit)],
+      ['Pembayaran berikutnya', idr(data.additionalRentPayments)],
+      ['Total pembayaran diterima', idr(data.totalRentReceived)],
+      ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
+      ['Total kewajiban lunas', idr(data.totalSettledAmount)],
+      ['Sisa kewajiban', idr(data.outstandingAmount)],
+      ['Status kontrak', invalidation ? 'DIBATALKAN' : 'LUNAS'],
+      ['Kontrak dinyatakan lunas', receiptDateTime(data.settledAt)],
+      ['Referensi transaksi', transactionReferences],
+      ['Untuk pembayaran', `Pelunasan seluruh kewajiban sewa kontrak untuk periode ${period}`],
+      [
+        'Pernyataan',
+        invalidation
+          ? `Bukti pelunasan ini dibatalkan pada ${receiptDateTime(invalidation.invalidatedAt)} karena ${invalidation.reason}.`
+          : `Dengan ini dinyatakan bahwa seluruh kewajiban pembayaran sewa kontrak atas ${formatRoomDescription(data.roomNumber, data.buildingCode)} untuk periode tersebut telah diterima dan dinyatakan lunas.`,
+      ],
+    ],
+  });
 }
 
 function receiptDateTime(value: string | Date | null | undefined): string {

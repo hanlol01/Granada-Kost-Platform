@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Download, Loader2 } from "lucide-react";
-import { FileUploadField } from "@/components/file/FileUploadField";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { UniversityCombobox } from "@/components/forms/UniversityCombobox";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,7 +78,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
   const [visitorName, setVisitorName] = useState("");
   const [visitorPhone, setVisitorPhone] = useState("");
   const [visitorUniversity, setVisitorUniversity] = useState("");
-  const [paymentEvidence, setPaymentEvidence] = useState<FileResponse | null>(null);
+  const [paymentEvidence, setPaymentEvidence] = useState<FileResponse[]>([]);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const quote = useBookingLeadCompletionQuote(open ? lead?.id : null, startDate, termMonths);
@@ -96,7 +96,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
     setVisitorName(lead?.visitorName ?? "");
     setVisitorPhone(lead?.visitorPhone ?? "");
     setVisitorUniversity(lead?.visitorUniversity ?? "");
-    setPaymentEvidence(null);
+    setPaymentEvidence([]);
     setEvidenceBusy(false);
     setSubmitAttempted(false);
     idempotencyKeyRef.current = null;
@@ -130,7 +130,9 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
             ? "DP harus lebih besar dari Rp0."
             : paymentType === "down_payment" && displayedCredit > totalRent
               ? `DP tidak boleh melebihi total sewa ${formatIDR(totalRent)}.`
-              : null;
+              : paymentMethod === "bank_transfer" && paymentEvidence.length === 0
+                ? "Bukti transfer wajib diunggah minimal 1 file."
+                : null;
 
   useEffect(() => {
     if (submitAttempted && error) {
@@ -166,7 +168,8 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
         rentCreditAmount: displayedCredit,
         securityDepositAmount: securityDeposit,
         paymentMethod,
-        paymentEvidenceFileIds: paymentEvidence ? [paymentEvidence.id] : undefined,
+        paymentEvidenceFileIds:
+          paymentEvidence.length > 0 ? paymentEvidence.map((file) => file.id) : undefined,
         paymentNote,
         visitorName,
         visitorPhone,
@@ -453,21 +456,23 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Bukti transfer opsional. Transfer akan menunggu konfirmasi dan memblokir aktivasi
-                  kamar.
+                  Bukti transfer wajib diunggah. Transfer akan menunggu konfirmasi dan memblokir
+                  aktivasi kamar.
                 </p>
               </fieldset>
               {paymentMethod === "bank_transfer" ? (
-                <FileUploadField
+                <EvidenceFileUploadField
                   propertyId={currentPropertyId ?? ""}
-                  filePurpose="payment_proof"
-                  label="Bukti transfer (opsional)"
+                  label="Bukti transfer"
                   description="Unggah JPG, PNG, WebP, atau PDF. Foto besar dikompresi otomatis; gunakan Lihat untuk memeriksa file sebelum menyimpan."
-                  value={paymentEvidence}
+                  values={paymentEvidence}
                   onChange={setPaymentEvidence}
                   onBusyChange={setEvidenceBusy}
                   disabled={!currentPropertyId || mutation.isPending}
                   capture="environment"
+                  required
+                  invalid={submitAttempted && paymentEvidence.length === 0}
+                  errorId="complete-booking-lead-error"
                   className="rounded-xl border border-border bg-muted/20 p-4"
                 />
               ) : null}
@@ -490,6 +495,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
               </div>
               {submitAttempted && error ? (
                 <p
+                  id="complete-booking-lead-error"
                   data-validation-target="true"
                   role="alert"
                   tabIndex={-1}

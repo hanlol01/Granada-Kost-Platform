@@ -40,7 +40,7 @@ export class CreateMyPaymentProofDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(3)
+  @ArrayMaxSize(5)
   @ArrayUnique()
   @IsUUID('4', { each: true })
   file_ids!: string[];

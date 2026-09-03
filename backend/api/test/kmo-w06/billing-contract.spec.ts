@@ -271,6 +271,14 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
     compactRoomSearchQueries.every((query) => query.statement.includes('regexp_replace')),
     true,
   );
+  assert.equal(
+    queries.some((query) =>
+      query.statement.includes(
+        'ORDER BY COALESCE(p.paid_at,p.created_at) DESC,p.created_at DESC,p.id DESC',
+      ),
+    ),
+    true,
+  );
 });
 
 type HarnessOptions = {

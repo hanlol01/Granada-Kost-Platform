@@ -911,7 +911,7 @@ export class W06BillingService {
             ))
             AND ($7::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date >= $7::date)
             AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)
-          ORDER BY p.paid_at DESC,p.id DESC
+          ORDER BY COALESCE(p.paid_at,p.created_at) DESC,p.created_at DESC,p.id DESC
           LIMIT $9 OFFSET $10`,
         values,
       ),

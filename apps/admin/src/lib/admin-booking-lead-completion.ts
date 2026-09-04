@@ -73,6 +73,7 @@ export type CompleteBookingLeadInput = {
   rentCreditAmount: number;
   securityDepositAmount: number;
   paymentMethod: "cash" | "bank_transfer";
+  paymentPaidAt?: string;
   paymentEvidenceFileIds?: string[];
   paymentNote?: string;
   visitorName?: string;
@@ -339,6 +340,7 @@ export async function requestCompleteBookingLead(
       rent_credit_amount: input.rentCreditAmount,
       security_deposit_amount: input.securityDepositAmount,
       payment_method: input.paymentMethod,
+      payment_paid_at: input.paymentPaidAt,
       payment_evidence_file_ids: input.paymentEvidenceFileIds,
       payment_note: input.paymentNote?.trim() || undefined,
       visitor_name: input.visitorName?.trim() || undefined,

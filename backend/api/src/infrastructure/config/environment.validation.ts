@@ -80,6 +80,22 @@ export const environmentValidationSchema = Joi.object({
   PAYMENT_SESSION_EXPIRY_MINUTES: Joi.number().integer().min(5).max(10080).default(1440),
   PAYMENT_ACTIVE_ATTEMPT_POLICY: Joi.string().valid('single_active').default('single_active'),
 
+  ADMIN_PAYMENT_AUTO_VERIFY_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  ADMIN_PAYMENT_AUTO_VERIFY_UNTIL: Joi.when('ADMIN_PAYMENT_AUTO_VERIFY_ENABLED', {
+    is: true,
+    then: Joi.string().isoDate().required(),
+    otherwise: Joi.string().isoDate().optional(),
+  }),
+  ADMIN_PAYMENT_AUTO_VERIFY_PROPERTY_IDS: Joi.when('ADMIN_PAYMENT_AUTO_VERIFY_ENABLED', {
+    is: true,
+    then: Joi.string()
+      .pattern(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(,[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*$/i,
+      )
+      .required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+
   SMART_LOCK_PROVIDER: Joi.string().valid('simulated', 'tuya').default('simulated'),
   SMART_LOCK_LIVE_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   SMART_LOCK_COMMAND_TIMEOUT_MS: Joi.number().integer().min(1000).max(120000).default(15000),

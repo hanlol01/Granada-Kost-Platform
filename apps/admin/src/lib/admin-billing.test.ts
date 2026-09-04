@@ -170,6 +170,13 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
           paid_at: "2026-07-31T10:00:00.000Z",
           resident_name: "Farhan",
           room_number: "RK-03-01",
+          building_code: "RK-03",
+          lease_term_months: 3,
+          contract_rent_amount: "5400000",
+          rent_payment_sequence: "2",
+          total_rent_received: "1800000",
+          remaining_rent_amount: "3600000",
+          final_settlement_due_at: "2026-10-01T23:59:59.000Z",
           lease_start: "2026-07-31",
           lease_end: "2026-10-31",
           property_name: "Granada Student House",
@@ -204,6 +211,13 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
           paid_at: "2026-08-01T10:05:00.000Z",
           resident_name: "Farhan",
           room_number: "RK-03-01",
+          building_code: "RK-03",
+          lease_term_months: 3,
+          contract_rent_amount: "5400000",
+          rent_payment_sequence: "2",
+          total_rent_received: "1800000",
+          remaining_rent_amount: "3600000",
+          final_settlement_due_at: "2026-10-01T23:59:59.000Z",
           lease_start: "2026-07-31",
           lease_end: "2026-10-31",
           property_name: "Granada Student House",
@@ -217,6 +231,23 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
   });
   assert.equal(reversalReceipt.receipt_kind, "reversal");
   assert.equal(reversalReceipt.snapshot.payment_method, "bank_transfer");
+
+  const legacyReversalReceipt = parseBillingReceipt({
+    data: {
+      id: paymentId,
+      receipt_code: "RCT-W06-LEGACY-REVERSAL",
+      receipt_kind: "reversal",
+      amount: 1_800_000,
+      issued_at: "2026-08-01T10:05:00.000Z",
+      snapshot: {
+        payment_code: "PAY-W06-001",
+        reason: "Pembatalan penyewaan sebelum aktivasi",
+        source: "booking_lead_cancellation",
+      },
+    },
+  });
+  assert.equal(legacyReversalReceipt.snapshot.payment_method, null);
+  assert.equal(legacyReversalReceipt.snapshot.payment_purpose, null);
 });
 
 test("W06 Admin parsers fail closed on extra fields, custom prototypes, invalid dates, UUIDs, and money", () => {

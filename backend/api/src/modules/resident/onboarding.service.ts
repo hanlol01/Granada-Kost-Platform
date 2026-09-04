@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
@@ -19,6 +20,7 @@ import {
 } from './types/onboarding.types';
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
+import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
 
 type RoomRow = {
   id: string;
@@ -65,6 +67,7 @@ type LeadPaymentCommitmentRow = {
   verification_status: 'verified' | 'pending_confirmation';
   payment_note: string | null;
   payment_evidence_file_ids: string[];
+  paid_at: Date;
   start_date: string;
   term_months: string | number;
   end_date: string;
@@ -114,6 +117,8 @@ export class OnboardingService {
     private readonly audit: AuditRepository,
     private readonly w06Billing: W06BillingService,
     private readonly contractScheduleIssuance: ContractScheduleIssuanceService,
+    @Optional()
+    private readonly paymentVerificationPolicy?: AdminPaymentVerificationPolicyService,
   ) {}
 
   async commit(
@@ -133,7 +138,34 @@ export class OnboardingService {
         code: 'ONBOARDING_INPUT_INVALID',
         message: 'Required onboarding fields are missing',
       });
-    const bookingFeeAmount = dto.booking_fee_paid_amount ?? 0;
+    const stagedPaymentEntries = dto.payment_entries ?? [];
+    if (dto.booking_lead_id && stagedPaymentEntries.length > 0)
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_STAGED_PAYMENTS_UNSUPPORTED',
+        message: 'Pembayaran bertahap hanya tersedia untuk tambah penyewaan langsung',
+      });
+    if (
+      stagedPaymentEntries.length > 0 &&
+      (dto.dp_verified_amount !== 0 ||
+        dto.security_deposit_funded_amount !== 0 ||
+        (dto.booking_fee_paid_amount ?? 0) !== 0)
+    )
+      throw new BadRequestException({
+        code: 'ONBOARDING_PAYMENT_INPUT_AMBIGUOUS',
+        message: 'Gunakan daftar pembayaran bertahap tanpa mencampur nominal pembayaran lama',
+      });
+    const bookingFeeEntries = stagedPaymentEntries.filter(
+      (entry) => entry.purpose === 'booking_fee',
+    );
+    if (bookingFeeEntries.length > 1)
+      throw new BadRequestException({
+        code: 'ONBOARDING_BOOKING_FEE_DUPLICATE',
+        message: 'Booking fee hanya boleh dicatat satu kali',
+      });
+    const bookingFeeAmount =
+      stagedPaymentEntries.length > 0
+        ? bookingFeeEntries.reduce((total, entry) => total + entry.amount, 0)
+        : (dto.booking_fee_paid_amount ?? 0);
     if (
       !Number.isSafeInteger(bookingFeeAmount) ||
       bookingFeeAmount < 0 ||
@@ -255,7 +287,7 @@ export class OnboardingService {
                     security_deposit_amount::bigint AS security_deposit_amount,
                     payment_method,verification_status,payment_note,payment_evidence_file_ids,
                     start_date::text,term_months,end_date::text,billing_cycle,payment_plan_type,
-                    materialized_onboarding_commitment_id,created_at
+                    materialized_onboarding_commitment_id,paid_at,created_at
              FROM booking_lead_payment_commitments
              WHERE booking_lead_id=$1 AND property_id=$2
              FOR UPDATE`,
@@ -510,17 +542,31 @@ export class OnboardingService {
           : null;
         const leadBookingFee =
           leadPaymentCommitment?.payment_type === 'booking_fee' ? (leadRentCredit ?? 0) : 0;
+        const stagedDirectOnboarding = !leadPaymentCommitment && stagedPaymentEntries.length > 0;
+        const stagedRentAmount = stagedPaymentEntries.reduce(
+          (total, entry) => total + (entry.purpose === 'rent' ? entry.amount : 0),
+          0,
+        );
+        const stagedSecurityDepositAmount = stagedPaymentEntries.reduce(
+          (total, entry) => total + (entry.purpose === 'security_deposit' ? entry.amount : 0),
+          0,
+        );
         const effectiveDpAmount = leadPaymentCommitment
           ? leadPaymentCommitment.payment_type === 'booking_fee'
             ? dto.dp_verified_amount
             : (leadRentCredit ?? 0)
-          : dto.dp_verified_amount;
+          : stagedDirectOnboarding
+            ? stagedRentAmount
+            : dto.dp_verified_amount;
         const isBookingFeeLead = leadPaymentCommitment?.payment_type === 'booking_fee';
+        const recordsNewPayment = !leadPaymentCommitment || isBookingFeeLead;
         const effectiveSecurityDeposit = leadPaymentCommitment
           ? isBookingFeeLead
             ? dto.security_deposit_funded_amount
             : (leadSecurityDeposit ?? 0)
-          : dto.security_deposit_funded_amount;
+          : stagedDirectOnboarding
+            ? stagedSecurityDepositAmount
+            : dto.security_deposit_funded_amount;
         if (
           leadPaymentCommitment &&
           (bookingFeeAmount !== leadBookingFee ||
@@ -538,19 +584,130 @@ export class OnboardingService {
         // Do not silently drop either credit before W06 allocates it to rent.
         const recordedBookingFeeAmount = leadPaymentCommitment ? leadBookingFee : bookingFeeAmount;
         const initialRentCredit = effectiveDpAmount + recordedBookingFeeAmount;
-        const currentPaymentStatus =
-          dto.payment_method === 'cash' ? ('verified' as const) : ('pending_confirmation' as const);
+        const normalVerificationDecision = {
+          status:
+            dto.payment_method === 'cash'
+              ? ('verified' as const)
+              : ('pending_confirmation' as const),
+          automaticallyVerified: false,
+          policy: { requiresActualPaymentDate: false },
+        };
+        const verificationDecision = dto.booking_lead_id
+          ? normalVerificationDecision
+          : (this.paymentVerificationPolicy?.decide(dto.property_id, dto.payment_method) ??
+            normalVerificationDecision);
+        const currentPaymentStatus = verificationDecision.status;
+        if (
+          !stagedDirectOnboarding &&
+          verificationDecision.policy.requiresActualPaymentDate &&
+          recordsNewPayment &&
+          !dto.payment_paid_at
+        )
+          throw new BadRequestException({
+            code: 'PAYMENT_PAID_AT_REQUIRED',
+            message: 'Actual payment date is required while historical-entry mode is active',
+          });
         const rentPayments = [] as Array<{
-          classification: 'booking_fee' | 'down_payment' | 'full_settlement';
+          classification: 'booking_fee' | 'down_payment' | 'installment' | 'full_settlement';
           amount: number;
           method: 'cash' | 'bank_transfer';
           status: 'verified' | 'pending_confirmation';
           evidenceFileIds: string[];
           paymentNote?: string;
-          paidAt?: Date;
+          paidAt?: string | Date;
           transactionCode?: string | null;
         }>;
-        if (leadPaymentCommitment) {
+        let securityDepositPayment:
+          | {
+              amount: number;
+              method: 'cash' | 'bank_transfer';
+              status: 'verified' | 'pending_confirmation';
+              evidenceFileIds: string[];
+              paymentNote?: string;
+              paidAt?: string | Date;
+            }
+          | undefined;
+        if (stagedDirectOnboarding) {
+          const securityDepositEntries = stagedPaymentEntries.filter(
+            (entry) => entry.purpose === 'security_deposit',
+          );
+          if (securityDepositEntries.length > 1)
+            throw new BadRequestException({
+              code: 'ONBOARDING_SECURITY_DEPOSIT_DUPLICATE',
+              message: 'Security deposit hanya boleh dicatat satu kali',
+            });
+          let runningRentCredit = 0;
+          let rentPaymentCount = 0;
+          let rentPaymentSeen = false;
+          let previousPaidAt = '';
+          for (const entry of stagedPaymentEntries) {
+            const paidAtDate = entry.paid_at.slice(0, 10);
+            if (previousPaidAt && paidAtDate < previousPaidAt)
+              throw new BadRequestException({
+                code: 'ONBOARDING_PAYMENT_DATE_ORDER_INVALID',
+                message: 'Tanggal pembayaran harus berurutan dari yang paling lama',
+              });
+            previousPaidAt = paidAtDate;
+            if (entry.purpose === 'booking_fee' && rentPaymentSeen)
+              throw new BadRequestException({
+                code: 'ONBOARDING_BOOKING_FEE_ORDER_INVALID',
+                message: 'Booking fee harus dicatat sebelum pembayaran sewa',
+              });
+            const decision = this.paymentVerificationPolicy?.decide(
+              dto.property_id,
+              entry.method,
+            ) ?? {
+              status:
+                entry.method === 'cash' ? ('verified' as const) : ('pending_confirmation' as const),
+              automaticallyVerified: false,
+              policy: { requiresActualPaymentDate: false },
+            };
+            const evidenceFileIds = entry.evidence_file_ids ?? [];
+            if (entry.purpose === 'security_deposit') {
+              securityDepositPayment = {
+                amount: entry.amount,
+                method: entry.method,
+                status: decision.status,
+                evidenceFileIds,
+                paymentNote: entry.note,
+                paidAt: entry.paid_at,
+              };
+              continue;
+            }
+            if (entry.purpose === 'booking_fee') {
+              runningRentCredit += entry.amount;
+              rentPayments.push({
+                classification: 'booking_fee',
+                amount: entry.amount,
+                method: entry.method,
+                status: decision.status,
+                evidenceFileIds,
+                paymentNote: entry.note,
+                paidAt: entry.paid_at,
+              });
+              continue;
+            }
+            rentPaymentSeen = true;
+            const nextRentCredit = runningRentCredit + entry.amount;
+            const classification =
+              nextRentCredit === contractRent
+                ? ('full_settlement' as const)
+                : rentPaymentCount === 0
+                  ? ('down_payment' as const)
+                  : ('installment' as const);
+            runningRentCredit = nextRentCredit;
+            rentPaymentCount += 1;
+            rentPayments.push({
+              classification,
+              amount: entry.amount,
+              method: entry.method,
+              status: decision.status,
+              evidenceFileIds,
+              paymentNote: entry.note,
+              paidAt: entry.paid_at,
+            });
+          }
+        } else if (leadPaymentCommitment) {
           rentPayments.push({
             classification: leadPaymentCommitment.payment_type,
             amount: leadRentCredit ?? 0,
@@ -558,7 +715,7 @@ export class OnboardingService {
             status: leadPaymentCommitment.verification_status,
             evidenceFileIds: leadPaymentCommitment.payment_evidence_file_ids,
             paymentNote: leadPaymentCommitment.payment_note ?? undefined,
-            paidAt: leadPaymentCommitment.created_at,
+            paidAt: leadPaymentCommitment.paid_at,
             transactionCode: leadPaymentCommitment.transaction_code,
           });
           if (isBookingFeeLead && effectiveDpAmount > 0)
@@ -570,6 +727,7 @@ export class OnboardingService {
               status: currentPaymentStatus,
               evidenceFileIds: dto.payment_evidence_file_ids ?? [],
               paymentNote: dto.payment_note,
+              paidAt: dto.payment_paid_at,
             });
         } else {
           if (recordedBookingFeeAmount > 0)
@@ -580,6 +738,7 @@ export class OnboardingService {
               status: currentPaymentStatus,
               evidenceFileIds: dto.payment_evidence_file_ids ?? [],
               paymentNote: dto.payment_note,
+              paidAt: dto.payment_paid_at,
             });
           if (effectiveDpAmount > 0)
             rentPayments.push({
@@ -590,34 +749,36 @@ export class OnboardingService {
               status: currentPaymentStatus,
               evidenceFileIds: dto.payment_evidence_file_ids ?? [],
               paymentNote: dto.payment_note,
+              paidAt: dto.payment_paid_at,
             });
         }
-        const securityDepositPayment =
-          effectiveSecurityDeposit > 0
-            ? {
-                amount: effectiveSecurityDeposit,
-                method:
-                  leadPaymentCommitment && !isBookingFeeLead
-                    ? leadPaymentCommitment.payment_method
-                    : dto.payment_method,
-                status:
-                  leadPaymentCommitment && !isBookingFeeLead
-                    ? leadPaymentCommitment.verification_status
-                    : currentPaymentStatus,
-                evidenceFileIds:
-                  leadPaymentCommitment && !isBookingFeeLead
-                    ? leadPaymentCommitment.payment_evidence_file_ids
-                    : (dto.payment_evidence_file_ids ?? []),
-                paymentNote:
-                  (leadPaymentCommitment && !isBookingFeeLead
-                    ? leadPaymentCommitment.payment_note
-                    : dto.payment_note) ?? undefined,
-                paidAt:
-                  leadPaymentCommitment && !isBookingFeeLead
-                    ? leadPaymentCommitment.created_at
-                    : undefined,
-              }
-            : undefined;
+        if (!stagedDirectOnboarding)
+          securityDepositPayment =
+            effectiveSecurityDeposit > 0
+              ? {
+                  amount: effectiveSecurityDeposit,
+                  method:
+                    leadPaymentCommitment && !isBookingFeeLead
+                      ? leadPaymentCommitment.payment_method
+                      : dto.payment_method,
+                  status:
+                    leadPaymentCommitment && !isBookingFeeLead
+                      ? leadPaymentCommitment.verification_status
+                      : currentPaymentStatus,
+                  evidenceFileIds:
+                    leadPaymentCommitment && !isBookingFeeLead
+                      ? leadPaymentCommitment.payment_evidence_file_ids
+                      : (dto.payment_evidence_file_ids ?? []),
+                  paymentNote:
+                    (leadPaymentCommitment && !isBookingFeeLead
+                      ? leadPaymentCommitment.payment_note
+                      : dto.payment_note) ?? undefined,
+                  paidAt:
+                    leadPaymentCommitment && !isBookingFeeLead
+                      ? leadPaymentCommitment.paid_at
+                      : dto.payment_paid_at,
+                }
+              : undefined;
         // W07A models every newly committed lease as one contract-rent
         // obligation. The UI may still use the familiar DP/full-payment choices,
         // but those choices describe the amount received today, not a recurring
@@ -626,16 +787,25 @@ export class OnboardingService {
         // The legacy DTO field name is retained for wire compatibility. It is the
         // additional rent payment recorded today. A prior booking fee is a rent
         // credit too, while security deposit remains a separate liability.
-        if (
-          !Number.isSafeInteger(initialRentCredit) ||
-          initialRentCredit < monthlyPrice ||
-          initialRentCredit > contractRent ||
-          effectiveSecurityDeposit < 0
-        )
+        const maximumSecurityDeposit = Math.floor(contractRent / dto.term_months);
+        if (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < monthlyPrice)
           throw new ConflictException({
             code: 'ONBOARDING_FINANCIAL_OBLIGATION_UNMET',
-            message:
-              'Initial rent credit must cover at least one full month and the security deposit amount must be valid',
+            message: 'Pembayaran awal sewa harus mencukupi minimal satu bulan sewa',
+          });
+        if (initialRentCredit > contractRent)
+          throw new ConflictException({
+            code: 'ONBOARDING_RENT_PAYMENT_EXCEEDS_CONTRACT',
+            message: `Total booking fee dan DP atau pelunasan tidak boleh melebihi total sewa kontrak sebesar Rp${contractRent.toLocaleString('id-ID')}`,
+          });
+        if (
+          !Number.isSafeInteger(effectiveSecurityDeposit) ||
+          effectiveSecurityDeposit < 0 ||
+          effectiveSecurityDeposit > maximumSecurityDeposit
+        )
+          throw new ConflictException({
+            code: 'ONBOARDING_SECURITY_DEPOSIT_EXCEEDS_LIMIT',
+            message: `Security deposit bersifat opsional dengan nominal minimal Rp0 dan maksimal Rp${maximumSecurityDeposit.toLocaleString('id-ID')}`,
           });
         const endDate = new Date(`${dto.start_date}T00:00:00.000Z`);
         endDate.setUTCMonth(endDate.getUTCMonth() + dto.term_months);
@@ -757,6 +927,19 @@ export class OnboardingService {
             context,
           },
         );
+        const contractPaidDocumentResult = await client.query<{
+          id: string;
+          document_code: string;
+          issued_at: Date;
+        }>(
+          `SELECT id,document_code,issued_at
+             FROM lease_contract_paid_documents
+            WHERE property_id=$1 AND lease_id=$2 AND invalidated_at IS NULL
+            ORDER BY issued_at DESC,id DESC
+            LIMIT 1`,
+          [dto.property_id, lease.rows[0].id],
+        );
+        const contractPaidDocumentRow = contractPaidDocumentResult.rows[0] ?? null;
         const verifiedNonBookingRentAmount = rentPayments.reduce(
           (total, payment) =>
             total +
@@ -861,6 +1044,13 @@ export class OnboardingService {
           dpRequiredAmount: dpRequired,
           securityDepositRequiredAmount: depositRequired,
           initialPayment,
+          contractPaidDocument: contractPaidDocumentRow
+            ? {
+                id: contractPaidDocumentRow.id,
+                documentCode: contractPaidDocumentRow.document_code,
+                issuedAt: contractPaidDocumentRow.issued_at.toISOString(),
+              }
+            : null,
           temporaryPassword: account.temporaryPassword,
         };
         await client.query(

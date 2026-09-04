@@ -6,9 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \".agents/skills/impeccable/scripts/hook.mjs\" ] || node \".agents/skills/impeccable/scripts/hook.mjs\"",
+            "command": "[ ! -f 'C:\\Users\\FARHAN\\.agents\\skills\\impeccable\\scripts\\hook.mjs' ] || node 'C:\\Users\\FARHAN\\.agents\\skills\\impeccable\\scripts\\hook.mjs'",
             "timeout": 5,
-            "statusMessage": "Checking UI changes"
+            "statusMessage": "Checking UI changes",
+            "commandWindows": "if exist \"C:\\\\Users\\\\FARHAN\\\\.agents\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" (node \"C:\\\\Users\\\\FARHAN\\\\.agents\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" & exit /b)"
           }
         ]
       }
@@ -18,9 +19,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \".agents/skills/impeccable/scripts/hook.mjs\" ] || node \".agents/skills/impeccable/scripts/hook.mjs\"",
+            "command": "[ ! -f 'C:\\Users\\FARHAN\\.agents\\skills\\impeccable\\scripts\\hook.mjs' ] || node 'C:\\Users\\FARHAN\\.agents\\skills\\impeccable\\scripts\\hook.mjs'",
             "timeout": 30,
-            "statusMessage": "Design deep pass"
+            "statusMessage": "Design deep pass",
+            "commandWindows": "if exist \"C:\\\\Users\\\\FARHAN\\\\.agents\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" (node \"C:\\\\Users\\\\FARHAN\\\\.agents\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\" & exit /b)"
           }
         ]
       }

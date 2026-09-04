@@ -163,6 +163,29 @@
   animation: fade-in 0.4s ease-out;
 }
 
+@keyframes room-category-filter-border-pulse {
+  0%,
+  100% {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    border-color: var(--primary);
+    box-shadow: 0 0 12px color-mix(in oklab, var(--primary) 28%, transparent);
+  }
+}
+
+.room-category-filter-card {
+  border-color: var(--primary);
+  animation: room-category-filter-border-pulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-category-filter-card {
+    animation: none;
+  }
+}
+
 @keyframes notice-alert-border-sweep {
   0% {
     background-position: 120% 0;

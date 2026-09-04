@@ -55,7 +55,7 @@ const response = {
       receipts: [
         {
           id: "33333333-3333-4333-8333-333333333333",
-          purpose: "dp",
+          purpose: "down_payment",
           amount: 5400000,
         },
         {
@@ -65,6 +65,7 @@ const response = {
         },
       ],
     },
+    contractPaidDocument: null,
     temporaryPassword: "one-time",
   },
 };

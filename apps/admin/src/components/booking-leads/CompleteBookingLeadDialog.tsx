@@ -13,12 +13,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NoticeAlert } from "@/components/ui/notice-alert";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   useBookingLeadCompletionQuote,
   useCompleteBookingLead,
 } from "@/hooks/useBookingLeadCompletion";
+import { useAdminPaymentVerificationPolicy } from "@/hooks/useAdminBilling";
 import type { BookingLeadRecord } from "@/lib/admin-booking-lead";
 import type {
   LeadInitialPaymentType,
@@ -74,6 +76,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
   const [rentCredit, setRentCredit] = useState(1_000_000);
   const [securityDeposit, setSecurityDeposit] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [paymentPaidAt, setPaymentPaidAt] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [visitorName, setVisitorName] = useState("");
   const [visitorPhone, setVisitorPhone] = useState("");
@@ -82,6 +85,8 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const quote = useBookingLeadCompletionQuote(open ? lead?.id : null, startDate, termMonths);
+  const verificationPolicy = useAdminPaymentVerificationPolicy(currentPropertyId);
+  const historicalEntryMode = verificationPolicy.data?.automaticVerificationActive === true;
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +97,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
     setRentCredit(FIXED_BOOKING_FEE);
     setSecurityDeposit(0);
     setPaymentMethod("cash");
+    setPaymentPaidAt("");
     setPaymentNote("");
     setVisitorName(lead?.visitorName ?? "");
     setVisitorPhone(lead?.visitorPhone ?? "");
@@ -126,13 +132,15 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
         ? "Memuat tarif kamar yang ditahan."
         : quote.isError || !quote.data
           ? "Tarif kamar yang ditahan belum dapat dimuat. Tutup dialog lalu periksa kembali status hold kamar."
-          : paymentType === "down_payment" && displayedCredit <= 0
-            ? "DP harus lebih besar dari Rp0."
-            : paymentType === "down_payment" && displayedCredit > totalRent
-              ? `DP tidak boleh melebihi total sewa ${formatIDR(totalRent)}.`
-              : paymentMethod === "bank_transfer" && paymentEvidence.length === 0
-                ? "Bukti transfer wajib diunggah minimal 1 file."
-                : null;
+          : historicalEntryMode && !paymentPaidAt
+            ? "Tanggal pembayaran wajib diisi selama mode input data historis aktif."
+            : paymentType === "down_payment" && displayedCredit <= 0
+              ? "DP harus lebih besar dari Rp0."
+              : paymentType === "down_payment" && displayedCredit > totalRent
+                ? `DP tidak boleh melebihi total sewa ${formatIDR(totalRent)}.`
+                : paymentMethod === "bank_transfer" && paymentEvidence.length === 0
+                  ? "Bukti transfer wajib diunggah minimal 1 file."
+                  : null;
 
   useEffect(() => {
     if (submitAttempted && error) {
@@ -168,6 +176,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
         rentCreditAmount: displayedCredit,
         securityDepositAmount: securityDeposit,
         paymentMethod,
+        paymentPaidAt: paymentPaidAt || undefined,
         paymentEvidenceFileIds:
           paymentEvidence.length > 0 ? paymentEvidence.map((file) => file.id) : undefined,
         paymentNote,
@@ -456,10 +465,35 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Bukti transfer wajib diunggah. Transfer akan menunggu konfirmasi dan memblokir
-                  aktivasi kamar.
+                  {historicalEntryMode
+                    ? "Pembayaran yang dicatat Admin akan langsung terverifikasi. Bukti transfer tetap wajib diunggah."
+                    : "Bukti transfer wajib diunggah. Transfer akan menunggu konfirmasi dan memblokir aktivasi kamar."}
                 </p>
               </fieldset>
+              {historicalEntryMode ? (
+                <NoticeAlert
+                  tone="warning"
+                  density="compact"
+                  title="Mode input data historis aktif"
+                  description="Pembayaran tunai maupun transfer yang dicatat Admin langsung terverifikasi. Isi tanggal pembayaran sesuai bukti asli; fitur verifikasi manual tetap tersedia setelah mode ini dinonaktifkan."
+                />
+              ) : null}
+              {historicalEntryMode ? (
+                <HeroUiDatePicker
+                  id="booking-lead-payment-date"
+                  label="Tanggal pembayaran"
+                  value={paymentPaidAt}
+                  onChange={(value) => setPaymentPaidAt(value ?? "")}
+                  required
+                  validationTarget={submitAttempted && !paymentPaidAt}
+                  error={
+                    submitAttempted && !paymentPaidAt
+                      ? "Tanggal pembayaran wajib diisi."
+                      : undefined
+                  }
+                  description="Gunakan tanggal dana diterima atau tanggal pada bukti pembayaran."
+                />
+              ) : null}
               {paymentMethod === "bank_transfer" ? (
                 <EvidenceFileUploadField
                   propertyId={currentPropertyId ?? ""}
@@ -539,7 +573,10 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
               >
                 Batal
               </Button>
-              <Button onClick={() => void submit()} disabled={mutation.isPending || evidenceBusy}>
+              <Button
+                onClick={() => void submit()}
+                disabled={mutation.isPending || evidenceBusy || verificationPolicy.isLoading}
+              >
                 {mutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (

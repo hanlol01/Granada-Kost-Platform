@@ -21,12 +21,17 @@ test('onboarding preserves Booking Fee, DP top-up, and full settlement as distin
   assert.doesNotMatch(onboarding, /dpAmount: initialRentCredit/);
 
   assert.match(billing, /classification: InitialOnboardingRentPaymentClassification/);
-  assert.match(billing, /classification === 'full_settlement' \? 'rent' : 'dp'/);
+  assert.match(
+    billing,
+    /payment\.classification === 'full_settlement' \|\|\s*payment\.classification === 'installment'/,
+  );
   assert.match(billing, /classification === 'booking_fee'\s*\? 'BOOKING'/);
   assert.match(billing, /classification === 'full_settlement'\s*\? 'LUNAS'/);
+  assert.match(billing, /classification === 'installment'\s*\? 'SEWA'/);
   assert.match(billing, /paymentCode\.endsWith\('-BOOKING'\)\) return 'booking_fee'/);
   assert.match(billing, /paymentCode\.endsWith\('-LUNAS'\)[\s\S]*return 'full_settlement'/);
   assert.match(billing, /booking_commitment\.receipt_code AS booking_receipt_code/);
+  assert.match(billing, /prior_payment\.payment_code NOT LIKE '%-BOOKING'/);
 });
 
 test('full settlement and booking-stage documents use explicit Indonesian identities', () => {

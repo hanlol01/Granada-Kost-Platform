@@ -171,6 +171,21 @@ test("resident detail is a full page with canonical tenancy rather than a dialog
   assert.match(workspace, /Ringkasan Penyewaan dan Pembayaran/);
   assert.match(workspace, /Aktivasi kamar/);
   assert.match(workspace, /Kendaraan & parkir/);
+  assert.match(workspace, /aria-label=\{`Lihat \$\{payment\.evidence\.length\} bukti transfer`\}/);
+  assert.match(workspace, /Bukti belum dilampirkan/);
+  assert.match(workspace, /<FilePreviewModal file=\{previewFile\}/);
+});
+
+test("resident edit keeps WhatsApp required while email remains optional", async () => {
+  const form = await readFile(
+    new URL("../components/forms/ResidentFormDialog.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(form, /Nomor HP \/ WhatsApp[\s\S]{0,120}required/);
+  assert.match(form, /<Field label="Email" optional/);
+  assert.match(form, /placeholder="Dapat dilengkapi nanti"/);
+  assert.doesNotMatch(form, /Email wajib diisi/);
 });
 
 test("lease entry remains a full-page two-stage lifecycle flow", async () => {
@@ -227,14 +242,25 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   assert.match(source, /invalid=\{Boolean\(errors\?\.paymentEvidence\)\}/);
   assert.match(
     source,
-    /const transferEvidenceRequired = paymentMethod === "bank_transfer" && !initialPaymentLocked/,
+    /paymentMethod === "bank_transfer" && !initialPaymentLocked && !historicalEntryMode/,
   );
   assert.match(source, /\(!transferEvidenceRequired \|\| paymentEvidence\.length > 0\)/);
+  assert.match(source, /Opsional selama mode input data historis aktif/);
+  assert.match(source, /required=\{transferEvidenceRequired\}/);
+  assert.match(source, /Bukti belum dilampirkan/);
   assert.match(fileUpload, /aria-invalid=\{invalid \|\| undefined\}/);
   assert.match(fileUpload, /data-validation-target=\{invalid \? "true" : undefined\}/);
   assert.match(source, /payment_method: paymentMethod/);
   assert.match(source, /paymentEvidence\.map\(\(file\) => file\.id\)/);
   assert.match(source, /payment_note: paymentNote\.trim\(\) \|\| undefined/);
+  assert.match(
+    source,
+    /const historicalEntryMode =\s*!bookingLeadId &&[\s\S]*?automaticVerificationActive === true/,
+  );
+  assert.match(
+    source,
+    /useAdminPaymentVerificationPolicy\(\s*bookingLeadId \? null : currentPropertyId/,
+  );
   assert.match(source, /Menunggu konfirmasi/);
   assert.match(source, /Security deposit[\s\S]*?Opsional, bebas diisi, dan terpisah dari DP/);
   assert.match(source, /Booking fee \(opsional\)/);
@@ -499,6 +525,33 @@ test("onboarding errors resolve to safe, actionable notices and the correct form
       title: "Data onboarding belum valid",
       description: "Periksa Nomor Telepon / WhatsApp dan Foto KTP pada tahap Penghuni & Penyewaan.",
       step: 1,
+    },
+  );
+
+  assert.deepEqual(
+    resolveOnboardingErrorNotice({
+      code: "ONBOARDING_RENT_PAYMENT_EXCEEDS_CONTRACT",
+      kind: "conflict",
+      message: "raw financial detail must not be shown",
+    }),
+    {
+      title: "Pembayaran sewa melebihi total kontrak",
+      description:
+        "Kurangi DP atau pelunasan. Total booking fee dan pembayaran sewa tidak boleh melebihi nilai kontrak.",
+      step: 2,
+    },
+  );
+  assert.deepEqual(
+    resolveOnboardingErrorNotice({
+      code: "ONBOARDING_SECURITY_DEPOSIT_EXCEEDS_LIMIT",
+      kind: "conflict",
+      message: "raw financial detail must not be shown",
+    }),
+    {
+      title: "Security deposit melebihi batas",
+      description:
+        "Security deposit tetap opsional. Jika diisi, nominalnya minimal Rp0 dan maksimal setara satu bulan berdasarkan nilai kontrak.",
+      step: 2,
     },
   );
 

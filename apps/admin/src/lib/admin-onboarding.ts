@@ -28,8 +28,17 @@ export type OnboardingPayload = {
   security_deposit_funded_amount: number;
   booking_fee_paid_amount?: number;
   payment_method: "cash" | "bank_transfer";
+  payment_paid_at?: string;
   payment_evidence_file_ids?: string[];
   payment_note?: string;
+  payment_entries?: Array<{
+    purpose: "rent" | "booking_fee" | "security_deposit";
+    amount: number;
+    method: "cash" | "bank_transfer";
+    paid_at: string;
+    evidence_file_ids?: string[];
+    note?: string;
+  }>;
   notes?: string;
 };
 export type OnboardingResponse = {
@@ -56,10 +65,21 @@ export type OnboardingResponse = {
     securityDepositVerifiedAmount: number;
     receipts: Array<{
       id: string;
-      purpose: "booking_fee" | "down_payment" | "full_settlement" | "security_deposit";
+      purpose:
+        | "booking_fee"
+        | "down_payment"
+        | "installment"
+        | "full_settlement"
+        | "security_deposit";
       amount: number;
+      rentPaymentSequence?: number | null;
     }>;
   };
+  contractPaidDocument: {
+    id: string;
+    documentCode: string;
+    issuedAt: string;
+  } | null;
   temporaryPassword: string | null;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,8 +93,27 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
   if (
     !d ||
     typeof d !== "object" ||
-    Object.keys(d).sort().join(",") !==
-      "billingCycle,category,commitmentId,contractRentAmount,dpRequiredAmount,endDate,initialPayment,leaseId,leaseStatus,paymentPlanType,roomNumber,securityDepositRequiredAmount,startDate,status,temporaryPassword,termMonths"
+    !Object.keys(d).every((key) =>
+      [
+        "billingCycle",
+        "category",
+        "commitmentId",
+        "contractPaidDocument",
+        "contractRentAmount",
+        "dpRequiredAmount",
+        "endDate",
+        "initialPayment",
+        "leaseId",
+        "leaseStatus",
+        "paymentPlanType",
+        "roomNumber",
+        "securityDepositRequiredAmount",
+        "startDate",
+        "status",
+        "temporaryPassword",
+        "termMonths",
+      ].includes(key),
+    )
   )
     throw new Error("Invalid onboarding response");
   const commitmentId = d.commitmentId;
@@ -92,6 +131,7 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
   const dpRequiredAmount = d.dpRequiredAmount;
   const securityDepositRequiredAmount = d.securityDepositRequiredAmount;
   const initialPayment = d.initialPayment;
+  const contractPaidDocument = d.contractPaidDocument ?? null;
   const temporaryPassword = d.temporaryPassword;
   const initialPaymentRecord =
     initialPayment !== null && typeof initialPayment === "object" && !Array.isArray(initialPayment)
@@ -141,16 +181,34 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
       if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) return false;
       const item = receipt as Record<string, unknown>;
       return (
-        Object.keys(item).sort().join(",") === "amount,id,purpose" &&
+        ["amount,id,purpose", "amount,id,purpose,rentPaymentSequence"].includes(
+          Object.keys(item).sort().join(","),
+        ) &&
         typeof item.id === "string" &&
         UUID.test(item.id) &&
-        ["booking_fee", "down_payment", "full_settlement", "security_deposit"].includes(
-          item.purpose as string,
-        ) &&
+        [
+          "booking_fee",
+          "down_payment",
+          "installment",
+          "full_settlement",
+          "security_deposit",
+        ].includes(item.purpose as string) &&
         Number.isSafeInteger(item.amount) &&
-        (item.amount as number) > 0
+        (item.amount as number) > 0 &&
+        (item.rentPaymentSequence === undefined ||
+          item.rentPaymentSequence === null ||
+          (Number.isSafeInteger(item.rentPaymentSequence) &&
+            (item.rentPaymentSequence as number) > 0))
       );
     }) ||
+    (contractPaidDocument !== null &&
+      (typeof contractPaidDocument !== "object" ||
+        Array.isArray(contractPaidDocument) ||
+        Object.keys(contractPaidDocument).sort().join(",") !== "documentCode,id,issuedAt" ||
+        typeof (contractPaidDocument as Record<string, unknown>).id !== "string" ||
+        !UUID.test((contractPaidDocument as Record<string, unknown>).id as string) ||
+        typeof (contractPaidDocument as Record<string, unknown>).documentCode !== "string" ||
+        typeof (contractPaidDocument as Record<string, unknown>).issuedAt !== "string")) ||
     (temporaryPassword !== null && typeof temporaryPassword !== "string")
   )
     throw new Error("Invalid onboarding response");
@@ -170,6 +228,7 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
     dpRequiredAmount: dpRequiredAmount as number,
     securityDepositRequiredAmount: securityDepositRequiredAmount as number,
     initialPayment: initialPayment as OnboardingResponse["initialPayment"],
+    contractPaidDocument: contractPaidDocument as OnboardingResponse["contractPaidDocument"],
     temporaryPassword: temporaryPassword as string | null,
   };
 }

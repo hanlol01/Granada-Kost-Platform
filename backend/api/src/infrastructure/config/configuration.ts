@@ -78,6 +78,16 @@ export default () => ({
       clientKey: process.env.MIDTRANS_CLIENT_KEY,
     },
   },
+  billing: {
+    adminPaymentAutoVerify: {
+      enabled: process.env.ADMIN_PAYMENT_AUTO_VERIFY_ENABLED === 'true',
+      until: process.env.ADMIN_PAYMENT_AUTO_VERIFY_UNTIL,
+      propertyIds: (process.env.ADMIN_PAYMENT_AUTO_VERIFY_PROPERTY_IDS ?? '')
+        .split(',')
+        .map((propertyId) => propertyId.trim())
+        .filter(Boolean),
+    },
+  },
   smartLock: {
     provider: process.env.SMART_LOCK_PROVIDER ?? 'simulated',
     liveEnabled: process.env.SMART_LOCK_LIVE_ENABLED === 'true',

@@ -88,7 +88,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { canCreateAdminBookingLead } from "@/lib/admin-booking-lead";
 import { safeErrorMessage } from "@/lib/error-normalizer";
-import { formatIDR } from "@/lib/format";
+import { formatDate, formatIDR } from "@/lib/format";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 import {
@@ -118,13 +118,13 @@ export type BuildingOption = {
 const EMPTY_ROOM_ITEMS: RoomInventory[] = [];
 
 const STATUS_TONE: Record<RoomInventory["status"], string> = {
-  vacant: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  reserved: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-  awaiting_check_in: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
-  occupied: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-  maintenance: "border-orange-500/30 bg-orange-500/10 text-orange-300",
-  inactive: "border-slate-700 bg-slate-800 text-slate-300",
-  requires_review: "border-rose-500/30 bg-rose-500/10 text-rose-300",
+  vacant: "border-success/30 bg-success/10 text-success",
+  reserved: "border-warning/30 bg-warning/10 text-warning",
+  awaiting_check_in: "border-info/30 bg-info/10 text-info",
+  occupied: "border-primary/30 bg-primary/10 text-primary",
+  maintenance: "border-warning/30 bg-warning/10 text-warning",
+  inactive: "border-border bg-muted text-muted-foreground",
+  requires_review: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 function roomLabel(room: RoomInventory): string {
@@ -273,7 +273,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
         canManage ? (
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outline"
+              variant="default"
               className="min-h-11"
               onClick={() => setTypeEditor(activeType ?? "create")}
             >
@@ -286,13 +286,9 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     >
       <div className="space-y-5 pb-24 lg:pb-8">
         {activeType ? (
-          <KostTypeHeader
-            kostType={activeType}
-            canManage={canManage}
-            onEdit={() => setTypeEditor(activeType)}
-          />
+          <KostTypeHeader kostType={activeType} />
         ) : (
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-border bg-card">
             <CardContent className="p-6">
               <EmptyState
                 icon={<Building2 className="h-5 w-5" />}
@@ -307,6 +303,9 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
             </CardContent>
           </Card>
         )}
+        {activeType?.futureCommercial ? (
+          <KostTypeRateScheduleNotice kostType={activeType} />
+        ) : null}
 
         <NoticeAlert
           tone={activeType ? "info" : "warning"}
@@ -381,50 +380,39 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   );
 }
 
-function KostTypeHeader({
-  kostType,
-  canManage,
-  onEdit,
-}: {
-  kostType: KostType;
-  canManage: boolean;
-  onEdit: () => void;
-}) {
+function KostTypeHeader({ kostType }: { kostType: KostType }) {
   return (
-    <Card className="overflow-hidden border-slate-800 bg-slate-900/90">
-      <CardHeader className="border-b border-slate-800 pb-4">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="border-blue-500/30 bg-blue-500/10 text-blue-300" variant="outline">
-                {KOST_TYPE_LABEL[kostType.category]}
+    <Card className="overflow-hidden border-border bg-card">
+      <CardHeader className="border-b border-border pb-4">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">
+              {KOST_TYPE_LABEL[kostType.category]}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={
+                kostType.status === "active"
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-border bg-muted text-muted-foreground"
+              }
+            >
+              {kostType.status === "active" ? "Aktif" : "Tidak Aktif"}
+            </Badge>
+            {kostType.publicVisible ? (
+              <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
+                <Eye className="mr-1 h-3 w-3" /> Publik
               </Badge>
-              <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-300">
-                {kostType.status === "active" ? "Aktif" : "Tidak Aktif"}
+            ) : (
+              <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
+                <EyeOff className="mr-1 h-3 w-3" /> Internal
               </Badge>
-              {kostType.publicVisible ? (
-                <Badge
-                  variant="outline"
-                  className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                >
-                  <Eye className="mr-1 h-3 w-3" /> Publik
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-300">
-                  <EyeOff className="mr-1 h-3 w-3" /> Internal
-                </Badge>
-              )}
-            </div>
-            <CardTitle className="text-xl text-slate-100">{kostType.name}</CardTitle>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              {kostType.descriptionShort || "Belum ada deskripsi singkat untuk tipe kost ini."}
-            </p>
+            )}
           </div>
-          {canManage ? (
-            <Button className="shrink-0" variant="outline" onClick={onEdit}>
-              <Pencil className="mr-2 h-4 w-4" /> Edit Tipe
-            </Button>
-          ) : null}
+          <CardTitle className="text-xl text-foreground">{kostType.name}</CardTitle>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            {kostType.descriptionShort || "Belum ada deskripsi singkat untuk tipe kost ini."}
+          </p>
         </div>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
@@ -441,6 +429,31 @@ function KostTypeHeader({
   );
 }
 
+function KostTypeRateScheduleNotice({ kostType }: { kostType: KostType }) {
+  const scheduled = kostType.futureCommercial;
+  if (!scheduled) return null;
+
+  return (
+    <NoticeAlert
+      tone="info"
+      density="compact"
+      title="Perubahan tarif sudah dijadwalkan"
+      description={
+        <>
+          Mulai <span className="font-semibold text-foreground">{formatDate(scheduled.effectiveDate)}</span>,
+          harga {KOST_TYPE_LABEL[kostType.category]} menjadi{" "}
+          <span className="font-semibold text-foreground">{formatIDR(scheduled.monthlyPrice)}/bulan</span>
+          {" dan "}
+          <span className="font-semibold text-foreground">
+            {formatIDR(scheduled.annualContractValue)}/tahun
+          </span>
+          . Sebelum tanggal tersebut, tarif aktif saat ini tetap digunakan.
+        </>
+      }
+    />
+  );
+}
+
 function Metric({
   label,
   value,
@@ -451,11 +464,11 @@ function Metric({
   icon: typeof CircleDollarSign;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-      <div className="flex items-center gap-2 text-xs text-slate-500">
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Icon className="h-3.5 w-3.5" /> {label}
       </div>
-      <p className="mt-1 truncate text-sm font-semibold text-slate-100">{value}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -693,7 +706,7 @@ export function Pagination({
   if (total <= 0) return null;
   const display = getRoomPaginationDisplay(offset, limit, total);
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
       <span>{display.isEmptyPage ? display.label : `Menampilkan ${display.label}`}</span>
       <div className="flex gap-2">
         <Button
@@ -819,7 +832,7 @@ export function RoomInventoryTable({
                         {room.leaseReconciliationRequired ? (
                           <Badge
                             variant="outline"
-                            className="border-amber-500/30 bg-amber-500/10 text-amber-200"
+                            className="border-warning/30 bg-warning/10 text-warning-foreground"
                           >
                             Perlu rekonsiliasi penyewaan
                           </Badge>
@@ -852,6 +865,7 @@ export function RoomInventoryTable({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => void openDetail(room)}>
+                            <Eye className="mr-2 h-4 w-4" aria-hidden="true" />
                             Lihat detail
                           </DropdownMenuItem>
                           {canCreateAdminBookingLead({
@@ -916,7 +930,7 @@ function draftForKostType(kostType: KostType | null): KostTypeDraft {
     roomSizeM2: kostType?.roomSizeM2 ?? undefined,
     monthlyPrice: authority?.monthlyPrice ?? 1_800_000,
     yearlyPrice: authority?.annualContractValue ?? 21_600_000,
-    effectiveDate: kostType ? "" : jakartaDate(),
+    effectiveDate: kostType?.futureCommercial?.effectiveDate ?? (kostType ? "" : jakartaDate()),
     paymentSchedules: authority?.paymentSchedules ?? ["annual", "two_month_installments"],
     securityDepositMonths: authority?.securityDepositMonths ?? 1,
     publicVisible: kostType?.publicVisible ?? true,
@@ -1253,12 +1267,12 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-slate-200">
+      <Label className="text-foreground">
         {label}
-        {required ? <span className="ml-1 text-rose-300">*</span> : null}
+        {required ? <span className="ml-1 text-destructive">*</span> : null}
       </Label>
       {children}
-      {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
@@ -1820,7 +1834,7 @@ function RoomStatusDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
-      <DialogContent className="border-slate-800 bg-slate-900 text-slate-100">
+      <DialogContent className="border-border bg-background text-foreground">
         <DialogHeader>
           <DialogTitle>Ubah Status Operasional</DialogTitle>
           <DialogDescription>
@@ -1860,7 +1874,7 @@ function RoomStatusDialog({
             </Field>
           </div>
         ) : (
-          <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
             Status ini dikelola oleh lifecycle penyewaan atau tidak memiliki transisi inventori yang
             tersedia.
           </p>

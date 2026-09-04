@@ -85,6 +85,14 @@ export class AdminBillingController {
     return this.w06.paymentWorkspace(user, query);
   }
 
+  @Get('billing/payment-verification-policy')
+  paymentVerificationPolicy(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    return this.w06.adminPaymentVerificationPolicy(user, query.property_id);
+  }
+
   @Get('billing/payment-proofs')
   proofs(@CurrentUser() user: UserAccessContext, @Query() query: AdminW06ProofsQueryDto) {
     return this.w06.proofWorkspace(user, query);

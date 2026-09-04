@@ -103,7 +103,7 @@ export function EvidenceFileUploadField({
           ) : null}
         </div>
         <span
-          className="shrink-0 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+          className="shrink-0 rounded-md border border-amber-400/50 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm shadow-amber-400/20 dark:text-amber-300"
           aria-live="polite"
         >
           {values.length} dari maksimal {maxFiles} file

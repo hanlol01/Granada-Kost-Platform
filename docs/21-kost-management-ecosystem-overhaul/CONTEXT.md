@@ -30,6 +30,7 @@ tenancy, occupancy, payment, and reporting are separate authorities.
 | **Kostation Management Fee**       | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.                      |
 | **Owner Settlement**               | Monthly review artifact that reconciles earned rent, owner entitlement, management fee, adjustments, and payout.                                                                          |
 | **Owner Payout**                   | Money actually disbursed after a settlement is approved. It is not created merely because rent was paid.                                                                                  |
+| **Pembayaran Angsuran Sewa**       | Pembayaran sewa terverifikasi setelah DP atau pembayaran sewa pertama. Nomornya berurutan tetap dalam satu kontrak; Booking Fee dan Security Deposit tidak dihitung, sedangkan pembalikan tidak memakai ulang nomor lama.                                  |
 
 ## Binding Separation Rules
 

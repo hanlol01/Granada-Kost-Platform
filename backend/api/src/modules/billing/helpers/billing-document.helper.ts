@@ -53,6 +53,14 @@ export type BillingReceiptDocumentData = {
   issuedByName?: string | null;
   leaseStart?: string | Date | null;
   leaseEnd?: string | Date | null;
+  leaseTermMonths?: number | null;
+  periodLabel?: string;
+  contractRentAmount?: number | null;
+  rentPaymentSequence?: number | null;
+  totalRentReceived?: number | null;
+  remainingRentAmount?: number | null;
+  finalSettlementDueAt?: string | Date | null;
+  showSettlementSummary?: boolean;
   transactionDirection?: 'incoming' | 'outgoing' | 'correction';
   paymentDescription?: string;
   /** Overrides the standard receipt number caption for non-transaction documents. */
@@ -207,7 +215,10 @@ export type LeaseExitOfficialDocumentSnapshot = {
 };
 
 function idr(value: number): string {
-  return `Rp ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(value)}`;
+  const amount = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(
+    Math.abs(value),
+  );
+  return `${value < 0 ? '-' : ''}Rp. ${amount},-`;
 }
 
 function label(value: string): string {
@@ -215,6 +226,23 @@ function label(value: string): string {
     .split('_')
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+}
+
+function propertyAddressText(
+  propertyName: string | null | undefined,
+  propertyAddress: string | null | undefined,
+  separator: string,
+): string {
+  const name = propertyName?.trim() || '';
+  let address = propertyAddress?.trim() || '';
+  if (
+    /granada student house jatinangor/i.test(name) &&
+    /kab\.\s*sumedang\s*$/i.test(address) &&
+    !/\b45363\b/.test(address)
+  ) {
+    address = `${address} 45363`;
+  }
+  return [name, address].filter(Boolean).join(separator);
 }
 
 export async function createBillingInvoicePdf(
@@ -246,9 +274,7 @@ export async function createBillingInvoicePdf(
 
   const addressLines = wrapText(
     regular,
-    [data.propertyName ?? 'Granada Student House', data.propertyAddress]
-      .filter(Boolean)
-      .join(' - '),
+    propertyAddressText(data.propertyName ?? 'Granada Student House', data.propertyAddress, ' - '),
     8,
     285,
   ).slice(0, 2);
@@ -411,9 +437,35 @@ function receiptDate(value: Date | string | null | undefined, withWeekday = fals
 function receiptPeriod(
   start: BillingReceiptDocumentData['leaseStart'],
   end: BillingReceiptDocumentData['leaseEnd'],
+  termMonths?: number | null,
 ) {
   if (!start) return 'Sesuai alokasi tagihan';
-  return `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
+  const duration = leaseDuration(termMonths ?? inferLeaseTermMonths(start, end));
+  const dates = `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
+  return duration ? `${duration} / ${dates}` : dates;
+}
+
+function inferLeaseTermMonths(
+  start: BillingReceiptDocumentData['leaseStart'],
+  end: BillingReceiptDocumentData['leaseEnd'],
+): number | null {
+  if (!start || !end) return null;
+  const startDate =
+    start instanceof Date ? start : new Date(`${String(start).slice(0, 10)}T00:00:00Z`);
+  const endDate = end instanceof Date ? end : new Date(`${String(end).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  const months =
+    (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+    endDate.getUTCMonth() -
+    startDate.getUTCMonth();
+  return months > 0 ? months : null;
+}
+
+function leaseDuration(termMonths?: number | null): string | null {
+  if (!termMonths || termMonths < 1) return null;
+  const years = Math.floor(termMonths / 12);
+  const months = termMonths % 12;
+  return [years ? `${years} tahun` : '', months ? `${months} bulan` : ''].filter(Boolean).join(' ');
 }
 
 function formatRoomDescription(roomNumber: string, buildingCode?: string | null): string {
@@ -472,19 +524,21 @@ function terbilang(value: number): string {
 }
 
 function wrapText(font: PDFFont, text: string, size: number, width: number): string[] {
-  const words = text.replace(/\s+/g, ' ').trim().split(' ');
   const lines: string[] = [];
-  let line = '';
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (line && font.widthOfTextAtSize(candidate, size) > width) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = candidate;
+  for (const paragraph of text.split(/\r?\n/)) {
+    const words = paragraph.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && font.widthOfTextAtSize(candidate, size) > width) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
     }
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
   return lines.length ? lines : ['-'];
 }
 
@@ -535,7 +589,7 @@ export async function createBillingReceiptPdf(
 
   const addressLines = wrapText(
     regular,
-    [data.propertyName ?? 'Kostation', data.propertyAddress].filter(Boolean).join(' · '),
+    propertyAddressText(data.propertyName ?? 'Kostation', data.propertyAddress, ' · '),
     8,
     285,
   ).slice(0, 2);
@@ -591,10 +645,25 @@ export async function createBillingReceiptPdf(
   const paymentDescription =
     data.paymentDescription ??
     (data.contractSettled
-      ? 'Pelunasan kontrak sewa'
-      : `${receiptPurpose[data.paymentPurpose] ?? label(data.paymentPurpose)}${
-          allocationText ? ` · ${allocationText}` : ''
-        }`);
+      ? `Pelunasan Sewa Kontrak${
+          data.contractRentAmount != null
+            ? `\n(dari total kontrak ${idr(data.contractRentAmount)})`
+            : ''
+        }`
+      : data.paymentPurpose === 'rent' && (data.rentPaymentSequence ?? 0) >= 2
+        ? `Pembayaran Angsuran Sewa ke-${data.rentPaymentSequence}${
+            data.contractRentAmount != null
+              ? `\n(dari total kontrak ${idr(data.contractRentAmount)})`
+              : ''
+          }`
+        : `${receiptPurpose[data.paymentPurpose] ?? label(data.paymentPurpose)}${
+            data.contractRentAmount != null &&
+            ['booking_fee', 'dp', 'down_payment', 'full_settlement'].includes(data.paymentPurpose)
+              ? `\n(dari total kontrak ${idr(data.contractRentAmount)})`
+              : allocationText
+                ? ` · ${allocationText}`
+                : ''
+          }`);
   const method = paymentMethodLabel[data.paymentMethod] ?? label(data.paymentMethod);
   const partyLabel =
     data.transactionDirection === 'outgoing'
@@ -608,7 +677,10 @@ export async function createBillingReceiptPdf(
     ['Uang sejumlah', idr(data.amount)],
     ['Untuk pembayaran', paymentDescription],
     ['Tanggal pembayaran', receiptDate(data.paidAt, true)],
-    ['Periode sewa', receiptPeriod(data.leaseStart, data.leaseEnd)],
+    [
+      data.periodLabel ?? 'Periode sewa',
+      receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths),
+    ],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Pembayaran via', method],
   ];
@@ -648,7 +720,49 @@ export async function createBillingReceiptPdf(
     });
   });
 
-  const footerY = Math.max(120, y - terbilangHeight - 92);
+  y -= terbilangHeight;
+  if (
+    data.showSettlementSummary &&
+    data.contractRentAmount != null &&
+    data.totalRentReceived != null &&
+    data.remainingRentAmount != null
+  ) {
+    const summaryRows: Array<[string, string]> = [
+      ['Total kontrak', idr(data.contractRentAmount)],
+      ['Total telah diterima', idr(data.totalRentReceived)],
+      ['Sisa pelunasan', idr(data.remainingRentAmount)],
+      [
+        'Batas akhir pelunasan',
+        data.remainingRentAmount <= 0 ? 'Lunas' : receiptDate(data.finalSettlementDueAt ?? null),
+      ],
+    ];
+    const summaryHeight = 18 + summaryRows.length * 15;
+    y -= 10;
+    page.drawRectangle({
+      x: 82,
+      y: y - summaryHeight,
+      width: 432,
+      height: summaryHeight,
+      borderColor: border,
+      borderWidth: 1,
+      color: rgb(0.985, 0.985, 0.985),
+    });
+    summaryRows.forEach(([summaryLabel, summaryValue], index) => {
+      const rowY = y - 18 - index * 15;
+      page.drawText(summaryLabel, { x: 96, y: rowY, size: 9, font: bold, color: navy });
+      page.drawText(':', { x: 223, y: rowY, size: 9, font: regular, color: muted });
+      page.drawText(summaryValue, {
+        x: 238,
+        y: rowY,
+        size: 9,
+        font: summaryLabel === 'Sisa pelunasan' ? bold : regular,
+        color: navy,
+      });
+    });
+    y -= summaryHeight;
+  }
+
+  const footerY = Math.max(120, y - 92);
   const issuer = data.issuedByName?.trim() || `Pengelola ${data.propertyName ?? 'Kostation'}`;
   page.drawText('Jatinangor Sumedang,', {
     x: 52,

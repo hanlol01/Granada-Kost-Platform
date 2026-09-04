@@ -129,6 +129,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   'billing.onboarding_cash_recorded': 'Pembayaran tunai onboarding dicatat',
   'billing.transfer_recorded': 'Transfer pembayaran dicatat',
   'billing.payment_verified': 'Pembayaran diverifikasi',
+  'billing.payment_auto_verified': 'Pembayaran terverifikasi otomatis',
   'billing.payment_rejected': 'Pembayaran ditolak',
   'billing.payment_reversed': 'Pembayaran dibalik',
   'billing.payment_proof_submitted': 'Bukti pembayaran dikirim',

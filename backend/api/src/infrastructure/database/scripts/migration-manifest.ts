@@ -597,4 +597,27 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_immutable' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '062_booking_payment_actual_paid_at.sql',
+    checksumSha256: 'bc8ec9179e200d29db3d2241bca12e7f680017b937689b6fc45629d131c4f128',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='paid_at' AND is_nullable='NO')",
+    ],
+  },
+  {
+    version: '063_onboarding_payment_amount_limits.sql',
+    checksumSha256: 'e6864b78e4dff3d2c34088b65f9b6b9ee37caa5a811790917d5b21f20f8692f1',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_rent_credit_limit_check' AND conrelid=to_regclass('public.onboarding_commitments'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_security_deposit_limit_check' AND conrelid=to_regclass('public.onboarding_commitments'))",
+    ],
+  },
+  {
+    version: '064_receipt_commercial_snapshots.sql',
+    checksumSha256: '0d4c608dbf43b4078440289dbc22de6e77e2aed9c3d1f0fa6b0807127b3b2af8',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='contract_rent_amount')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_lead_payment_commitments_contract_rent_check' AND conrelid=to_regclass('public.booking_lead_payment_commitments'))",
+    ],
+  },
 ] as const;

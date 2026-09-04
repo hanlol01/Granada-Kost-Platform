@@ -56,6 +56,47 @@ void test('branded receipt renderer creates a one-page PDF with the canonical re
   assert.equal(loaded.getPageCount(), 1);
 });
 
+void test('rent installment receipt states its sequence, contract, period, balance, and deadline', async () => {
+  const result = await createBillingReceiptPdf({
+    receiptCode: '004-09/SEWA-KOST/GSH1/2026',
+    paymentCode: 'TRX-20260822-000001-SEWA',
+    paymentMethod: 'bank_transfer',
+    paymentPurpose: 'rent',
+    residentName: 'Deyaa',
+    roomNumber: 'AK-05-02',
+    buildingCode: 'AK-05',
+    amount: 2_000_000,
+    paidAt: new Date('2026-08-22T10:30:00+07:00'),
+    issuedAt: new Date('2026-08-22T10:31:00+07:00'),
+    allocations: [],
+    propertyName: 'Granada Student House Jatinangor',
+    propertyAddress: 'Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363',
+    issuedByName: 'Diki Karya Permana',
+    leaseStart: '2026-08-01',
+    leaseEnd: '2027-08-01',
+    leaseTermMonths: 12,
+    contractRentAmount: 21_600_000,
+    rentPaymentSequence: 2,
+    totalRentReceived: 18_300_000,
+    remainingRentAmount: 3_300_000,
+    finalSettlementDueAt: new Date('2026-11-01T16:59:59.999Z'),
+    showSettlementSummary: true,
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /Pembayaran Angsuran Sewa ke-2/);
+  assert.match(text, /dari total kontrak Rp\. 21\.600\.000,-/);
+  assert.match(text, /1 tahun \/ 1 Agustus 2026 s\.d\. 1 Agustus 2027/);
+  assert.match(text, /Uang sejumlah\s+:\s+Rp\. 2\.000\.000,-/);
+  assert.match(text, /Sisa pelunasan\s+:\s+Rp\. 3\.300\.000,-/);
+  assert.match(text, /Batas akhir pelunasan\s+:\s+1 November 2026/);
+  assert.match(text, /Kab\. Sumedang 45363/);
+});
+
 void test('contract-paid proof is a distinct one-page document for the full lease obligation', async () => {
   const result = await createContractPaidDocumentPdf({
     documentCode: '001-09/KONTRAK-LUNAS/GSH1/2026',

@@ -20,9 +20,15 @@ import { useFilePreview } from "@/hooks/useFileUpload";
 import { formatFileSize, isImageMime, isPdfMime, fetchFileBlob } from "@/lib/file-utils";
 import type { FileResponse } from "@granada-kost/domain";
 
+export type FilePreviewReference = Pick<
+  FileResponse,
+  "id" | "original_filename" | "mime_type" | "file_size_bytes"
+> &
+  Partial<Pick<FileResponse, "sanitized_filename">>;
+
 export type FilePreviewModalProps = {
   /** File metadata from the backend. Null = modal closed. */
-  file: FileResponse | null;
+  file: FilePreviewReference | null;
   /** Called when the modal is closed. */
   onClose: () => void;
 };

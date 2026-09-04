@@ -1,5 +1,6 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
@@ -15,6 +16,7 @@ import {
   MaxLength,
   Min,
   Length,
+  ValidateNested,
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -22,6 +24,26 @@ const optionalTrim = ({ value }: { value: unknown }) => {
   const normalized = trim({ value });
   return normalized === '' ? undefined : normalized;
 };
+
+export class CommitOnboardingPaymentEntryDto {
+  @IsIn(['rent', 'booking_fee', 'security_deposit'])
+  purpose!: 'rent' | 'booking_fee' | 'security_deposit';
+
+  @IsInt() @Min(1) amount!: number;
+
+  @IsIn(['cash', 'bank_transfer']) method!: 'cash' | 'bank_transfer';
+
+  @IsDateString() paid_at!: string;
+
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  evidence_file_ids?: string[];
+
+  @IsOptional() @Transform(optionalTrim) @IsString() @MaxLength(500) note?: string;
+}
 
 export class CommitOnboardingDto {
   @IsUUID('4') property_id!: string;
@@ -58,6 +80,7 @@ export class CommitOnboardingDto {
   @IsInt() @Min(0) security_deposit_funded_amount!: number;
   @IsInt() @Min(0) @IsOptional() booking_fee_paid_amount?: number;
   @IsIn(['cash', 'bank_transfer']) payment_method!: 'cash' | 'bank_transfer';
+  @IsDateString() @IsOptional() payment_paid_at?: string;
   @IsArray()
   @ArrayMaxSize(5)
   @ArrayUnique()
@@ -65,5 +88,12 @@ export class CommitOnboardingDto {
   @IsOptional()
   payment_evidence_file_ids?: string[];
   @IsOptional() @Transform(trim) @IsString() @MaxLength(500) payment_note?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => CommitOnboardingPaymentEntryDto)
+  @IsOptional()
+  payment_entries?: CommitOnboardingPaymentEntryDto[];
   @IsOptional() @Transform(trim) @IsString() @MaxLength(500) notes?: string;
 }

@@ -555,7 +555,7 @@ export const DEV_NOTIFICATION_PREFERENCE_SEEDS: DevNotificationPreferenceSeedRec
 export const GRANADA_PROPERTY = {
   id: CORE_SEED_IDS.granadaProperty,
   name: 'Granada Student House Jatinangor',
-  address: 'Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang',
+  address: 'Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363',
   timezone: 'Asia/Jakarta',
   status: 'active',
 } as const;

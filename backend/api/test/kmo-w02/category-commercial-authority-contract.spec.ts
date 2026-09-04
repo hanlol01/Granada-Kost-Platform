@@ -381,7 +381,9 @@ function currentVersion() {
   };
 }
 
-function updateHarness(options: { future?: boolean; auditFails?: boolean } = {}) {
+function updateHarness(
+  options: { future?: boolean; auditFails?: boolean; driverReturnsDates?: boolean } = {},
+) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   const client = {
     query: async (sql: string, values: unknown[] = []) => {
@@ -397,10 +399,21 @@ function updateHarness(options: { future?: boolean; auditFails?: boolean } = {})
         return { rows: [{ today: '2026-07-31' }] };
       }
       if (sql.includes('FROM kost_type_commercial_versions') && sql.includes('FOR UPDATE')) {
+        const returnsIsoText = sql.includes('effective_date::text AS effective_date');
+        const effectiveDate =
+          options.driverReturnsDates && !returnsIsoText
+            ? new Date('2026-07-01T00:00:00+07:00')
+            : '2026-07-01';
+        const futureEffectiveDate =
+          options.driverReturnsDates && !returnsIsoText
+            ? new Date('2026-08-15T00:00:00+07:00')
+            : '2026-08-15';
         return {
           rows: [
-            currentVersion(),
-            ...(options.future ? [{ ...currentVersion(), effective_date: '2026-08-15' }] : []),
+            { ...currentVersion(), effective_date: effectiveDate },
+            ...(options.future
+              ? [{ ...currentVersion(), effective_date: futureEffectiveDate }]
+              : []),
           ],
         };
       }
@@ -409,6 +422,7 @@ function updateHarness(options: { future?: boolean; auditFails?: boolean } = {})
           rows: [{ ...lockedKostType(), updated_at: new Date('2026-07-31T00:00:00.000Z') }],
         };
       }
+      if (/^\s*UPDATE kost_type_commercial_versions/.test(sql)) return { rows: [] };
       if (sql.includes('INSERT INTO kost_type_commercial_versions')) return { rows: [] };
       if (
         sql.includes('FROM kost_type_commercial_versions') &&
@@ -538,6 +552,46 @@ test('commercial update fails closed when a future version is already locked', a
   );
   assert.equal(harness.auditClients.length, 0);
   assert.equal(harness.rootQueryCount(), 0);
+});
+
+test('commercial update can revise the already scheduled effective date', async () => {
+  const harness = updateHarness({ future: true });
+  const response = await harness.service.updateKostType(
+    { id: actorId, roles: ['admin'], propertyIds: [propertyId] } as never,
+    kostTypeId,
+    updateBody('2026-08-15'),
+    {} as never,
+    'future-revise',
+  );
+
+  assert.equal(response.data.property_id, propertyId);
+  assert.equal(
+    harness.calls.some(({ sql }) => /UPDATE kost_type_commercial_versions/.test(sql)),
+    true,
+  );
+  assert.equal(
+    harness.calls.some(({ sql }) => sql.includes('INSERT INTO kost_type_commercial_versions')),
+    false,
+  );
+});
+
+test('commercial update compares locked PostgreSQL dates as canonical ISO text', async () => {
+  const harness = updateHarness({ future: true, driverReturnsDates: true });
+  const response = await harness.service.updateKostType(
+    { id: actorId, roles: ['admin'], propertyIds: [propertyId] } as never,
+    kostTypeId,
+    updateBody('2026-08-15'),
+    {} as never,
+    'postgres-date-normalization',
+  );
+
+  assert.equal(response.data.property_id, propertyId);
+  assert.match(
+    harness.calls.find(
+      ({ sql }) => sql.includes('FROM kost_type_commercial_versions') && sql.includes('FOR UPDATE'),
+    )!.sql,
+    /effective_date::text AS effective_date/,
+  );
 });
 
 test('commercial update keeps future rate, audit, and command completion atomic', async () => {

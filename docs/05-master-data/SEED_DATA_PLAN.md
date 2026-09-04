@@ -269,7 +269,7 @@ Sumber: `MASTER_DATA_KOSTATION.docx` dan `DATA_KAMAR_GRANADA.xlsx` (Sheet6)
 |---|---|---|
 | `id` | **Deterministic UUID** — hardcoded atau UUID v5 dari name | Convention |
 | `name` | `Granada Student House Jatinangor` | Sheet6 + DOCX |
-| `address` | `Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang` | DOCX Pasal perjanjian |
+| `address` | `Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363` | DOCX Pasal perjanjian |
 | `phone` | `NULL` | Belum tersedia — input manual nanti |
 | `email` | `NULL` | Belum tersedia — input manual nanti |
 | `timezone` | `Asia/Jakarta` | Default (Jatinangor = WIB) |

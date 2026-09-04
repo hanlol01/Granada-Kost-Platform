@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { resolve } from 'node:path';
 import { LoggerModule } from 'nestjs-pino';
 import configuration from './infrastructure/config/configuration';
 import { environmentValidationSchema } from './infrastructure/config/environment.validation';
@@ -40,6 +41,7 @@ import { ActivityLogModule } from './modules/activity-log/activity-log.module';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      envFilePath: [resolve(__dirname, '../.env.local'), resolve(__dirname, '../.env')],
       load: [configuration],
       validationSchema: environmentValidationSchema,
       validationOptions: {

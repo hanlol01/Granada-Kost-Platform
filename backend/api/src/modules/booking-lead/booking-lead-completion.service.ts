@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
@@ -21,6 +22,7 @@ import {
 } from '../billing/services/w06-billing.service';
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
 import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
+import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
 
 type ContextRow = {
   lead_id: string;
@@ -63,9 +65,11 @@ type CommitmentRow = {
   verification_status: string;
   payment_note: string | null;
   payment_evidence_file_ids: string[];
+  paid_at: Date;
   start_date: string | Date;
   term_months: number;
   end_date: string | Date;
+  contract_rent_amount: string | number | null;
   billing_cycle: string;
   payment_plan_type: string;
   materialized_onboarding_commitment_id: string | null;
@@ -249,6 +253,8 @@ export class BookingLeadCompletionService {
   constructor(
     private readonly database: DatabaseService,
     private readonly billing: W06BillingService,
+    @Optional()
+    private readonly paymentVerificationPolicy?: AdminPaymentVerificationPolicyService,
   ) {}
 
   async complete(
@@ -285,8 +291,22 @@ export class BookingLeadCompletionService {
       const rentTotal = this.contractRent(context, dto);
       this.assertPayment(dto, rentTotal);
       const endDate = await this.endDate(client, dto.start_date, dto.term_months);
-      const verificationStatus =
-        dto.payment_method === 'cash' ? 'verified' : 'pending_confirmation';
+      const verificationDecision = this.paymentVerificationPolicy?.decide(
+        dto.property_id,
+        dto.payment_method,
+      ) ?? {
+        status:
+          dto.payment_method === 'cash' ? ('verified' as const) : ('pending_confirmation' as const),
+        automaticallyVerified: false,
+        policy: { requiresActualPaymentDate: false },
+      };
+      const verificationStatus = verificationDecision.status;
+      if (verificationDecision.policy.requiresActualPaymentDate && !dto.payment_paid_at) {
+        throw new BadRequestException({
+          code: 'PAYMENT_PAID_AT_REQUIRED',
+          message: 'Actual payment date is required while historical-entry mode is active',
+        });
+      }
       if (dto.payment_method === 'bank_transfer' && !dto.payment_evidence_file_ids?.length) {
         throw new BadRequestException({
           code: 'BOOKING_LEAD_PAYMENT_EVIDENCE_REQUIRED',
@@ -303,8 +323,8 @@ export class BookingLeadCompletionService {
         `INSERT INTO booking_lead_payment_commitments(
             property_id, booking_lead_id, hold_id, room_id, payment_type, receipt_code, transaction_code,
             rent_credit_amount, security_deposit_amount, payment_method, verification_status,
-            payment_note, payment_evidence_file_ids, start_date, term_months, end_date,
-            billing_cycle, payment_plan_type, created_by_user_id
+            payment_note, payment_evidence_file_ids, paid_at, start_date, term_months, end_date,
+            billing_cycle, payment_plan_type, contract_rent_amount, created_by_user_id
           ) VALUES(
             $1,$2,$3,$4,$5,
             next_billing_document_number(
@@ -323,9 +343,10 @@ export class BookingLeadCompletionService {
                 WHEN 'down_payment' THEN 'DP'
                 ELSE 'LUNAS'
               END,
-              now()
+              COALESCE($12::timestamptz,now())
             ),
-            $6,$7,$8,$9,$10,$11::uuid[],$12::date,$13,$14::date,$15,$16,$17
+            $6,$7,$8,$9,$10,$11::uuid[],COALESCE($12::timestamptz,now()),
+            $13::date,$14,$15::date,$16,$17,$18,$19
           )
           RETURNING *`,
         [
@@ -340,11 +361,13 @@ export class BookingLeadCompletionService {
           verificationStatus,
           dto.payment_note ?? null,
           dto.payment_evidence_file_ids ?? [],
+          dto.payment_paid_at ?? null,
           dto.start_date,
           dto.term_months,
           endDate,
           dto.billing_cycle,
           dto.payment_plan_type,
+          rentTotal,
           actorUserId,
         ],
       );
@@ -382,7 +405,8 @@ export class BookingLeadCompletionService {
           dto.visitor_university ?? null,
         ],
       );
-      const body = { data: this.response(commitment) };
+      const response = this.response(commitment);
+      const body = { data: response };
       await this.auditAndOutbox(
         client,
         dto.property_id,
@@ -390,7 +414,14 @@ export class BookingLeadCompletionService {
         leadId,
         actorUserId,
         correlationId,
-        this.response(commitment),
+        {
+          ...response,
+          verification_source: verificationDecision.automaticallyVerified
+            ? 'automatic_historical_admin_entry'
+            : verificationStatus === 'verified'
+              ? 'cash_admin_entry'
+              : 'manual_review_required',
+        },
       );
       await this.completeClaim(client, actorUserId, key, body, commitment.id);
       await client.query('COMMIT');
@@ -846,21 +877,26 @@ export class BookingLeadCompletionService {
       payment_method: string;
       verification_status: string;
       rent_credit_amount: string | number;
+      paid_at: Date;
       created_at: Date;
       visitor_name: string;
       room_number: string;
       building_code: string | null;
       start_date: string;
       end_date: string | null;
+      term_months: number;
+      contract_rent_amount: string | number | null;
       property_name: string;
       property_address: string;
       issued_by_name: string | null;
     }>(
       `SELECT commitment.id AS commitment_id,commitment.receipt_code,commitment.transaction_code,
               commitment.payment_type,commitment.payment_method,
-              commitment.verification_status,commitment.rent_credit_amount,commitment.created_at,
+              commitment.verification_status,commitment.rent_credit_amount,
+              commitment.paid_at,commitment.created_at,
               lead.visitor_name,room.number AS room_number,building.building_code AS building_code,
               commitment.start_date::text AS start_date,commitment.end_date::text AS end_date,
+              commitment.term_months,commitment.contract_rent_amount,
               property.name AS property_name,property.address AS property_address,
               issuer.display_name AS issued_by_name
          FROM booking_lead_payment_commitments commitment
@@ -895,7 +931,7 @@ export class BookingLeadCompletionService {
       roomNumber: row.room_number,
       buildingCode: row.building_code,
       amount: Number(row.rent_credit_amount),
-      paidAt: verified ? row.created_at : null,
+      paidAt: verified ? row.paid_at : null,
       issuedAt: row.created_at,
       allocations: [],
       documentTitle: `${verified ? 'KUITANSI' : 'NOTA'} ${documentSubject}`,
@@ -907,6 +943,10 @@ export class BookingLeadCompletionService {
       issuedByName: row.issued_by_name,
       leaseStart: row.start_date,
       leaseEnd: row.end_date,
+      leaseTermMonths: row.term_months,
+      periodLabel: row.payment_type === 'booking_fee' ? 'Rencana periode sewa' : 'Periode sewa',
+      contractRentAmount:
+        row.contract_rent_amount == null ? null : Number(row.contract_rent_amount),
     });
   }
 
@@ -925,6 +965,9 @@ export class BookingLeadCompletionService {
       visitor_name: string;
       room_number: string | null;
       building_code: string | null;
+      start_date: string;
+      end_date: string;
+      term_months: number;
       property_name: string;
       property_address: string;
       issued_by_name: string | null;
@@ -932,13 +975,17 @@ export class BookingLeadCompletionService {
       `SELECT refund.id AS refund_id,refund.receipt_code,refund.transaction_code,
                refund.refund_amount,refund.refund_method,refund.refund_note,
                refund.refunded_at,lead.visitor_name,room.number AS room_number,
-               building.building_code AS building_code
+               building.building_code AS building_code,
+               commitment.start_date::text AS start_date,commitment.end_date::text AS end_date,
+               commitment.term_months
                ,property.name AS property_name,property.address AS property_address,
                issuer.display_name AS issued_by_name
          FROM booking_lead_payment_commitment_refunds refund
          JOIN properties property ON property.id=refund.property_id
          JOIN booking_leads lead ON lead.id=refund.booking_lead_id
            AND lead.property_id=refund.property_id
+         JOIN booking_lead_payment_commitments commitment
+           ON commitment.id=refund.commitment_id AND commitment.property_id=refund.property_id
          JOIN booking_lead_holds hold ON hold.id=refund.hold_id AND hold.property_id=refund.property_id
          LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=refund.property_id
          LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
@@ -971,6 +1018,10 @@ export class BookingLeadCompletionService {
       propertyName: row.property_name,
       propertyAddress: row.property_address,
       issuedByName: row.issued_by_name,
+      leaseStart: row.start_date,
+      leaseEnd: row.end_date,
+      leaseTermMonths: row.term_months,
+      periodLabel: 'Rencana periode sewa',
     });
   }
 

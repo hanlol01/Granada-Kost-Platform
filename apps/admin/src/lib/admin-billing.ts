@@ -111,6 +111,7 @@ export type BillingPayment = {
   reversal_reason: string | null;
   reversed_at: string | null;
   allocations: BillingAllocation[];
+  evidence: BillingEvidence[];
 };
 export type BillingWorkspacePayment = BillingPayment & {
   resident_id: string;
@@ -131,8 +132,8 @@ export type BillingReceipt = {
   issued_at: string;
   snapshot: {
     payment_code: string;
-    payment_method: W06PaymentMethod;
-    payment_purpose: W06PaymentPurpose;
+    payment_method: W06PaymentMethod | null;
+    payment_purpose: W06PaymentPurpose | null;
     lease_id: string | null;
     allocations: BillingAllocation[];
   };
@@ -337,6 +338,14 @@ export type SafePaymentResult = {
   receipt_id: string | null;
 };
 
+export type AdminPaymentVerificationPolicy = {
+  mode: "manual" | "automatic_admin_entry";
+  automaticVerificationActive: boolean;
+  automaticVerificationUntil: string | null;
+  requiresActualPaymentDate: boolean;
+  transferEvidenceRequired: boolean;
+};
+
 export type ContractSettlementExtensionInput = {
   property_id: string;
   extension_days: number;
@@ -408,6 +417,10 @@ function integer(value: unknown, label: string): number {
     throw new Error(`${label} tidak valid.`);
   return value;
 }
+function serializedInteger(value: unknown, label: string): number {
+  const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+  return integer(parsed, label);
+}
 function flag(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") throw new Error(`${label} tidak valid.`);
   return value;
@@ -466,10 +479,12 @@ function payment(value: unknown): BillingPayment {
       "reversal_reason",
       "reversed_at",
       "allocations",
+      "evidence",
     ],
     "pembayaran",
   );
   if (!Array.isArray(record.allocations)) throw new Error("Alokasi pembayaran tidak valid.");
+  if (!Array.isArray(record.evidence)) throw new Error("Bukti pembayaran tidak valid.");
   return {
     id: uuid(record.id, "ID pembayaran"),
     payment_code: text(record.payment_code, "Kode pembayaran"),
@@ -489,6 +504,7 @@ function payment(value: unknown): BillingPayment {
     reversal_reason: nullable(record.reversal_reason, (item) => text(item, "Alasan reversal")),
     reversed_at: nullable(record.reversed_at, (item) => timestamp(item, "Waktu reversal")),
     allocations: record.allocations.map(allocation),
+    evidence: record.evidence.map(evidence),
   };
 }
 
@@ -559,6 +575,7 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
     reversal_reason: record.reversal_reason,
     reversed_at: record.reversed_at,
     allocations: record.allocations,
+    evidence: record.evidence,
   });
   return {
     ...base,
@@ -1152,19 +1169,35 @@ export function parseBillingReceipt(value: unknown): BillingReceipt {
             "document",
           ]
         : ["payment_code", "payment_method", "payment_purpose", "lease_id", "allocations"]
-      : Object.prototype.hasOwnProperty.call(rawSnapshot, "source")
-        ? ["payment_code", "reason", "source", "document"]
-        : ["payment_code", "reason", "document"],
+      : hasDocument
+        ? Object.prototype.hasOwnProperty.call(rawSnapshot, "source")
+          ? ["payment_code", "reason", "source", "document"]
+          : ["payment_code", "reason", "document"]
+        : Object.prototype.hasOwnProperty.call(rawSnapshot, "source")
+          ? ["payment_code", "reason", "source"]
+          : ["payment_code", "reason"],
     "snapshot kuitansi",
   );
 
   let paymentCode: string;
-  let paymentMethod: W06PaymentMethod;
-  let paymentPurpose: W06PaymentPurpose;
+  let paymentMethod: W06PaymentMethod | null = null;
+  let paymentPurpose: W06PaymentPurpose | null = null;
   let leaseId: string | null = null;
   let allocations: BillingAllocation[] = [];
 
   if (hasDocument) {
+    const optionalDocumentKeys = [
+      "building_code",
+      "lease_term_months",
+      "contract_rent_amount",
+      "rent_payment_sequence",
+      "total_rent_received",
+      "remaining_rent_amount",
+      "final_settlement_due_at",
+    ] as const;
+    const presentOptionalDocumentKeys = optionalDocumentKeys.filter((key) =>
+      Object.prototype.hasOwnProperty.call(snapshot.document, key),
+    );
     const document = object(
       snapshot.document,
       [
@@ -1178,6 +1211,7 @@ export function parseBillingReceipt(value: unknown): BillingReceipt {
         "paid_at",
         "resident_name",
         "room_number",
+        ...presentOptionalDocumentKeys,
         "lease_start",
         "lease_end",
         "property_name",
@@ -1203,6 +1237,30 @@ export function parseBillingReceipt(value: unknown): BillingReceipt {
     nullable(document.paid_at, (item) => timestamp(item, "Waktu pembayaran kuitansi"));
     text(document.resident_name, "Nama penghuni kuitansi");
     text(document.room_number, "Nomor kamar kuitansi");
+    if (presentOptionalDocumentKeys.includes("building_code"))
+      text(document.building_code, "Kode bangunan kuitansi");
+    if (presentOptionalDocumentKeys.includes("lease_term_months"))
+      nullable(document.lease_term_months, (item) => integer(item, "Durasi sewa kuitansi"));
+    if (presentOptionalDocumentKeys.includes("contract_rent_amount"))
+      nullable(document.contract_rent_amount, (item) =>
+        serializedInteger(item, "Nilai kontrak kuitansi"),
+      );
+    if (presentOptionalDocumentKeys.includes("rent_payment_sequence"))
+      nullable(document.rent_payment_sequence, (item) =>
+        serializedInteger(item, "Urutan pembayaran kuitansi"),
+      );
+    if (presentOptionalDocumentKeys.includes("total_rent_received"))
+      nullable(document.total_rent_received, (item) =>
+        serializedInteger(item, "Total sewa diterima"),
+      );
+    if (presentOptionalDocumentKeys.includes("remaining_rent_amount"))
+      nullable(document.remaining_rent_amount, (item) =>
+        serializedInteger(item, "Sisa pelunasan kuitansi"),
+      );
+    if (presentOptionalDocumentKeys.includes("final_settlement_due_at"))
+      nullable(document.final_settlement_due_at, (item) =>
+        timestamp(item, "Batas pelunasan kuitansi"),
+      );
     nullable(document.lease_start, (item) => date(item, "Tanggal mulai sewa kuitansi"));
     nullable(document.lease_end, (item) => date(item, "Tanggal akhir sewa kuitansi"));
     text(document.property_name, "Nama properti kuitansi");
@@ -1226,13 +1284,15 @@ export function parseBillingReceipt(value: unknown): BillingReceipt {
       if (!Array.isArray(snapshot.allocations)) throw new Error("Alokasi kuitansi tidak valid.");
       allocations = snapshot.allocations.map(allocation);
     }
-  } else {
+  } else if (receiptKind === "payment") {
     if (!Array.isArray(snapshot.allocations)) throw new Error("Alokasi kuitansi tidak valid.");
     paymentCode = text(snapshot.payment_code, "Kode pembayaran kuitansi");
     paymentMethod = oneOf(snapshot.payment_method, W06_PAYMENT_METHODS, "Metode kuitansi");
     paymentPurpose = oneOf(snapshot.payment_purpose, W06_PAYMENT_PURPOSES, "Tujuan kuitansi");
     leaseId = uuid(snapshot.lease_id, "ID kontrak kuitansi");
     allocations = snapshot.allocations.map(allocation);
+  } else {
+    paymentCode = text(snapshot.payment_code, "Kode pembayaran kuitansi");
   }
   return {
     id: uuid(receipt.id, "ID kuitansi"),
@@ -1457,6 +1517,42 @@ export async function getBillingPayments(
       signal,
     }),
   );
+}
+
+export async function getAdminPaymentVerificationPolicy(
+  propertyId: string,
+  signal?: AbortSignal,
+  requester: Requester = adminUxV2Requester,
+): Promise<AdminPaymentVerificationPolicy> {
+  const response = object(
+    await requester.get<unknown>("/admin/billing/payment-verification-policy", {
+      query: { property_id: propertyId },
+      signal,
+    }),
+    ["data"],
+    "kebijakan verifikasi pembayaran",
+  );
+  const data = object(
+    response.data,
+    [
+      "mode",
+      "automaticVerificationActive",
+      "automaticVerificationUntil",
+      "requiresActualPaymentDate",
+      "transferEvidenceRequired",
+    ],
+    "kebijakan verifikasi pembayaran",
+  );
+  if (
+    !["manual", "automatic_admin_entry"].includes(String(data.mode)) ||
+    typeof data.automaticVerificationActive !== "boolean" ||
+    typeof data.requiresActualPaymentDate !== "boolean" ||
+    typeof data.transferEvidenceRequired !== "boolean" ||
+    (data.automaticVerificationUntil !== null &&
+      typeof data.automaticVerificationUntil !== "string")
+  )
+    throw new Error("Respons kebijakan verifikasi pembayaran tidak valid.");
+  return data as AdminPaymentVerificationPolicy;
 }
 export async function getBillingProofs(
   input: {

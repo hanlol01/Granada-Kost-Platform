@@ -25,7 +25,7 @@ Dokumen ini menganalisis dan memetakan data dari sumber master data operasional 
 | **Data Kontrak** | Dokumen DOCX berisi template perjanjian sewa, bukan data kontrak riil |
 | **Budget Target** | RuKost: Rp 2.656.800.000, ApartKost: Rp 864.000.000, Total: Rp 3.520.800.000 |
 | **Nama Properti Resmi** | KOST GRANADA STUDENT HOUSE JATINANGOR (GSH JATINANGOR 1) |
-| **Alamat** | Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang |
+| **Alamat** | Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363 |
 | **Rekening** | BSI 7318321153 a/n PT SON SMART LIVING |
 
 ---
@@ -48,7 +48,7 @@ Dokumen ini berisi **template perjanjian sewa menyewa** (Surat Perjanjian Sewa K
 
 - Pihak Kesatu: Manajemen KOST GRANADA STUDENT HOUSE JATINANGOR (Pengelola Kost)
 - Pihak Kedua: Penyewa (field kosong, template)
-- Alamat: Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang
+- Alamat: Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363
 - Metode pembayaran: Transfer BSI 7318321153 a/n PT SON SMART LIVING
 - Aturan kos: jam malam 21:00, larangan tamu lawan jenis, larangan merokok, larangan narkoba
 - Force Majeure, sanksi, dan ketentuan hukum
@@ -441,7 +441,7 @@ Data berikut **harus** diinput secara manual karena tidak tersedia di sumber man
 | Data dari DOCX | Tabel | Kolom | Nilai |
 |---|---|---|---|
 | Nama property | `properties` | `name` | `KOST GRANADA STUDENT HOUSE JATINANGOR` |
-| Alamat | `properties` | `address` | `Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang` |
+| Alamat | `properties` | `address` | `Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363` |
 | Jam malam | `property_settings` | `quiet_hour_start` | `21:00:00` (dari Pasal 6: tamu melebihi jam malam 21:00) |
 | Batas laporan tamu | `property_settings` | `guest_report_deadline` | `21:00:00` |
 | Rekening pembayaran | — | — | BSI 7318321153 a/n PT SON SMART LIVING (perlu tabel tersendiri) |
@@ -477,7 +477,7 @@ Dari DOCX Pasal 5 dan 6, peraturan yang bisa di-seed:
 ```
 Tabel: properties
 - 1 property: "Granada Student House Jatinangor"
-- address: "Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang"
+- address: "Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363"
 - status: "active"
 
 Tabel: property_settings
@@ -680,7 +680,7 @@ Sebelum seed data dapat dibuat, keputusan berikut harus diambil:
 | Rekening | BSI 7318321153 |
 | Atas Nama Rekening | PT SON SMART LIVING |
 | Nama Kost | KOST GRANADA STUDENT HOUSE JATINANGOR |
-| Alamat | Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang |
+| Alamat | Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363 |
 | Yurisdiksi | Pengadilan Negeri Kab. Sumedang |
 
 ### Template Kontrak Fields

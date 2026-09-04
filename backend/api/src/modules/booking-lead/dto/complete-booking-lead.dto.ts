@@ -53,6 +53,10 @@ export class CompleteBookingLeadDto {
   payment_method!: 'cash' | 'bank_transfer';
 
   @IsOptional()
+  @IsDateString()
+  payment_paid_at?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(5)
   @ArrayUnique()

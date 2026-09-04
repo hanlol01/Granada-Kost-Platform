@@ -19,6 +19,7 @@ import {
   getBillingWorklist,
   getBillingDocuments,
   getBillingPayments,
+  getAdminPaymentVerificationPolicy,
   getBillingProofs,
   getBillingReceipt,
   getResidentBilling,
@@ -94,7 +95,20 @@ export const w06BillingKeys = {
     [...w06BillingKeys.root(propertyId), "receipt", receiptId] as const,
   documents: (propertyId: string, query: string, offset: number) =>
     [...w06BillingKeys.root(propertyId), "documents", query, offset] as const,
+  verificationPolicy: (propertyId: string) =>
+    [...w06BillingKeys.root(propertyId), "verification-policy"] as const,
 };
+
+export function useAdminPaymentVerificationPolicy(propertyId: string | null) {
+  return useQuery({
+    queryKey: propertyId
+      ? w06BillingKeys.verificationPolicy(propertyId)
+      : (["admin", "w06-billing", "no-property", "verification-policy"] as const),
+    queryFn: ({ signal }) => getAdminPaymentVerificationPolicy(propertyId!, signal),
+    enabled: Boolean(propertyId),
+    staleTime: 60_000,
+  });
+}
 
 class W06ScopeChangedError extends Error {
   readonly code = "W06_SCOPE_CHANGED";

@@ -47,7 +47,7 @@ const Schema = z.object({
     .trim()
     .min(1, "Nomor HP wajib diisi")
     .regex(/^(?:\+62|62|0)8\d{7,12}$/, "Gunakan nomor WhatsApp Indonesia yang valid"),
-  email: z.string().trim().min(1, "Email wajib diisi").email("Email tidak valid"),
+  email: z.string().trim().email("Email tidak valid").or(z.literal("")),
   ktpNumber: z.string().trim().optional().or(z.literal("")),
   ktpFileId: z.string().uuid().nullable().optional(),
   dateOfBirth: z.string().optional().or(z.literal("")),
@@ -227,7 +227,7 @@ export function ResidentFormDialog({
                 disabled={pending}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field
                 label="Nomor HP / WhatsApp"
                 required
@@ -241,10 +241,12 @@ export function ResidentFormDialog({
                   disabled={pending}
                 />
               </Field>
-              <Field label="Email" required error={form.formState.errors.email?.message}>
+              <Field label="Email" optional error={form.formState.errors.email?.message}>
                 <Input
                   type="email"
                   {...form.register("email")}
+                  autoComplete="email"
+                  placeholder="Dapat dilengkapi nanti"
                   aria-invalid={Boolean(form.formState.errors.email)}
                   disabled={pending}
                 />

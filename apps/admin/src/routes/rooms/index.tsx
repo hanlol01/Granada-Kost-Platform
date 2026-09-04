@@ -212,7 +212,7 @@ function RoomsPage() {
   ].join("|");
   const selectedBuilding = buildings.find((building) => building.id === search.buildingId);
   const filterCriteria = [
-    search.q.trim() ? `pencarian \"${search.q.trim()}\"` : "",
+    search.q.trim() ? `pencarian "${search.q.trim()}"` : "",
     search.category ? `kategori: ${KOST_TYPE_LABEL[search.category]}` : "",
     selectedBuilding ? `bangunan: ${selectedBuilding.label}` : "",
     search.floorCode ? `lantai: ${search.floorCode}` : "",
@@ -318,8 +318,8 @@ function RoomsPage() {
                   <Card
                     className={
                       selected
-                        ? "border-primary bg-primary-soft"
-                        : "border-border bg-card transition-colors hover:bg-muted/60"
+                        ? "room-category-filter-card border-2 bg-primary/15 shadow-md"
+                        : "room-category-filter-card border-2 bg-card transition-colors hover:bg-primary/10"
                     }
                   >
                     <CardContent className="p-4">

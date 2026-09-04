@@ -15,6 +15,7 @@ import {
   Clock3,
   CreditCard,
   Download,
+  Eye,
   FileText,
   Landmark,
   KeyRound,
@@ -32,6 +33,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/PaymentsWorkspace";
 import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
+import { FilePreviewModal } from "@/components/file/FilePreviewModal";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
@@ -65,11 +67,13 @@ import { useResidentBilling } from "@/hooks/useAdminBilling";
 import {
   downloadAdminContractPaidDocument,
   downloadAdminReceiptDocument,
+  type BillingEvidence,
   type ResidentBilling,
 } from "@/lib/admin-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
 import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
 import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
+import { formatFileSize } from "@/lib/file-utils";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
 import { newIdempotencyKey } from "@/lib/idempotency";
@@ -2622,8 +2626,27 @@ function PaymentDetailDialog({
   typeLabel: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [previewFile, setPreviewFile] = useState<BillingEvidence | null>(null);
+  const paymentMethod = payment.payment_method === "cash" ? "Tunai" : "Transfer bank";
+  const openEvidence = () => {
+    if (payment.evidence.length === 1) {
+      setPreviewFile(payment.evidence[0] ?? null);
+      return;
+    }
+    if (payment.evidence.length > 1) setShowEvidence((current) => !current);
+  };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) {
+          setShowEvidence(false);
+          setPreviewFile(null);
+        }
+      }}
+    >
       <Button className="min-h-9" size="sm" variant="info" onClick={() => setOpen(true)}>
         Rincian
       </Button>
@@ -2642,7 +2665,31 @@ function PaymentDetailDialog({
           rows={[
             ["Kode pembayaran", payment.payment_code],
             ["Jenis", typeLabel],
-            ["Metode", payment.payment_method === "cash" ? "Tunai" : "Transfer bank"],
+            [
+              "Metode",
+              <div key="payment-method" className="flex min-w-0 flex-wrap items-center gap-2">
+                <span>{paymentMethod}</span>
+                {payment.payment_method === "bank_transfer" ? (
+                  payment.evidence.length > 0 ? (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="info"
+                      className="h-9 w-9 shrink-0"
+                      onClick={openEvidence}
+                      aria-label={`Lihat ${payment.evidence.length} bukti transfer`}
+                      title="Lihat bukti transfer"
+                    >
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  ) : (
+                    <span className="text-xs font-normal text-amber-700 dark:text-amber-300">
+                      Bukti belum dilampirkan
+                    </span>
+                  )
+                ) : null}
+              </div>,
+            ],
             ["Nominal", rupiah(payment.amount)],
             ["Status", paymentStatusLabel(payment.payment_status)],
             [
@@ -2679,6 +2726,45 @@ function PaymentDetailDialog({
             ],
           ]}
         />
+        {showEvidence ? (
+          <section
+            className="space-y-3 rounded-xl border border-border bg-muted/15 p-4"
+            aria-label="Daftar bukti transfer"
+          >
+            <div>
+              <p className="text-sm font-semibold">Bukti transfer</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {payment.evidence.length} file tersimpan untuk pembayaran ini.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              {payment.evidence.map((file, index) => (
+                <div
+                  key={file.id}
+                  className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-border bg-background p-3"
+                >
+                  <FileText className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium" title={file.original_filename}>
+                      Bukti {index + 1} · {file.original_filename}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(file.file_size_bytes)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="info"
+                    size="sm"
+                    onClick={() => setPreviewFile(file)}
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" /> Lihat
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
           {payment.receipt_id && propertyId ? (
             <ReceiptDownloadButton
@@ -2706,6 +2792,7 @@ function PaymentDetailDialog({
             Tutup
           </Button>
         </div>
+        <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       </DialogContent>
     </Dialog>
   );

@@ -340,10 +340,22 @@ export class AdminUxMasterService {
       const today = await this.databaseToday(client);
       const versions = await this.lockCommercialVersions(client, id);
       const current = this.currentCommercialFromLockedVersions(versions, today);
-      const commercial = this.validateCommercialInput(dto, this.mergeCommercial(before, current));
       const effectiveDate = commercialChange
         ? this.effectiveDate(dto.effective_date)
         : String(current.effective_date).slice(0, 10);
+      const futureVersions = versions.filter(
+        (version) => String(version.effective_date).slice(0, 10) > today,
+      );
+      const scheduledVersion = futureVersions.find(
+        (version) => String(version.effective_date).slice(0, 10) === effectiveDate,
+      );
+      // A partial edit must retain values from the scheduled version, if any;
+      // otherwise an omitted monthly/yearly field would silently revert to the
+      // currently active rate while revising the future schedule.
+      const commercial = this.validateCommercialInput(
+        dto,
+        this.mergeCommercial(before, scheduledVersion ?? current),
+      );
       if (commercialChange && effectiveDate <= today) {
         throw new BadRequestException({
           code: 'KOST_TYPE_EFFECTIVE_DATE_NOT_FUTURE',
@@ -352,7 +364,8 @@ export class AdminUxMasterService {
       }
       if (
         commercialChange &&
-        versions.some((version) => String(version.effective_date).slice(0, 10) > today)
+        futureVersions.length > 0 &&
+        (futureVersions.length > 1 || !scheduledVersion)
       ) {
         throw new ConflictException({
           code: 'KOST_TYPE_FUTURE_COMMERCIAL_CONFLICT',
@@ -397,23 +410,47 @@ export class AdminUxMasterService {
         });
       }
       if (commercialChange) {
-        await client.query(
-          `INSERT INTO kost_type_commercial_versions (
-             kost_type_id, effective_date, monthly_price, annual_contract_value,
-             minimum_dp_percent, security_deposit_months, payment_schedules,
-             created_by_user_id, updated_by_user_id
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
-          [
-            id,
-            effectiveDate,
-            commercial.monthlyPrice,
-            commercial.annualContractValue,
-            DEFAULT_MINIMUM_DP_PERCENT,
-            commercial.securityDepositMonths,
-            commercial.paymentSchedules,
-            user.id,
-          ],
-        );
+        if (scheduledVersion) {
+          await client.query(
+            `UPDATE kost_type_commercial_versions
+             SET monthly_price = $3,
+                 annual_contract_value = $4,
+                 minimum_dp_percent = $5,
+                 security_deposit_months = $6,
+                 payment_schedules = $7,
+                 updated_by_user_id = $8,
+                 updated_at = now()
+             WHERE kost_type_id = $1 AND effective_date = $2`,
+            [
+              id,
+              effectiveDate,
+              commercial.monthlyPrice,
+              commercial.annualContractValue,
+              DEFAULT_MINIMUM_DP_PERCENT,
+              commercial.securityDepositMonths,
+              commercial.paymentSchedules,
+              user.id,
+            ],
+          );
+        } else {
+          await client.query(
+            `INSERT INTO kost_type_commercial_versions (
+               kost_type_id, effective_date, monthly_price, annual_contract_value,
+               minimum_dp_percent, security_deposit_months, payment_schedules,
+               created_by_user_id, updated_by_user_id
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+            [
+              id,
+              effectiveDate,
+              commercial.monthlyPrice,
+              commercial.annualContractValue,
+              DEFAULT_MINIMUM_DP_PERCENT,
+              commercial.securityDepositMonths,
+              commercial.paymentSchedules,
+              user.id,
+            ],
+          );
+        }
       }
       await this.audit.write(
         {
@@ -1491,7 +1528,8 @@ export class AdminUxMasterService {
 
   private async lockCommercialVersions(client: PoolClient, kostTypeId: string): Promise<DbRow[]> {
     const result = await client.query<DbRow>(
-      `SELECT effective_date, monthly_price, annual_contract_value, minimum_dp_percent,
+      `SELECT effective_date::text AS effective_date,
+              monthly_price, annual_contract_value, minimum_dp_percent,
               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1

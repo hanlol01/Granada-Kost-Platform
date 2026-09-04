@@ -57,6 +57,7 @@ import {
   useBillingProofs,
   useBillingReceipt,
   useBillingWorklist,
+  useAdminPaymentVerificationPolicy,
   useCreateOtherCharge,
   useRecordManualPayment,
   useRejectPayment,
@@ -1353,9 +1354,14 @@ export function RecordPaymentDialog({
   const [depositAmount, setDepositAmount] = useState(0);
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
+  const [paidAt, setPaidAt] = useState("");
   const [evidenceFiles, setEvidenceFiles] = useState<FileResponse[]>([]);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const mutation = useRecordManualPayment(propertyId);
+  const verificationPolicy = useAdminPaymentVerificationPolicy(propertyId);
+  const historicalMode = verificationPolicy.data?.automaticVerificationActive === true;
+  const transferEvidenceRequired =
+    method === "bank_transfer" && (verificationPolicy.data?.transferEvidenceRequired ?? true);
   const resetPaymentMutation = mutation.reset;
   const eligible = useMemo(
     () =>
@@ -1396,6 +1402,7 @@ export function RecordPaymentDialog({
     allocations,
     reference,
     note,
+    paidAt,
     evidenceFileIds: evidenceFiles.map((file) => file.id),
     contractSettlementInvoiceId,
     contractSettlementMode,
@@ -1409,6 +1416,7 @@ export function RecordPaymentDialog({
     setDepositAmount(0);
     setReference("");
     setNote("");
+    setPaidAt("");
     setEvidenceFiles([]);
     setEvidenceBusy(false);
     setSettlementChoice("partial");
@@ -1435,7 +1443,7 @@ export function RecordPaymentDialog({
     });
   }
   function submit() {
-    if (!propertyId || mutation.isPending) return;
+    if (!propertyId || mutation.isPending || (historicalMode && !paidAt)) return;
     mutation.mutate(
       {
         input: {
@@ -1445,6 +1453,7 @@ export function RecordPaymentDialog({
           method,
           payment_purpose: purpose,
           amount,
+          paid_at: paidAt || undefined,
           reference_number: reference || undefined,
           note: note || undefined,
           evidence_file_ids:
@@ -1480,11 +1489,22 @@ export function RecordPaymentDialog({
             </DialogTitle>
             <DialogDescription>
               {isContractSettlement
-                ? "Catat pembayaran untuk pelunasan sewa kontrak. Tunai langsung terverifikasi; transfer bank wajib menyertakan bukti dan menunggu konfirmasi."
-                : "Pilih tagihan dan nominal pembayaran. Transfer tetap menunggu verifikasi; kas dicatat dan diterbitkan kuitansinya secara atomik."}
+                ? historicalMode
+                  ? "Catat pembayaran untuk pelunasan sewa kontrak. Pembayaran Admin langsung terverifikasi selama mode input historis aktif."
+                  : "Catat pembayaran untuk pelunasan sewa kontrak. Tunai langsung terverifikasi; transfer bank wajib menyertakan bukti dan menunggu konfirmasi."
+                : historicalMode
+                  ? "Pilih tagihan dan nominal pembayaran. Pembayaran Admin langsung terverifikasi dan diterbitkan kuitansinya."
+                  : "Pilih tagihan dan nominal pembayaran. Transfer tetap menunggu verifikasi; kas dicatat dan diterbitkan kuitansinya secara atomik."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {historicalMode ? (
+              <NoticeAlert
+                tone="warning"
+                title="Mode input data historis aktif"
+                description={`Pembayaran yang dicatat Admin akan langsung terverifikasi sampai ${verificationPolicy.data?.automaticVerificationUntil ? timeOnly(verificationPolicy.data.automaticVerificationUntil) : "batas waktu konfigurasi"}. Bukti transfer dan tanggal pembayaran sebenarnya tetap wajib.`}
+              />
+            ) : null}
             <Field label="Metode">
               <select
                 className="min-h-11 w-full rounded-md border border-input bg-background px-3"
@@ -1561,17 +1581,21 @@ export function RecordPaymentDialog({
               </Field>
             ) : isContractSettlement && contractSettlementInvoice ? (
               <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <p className="text-sm font-semibold">Nominal pembayaran sewa</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Sisa sewa yang perlu dibayar{" "}
-                      {formatIDR(contractSettlementInvoice.outstanding_amount)}.
+                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                      Pelunasan sewa kontrak
+                    </span>
+                  </div>
+                  <div className="mx-auto w-full max-w-[14rem] rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-center">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Sisa sewa yang perlu dibayar
+                    </p>
+                    <p className="mt-0.5 text-xl font-bold tracking-tight text-primary sm:text-2xl">
+                      {formatIDR(contractSettlementInvoice.outstanding_amount)}
                     </p>
                   </div>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                    Pelunasan sewa kontrak
-                  </span>
                 </div>
                 <div
                   className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
@@ -1713,7 +1737,9 @@ export function RecordPaymentDialog({
                     </p>
                     {method === "bank_transfer" ? (
                       <p>
-                        Transfer akan mengurangi sisa setelah admin memverifikasi bukti pembayaran.
+                        {historicalMode
+                          ? "Transfer langsung mengurangi sisa setelah pembayaran disimpan."
+                          : "Transfer akan mengurangi sisa setelah admin memverifikasi bukti pembayaran."}
                       </p>
                     ) : null}
                   </div>
@@ -1721,7 +1747,9 @@ export function RecordPaymentDialog({
                   <p className="mt-3 text-xs leading-5 text-muted-foreground">
                     Setelah pembayaran ini tercatat, pelunasan sewa kontrak selesai.
                     {method === "bank_transfer"
-                      ? " Transfer tetap harus diverifikasi terlebih dahulu."
+                      ? historicalMode
+                        ? " Transfer langsung terverifikasi dalam mode input historis."
+                        : " Transfer tetap harus diverifikasi terlebih dahulu."
                       : ""}
                   </p>
                 )}
@@ -1731,21 +1759,51 @@ export function RecordPaymentDialog({
               <EvidenceFileUploadField
                 propertyId={propertyId}
                 label={
-                  method === "bank_transfer"
+                  transferEvidenceRequired
                     ? "Bukti transfer (wajib)"
-                    : "Bukti pembayaran (opsional)"
+                    : method === "bank_transfer"
+                      ? "Bukti transfer (opsional)"
+                      : "Bukti pembayaran (opsional)"
                 }
                 description={
-                  method === "bank_transfer"
+                  transferEvidenceRequired
                     ? "Pilih bukti pembayaran transfer. File dapat dilihat, diganti, atau dihapus sebelum pembayaran disimpan."
-                    : "Lampirkan bila tersedia sebagai bukti penerimaan pembayaran tunai."
+                    : method === "bank_transfer"
+                      ? "Opsional selama mode input data historis aktif. Bukti dapat dilengkapi kemudian bila tersedia."
+                      : "Lampirkan bila tersedia sebagai bukti penerimaan pembayaran tunai."
                 }
                 values={evidenceFiles}
                 onChange={setEvidenceFiles}
                 onBusyChange={setEvidenceBusy}
-                required={method === "bank_transfer"}
+                required={transferEvidenceRequired}
               />
             ) : null}
+            <Field
+              label={
+                historicalMode ? (
+                  <>
+                    Tanggal pembayaran sebenarnya <span className="text-destructive">*</span>
+                  </>
+                ) : (
+                  "Tanggal pembayaran sebenarnya (opsional)"
+                )
+              }
+            >
+              <HeroUiDatePicker
+                id="manual-payment-paid-at"
+                ariaLabel="Tanggal pembayaran sebenarnya"
+                value={paidAt}
+                onChange={(value) => setPaidAt(value ?? "")}
+                required={historicalMode}
+                validationTarget={historicalMode && !paidAt}
+                error={
+                  historicalMode && !paidAt
+                    ? "Tanggal pembayaran sebenarnya wajib diisi."
+                    : undefined
+                }
+                description="Gunakan tanggal dana diterima atau pembayaran tunai dilakukan, bukan tanggal data dimasukkan ke sistem."
+              />
+            </Field>
             <Field
               label={
                 method === "bank_transfer"
@@ -1794,7 +1852,8 @@ export function RecordPaymentDialog({
                 (isContractSettlement &&
                   contractSettlementInvoice !== null &&
                   amount > contractSettlementInvoice.outstanding_amount) ||
-                (method === "bank_transfer" && evidenceFiles.length === 0)
+                (transferEvidenceRequired && evidenceFiles.length === 0) ||
+                (historicalMode && !paidAt)
               }
               onClick={submit}
             >
@@ -2577,7 +2636,7 @@ function ActionDialog({
     </Dialog>
   );
 }
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <label className="block space-y-1.5 text-sm font-medium">
       <span>{label}</span>
@@ -2747,7 +2806,8 @@ function timeOnly(value: string) {
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
 }
-function methodLabel(value: string) {
+function methodLabel(value: string | null) {
+  if (value === null) return "Tidak tersedia pada dokumen lama";
   return value === "cash" ? "Kas" : "Transfer bank";
 }
 function purposeLabel(value: string | null) {

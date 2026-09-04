@@ -76,7 +76,39 @@ const CODE_NOTICES: Readonly<Record<string, OnboardingErrorNotice>> = {
   },
   ONBOARDING_FINANCIAL_OBLIGATION_UNMET: {
     title: "Pembayaran awal belum memenuhi ketentuan",
-    description: "Periksa kembali booking fee, DP atau pelunasan sewa, dan security deposit.",
+    description: "Total booking fee dan DP atau pelunasan harus mencukupi minimal satu bulan sewa.",
+    step: 2,
+  },
+  ONBOARDING_RENT_PAYMENT_EXCEEDS_CONTRACT: {
+    title: "Pembayaran sewa melebihi total kontrak",
+    description:
+      "Kurangi DP atau pelunasan. Total booking fee dan pembayaran sewa tidak boleh melebihi nilai kontrak.",
+    step: 2,
+  },
+  ONBOARDING_SECURITY_DEPOSIT_EXCEEDS_LIMIT: {
+    title: "Security deposit melebihi batas",
+    description:
+      "Security deposit tetap opsional. Jika diisi, nominalnya minimal Rp0 dan maksimal setara satu bulan berdasarkan nilai kontrak.",
+    step: 2,
+  },
+  ONBOARDING_PAYMENT_DATE_ORDER_INVALID: {
+    title: "Urutan tanggal pembayaran belum valid",
+    description: "Susun tanggal pembayaran dari tahap yang paling lama ke yang paling baru.",
+    step: 2,
+  },
+  ONBOARDING_BOOKING_FEE_ORDER_INVALID: {
+    title: "Urutan Booking Fee belum valid",
+    description: "Catat Booking Fee sebelum DP atau angsuran sewa.",
+    step: 2,
+  },
+  ONBOARDING_BOOKING_FEE_DUPLICATE: {
+    title: "Booking Fee tercatat lebih dari sekali",
+    description: "Pertahankan hanya satu pencatatan Booking Fee pada daftar pembayaran.",
+    step: 2,
+  },
+  ONBOARDING_SECURITY_DEPOSIT_DUPLICATE: {
+    title: "Security deposit tercatat lebih dari sekali",
+    description: "Pertahankan hanya satu pencatatan security deposit pada daftar pembayaran.",
     step: 2,
   },
   ROOM_NOT_AVAILABLE: {

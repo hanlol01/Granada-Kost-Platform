@@ -24,10 +24,21 @@ export type OnboardingCommitmentResponse = {
     securityDepositVerifiedAmount: number;
     receipts: Array<{
       id: string;
-      purpose: 'booking_fee' | 'down_payment' | 'full_settlement' | 'security_deposit';
+      purpose:
+        | 'booking_fee'
+        | 'down_payment'
+        | 'installment'
+        | 'full_settlement'
+        | 'security_deposit';
       amount: number;
+      rentPaymentSequence: number | null;
     }>;
   };
+  contractPaidDocument: {
+    id: string;
+    documentCode: string;
+    issuedAt: string;
+  } | null;
   temporaryPassword: string | null;
 };
 

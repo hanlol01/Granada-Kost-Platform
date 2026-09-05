@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   PDFDocument,
@@ -416,7 +416,31 @@ const paymentMethodLabel: Record<string, string> = {
   other: 'Metode lainnya',
 };
 
-const receiptAsset = (name: string) => readFileSync(join(__dirname, '..', 'assets', name));
+const receiptAsset = (name: string) => {
+  const apiAsset = join(__dirname, '..', 'assets', name);
+  if (existsSync(apiAsset)) return readFileSync(apiAsset);
+
+  // The signature is a shared brand asset already committed with both web apps.
+  // API releases are built from the full monorepo, so resolve that canonical copy
+  // when an asset has not been duplicated under the API source tree.
+  return readFileSync(
+    join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      '..',
+      '..',
+      'apps',
+      'admin',
+      'public',
+      'images',
+      'brand',
+      name,
+    ),
+  );
+};
 
 function receiptDate(value: Date | string | null | undefined, withWeekday = false): string {
   if (!value) return 'Tidak tersedia';

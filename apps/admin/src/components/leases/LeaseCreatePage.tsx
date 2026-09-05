@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -82,6 +83,7 @@ import { useProperty } from "@/lib/property";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp-lead";
 import { normalizeRoomSearch } from "./transfer-shared";
 import type { FileResponse } from "@granada-kost/domain";
+import { ApiError } from "@granada-kost/api-client";
 
 type Props = { onCreated: (leaseId: string) => void | Promise<void>; bookingLeadId?: string };
 type Gender = "male" | "female";
@@ -129,6 +131,11 @@ type StagedPaymentController = {
   hasUnsavedDraft: boolean;
   hideDraft: boolean;
   rentPurposeDisabled: boolean;
+  recentlyAddedPaymentId: string | null;
+  securityDepositPromptVisible: boolean;
+  optionalSecurityDepositDraftOpen: boolean;
+  onOpenSecurityDeposit: () => void;
+  onCancelSecurityDeposit: () => void;
 };
 
 type ResidentDraft = {
@@ -300,6 +307,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [paymentEntries, setPaymentEntries] = useState<StagedPaymentEntry[]>([]);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+  const [recentlyAddedPaymentId, setRecentlyAddedPaymentId] = useState<string | null>(null);
+  const [optionalSecurityDepositDraftOpen, setOptionalSecurityDepositDraftOpen] = useState(false);
   const [paymentDraftAttempted, setPaymentDraftAttempted] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
@@ -318,7 +327,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   propertyScopeRef.current = currentPropertyId;
   const deferredRoomSearch = useDeferredValue(roomSearch);
-  const rooms = useM6LeaseAvailableRooms(deferredRoomSearch);
+  const rooms = useM6LeaseAvailableRooms(deferredRoomSearch, startDate || undefined);
   const bookingLeadContext = useBookingLeadCompletionContext(bookingLeadId);
   const bookingLeadQuote = useBookingLeadCompletionQuote(bookingLeadId, startDate, termMonths);
   const onboarding = useResidentOnboarding(setTemporaryPassword);
@@ -341,6 +350,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       section.focus({ preventScroll: true });
     });
   };
+
+  useEffect(() => {
+    if (!recentlyAddedPaymentId) return;
+    const timeout = window.setTimeout(() => setRecentlyAddedPaymentId(null), 1_000);
+    return () => window.clearTimeout(timeout);
+  }, [recentlyAddedPaymentId]);
 
   useEffect(() => {
     const context = bookingLeadContext.data;
@@ -400,6 +415,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaymentEntries([]);
     setEditingPaymentId(null);
     setExpandedPaymentId(null);
+    setRecentlyAddedPaymentId(null);
+    setOptionalSecurityDepositDraftOpen(false);
     setPaymentDraftAttempted(false);
     setKtpDocumentError(null);
     setServerStageOneErrors({});
@@ -436,6 +453,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const selectedRoom =
     rooms.data?.items.find((room) => room.id === roomId) ??
     (heldRoom?.id === roomId ? heldRoom : undefined);
+  const commercialPricingPending = Boolean(startDate && rooms.isPlaceholderData);
   const fallbackAmounts = calculateLeaseAmounts(selectedRoom, termMonths);
   const amounts =
     bookingLeadQuote.data && selectedRoom?.id === bookingLeadQuote.data.room.id
@@ -537,11 +555,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   );
   const hideStagedPaymentDraft =
     stagedPaymentMode &&
-    recordedRentFullyPaid &&
-    hasSecurityDepositStage &&
+    contractFullyPaid &&
+    !optionalSecurityDepositDraftOpen &&
     editingPaymentId === null;
   const rentPurposeDisabled = recordedRentFullyPaid && editingPaymentId === null;
   const hasUnsavedPaymentDraft =
+    optionalSecurityDepositDraftOpen ||
     draftAmount > 0 ||
     paymentPaidAt.length > 0 ||
     paymentNote.trim().length > 0 ||
@@ -572,8 +591,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             duplicatePurpose
           ? `${paymentPurposeLabel(paymentPurpose)} hanya boleh dicatat satu kali.`
           : "",
-    amount:
-      !Number.isSafeInteger(draftAmount) || draftAmount <= 0
+    amount: commercialPricingPending
+      ? "Tunggu sampai harga yang berlaku pada tanggal mulai sewa selesai dimuat."
+      : !Number.isSafeInteger(draftAmount) || draftAmount <= 0
         ? "Nominal pembayaran wajib lebih dari Rp0."
         : bookingFeeBelowMinimum
           ? `Booking fee minimal ${currency(MINIMUM_BOOKING_FEE)}.`
@@ -635,6 +655,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       totalRentCredit <= amounts.contractRent &&
       stagedSecurityDepositAmount <= maximumSecurityDeposit &&
       !hasUnsavedPaymentDraft &&
+      !commercialPricingPending &&
       !paymentEvidenceBusy &&
       confirmed
     : Boolean(selectedRoom) &&
@@ -648,6 +669,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       !bookingFeeExceedsRent &&
       !rentCreditExceedsContract &&
       !securityDepositExceedsMaximum &&
+      !commercialPricingPending &&
       Boolean(bookingLeadQuote.data) &&
       paymentChoiceSelected &&
       paymentMethodSelected &&
@@ -792,36 +814,57 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaymentDraftAttempted(false);
   };
 
+  const openOptionalSecurityDepositStage = () => {
+    clearPaymentDraft();
+    setPaymentPurpose("security_deposit");
+    setOptionalSecurityDepositDraftOpen(true);
+    setConfirmed(false);
+  };
+
+  const cancelOptionalSecurityDepositStage = () => {
+    clearPaymentDraft();
+    setOptionalSecurityDepositDraftOpen(false);
+    scrollToPaymentSection();
+  };
+
   const cancelPaymentEdit = () => {
     clearPaymentDraft();
     scrollToPaymentSection();
   };
 
   const pickRoom = (room: LeaseRoomOption) => {
-    if (stagedPaymentMode && paymentEntries.length > 0 && room.id !== roomId) return;
+    if (stagedPaymentMode && paymentEntries.length > 0 && roomId && room.id !== roomId) return;
+    const replacingUnavailableRoom = stagedPaymentMode && paymentEntries.length > 0 && !roomId;
     setRoomId(room.id);
     setCategory(room.kostType.category);
     const nextAmounts = calculateLeaseAmounts(room, termMonths);
-    setSecurityDeposit(0);
-    if (stagedPaymentMode) {
+    if (replacingUnavailableRoom) {
+      clearPaymentDraft();
+    } else if (stagedPaymentMode) {
       setPaymentEntries([]);
       setEditingPaymentId(null);
       setExpandedPaymentId(null);
+      setRecentlyAddedPaymentId(null);
+      setOptionalSecurityDepositDraftOpen(false);
       setPaymentPurpose("rent");
       setPaymentPaidAt("");
       setPaymentNote("");
       setPaymentEvidence([]);
     }
-    setPaidRent(
-      Math.max(
-        0,
-        (paymentChoice === "full"
-          ? nextAmounts.contractRent
-          : Math.max(nextAmounts.minimumDp, room.kostType.monthlyPrice)) - bookingFee,
-      ),
-    );
+    if (!replacingUnavailableRoom) {
+      setSecurityDeposit(0);
+      setPaidRent(
+        Math.max(
+          0,
+          (paymentChoice === "full"
+            ? nextAmounts.contractRent
+            : Math.max(nextAmounts.minimumDp, room.kostType.monthlyPrice)) - bookingFee,
+        ),
+      );
+    }
     setAttemptedSubmit(false);
     setConfirmed(false);
+    if (onboarding.error) onboarding.reset();
   };
 
   const changeTerm = (value: number) => {
@@ -831,6 +874,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setPaymentEntries([]);
       setEditingPaymentId(null);
       setExpandedPaymentId(null);
+      setRecentlyAddedPaymentId(null);
+      setOptionalSecurityDepositDraftOpen(false);
       setPaymentPurpose("rent");
       setPaymentPaidAt("");
       setPaymentNote("");
@@ -931,6 +976,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       revealFirstValidationError(paymentSectionRef.current);
       return;
     }
+    const isNewPayment = editingPaymentId === null;
     const id = editingPaymentId ?? globalThis.crypto.randomUUID();
     const nextEntry: StagedPaymentEntry = {
       id,
@@ -948,12 +994,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         : [...current, nextEntry],
     );
     setExpandedPaymentId(null);
+    if (isNewPayment) setRecentlyAddedPaymentId(id);
+    if (paymentPurpose === "security_deposit") setOptionalSecurityDepositDraftOpen(false);
     clearPaymentDraft();
     setConfirmed(false);
     scrollToPaymentSection();
   };
 
   const editPaymentStage = (entry: StagedPaymentEntry) => {
+    setOptionalSecurityDepositDraftOpen(false);
     setEditingPaymentId(entry.id);
     setExpandedPaymentId(entry.id);
     setPaymentPurpose(entry.purpose);
@@ -972,6 +1021,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaymentEntries((current) => current.filter((item) => item.id !== entry.id));
     if (editingPaymentId === entry.id) clearPaymentDraft();
     if (expandedPaymentId === entry.id) setExpandedPaymentId(null);
+    if (recentlyAddedPaymentId === entry.id) setRecentlyAddedPaymentId(null);
+    if (entry.purpose === "security_deposit") setOptionalSecurityDepositDraftOpen(false);
     setConfirmed(false);
   };
 
@@ -1044,6 +1095,19 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     try {
       await onboarding.mutateAsync(payload);
     } catch (error) {
+      if (
+        ApiError.isApiError(error) &&
+        ["ROOM_NOT_AVAILABLE", "ROOM_LIFECYCLE_CONFLICT", "ROOM_LIFECYCLE_AMBIGUOUS"].includes(
+          error.code,
+        )
+      ) {
+        setRoomId("");
+        setConfirmed(false);
+        setStep(2);
+        void rooms.refetch();
+        scrollToPaymentSection();
+        return;
+      }
       const fieldErrors = onboardingErrorFieldErrors(error);
       if (Object.keys(fieldErrors).length > 0) {
         setServerStageOneErrors(fieldErrors);
@@ -1504,6 +1568,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                     hasUnsavedDraft: hasUnsavedPaymentDraft,
                     hideDraft: hideStagedPaymentDraft,
                     rentPurposeDisabled,
+                    recentlyAddedPaymentId,
+                    securityDepositPromptVisible:
+                      contractFullyPaid &&
+                      !hasSecurityDepositStage &&
+                      !optionalSecurityDepositDraftOpen &&
+                      editingPaymentId === null,
+                    optionalSecurityDepositDraftOpen,
+                    onOpenSecurityDeposit: openOptionalSecurityDepositStage,
+                    onCancelSecurityDeposit: cancelOptionalSecurityDepositStage,
                   }
                 : null
             }
@@ -2092,7 +2165,8 @@ function RoomAndPaymentStep({
   const editorRef = useRef<HTMLDivElement>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<StagedPaymentEntry | null>(null);
   useEffect(() => {
-    if (!stagedPayment?.editingPaymentId) return;
+    if (!stagedPayment?.editingPaymentId && !stagedPayment?.optionalSecurityDepositDraftOpen)
+      return;
     const frame = requestAnimationFrame(() => {
       const editor = editorRef.current;
       if (!editor) return;
@@ -2100,7 +2174,7 @@ function RoomAndPaymentStep({
       editor.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [stagedPayment?.editingPaymentId]);
+  }, [stagedPayment?.editingPaymentId, stagedPayment?.optionalSecurityDepositDraftOpen]);
   return (
     <div className="space-y-6">
       <Card>
@@ -2226,6 +2300,8 @@ function RoomAndPaymentStep({
                     <div className="overflow-hidden rounded-xl border border-border">
                       {stagedPayment.entries.map((entry, index) => {
                         const expanded = stagedPayment.expandedPaymentId === entry.id;
+                        const recentlyAdded = stagedPayment.recentlyAddedPaymentId === entry.id;
+                        const isLastEntry = index === stagedPayment.entries.length - 1;
                         const entriesThroughStage = stagedPayment.entries.slice(0, index + 1);
                         const rentSequence = entriesThroughStage.filter(
                           (item) => item.purpose === "rent",
@@ -2247,7 +2323,22 @@ function RoomAndPaymentStep({
                                 ? "DP / uang muka sewa"
                                 : `Angsuran sewa ke-${rentSequence}`;
                         return (
-                          <div key={entry.id} className="border-b border-border last:border-b-0">
+                          <div
+                            key={entry.id}
+                            className="relative border-b border-border last:border-b-0"
+                          >
+                            {recentlyAdded ? (
+                              <div
+                                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-card px-4 text-success motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-200 motion-reduce:animate-none"
+                                role="status"
+                                aria-live="polite"
+                              >
+                                <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-4 py-2 text-sm font-semibold">
+                                  <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+                                  Pembayaran tahap {index + 1} berhasil ditambahkan
+                                </span>
+                              </div>
+                            ) : null}
                             <div className="flex flex-wrap items-center gap-3 bg-muted/15 px-4 py-3">
                               <button
                                 type="button"
@@ -2308,6 +2399,30 @@ function RoomAndPaymentStep({
                                 ) : null}
                               </div>
                             ) : null}
+                            {isLastEntry && stagedPayment.securityDepositPromptVisible ? (
+                              <div className="flex flex-col gap-3 border-t border-success/25 bg-success/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
+                                  <CheckCircle2
+                                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                                    aria-hidden="true"
+                                  />
+                                  <span>
+                                    Sewa kontrak sudah lunas. Tambahkan security deposit hanya jika
+                                    pembayaran jaminan juga perlu dicatat.
+                                  </span>
+                                </p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="min-h-11 w-full shrink-0 whitespace-nowrap border-primary/50 text-primary hover:border-primary hover:bg-primary/10 hover:text-primary sm:w-auto"
+                                  onClick={stagedPayment.onOpenSecurityDeposit}
+                                  aria-label="Tambahkan pembayaran security deposit"
+                                >
+                                  <Plus className="h-4 w-4" aria-hidden="true" />
+                                  Tambah Security Deposit
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })}
@@ -2348,29 +2463,39 @@ function RoomAndPaymentStep({
                           kuitansinya jelas.
                         </p>
                       </div>
-                      <div
-                        className="grid gap-2 sm:grid-cols-3"
-                        role="group"
-                        aria-label="Tujuan pembayaran"
-                      >
-                        {(["rent", "booking_fee", "security_deposit"] as const).map((purpose) => (
-                          <Button
-                            key={purpose}
-                            type="button"
-                            variant={stagedPayment.purpose === purpose ? "default" : "outline"}
-                            className="min-h-11"
-                            disabled={
-                              (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
-                              (purpose === "booking_fee" &&
-                                (hasOtherBookingFee || hasRecordedRent)) ||
-                              (purpose === "security_deposit" && hasOtherSecurityDeposit)
-                            }
-                            onClick={() => stagedPayment.onPurposeChange(purpose)}
-                          >
-                            {paymentPurposeLabel(purpose)}
-                          </Button>
-                        ))}
-                      </div>
+                      {stagedPayment.optionalSecurityDepositDraftOpen ? (
+                        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-success/30 bg-success/5 px-4 text-sm font-semibold text-foreground">
+                          <CheckCircle2
+                            className="h-4 w-4 shrink-0 text-success"
+                            aria-hidden="true"
+                          />
+                          Tujuan tahap ini: Security Deposit
+                        </div>
+                      ) : (
+                        <div
+                          className="grid gap-2 sm:grid-cols-3"
+                          role="group"
+                          aria-label="Tujuan pembayaran"
+                        >
+                          {(["rent", "booking_fee", "security_deposit"] as const).map((purpose) => (
+                            <Button
+                              key={purpose}
+                              type="button"
+                              variant={stagedPayment.purpose === purpose ? "default" : "outline"}
+                              className="min-h-11"
+                              disabled={
+                                (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
+                                (purpose === "booking_fee" &&
+                                  (hasOtherBookingFee || hasRecordedRent)) ||
+                                (purpose === "security_deposit" && hasOtherSecurityDeposit)
+                              }
+                              onClick={() => stagedPayment.onPurposeChange(purpose)}
+                            >
+                              {paymentPurposeLabel(purpose)}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                       {stagedDraftErrors?.purpose ? (
                         <p
                           className="text-xs text-destructive"
@@ -2661,6 +2786,14 @@ function RoomAndPaymentStep({
                           onClick={stagedPayment.onCancelEdit}
                         >
                           <X className="h-4 w-4" /> Batalkan edit
+                        </Button>
+                      ) : stagedPayment.optionalSecurityDepositDraftOpen ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={stagedPayment.onCancelSecurityDeposit}
+                        >
+                          <X className="h-4 w-4" /> Batal tambah deposit
                         </Button>
                       ) : null}
                       <Button

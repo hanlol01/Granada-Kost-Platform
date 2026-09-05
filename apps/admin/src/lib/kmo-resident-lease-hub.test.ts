@@ -206,6 +206,11 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
     "utf8",
   );
   const onboarding = await readFile(new URL("./admin-onboarding.ts", import.meta.url), "utf8");
+  const leaseHooks = await readFile(
+    new URL("../hooks/useAdminUxLeases.ts", import.meta.url),
+    "utf8",
+  );
+  const leaseApi = await readFile(new URL("./admin-ux-lease-api.ts", import.meta.url), "utf8");
 
   assert.match(source, /\["Penghuni & Penyewaan", "Pilih Kamar Kost"\]\.map/);
   assert.match(source, /LeaseCreatePage/);
@@ -273,10 +278,22 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   assert.match(source, /paymentChoiceSelected/);
   assert.match(source, /paymentMethodSelected/);
   assert.match(source, /selectedRoom\?\.kostType\.monthlyPrice \?\? 0/);
+  assert.match(source, /useM6LeaseAvailableRooms\(deferredRoomSearch, startDate \|\| undefined\)/);
+  assert.match(leaseHooks, /commercialDate/);
+  assert.match(leaseApi, /commercial_date: input\.commercialDate/);
   assert.match(source, /Pembayaran awal wajib menutup minimal satu bulan sewa/);
   assert.match(source, /Jumlah pelunasan sewa/);
   assert.match(source, /Ringkasan Pembayaran/);
   assert.match(source, /Sisa pembayaran sewa/);
+  assert.match(source, /Pembayaran tahap \{index \+ 1\} berhasil ditambahkan/);
+  assert.match(source, /setRecentlyAddedPaymentId\(null\), 1_000/);
+  assert.match(source, /securityDepositPromptVisible/);
+  assert.match(source, /Sewa kontrak sudah lunas/);
+  assert.match(source, /Tambah Security Deposit/);
+  assert.match(source, /optionalSecurityDepositDraftOpen/);
+  assert.match(source, /setRoomId\(""\)/);
+  assert.match(source, /void rooms\.refetch\(\)/);
+  assert.match(source, /replacingUnavailableRoom/);
   assert.match(source, /bookingFee \+ paidRent \+ securityDeposit/);
   assert.match(source, /booking_fee_paid_amount: bookingFee \|\| undefined/);
   assert.match(onboarding, /awaiting_activation/);

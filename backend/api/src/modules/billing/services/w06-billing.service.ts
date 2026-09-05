@@ -348,6 +348,7 @@ type ContractPaidDocumentProjectionRow = {
 type ContractPaidDocumentStoredRow = ContractPaidDocumentProjectionRow & {
   safe_snapshot: ContractPaidDocumentSnapshot;
   invalidation_reason: string | null;
+  settling_paid_at: Date;
 };
 type ReplayRow = {
   request_fingerprint: string;
@@ -1940,8 +1941,6 @@ export class W06BillingService {
           code: 'PAYMENT_METHOD_NOT_VERIFIABLE',
           message: 'Only a bank transfer can be verified',
         });
-      const isPreActivationOnboardingPayment =
-        payment.command_fingerprint?.startsWith('onboarding:') === true;
       const evidence = await client.query(
         `SELECT id FROM payment_evidence_files WHERE payment_id=$1 ORDER BY id FOR UPDATE`,
         [payment.id],
@@ -1981,7 +1980,6 @@ export class W06BillingService {
           amount: this.money(item.intended_amount),
         })),
         invoiceRows,
-        isPreActivationOnboardingPayment,
       );
       await client.query(
         `UPDATE payments SET payment_status='verified',verified_by_user_id=$2,verified_at=now(),updated_at=now() WHERE id=$1 AND payment_status='pending_confirmation'`,
@@ -2916,9 +2914,19 @@ export class W06BillingService {
   ): Promise<BillingReceiptDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
     const result = await this.database.client.query<ContractPaidDocumentStoredRow>(
-      `SELECT id,document_code,issued_at,invalidated_at,safe_snapshot,invalidation_reason
-         FROM lease_contract_paid_documents
-        WHERE id=$1 AND property_id=$2`,
+      `SELECT paid_document.id,
+              paid_document.document_code,
+              paid_document.issued_at,
+              paid_document.invalidated_at,
+              paid_document.safe_snapshot,
+              paid_document.invalidation_reason,
+              settling_payment.paid_at AS settling_paid_at
+         FROM lease_contract_paid_documents paid_document
+         JOIN payments settling_payment
+           ON settling_payment.id=paid_document.settling_payment_id
+          AND settling_payment.property_id=paid_document.property_id
+          AND settling_payment.lease_id=paid_document.lease_id
+        WHERE paid_document.id=$1 AND paid_document.property_id=$2`,
       [documentId, propertyId],
     );
     const row = result.rows[0];
@@ -2928,7 +2936,10 @@ export class W06BillingService {
         message: 'Contract paid document not found',
       });
     return createContractPaidDocumentPdf(
-      row.safe_snapshot,
+      {
+        ...row.safe_snapshot,
+        settledAt: row.settling_paid_at.toISOString(),
+      },
       row.invalidated_at
         ? {
             invalidatedAt: row.invalidated_at.toISOString(),
@@ -3710,7 +3721,6 @@ export class W06BillingService {
     purpose: W06PaymentPurpose,
     allocations: Array<{ invoice_id: string; amount: number }>,
     invoiceRows: InvoiceLockRow[],
-    allowPreActivationRent = false,
   ): Promise<boolean> {
     if (purpose !== 'rent' && purpose !== 'dp') return false;
     const settlementResult = await client.query<ContractSettlementProjectionRow>(
@@ -3811,14 +3821,9 @@ export class W06BillingService {
           ? 'Rent payment may allocate only to this lease contract schedule'
           : 'Legacy rent payment must allocate only to its settlement invoice',
       });
-    // DP and rent payments created by the onboarding command are valid
-    // pre-activation funding. Ordinary rent payments still begin only after
-    // the room and contract settlement have been activated.
-    if (settlement.state === 'awaiting_activation' && purpose !== 'dp' && !allowPreActivationRent)
-      throw new ConflictException({
-        code: 'CONTRACT_SETTLEMENT_NOT_ACTIVE',
-        message: 'Rent payment starts only after room activation',
-      });
+    // Admin may record verified historical or advance rent while a committed
+    // lease is still awaiting room activation. Occupancy and earned-rent
+    // recognition remain separate and still begin only after activation.
     if (settlement.state === 'terminated' || settlement.state === 'cancelled')
       throw new ConflictException({
         code: 'CONTRACT_SETTLEMENT_TERMINATED',

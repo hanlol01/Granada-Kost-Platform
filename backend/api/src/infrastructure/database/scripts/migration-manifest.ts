@@ -620,4 +620,12 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='booking_lead_payment_commitments_contract_rent_check' AND conrelid=to_regclass('public.booking_lead_payment_commitments'))",
     ],
   },
+  {
+    version: '065_contract_paid_actual_settlement_date.sql',
+    checksumSha256: '3a5b932f943f9195fa3e335565d0ef60074c817042b46fc07f13a917c861d3d5',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='align_contract_paid_actual_settlement_date')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_actual_settled_at' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
+    ],
+  },
 ] as const;

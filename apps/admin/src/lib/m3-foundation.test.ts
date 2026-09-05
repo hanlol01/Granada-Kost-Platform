@@ -67,7 +67,7 @@ test("M3 requester preserves the API base pathname for relative endpoints", asyn
     let requestedUrl = "";
     const requester = createAdminUxV2Requester({
       baseUrl,
-      getAccessToken: () => null,
+      getAccessToken: () => "token",
       refreshAccessToken: async () => false,
       onAuthFailure: () => undefined,
       fetchImpl: async (input) => {
@@ -108,6 +108,38 @@ test("M3 requester preserves the API base pathname for relative endpoints", asyn
     }),
     "https://reports.example.test/invoices?limit=10",
   );
+});
+
+test("M3 requester restores a missing access token before a protected request", async () => {
+  let accessToken: string | null = null;
+  let refreshCount = 0;
+  let authFailureCount = 0;
+  let authorization = "";
+  const requester = createAdminUxV2Requester({
+    baseUrl: "https://api.example.test/api/v1",
+    getAccessToken: () => accessToken,
+    refreshAccessToken: async () => {
+      refreshCount += 1;
+      accessToken = "restored-token";
+      return true;
+    },
+    onAuthFailure: () => {
+      authFailureCount += 1;
+    },
+    fetchImpl: async (_input, init) => {
+      authorization = new Headers(init?.headers).get("Authorization") ?? "";
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  await requester.get("/rooms");
+
+  assert.equal(refreshCount, 1);
+  assert.equal(authFailureCount, 0);
+  assert.equal(authorization, "Bearer restored-token");
 });
 
 test("M3 query keys are canonical, property-scoped, and do not retain NIK", () => {

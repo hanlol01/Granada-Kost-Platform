@@ -866,7 +866,9 @@ export const adminUxLeaseApi = {
       ),
   },
   rooms: {
-    listAvailable: (input: LeasePageInput & { q?: string; kostTypeId?: string }) =>
+    listAvailable: (
+      input: LeasePageInput & { q?: string; kostTypeId?: string; commercialDate?: string },
+    ) =>
       adminUxV2Requester
         .get<V2ListEnvelope<unknown>>("/rooms", {
           query: {
@@ -874,6 +876,7 @@ export const adminUxLeaseApi = {
             status: "vacant",
             kost_type_id: input.kostTypeId,
             q: text(input.q),
+            commercial_date: input.commercialDate,
           },
         })
         .then((envelope) => parseAvailableRooms(envelope, input.propertyId)),

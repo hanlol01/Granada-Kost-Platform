@@ -4,6 +4,7 @@ import { ApiClient, type TokenProvider } from "@granada-kost/api-client";
 import { env } from "./env";
 
 let tokenProviderRef: TokenProvider | null = null;
+let accessTokenRefresh: Promise<boolean> | null = null;
 
 export function registerTokenProvider(provider: TokenProvider): void {
   tokenProviderRef = provider;
@@ -22,7 +23,6 @@ export const apiClient = new ApiClient({
   onError: (err) => {
     // Only normalized ApiError lands here. Never log raw payloads (ADR-FE-008).
     if (typeof window !== "undefined") {
-      // eslint-disable-next-line no-console
       console.error(
         `[api] ${err.code} ${err.status} ${err.message} cid=${err.correlationId ?? "-"}`,
       );
@@ -38,7 +38,12 @@ export function getAccessToken(): string | null {
 // Admin UX V2 preserves its own envelopes, so it cannot use ApiClient's legacy
 // success-envelope unwrapping. These helpers retain the same auth lifecycle.
 export async function refreshAccessToken(): Promise<boolean> {
-  return proxyTokenProvider.refresh();
+  if (accessTokenRefresh) return accessTokenRefresh;
+  const refresh = proxyTokenProvider.refresh().finally(() => {
+    if (accessTokenRefresh === refresh) accessTokenRefresh = null;
+  });
+  accessTokenRefresh = refresh;
+  return refresh;
 }
 
 export function notifyAuthFailure(): void {

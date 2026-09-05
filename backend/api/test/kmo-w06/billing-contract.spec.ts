@@ -781,6 +781,28 @@ test('bank transfer remains pending confirmation and creates no allocation or re
   );
 });
 
+test('admin can record a rent payment before room activation or check-in', async () => {
+  const harness = paymentHarness({
+    contractSettlement: {
+      state: 'awaiting_activation',
+      activatedAt: null,
+      originalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+      deadlinePassed: false,
+      policyFinalDueAt: new Date('2026-11-01T16:59:59.999Z'),
+    },
+  });
+
+  const result = await harness.service.recordManualPayment(
+    actor as never,
+    paymentDto('bank_transfer'),
+    KEY,
+    {},
+  );
+
+  assert.equal(result.data.payment_status, 'pending_confirmation');
+  assert.equal(result.data.receipt_id, null);
+});
+
 test('bank transfer without proof is rejected before payment writes', async () => {
   const harness = paymentHarness();
   const dto = { ...paymentDto('bank_transfer'), evidence_file_ids: [] };
@@ -886,7 +908,7 @@ test('pre-activation full settlement created by onboarding can be verified', asy
   assert.equal(result.data.receipt_id, RECEIPT_ID);
 });
 
-test('ordinary rent transfer remains blocked before lease activation', async () => {
+test('ordinary rent transfer can be verified before lease activation', async () => {
   const harness = paymentHarness({
     paymentPurpose: 'rent',
     commandFingerprint: null,
@@ -901,20 +923,16 @@ test('ordinary rent transfer remains blocked before lease activation', async () 
     },
   });
 
-  await assert.rejects(
-    harness.service.verifyManualPayment(
-      actor as never,
-      PAYMENT_ID,
-      { property_id: PROPERTY_ID },
-      KEY,
-      {},
-    ),
-    (error: unknown) =>
-      error instanceof Error &&
-      'getResponse' in error &&
-      (error as { getResponse: () => { code: string } }).getResponse().code ===
-        'CONTRACT_SETTLEMENT_NOT_ACTIVE',
+  const result = await harness.service.verifyManualPayment(
+    actor as never,
+    PAYMENT_ID,
+    { property_id: PROPERTY_ID },
+    KEY,
+    {},
   );
+
+  assert.equal(result.data.payment_status, 'verified');
+  assert.equal(result.data.receipt_id, RECEIPT_ID);
 });
 
 test('manual transfer rejection is terminal without allocation, receipt, or verification effects', async () => {

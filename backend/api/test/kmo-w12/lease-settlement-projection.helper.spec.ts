@@ -25,6 +25,23 @@ const sixMonthCheckpoints = [
   checkpoint('final_settlement', 3, '2026-11-28T16:59:59.999Z', null),
 ];
 
+void test('awaiting-activation lease can receive additional historical rent payments', () => {
+  const projection = projectLeaseSettlementV2({
+    activated: false,
+    terminationPending: false,
+    contractRentAmount: 10_800_000,
+    cumulativeVerifiedRentCredit: 1_800_000,
+    authoritativeNow: new Date('2026-12-01T00:00:00.000Z'),
+    gracePeriodDays: 3,
+    checkpoints: sixMonthCheckpoints,
+  });
+
+  assert.equal(projection.stage, 'awaiting_activation');
+  assert.equal(projection.outstandingAmount, 9_000_000);
+  assert.equal(projection.partialPaymentAllowed, true);
+  assert.equal(projection.exactFinalPaymentRequired, false);
+});
+
 void test('regular checkpoint uses cumulative verified credit and exposes only its shortfall', () => {
   const projection = projectLeaseSettlementV2({
     activated: true,

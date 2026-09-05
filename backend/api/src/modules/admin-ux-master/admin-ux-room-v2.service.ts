@@ -88,6 +88,7 @@ export class AdminUxRoomV2Service {
       query.status ?? null,
       search,
       normalizedRoomNumberSearch,
+      query.commercial_date ?? null,
     ];
     const optionalFilters: string[] = [];
     if (query.gender_policy !== undefined) {
@@ -155,7 +156,7 @@ export class AdminUxRoomV2Service {
                 version.security_deposit_months
          FROM kost_type_commercial_versions version
          WHERE version.kost_type_id = kost_type.id
-           AND version.effective_date <= CURRENT_DATE
+           AND version.effective_date <= COALESCE($10::date, CURRENT_DATE)
          ORDER BY version.effective_date DESC, version.id DESC
          LIMIT 1
        ) commercial_version ON true
@@ -169,6 +170,48 @@ export class AdminUxRoomV2Service {
          AND ($5::uuid IS NULL OR building.id = $5)
          AND ($6::text IS NULL OR room.floor_code = $6)
          AND ($7::text IS NULL OR room.room_status = $7)
+         AND ($7::text IS DISTINCT FROM 'vacant' OR (
+           NOT EXISTS (
+             SELECT 1
+             FROM occupancies unavailable_occupancy
+             WHERE unavailable_occupancy.property_id = room.property_id
+               AND unavailable_occupancy.room_id = room.id
+               AND unavailable_occupancy.occupancy_status = 'active'
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM leases unavailable_lease
+             WHERE unavailable_lease.property_id = room.property_id
+               AND unavailable_lease.room_id = room.id
+               AND unavailable_lease.lease_status IN ('active', 'awaiting_activation')
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM onboarding_commitments unavailable_commitment
+             WHERE unavailable_commitment.property_id = room.property_id
+               AND unavailable_commitment.room_id = room.id
+               AND unavailable_commitment.status IN (
+                 'draft',
+                 'awaiting_documents',
+                 'awaiting_financials',
+                 'ready_to_commit',
+                 'committed'
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM booking_lead_holds unavailable_hold
+             WHERE unavailable_hold.property_id = room.property_id
+               AND unavailable_hold.room_id = room.id
+               AND (
+                 unavailable_hold.hold_status = 'committed'
+                 OR (
+                   unavailable_hold.hold_status = 'active'
+                   AND unavailable_hold.expires_at > now()
+                 )
+               )
+           )
+         ))
          AND ($8::text IS NULL OR
            room.number ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            room.room_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
@@ -232,7 +275,7 @@ export class AdminUxRoomV2Service {
                             SELECT 1
                             FROM kost_type_commercial_versions reconciliation_version
                             WHERE reconciliation_version.kost_type_id = reconciliation_type.id
-                              AND reconciliation_version.effective_date <= CURRENT_DATE
+                              AND reconciliation_version.effective_date <= COALESCE($10::date, CURRENT_DATE)
                           )
                         )
                     )

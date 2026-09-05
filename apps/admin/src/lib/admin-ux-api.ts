@@ -118,7 +118,25 @@ export function createAdminUxV2Requester(config: RequesterConfig): AdminUxV2Requ
     headers.set("Accept", ADMIN_UX_V2_ACCEPT);
     headers.set("X-Correlation-Id", requestCorrelationId);
     if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
-    const token = config.getAccessToken();
+    let token = config.getAccessToken();
+    if (!token && !retriedAfterRefresh) {
+      try {
+        await config.refreshAccessToken();
+      } catch {
+        // The authenticated Admin requester must never send a protected request
+        // without a bearer token, even when refresh itself is unavailable.
+      }
+      token = config.getAccessToken();
+    }
+    if (!token) {
+      config.onAuthFailure();
+      throw new ApiError({
+        code: ERROR_CODES.UNAUTHENTICATED,
+        message: "Authentication token is required.",
+        status: 401,
+        correlationId: requestCorrelationId,
+      });
+    }
     if (token) headers.set("Authorization", "Bearer " + token);
 
     let response: Response;

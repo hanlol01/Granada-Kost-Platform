@@ -99,6 +99,13 @@ test('V2 room list keeps exact filtered total on an empty offset page', async ()
   assert.equal(calls.length, 1);
   assert.match(calls[0].sql, /COUNT\(\*\)::int AS total/);
   assert.doesNotMatch(calls[0].sql, /COUNT\(\*\) OVER/);
+  assert.match(calls[0].sql, /unavailable_occupancy\.occupancy_status = 'active'/);
+  assert.match(
+    calls[0].sql,
+    /unavailable_lease\.lease_status IN \('active', 'awaiting_activation'\)/,
+  );
+  assert.match(calls[0].sql, /FROM onboarding_commitments unavailable_commitment/);
+  assert.match(calls[0].sql, /FROM booking_lead_holds unavailable_hold/);
   assert.deepEqual(calls[0].values, [
     [PROPERTY_A],
     PROPERTY_A,
@@ -108,7 +115,37 @@ test('V2 room list keeps exact filtered total on an empty offset page', async ()
     null,
     'vacant',
     'A-',
+    'A',
+    null,
   ]);
+});
+
+test('vacant-room commercial values follow the requested lease start date', async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const service = new AdminUxRoomV2Service(
+    {
+      client: {
+        query: async (sql: string, values: unknown[]) => {
+          calls.push({ sql, values });
+          return { rows: [{ total: 0 }] };
+        },
+      },
+    } as never,
+    { assertCanReadProperty: async () => undefined } as never,
+    {} as never,
+  );
+
+  await service.list(user(), {
+    property_id: PROPERTY_A,
+    status: 'vacant',
+    commercial_date: '2026-07-31',
+    limit: 20,
+    offset: 0,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /version\.effective_date <= COALESCE\(\$10::date, CURRENT_DATE\)/);
+  assert.equal(calls[0].values[9], '2026-07-31');
 });
 
 test('count and page use identical filter semantics with no more than two base queries', async () => {
@@ -151,7 +188,7 @@ test('count and page use identical filter semantics with no more than two base q
   const base = calls.filter(({ sql }) => /FROM rooms room/.test(sql));
 
   assert.equal(base.length, 2);
-  assert.deepEqual(base[0].values, base[1].values.slice(0, 8));
+  assert.deepEqual(base[0].values, base[1].values.slice(0, 10));
   assert.equal(result.meta.total, 1);
   assert.deepEqual(Object.keys(result).sort(), ['data', 'meta']);
   assert.deepEqual(Object.keys(result.meta).sort(), ['limit', 'offset', 'total']);

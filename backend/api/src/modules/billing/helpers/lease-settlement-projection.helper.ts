@@ -84,6 +84,7 @@ export function projectLeaseSettlementV2(input: LeaseSettlementProjectionInput) 
     checkpoints.at(-1)!;
   const finalCheckpoint = checkpoints.find((checkpoint) => checkpoint.code === 'final_settlement')!;
   const exactFinalPaymentRequired =
+    input.activated &&
     outstandingAmount > 0 &&
     (input.terminationPending || nowTime > finalCheckpoint.dueAt.getTime());
   const stage = settlementStage(
@@ -103,10 +104,7 @@ export function projectLeaseSettlementV2(input: LeaseSettlementProjectionInput) 
     checkpoints,
     exactFinalPaymentRequired,
     partialPaymentAllowed:
-      input.activated &&
-      outstandingAmount > 0 &&
-      !input.terminationPending &&
-      !exactFinalPaymentRequired,
+      outstandingAmount > 0 && !input.terminationPending && !exactFinalPaymentRequired,
     adminActionRequired:
       currentCheckpoint.status === 'admin_action_required' ||
       currentCheckpoint.status === 'termination_eligible',

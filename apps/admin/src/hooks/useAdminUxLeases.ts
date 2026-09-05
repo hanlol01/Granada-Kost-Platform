@@ -134,15 +134,16 @@ export function useM6RenewalEligibility(
   });
 }
 
-export function useM6LeaseAvailableRooms(q = "") {
+export function useM6LeaseAvailableRooms(q = "", commercialDate?: string) {
   const { currentPropertyId } = useProperty();
-  const keyFilters = { q, status: "vacant", limit: SELECT_LIMIT };
+  const keyFilters = { q, status: "vacant", limit: SELECT_LIMIT, commercialDate };
   return useQuery({
     queryKey: adminUxQueryKeys.rooms.availability(currentPropertyId ?? "", keyFilters),
     queryFn: () =>
       adminUxLeaseApi.rooms.listAvailable({
         propertyId: currentPropertyId!,
         q,
+        commercialDate,
         limit: SELECT_LIMIT,
         offset: 0,
       }),

@@ -16,6 +16,10 @@ const contractPaidMigrationPath = new URL(
   '../../src/infrastructure/database/migrations/061_contract_paid_official_document.sql',
   import.meta.url,
 );
+const contractPaidActualDateMigrationPath = new URL(
+  '../../src/infrastructure/database/migrations/065_contract_paid_actual_settlement_date.sql',
+  import.meta.url,
+);
 
 void test('formal document migration is canonical and covers every issuance family', async () => {
   const [migration, manifest] = await Promise.all([
@@ -122,4 +126,83 @@ void test('contract-paid proof has formal numbering, immutable snapshot, and rev
   assert.match(migration, /invalidated_by_reversal_id/);
   assert.ok(manifest.includes("version: '061_contract_paid_official_document.sql'"));
   assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
+});
+
+void test('contract-paid proof uses the actual final payment date for historical entry', async () => {
+  const [migration, manifest] = await Promise.all([
+    readFile(contractPaidActualDateMigrationPath, 'utf8'),
+    readFile(manifestPath, 'utf8'),
+  ]);
+  const checksum = createHash('sha256')
+    .update(await readFile(contractPaidActualDateMigrationPath))
+    .digest('hex');
+
+  assert.match(migration, /align_contract_paid_actual_settlement_date/);
+  assert.match(migration, /SELECT payment\.paid_at/);
+  assert.match(migration, /'\{settledAt\}'/);
+  assert.match(migration, /trg_lease_contract_paid_documents_actual_settled_at/);
+  assert.match(migration, /UPDATE lease_contract_paid_documents document/);
+  assert.ok(manifest.includes("version: '065_contract_paid_actual_settlement_date.sql'"));
+  assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
+});
+
+void test('contract-paid download renders the settling payment date instead of its issuance date', async () => {
+  const queries: string[] = [];
+  const database = {
+    client: {
+      query: (sql: string) => {
+        queries.push(sql);
+        return Promise.resolve({
+          rows: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              document_code: '021-09/KONTRAK-LUNAS/GSH1/2026',
+              issued_at: new Date('2026-09-05T08:10:00.000Z'),
+              invalidated_at: null,
+              invalidation_reason: null,
+              settling_paid_at: new Date('2026-08-01T05:00:00.000Z'),
+              safe_snapshot: {
+                documentCode: '021-09/KONTRAK-LUNAS/GSH1/2026',
+                residentName: 'Jokowi',
+                roomNumber: 'RK-06-05',
+                buildingCode: 'RK-06',
+                leaseStart: '2026-08-01',
+                leaseEnd: '2026-11-01',
+                contractRentAmount: 5_400_000,
+                initialRentCredit: 5_400_000,
+                additionalRentPayments: 0,
+                contractAdjustmentAmount: 0,
+                totalRentReceived: 5_400_000,
+                totalSettledAmount: 5_400_000,
+                outstandingAmount: 0,
+                settledAt: '2026-09-05T08:10:00.000Z',
+                issuedAt: '2026-09-05T08:10:00.000Z',
+                transactionCodes: ['TRX-20260801-000003-LUNAS'],
+                propertyName: 'Granada Student House Jatinangor',
+                propertyAddress:
+                  'Jl. Kiara Beres, Desa Cipacing, Kec. Jatinangor, Kab. Sumedang 45363',
+                issuedByName: 'Diki Karya Permana',
+              },
+            },
+          ],
+        });
+      },
+    },
+  };
+  const properties = { assertCanReadProperty: () => Promise.resolve() };
+  const service = new W06BillingService(database as never, properties as never, {} as never);
+
+  const result = await service.contractPaidDocument(
+    {} as never,
+    '20000000-0000-4000-8000-000000000001',
+    '11111111-1111-4111-8111-111111111111',
+  );
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(queries[0] ?? '', /settling_payment\.paid_at AS settling_paid_at/);
+  assert.match(text, /Kontrak dinyatakan lunas\s+:\s+1 Agustus 2026 pukul 12\.00/);
+  assert.doesNotMatch(text, /Kontrak dinyatakan lunas\s+:\s+5 September 2026/);
 });

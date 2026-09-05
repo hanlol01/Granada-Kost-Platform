@@ -2,6 +2,7 @@ import { Transform, Type, type TransformFnParams } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
@@ -89,6 +90,10 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   @IsOptional()
   @IsIn(['normal', 'requires_review'])
   reconciliation_state?: 'normal' | 'requires_review';
+
+  @IsOptional()
+  @IsDateString()
+  commercial_date?: string;
 
   @IsOptional()
   @IsIn([

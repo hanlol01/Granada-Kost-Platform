@@ -34,11 +34,21 @@ export type PropertyPageInput = {
 export type KostTypeCommercial = {
   monthlyPrice: number;
   annualContractValue: number;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
+  managementFeeAmount: number;
+  managementFeeEffectiveDate: string;
   minimumDpPercent: number;
   minimumDpAmount: number;
   paymentSchedules: Array<"annual" | "two_month_installments">;
   securityDepositMonths: number;
   securityDepositRequired: number;
+  effectiveDate: string;
+};
+
+export type ManagementFeeAuthority = {
+  monthlyFeeAmount: number;
   effectiveDate: string;
 };
 
@@ -54,6 +64,9 @@ export type KostType = {
   roomSizeM2?: number | null;
   monthlyPrice: number;
   yearlyPrice: number;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
   depositAmount: number;
   maxOccupants?: number;
   publicVisible: boolean;
@@ -65,6 +78,8 @@ export type KostType = {
   rules?: KostTypeRule[];
   commercial?: KostTypeCommercial;
   futureCommercial?: KostTypeCommercial | null;
+  managementFee?: ManagementFeeAuthority;
+  futureManagementFee?: ManagementFeeAuthority | null;
   deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -122,6 +137,10 @@ export type RoomInventory = {
     KostType,
     "id" | "name" | "slug" | "category" | "monthlyPrice" | "yearlyPrice" | "depositAmount"
   > & {
+    shortStayMonthlyPrice?: number;
+    mediumStayMonthlyPrice?: number;
+    longStayMonthlyPrice?: number;
+    commercialEffectiveDate?: string;
     facilities?: Array<
       Pick<RoomFacility, "id" | "name" | "icon" | "description" | "categoryId" | "sortOrder">
     >;
@@ -374,6 +393,11 @@ export type KostTypeInput = {
   roomSizeM2?: number;
   monthlyPrice: number;
   yearlyPrice: number;
+  shortStayMonthlyPrice?: number;
+  mediumStayMonthlyPrice?: number;
+  longStayMonthlyPrice?: number;
+  managementFeeAmount?: number;
+  managementFeeEffectiveDate?: string;
   effectiveDate?: string;
   paymentSchedules?: Array<"annual" | "two_month_installments">;
   securityDepositMonths?: number;
@@ -536,6 +560,9 @@ const KOST_TYPE_BASE_KEYS = [
   "room_size_m2",
   "monthly_price",
   "yearly_price",
+  "short_stay_monthly_price",
+  "medium_stay_monthly_price",
+  "long_stay_monthly_price",
   "deposit_amount",
   "max_occupants",
   "public_visible",
@@ -546,11 +573,18 @@ const KOST_TYPE_BASE_KEYS = [
   "updated_at",
   "commercial",
   "future_commercial",
+  "management_fee",
+  "future_management_fee",
 ] as const;
 
 const COMMERCIAL_AUTHORITY_KEYS = [
   "monthly_price",
   "annual_contract_value",
+  "short_stay_monthly_price",
+  "medium_stay_monthly_price",
+  "long_stay_monthly_price",
+  "management_fee_amount",
+  "management_fee_effective_date",
   "minimum_dp_percent",
   "minimum_dp_amount",
   "payment_schedules",
@@ -558,6 +592,17 @@ const COMMERCIAL_AUTHORITY_KEYS = [
   "security_deposit_required",
   "effective_date",
 ] as const;
+
+const MANAGEMENT_FEE_AUTHORITY_KEYS = ["monthly_fee_amount", "effective_date"] as const;
+
+function isManagementFeeAuthority(value: unknown): value is Record<string, unknown> {
+  return (
+    isPlainRecord(value) &&
+    hasExactKeys(value, MANAGEMENT_FEE_AUTHORITY_KEYS) &&
+    isNonNegativeSafeInteger(value.monthly_fee_amount) &&
+    isCanonicalDate(value.effective_date)
+  );
+}
 
 function isCanonicalDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -591,6 +636,11 @@ function isCommercialAuthority(value: unknown): value is Record<string, unknown>
     new Set(value.payment_schedules).size !== value.payment_schedules.length ||
     !isPositiveSafeInteger(value.monthly_price) ||
     !isPositiveSafeInteger(value.annual_contract_value) ||
+    !isPositiveSafeInteger(value.short_stay_monthly_price) ||
+    !isPositiveSafeInteger(value.medium_stay_monthly_price) ||
+    !isPositiveSafeInteger(value.long_stay_monthly_price) ||
+    !isNonNegativeSafeInteger(value.management_fee_amount) ||
+    !isCanonicalDate(value.management_fee_effective_date) ||
     value.minimum_dp_percent !== 25 ||
     !isPositiveSafeInteger(value.minimum_dp_amount) ||
     (value.security_deposit_months !== 1 && value.security_deposit_months !== 2) ||
@@ -600,6 +650,11 @@ function isCommercialAuthority(value: unknown): value is Record<string, unknown>
     return false;
   }
   return (
+    value.monthly_price === value.short_stay_monthly_price &&
+    value.annual_contract_value === (value.long_stay_monthly_price as number) * 12 &&
+    (value.short_stay_monthly_price as number) >= (value.medium_stay_monthly_price as number) &&
+    (value.medium_stay_monthly_price as number) >= (value.long_stay_monthly_price as number) &&
+    (value.management_fee_amount as number) < (value.long_stay_monthly_price as number) &&
     value.minimum_dp_amount ===
       Math.ceil(
         ((value.annual_contract_value as number) * (value.minimum_dp_percent as number)) / 100,
@@ -689,16 +744,30 @@ export function parseKostTypeRecord(value: unknown): KostType {
   }
   const commercial = value.commercial;
   const futureCommercial = value.future_commercial;
+  const managementFee = value.management_fee;
+  const futureManagementFee = value.future_management_fee;
   const facilities = value.facilities;
   const rules = value.rules;
   if (
     !isCommercialAuthority(commercial) ||
     (futureCommercial !== null && !isCommercialAuthority(futureCommercial)) ||
+    !isManagementFeeAuthority(managementFee) ||
+    (futureManagementFee !== null && !isManagementFeeAuthority(futureManagementFee)) ||
+    commercial.management_fee_amount !== managementFee.monthly_fee_amount ||
+    commercial.management_fee_effective_date !== managementFee.effective_date ||
+    (futureManagementFee !== null &&
+      String(futureManagementFee.effective_date) <= String(managementFee.effective_date)) ||
     !isPositiveSafeInteger(value.monthly_price) ||
     !isPositiveSafeInteger(value.yearly_price) ||
+    !isPositiveSafeInteger(value.short_stay_monthly_price) ||
+    !isPositiveSafeInteger(value.medium_stay_monthly_price) ||
+    !isPositiveSafeInteger(value.long_stay_monthly_price) ||
     !isPositiveSafeInteger(value.deposit_amount) ||
     value.monthly_price !== commercial.monthly_price ||
     value.yearly_price !== commercial.annual_contract_value ||
+    value.short_stay_monthly_price !== commercial.short_stay_monthly_price ||
+    value.medium_stay_monthly_price !== commercial.medium_stay_monthly_price ||
+    value.long_stay_monthly_price !== commercial.long_stay_monthly_price ||
     value.deposit_amount !== commercial.security_deposit_required ||
     (futureCommercial !== null &&
       String(futureCommercial.effective_date) <= String(commercial.effective_date)) ||
@@ -1308,6 +1377,10 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       "category",
       "monthly_price",
       "yearly_price",
+      "short_stay_monthly_price",
+      "medium_stay_monthly_price",
+      "long_stay_monthly_price",
+      "commercial_effective_date",
       "deposit_amount",
       "facilities",
     ]) ||
@@ -1317,6 +1390,10 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     !isKostTypeCategory(kostType.category) ||
     typeof kostType.monthly_price !== "number" ||
     typeof kostType.yearly_price !== "number" ||
+    typeof kostType.short_stay_monthly_price !== "number" ||
+    typeof kostType.medium_stay_monthly_price !== "number" ||
+    typeof kostType.long_stay_monthly_price !== "number" ||
+    !isCanonicalDate(kostType.commercial_effective_date) ||
     typeof kostType.deposit_amount !== "number" ||
     !Array.isArray(kostType.facilities)
   ) {
@@ -1397,6 +1474,10 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       category: kostType.category,
       monthlyPrice: kostType.monthly_price,
       yearlyPrice: kostType.yearly_price,
+      shortStayMonthlyPrice: kostType.short_stay_monthly_price,
+      mediumStayMonthlyPrice: kostType.medium_stay_monthly_price,
+      longStayMonthlyPrice: kostType.long_stay_monthly_price,
+      commercialEffectiveDate: kostType.commercial_effective_date,
       depositAmount: kostType.deposit_amount,
       facilities: kostType.facilities.map(parseRoomFacility),
     },
@@ -2159,6 +2240,11 @@ export function kostTypeBody(input: KostTypeInput | KostTypeUpdateInput): Record
     room_size_m2: input.roomSizeM2,
     monthly_price: input.monthlyPrice,
     yearly_price: input.yearlyPrice,
+    short_stay_monthly_price: input.shortStayMonthlyPrice,
+    medium_stay_monthly_price: input.mediumStayMonthlyPrice,
+    long_stay_monthly_price: input.longStayMonthlyPrice,
+    management_fee_amount: input.managementFeeAmount,
+    management_fee_effective_date: input.managementFeeEffectiveDate,
     effective_date: input.effectiveDate,
     payment_schedules: input.paymentSchedules,
     security_deposit_months: input.securityDepositMonths,

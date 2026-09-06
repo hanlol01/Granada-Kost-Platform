@@ -628,4 +628,22 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_actual_settled_at' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '066_contract_paid_transaction_references.sql',
+    checksumSha256: 'e2f740b36314cd9cd25ebe945f83889b83f26d74aa2362796c415ffe0cacd785',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='contract_paid_transaction_references')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_transaction_references' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '067_duration_pricing_and_management_fee.sql',
+    checksumSha256: 'ff86d468944686aa10e9cf854f10a5713e8980691279d5e6029bdc4a73b9af4f',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='kost_type_commercial_versions' AND column_name='short_stay_monthly_price' AND is_nullable='NO')",
+      "to_regclass('public.property_management_fee_versions') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='kost_type_commercial_versions_duration_rates_check' AND conrelid=to_regclass('public.kost_type_commercial_versions'))",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='snapshot_pricing_tier')",
+    ],
+  },
 ] as const;

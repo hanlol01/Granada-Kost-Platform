@@ -169,14 +169,14 @@ function SettlementProgress({ billing }: { billing: MyW06Billing }) {
             />
             <SummaryRow
               label="Batas berlaku"
-              value={dueAt ? jakartaTime(dueAt) : "Belum tersedia"}
+              value={dueAt ? jakartaFinancialDate(dueAt) : "Belum tersedia"}
               stacked
             />
           </div>
 
           {settlement.extension_due_at ? (
             <p className="rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs leading-relaxed">
-              Perpanjangan resmi berlaku sampai {jakartaTime(settlement.extension_due_at)}
+              Perpanjangan resmi berlaku sampai {jakartaFinancialDate(settlement.extension_due_at)}
               {settlement.extension_reason ? ` · ${settlement.extension_reason}` : ""}.
             </p>
           ) : null}
@@ -459,7 +459,9 @@ function PaymentHistory({
                   <div>
                     <p className="text-lg font-bold">{idr(payment.amount)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {payment.paid_at ? jakartaTime(payment.paid_at) : "Waktu belum tersedia"}
+                      {payment.paid_at
+                        ? jakartaFinancialDate(payment.paid_at)
+                        : "Tanggal belum tersedia"}
                     </p>
                   </div>
                   {payment.receipt_id ? (
@@ -537,7 +539,7 @@ function FinancialTimeline({
                           {financialEventLabel(event.event_type)}
                         </h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {jakartaTime(event.occurred_at)} · {event.actor_name}
+                          {jakartaFinancialDate(event.occurred_at)} · {event.actor_name}
                         </p>
                       </div>
                       <p className="font-bold">{financialAmount(event.direction, event.amount)}</p>
@@ -604,7 +606,7 @@ function OfficialLeaseDocuments({ billing }: { billing: MyW06Billing }) {
                       : "Bukti pengembalian refund"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {document.document_code} · {jakartaTime(document.issued_at)}
+                  {document.document_code} · {jakartaFinancialDate(document.issued_at)}
                 </p>
               </div>
               <Button
@@ -656,7 +658,7 @@ function ProofHistory({ proofs, invoices }: { proofs: Proof[]; invoices: Invoice
                     {invoiceCodes.get(proof.invoice_id) ?? "Invoice kontrak"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {idr(proof.claimed_amount)} · {jakartaTime(proof.uploaded_at)}
+                    {idr(proof.claimed_amount)} · {jakartaFinancialDate(proof.uploaded_at)}
                   </p>
                 </div>
                 <ProofBadge status={proof.proof_status} />
@@ -705,7 +707,9 @@ function ReceiptDialog({ receiptId, onClose }: { receiptId: string | null; onClo
               <CheckCircle2 className="h-6 w-6 text-success" />
               <div>
                 <p className="font-semibold">{query.data.receipt_code}</p>
-                <p className="text-xs text-muted-foreground">{jakartaTime(query.data.issued_at)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {jakartaFinancialDate(query.data.issued_at)}
+                </p>
               </div>
             </div>
             <SummaryRow label="Pembayaran" value={query.data.snapshot.payment_code} />
@@ -989,10 +993,9 @@ function jakartaDate(value: string) {
     timeZone: "Asia/Jakarta",
   }).format(new Date(`${value}T00:00:00+07:00`));
 }
-function jakartaTime(value: string) {
+function jakartaFinancialDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    dateStyle: "long",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
 }

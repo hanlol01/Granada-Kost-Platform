@@ -369,9 +369,13 @@ test("vacant room parser accepts the live snake-case envelope and binds property
       id: "44444444-4444-4444-8444-444444444444",
       name: "Apart Kost",
       category: "apartkost",
-      monthly_price: 1_800_000,
+      monthly_price: 1_900_000,
       yearly_price: 21_600_000,
-      deposit_amount: 1_800_000,
+      short_stay_monthly_price: 1_900_000,
+      medium_stay_monthly_price: 1_850_000,
+      long_stay_monthly_price: 1_800_000,
+      commercial_effective_date: "2026-06-01",
+      deposit_amount: 1_900_000,
     },
   };
   const envelope = { data: [room], meta: { limit: 100, offset: 0, total: 1 } };
@@ -379,7 +383,8 @@ test("vacant room parser accepts the live snake-case envelope and binds property
   const page = parseAvailableRooms(envelope, propertyId);
   assert.equal(page.items[0]?.buildingName, "Apart Kost Unit 01");
   assert.equal(page.items[0]?.genderPolicy, "female");
-  assert.equal(page.items[0]?.kostType.monthlyPrice, 1_800_000);
+  assert.equal(page.items[0]?.kostType.monthlyPrice, 1_900_000);
+  assert.equal(page.items[0]?.kostType.mediumStayMonthlyPrice, 1_850_000);
 
   assert.throws(() =>
     parseAvailableRooms(

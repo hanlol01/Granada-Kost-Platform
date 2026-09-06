@@ -37,7 +37,7 @@ import {
 type DbRow = Record<string, unknown>;
 
 const LEGACY_ROOM_PRICE_MAX = 2_147_483_647;
-const INITIAL_MONTHLY_PRICE = 1_800_000;
+const INITIAL_MONTHLY_PRICE = 1_900_000;
 const INITIAL_ANNUAL_CONTRACT_VALUE = 21_600_000;
 const DEFAULT_PAYMENT_SCHEDULES = ['annual', 'two_month_installments'] as const;
 const DEFAULT_MINIMUM_DP_PERCENT = 25;
@@ -75,6 +75,21 @@ export class AdminUxMasterService {
          kost_type.description_short, kost_type.description_long, kost_type.room_size_label,
          kost_type.room_size_m2, commercial_version.monthly_price,
          commercial_version.annual_contract_value AS yearly_price,
+         commercial_version.short_stay_monthly_price,
+         commercial_version.medium_stay_monthly_price,
+         commercial_version.long_stay_monthly_price,
+         (SELECT fee.monthly_fee_amount FROM property_management_fee_versions fee
+           WHERE fee.property_id=kost_type.property_id AND fee.effective_date<=CURRENT_DATE
+           ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1) AS management_fee_amount,
+         (SELECT fee.effective_date::text FROM property_management_fee_versions fee
+           WHERE fee.property_id=kost_type.property_id AND fee.effective_date<=CURRENT_DATE
+           ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1) AS management_fee_effective_date,
+         (SELECT fee.monthly_fee_amount FROM property_management_fee_versions fee
+           WHERE fee.property_id=kost_type.property_id AND fee.effective_date>CURRENT_DATE
+           ORDER BY fee.effective_date,fee.id LIMIT 1) AS future_management_fee_amount,
+         (SELECT fee.effective_date::text FROM property_management_fee_versions fee
+           WHERE fee.property_id=kost_type.property_id AND fee.effective_date>CURRENT_DATE
+           ORDER BY fee.effective_date,fee.id LIMIT 1) AS future_management_fee_effective_date,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
          commercial_version.effective_date::text AS effective_date,
@@ -83,6 +98,9 @@ export class AdminUxMasterService {
          future_version.effective_date::text AS future_effective_date,
          future_version.monthly_price AS future_monthly_price,
          future_version.annual_contract_value AS future_yearly_price,
+         future_version.short_stay_monthly_price AS future_short_stay_monthly_price,
+         future_version.medium_stay_monthly_price AS future_medium_stay_monthly_price,
+         future_version.long_stay_monthly_price AS future_long_stay_monthly_price,
          future_version.minimum_dp_percent AS future_minimum_dp_percent,
          future_version.security_deposit_months AS future_security_deposit_months,
          future_version.payment_schedules AS future_payment_schedules,
@@ -94,7 +112,9 @@ export class AdminUxMasterService {
          COUNT(*) OVER()::int AS total
        FROM kost_types kost_type
        JOIN LATERAL (
-         SELECT version.effective_date, version.monthly_price, version.annual_contract_value,
+          SELECT version.effective_date, version.monthly_price, version.annual_contract_value,
+                 version.short_stay_monthly_price,version.medium_stay_monthly_price,
+                 version.long_stay_monthly_price,
                 version.minimum_dp_percent, version.security_deposit_months, version.payment_schedules
          FROM kost_type_commercial_versions version
          WHERE version.kost_type_id = kost_type.id
@@ -103,7 +123,9 @@ export class AdminUxMasterService {
          LIMIT 1
        ) commercial_version ON true
        LEFT JOIN LATERAL (
-         SELECT version.effective_date, version.monthly_price, version.annual_contract_value,
+          SELECT version.effective_date, version.monthly_price, version.annual_contract_value,
+                 version.short_stay_monthly_price,version.medium_stay_monthly_price,
+                 version.long_stay_monthly_price,
                 version.minimum_dp_percent, version.security_deposit_months, version.payment_schedules
          FROM kost_type_commercial_versions version
          WHERE version.kost_type_id = kost_type.id
@@ -123,12 +145,18 @@ export class AdminUxMasterService {
                  commercial_version.effective_date,
                  commercial_version.monthly_price,
                  commercial_version.annual_contract_value,
+                 commercial_version.short_stay_monthly_price,
+                 commercial_version.medium_stay_monthly_price,
+                 commercial_version.long_stay_monthly_price,
                  commercial_version.minimum_dp_percent,
                  commercial_version.security_deposit_months,
                  commercial_version.payment_schedules,
                  future_version.effective_date,
                  future_version.monthly_price,
                  future_version.annual_contract_value,
+                 future_version.short_stay_monthly_price,
+                 future_version.medium_stay_monthly_price,
+                 future_version.long_stay_monthly_price,
                  future_version.minimum_dp_percent,
                  future_version.security_deposit_months,
                  future_version.payment_schedules
@@ -233,21 +261,33 @@ export class AdminUxMasterService {
       const record = result.rows[0];
       await client.query(
         `INSERT INTO kost_type_commercial_versions (
-           kost_type_id, effective_date, monthly_price, annual_contract_value,
-           minimum_dp_percent, security_deposit_months, payment_schedules,
-           created_by_user_id, updated_by_user_id
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+            kost_type_id, effective_date, monthly_price, annual_contract_value,
+            short_stay_monthly_price, medium_stay_monthly_price, long_stay_monthly_price,
+            minimum_dp_percent, security_deposit_months, payment_schedules,
+            created_by_user_id, updated_by_user_id
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
         [
           record.id,
           effectiveDate,
           commercial.monthlyPrice,
           commercial.annualContractValue,
+          commercial.shortStayMonthlyPrice,
+          commercial.mediumStayMonthlyPrice,
+          commercial.longStayMonthlyPrice,
           commercial.minimumDpPercent,
           commercial.securityDepositMonths,
           commercial.paymentSchedules,
           user.id,
         ],
       );
+      await client.query(
+        `INSERT INTO property_management_fee_versions(
+           property_id,effective_date,monthly_fee_amount,created_by_user_id,updated_by_user_id
+         ) VALUES($1,$2::date,$3,$4,$4)
+         ON CONFLICT(property_id,effective_date) DO NOTHING`,
+        [dto.property_id, effectiveDate, dto.management_fee_amount ?? 300000, user.id],
+      );
+      await this.assertManagementFeeCompatible(client, dto.property_id, effectiveDate);
       await this.audit.write(
         {
           actorUserId: user.id,
@@ -260,6 +300,9 @@ export class AdminUxMasterService {
               effective_date: effectiveDate,
               monthly_price: commercial.monthlyPrice,
               annual_contract_value: commercial.annualContractValue,
+              short_stay_monthly_price: commercial.shortStayMonthlyPrice,
+              medium_stay_monthly_price: commercial.mediumStayMonthlyPrice,
+              long_stay_monthly_price: commercial.longStayMonthlyPrice,
               minimum_dp_percent: commercial.minimumDpPercent,
               security_deposit_months: commercial.securityDepositMonths,
               payment_schedules: commercial.paymentSchedules,
@@ -309,10 +352,14 @@ export class AdminUxMasterService {
     const commercialChange = [
       dto.monthly_price,
       dto.yearly_price,
+      dto.short_stay_monthly_price,
+      dto.medium_stay_monthly_price,
+      dto.long_stay_monthly_price,
       dto.security_deposit_months,
       dto.payment_schedules,
       dto.effective_date,
     ].some((value) => value !== undefined);
+    const managementFeeChange = dto.management_fee_amount !== undefined;
     if (commercialChange && dto.effective_date === undefined) {
       throw new BadRequestException({
         code: 'KOST_TYPE_EFFECTIVE_DATE_REQUIRED',
@@ -343,6 +390,9 @@ export class AdminUxMasterService {
       const effectiveDate = commercialChange
         ? this.effectiveDate(dto.effective_date)
         : String(current.effective_date).slice(0, 10);
+      const managementFeeEffectiveDate = managementFeeChange
+        ? this.effectiveDate(dto.management_fee_effective_date ?? dto.effective_date)
+        : null;
       const futureVersions = versions.filter(
         (version) => String(version.effective_date).slice(0, 10) > today,
       );
@@ -361,6 +411,14 @@ export class AdminUxMasterService {
           code: 'KOST_TYPE_EFFECTIVE_DATE_NOT_FUTURE',
           message: 'Commercial updates must start after the current business date.',
         });
+      }
+      if (managementFeeChange) {
+        if (managementFeeEffectiveDate! <= today || !managementFeeEffectiveDate!.endsWith('-01')) {
+          throw new BadRequestException({
+            code: 'MANAGEMENT_FEE_EFFECTIVE_DATE_INVALID',
+            message: 'Management fee must start on the first day of a future month.',
+          });
+        }
       }
       if (
         commercialChange &&
@@ -414,11 +472,14 @@ export class AdminUxMasterService {
           await client.query(
             `UPDATE kost_type_commercial_versions
              SET monthly_price = $3,
-                 annual_contract_value = $4,
-                 minimum_dp_percent = $5,
-                 security_deposit_months = $6,
-                 payment_schedules = $7,
-                 updated_by_user_id = $8,
+                  annual_contract_value = $4,
+                  short_stay_monthly_price = $5,
+                  medium_stay_monthly_price = $6,
+                  long_stay_monthly_price = $7,
+                  minimum_dp_percent = $8,
+                  security_deposit_months = $9,
+                  payment_schedules = $10,
+                  updated_by_user_id = $11,
                  updated_at = now()
              WHERE kost_type_id = $1 AND effective_date = $2`,
             [
@@ -426,6 +487,9 @@ export class AdminUxMasterService {
               effectiveDate,
               commercial.monthlyPrice,
               commercial.annualContractValue,
+              commercial.shortStayMonthlyPrice,
+              commercial.mediumStayMonthlyPrice,
+              commercial.longStayMonthlyPrice,
               DEFAULT_MINIMUM_DP_PERCENT,
               commercial.securityDepositMonths,
               commercial.paymentSchedules,
@@ -435,15 +499,19 @@ export class AdminUxMasterService {
         } else {
           await client.query(
             `INSERT INTO kost_type_commercial_versions (
-               kost_type_id, effective_date, monthly_price, annual_contract_value,
-               minimum_dp_percent, security_deposit_months, payment_schedules,
-               created_by_user_id, updated_by_user_id
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+                kost_type_id, effective_date, monthly_price, annual_contract_value,
+                short_stay_monthly_price, medium_stay_monthly_price, long_stay_monthly_price,
+                minimum_dp_percent, security_deposit_months, payment_schedules,
+                created_by_user_id, updated_by_user_id
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
             [
               id,
               effectiveDate,
               commercial.monthlyPrice,
               commercial.annualContractValue,
+              commercial.shortStayMonthlyPrice,
+              commercial.mediumStayMonthlyPrice,
+              commercial.longStayMonthlyPrice,
               DEFAULT_MINIMUM_DP_PERCENT,
               commercial.securityDepositMonths,
               commercial.paymentSchedules,
@@ -451,6 +519,56 @@ export class AdminUxMasterService {
             ],
           );
         }
+      }
+      if (commercialChange) {
+        await this.assertManagementFeeCompatible(client, dto.property_id, effectiveDate);
+        const scheduledFees = await client.query<{
+          effective_date: string;
+          monthly_fee_amount: string | number;
+        }>(
+          `SELECT effective_date::text,monthly_fee_amount
+           FROM property_management_fee_versions
+           WHERE property_id=$1 AND effective_date>$2::date
+           ORDER BY effective_date`,
+          [dto.property_id, effectiveDate],
+        );
+        for (const fee of scheduledFees.rows) {
+          await this.assertManagementFeeCompatible(
+            client,
+            dto.property_id,
+            fee.effective_date,
+            Number(fee.monthly_fee_amount),
+          );
+        }
+      }
+      if (managementFeeChange) {
+        await this.assertManagementFeeCompatible(
+          client,
+          dto.property_id,
+          managementFeeEffectiveDate!,
+          dto.management_fee_amount,
+        );
+        const existingFutureFee = await client.query<{ effective_date: string }>(
+          `SELECT effective_date::text FROM property_management_fee_versions
+           WHERE property_id=$1 AND effective_date>CURRENT_DATE
+             AND effective_date<>$2::date FOR UPDATE`,
+          [dto.property_id, managementFeeEffectiveDate],
+        );
+        if (existingFutureFee.rowCount) {
+          throw new ConflictException({
+            code: 'MANAGEMENT_FEE_FUTURE_CONFLICT',
+            message: 'A future management fee is already scheduled.',
+          });
+        }
+        await client.query(
+          `INSERT INTO property_management_fee_versions(
+             property_id,effective_date,monthly_fee_amount,created_by_user_id,updated_by_user_id
+           ) VALUES($1,$2::date,$3,$4,$4)
+           ON CONFLICT(property_id,effective_date) DO UPDATE
+             SET monthly_fee_amount=EXCLUDED.monthly_fee_amount,
+                 updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()`,
+          [dto.property_id, managementFeeEffectiveDate, dto.management_fee_amount, user.id],
+        );
       }
       await this.audit.write(
         {
@@ -465,6 +583,9 @@ export class AdminUxMasterService {
               effective_date: effectiveDate,
               monthly_price: commercial.monthlyPrice,
               annual_contract_value: commercial.annualContractValue,
+              short_stay_monthly_price: commercial.shortStayMonthlyPrice,
+              medium_stay_monthly_price: commercial.mediumStayMonthlyPrice,
+              long_stay_monthly_price: commercial.longStayMonthlyPrice,
               minimum_dp_percent: commercial.minimumDpPercent,
               security_deposit_months: commercial.securityDepositMonths,
               payment_schedules: commercial.paymentSchedules,
@@ -1088,6 +1209,12 @@ export class AdminUxMasterService {
   }
 
   private kostTypeSummary(row: DbRow) {
+    const managementFeeEffectiveDate =
+      typeof row.management_fee_effective_date === 'string'
+        ? row.management_fee_effective_date.slice(0, 10)
+        : row.management_fee_effective_date instanceof Date
+          ? row.management_fee_effective_date.toISOString().slice(0, 10)
+          : '2026-06-01';
     const result: Record<string, unknown> = {
       id: row.id,
       property_id: row.property_id,
@@ -1100,6 +1227,9 @@ export class AdminUxMasterService {
       room_size_m2: row.room_size_m2 === null ? null : Number(row.room_size_m2),
       monthly_price: Number(row.monthly_price),
       yearly_price: Number(row.yearly_price),
+      short_stay_monthly_price: Number(row.short_stay_monthly_price),
+      medium_stay_monthly_price: Number(row.medium_stay_monthly_price),
+      long_stay_monthly_price: Number(row.long_stay_monthly_price),
       deposit_amount: Number(row.deposit_amount),
       max_occupants: Number(row.max_occupants ?? 1),
       public_visible: Boolean(row.public_visible),
@@ -1111,6 +1241,11 @@ export class AdminUxMasterService {
       commercial: {
         monthly_price: Number(row.monthly_price),
         annual_contract_value: Number(row.yearly_price),
+        short_stay_monthly_price: Number(row.short_stay_monthly_price),
+        medium_stay_monthly_price: Number(row.medium_stay_monthly_price),
+        long_stay_monthly_price: Number(row.long_stay_monthly_price),
+        management_fee_amount: Number(row.management_fee_amount ?? 300000),
+        management_fee_effective_date: managementFeeEffectiveDate,
         minimum_dp_percent: Number(row.minimum_dp_percent ?? DEFAULT_MINIMUM_DP_PERCENT),
         minimum_dp_amount: Math.ceil(
           (Number(row.yearly_price) *
@@ -1127,6 +1262,14 @@ export class AdminUxMasterService {
         effective_date: String(row.effective_date).slice(0, 10),
       },
       future_commercial: this.futureCommercialSummary(row),
+      management_fee: this.managementFeeSummary(
+        row.management_fee_amount,
+        row.management_fee_effective_date,
+      ),
+      future_management_fee: this.managementFeeSummary(
+        row.future_management_fee_amount,
+        row.future_management_fee_effective_date,
+      ),
     };
     if (row.room_count !== undefined) result.room_count = Number(row.room_count);
     if (row.facility_count !== undefined) result.facility_count = Number(row.facility_count);
@@ -1136,8 +1279,25 @@ export class AdminUxMasterService {
   private async currentCommercial(kostTypeId: string, client?: PoolClient): Promise<DbRow> {
     const result = await (client ?? this.database.client).query<DbRow>(
       `SELECT effective_date::text AS effective_date,
-              monthly_price, annual_contract_value, minimum_dp_percent,
-              security_deposit_months, payment_schedules
+               monthly_price, annual_contract_value,short_stay_monthly_price,
+               medium_stay_monthly_price,long_stay_monthly_price, minimum_dp_percent,
+               (SELECT monthly_fee_amount FROM property_management_fee_versions fee
+                 JOIN kost_types type ON type.property_id=fee.property_id
+                 WHERE type.id=$1 AND fee.effective_date<=CURRENT_DATE
+                 ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1) AS management_fee_amount,
+                (SELECT effective_date::text FROM property_management_fee_versions fee
+                  JOIN kost_types type ON type.property_id=fee.property_id
+                  WHERE type.id=$1 AND fee.effective_date<=CURRENT_DATE
+                  ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1) AS management_fee_effective_date,
+                (SELECT monthly_fee_amount FROM property_management_fee_versions fee
+                  JOIN kost_types type ON type.property_id=fee.property_id
+                  WHERE type.id=$1 AND fee.effective_date>CURRENT_DATE
+                  ORDER BY fee.effective_date,fee.id LIMIT 1) AS future_management_fee_amount,
+                (SELECT effective_date::text FROM property_management_fee_versions fee
+                  JOIN kost_types type ON type.property_id=fee.property_id
+                  WHERE type.id=$1 AND fee.effective_date>CURRENT_DATE
+                  ORDER BY fee.effective_date,fee.id LIMIT 1) AS future_management_fee_effective_date,
+               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1 AND effective_date <= CURRENT_DATE
        ORDER BY effective_date DESC, id DESC
@@ -1153,10 +1313,57 @@ export class AdminUxMasterService {
     return result.rows[0];
   }
 
+  private async assertManagementFeeCompatible(
+    client: PoolClient,
+    propertyId: string,
+    effectiveDate: string,
+    requestedAmount?: number,
+  ): Promise<void> {
+    const result = await client.query<{
+      management_fee_amount: string | number | null;
+      minimum_monthly_rate: string | number | null;
+    }>(
+      `SELECT
+         COALESCE(
+           $3::bigint,
+           (SELECT fee.monthly_fee_amount
+            FROM property_management_fee_versions fee
+            WHERE fee.property_id=$1 AND fee.effective_date<=$2::date
+            ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1)
+         ) AS management_fee_amount,
+         (SELECT MIN(commercial.long_stay_monthly_price)
+          FROM kost_types type
+          JOIN LATERAL (
+            SELECT version.long_stay_monthly_price
+            FROM kost_type_commercial_versions version
+            WHERE version.kost_type_id=type.id AND version.effective_date<=$2::date
+            ORDER BY version.effective_date DESC,version.id DESC LIMIT 1
+          ) commercial ON true
+          WHERE type.property_id=$1 AND type.status='active' AND type.deleted_at IS NULL
+         ) AS minimum_monthly_rate`,
+      [propertyId, effectiveDate, requestedAmount ?? null],
+    );
+    const managementFee = Number(result.rows[0]?.management_fee_amount);
+    const minimumMonthlyRate = Number(result.rows[0]?.minimum_monthly_rate);
+    if (
+      !Number.isSafeInteger(managementFee) ||
+      managementFee < 0 ||
+      !Number.isSafeInteger(minimumMonthlyRate) ||
+      minimumMonthlyRate <= 0 ||
+      managementFee >= minimumMonthlyRate
+    ) {
+      throw new BadRequestException({
+        code: 'MANAGEMENT_FEE_AMOUNT_INVALID',
+        message: 'Management fee must be lower than every active monthly rent tier.',
+      });
+    }
+  }
+
   private async nextCommercial(kostTypeId: string, client?: PoolClient): Promise<DbRow | null> {
     const result = await (client ?? this.database.client).query<DbRow>(
       `SELECT effective_date::text AS effective_date,
-              monthly_price, annual_contract_value, minimum_dp_percent,
+               monthly_price, annual_contract_value,short_stay_monthly_price,
+               medium_stay_monthly_price,long_stay_monthly_price, minimum_dp_percent,
               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1 AND effective_date > CURRENT_DATE
@@ -1179,6 +1386,13 @@ export class AdminUxMasterService {
       effective_date: commercial.effective_date,
       monthly_price: commercial.monthly_price,
       yearly_price: commercial.annual_contract_value,
+      short_stay_monthly_price: commercial.short_stay_monthly_price,
+      medium_stay_monthly_price: commercial.medium_stay_monthly_price,
+      long_stay_monthly_price: commercial.long_stay_monthly_price,
+      management_fee_amount: commercial.management_fee_amount,
+      management_fee_effective_date: commercial.management_fee_effective_date,
+      future_management_fee_amount: commercial.future_management_fee_amount,
+      future_management_fee_effective_date: commercial.future_management_fee_effective_date,
       deposit_amount: Number(commercial.monthly_price) * Number(commercial.security_deposit_months),
       minimum_dp_percent: commercial.minimum_dp_percent,
       security_deposit_months: commercial.security_deposit_months,
@@ -1192,6 +1406,9 @@ export class AdminUxMasterService {
       future_effective_date: commercial?.effective_date ?? null,
       future_monthly_price: commercial?.monthly_price ?? null,
       future_yearly_price: commercial?.annual_contract_value ?? null,
+      future_short_stay_monthly_price: commercial?.short_stay_monthly_price ?? null,
+      future_medium_stay_monthly_price: commercial?.medium_stay_monthly_price ?? null,
+      future_long_stay_monthly_price: commercial?.long_stay_monthly_price ?? null,
       future_minimum_dp_percent: commercial?.minimum_dp_percent ?? null,
       future_security_deposit_months: commercial?.security_deposit_months ?? null,
       future_payment_schedules: commercial?.payment_schedules ?? null,
@@ -1211,11 +1428,29 @@ export class AdminUxMasterService {
     }
     const monthlyPrice = Number(row.future_monthly_price);
     const annualContractValue = Number(row.future_yearly_price);
+    const shortStayMonthlyPrice = Number(row.future_short_stay_monthly_price);
+    const mediumStayMonthlyPrice = Number(row.future_medium_stay_monthly_price);
+    const longStayMonthlyPrice = Number(row.future_long_stay_monthly_price);
     const minimumDpPercent = Number(row.future_minimum_dp_percent);
     const securityDepositMonths = Number(row.future_security_deposit_months);
+    const managementFeeEffectiveDate =
+      typeof row.future_management_fee_effective_date === 'string'
+        ? row.future_management_fee_effective_date.slice(0, 10)
+        : typeof row.management_fee_effective_date === 'string'
+          ? row.management_fee_effective_date.slice(0, 10)
+          : futureEffectiveDate instanceof Date
+            ? futureEffectiveDate.toISOString().slice(0, 10)
+            : futureEffectiveDate.slice(0, 10);
     return {
       monthly_price: monthlyPrice,
       annual_contract_value: annualContractValue,
+      short_stay_monthly_price: shortStayMonthlyPrice,
+      medium_stay_monthly_price: mediumStayMonthlyPrice,
+      long_stay_monthly_price: longStayMonthlyPrice,
+      management_fee_amount: Number(
+        row.future_management_fee_amount ?? row.management_fee_amount ?? 300000,
+      ),
+      management_fee_effective_date: managementFeeEffectiveDate,
       minimum_dp_percent: minimumDpPercent,
       minimum_dp_amount: Math.ceil((annualContractValue * minimumDpPercent) / 100),
       payment_schedules: this.paymentSchedules(row.future_payment_schedules),
@@ -1226,6 +1461,34 @@ export class AdminUxMasterService {
           ? futureEffectiveDate.toISOString().slice(0, 10)
           : futureEffectiveDate.slice(0, 10),
     };
+  }
+
+  private managementFeeSummary(
+    amount: unknown,
+    effectiveDate: unknown,
+  ): Record<string, unknown> | null {
+    if (
+      amount === null ||
+      amount === undefined ||
+      effectiveDate === null ||
+      effectiveDate === undefined
+    ) {
+      return null;
+    }
+    const normalizedDate =
+      effectiveDate instanceof Date
+        ? effectiveDate.toISOString().slice(0, 10)
+        : typeof effectiveDate === 'string'
+          ? effectiveDate.slice(0, 10)
+          : null;
+    const normalizedAmount = Number(amount);
+    if (!normalizedDate || !Number.isSafeInteger(normalizedAmount) || normalizedAmount < 0) {
+      throw new ConflictException({
+        code: 'MANAGEMENT_FEE_AUTHORITY_INVALID',
+        message: 'Property management fee authority is invalid.',
+      });
+    }
+    return { monthly_fee_amount: normalizedAmount, effective_date: normalizedDate };
   }
 
   private paymentSchedules(value: unknown): PaymentSchedule[] {
@@ -1436,12 +1699,30 @@ export class AdminUxMasterService {
   private validateCommercialInput(
     dto: Pick<
       CreateKostTypeDto | UpdateKostTypeDto,
-      'monthly_price' | 'yearly_price' | 'security_deposit_months' | 'payment_schedules'
+      | 'monthly_price'
+      | 'yearly_price'
+      | 'short_stay_monthly_price'
+      | 'medium_stay_monthly_price'
+      | 'long_stay_monthly_price'
+      | 'security_deposit_months'
+      | 'payment_schedules'
     >,
     fallback?: DbRow,
   ) {
-    const monthlyPrice = dto.monthly_price ?? Number(fallback?.monthly_price ?? 0);
-    const annualContractValue = dto.yearly_price ?? Number(fallback?.yearly_price ?? 0);
+    const shortStayMonthlyPrice =
+      dto.short_stay_monthly_price ??
+      dto.monthly_price ??
+      Number(fallback?.short_stay_monthly_price ?? fallback?.monthly_price ?? 0);
+    const mediumStayMonthlyPrice =
+      dto.medium_stay_monthly_price ??
+      Number(fallback?.medium_stay_monthly_price ?? shortStayMonthlyPrice);
+    const longStayMonthlyPrice =
+      dto.long_stay_monthly_price ??
+      (dto.yearly_price !== undefined
+        ? dto.yearly_price / 12
+        : Number(fallback?.long_stay_monthly_price ?? Number(fallback?.yearly_price ?? 0) / 12));
+    const monthlyPrice = shortStayMonthlyPrice;
+    const annualContractValue = longStayMonthlyPrice * 12;
     const minimumDpPercent = DEFAULT_MINIMUM_DP_PERCENT;
     const securityDepositMonths =
       dto.security_deposit_months ??
@@ -1452,8 +1733,13 @@ export class AdminUxMasterService {
     if (
       !Number.isInteger(monthlyPrice) ||
       !Number.isInteger(annualContractValue) ||
+      !Number.isInteger(shortStayMonthlyPrice) ||
+      !Number.isInteger(mediumStayMonthlyPrice) ||
+      !Number.isInteger(longStayMonthlyPrice) ||
       monthlyPrice <= 0 ||
       annualContractValue <= 0 ||
+      shortStayMonthlyPrice < mediumStayMonthlyPrice ||
+      mediumStayMonthlyPrice < longStayMonthlyPrice ||
       !Number.isInteger(securityDepositMonths) ||
       securityDepositMonths < 1 ||
       securityDepositMonths > 2
@@ -1471,6 +1757,9 @@ export class AdminUxMasterService {
     return {
       monthlyPrice,
       annualContractValue,
+      shortStayMonthlyPrice,
+      mediumStayMonthlyPrice,
+      longStayMonthlyPrice,
       minimumDpPercent,
       securityDepositMonths,
       paymentSchedules,
@@ -1529,7 +1818,8 @@ export class AdminUxMasterService {
   private async lockCommercialVersions(client: PoolClient, kostTypeId: string): Promise<DbRow[]> {
     const result = await client.query<DbRow>(
       `SELECT effective_date::text AS effective_date,
-              monthly_price, annual_contract_value, minimum_dp_percent,
+               monthly_price, annual_contract_value,short_stay_monthly_price,
+               medium_stay_monthly_price,long_stay_monthly_price, minimum_dp_percent,
               security_deposit_months, payment_schedules
        FROM kost_type_commercial_versions
        WHERE kost_type_id = $1

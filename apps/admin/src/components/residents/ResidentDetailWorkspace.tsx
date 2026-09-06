@@ -107,6 +107,15 @@ function formatResidentDetailDate(value: string): string {
   });
 }
 
+function formatResidentFinancialDate(value: string): string {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(value));
+}
+
 function formatResidentDetailTimestamp(value: string): string {
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
@@ -1033,7 +1042,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                           <td className="py-3 text-muted-foreground">{index + 1}</td>
                           <td className="py-3 whitespace-nowrap">
                             {payment.paid_at
-                              ? formatResidentDetailTimestamp(payment.paid_at)
+                              ? formatResidentFinancialDate(payment.paid_at)
                               : "Belum dicatat"}
                           </td>
                           <td className="py-3 font-medium">{payment.payment_code}</td>
@@ -1112,7 +1121,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                           className="border-t border-border"
                         >
                           <td className="py-3 whitespace-nowrap">
-                            {formatResidentDetailTimestamp(event.occurred_at)}
+                            {formatResidentFinancialDate(event.occurred_at)}
                           </td>
                           <td className="max-w-80 py-3">
                             <p className="font-medium">{financialEventLabel(event.event_type)}</p>
@@ -1169,7 +1178,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {document.document_code} Â·{" "}
-                        {formatResidentDetailTimestamp(document.issued_at)}
+                        {formatResidentFinancialDate(document.issued_at)}
                       </p>
                     </div>
                     <Button
@@ -2694,12 +2703,12 @@ function PaymentDetailDialog({
             ["Status", paymentStatusLabel(payment.payment_status)],
             [
               "Dicatat",
-              payment.paid_at ? formatResidentDetailTimestamp(payment.paid_at) : "Belum dicatat",
+              payment.paid_at ? formatResidentFinancialDate(payment.paid_at) : "Belum dicatat",
             ],
             [
               "Terverifikasi",
               payment.verified_at
-                ? formatResidentDetailTimestamp(payment.verified_at)
+                ? formatResidentFinancialDate(payment.verified_at)
                 : "Belum diverifikasi",
             ],
             ...(payment.reversal_id
@@ -2711,8 +2720,8 @@ function PaymentDetailDialog({
                   [
                     "Dibatalkan pada",
                     payment.reversed_at
-                      ? formatResidentDetailTimestamp(payment.reversed_at)
-                      : "Waktu tidak tersedia",
+                      ? formatResidentFinancialDate(payment.reversed_at)
+                      : "Tanggal tidak tersedia",
                   ],
                 ] as Array<[string, ReactNode]>)
               : []),

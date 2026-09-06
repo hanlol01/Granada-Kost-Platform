@@ -28,9 +28,12 @@ function wire() {
     description_long: null,
     room_size_label: "3 x 4 m",
     room_size_m2: 12,
-    monthly_price: 1_800_000,
+    monthly_price: 1_900_000,
     yearly_price: 21_600_000,
-    deposit_amount: 1_800_000,
+    short_stay_monthly_price: 1_900_000,
+    medium_stay_monthly_price: 1_850_000,
+    long_stay_monthly_price: 1_800_000,
+    deposit_amount: 1_900_000,
     max_occupants: 1,
     public_visible: true,
     notes: null,
@@ -39,26 +42,48 @@ function wire() {
     created_at: "2026-07-31T00:00:00.000Z",
     updated_at: "2026-07-31T00:00:00.000Z",
     commercial: {
-      monthly_price: 1_800_000,
+      monthly_price: 1_900_000,
       annual_contract_value: 21_600_000,
+      short_stay_monthly_price: 1_900_000,
+      medium_stay_monthly_price: 1_850_000,
+      long_stay_monthly_price: 1_800_000,
+      management_fee_amount: 300_000,
+      management_fee_effective_date: "2026-06-01",
       minimum_dp_percent: 25,
       minimum_dp_amount: 5_400_000,
       payment_schedules: ["annual", "two_month_installments"],
       security_deposit_months: 1,
-      security_deposit_required: 1_800_000,
+      security_deposit_required: 1_900_000,
       effective_date: "2026-08-01",
     },
     future_commercial: null,
+    management_fee: {
+      monthly_fee_amount: 300_000,
+      effective_date: "2026-06-01",
+    },
+    future_management_fee: null,
   };
 }
 
 test("strict category parser preserves a single commercial authority", () => {
   const parsed = parseKostTypeRecord(wire());
-  assert.equal(parsed.monthlyPrice, 1_800_000);
+  assert.equal(parsed.monthlyPrice, 1_900_000);
   assert.equal(parsed.yearlyPrice, 21_600_000);
-  assert.equal(parsed.depositAmount, 1_800_000);
+  assert.equal(parsed.depositAmount, 1_900_000);
   assert.equal(parsed.commercial?.minimumDpAmount, 5_400_000);
   assert.equal(parsed.commercial?.securityDepositMonths, 1);
+  assert.equal(parsed.managementFee?.monthlyFeeAmount, 300_000);
+  assert.equal(parsed.futureManagementFee, null);
+  assert.equal(
+    parseKostTypeRecord({
+      ...wire(),
+      future_management_fee: {
+        monthly_fee_amount: 325_000,
+        effective_date: "2026-10-01",
+      },
+    }).futureManagementFee?.monthlyFeeAmount,
+    325_000,
+  );
   assert.equal(parsed.futureCommercial, null);
   assert.throws(() => parseKostTypeRecord({ ...wire(), extra: true }));
   assert.throws(() =>
@@ -86,6 +111,15 @@ test("strict category parser preserves a single commercial authority", () => {
     parseKostTypeRecord({
       ...wire(),
       commercial: { ...wire().commercial, minimum_dp_percent: 30 },
+    }),
+  );
+  assert.throws(() =>
+    parseKostTypeRecord({
+      ...wire(),
+      future_management_fee: {
+        monthly_fee_amount: 300_000,
+        effective_date: "2026-05-01",
+      },
     }),
   );
   assert.throws(() =>
@@ -131,8 +165,13 @@ test("requester writes policy rules and never sends a raw deposit override", () 
     category: "apartkost",
     name: "Apart Kost",
     slug: "apart-kost",
-    monthlyPrice: 1_800_000,
+    monthlyPrice: 1_900_000,
     yearlyPrice: 21_600_000,
+    shortStayMonthlyPrice: 1_900_000,
+    mediumStayMonthlyPrice: 1_850_000,
+    longStayMonthlyPrice: 1_800_000,
+    managementFeeAmount: 300_000,
+    managementFeeEffectiveDate: "2026-10-01",
     effectiveDate: "2026-09-01",
     securityDepositMonths: 1,
     paymentSchedules: ["annual", "two_month_installments"],
@@ -146,8 +185,13 @@ test("requester writes policy rules and never sends a raw deposit override", () 
     description_long: undefined,
     room_size_label: undefined,
     room_size_m2: undefined,
-    monthly_price: 1_800_000,
+    monthly_price: 1_900_000,
     yearly_price: 21_600_000,
+    short_stay_monthly_price: 1_900_000,
+    medium_stay_monthly_price: 1_850_000,
+    long_stay_monthly_price: 1_800_000,
+    management_fee_amount: 300_000,
+    management_fee_effective_date: "2026-10-01",
     effective_date: "2026-09-01",
     payment_schedules: ["annual", "two_month_installments"],
     security_deposit_months: 1,
@@ -256,8 +300,16 @@ test("category editor is future-effective and room editor stays non-commercial",
   assert.match(component, /Angsuran per dua bulan/);
   assert.match(component, /Tarif aktif saat ini/);
   assert.match(component, /Tarif terjadwal berikutnya/);
-  assert.match(component, /Preview:/);
-  assert.match(component, /monthlyPrice: authority\?\.monthlyPrice \?\? 1_800_000/);
+  assert.match(component, /Hak pemilik per bulan/);
+  assert.match(
+    component,
+    /shortStayMonthlyPrice: authority\?\.shortStayMonthlyPrice \?\? 1_900_000/,
+  );
+  assert.match(
+    component,
+    /mediumStayMonthlyPrice: authority\?\.mediumStayMonthlyPrice \?\? 1_850_000/,
+  );
+  assert.match(component, /longStayMonthlyPrice: authority\?\.longStayMonthlyPrice \?\? 1_800_000/);
   assert.match(component, /yearlyPrice: authority\?\.annualContractValue \?\? 21_600_000/);
   assert.match(component, /useKostTypeCommercialMutation/);
   assert.match(component, /propertyId/);

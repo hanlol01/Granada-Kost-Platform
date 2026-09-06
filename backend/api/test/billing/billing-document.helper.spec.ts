@@ -115,6 +115,10 @@ void test('contract-paid proof is a distinct one-page document for the full leas
     settledAt: '2026-09-03T03:00:00.000Z',
     issuedAt: '2026-09-03T03:00:00.000Z',
     transactionCodes: ['TRX-20260801-000001-DP', 'TRX-20260903-000004-LUNAS'],
+    transactionReferences: [
+      { code: 'TRX-20260801-000001-DP', amount: 1_800_000 },
+      { code: 'TRX-20260903-000004-LUNAS', amount: 3_600_000 },
+    ],
     propertyName: 'Granada Student House by Kostation',
     propertyAddress: 'Jatinangor, Sumedang',
     issuedByName: 'Diki Karya Permana',
@@ -134,4 +138,8 @@ void test('contract-paid proof is a distinct one-page document for the full leas
   assert.match(text, /Apart Kost · Kamar No\.18, Unit 17/);
   assert.match(text, /seluruh kewajiban pembayaran sewa kontrak/);
   assert.match(text, /Total kewajiban lunas/);
+  assert.match(text, /TRX-20260801-000001-DP \( Rp\. 1\.800\.000,- \)/);
+  assert.match(text, /TRX-20260903-000004-LUNAS \( Rp\. 3\.600\.000,- \)/);
+  assert.doesNotMatch(text, /Pembayaran awal/);
+  assert.doesNotMatch(text, /Pembayaran berikutnya/);
 });

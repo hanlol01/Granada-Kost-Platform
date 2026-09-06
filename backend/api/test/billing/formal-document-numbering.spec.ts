@@ -20,6 +20,10 @@ const contractPaidActualDateMigrationPath = new URL(
   '../../src/infrastructure/database/migrations/065_contract_paid_actual_settlement_date.sql',
   import.meta.url,
 );
+const contractPaidTransactionReferencesMigrationPath = new URL(
+  '../../src/infrastructure/database/migrations/066_contract_paid_transaction_references.sql',
+  import.meta.url,
+);
 
 void test('formal document migration is canonical and covers every issuance family', async () => {
   const [migration, manifest] = await Promise.all([
@@ -146,6 +150,23 @@ void test('contract-paid proof uses the actual final payment date for historical
   assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
 });
 
+void test('contract-paid proof captures transaction references with immutable amounts', async () => {
+  const [migration, manifest] = await Promise.all([
+    readFile(contractPaidTransactionReferencesMigrationPath, 'utf8'),
+    readFile(manifestPath, 'utf8'),
+  ]);
+  const checksum = createHash('sha256')
+    .update(await readFile(contractPaidTransactionReferencesMigrationPath))
+    .digest('hex');
+
+  assert.match(migration, /contract_paid_transaction_references/);
+  assert.match(migration, /jsonb_build_object\('code', payment_code, 'amount', net_amount\)/);
+  assert.match(migration, /trg_lease_contract_paid_documents_transaction_references/);
+  assert.match(migration, /DISABLE TRIGGER trg_lease_contract_paid_documents_immutable/);
+  assert.ok(manifest.includes("version: '066_contract_paid_transaction_references.sql'"));
+  assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
+});
+
 void test('contract-paid download renders the settling payment date instead of its issuance date', async () => {
   const queries: string[] = [];
   const database = {
@@ -203,6 +224,7 @@ void test('contract-paid download renders the settling payment date instead of i
   const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
 
   assert.match(queries[0] ?? '', /settling_payment\.paid_at AS settling_paid_at/);
-  assert.match(text, /Kontrak dinyatakan lunas\s+:\s+1 Agustus 2026 pukul 12\.00/);
+  assert.match(text, /Kontrak dinyatakan lunas\s+:\s+1 Agustus 2026/);
+  assert.doesNotMatch(text, /pukul\s+\d{2}[.:]\d{2}/i);
   assert.doesNotMatch(text, /Kontrak dinyatakan lunas\s+:\s+5 September 2026/);
 });

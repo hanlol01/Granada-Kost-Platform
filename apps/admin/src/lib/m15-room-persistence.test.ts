@@ -120,9 +120,13 @@ function roomWire(overrides: Record<string, unknown> = {}) {
       name: "Rumah Kost",
       slug: "rukost",
       category: "rukost",
-      monthly_price: 1_800_000,
-      yearly_price: 0,
-      deposit_amount: 0,
+      monthly_price: 1_900_000,
+      yearly_price: 21_600_000,
+      short_stay_monthly_price: 1_900_000,
+      medium_stay_monthly_price: 1_850_000,
+      long_stay_monthly_price: 1_800_000,
+      commercial_effective_date: "2026-06-01",
+      deposit_amount: 1_900_000,
       facilities: [
         {
           id: FACILITY_ID,

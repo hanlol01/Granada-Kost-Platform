@@ -778,15 +778,24 @@ test('three-month DP recommendation never bypasses the one-month initial-rent mi
 });
 
 test('commercial calculation keeps DP and free security deposit separate and public lead cannot inject room', async () => {
-  assert.deepEqual(calculateOnboardingCommercial(1_800_000, 21_600_000, 'yearly', 12), {
+  const pricing = {
+    shortStayMonthlyPrice: 1_900_000,
+    mediumStayMonthlyPrice: 1_850_000,
+    longStayMonthlyPrice: 1_800_000,
+  };
+  assert.deepEqual(calculateOnboardingCommercial(pricing, 12), {
     contractRent: 21_600_000,
     dpRequired: 5_400_000,
     depositRequired: 0,
+    monthlyRate: 1_800_000,
+    pricingTier: 'long_stay',
   });
-  assert.deepEqual(calculateOnboardingCommercial(1_800_000, 21_600_000, 'monthly', 3), {
-    contractRent: 5_400_000,
-    dpRequired: 1_350_000,
+  assert.deepEqual(calculateOnboardingCommercial(pricing, 3), {
+    contractRent: 5_700_000,
+    dpRequired: 1_425_000,
     depositRequired: 0,
+    monthlyRate: 1_900_000,
+    pricingTier: 'short_stay',
   });
   const publicLead = plainToInstance(CreatePublicBookingLeadDto, {
     category: 'rukost',

@@ -102,6 +102,31 @@ export class CreateKostTypeDto {
   @Min(0)
   yearly_price!: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  short_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  medium_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  long_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  management_fee_amount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  management_fee_effective_date?: string;
+
   @IsDateString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   effective_date!: string;
@@ -189,6 +214,31 @@ export class UpdateKostTypeDto {
   @IsInt()
   @Min(0)
   yearly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  short_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  medium_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  long_stay_monthly_price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  management_fee_amount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  management_fee_effective_date?: string;
 
   @IsOptional()
   @IsInt()

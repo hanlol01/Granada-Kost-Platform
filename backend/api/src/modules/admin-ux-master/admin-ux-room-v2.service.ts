@@ -152,7 +152,9 @@ export class AdminUxRoomV2Service {
          ON kost_type.id = room.kost_type_id
         AND kost_type.property_id = room.property_id
        JOIN LATERAL (
-         SELECT version.monthly_price, version.annual_contract_value,
+            SELECT version.monthly_price, version.annual_contract_value,
+                   version.short_stay_monthly_price,version.medium_stay_monthly_price,
+                   version.long_stay_monthly_price,version.effective_date,
                 version.security_deposit_months
          FROM kost_type_commercial_versions version
          WHERE version.kost_type_id = kost_type.id
@@ -305,6 +307,10 @@ export class AdminUxRoomV2Service {
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
          commercial_version.monthly_price,
          commercial_version.annual_contract_value AS yearly_price,
+         commercial_version.short_stay_monthly_price,
+         commercial_version.medium_stay_monthly_price,
+         commercial_version.long_stay_monthly_price,
+         commercial_version.effective_date::text AS commercial_effective_date,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
          building.building_code, building.building_name
@@ -576,6 +582,10 @@ export class AdminUxRoomV2Service {
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
          commercial_version.monthly_price,
          commercial_version.annual_contract_value AS yearly_price,
+         commercial_version.short_stay_monthly_price,
+         commercial_version.medium_stay_monthly_price,
+         commercial_version.long_stay_monthly_price,
+         commercial_version.effective_date::text AS commercial_effective_date,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
          building.building_code, building.building_name
@@ -586,7 +596,9 @@ export class AdminUxRoomV2Service {
         AND kost_type.category = room.category
         AND kost_type.deleted_at IS NULL
        JOIN LATERAL (
-         SELECT version.monthly_price, version.annual_contract_value,
+          SELECT version.monthly_price, version.annual_contract_value,
+                 version.short_stay_monthly_price,version.medium_stay_monthly_price,
+                 version.long_stay_monthly_price,version.effective_date,
                 version.security_deposit_months
          FROM kost_type_commercial_versions version
          WHERE version.kost_type_id = kost_type.id
@@ -710,6 +722,10 @@ export class AdminUxRoomV2Service {
         category: row.kost_type_category,
         monthly_price: Number(row.monthly_price),
         yearly_price: Number(row.yearly_price),
+        short_stay_monthly_price: Number(row.short_stay_monthly_price),
+        medium_stay_monthly_price: Number(row.medium_stay_monthly_price),
+        long_stay_monthly_price: Number(row.long_stay_monthly_price),
+        commercial_effective_date: String(row.commercial_effective_date).slice(0, 10),
         deposit_amount: Number(row.deposit_amount),
         facilities: facilitiesByType.get(String(row.kost_type_id)) ?? [],
       },

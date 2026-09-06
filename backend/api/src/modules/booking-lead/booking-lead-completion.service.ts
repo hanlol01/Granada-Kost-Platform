@@ -23,6 +23,7 @@ import {
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
 import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
 import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
+import { resolveDurationPricing } from '../billing/helpers/duration-pricing.helper';
 
 type ContextRow = {
   lead_id: string;
@@ -48,6 +49,9 @@ type ContextRow = {
   room_status: string | null;
   monthly_price: string | number | null;
   yearly_price: string | number | null;
+  short_stay_monthly_price: string | number | null;
+  medium_stay_monthly_price: string | number | null;
+  long_stay_monthly_price: string | number | null;
 };
 
 type CommitmentRow = {
@@ -1225,7 +1229,9 @@ export class BookingLeadCompletionService {
         building.property_id AS building_property_id, building.category AS building_category,
         kost_type.property_id AS kost_type_property_id, kost_type.category AS kost_type_category,
         room.room_status,
-        commercial.monthly_price, commercial.annual_contract_value AS yearly_price
+        commercial.monthly_price, commercial.annual_contract_value AS yearly_price,
+        commercial.short_stay_monthly_price, commercial.medium_stay_monthly_price,
+        commercial.long_stay_monthly_price
        FROM booking_leads lead
          LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status IN ('active','committed')
        LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=lead.property_id
@@ -1238,8 +1244,11 @@ export class BookingLeadCompletionService {
          ) AS target_date
        ) commercial_effective
        LEFT JOIN LATERAL (
-         SELECT commercial_version.monthly_price,
-                commercial_version.annual_contract_value,
+          SELECT commercial_version.monthly_price,
+                 commercial_version.annual_contract_value,
+                 commercial_version.short_stay_monthly_price,
+                 commercial_version.medium_stay_monthly_price,
+                 commercial_version.long_stay_monthly_price,
                 commercial_version.effective_date
            FROM kost_type_commercial_versions commercial_version
           WHERE commercial_version.kost_type_id=kost_type.id
@@ -1348,11 +1357,14 @@ export class BookingLeadCompletionService {
     row: ContextRow,
     terms: Pick<CompleteBookingLeadDto, 'billing_cycle' | 'term_months'>,
   ): number {
-    const monthly = Number(row.monthly_price);
-    const yearly = Number(row.yearly_price);
-    return terms.billing_cycle === 'yearly'
-      ? yearly * (terms.term_months / 12)
-      : monthly * terms.term_months;
+    return resolveDurationPricing(
+      {
+        shortStayMonthlyPrice: Number(row.short_stay_monthly_price ?? row.monthly_price),
+        mediumStayMonthlyPrice: Number(row.medium_stay_monthly_price ?? row.monthly_price),
+        longStayMonthlyPrice: Number(row.long_stay_monthly_price ?? Number(row.yearly_price) / 12),
+      },
+      terms.term_months,
+    ).contractRent;
   }
 
   private assertQuoteTerms(startDate: string, termMonths: number): void {

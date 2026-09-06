@@ -1171,7 +1171,9 @@ function PaymentHistory({
                   <p className="font-medium">{payment.payment_code}</p>
                   <p className="text-xs text-muted-foreground">
                     {methodLabel(payment.payment_method)} ·{" "}
-                    {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu belum tersedia"}
+                    {payment.paid_at
+                      ? formatBillingDate(payment.paid_at)
+                      : "Tanggal belum tersedia"}
                   </p>
                 </div>
                 <StatusBadge status={payment.reversal_id ? "reversed" : payment.payment_status} />
@@ -1273,7 +1275,7 @@ function AdminReceiptDialog({
         ) : query.data ? (
           <div className="space-y-2 rounded-xl border border-border p-4 text-sm">
             <DetailRow label="Nomor" value={query.data.receipt_code} />
-            <DetailRow label="Diterbitkan" value={timeOnly(query.data.issued_at)} />
+            <DetailRow label="Diterbitkan" value={formatBillingDate(query.data.issued_at)} />
             <DetailRow label="Pembayaran" value={query.data.snapshot.payment_code} />
             <DetailRow label="Metode" value={methodLabel(query.data.snapshot.payment_method)} />
             <DetailRow label="Tujuan" value={purposeLabel(query.data.snapshot.payment_purpose)} />
@@ -1391,7 +1393,7 @@ export function RecordPaymentDialog({
       ? Math.max(0, contractSettlementInvoice.outstanding_amount - amount)
       : null;
   const contractSettlementDueLabel = data.contract_settlement?.effective_due_at
-    ? timeOnly(data.contract_settlement.effective_due_at)
+    ? formatBillingDate(data.contract_settlement.effective_due_at)
     : null;
   const fingerprint = JSON.stringify({
     propertyId,
@@ -1502,7 +1504,7 @@ export function RecordPaymentDialog({
               <NoticeAlert
                 tone="warning"
                 title="Mode input data historis aktif"
-                description={`Pembayaran yang dicatat Admin akan langsung terverifikasi sampai ${verificationPolicy.data?.automaticVerificationUntil ? timeOnly(verificationPolicy.data.automaticVerificationUntil) : "batas waktu konfigurasi"}. Bukti transfer dan tanggal pembayaran sebenarnya tetap wajib.`}
+                description={`Pembayaran yang dicatat Admin akan langsung terverifikasi sampai ${verificationPolicy.data?.automaticVerificationUntil ? formatBillingDate(verificationPolicy.data.automaticVerificationUntil) : "batas waktu konfigurasi"}. Bukti transfer dan tanggal pembayaran sebenarnya tetap wajib.`}
               />
             ) : null}
             <Field label="Metode">
@@ -1924,7 +1926,9 @@ function PaidPanel({
                   <TableCell>
                     <p className="font-medium">{payment.payment_code}</p>
                     <p className="text-xs text-muted-foreground">
-                      {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu belum tersedia"}
+                      {payment.paid_at
+                        ? formatBillingDate(payment.paid_at)
+                        : "Tanggal belum tersedia"}
                     </p>
                   </TableCell>
                   <TableCell>{purposeLabel(payment.payment_purpose)}</TableCell>
@@ -2041,13 +2045,17 @@ function CorrectionPanel({
                   <TableCell>
                     <p className="font-medium">{payment.payment_code}</p>
                     <p className="text-xs text-muted-foreground">
-                      {payment.paid_at ? timeOnly(payment.paid_at) : "Waktu tidak tersedia"}
+                      {payment.paid_at
+                        ? formatBillingDate(payment.paid_at)
+                        : "Tanggal tidak tersedia"}
                     </p>
                   </TableCell>
                   <TableCell>
                     <StatusBadge status="reversed" />
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {payment.reversed_at ? timeOnly(payment.reversed_at) : "Waktu tidak tersedia"}
+                      {payment.reversed_at
+                        ? formatBillingDate(payment.reversed_at)
+                        : "Tanggal tidak tersedia"}
                     </p>
                   </TableCell>
                   <TableCell className="max-w-72 whitespace-normal">
@@ -2799,10 +2807,9 @@ function leaseDurationMonths(startDate: string, endDate: string) {
   const [endYear, endMonth] = endDate.split("-").map(Number);
   return Math.max(1, (endYear - startYear) * 12 + endMonth - startMonth);
 }
-function timeOnly(value: string) {
+function formatBillingDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    dateStyle: "long",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
 }

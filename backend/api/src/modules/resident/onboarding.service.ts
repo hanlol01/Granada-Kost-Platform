@@ -43,6 +43,10 @@ type RoomRow = {
   kost_type_deleted_at: string | null;
   monthly_price: number | string;
   yearly_price: number | string;
+  short_stay_monthly_price: number | string;
+  medium_stay_monthly_price: number | string;
+  long_stay_monthly_price: number | string;
+  commercial_effective_date: string;
   security_deposit_amount: number | string;
 };
 type OnboardingHoldRow = {
@@ -335,14 +339,19 @@ export class OnboardingService {
                 r.floor_code,kt.id AS kost_type_id,kt.name AS kost_type_name,
                 kt.property_id AS kost_type_property_id,kt.category AS kost_type_category,
                 kt.status AS kost_type_status,kt.deleted_at AS kost_type_deleted_at,
-                kcv.monthly_price::bigint AS monthly_price,
-                kcv.annual_contract_value::bigint AS yearly_price,
+                 kcv.monthly_price::bigint AS monthly_price,
+                 kcv.annual_contract_value::bigint AS yearly_price,
+                 kcv.short_stay_monthly_price::bigint AS short_stay_monthly_price,
+                 kcv.medium_stay_monthly_price::bigint AS medium_stay_monthly_price,
+                 kcv.long_stay_monthly_price::bigint AS long_stay_monthly_price,
+                 kcv.effective_date::text AS commercial_effective_date,
                 (kcv.monthly_price * kcv.security_deposit_months)::bigint AS security_deposit_amount
          FROM rooms r
          JOIN room_buildings rb ON rb.id=r.building_id
          JOIN kost_types kt ON kt.id=r.kost_type_id
          JOIN LATERAL (
-           SELECT monthly_price,annual_contract_value,security_deposit_months
+           SELECT effective_date,monthly_price,annual_contract_value,security_deposit_months,
+                  short_stay_monthly_price,medium_stay_monthly_price,long_stay_monthly_price
            FROM kost_type_commercial_versions
            WHERE kost_type_id=kt.id
              AND (effective_date<=$3::date OR $4::boolean)
@@ -522,9 +531,13 @@ export class OnboardingService {
         let commercial: ReturnType<typeof calculateOnboardingCommercial>;
         try {
           commercial = calculateOnboardingCommercial(
-            monthlyPrice,
-            yearlyPrice,
-            dto.billing_cycle,
+            {
+              shortStayMonthlyPrice: Number(room.short_stay_monthly_price ?? room.monthly_price),
+              mediumStayMonthlyPrice: Number(room.medium_stay_monthly_price ?? room.monthly_price),
+              longStayMonthlyPrice: Number(
+                room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
+              ),
+            },
             dto.term_months,
           );
         } catch {
@@ -788,7 +801,7 @@ export class OnboardingService {
         // additional rent payment recorded today. A prior booking fee is a rent
         // credit too, while security deposit remains a separate liability.
         const maximumSecurityDeposit = Math.floor(contractRent / dto.term_months);
-        if (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < monthlyPrice)
+        if (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < commercial.monthlyRate)
           throw new ConflictException({
             code: 'ONBOARDING_FINANCIAL_OBLIGATION_UNMET',
             message: 'Pembayaran awal sewa harus mencukupi minimal satu bulan sewa',
@@ -836,7 +849,7 @@ export class OnboardingService {
           ],
         );
         const lease = await client.query<{ id: string }>(
-          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),$21,$21) RETURNING id`,
+          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,signed_at,created_by_user_id,updated_by_user_id) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,now(),$23,$23) RETURNING id`,
           [
             dto.property_id,
             `ONB-${Date.now()}`,
@@ -846,7 +859,7 @@ export class OnboardingService {
             dto.start_date,
             endDate.toISOString().slice(0, 10),
             dto.billing_cycle,
-            monthlyPrice,
+            commercial.monthlyRate,
             yearlyPrice,
             depositRequired,
             room.room_number,
@@ -858,6 +871,8 @@ export class OnboardingService {
             contractRent,
             dpRequired,
             depositRequired,
+            commercial.pricingTier,
+            room.commercial_effective_date,
             actor.id,
           ],
         );

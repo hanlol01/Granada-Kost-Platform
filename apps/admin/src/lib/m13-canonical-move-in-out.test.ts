@@ -39,9 +39,13 @@ function roomWire() {
       name: "Rumah Kost",
       slug: "rukost",
       category: "rukost",
-      monthly_price: 1800000,
-      yearly_price: 0,
-      deposit_amount: 0,
+      monthly_price: 1900000,
+      yearly_price: 21600000,
+      short_stay_monthly_price: 1900000,
+      medium_stay_monthly_price: 1850000,
+      long_stay_monthly_price: 1800000,
+      commercial_effective_date: "2026-06-01",
+      deposit_amount: 1900000,
       facilities: [
         {
           id: "facility-opaque",

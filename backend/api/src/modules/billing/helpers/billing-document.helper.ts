@@ -93,6 +93,8 @@ export type ContractPaidDocumentSnapshot = {
   settledAt: string;
   issuedAt: string;
   transactionCodes: string[];
+  /** Immutable transaction references captured with their settled amounts. */
+  transactionReferences?: Array<{ code: string; amount: number }>;
   propertyName: string;
   propertyAddress: string | null;
   issuedByName: string | null;
@@ -813,9 +815,13 @@ export function createContractPaidDocumentPdf(
   data: ContractPaidDocumentSnapshot,
   invalidation?: { invalidatedAt: string; reason: string } | null,
 ): Promise<BillingReceiptDocument> {
-  const transactionReferences = data.transactionCodes.length
-    ? data.transactionCodes.join(', ')
-    : 'Sesuai riwayat pembayaran terverifikasi';
+  const transactionReferences = data.transactionReferences?.length
+    ? data.transactionReferences
+        .map((reference) => `${reference.code} ( ${idr(reference.amount)} )`)
+        .join('\n')
+    : data.transactionCodes.length
+      ? data.transactionCodes.join(', ')
+      : 'Sesuai riwayat pembayaran terverifikasi';
   const period = receiptPeriod(data.leaseStart, data.leaseEnd);
 
   return createBillingReceiptPdf({
@@ -843,39 +849,22 @@ export function createContractPaidDocumentPdf(
       ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
       ['Periode sewa', period],
       ['Total sewa kontrak', idr(data.contractRentAmount)],
-      ['Pembayaran awal', idr(data.initialRentCredit)],
-      ['Pembayaran berikutnya', idr(data.additionalRentPayments)],
       ['Total pembayaran diterima', idr(data.totalRentReceived)],
       ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
       ['Total kewajiban lunas', idr(data.totalSettledAmount)],
       ['Sisa kewajiban', idr(data.outstandingAmount)],
       ['Status kontrak', invalidation ? 'DIBATALKAN' : 'LUNAS'],
-      ['Kontrak dinyatakan lunas', receiptDateTime(data.settledAt)],
+      ['Kontrak dinyatakan lunas', receiptDate(data.settledAt)],
       ['Referensi transaksi', transactionReferences],
       ['Untuk pembayaran', `Pelunasan seluruh kewajiban sewa kontrak untuk periode ${period}`],
       [
         'Pernyataan',
         invalidation
-          ? `Bukti pelunasan ini dibatalkan pada ${receiptDateTime(invalidation.invalidatedAt)} karena ${invalidation.reason}.`
+          ? `Bukti pelunasan ini dibatalkan pada ${receiptDate(invalidation.invalidatedAt)} karena ${invalidation.reason}.`
           : `Dengan ini dinyatakan bahwa seluruh kewajiban pembayaran sewa kontrak atas ${formatRoomDescription(data.roomNumber, data.buildingCode)} untuk periode tersebut telah diterima dan dinyatakan lunas.`,
       ],
     ],
   });
-}
-
-function receiptDateTime(value: string | Date | null | undefined): string {
-  if (!value) return 'Tidak tersedia';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Tidak tersedia';
-  return new Intl.DateTimeFormat('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
 }
 
 function exitTypeLabel(value: LeaseExitOfficialDocumentSnapshot['lease']['exit_type']): string {
@@ -1048,7 +1037,7 @@ export async function createLeaseExitOfficialDocumentPdf(
   row('Tanggal check-out', receiptDate(snapshot.lease.actual_checkout_date, true));
   row('Versi kebijakan', snapshot.lease.policy_version);
   row('Dikonfirmasi oleh', snapshot.authority.checkout_confirmed_by);
-  row('Waktu penerbitan', receiptDateTime(snapshot.issued_at));
+  row('Tanggal penerbitan', receiptDate(snapshot.issued_at));
 
   if (kind === 'checkout_handover') {
     section('B. Serah terima dan pemeriksaan kamar');
@@ -1058,7 +1047,7 @@ export async function createLeaseExitOfficialDocumentPdf(
     row('Pemeriksaan kamar', yesNo(snapshot.handover.inspection_confirmed));
     row('Hasil kamar', label(snapshot.room.checkout_result));
     row('Pemeriksa', snapshot.authority.inspection_recorded_by);
-    row('Waktu pemeriksaan', receiptDateTime(snapshot.authority.inspection_recorded_at));
+    row('Tanggal pemeriksaan', receiptDate(snapshot.authority.inspection_recorded_at));
 
     section('B.1 Rincian inventaris');
     if (snapshot.handover.inventory_items.length === 0)
@@ -1104,7 +1093,7 @@ export async function createLeaseExitOfficialDocumentPdf(
       const status = payment.payment_status === 'reversed' ? 'Dibalik/reversal' : 'Terverifikasi';
       row(
         payment.payment_code,
-        `${receiptPurpose[payment.payment_purpose] ?? label(payment.payment_purpose)} · ${idr(payment.amount)} · ${receiptDateTime(payment.paid_at)} · ${paymentMethodLabel[payment.payment_method] ?? label(payment.payment_method)} · ${status}${payment.receipt_code ? ` · Kuitansi ${payment.receipt_code}` : ''}`,
+        `${receiptPurpose[payment.payment_purpose] ?? label(payment.payment_purpose)} · ${idr(payment.amount)} · ${receiptDate(payment.paid_at)} · ${paymentMethodLabel[payment.payment_method] ?? label(payment.payment_method)} · ${status}${payment.receipt_code ? ` · Kuitansi ${payment.receipt_code}` : ''}`,
       );
     });
 

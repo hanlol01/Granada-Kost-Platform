@@ -172,6 +172,12 @@ void test('M6 checkout and final-settlement PDFs reuse the official branded docu
     assert.ok(parsed.getPageCount() >= 1);
     const source = result.content.toString('latin1');
     assert.doesNotMatch(source, /file_id|content_path|storage_path/i);
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const rendered = await getDocument({ data: new Uint8Array(result.content) }).promise;
+    const page = await rendered.getPage(1);
+    const pageContent = await page.getTextContent();
+    const text = pageContent.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+    assert.doesNotMatch(text, /pukul\s+\d{2}[.:]\d{2}/i);
   }
 });
 

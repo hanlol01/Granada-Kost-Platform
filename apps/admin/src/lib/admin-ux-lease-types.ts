@@ -197,6 +197,10 @@ export type LeaseRoomOption = {
     category: "rukost" | "apartkost";
     monthlyPrice: number;
     yearlyPrice: number;
+    shortStayMonthlyPrice: number;
+    mediumStayMonthlyPrice: number;
+    longStayMonthlyPrice: number;
+    commercialEffectiveDate: string;
     depositAmount: number;
   };
 };

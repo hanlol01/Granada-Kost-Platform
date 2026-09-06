@@ -911,9 +911,15 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
         typeof type.id !== "string" ||
         typeof type.name !== "string" ||
         !["rukost", "apartkost"].includes(String(type.category)) ||
-        ![type.monthlyPrice, type.yearlyPrice, type.depositAmount].every(
-          (value) => Number.isSafeInteger(value) && Number(value) >= 0,
-        )
+        ![
+          type.monthlyPrice,
+          type.yearlyPrice,
+          type.shortStayMonthlyPrice,
+          type.mediumStayMonthlyPrice,
+          type.longStayMonthlyPrice,
+          type.depositAmount,
+        ].every((value) => Number.isSafeInteger(value) && Number(value) >= 0) ||
+        typeof type.commercialEffectiveDate !== "string"
       )
         throw new Error("Invalid vacant-room commercial authority");
       return {
@@ -932,6 +938,10 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
           category: type.category as LeaseRoomOption["kostType"]["category"],
           monthlyPrice: Number(type.monthlyPrice),
           yearlyPrice: Number(type.yearlyPrice),
+          shortStayMonthlyPrice: Number(type.shortStayMonthlyPrice),
+          mediumStayMonthlyPrice: Number(type.mediumStayMonthlyPrice),
+          longStayMonthlyPrice: Number(type.longStayMonthlyPrice),
+          commercialEffectiveDate: type.commercialEffectiveDate,
           depositAmount: Number(type.depositAmount),
         },
       };

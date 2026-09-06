@@ -28,6 +28,8 @@ tenancy, occupancy, payment, and reporting are separate authorities.
 | **Gross Earned Rent**              | Verified rent collected for service already delivered during an occupancy period. It is not the same as cash received in advance.                                                         |
 | **Owner Entitlement**              | The Property Owner share of Gross Earned Rent for an asset and ownership period. Current policy: Rp1.500.000 per occupied room per earned month at the standard tariff.                   |
 | **Kostation Management Fee**       | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.                      |
+| **Duration Pricing Tier**          | One monthly room rate selected from the whole contractual duration: Short Stay (3–5 months), Medium Stay (6–11 months), or Long Stay (12+ months). The selected rate applies to every month of that contract. |
+| **Commercial Effective Date**      | The tenancy start date used to select the applicable effective-dated pricing authority. A later tariff change never rewrites an existing lease snapshot.                                |
 | **Owner Settlement**               | Monthly review artifact that reconciles earned rent, owner entitlement, management fee, adjustments, and payout.                                                                          |
 | **Owner Payout**                   | Money actually disbursed after a settlement is approved. It is not created merely because rent was paid.                                                                                  |
 | **Pembayaran Angsuran Sewa**       | Pembayaran sewa terverifikasi setelah DP atau pembayaran sewa pertama. Nomornya berurutan tetap dalam satu kontrak; Booking Fee dan Security Deposit tidak dihitung, sedangkan pembalikan tidak memakai ulang nomor lama.                                  |
@@ -47,16 +49,21 @@ Security Deposit != Rent Revenue
 
 ## Current Economics
 
-- Standard gross room tariff: Rp1.800.000 per occupied room per month.
-- Owner entitlement: Rp1.500.000 per earned occupied-room month.
+- Short Stay (3–5 months): Rp1.900.000 per month.
+- Medium Stay (6–11 months): Rp1.850.000 per month.
+- Long Stay (12 months or more): Rp1.800.000 per month for every contract month.
+- These duration tiers are effective from 1 June 2026 for Rumah Kost and Apart Kost.
+- Owner entitlement is the selected duration-tier rate minus the effective Kostation management fee: currently Rp1.600.000, Rp1.550.000, or Rp1.500.000 per earned month.
 - Kostation management fee: Rp300.000 per earned occupied-room month.
 - Booking Fee and DP are advance rent credits and become earned over service
   coverage; they are not immediately fully payable to an owner.
 - Security deposit is a refundable liability and is excluded from owner revenue.
 - Vacant or not-yet-activated rooms create neither owner entitlement nor
   management fee.
-- Rates are effective-dated policy snapshots. These current amounts must not be
-  hardcoded as timeless constants.
+- Price tiers and management fees are separate effective-dated policies. A normal
+  management-fee change starts on the first day of a future month and applies only
+  to future earned service periods, including eligible active leases; it is never retroactive.
+- A lease snapshots its selected pricing tier and monthly rate when committed.
 
 ## Primary References
 

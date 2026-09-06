@@ -410,7 +410,6 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
 function formatDocumentDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "long",
-    timeStyle: "short",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
 }

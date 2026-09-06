@@ -22,6 +22,7 @@ import {
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type { BillingCycle, IdempotentResult, LeaseAuditContext } from './lease.types';
+import { resolveDurationPricing } from '../billing/helpers/duration-pricing.helper';
 
 type LeaseRow = {
   id: string;
@@ -62,6 +63,10 @@ type CommercialRoomRow = {
   building_code: string | null;
   monthly_price: string | null;
   yearly_price: string | null;
+  short_stay_monthly_price: string | null;
+  medium_stay_monthly_price: string | null;
+  long_stay_monthly_price: string | null;
+  commercial_effective_date: string;
 };
 
 type RenewalCommandRow = {
@@ -110,6 +115,8 @@ type CommercialSnapshot = {
   snapshot_monthly_price: number;
   snapshot_yearly_price: number;
   snapshot_deposit_amount: number;
+  snapshot_pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
+  snapshot_commercial_effective_date: string;
   room_number: string;
   kost_type_id: string;
   kost_type_name: string;
@@ -303,12 +310,13 @@ export class LeaseRenewalService {
              property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,
              start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,
              snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,
+             snapshot_pricing_tier,snapshot_commercial_effective_date,
              snapshot_room_number,snapshot_kost_type_name,renewed_from_lease_id,
              term_months,payment_plan_type,contract_rent_amount,dp_required_amount,
              security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id
            ) VALUES(
              $1,$2,$3,$4,NULL,$5,'awaiting_activation',$6::date,$7::date,$8,$9,$6::date,
-             $10,$11,$12,$13,$14,$15,$16,$17,$18,$19,0,now(),$20,$20
+             $10,$11,$12,$13,$14::date,$15,$16,$17,$18,$19,$20,$21,0,now(),$22,$22
            ) RETURNING id,lease_code`,
           [
             scope.property_id,
@@ -323,6 +331,8 @@ export class LeaseRenewalService {
             snapshot.snapshot_monthly_price,
             snapshot.snapshot_yearly_price,
             snapshot.snapshot_deposit_amount,
+            snapshot.snapshot_pricing_tier,
+            snapshot.snapshot_commercial_effective_date,
             snapshot.room_number,
             snapshot.kost_type_name,
             predecessor.id,
@@ -1463,12 +1473,17 @@ export class LeaseRenewalService {
     const result = await client.query<CommercialRoomRow>(
       `SELECT r.id,r.property_id,r.number AS room_number,r.room_status,r.kost_type_id,
               kt.name AS kost_type_name,kt.status AS kost_type_status,kt.deleted_at::text AS kost_type_deleted_at,
-              rb.building_code,kcv.monthly_price::text AS monthly_price,kcv.annual_contract_value::text AS yearly_price
+               rb.building_code,kcv.monthly_price::text AS monthly_price,kcv.annual_contract_value::text AS yearly_price,
+               kcv.short_stay_monthly_price::text,kcv.medium_stay_monthly_price::text,
+               kcv.long_stay_monthly_price::text,
+               kcv.effective_date::text AS commercial_effective_date
        FROM rooms r
        JOIN room_buildings rb ON rb.id=r.building_id
        JOIN kost_types kt ON kt.id=r.kost_type_id
        JOIN LATERAL (
-         SELECT monthly_price,annual_contract_value FROM kost_type_commercial_versions
+           SELECT monthly_price,annual_contract_value,short_stay_monthly_price,
+                  medium_stay_monthly_price,long_stay_monthly_price,effective_date
+           FROM kost_type_commercial_versions
           WHERE kost_type_id=kt.id AND effective_date<=$2::date
           ORDER BY effective_date DESC,id DESC LIMIT 1
        ) kcv ON true
@@ -1597,12 +1612,19 @@ export class LeaseRenewalService {
       payment_plan_type: ContractPaymentPlan;
     },
   ): CommercialSnapshot {
-    const monthly = Number(room.monthly_price);
+    const pricing = resolveDurationPricing(
+      {
+        shortStayMonthlyPrice: Number(room.short_stay_monthly_price ?? room.monthly_price),
+        mediumStayMonthlyPrice: Number(room.medium_stay_monthly_price ?? room.monthly_price),
+        longStayMonthlyPrice: Number(
+          room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
+        ),
+      },
+      terms.term_months,
+    );
+    const monthly = pricing.monthlyRate;
     const yearly = Number(room.yearly_price);
-    const rent =
-      terms.billing_cycle === 'yearly'
-        ? yearly * (terms.term_months / 12)
-        : monthly * terms.term_months;
+    const rent = pricing.contractRent;
     if (!Number.isSafeInteger(rent) || rent < 0)
       throw new ConflictException({
         code: 'RENEWAL_COMMERCIAL_INVALID',
@@ -1615,6 +1637,8 @@ export class LeaseRenewalService {
       snapshot_monthly_price: monthly,
       snapshot_yearly_price: yearly,
       snapshot_deposit_amount: Number(predecessor.snapshot_deposit_amount),
+      snapshot_pricing_tier: pricing.tier,
+      snapshot_commercial_effective_date: room.commercial_effective_date,
       room_number: room.room_number,
       kost_type_id: room.kost_type_id as string,
       kost_type_name: room.kost_type_name as string,

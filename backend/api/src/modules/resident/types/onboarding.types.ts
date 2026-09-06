@@ -42,30 +42,30 @@ export type OnboardingCommitmentResponse = {
   temporaryPassword: string | null;
 };
 
+import {
+  resolveDurationPricing,
+  type DurationPricingAuthority,
+  type DurationPricingTier,
+} from '../../billing/helpers/duration-pricing.helper';
+
 export function calculateOnboardingCommercial(
-  monthlyPrice: number,
-  yearlyPrice: number,
-  billingCycle: 'monthly' | 'yearly',
+  pricing: DurationPricingAuthority,
   termMonths: number,
-): { contractRent: number; dpRequired: number; depositRequired: number } {
-  if (
-    !Number.isSafeInteger(monthlyPrice) ||
-    !Number.isSafeInteger(yearlyPrice) ||
-    monthlyPrice < 0 ||
-    yearlyPrice < 0 ||
-    !Number.isSafeInteger(termMonths) ||
-    termMonths < 3 ||
-    (billingCycle === 'yearly' && termMonths % 12 !== 0)
-  ) {
-    throw new RangeError('Invalid onboarding commercial authority');
-  }
-  const contractRent =
-    billingCycle === 'yearly' ? yearlyPrice * (termMonths / 12) : monthlyPrice * termMonths;
+): {
+  contractRent: number;
+  dpRequired: number;
+  depositRequired: number;
+  monthlyRate: number;
+  pricingTier: DurationPricingTier;
+} {
+  const resolved = resolveDurationPricing(pricing, termMonths);
   return {
-    contractRent,
-    dpRequired: Math.ceil(contractRent * 0.25),
+    contractRent: resolved.contractRent,
+    dpRequired: Math.ceil(resolved.contractRent * 0.25),
     // Security deposit remains a separate liability. Its funding is a free
     // non-negative commitment input and never reduces rent receivable.
     depositRequired: 0,
+    monthlyRate: resolved.monthlyRate,
+    pricingTier: resolved.tier,
   };
 }

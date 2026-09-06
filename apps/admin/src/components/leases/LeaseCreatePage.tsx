@@ -216,15 +216,20 @@ async function compressResidentKtpImage(file: File): Promise<File> {
 
 function calculateLeaseAmounts(room: LeaseRoomOption | undefined, termMonths: number) {
   if (!room || !Number.isInteger(termMonths) || termMonths < 3)
-    return { contractRent: 0, minimumDp: 0, securityDeposit: 0 };
-  const contractRent =
-    termMonths % 12 === 0
-      ? room.kostType.yearlyPrice * (termMonths / 12)
-      : room.kostType.monthlyPrice * termMonths;
+    return { contractRent: 0, minimumDp: 0, securityDeposit: 0, monthlyRate: 0, tierLabel: "" };
+  const monthlyRate =
+    termMonths <= 5
+      ? room.kostType.shortStayMonthlyPrice
+      : termMonths <= 11
+        ? room.kostType.mediumStayMonthlyPrice
+        : room.kostType.longStayMonthlyPrice;
+  const contractRent = monthlyRate * termMonths;
   return {
     contractRent,
     minimumDp: Math.ceil(contractRent * 0.25),
     securityDeposit: 0,
+    monthlyRate,
+    tierLabel: termMonths <= 5 ? "3–5 bulan" : termMonths <= 11 ? "6–11 bulan" : "12+ bulan",
   };
 }
 
@@ -258,7 +263,22 @@ function currency(amount: number) {
 function paymentPurposeLabel(purpose: PaymentEntryPurpose) {
   if (purpose === "booking_fee") return "Booking Fee";
   if (purpose === "security_deposit") return "Security Deposit";
-  return "Pembayaran sewa";
+  return "Pembayaran Sewa";
+}
+
+function stagedRentChoiceLabel(
+  entries: StagedPaymentEntry[],
+  editingPaymentId: string | null,
+): "Uang Muka" | "Angsuran" {
+  const editingIndex = editingPaymentId
+    ? entries.findIndex((entry) => entry.id === editingPaymentId)
+    : -1;
+  const entriesBeforeDraft = editingIndex >= 0 ? entries.slice(0, editingIndex) : entries;
+  return entriesBeforeDraft.some(
+    (entry) => entry.purpose === "rent" || entry.purpose === "booking_fee",
+  )
+    ? "Angsuran"
+    : "Uang Muka";
 }
 
 function paymentMethodLabel(method: PaymentMethod) {
@@ -440,6 +460,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           category: bookingRoom.category,
           monthlyPrice: bookingRoom.monthlyPrice,
           yearlyPrice: bookingRoom.yearlyPrice,
+          shortStayMonthlyPrice: bookingRoom.monthlyPrice,
+          mediumStayMonthlyPrice: bookingRoom.monthlyPrice,
+          longStayMonthlyPrice: bookingRoom.yearlyPrice / 12,
+          commercialEffectiveDate: startDate,
           depositAmount: 0,
         },
       } satisfies LeaseRoomOption)
@@ -461,6 +485,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           contractRent: bookingLeadQuote.data.contractRentAmount,
           minimumDp: bookingLeadQuote.data.suggestedDpAmount,
           securityDeposit: 0,
+          monthlyRate: fallbackAmounts.monthlyRate,
+          tierLabel: fallbackAmounts.tierLabel,
         }
       : fallbackAmounts;
   const stagedPaymentMode = !bookingLeadId;
@@ -521,8 +547,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ? amounts.contractRent - otherBookingFeeAmount - otherRentAmount
       : amounts.contractRent - bookingFee,
   );
-  const maximumSecurityDeposit =
-    selectedRoom && termMonths > 0 ? Math.floor(amounts.contractRent / termMonths) : 0;
+  const maximumSecurityDeposit = selectedRoom ? selectedRoom.kostType.shortStayMonthlyPrice : 0;
   const securityDepositExceedsMaximum =
     Boolean(selectedRoom) &&
     (stagedPaymentMode ? prospectiveSecurityDeposit : securityDeposit) > maximumSecurityDeposit;
@@ -538,10 +563,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   // The 25% figure remains a recommendation, while the activation policy now
   // requires at least one full month of rent credit before commitment.
   const requiredInitialRent = stagedPaymentMode
-    ? (selectedRoom?.kostType.monthlyPrice ?? 0)
+    ? amounts.monthlyRate
     : paymentChoice === "full"
       ? amounts.contractRent
-      : (selectedRoom?.kostType.monthlyPrice ?? 0);
+      : amounts.monthlyRate;
   const stagedRentPayments = paymentEntries.filter(
     (entry) => entry.purpose === "rent" || entry.purpose === "booking_fee",
   );
@@ -887,8 +912,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           0,
           (paymentChoice === "full"
             ? nextAmounts.contractRent
-            : Math.max(nextAmounts.minimumDp, selectedRoom?.kostType.monthlyPrice ?? 0)) -
-            bookingFee,
+            : Math.max(nextAmounts.minimumDp, nextAmounts.monthlyRate)) - bookingFee,
         ),
       );
     }
@@ -2162,6 +2186,9 @@ function RoomAndPaymentStep({
         : stagedPayment.entries
       ).filter((entry) => entry.purpose === "rent").length + 1
     : 1;
+  const stagedRentChoice = stagedPayment
+    ? stagedRentChoiceLabel(stagedPayment.entries, stagedPayment.editingPaymentId)
+    : null;
   const editorRef = useRef<HTMLDivElement>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<StagedPaymentEntry | null>(null);
   useEffect(() => {
@@ -2306,6 +2333,11 @@ function RoomAndPaymentStep({
                         const rentSequence = entriesThroughStage.filter(
                           (item) => item.purpose === "rent",
                         ).length;
+                        const hasPriorRentCredit = entriesThroughStage
+                          .slice(0, -1)
+                          .some(
+                            (item) => item.purpose === "rent" || item.purpose === "booking_fee",
+                          );
                         const rentCreditThroughStage = entriesThroughStage.reduce(
                           (total, item) =>
                             total +
@@ -2318,10 +2350,12 @@ function RoomAndPaymentStep({
                           entry.purpose !== "rent"
                             ? paymentPurposeLabel(entry.purpose)
                             : rentCreditThroughStage === amounts.contractRent
-                              ? "Pelunasan sewa"
-                              : rentSequence === 1
-                                ? "DP / uang muka sewa"
-                                : `Angsuran sewa ke-${rentSequence}`;
+                              ? "Pelunasan Sewa"
+                              : !hasPriorRentCredit
+                                ? "Uang Muka"
+                                : rentSequence === 1
+                                  ? "Angsuran Sewa"
+                                  : `Angsuran Sewa ke-${rentSequence}`;
                         return (
                           <div
                             key={entry.id}
@@ -2521,7 +2555,7 @@ function RoomAndPaymentStep({
                     onClick={() => onPaymentChoiceChange("dp")}
                     disabled={initialPaymentLocked || Boolean(stagedPayment?.rentPurposeDisabled)}
                   >
-                    {stagedPayment ? "Penuhi DP 25%" : "Rekomendasi DP 25%"}
+                    {stagedPayment ? stagedRentChoice : "Rekomendasi DP 25%"}
                   </Button>
                   <Button
                     type="button"
@@ -2610,9 +2644,13 @@ function RoomAndPaymentStep({
                         <Label htmlFor="paid-rent">
                           {paymentChoice === "full"
                             ? "Jumlah pelunasan sewa"
-                            : stagedPayment && activeRentSequence > 1
-                              ? `Pembayaran angsuran sewa ke-${activeRentSequence}`
-                              : "DP / uang muka sewa"}
+                            : stagedPayment && stagedRentChoice === "Angsuran"
+                              ? activeRentSequence > 1
+                                ? `Pembayaran Angsuran Sewa ke-${activeRentSequence}`
+                                : "Pembayaran Angsuran Sewa"
+                              : stagedPayment
+                                ? "Uang Muka Sewa"
+                                : "DP / uang muka sewa"}
                           <span className="text-destructive"> *</span>
                         </Label>
                         <RupiahInput
@@ -2828,10 +2866,14 @@ function RoomAndPaymentStep({
                     <Summary label="Kamar" value={selectedRoom.number} />
                     <Summary label="Tipe kost" value={selectedRoom.kostType.name} />
                     <Summary
-                      label="Tarif bulanan"
-                      value={currency(selectedRoom.kostType.monthlyPrice)}
+                      label={`Tarif paket ${amounts.tierLabel}`}
+                      value={`${currency(amounts.monthlyRate)} / bulan`}
                     />
                     <Summary label="Durasi sewa" value={`${termMonths} bulan`} />
+                    <Summary
+                      label="Tarif efektif"
+                      value={formatIndonesianDate(selectedRoom.kostType.commercialEffectiveDate)}
+                    />
                   </div>
                   <div className="space-y-2 py-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

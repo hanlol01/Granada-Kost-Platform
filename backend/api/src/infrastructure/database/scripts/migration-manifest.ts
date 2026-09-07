@@ -646,4 +646,12 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='snapshot_pricing_tier')",
     ],
   },
+  {
+    version: '068_correct_rukost_units_13_14.sql',
+    checksumSha256: '9a3e8779ab0ee8cb7ae8b705db1fdae52126423920838a516ba15321fc3c9cf4',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM room_buildings WHERE category = 'rukost' AND building_code = 'RK-13' AND total_rooms = 6 AND gender_policy = 'male')",
+      "EXISTS (SELECT 1 FROM room_buildings WHERE category = 'rukost' AND building_code = 'RK-14' AND total_rooms = 11 AND gender_policy = 'female')",
+    ],
+  },
 ] as const;

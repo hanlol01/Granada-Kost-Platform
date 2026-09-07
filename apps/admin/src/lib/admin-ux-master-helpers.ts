@@ -202,6 +202,11 @@ function optionalText(value: unknown, max = 120): string | undefined {
 export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSearch {
   const category =
     raw.category === "rukost" || raw.category === "apartkost" ? raw.category : undefined;
+  const buildingIdRaw = raw.building_id ?? raw.buildingId;
+  const floorCodeRaw = raw.floor_code ?? raw.floorCode;
+  const genderPolicyRaw = raw.gender_policy ?? raw.genderPolicy;
+  const activeOccupancyRaw = raw.active_occupancy ?? raw.activeOccupancy;
+  const reconciliationStateRaw = raw.reconciliation_state ?? raw.reconciliationState;
   const status =
     raw.status === "vacant" ||
     raw.status === "reserved" ||
@@ -214,21 +219,21 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
   return {
     q: optionalText(raw.q) ?? "",
     ...(category ? { category } : {}),
-    buildingId: optionalText(raw.building_id, 80),
+    buildingId: optionalText(buildingIdRaw, 80),
     floor: undefined,
-    ...(raw.floor_code === "A" || raw.floor_code === "B" ? { floorCode: raw.floor_code } : {}),
+    ...(floorCodeRaw === "A" || floorCodeRaw === "B" ? { floorCode: floorCodeRaw } : {}),
     status,
     visibility: undefined,
-    ...(raw.gender_policy === "male" || raw.gender_policy === "female"
-      ? { genderPolicy: raw.gender_policy }
+    ...(genderPolicyRaw === "male" || genderPolicyRaw === "female"
+      ? { genderPolicy: genderPolicyRaw }
       : {}),
-    ...(raw.active_occupancy === true || raw.active_occupancy === "true"
+    ...(activeOccupancyRaw === true || activeOccupancyRaw === "true"
       ? { activeOccupancy: true }
-      : raw.active_occupancy === false || raw.active_occupancy === "false"
+      : activeOccupancyRaw === false || activeOccupancyRaw === "false"
         ? { activeOccupancy: false }
         : {}),
-    ...(raw.reconciliation_state === "normal" || raw.reconciliation_state === "requires_review"
-      ? { reconciliationState: raw.reconciliation_state }
+    ...(reconciliationStateRaw === "normal" || reconciliationStateRaw === "requires_review"
+      ? { reconciliationState: reconciliationStateRaw }
       : {}),
     ...(raw.sort === "room_number" ||
     raw.sort === "building" ||

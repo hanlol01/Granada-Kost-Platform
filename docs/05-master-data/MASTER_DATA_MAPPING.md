@@ -89,8 +89,8 @@ Granada Student House Jatinangor 1 (GSH JATINANGOR 1)
 │   ├── Unit 10 (Putra) — 8 kamar
 │   ├── Unit 11 (Putra) — 7 kamar
 │   ├── Unit 12 (Putra) — 7 kamar
-│   ├── Unit 13 (Putri) — 11 kamar
-│   ├── Unit 14 (Putra) — 6 kamar
+│   ├── Unit 13 (Putra) — 6 kamar
+│   ├── Unit 14 (Putri) — 11 kamar
 │   ├── Unit 15 (Putri) — 6 kamar
 │   ├── Unit 16 (Putri) — 7 kamar
 │   └── Unit 17 (Putri) — 10 kamar
@@ -167,8 +167,8 @@ Format NO. UNIT pada RuKost mengandung informasi yang di-encode:
 | `10 B-4 A-4 Putra` | Unit 10 | 4 | 4 | Putra | 8 |
 | `11 B-3 A-4 Putra` | Unit 11 | 3 | 4 | Putra | 7 |
 | `12 B-3 A-4 Putra` | Unit 12 | 3 | 4 | Putra | 7 |
-| `13 B-5 A-6 Putri` | Unit 13 | 5 | 6 | Putri | 11 |
-| `14 B-3 A-3 Putra` | Unit 14 | 3 | 3 | Putra | 6 |
+| Corrected room master | Unit 13 | 5 | 1 | Putra | 6 |
+| Corrected room master | Unit 14 | 3 | 8 | Putri | 11 |
 | `15 B-3 A-3 Putri` | Unit 15 | 3 | 3 | Putri | 6 |
 | `16 B-3 A-4 Putri` | Unit 16 | 3 | 4 | Putri | 7 |
 | `17 B-5 A-5 Putri` | Unit 17 | 5 | 5 | Putri | 10 |

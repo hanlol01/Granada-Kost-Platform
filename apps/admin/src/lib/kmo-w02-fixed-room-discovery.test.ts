@@ -64,6 +64,34 @@ test("room search normalization carries the complete canonical discovery contrac
   assert.equal(normalizeRoomSearch({ active_occupancy: "1" }).activeOccupancy, undefined);
 });
 
+test("room search normalization preserves camel-case values emitted by the all-rooms route", () => {
+  assert.deepEqual(
+    normalizeRoomSearch({
+      q: "",
+      buildingId: "building-unit-01",
+      floorCode: "B",
+      genderPolicy: "female",
+      activeOccupancy: false,
+      reconciliationState: "requires_review",
+      offset: 0,
+      limit: 20,
+    }),
+    {
+      q: "",
+      buildingId: "building-unit-01",
+      floor: undefined,
+      floorCode: "B",
+      status: undefined,
+      visibility: undefined,
+      genderPolicy: "female",
+      activeOccupancy: false,
+      reconciliationState: "requires_review",
+      offset: 0,
+      limit: 20,
+    },
+  );
+});
+
 test("room list cache remains property-scoped and includes every server-side filter", () => {
   const key = adminUxQueryKeys.rooms.list("property-a", {
     q: "RK",

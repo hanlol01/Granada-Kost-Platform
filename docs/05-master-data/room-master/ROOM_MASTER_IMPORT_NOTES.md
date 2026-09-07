@@ -28,6 +28,14 @@ This task performed data cleanup and normalization of the Granada Kost (GSH Jati
 | `ROOM_MASTER_DATA_DICTIONARY.md` | root | Complete data dictionary (rewritten) |
 | `ROOM_MASTER_IMPORT_NOTES.md` | root | This file |
 
+### Business correction (2026-09-07)
+
+The normalized master and runtime seed now reflect the corrected assignment:
+Rumah Kost Unit 13 contains 6 Putra rooms and Unit 14 contains 11 Putri rooms.
+The files under `raw/` remain an immutable copy of the original workbook input;
+the correction is represented in the normalized master, seed manifest, and
+database migration `068_correct_rukost_units_13_14.sql`.
+
 ---
 
 ## 2. Raw Data Quality Findings

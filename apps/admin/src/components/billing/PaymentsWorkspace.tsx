@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { FileResponse } from "@granada-kost/domain";
+import { useNavigate } from "@tanstack/react-router";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state/EmptyState";
@@ -72,6 +73,7 @@ import {
   canManageW06Billing,
   canVerifyW06Payment,
   downloadAdminInvoiceDocument,
+  downloadAdminContractPaidDocument,
   downloadAdminReceiptDocument,
   type BillingProof,
   type BillingWorkspacePayment,
@@ -90,6 +92,8 @@ import { ReminderTemplateDialog } from "./ReminderTemplateDialog";
 import { BillingDocumentSearch } from "./BillingDocumentSearch";
 
 type WorkspaceTab = "unpaid" | "paid" | "pending" | "corrections" | "other";
+type PaymentKindFilter = "" | W06PaymentPurpose | "rent_contract_settled";
+const DEFAULT_PAID_KIND: PaymentKindFilter = "rent_contract_settled";
 const PAYMENT_DEADLINE_OPTIONS = [7, 14, 30] as const;
 
 export function PaymentsWorkspace() {
@@ -118,6 +122,7 @@ export function PaymentsWorkspace() {
   const normalizedPaymentSearch = paymentSearch.trim();
   const [paymentMethod, setPaymentMethod] = useState<"" | W06PaymentMethod>("");
   const [paymentPurpose, setPaymentPurpose] = useState<"" | W06PaymentPurpose>("");
+  const [paidKind, setPaidKind] = useState<PaymentKindFilter>(DEFAULT_PAID_KIND);
   const [paymentDueWithinDaysInput, setPaymentDueWithinDaysInput] = useState("");
   const paymentDueWithinDays = parseDueWithinDays(paymentDueWithinDaysInput);
   const hasInvalidPaymentDueWithinDays =
@@ -150,7 +155,11 @@ export function PaymentsWorkspace() {
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
   };
-  const paid = useBillingPayments(currentPropertyId, "verified", paymentFilters);
+  const paid = useBillingPayments(currentPropertyId, "verified", {
+    ...paymentFilters,
+    purpose: paidKind && paidKind !== "rent_contract_settled" ? paidKind : undefined,
+    rentContractSettled: paidKind === "rent_contract_settled" ? true : undefined,
+  });
   const pendingPayments = useBillingPayments(
     currentPropertyId,
     "pending_confirmation",
@@ -174,8 +183,15 @@ export function PaymentsWorkspace() {
     Number(tab === "pending" && Boolean(paymentDueWithinDaysInput)) +
     Number(Boolean(dateFrom)) +
     Number(Boolean(dateTo));
+  const paidActiveFilterCount =
+    Number(Boolean(normalizedPaymentSearch)) +
+    Number(Boolean(paymentMethod)) +
+    Number(Boolean(paidKind)) +
+    Number(Boolean(dateFrom)) +
+    Number(Boolean(dateTo));
   const filterSignature = `${month}:${normalizedSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
   const paymentFilterSignature = `${tab}:${normalizedPaymentSearch}:${paymentMethod}:${paymentPurpose}:${paymentDueWithinDaysInput}:${dateFrom}:${dateTo}`;
+  const paidFilterSignature = `paid:${normalizedPaymentSearch}:${paymentMethod}:${paidKind}:${dateFrom}:${dateTo}`;
   const invoiceFilterCriteria = [
     normalizedSearch ? `pencarian "${normalizedSearch}"` : "",
     month !== jakartaMonth() ? `periode: ${monthLabel(month)}` : "",
@@ -201,6 +217,16 @@ export function PaymentsWorkspace() {
     tab === "pending" && paymentDueWithinDaysInput
       ? `tenggat jatuh tempo dalam ${paymentDueWithinDaysInput} hari`
       : "",
+    dateRangeFilterLabel(dateFrom, dateTo),
+  ].filter(Boolean);
+  const paidFilterCriteria = [
+    normalizedPaymentSearch ? `pencarian "${normalizedPaymentSearch}"` : "",
+    paymentMethod ? `metode: ${methodLabel(paymentMethod)}` : "",
+    paidKind === "rent_contract_settled"
+      ? "status kontrak: sudah lunas sewa"
+      : paidKind
+        ? `jenis pembayaran: ${purposeLabel(paidKind)}`
+        : "",
     dateRangeFilterLabel(dateFrom, dateTo),
   ].filter(Boolean);
 
@@ -240,7 +266,12 @@ export function PaymentsWorkspace() {
           aria-labelledby="payments-workspace-heading"
           value={tab}
           onValueChange={(value) => {
-            setTab(value as WorkspaceTab);
+            const nextTab = value as WorkspaceTab;
+            setTab(nextTab);
+            if (nextTab === "paid") {
+              setPaidKind(DEFAULT_PAID_KIND);
+              setPaymentOffset(0);
+            }
             // Detail billing is contextual to the list that opened it. Clear it
             // immediately when the operator moves to another billing tab so a
             // previous resident's detail cannot remain visible out of context.
@@ -354,8 +385,14 @@ export function PaymentsWorkspace() {
                   setDueWithinDaysInput(value);
                   setOffset(0);
                 }}
-                canReset={activeFilterCount > 0}
-                onReset={() => {
+                showHelperText={false}
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                className="min-h-11 w-full xl:col-start-4 xl:row-start-2"
+                disabled={activeFilterCount === 0}
+                onClick={() => {
                   setMonth(jakartaMonth());
                   setSearch("");
                   setInvoiceStatus("");
@@ -365,8 +402,14 @@ export function PaymentsWorkspace() {
                   setDateTo("");
                   setOffset(0);
                 }}
-              />
+              >
+                <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
+              </Button>
+              <p className="text-xs text-muted-foreground xl:col-start-4 xl:row-start-3">
+                Jatuh tempo dalam rentang hari dari hari ini.
+              </p>
               <DateRangeFilter
+                className="xl:col-start-2 xl:row-start-3"
                 from={dateFrom}
                 to={dateTo}
                 onFromChange={(value) => {
@@ -407,7 +450,9 @@ export function PaymentsWorkspace() {
               showDueWithinDays={false}
               search={paymentSearch}
               method={paymentMethod}
-              purpose={paymentPurpose}
+              purpose={paidKind}
+              includeSettledContracts
+              defaultPurpose={DEFAULT_PAID_KIND}
               dueWithinDays={paymentDueWithinDaysInput}
               dateFrom={dateFrom}
               dateTo={dateTo}
@@ -421,7 +466,7 @@ export function PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onPurpose={(value) => {
-                setPaymentPurpose(value);
+                setPaidKind(value);
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
@@ -439,7 +484,7 @@ export function PaymentsWorkspace() {
               onReset={() => {
                 setPaymentSearch("");
                 setPaymentMethod("");
-                setPaymentPurpose("");
+                setPaidKind(DEFAULT_PAID_KIND);
                 setPaymentDueWithinDaysInput("");
                 setDateFrom("");
                 setDateTo("");
@@ -448,15 +493,20 @@ export function PaymentsWorkspace() {
             />
             {!paid.isFetching && !paid.isError ? (
               <FilterResultNotice
-                key={`paid:${paymentFilterSignature}`}
-                entityLabel="pembayaran terverifikasi"
+                key={paidFilterSignature}
+                entityLabel="kontrak sewa lunas"
                 resultCount={paid.data?.meta.total ?? 0}
-                activeFilterCount={paymentActiveFilterCount}
+                activeFilterCount={paidActiveFilterCount}
                 searchTerm={normalizedPaymentSearch}
-                criteria={paymentFilterCriteria}
+                criteria={paidFilterCriteria}
               />
             ) : null}
-            <PaidPanel query={paid} propertyId={currentPropertyId} onOffset={setPaymentOffset} />
+            <PaidPanel
+              query={paid}
+              propertyId={currentPropertyId}
+              settledOnly={paidKind === "rent_contract_settled"}
+              onOffset={setPaymentOffset}
+            />
           </TabsContent>
 
           <TabsContent value="pending" className="space-y-4">
@@ -478,7 +528,7 @@ export function PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onPurpose={(value) => {
-                setPaymentPurpose(value);
+                setPaymentPurpose(value as "" | W06PaymentPurpose);
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
@@ -540,7 +590,7 @@ export function PaymentsWorkspace() {
                 setPaymentOffset(0);
               }}
               onPurpose={(value) => {
-                setPaymentPurpose(value);
+                setPaymentPurpose(value as "" | W06PaymentPurpose);
                 setPaymentOffset(0);
               }}
               onDueWithinDays={(value) => {
@@ -614,6 +664,8 @@ export function PaymentsWorkspace() {
 
 function PaymentFilterBar({
   showDueWithinDays = false,
+  includeSettledContracts = false,
+  defaultPurpose = "",
   search,
   method,
   purpose,
@@ -630,16 +682,18 @@ function PaymentFilterBar({
   onReset,
 }: {
   showDueWithinDays?: boolean;
+  includeSettledContracts?: boolean;
+  defaultPurpose?: PaymentKindFilter;
   search: string;
   method: "" | W06PaymentMethod;
-  purpose: "" | W06PaymentPurpose;
+  purpose: PaymentKindFilter;
   dueWithinDays: string;
   dateFrom: string;
   dateTo: string;
   dueWithinDaysInvalid: boolean;
   onSearch: (value: string) => void;
   onMethod: (value: "" | W06PaymentMethod) => void;
-  onPurpose: (value: "" | W06PaymentPurpose) => void;
+  onPurpose: (value: PaymentKindFilter) => void;
   onDueWithinDays: (value: string) => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
@@ -648,7 +702,7 @@ function PaymentFilterBar({
   const hasFilters = Boolean(
     search.trim() ||
     method ||
-    purpose ||
+    purpose !== defaultPurpose ||
     (showDueWithinDays && dueWithinDays) ||
     dateFrom ||
     dateTo,
@@ -678,10 +732,13 @@ function PaymentFilterBar({
       <select
         className="min-h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm"
         value={purpose}
-        onChange={(event) => onPurpose(event.target.value as "" | W06PaymentPurpose)}
+        onChange={(event) => onPurpose(event.target.value as PaymentKindFilter)}
         aria-label="Filter jenis pembayaran"
       >
         <option value="">Semua jenis</option>
+        {includeSettledContracts ? (
+          <option value="rent_contract_settled">Sudah lunas sewa</option>
+        ) : null}
         <option value="rent">Pembayaran sewa</option>
         <option value="dp">DP / uang muka sewa</option>
         <option value="security_deposit">Security deposit</option>
@@ -715,18 +772,20 @@ function PaymentFilterBar({
 }
 
 function DateRangeFilter({
+  className,
   from,
   to,
   onFromChange,
   onToChange,
 }: {
+  className?: string;
   from: string;
   to: string;
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
 }) {
   return (
-    <div className="min-w-0 md:col-span-2 xl:col-span-2">
+    <div className={cn("min-w-0 md:col-span-2 xl:col-span-2", className)}>
       <div className="grid grid-cols-[minmax(0,1fr)_1.25rem_minmax(0,1fr)] items-center gap-2">
         <HeroUiDatePicker
           ariaLabel="Tanggal awal rentang pembayaran"
@@ -762,6 +821,7 @@ function DeadlineWindowFilter({
   className,
   canReset = false,
   onReset,
+  showHelperText = true,
 }: {
   value: string;
   invalid: boolean;
@@ -769,6 +829,7 @@ function DeadlineWindowFilter({
   className?: string;
   canReset?: boolean;
   onReset?: () => void;
+  showHelperText?: boolean;
 }) {
   return (
     <div className={cn("min-w-0 space-y-2", className)}>
@@ -823,13 +884,17 @@ function DeadlineWindowFilter({
           <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
         </Button>
       ) : null}
-      {invalid ? (
+      {showHelperText ? (
+        invalid ? (
+          <p className="text-xs text-destructive">Masukkan 0 sampai 365 hari.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Jatuh tempo dalam rentang hari dari hari ini.
+          </p>
+        )
+      ) : invalid ? (
         <p className="text-xs text-destructive">Masukkan 0 sampai 365 hari.</p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Jatuh tempo dalam rentang hari dari hari ini.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1871,13 +1936,16 @@ export function RecordPaymentDialog({
 function PaidPanel({
   query,
   propertyId,
+  settledOnly,
   onOffset,
 }: {
   query: ReturnType<typeof useBillingPayments>;
   propertyId: string | null;
+  settledOnly: boolean;
   onOffset: (offset: number) => void;
 }) {
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [settledPayment, setSettledPayment] = useState<BillingWorkspacePayment | null>(null);
   if (query.isPending) return <LoadingState label="Memuat pembayaran terverifikasi..." />;
   if (query.isError)
     return (
@@ -1891,8 +1959,12 @@ function PaidPanel({
     return (
       <EmptyState
         icon={<WalletCards className="h-5 w-5" />}
-        title="Belum ada pembayaran"
-        description="Pembayaran terverifikasi akan muncul di sini."
+        title={settledOnly ? "Belum ada kontrak sewa lunas" : "Belum ada pembayaran"}
+        description={
+          settledOnly
+            ? "Kontrak akan muncul setelah seluruh kewajiban sewa lunas dan bukti pelunasan diterbitkan."
+            : "Pembayaran terverifikasi akan muncul di sini."
+        }
       />
     );
   return (
@@ -1931,7 +2003,11 @@ function PaidPanel({
                         : "Tanggal belum tersedia"}
                     </p>
                   </TableCell>
-                  <TableCell>{purposeLabel(payment.payment_purpose)}</TableCell>
+                  <TableCell>
+                    {payment.contract_paid_document
+                      ? "Pelunasan sewa penuh"
+                      : purposeLabel(payment.payment_purpose)}
+                  </TableCell>
                   <TableCell>{methodLabel(payment.payment_method)}</TableCell>
                   <TableCell>
                     <div className="flex min-w-40 flex-col items-start gap-1.5">
@@ -1950,11 +2026,21 @@ function PaidPanel({
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-semibold">
-                    {formatIDR(payment.amount)}
+                    {formatIDR(
+                      payment.contract_paid_document?.contract_rent_amount ?? payment.amount,
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex min-w-44 justify-end gap-2">
-                      {payment.receipt_id ? (
+                      {payment.contract_paid_document ? (
+                        <Button
+                          className="min-h-11"
+                          variant="info"
+                          onClick={() => setSettledPayment(payment)}
+                        >
+                          Rincian
+                        </Button>
+                      ) : payment.receipt_id ? (
                         <Button
                           className="min-h-11"
                           variant="info"
@@ -1984,7 +2070,144 @@ function PaidPanel({
         receiptId={receiptId}
         onClose={() => setReceiptId(null)}
       />
+      <ContractPaidDetailDialog
+        propertyId={propertyId}
+        payment={settledPayment}
+        onClose={() => setSettledPayment(null)}
+      />
     </div>
+  );
+}
+
+function ContractPaidDetailDialog({
+  propertyId,
+  payment,
+  onClose,
+}: {
+  propertyId: string | null;
+  payment: BillingWorkspacePayment | null;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
+  const document = payment?.contract_paid_document ?? null;
+
+  useEffect(() => {
+    setIsDownloading(false);
+    setDownloadError(false);
+  }, [document?.id]);
+
+  return (
+    <Dialog open={Boolean(payment && document)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Rincian pelunasan kontrak sewa</DialogTitle>
+          <DialogDescription>
+            Ringkasan ini berasal dari dokumen resmi saat seluruh kewajiban sewa dinyatakan lunas.
+          </DialogDescription>
+        </DialogHeader>
+        {payment && document ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-xl border border-border p-4 text-sm sm:grid-cols-2">
+              <DetailRow label="Penghuni" value={payment.resident_name} />
+              <DetailRow label="Kamar" value={payment.room_number} />
+              <DetailRow label="Nomor dokumen" value={document.document_code} />
+              <DetailRow label="Transaksi pelunasan" value={payment.payment_code} />
+              <DetailRow
+                label="Tanggal pelunasan"
+                value={payment.paid_at ? formatBillingDate(payment.paid_at) : "Belum tersedia"}
+              />
+              <DetailRow label="Metode terakhir" value={methodLabel(payment.payment_method)} />
+              <DetailRow
+                label="Periode sewa"
+                value={`${formatBillingDate(document.lease_start)} s.d. ${formatBillingDate(document.lease_end)}`}
+              />
+              <DetailRow
+                label="Total sewa kontrak"
+                value={formatIDR(document.contract_rent_amount)}
+              />
+              <DetailRow
+                label="Total pembayaran diterima"
+                value={formatIDR(document.total_rent_received)}
+              />
+              <DetailRow label="Sisa kewajiban" value={formatIDR(document.outstanding_amount)} />
+            </div>
+            {document.transaction_references.length ? (
+              <div className="rounded-xl bg-muted/60 p-4">
+                <p className="mb-2 text-sm font-semibold">Referensi transaksi</p>
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  {document.transaction_references.map((reference) => (
+                    <li
+                      key={`${reference.code}:${reference.amount}`}
+                      className="flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1"
+                    >
+                      <span className="break-all">{reference.code}</span>
+                      <span className="shrink-0 font-medium text-foreground">
+                        {formatIDR(reference.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {downloadError ? (
+          <p role="alert" className="text-sm text-destructive">
+            Bukti pelunasan belum dapat diunduh. Silakan coba lagi.
+          </p>
+        ) : null}
+        <DialogFooter className="sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {payment ? (
+              <Button
+                className="min-h-11"
+                variant="default"
+                onClick={() => {
+                  onClose();
+                  void navigate({
+                    to: "/tenants/$residentId",
+                    params: { residentId: payment.resident_id },
+                    hash: "riwayat-pembayaran",
+                  });
+                }}
+              >
+                <Eye className="mr-2 size-4" aria-hidden="true" />
+                Lihat rincian pembayaran
+              </Button>
+            ) : null}
+            {propertyId && document ? (
+              <Button
+                className="min-h-11"
+                variant="success"
+                disabled={isDownloading}
+                onClick={() => {
+                  setIsDownloading(true);
+                  setDownloadError(false);
+                  void downloadAdminContractPaidDocument(
+                    propertyId,
+                    document.id,
+                    document.document_code,
+                  )
+                    .then(() => setIsDownloading(false))
+                    .catch(() => {
+                      setIsDownloading(false);
+                      setDownloadError(true);
+                    });
+                }}
+              >
+                <Download className="mr-2 size-4" aria-hidden="true" />
+                {isDownloading ? "Menyiapkan PDF..." : "Unduh kuitansi lunas sewa"}
+              </Button>
+            ) : null}
+          </div>
+          <Button className="min-h-11" variant="destructive" onClick={onClose}>
+            Tutup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

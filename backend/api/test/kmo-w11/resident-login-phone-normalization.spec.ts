@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AuthService } from '../../src/modules/auth/auth.service';
 import { IamRepository } from '../../src/modules/iam/repositories/iam.repository';
-import { normalizeLoginIdentifier } from '../../src/modules/iam/identifier-normalizer';
+import {
+  loginPhoneCandidates,
+  normalizeLoginIdentifier,
+} from '../../src/modules/iam/identifier-normalizer';
 
 void test('resident login accepts the local 0 phone form for a canonical 62 account', () => {
   assert.equal(normalizeLoginIdentifier('081222891172'), '6281222891172');
@@ -29,7 +32,8 @@ void test('IAM lookup uses the canonical phone value for a local login input', a
 
   await repository.findUserByIdentifier('081222891172');
 
-  assert.deepEqual(values, ['6281222891172']);
+  assert.deepEqual(values, ['6281222891172', ['6281222891172', '081222891172']]);
+  assert.deepEqual(loginPhoneCandidates('+62 812-2289-1172'), ['6281222891172', '081222891172']);
 });
 
 void test('AuthService shares the canonical identifier with lookup and rate limiting', async () => {

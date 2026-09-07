@@ -78,6 +78,7 @@ import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { useProperty } from "@/lib/property";
+import { cn } from "@/lib/utils";
 import { normalizeWhatsAppPhone } from "@/lib/whatsapp-lead";
 import { AccountStatusPill, formatResidentDate, ResidentStatusPill } from "@/routes/tenants";
 
@@ -569,6 +570,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
     return () => window.cancelAnimationFrame(frame);
   }, [transferOpen]);
   const [guidanceFocusId, setGuidanceFocusId] = useState<string | null>(null);
+  const [paymentHistoryHighlighted, setPaymentHistoryHighlighted] = useState(false);
 
   useEffect(() => {
     if (!guidanceFocusId || !billing.data) return;
@@ -584,6 +586,21 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
     };
   }, [billing.data, guidanceFocusId]);
 
+  useEffect(() => {
+    if (!billing.data || window.location.hash !== "#riwayat-pembayaran") return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById("riwayat-pembayaran");
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+      setPaymentHistoryHighlighted(true);
+    });
+    const timer = window.setTimeout(() => setPaymentHistoryHighlighted(false), 2_500);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [billing.data]);
+
   if (detail.error)
     return (
       <AppShell title="Detail Penghuni">
@@ -597,6 +614,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   if (detail.isLoading || !detail.data) return <LoadingPage />;
 
   const resident = detail.data;
+  const residentName = resident.fullName.trim() || "Tanpa nama";
   const currentTenancy = tenancy.data ?? null;
   const canManage = hasPermission("resident.manage");
   const canActivate =
@@ -633,7 +651,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
       : new Map<string, string>();
   return (
     <AppShell
-      title="Detail Penghuni"
+      title={`Detail Penghuni # ${residentName}`}
       subtitle="Informasi penghuni, penyewaan, tagihan, dan aktivitas terkait"
       actions={
         <div className="flex flex-wrap gap-2">
@@ -1013,7 +1031,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               )}
             </CardContent>
           </Card>
-          <Card>
+          <Card
+            id="riwayat-pembayaran"
+            tabIndex={-1}
+            className={cn(
+              "scroll-mt-24 outline-none transition-shadow duration-500",
+              paymentHistoryHighlighted &&
+                "ring-2 ring-primary ring-offset-4 ring-offset-background shadow-lg",
+            )}
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ReceiptText className="h-4 w-4 text-primary" /> Riwayat pembayaran

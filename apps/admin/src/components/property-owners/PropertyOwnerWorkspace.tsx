@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Eye,
+  EyeOff,
   KeyRound,
   Landmark,
   Loader2,
@@ -171,6 +172,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(ownerId ?? null);
   const [modal, setModal] = useState<Modal>(null);
   const [draft, setDraft] = useState<OwnerDraft>(emptyDraft);
+  const [showInitialPassword, setShowInitialPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [passwordReceipt, setPasswordReceipt] = useState<{
     kind: "created" | "reset";
     name: string;
@@ -204,7 +207,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     detail.data ?? owners.data?.data.find((owner) => owner.id === selectedId) ?? null;
   const loading = owners.isLoading;
   const error = owners.isError;
-  const hasLoginIdentifier = Boolean(draft.email.trim() || draft.phone.trim());
+  const hasLoginPhone = Boolean(draft.phone.trim());
   const assignmentErrors = useMemo(
     () =>
       validateOwnerAssignment({
@@ -240,6 +243,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   const clearModal = () => {
     setModal(null);
     setDraft(emptyDraft());
+    setShowInitialPassword(false);
+    setShowResetPassword(false);
     setAssignmentReason("");
     setAssignmentSubmitAttempted(false);
     setEffectiveUntil("");
@@ -252,6 +257,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   };
   const openCreate = () => {
     setDraft(emptyDraft());
+    setShowInitialPassword(false);
     setModal("create");
   };
   const openDetail = (id: string) => {
@@ -266,12 +272,13 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
       address: owner.address ?? "",
       initialPassword: "",
     });
+    setShowInitialPassword(false);
     setModal("edit");
   };
   const submitOwner = async () => {
     if (
       !draft.fullName.trim() ||
-      !hasLoginIdentifier ||
+      !hasLoginPhone ||
       (modal === "create" && draft.initialPassword.length < 10)
     )
       return;
@@ -626,14 +633,21 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                 onChange={(event) => setDraft({ ...draft, fullName: event.target.value })}
               />
             </Field>
-            <Field label="Nomor telepon untuk login" hint="Isi email atau nomor telepon.">
+            <Field
+              label="Nomor telepon untuk login"
+              required
+              hint="Nomor ini digunakan sebagai login utama."
+            >
               <Input
                 inputMode="tel"
                 value={draft.phone}
                 onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
               />
             </Field>
-            <Field label="Email untuk login" hint="Isi email atau nomor telepon.">
+            <Field
+              label="Email untuk login"
+              hint="Opsional. Dapat digunakan sebagai login alternatif."
+            >
               <Input
                 type="email"
                 value={draft.email}
@@ -646,11 +660,29 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                 required
                 hint="Minimal 10 karakter. Hanya akan tampil satu kali."
               >
-                <Input
-                  type="password"
-                  value={draft.initialPassword}
-                  onChange={(event) => setDraft({ ...draft, initialPassword: event.target.value })}
-                />
+                <div className="relative">
+                  <Input
+                    type={showInitialPassword ? "text" : "password"}
+                    value={draft.initialPassword}
+                    onChange={(event) =>
+                      setDraft({ ...draft, initialPassword: event.target.value })
+                    }
+                    className="pr-11"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    aria-label={
+                      showInitialPassword ? "Sembunyikan password awal" : "Tampilkan password awal"
+                    }
+                    aria-pressed={showInitialPassword}
+                    onClick={() => setShowInitialPassword((visible) => !visible)}
+                  >
+                    {showInitialPassword ? <EyeOff /> : <Eye />}
+                  </Button>
+                </div>
               </Field>
             )}
             <Field label="Alamat" className="sm:col-span-2">
@@ -667,7 +699,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
             <Button
               disabled={
                 !draft.fullName.trim() ||
-                !hasLoginIdentifier ||
+                !hasLoginPhone ||
                 (modal === "create" && draft.initialPassword.length < 10) ||
                 mutations.create.isPending ||
                 mutations.update.isPending
@@ -809,11 +841,27 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
             </DialogDescription>
           </DialogHeader>
           <Field label="Password baru" required>
-            <Input
-              type="password"
-              value={draft.initialPassword}
-              onChange={(event) => setDraft({ ...draft, initialPassword: event.target.value })}
-            />
+            <div className="relative">
+              <Input
+                type={showResetPassword ? "text" : "password"}
+                value={draft.initialPassword}
+                onChange={(event) => setDraft({ ...draft, initialPassword: event.target.value })}
+                className="pr-11"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                aria-label={
+                  showResetPassword ? "Sembunyikan password baru" : "Tampilkan password baru"
+                }
+                aria-pressed={showResetPassword}
+                onClick={() => setShowResetPassword((visible) => !visible)}
+              >
+                {showResetPassword ? <EyeOff /> : <Eye />}
+              </Button>
+            </div>
           </Field>
           <DialogFooter>
             <Button variant="outline" onClick={clearModal}>

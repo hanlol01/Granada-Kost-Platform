@@ -155,6 +155,15 @@ type PaymentWorkspaceRow = PaymentProjectionRow & {
   reference_number: string | null;
   rent_allocation_amount: string;
   settles_rent_contract: boolean;
+  contract_paid_document_id: string | null;
+  contract_paid_document_code: string | null;
+  contract_paid_document_issued_at: Date | null;
+  contract_paid_contract_rent_amount: string | null;
+  contract_paid_total_rent_received: string | null;
+  contract_paid_outstanding_amount: string | null;
+  contract_paid_lease_start: string | null;
+  contract_paid_lease_end: string | null;
+  contract_paid_transaction_references: Array<{ code: string; amount: string | number }> | null;
   evidence: Array<{
     id: string;
     original_filename: string;
@@ -854,6 +863,7 @@ export class W06BillingService {
       query.due_within_days ?? null,
       query.date_from ?? null,
       query.date_to ?? null,
+      query.rent_contract_settled ?? null,
       limit,
       offset,
     ];
@@ -863,6 +873,17 @@ export class W06BillingService {
          JOIN residents resident ON resident.id=p.resident_id AND resident.property_id=p.property_id
          JOIN rooms room ON room.id=lease.room_id AND room.property_id=p.property_id
          LEFT JOIN payment_reversals reversal ON reversal.payment_id=p.id
+         LEFT JOIN LATERAL (
+           SELECT paid_document.id,paid_document.document_code,paid_document.issued_at,
+                  paid_document.safe_snapshot
+           FROM lease_contract_paid_documents paid_document
+           WHERE paid_document.property_id=p.property_id
+             AND paid_document.lease_id=p.lease_id
+             AND paid_document.settling_payment_id=p.id
+             AND paid_document.invalidated_at IS NULL
+           ORDER BY paid_document.issued_at DESC,paid_document.id DESC
+           LIMIT 1
+         ) contract_paid_document ON true
          WHERE p.property_id=$1
            AND p.authority_source IN ('manual_transfer','audited_cash')
            AND ($2::text IS NULL OR CASE WHEN reversal.id IS NULL THEN p.payment_status ELSE 'reversed' END=$2)
@@ -870,6 +891,7 @@ export class W06BillingService {
              OR resident.full_name ILIKE '%'||$3||'%'
              OR ${normalizedRoomSearchSql('room.number', '$3')}
              OR p.payment_code ILIKE '%'||$3||'%'
+             OR COALESCE(contract_paid_document.document_code,'') ILIKE '%'||$3||'%'
              OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
             AND ($4::text IS NULL OR p.payment_method=$4)
             AND ($5::text IS NULL OR p.payment_purpose=$5)
@@ -886,11 +908,12 @@ export class W06BillingService {
                 AND deadline_invoice.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $6::int)
             ))
             AND ($7::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date >= $7::date)
-            AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)`;
+            AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)
+            AND ($9::boolean IS NOT TRUE OR contract_paid_document.id IS NOT NULL)`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
-        values.slice(0, 8),
+        values.slice(0, 9),
       ),
       this.database.client.query<PaymentWorkspaceRow>(
         `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,p.reference_number,
@@ -899,7 +922,16 @@ export class W06BillingService {
                 reversal.receipt_id AS reversal_receipt_id,reversal.reason AS reversal_reason,
                 reversal.reversed_at,
                 COALESCE(allocation_summary.rent_amount,0) AS rent_allocation_amount,
-                (COALESCE(rent_contract.fully_paid,false) AND latest_rent_payment.id=p.id) AS settles_rent_contract,
+                (contract_paid_document.id IS NOT NULL) AS settles_rent_contract,
+                contract_paid_document.id AS contract_paid_document_id,
+                contract_paid_document.document_code AS contract_paid_document_code,
+                contract_paid_document.issued_at AS contract_paid_document_issued_at,
+                contract_paid_document.safe_snapshot->>'contractRentAmount' AS contract_paid_contract_rent_amount,
+                contract_paid_document.safe_snapshot->>'totalRentReceived' AS contract_paid_total_rent_received,
+                contract_paid_document.safe_snapshot->>'outstandingAmount' AS contract_paid_outstanding_amount,
+                contract_paid_document.safe_snapshot->>'leaseStart' AS contract_paid_lease_start,
+                contract_paid_document.safe_snapshot->>'leaseEnd' AS contract_paid_lease_end,
+                contract_paid_document.safe_snapshot->'transactionReferences' AS contract_paid_transaction_references,
                 COALESCE(allocation_rows.items,'[]'::jsonb) AS allocations,
                 COALESCE(evidence_rows.items,'[]'::jsonb) AS evidence
          FROM payments p
@@ -909,40 +941,22 @@ export class W06BillingService {
          LEFT JOIN payment_reversals reversal ON reversal.payment_id=p.id
          LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment'
          LEFT JOIN LATERAL (
+           SELECT paid_document.id,paid_document.document_code,paid_document.issued_at,
+                  paid_document.safe_snapshot
+           FROM lease_contract_paid_documents paid_document
+           WHERE paid_document.property_id=p.property_id
+             AND paid_document.lease_id=p.lease_id
+             AND paid_document.settling_payment_id=p.id
+             AND paid_document.invalidated_at IS NULL
+           ORDER BY paid_document.issued_at DESC,paid_document.id DESC
+           LIMIT 1
+         ) contract_paid_document ON true
+         LEFT JOIN LATERAL (
            SELECT COALESCE(sum(allocation.allocated_amount) FILTER(WHERE invoice.invoice_purpose='rent'),0) AS rent_amount
            FROM payment_allocations allocation
            JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=p.property_id
            WHERE allocation.payment_id=p.id
          ) allocation_summary ON true
-         LEFT JOIN LATERAL (
-           SELECT count(*)>0 AND bool_and(
-             GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(invoice_allocation.net,0),0)=0
-           ) AS fully_paid
-           FROM invoices invoice
-           LEFT JOIN LATERAL (
-             SELECT COALESCE(sum(allocation.allocated_amount),0)-COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
-             FROM payment_allocations allocation
-             LEFT JOIN payment_reversal_allocations reversal_allocation
-               ON reversal_allocation.original_allocation_id=allocation.id
-             WHERE allocation.invoice_id=invoice.id
-           ) invoice_allocation ON true
-           WHERE invoice.property_id=p.property_id AND invoice.lease_id=p.lease_id
-             AND invoice.invoice_purpose='rent' AND invoice.invoice_status<>'void'
-         ) rent_contract ON true
-         LEFT JOIN LATERAL (
-           SELECT candidate.id
-           FROM payments candidate
-           JOIN payment_allocations candidate_allocation ON candidate_allocation.payment_id=candidate.id
-           JOIN invoices candidate_invoice ON candidate_invoice.id=candidate_allocation.invoice_id
-             AND candidate_invoice.property_id=candidate.property_id
-             AND candidate_invoice.lease_id=candidate.lease_id
-             AND candidate_invoice.invoice_purpose='rent'
-           LEFT JOIN payment_reversals candidate_reversal ON candidate_reversal.payment_id=candidate.id
-           WHERE candidate.property_id=p.property_id AND candidate.lease_id=p.lease_id
-             AND candidate.payment_status='verified' AND candidate_reversal.id IS NULL
-           ORDER BY candidate.verified_at DESC NULLS LAST,candidate.paid_at DESC,candidate.id DESC
-           LIMIT 1
-         ) latest_rent_payment ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('invoice_id',allocation.invoice_id,'amount',allocation.allocated_amount) ORDER BY allocation.invoice_id) AS items
            FROM payment_allocations allocation
@@ -965,6 +979,7 @@ export class W06BillingService {
              OR resident.full_name ILIKE '%'||$3||'%'
              OR ${normalizedRoomSearchSql('room.number', '$3')}
              OR p.payment_code ILIKE '%'||$3||'%'
+             OR COALESCE(contract_paid_document.document_code,'') ILIKE '%'||$3||'%'
              OR COALESCE(p.reference_number,'') ILIKE '%'||$3||'%')
             AND ($4::text IS NULL OR p.payment_method=$4)
             AND ($5::text IS NULL OR p.payment_purpose=$5)
@@ -982,8 +997,9 @@ export class W06BillingService {
             ))
             AND ($7::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date >= $7::date)
             AND ($8::date IS NULL OR (p.paid_at AT TIME ZONE 'Asia/Jakarta')::date <= $8::date)
+            AND ($9::boolean IS NOT TRUE OR contract_paid_document.id IS NOT NULL)
           ORDER BY COALESCE(p.paid_at,p.created_at) DESC,p.created_at DESC,p.id DESC
-          LIMIT $9 OFFSET $10`,
+          LIMIT $10 OFFSET $11`,
         values,
       ),
     ]);
@@ -5129,6 +5145,25 @@ export class W06BillingService {
       reference_number: row.reference_number,
       rent_allocation_amount: this.money(row.rent_allocation_amount),
       settles_rent_contract: row.settles_rent_contract === true,
+      contract_paid_document: row.contract_paid_document_id
+        ? {
+            id: row.contract_paid_document_id,
+            document_code: row.contract_paid_document_code,
+            issued_at: row.contract_paid_document_issued_at?.toISOString() ?? null,
+            contract_rent_amount: this.money(row.contract_paid_contract_rent_amount ?? 0),
+            total_rent_received: this.money(row.contract_paid_total_rent_received ?? 0),
+            outstanding_amount: this.money(row.contract_paid_outstanding_amount ?? 0),
+            lease_start: row.contract_paid_lease_start,
+            lease_end: row.contract_paid_lease_end,
+            transaction_references: (Array.isArray(row.contract_paid_transaction_references)
+              ? row.contract_paid_transaction_references
+              : []
+            ).map((reference) => ({
+              code: String(reference.code),
+              amount: this.money(reference.amount),
+            })),
+          }
+        : null,
       evidence: this.sanitizeEvidenceFiles(row.evidence),
     };
   }

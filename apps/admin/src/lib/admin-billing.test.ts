@@ -64,6 +64,7 @@ function workspacePayment(status = "pending_confirmation") {
     reference_number: "TRX-001",
     rent_allocation_amount: 1_800_000,
     settles_rent_contract: false,
+    contract_paid_document: null,
     evidence: [
       {
         id: fileId,
@@ -109,6 +110,28 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
   });
   assert.equal(pending.data[0].payment_status, "pending_confirmation");
   assert.equal(pending.data[0].evidence[0].content_path, "/files/" + fileId + "/content");
+  const settled = parseBillingPayments({
+    data: [
+      {
+        ...workspacePayment("verified"),
+        settles_rent_contract: true,
+        contract_paid_document: {
+          id: "00000000-0000-4000-8000-000000000006",
+          document_code: "001/09/KONTRAK-LUNAS/GSHJ/2026",
+          issued_at: "2026-09-01T08:00:00.000Z",
+          contract_rent_amount: 5_400_000,
+          total_rent_received: 5_400_000,
+          outstanding_amount: 0,
+          lease_start: "2026-08-01",
+          lease_end: "2026-11-01",
+          transaction_references: [{ code: "TRX-20260801-000001-LUNAS", amount: 5_400_000 }],
+        },
+      },
+    ],
+    meta: { limit: 20, offset: 0, total: 1 },
+  });
+  assert.equal(settled.data[0].contract_paid_document?.contract_rent_amount, 5_400_000);
+  assert.equal(settled.data[0].contract_paid_document?.outstanding_amount, 0);
   assert.throws(() =>
     parseBillingPayments({
       data: [workspacePayment("pending")],
@@ -359,7 +382,12 @@ test("W06 Admin pending workspace and rejection use exact property-scoped endpoi
     },
   };
   const pending = await getBillingPayments(
-    { propertyId: residentId, status: "pending_confirmation", dueWithinDays: 30 },
+    {
+      propertyId: residentId,
+      status: "pending_confirmation",
+      dueWithinDays: 30,
+      rentContractSettled: true,
+    },
     undefined,
     requester as never,
   );
@@ -378,6 +406,7 @@ test("W06 Admin pending workspace and rejection use exact property-scoped endpoi
     limit: 20,
     offset: 0,
     due_within_days: 30,
+    rent_contract_settled: true,
   });
   assert.equal(calls[1].path, "/admin/billing/payments/" + paymentId + "/reject");
   assert.deepEqual(calls[1].body, {
@@ -472,6 +501,10 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /downloadAdminReceiptDocument/);
   assert.match(workspace, /settles_rent_contract/);
   assert.match(workspace, /Sewa kontrak lunas/);
+  assert.match(workspace, /DEFAULT_PAID_KIND.*"rent_contract_settled"/);
+  assert.match(workspace, /Sudah lunas sewa/);
+  assert.match(workspace, /downloadAdminContractPaidDocument/);
+  assert.match(workspace, /hash: "riwayat-pembayaran"/);
   assert.match(workspace, /scrollIntoView/);
   assert.doesNotMatch(workspace, /useDeferredValue/);
   assert.match(workspace, /const normalizedSearch = search\.trim\(\)/);

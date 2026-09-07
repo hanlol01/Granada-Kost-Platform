@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -137,9 +138,7 @@ export class AdminBillingScopeQueryDto {
 
 export class AdminBillingDocumentSearchQueryDto extends PaginationQueryDto {
   @IsUUID('4') property_id!: string;
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(2)
   @MaxLength(100)
@@ -158,6 +157,14 @@ export class AdminW06PaymentsQueryDto extends PaginationQueryDto {
   @IsIn(PAYMENT_PURPOSES)
   @IsOptional()
   purpose?: W06PaymentPurpose;
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
+  @IsBoolean()
+  @IsOptional()
+  rent_contract_settled?: boolean;
   @Type(() => Number)
   @IsInt()
   @Min(0)

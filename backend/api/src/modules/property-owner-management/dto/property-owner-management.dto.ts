@@ -69,10 +69,10 @@ export class CreatePropertyOwnerDto {
   @MaxLength(150)
   full_name!: string;
 
-  @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(32)
-  phone?: string;
+  phone!: string;
 
   @ValidateIf((value: CreatePropertyOwnerDto) => Boolean(value.email))
   @IsEmail()

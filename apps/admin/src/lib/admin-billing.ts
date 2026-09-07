@@ -121,6 +121,17 @@ export type BillingWorkspacePayment = BillingPayment & {
   reference_number: string | null;
   rent_allocation_amount: number;
   settles_rent_contract: boolean;
+  contract_paid_document: {
+    id: string;
+    document_code: string;
+    issued_at: string;
+    contract_rent_amount: number;
+    total_rent_received: number;
+    outstanding_amount: number;
+    lease_start: string;
+    lease_end: string;
+    transaction_references: Array<{ code: string; amount: number }>;
+  } | null;
   evidence: BillingEvidence[];
 };
 
@@ -555,11 +566,48 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
       "reference_number",
       "rent_allocation_amount",
       "settles_rent_contract",
+      "contract_paid_document",
       "evidence",
     ],
     "pembayaran workspace",
   );
   if (!Array.isArray(record.evidence)) throw new Error("Bukti pembayaran tidak valid.");
+  const contractPaidDocument = nullable(record.contract_paid_document, (value) => {
+    const document = object(
+      value,
+      [
+        "id",
+        "document_code",
+        "issued_at",
+        "contract_rent_amount",
+        "total_rent_received",
+        "outstanding_amount",
+        "lease_start",
+        "lease_end",
+        "transaction_references",
+      ],
+      "dokumen pelunasan kontrak",
+    );
+    if (!Array.isArray(document.transaction_references))
+      throw new Error("Referensi transaksi pelunasan tidak valid.");
+    return {
+      id: uuid(document.id, "ID dokumen pelunasan"),
+      document_code: text(document.document_code, "Kode dokumen pelunasan"),
+      issued_at: timestamp(document.issued_at, "Waktu dokumen pelunasan"),
+      contract_rent_amount: integer(document.contract_rent_amount, "Total sewa kontrak"),
+      total_rent_received: integer(document.total_rent_received, "Total sewa diterima"),
+      outstanding_amount: integer(document.outstanding_amount, "Sisa kewajiban sewa"),
+      lease_start: date(document.lease_start, "Tanggal mulai sewa"),
+      lease_end: date(document.lease_end, "Tanggal akhir sewa"),
+      transaction_references: document.transaction_references.map((value) => {
+        const reference = object(value, ["code", "amount"], "referensi transaksi pelunasan");
+        return {
+          code: text(reference.code, "Kode transaksi pelunasan"),
+          amount: integer(reference.amount, "Nominal transaksi pelunasan"),
+        };
+      }),
+    };
+  });
   const base = payment({
     id: record.id,
     payment_code: record.payment_code,
@@ -588,6 +636,7 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
     ),
     rent_allocation_amount: integer(record.rent_allocation_amount, "Alokasi pembayaran sewa"),
     settles_rent_contract: flag(record.settles_rent_contract, "Penanda pelunasan kontrak"),
+    contract_paid_document: contractPaidDocument,
     evidence: record.evidence.map(evidence),
   };
 }
@@ -1493,6 +1542,7 @@ export async function getBillingPayments(
     search?: string;
     method?: W06PaymentMethod;
     purpose?: W06PaymentPurpose;
+    rentContractSettled?: boolean;
     dueWithinDays?: number;
     dateFrom?: string;
     dateTo?: string;
@@ -1510,6 +1560,9 @@ export async function getBillingPayments(
         ...(input.search ? { search: input.search } : {}),
         ...(input.method ? { method: input.method } : {}),
         ...(input.purpose ? { purpose: input.purpose } : {}),
+        ...(input.rentContractSettled !== undefined
+          ? { rent_contract_settled: input.rentContractSettled }
+          : {}),
         ...(input.dueWithinDays !== undefined ? { due_within_days: input.dueWithinDays } : {}),
         ...(input.dateFrom ? { date_from: input.dateFrom } : {}),
         ...(input.dateTo ? { date_to: input.dateTo } : {}),

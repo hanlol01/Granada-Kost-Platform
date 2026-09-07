@@ -24,3 +24,19 @@ export function normalizeLoginIdentifier(rawIdentifier: string): string {
 
   return identifier;
 }
+
+/**
+ * Returns canonical and legacy digit-only forms for phone lookups.
+ * Existing accounts may predate canonical `62...` storage and keep `08...`
+ * or formatted values, so authentication must accept both representations.
+ */
+export function loginPhoneCandidates(rawIdentifier: string): string[] {
+  const normalized = normalizeLoginIdentifier(rawIdentifier);
+  if (!/^\d+$/.test(normalized)) return [];
+
+  const candidates = [normalized];
+  if (normalized.startsWith('62') && normalized.length > 2) {
+    candidates.push(`0${normalized.slice(2)}`);
+  }
+  return [...new Set(candidates)];
+}

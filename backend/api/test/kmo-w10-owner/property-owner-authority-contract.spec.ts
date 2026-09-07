@@ -101,10 +101,19 @@ void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost sel
   const valid = plainToInstance(CreatePropertyOwnerDto, {
     property_id: propertyId,
     full_name: 'Owner Demo',
+    phone: '081234567890',
     email: 'owner@example.test',
     initial_password: 'Kostation2026',
   });
   assert.equal((await validate(valid, { whitelist: true, forbidNonWhitelisted: true })).length, 0);
+
+  const missingPhone = plainToInstance(CreatePropertyOwnerDto, {
+    property_id: propertyId,
+    full_name: 'Owner Demo',
+    email: 'owner@example.test',
+    initial_password: 'Kostation2026',
+  });
+  assert.ok((await validate(missingPhone)).some((error) => error.property === 'phone'));
 
   const unknown = plainToInstance(CreatePropertyOwnerDto, {
     property_id: propertyId,
@@ -199,6 +208,7 @@ void test('empty or foreign property scope fails before query, transaction, or p
       {
         property_id: propertyId,
         full_name: 'Owner Demo',
+        phone: '081234567890',
         email: 'owner@example.test',
         initial_password: 'Kostation2026',
       },

@@ -11,6 +11,7 @@ import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { UserAccessContext } from '../iam/types/iam.types';
+import { loginPhoneCandidates, normalizeLoginIdentifier } from '../iam/identifier-normalizer';
 import { RequestAuditContext } from '../property/types/property.types';
 import {
   AssignOwnerBuildingDto,
@@ -264,16 +265,17 @@ export class PropertyOwnerManagementService {
     context: RequestAuditContext,
   ): Promise<OwnerCreateResponse> {
     this.assertPropertyScope(actor, dto.property_id);
-    this.assertIdentifier(dto.email, dto.phone);
     const route = '/admin/property-owners';
     const key = this.requireIdempotencyKey(idempotencyKey);
     const normalized = {
       property_id: dto.property_id,
       full_name: dto.full_name.trim(),
       email: dto.email?.trim().toLowerCase() || null,
-      phone: dto.phone?.trim() || null,
+      phone: dto.phone?.trim() ? normalizeLoginIdentifier(dto.phone) : null,
       address: dto.address?.trim() || null,
     };
+    this.assertPhone(normalized.phone);
+    const phoneCandidates = loginPhoneCandidates(normalized.phone ?? '');
     const fingerprint = this.fingerprint({ ...normalized, initial_password: dto.initial_password });
 
     return this.database.transaction(async (client) => {
@@ -294,9 +296,9 @@ export class PropertyOwnerManagementService {
       const duplicate = await client.query(
         `SELECT id FROM users
          WHERE ($1::text IS NOT NULL AND lower(email) = $1)
-            OR ($2::text IS NOT NULL AND phone = $2)
+            OR ($2::text[] IS NOT NULL AND regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = ANY($2::text[]))
          ORDER BY id FOR UPDATE`,
-        [normalized.email, normalized.phone],
+        [normalized.email, phoneCandidates],
       );
       if (duplicate.rows.length > 0) {
         throw new ConflictException({
@@ -412,15 +414,23 @@ export class PropertyOwnerManagementService {
       if (replay) return replay;
       const current = await this.lockOwner(client, ownerId, dto.property_id);
       const fullName = dto.full_name?.trim() ?? current.full_name;
-      const phone = dto.phone === undefined ? current.phone : dto.phone.trim() || null;
+      const phone =
+        dto.phone === undefined
+          ? current.phone
+          : dto.phone.trim()
+            ? normalizeLoginIdentifier(dto.phone)
+            : null;
       const email =
         dto.email === undefined ? current.email : dto.email.trim().toLowerCase() || null;
-      this.assertIdentifier(email, phone);
+      this.assertPhone(phone);
+      const phoneCandidates = loginPhoneCandidates(phone ?? '');
       const duplicate = await client.query(
         `SELECT id FROM users
-         WHERE id <> $1 AND (($2::text IS NOT NULL AND lower(email) = $2) OR ($3::text IS NOT NULL AND phone = $3))
+         WHERE id <> $1
+           AND (($2::text IS NOT NULL AND lower(email) = $2)
+             OR ($3::text[] IS NOT NULL AND regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = ANY($3::text[])))
          ORDER BY id FOR UPDATE`,
-        [current.user_id, email, phone],
+        [current.user_id, email, phoneCandidates],
       );
       if (duplicate.rows.length > 0) {
         throw new ConflictException({
@@ -1130,11 +1140,11 @@ export class PropertyOwnerManagementService {
     }
   }
 
-  private assertIdentifier(email?: string | null, phone?: string | null): void {
-    if (!email && !phone) {
+  private assertPhone(phone?: string | null): void {
+    if (!phone?.trim()) {
       throw new BadRequestException({
-        code: 'PROPERTY_OWNER_LOGIN_IDENTIFIER_REQUIRED',
-        message: 'Email or phone is required for the owner account',
+        code: 'PROPERTY_OWNER_LOGIN_PHONE_REQUIRED',
+        message: 'Phone is required for the owner account',
       });
     }
   }

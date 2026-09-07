@@ -73,6 +73,7 @@ export const w06BillingKeys = {
     search: string,
     method: string,
     purpose: string,
+    rentContractSettled: boolean | null,
     dueWithinDays: number | null,
     dateFrom: string | null,
     dateTo: string | null,
@@ -85,6 +86,7 @@ export const w06BillingKeys = {
       search,
       method,
       purpose,
+      rentContractSettled,
       dueWithinDays,
       dateFrom,
       dateTo,
@@ -216,6 +218,7 @@ export function useBillingPayments(
     search?: string;
     method?: W06PaymentMethod;
     purpose?: W06PaymentPurpose;
+    rentContractSettled?: boolean;
     dueWithinDays?: number;
     dateFrom?: string;
     dateTo?: string;
@@ -230,6 +233,7 @@ export function useBillingPayments(
       input.search ?? "",
       input.method ?? "all",
       input.purpose ?? "all",
+      input.rentContractSettled ?? null,
       input.dueWithinDays ?? null,
       input.dateFrom ?? null,
       input.dateTo ?? null,
@@ -244,6 +248,7 @@ export function useBillingPayments(
           search: input.search,
           method: input.method,
           purpose: input.purpose,
+          rentContractSettled: input.rentContractSettled,
           dueWithinDays: input.dueWithinDays,
           dateFrom: input.dateFrom,
           dateTo: input.dateTo,

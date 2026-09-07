@@ -251,6 +251,7 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
     status: 'verified',
     due_within_days: 30,
     search: 'RK0301',
+    rent_contract_settled: true,
   });
 
   assert.equal(
@@ -263,6 +264,16 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
   );
   assert.equal(
     queries.some((query) => query.statement.includes('payment_allocations deadline_allocation')),
+    true,
+  );
+  const settledPaymentQueries = queries.filter((query) => query.values.includes(true));
+  assert.equal(settledPaymentQueries.length, 2);
+  assert.equal(
+    settledPaymentQueries.every(
+      (query) =>
+        query.statement.includes('lease_contract_paid_documents') &&
+        query.statement.includes('contract_paid_document.id IS NOT NULL'),
+    ),
     true,
   );
   const compactRoomSearchQueries = queries.filter((query) => query.values.includes('RK0301'));

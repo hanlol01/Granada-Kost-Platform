@@ -97,7 +97,7 @@ export function usePropertyOwnerMutations() {
       mutationFn: (input: {
         fullName: string;
         email?: string;
-        phone?: string;
+        phone: string;
         address?: string;
         initialPassword: string;
       }) =>
@@ -111,7 +111,7 @@ export function usePropertyOwnerMutations() {
                 property_id: propertyId,
                 full_name: input.fullName,
                 email: input.email || undefined,
-                phone: input.phone || undefined,
+                phone: input.phone,
                 address: input.address || undefined,
                 initial_password: input.initialPassword,
               },
@@ -126,7 +126,7 @@ export function usePropertyOwnerMutations() {
         ownerId: string;
         fullName: string;
         email?: string;
-        phone?: string;
+        phone: string;
         address?: string;
       }) =>
         guarded(
@@ -140,7 +140,7 @@ export function usePropertyOwnerMutations() {
                 property_id: propertyId,
                 full_name: input.fullName,
                 email: input.email || undefined,
-                phone: input.phone || undefined,
+                phone: input.phone,
                 address: input.address || undefined,
               },
               key,

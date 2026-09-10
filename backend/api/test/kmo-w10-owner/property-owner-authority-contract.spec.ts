@@ -232,7 +232,7 @@ void test('historical owner scope migration backdates only first permanent assig
   const sql = readFileSync(
     resolve(
       root,
-      'src/infrastructure/database/migrations/072_owner_historical_scope_and_period_close.sql',
+      'src/infrastructure/database/migrations/073_owner_historical_scope_and_period_close.sql',
     ),
     'utf8',
   );

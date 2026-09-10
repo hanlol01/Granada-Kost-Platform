@@ -9,6 +9,11 @@ CREATE TEMP TABLE apart_kost_room_code_rename (
   new_code TEXT NOT NULL UNIQUE
 ) ON COMMIT DROP;
 
+CREATE TEMP TABLE apart_kost_room_updated_at_guard (
+  room_id UUID PRIMARY KEY,
+  previous_updated_at TIMESTAMPTZ NOT NULL
+) ON COMMIT DROP;
+
 INSERT INTO apart_kost_room_code_rename (old_code, new_code)
 VALUES
   ('AK-05-01', 'AK-6B-01'),
@@ -48,7 +53,7 @@ VALUES
   ('AK-18-19', 'AK-18/18-19'),
   ('AK-18-20', 'AK-18/18-20'),
   ('AK-18-21', 'AK-18/19-21'),
-  ('AK-18-22', 'AK-18/20-22'),
+  ('AK-18-22', 'AK-18/19-22'),
   ('AK-18-23', 'AK-18/20-23'),
   ('AK-18-24', 'AK-18/20-24');
 
@@ -114,10 +119,15 @@ BEGIN
       affected_property_count;
   END IF;
 
+  INSERT INTO apart_kost_room_updated_at_guard (room_id, previous_updated_at)
+  SELECT rooms.id, rooms.updated_at
+  FROM rooms rooms
+  JOIN apart_kost_room_code_rename mapping ON mapping.old_code = rooms.number
+  WHERE rooms.category = 'apartkost';
+
   UPDATE rooms rooms
   SET number = mapping.new_code,
-      room_code = mapping.new_code,
-      updated_at = now()
+      room_code = mapping.new_code
   FROM apart_kost_room_code_rename mapping
   WHERE rooms.category = 'apartkost'
     AND rooms.number = mapping.old_code;
@@ -128,6 +138,15 @@ BEGIN
       'Expected to rename % Apart Kost rooms, renamed %',
       expected_count,
       updated_count;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM rooms rooms
+    JOIN apart_kost_room_updated_at_guard guard ON guard.room_id = rooms.id
+    WHERE rooms.updated_at IS DISTINCT FROM guard.previous_updated_at
+  ) THEN
+    RAISE EXCEPTION 'Apart Kost room rename changed updated_at; migration aborted';
   END IF;
 
   IF EXISTS (

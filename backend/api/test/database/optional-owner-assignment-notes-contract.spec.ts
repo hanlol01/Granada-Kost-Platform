@@ -8,13 +8,13 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
 const MIGRATION_PATH =
-  'backend/api/src/infrastructure/database/migrations/069_optional_property_owner_assignment_notes.sql';
+  'backend/api/src/infrastructure/database/migrations/070_optional_property_owner_assignment_notes.sql';
 
 void test('property owner assignment notes migration is optional and non-destructive', () => {
   const migration = readFileSync(resolve(ROOT, MIGRATION_PATH));
   const sql = migration.toString('utf8');
   const manifestEntry = MIGRATION_MANIFEST.find(
-    ({ version }) => version === '069_optional_property_owner_assignment_notes.sql',
+    ({ version }) => version === '070_optional_property_owner_assignment_notes.sql',
   );
 
   assert.ok(manifestEntry);

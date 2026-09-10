@@ -656,7 +656,7 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
   },
   {
     version: '069_rename_apart_kost_rooms.sql',
-    checksumSha256: '9bd0d2bf21b37001c8bd3f95ce833f6ac85fbecd084a3ace33dd46ce577d84eb',
+    checksumSha256: '8b438b65d31a03bae74138a03231c608504e5cc978a7dcbaf4106bb0fc25b7b8',
     sentinels: [
       "(SELECT count(*) FROM rooms WHERE category='apartkost' AND number IN ('AK-6B-01', 'AK-6B-02', 'AK-06A-03', 'AK-06A-04', 'AK-05B-05', 'AK-05B-06', 'AK-05A-07', 'AK-05A-08', 'AK-6B-09', 'AK-6B-10', 'AK-06A-11', 'AK-06A-12', 'AK-05B-13', 'AK-05B-14', 'AK-05A-15', 'AK-05A-16', 'AK-18/15-01', 'AK-18/15-02', 'AK-18/16-03', 'AK-18/16-04', 'AK-18/17-05', 'AK-18/17-06', 'AK-18/18-07', 'AK-18/18-08', 'AK-18/19-09', 'AK-18/19-10', 'AK-18/20-11', 'AK-18/20-12', 'AK-18/15-13', 'AK-18/15-14', 'AK-18/16-15', 'AK-18/16-16', 'AK-18/17-17', 'AK-18/17-18', 'AK-18/18-19', 'AK-18/18-20', 'AK-18/19-21', 'AK-18/19-22', 'AK-18/20-23', 'AK-18/20-24') AND room_code = number) = 40",
       "NOT EXISTS (SELECT 1 FROM rooms WHERE category='apartkost' AND number IN ('AK-05-01', 'AK-05-02', 'AK-05-03', 'AK-05-04', 'AK-05-05', 'AK-05-06', 'AK-05-07', 'AK-05-08', 'AK-05-09', 'AK-05-10', 'AK-05-11', 'AK-05-12', 'AK-05-13', 'AK-05-14', 'AK-05-15', 'AK-05-16', 'AK-18-01', 'AK-18-02', 'AK-18-03', 'AK-18-04', 'AK-18-05', 'AK-18-06', 'AK-18-07', 'AK-18-08', 'AK-18-09', 'AK-18-10', 'AK-18-11', 'AK-18-12', 'AK-18-13', 'AK-18-14', 'AK-18-15', 'AK-18-16', 'AK-18-17', 'AK-18-18', 'AK-18-19', 'AK-18-20', 'AK-18-21', 'AK-18-22', 'AK-18-23', 'AK-18-24'))",

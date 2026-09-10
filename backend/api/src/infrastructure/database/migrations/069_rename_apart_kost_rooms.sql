@@ -116,8 +116,7 @@ BEGIN
 
   UPDATE rooms rooms
   SET number = mapping.new_code,
-      room_code = mapping.new_code,
-      updated_at = now()
+      room_code = mapping.new_code
   FROM apart_kost_room_code_rename mapping
   WHERE rooms.category = 'apartkost'
     AND rooms.number = mapping.old_code;

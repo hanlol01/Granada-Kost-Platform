@@ -8,13 +8,13 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
 const MIGRATION_PATH =
-  'backend/api/src/infrastructure/database/migrations/070_permanent_property_ownership.sql';
+  'backend/api/src/infrastructure/database/migrations/071_permanent_property_ownership.sql';
 
 void test('permanent ownership migration permits an immediate same-day release', () => {
   const migration = readFileSync(resolve(ROOT, MIGRATION_PATH));
   const sql = migration.toString('utf8');
   const manifestEntry = MIGRATION_MANIFEST.find(
-    ({ version }) => version === '070_permanent_property_ownership.sql',
+    ({ version }) => version === '071_permanent_property_ownership.sql',
   );
 
   assert.ok(manifestEntry);

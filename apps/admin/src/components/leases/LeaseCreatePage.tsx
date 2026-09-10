@@ -448,6 +448,13 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   }, [bookingLeadId, currentPropertyId]);
 
   const bookingRoom = bookingLeadQuote.data?.room ?? bookingLeadContext.data?.room;
+  // The completion quote is calculated with the selected lease term. Use it as
+  // the held-room card's effective monthly rate while the booking-lead API
+  // still exposes the room's base monthly/yearly fields only.
+  const bookingQuotedMonthlyRate =
+    bookingLeadQuote.data && bookingLeadQuote.data.termMonths === termMonths
+      ? bookingLeadQuote.data.contractRentAmount / termMonths
+      : undefined;
   const heldRoom = bookingRoom
     ? ({
         id: bookingRoom.id,
@@ -460,9 +467,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           category: bookingRoom.category,
           monthlyPrice: bookingRoom.monthlyPrice,
           yearlyPrice: bookingRoom.yearlyPrice,
-          shortStayMonthlyPrice: bookingRoom.monthlyPrice,
-          mediumStayMonthlyPrice: bookingRoom.monthlyPrice,
-          longStayMonthlyPrice: bookingRoom.yearlyPrice / 12,
+          shortStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.monthlyPrice,
+          mediumStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.monthlyPrice,
+          longStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.yearlyPrice / 12,
           commercialEffectiveDate: startDate,
           depositAmount: 0,
         },
@@ -485,7 +492,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           contractRent: bookingLeadQuote.data.contractRentAmount,
           minimumDp: bookingLeadQuote.data.suggestedDpAmount,
           securityDeposit: 0,
-          monthlyRate: fallbackAmounts.monthlyRate,
+          monthlyRate: bookingQuotedMonthlyRate ?? fallbackAmounts.monthlyRate,
           tierLabel: fallbackAmounts.tierLabel,
         }
       : fallbackAmounts;
@@ -2247,26 +2254,33 @@ function RoomAndPaymentStep({
           </p>
           <div className="max-h-[28rem] overflow-y-auto overscroll-contain pr-1" aria-live="polite">
             <div className="grid gap-3 md:grid-cols-2">
-              {rooms.map((room) => (
-                <button
-                  key={room.id}
-                  type="button"
-                  onClick={() => !roomLocked && onPick(room)}
-                  aria-disabled={roomLocked || undefined}
-                  className={
-                    "min-h-28 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
-                    (selectedRoom?.id === room.id
-                      ? "border-primary bg-primary/10"
-                      : "border-border bg-card hover:border-primary/50")
-                  }
-                >
-                  <p className="font-semibold">{room.number}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {room.kostType.name} · {room.buildingName ?? room.buildingCode ?? "Bangunan"}
-                  </p>
-                  <p className="mt-2 text-xs">{currency(room.kostType.monthlyPrice)} / bulan</p>
-                </button>
-              ))}
+              {rooms.map((room) => {
+                const roomAmounts = calculateLeaseAmounts(room, termMonths);
+                const rateLabel =
+                  roomAmounts.monthlyRate > 0
+                    ? `${currency(roomAmounts.monthlyRate)} / bulan · ${roomAmounts.tierLabel}`
+                    : "Pilih durasi minimal 3 bulan";
+                return (
+                  <button
+                    key={room.id}
+                    type="button"
+                    onClick={() => !roomLocked && onPick(room)}
+                    aria-disabled={roomLocked || undefined}
+                    className={
+                      "min-h-28 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                      (selectedRoom?.id === room.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card hover:border-primary/50")
+                    }
+                  >
+                    <p className="font-semibold">{room.number}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {room.kostType.name} · {room.buildingName ?? room.buildingCode ?? "Bangunan"}
+                    </p>
+                    <p className="mt-2 text-xs font-medium text-primary">{rateLabel}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
           {errors?.roomId ? (

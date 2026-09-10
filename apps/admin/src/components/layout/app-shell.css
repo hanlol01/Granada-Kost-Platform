@@ -1,0 +1,34 @@
+.app-shell-header {
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+}
+
+.app-shell-actions {
+  scrollbar-width: none;
+}
+
+.app-shell-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.app-shell-breadcrumb nav {
+  margin-top: 0;
+}
+
+@media (max-width: 767px) {
+  .app-shell-header[data-header-visible="false"] {
+    transform: translateY(-105%);
+  }
+}
+
+@media (min-width: 768px) {
+  .app-shell-header {
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-header {
+    transition-duration: 1ms;
+  }
+}

@@ -33,10 +33,12 @@ export type ConfirmDialogProps = {
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: ReactNode;
+  children?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
   pending?: boolean;
+  confirmDisabled?: boolean;
   reason?: {
     label?: string;
     placeholder?: string;
@@ -51,10 +53,12 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
+  children,
   confirmLabel = "Konfirmasi",
   cancelLabel = "Batal",
   destructive = false,
   pending = false,
+  confirmDisabled = false,
   reason,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -66,7 +70,7 @@ export function ConfirmDialog({
   }, [open]);
 
   const reasonInvalid = !!reason && text.trim().length < min;
-  const disabled = pending || reasonInvalid;
+  const disabled = pending || confirmDisabled || reasonInvalid;
 
   const handleConfirm = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -81,6 +85,7 @@ export function ConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
         </AlertDialogHeader>
+        {children}
         {reason ? (
           <div className="space-y-1.5">
             <Label htmlFor="confirm-reason" className="text-xs">

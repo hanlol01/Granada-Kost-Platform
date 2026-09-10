@@ -172,6 +172,8 @@ const finance = () => ({
   period: { period: "2026-08", start: "2026-08-01", end: "2026-08-31" },
   scope_checksum: "a".repeat(64),
   summary: {
+    period_status: "closed",
+    calculated_through: "2026-08-31",
     gross_earned_rent: "2214000000",
     owner_entitlement: "2000000000",
     management_fee: "214000000",
@@ -293,15 +295,25 @@ void test("owner occupancy resident detail stays room-scoped and rejects tenant 
   assert.throws(() => parseOwnerOccupancyResidentDetail(unsafe));
 });
 
-void test("owner portal has an Admin-aligned read-only application shell", () => {
+void test("owner portal has a mobile-first read-only drawer shell", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
   const ownerShell = source("components/property-owner-portal/OwnerPortalShell.tsx");
   const appShell = source("components/layout/app-shell.tsx");
+  const ownerStyles = source("components/property-owner-portal/owner-portal.css");
 
-  assert.match(ownerShell, /bg-sidebar/);
+  assert.match(ownerShell, /Buka menu Portal Owner/);
+  assert.match(ownerShell, /side="left"/);
+  assert.match(ownerShell, /owner-nav-surface/);
+  assert.match(ownerShell, /sidebar={null}/);
+  assert.match(ownerShell, /bottomNavigation={null}/);
+  assert.doesNotMatch(ownerShell, /OwnerPortalBottomNavigation|OwnerPortalSidebar/);
+  assert.match(appShell, /leadingAction/);
   assert.match(appShell, /backdrop-blur/);
   assert.match(ownerShell, /aria-current/);
   assert.match(ownerShell, /Akses hanya baca/);
+  assert.match(ownerStyles, /--owner-nav-background/);
+  assert.match(ownerStyles, /owner-collapse-action/);
+  assert.match(ownerStyles, /prefers-reduced-motion/);
   assert.match(portalComponent, /OwnerPortalBoundary/);
   assert.match(portalComponent, /initialPeriod=\{initialPeriod\}/);
   assert.match(portalComponent, /<Input/);
@@ -354,14 +366,49 @@ void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
   assert.match(portalComponent, /function Dashboard/);
-  assert.match(portalComponent, /href="\/property-owners\/portal\/assets"/);
-  assert.match(portalComponent, /href="\/property-owners\/portal\/occupancy"/);
-  assert.match(portalComponent, /href="\/property-owners\/portal\/issues"/);
+  assert.match(portalComponent, /Hak Owner/);
+  assert.match(portalComponent, /Status kamar saat ini/);
+  assert.match(portalComponent, /Pembayaran penghuni saat ini/);
+  assert.match(portalComponent, /Kamar yang perlu dilihat/);
+  assert.match(portalComponent, /dashboardRoomPage/);
+  assert.match(portalComponent, /Status perhatian/);
+  assert.match(portalComponent, /Kembali/);
+  assert.match(portalComponent, /Lanjut/);
+  assert.match(portalComponent, /propertyOwnerPortalApi\.collectionProgress\(\)/);
+  assert.match(portalComponent, /to="\/property-owners\/portal\/assets\/\$roomCode"/);
+  assert.match(portalComponent, /"\/property-owners\/portal\/finance"/);
+  assert.match(portalComponent, /"\/property-owners\/portal\/issues"/);
   assert.match(portalComponent, /to="\/property-owners\/portal\/notifications"/);
   assert.match(portalComponent, /Tidak ada perhatian baru/);
-  assert.match(portalComponent, /ownerPortalNavigation/);
-  assert.match(portalComponent, /Ringkasan ini berasal dari data operasional/);
+  assert.match(portalComponent, /data-payment-progress/);
+  assert.match(portalComponent, /useGSAP/);
+  assert.doesNotMatch(portalComponent, /ownerPortalNavigation/);
   assert.doesNotMatch(portalComponent, /useState\([^)]*openComplaints/);
+});
+
+void test("owner collection payment details support search, filters, and five-item pages", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /function CollectionProgress/);
+  assert.match(portalComponent, /Cari kamar atau penghuni/);
+  assert.match(portalComponent, /Status tagihan/);
+  assert.match(portalComponent, /Status checkpoint/);
+  assert.match(portalComponent, /Semua bangunan/);
+  assert.match(portalComponent, /const pageSize = 5/);
+  assert.match(portalComponent, /Menampilkan \{start\}–\{end\}/);
+  assert.match(portalComponent, /Lanjut ke halaman rincian pembayaran berikutnya/);
+});
+
+void test("owner finance copy uses plain Indonesian terms", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /Pendapatan dan hak Owner yang telah tercatat/);
+  assert.match(portalComponent, /Hak pemilik/);
+  assert.match(portalComponent, /Pencairan tercatat/);
+  assert.doesNotMatch(
+    portalComponent,
+    /Entitlement owner|Payout tercatat|Status settlement periode/,
+  );
 });
 
 void test("E5 dashboard finance snapshot is report-only and comes from the owner projection", () => {
@@ -404,15 +451,14 @@ void test("E6 keeps the read-only account route available without an active assi
   assert.match(portalComponent, /Profil owner belum tersedia/);
 });
 
-void test("E6 uses a non-destructive reset control for finance filters", () => {
+void test("E6 uses the requested red reset control for finance filters", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
   const financeStart = portalComponent.indexOf("function Finance(");
   const financeEnd = portalComponent.indexOf("function OperationalFilters(");
   assert.ok(financeStart >= 0 && financeEnd > financeStart);
   const finance = portalComponent.slice(financeStart, financeEnd);
-  assert.match(finance, /variant="outline" onClick=\{resetFilters\}/);
-  assert.doesNotMatch(finance, /variant="destructive" onClick=\{resetFilters\}/);
+  assert.match(finance, /variant="destructive" onClick=\{resetFilters\}/);
 });
 
 void test("E2 resource parser accepts safe occupancy facts and rejects resident PII", () => {

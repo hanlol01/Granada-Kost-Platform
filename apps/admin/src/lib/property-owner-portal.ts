@@ -288,6 +288,8 @@ export type OwnerFinance = {
   period: { period: string; start: string; end: string };
   scopeChecksum: string;
   summary: {
+    periodStatus: "open" | "closed";
+    calculatedThrough: string | null;
     grossEarnedRent: Money;
     ownerEntitlement: Money;
     managementFee: Money;
@@ -1131,6 +1133,8 @@ export function parseOwnerFinance(value: unknown): OwnerFinance {
     root.summary,
     [
       "gross_earned_rent",
+      "period_status",
+      "calculated_through",
       "owner_entitlement",
       "management_fee",
       "owner_adjustments",
@@ -1154,6 +1158,15 @@ export function parseOwnerFinance(value: unknown): OwnerFinance {
     },
     scopeChecksum: string(root.scope_checksum, "finance.scope_checksum"),
     summary: {
+      periodStatus: enumValue(
+        summary.period_status,
+        ["open", "closed"],
+        "finance.summary.period_status",
+      ),
+      calculatedThrough:
+        summary.calculated_through === null
+          ? null
+          : date(summary.calculated_through, "finance.summary.calculated_through"),
       grossEarnedRent: money(summary.gross_earned_rent, "finance.summary.gross_earned_rent"),
       ownerEntitlement: money(summary.owner_entitlement, "finance.summary.owner_entitlement"),
       managementFee: money(summary.management_fee, "finance.summary.management_fee"),

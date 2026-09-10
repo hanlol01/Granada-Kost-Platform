@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
@@ -6,7 +6,7 @@ import {
   CircleDollarSign,
   FileText,
   LayoutDashboard,
-  MoreHorizontal,
+  Menu,
   ShieldCheck,
   UserRound,
   UsersRound,
@@ -24,6 +24,7 @@ import {
   type OwnerPortalRouteMetadata,
 } from "@/lib/property-owner-route-registry";
 import { cn } from "@/lib/utils";
+import "./owner-portal.css";
 
 const routeIcons: Record<OwnerPortalRouteId, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -39,12 +40,10 @@ const routeIcons: Record<OwnerPortalRouteId, LucideIcon> = {
 function OwnerRouteLink({
   route,
   pathname,
-  compact = false,
   onNavigate,
 }: {
   route: OwnerPortalRouteMetadata;
   pathname: string;
-  compact?: boolean;
   onNavigate?: () => void;
 }) {
   const Icon = routeIcons[route.id];
@@ -55,140 +54,87 @@ function OwnerRouteLink({
       to={route.to as never}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      aria-label={compact ? route.label : undefined}
-      title={compact ? route.label : undefined}
-      className={cn(
-        "relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
-        compact && "justify-center px-2",
-        active
-          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-      )}
+      data-active={active ? "true" : "false"}
+      className="owner-nav-link relative flex min-h-12 items-center gap-3 rounded-xl px-4 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--owner-nav-background)]"
     >
-      {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" /> : null}
-      <Icon className="h-4 w-4 shrink-0" />
-      {!compact ? <span className="truncate">{route.label}</span> : null}
+      {active ? <span className="absolute inset-y-3 left-1 w-1 rounded-full bg-white" /> : null}
+      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <span className="truncate">{route.label}</span>
     </Link>
   );
 }
 
-function OwnerPortalSidebar({ ownerName, historical }: { ownerName: string; historical: boolean }) {
+function OwnerPortalNavigationDrawer({
+  ownerName,
+  historical,
+}: {
+  ownerName: string;
+  historical: boolean;
+}) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const routes = getVisibleOwnerPortalRoutes(historical);
+  const [open, setOpen] = useState(false);
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
-      <div className="flex items-center gap-3 border-b border-sidebar-border px-6 py-6">
-        <img
-          src="/images/brand/kostation-mark.png"
-          alt="Kostation"
-          className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-sm"
-        />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">Kostation</p>
-          <p className="truncate text-xs text-sidebar-foreground/65">Portal Pemilik Properti</p>
-        </div>
-      </div>
-
-      <div className="px-4 py-5">
-        <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/35 px-4 py-3">
-          <p className="truncate text-sm font-semibold">{ownerName}</p>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-sidebar-foreground/65">
-            <ShieldCheck className="h-3.5 w-3.5" /> Akses hanya baca
-          </p>
-        </div>
-      </div>
-
-      <nav
-        aria-label="Navigasi portal owner"
-        className="app-scrollbar flex-1 space-y-1 overflow-y-auto px-4 pb-5"
-      >
-        {routes.map((route) => (
-          <OwnerRouteLink key={route.id} route={route} pathname={pathname} />
-        ))}
-      </nav>
-
-      <p className="border-t border-sidebar-border px-6 py-5 text-xs leading-5 text-sidebar-foreground/60">
-        Data mengikuti cakupan kepemilikan dan periode yang berlaku.
-      </p>
-    </aside>
-  );
-}
-
-function OwnerPortalBottomNavigation({ historical }: { historical: boolean }) {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const routes = getVisibleOwnerPortalRoutes(historical);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const primary = useMemo(
-    () =>
-      routes
-        .filter((route) => route.mobilePriority !== undefined)
-        .sort((left, right) => left.mobilePriority! - right.mobilePriority!)
-        .slice(0, 4),
-    [routes],
-  );
-  const more = useMemo(
-    () => routes.filter((route) => !primary.some((primaryRoute) => primaryRoute.id === route.id)),
-    [primary, routes],
-  );
-
-  return (
-    <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-      <nav
-        aria-label="Navigasi portal owner seluler"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 shadow-[0_-8px_30px_rgba(0,0,0,0.16)] backdrop-blur lg:hidden"
-      >
-        <div className="grid grid-cols-5">
-          {primary.map((route) => {
-            const Icon = routeIcons[route.id];
-            const active = isOwnerPortalRouteActive(route, pathname);
-            return (
-              <Link
-                key={route.id}
-                to={route.to as never}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="max-w-full truncate">{route.shortLabel}</span>
-              </Link>
-            );
-          })}
-          <SheetTrigger asChild>
-            <button
-              type="button"
-              className="flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-              aria-label="Buka menu Owner lainnya"
-            >
-              <MoreHorizontal className="h-5 w-5" />
-              <span>Lainnya</span>
-            </button>
-          </SheetTrigger>
-        </div>
-      </nav>
-
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-12 w-12 border-primary/30 bg-primary/10 text-primary shadow-sm hover:bg-primary/15"
+          aria-label="Buka menu Portal Owner"
+          aria-expanded={open}
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </Button>
+      </SheetTrigger>
       <SheetContent
-        side="bottom"
-        className="app-scrollbar max-h-[80vh] overflow-y-auto border-border bg-background px-5 pb-8"
+        side="left"
+        className="owner-nav-surface owner-nav-drawer flex w-[calc(100%-1rem)] max-w-sm flex-col gap-0 border-r-0 p-0 shadow-2xl [&>button]:h-11 [&>button]:w-11 [&>button]:text-white [&>button]:ring-offset-[var(--owner-nav-background)] [&>button]:hover:bg-white/10"
       >
-        <SheetHeader>
-          <SheetTitle className="text-foreground">Menu Owner lainnya</SheetTitle>
+        <SheetHeader className="owner-dashboard-finance-rule border-b px-5 py-6 pr-16 text-left">
+          <div className="flex items-center gap-3">
+            <img
+              src="/images/brand/kostation-mark.png"
+              alt="Kostation"
+              className="h-11 w-11 shrink-0 rounded-xl object-cover shadow-sm"
+            />
+            <div className="min-w-0">
+              <SheetTitle className="truncate text-base text-white">Kostation</SheetTitle>
+              <p className="truncate text-sm text-[var(--owner-nav-muted)]">
+                Portal Pemilik Properti
+              </p>
+            </div>
+          </div>
         </SheetHeader>
-        <nav aria-label="Menu Owner lainnya" className="mt-5 grid gap-1">
-          {more.map((route) => (
+
+        <div className="px-4 py-5">
+          <div className="rounded-xl bg-[var(--owner-nav-panel)] px-4 py-4">
+            <p className="truncate text-base font-semibold text-white">{ownerName}</p>
+            <p className="mt-1.5 flex items-center gap-2 text-sm text-[var(--owner-nav-muted)]">
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" /> Akses hanya baca
+            </p>
+          </div>
+        </div>
+
+        <nav
+          aria-label="Navigasi Portal Owner"
+          className="app-scrollbar flex-1 space-y-1 overflow-y-auto px-4 pb-5"
+        >
+          {routes.map((route) => (
             <OwnerRouteLink
               key={route.id}
               route={route}
               pathname={pathname}
-              onNavigate={() => setMoreOpen(false)}
+              onNavigate={() => setOpen(false)}
             />
           ))}
         </nav>
+
+        <p className="owner-dashboard-finance-rule border-t px-5 py-5 text-sm leading-6 text-[var(--owner-nav-muted)]">
+          Data mengikuti kepemilikan dan periode yang berlaku.
+        </p>
       </SheetContent>
     </Sheet>
   );
@@ -213,7 +159,7 @@ export function OwnerPortalShell({
   const breadcrumb = (
     <nav
       aria-label="Breadcrumb"
-      className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+      className="mt-2 hidden min-w-0 items-center gap-2 text-sm text-muted-foreground sm:flex"
     >
       <Link to="/property-owners/portal" className="transition-colors hover:text-foreground">
         Portal Owner
@@ -235,7 +181,7 @@ export function OwnerPortalShell({
       asChild
       variant="ghost"
       size="icon"
-      className="relative text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      className="relative h-11 w-11 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
     >
       <Link to="/property-owners/portal/notifications" aria-label="Buka notifikasi Owner">
         <Bell className="h-4 w-4" />
@@ -250,14 +196,15 @@ export function OwnerPortalShell({
     <AppShell
       eyebrow="Portal Owner"
       title={route.label}
-      subtitle={`${ownerName} · Informasi sesuai penugasan kepemilikan`}
-      sidebar={<OwnerPortalSidebar ownerName={ownerName} historical={historical} />}
-      bottomNavigation={<OwnerPortalBottomNavigation historical={historical} />}
+      subtitle={`${ownerName} · Informasi kepemilikan`}
+      leadingAction={<OwnerPortalNavigationDrawer ownerName={ownerName} historical={historical} />}
+      sidebar={null}
+      bottomNavigation={null}
       breadcrumb={breadcrumb}
       notificationAction={notificationAction}
-      contentClassName="lg:py-8"
+      contentClassName="pb-8 lg:py-8"
     >
-      <div className="mx-auto w-full max-w-7xl">{children}</div>
+      <div className="owner-portal-root mx-auto w-full max-w-7xl">{children}</div>
     </AppShell>
   );
 }

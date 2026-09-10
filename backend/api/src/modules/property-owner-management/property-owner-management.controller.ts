@@ -22,6 +22,7 @@ import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
   AssignOwnerBuildingDto,
   AssignOwnerRoomsDto,
+  CloseOwnerReportPeriodDto,
   CreatePropertyOwnerDto,
   ListPropertyOwnersQueryDto,
   PropertyOwnerAssetOptionsQueryDto,
@@ -100,6 +101,23 @@ export class PropertyOwnerManagementController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.owners.resetPassword(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Delete(':ownerId/permanent')
+  deletePermanently(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Query() query: PropertyOwnerPropertyQueryDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.owners.deletePermanently(
+      actor,
+      ownerId,
+      query.property_id,
+      idempotencyKey,
+      auditContext(request),
+    );
   }
 
   @Delete(':ownerId')
@@ -211,6 +229,24 @@ export class PropertyOwnerManagementController {
       actor,
       ownerId,
       'room',
+      dto,
+      idempotencyKey,
+      auditContext(request),
+    );
+  }
+
+  @Post(':ownerId/report-periods/close')
+  @RequirePermissions('property_owner.settlement.manage')
+  closeReportPeriod(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: CloseOwnerReportPeriodDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.owners.closeReportPeriod(
+      actor,
+      ownerId,
       dto,
       idempotencyKey,
       auditContext(request),

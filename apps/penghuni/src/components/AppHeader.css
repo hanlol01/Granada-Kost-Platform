@@ -1,0 +1,22 @@
+.resident-app-header {
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+}
+
+@media (max-width: 767px) {
+  .resident-app-header[data-header-visible="false"] {
+    transform: translateY(-105%);
+  }
+}
+
+@media (min-width: 768px) {
+  .resident-app-header {
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resident-app-header {
+    transition-duration: 1ms;
+  }
+}

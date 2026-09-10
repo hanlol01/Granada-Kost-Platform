@@ -15,6 +15,7 @@ import type { UserAccessContext } from '../../src/modules/iam/types/iam.types';
 import {
   AssignOwnerBuildingDto,
   AssignOwnerRoomsDto,
+  CloseOwnerReportPeriodDto,
   CreatePropertyOwnerDto,
   ReleaseOwnerAssignmentsDto,
 } from '../../src/modules/property-owner-management/dto/property-owner-management.dto';
@@ -95,6 +96,39 @@ void test('controllers freeze separate Admin mutation and exact property_owner r
       .releaseRoomBatch,
     'function',
   );
+  assert.equal(
+    typeof (PropertyOwnerManagementController.prototype as unknown as Record<string, unknown>)
+      .deletePermanently,
+    'function',
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      PropertyOwnerManagementController.prototype.closeReportPeriod,
+    ),
+    ['property_owner.settlement.manage'],
+  );
+});
+
+void test('owner lifecycle keeps archive and permanent deletion fail-closed', () => {
+  const service = readFileSync(
+    resolve(root, 'src/modules/property-owner-management/property-owner-management.service.ts'),
+    'utf8',
+  );
+  const controller = readFileSync(
+    resolve(root, 'src/modules/property-owner-management/property-owner-management.controller.ts'),
+    'utf8',
+  );
+
+  assert.match(service, /PROPERTY_OWNER_ASSIGNMENTS_STILL_ACTIVE/);
+  assert.match(service, /buildingAssignments\.rows\.length > 0/);
+  assert.match(service, /roomAssignments\.rows\.length > 0/);
+  assert.match(service, /PROPERTY_OWNER_PERMANENT_DELETE_BLOCKED/);
+  assert.match(service, /owner\.profile_status !== 'archived'/);
+  assert.match(service, /ownershipHistory > 0/);
+  assert.match(service, /counts\.financial_record_count > 0/);
+  assert.match(service, /DELETE FROM property_owner_profiles/);
+  assert.match(controller, /@Delete\(':ownerId\/permanent'\)/);
 });
 
 void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost selections', async () => {
@@ -127,31 +161,37 @@ void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost sel
   const emptyRooms = plainToInstance(AssignOwnerRoomsDto, {
     property_id: propertyId,
     room_ids: [],
-    effective_from: '2026-08-11',
     reason: 'Initial assignment',
   });
   assert.ok((await validate(emptyRooms)).some((error) => error.property === 'room_ids'));
 
-  const invalidPeriod = plainToInstance(AssignOwnerBuildingDto, {
+  const obsoletePeriodFields = plainToInstance(AssignOwnerBuildingDto, {
     property_id: propertyId,
     building_id: '44444444-4444-4444-8444-444444444444',
-    effective_from: 'not-a-date',
+    effective_from: '2026-08-11',
+    effective_until: '2026-09-11',
     reason: 'Initial assignment',
   });
-  assert.ok((await validate(invalidPeriod)).some((error) => error.property === 'effective_from'));
+  assert.ok(
+    (await validate(obsoletePeriodFields, { whitelist: true, forbidNonWhitelisted: true })).some(
+      (error) => error.property === 'effective_from' || error.property === 'effective_until',
+    ),
+  );
 
-  const timestampPeriod = plainToInstance(AssignOwnerBuildingDto, {
+  const optionalAssignmentNote = plainToInstance(AssignOwnerBuildingDto, {
     property_id: propertyId,
     building_id: '44444444-4444-4444-8444-444444444444',
-    effective_from: '2026-08-11T00:00:00Z',
-    reason: 'Initial assignment',
+    reason: '',
   });
-  assert.ok((await validate(timestampPeriod)).some((error) => error.property === 'effective_from'));
+  assert.equal(
+    (await validate(optionalAssignmentNote)).some((error) => error.property === 'reason'),
+    false,
+    'assignment notes are optional',
+  );
 
   const emptyBatchRelease = plainToInstance(ReleaseOwnerAssignmentsDto, {
     property_id: propertyId,
     assignment_ids: [],
-    effective_until: '2026-08-11',
     reason: 'Batch release',
   });
   assert.ok(
@@ -165,13 +205,42 @@ void test('DTOs reject unknown fields, malformed dates, and empty Apart Kost sel
       '44444444-4444-4444-8444-444444444444',
       '44444444-4444-4444-8444-444444444444',
     ],
-    effective_until: '2026-08-11',
     reason: 'Batch release',
   });
   assert.ok(
     (await validate(duplicateBatchRelease)).some((error) => error.property === 'assignment_ids'),
     'a batch release must reject duplicate assignment ids',
   );
+});
+
+void test('owner report close DTO accepts completed month format and rejects calendar dates', async () => {
+  const valid = plainToInstance(CloseOwnerReportPeriodDto, {
+    property_id: propertyId,
+    period: '2026-08',
+    notes: 'Sudah diperiksa Admin',
+  });
+  assert.equal((await validate(valid, { whitelist: true, forbidNonWhitelisted: true })).length, 0);
+
+  const invalid = plainToInstance(CloseOwnerReportPeriodDto, {
+    property_id: propertyId,
+    period: '2026-08-31',
+  });
+  assert.ok((await validate(invalid, { whitelist: true, forbidNonWhitelisted: true })).length > 0);
+});
+
+void test('historical owner scope migration backdates only first permanent assignments', () => {
+  const sql = readFileSync(
+    resolve(
+      root,
+      'src/infrastructure/database/migrations/072_owner_historical_scope_and_period_close.sql',
+    ),
+    'utf8',
+  );
+  assert.match(sql, /CREATE OR REPLACE FUNCTION property_owner_initial_assignment_date/);
+  assert.match(sql, /MIN\(policies\.effective_from\)/);
+  assert.match(sql, /assignments\.assignment_status = 'active'/);
+  assert.match(sql, /assignments\.effective_until IS NULL/);
+  assert.match(sql, /NOT EXISTS \(/);
 });
 
 void test('empty or foreign property scope fails before query, transaction, or password hashing', async () => {
@@ -446,7 +515,6 @@ void test('building assignment keeps one transaction client and rolls back befor
       {
         property_id: propertyId,
         building_id: buildingId,
-        effective_from: '2026-08-11',
         reason: 'Initial owner assignment',
       },
       'owner-building-key-0001',
@@ -473,7 +541,7 @@ void test('building assignment keeps one transaction client and rolls back befor
   assert.equal(events.includes('commit'), false);
 });
 
-void test('releasing ownership shortens its protected period and rejects a non-shortening release', async () => {
+void test('releasing ownership closes it immediately without an admin-supplied date', async () => {
   const ownerId = '55555555-5555-4555-8555-555555555555';
   const assignmentId = '88888888-8888-4888-8888-888888888888';
   const events: string[] = [];
@@ -565,7 +633,6 @@ void test('releasing ownership shortens its protected period and rejects a non-s
     assignmentId,
     {
       property_id: propertyId,
-      effective_until: '2026-09-01',
       reason: 'Transfer to the new owner',
     },
     'w10-owner-release-key-0001',
@@ -590,40 +657,10 @@ void test('releasing ownership shortens its protected period and rejects a non-s
     'release',
   ]);
 
-  await assert.rejects(
-    service.releaseAssignment(
-      actor(),
-      ownerId,
-      'room',
-      assignmentId,
-      {
-        property_id: propertyId,
-        effective_until: '2026-10-01',
-        reason: 'Must not remove overlap protection',
-      },
-      'w10-owner-release-key-0002',
-      { correlationId: 'w10-owner-release-not-shortening' },
-    ),
-    (error) => {
-      assert.deepEqual(exceptionBody(error), {
-        code: 'PROPERTY_OWNER_ASSIGNMENT_RELEASE_NOT_SHORTENING',
-        message: 'Ownership release must shorten the current effective period',
-      });
-      return true;
-    },
-  );
-  assert.deepEqual(events.slice(-6), [
-    'begin',
-    'claim',
-    'owner-lock',
-    'assignment-lock',
-    'rollback',
-    'release',
-  ]);
-  assert.equal(releases, 2);
+  assert.equal(releases, 1);
 });
 
-void test('batch ownership release locks, audits, and closes every selected period in one command', async () => {
+void test('batch ownership release locks, audits, and closes every selected asset in one command', async () => {
   const ownerId = '55555555-5555-4555-8555-555555555555';
   const firstAssignmentId = '77777777-7777-4777-8777-777777777777';
   const secondAssignmentId = '88888888-8888-4888-8888-888888888888';
@@ -712,7 +749,6 @@ void test('batch ownership release locks, audits, and closes every selected peri
     {
       property_id: propertyId,
       assignment_ids: [secondAssignmentId, firstAssignmentId],
-      effective_until: '2026-09-01',
       reason: 'Transfer portfolio ownership',
     },
     'w10-owner-batch-release-key-0001',
@@ -753,7 +789,6 @@ void test('batch ownership release locks, audits, and closes every selected peri
       {
         property_id: propertyId,
         assignment_ids: [unavailableAssignmentId, firstAssignmentId],
-        effective_until: '2026-09-01',
         reason: 'Must remain atomic',
       },
       'w10-owner-batch-release-key-0002',

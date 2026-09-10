@@ -23,7 +23,7 @@ export function AppBreadcrumb() {
   if (crumbs.length === 0) return null;
 
   return (
-    <Breadcrumb className="mt-1.5">
+    <Breadcrumb>
       <BreadcrumbList className="text-xs">
         {crumbs.map((crumb, index) => {
           const isCurrent = index === crumbs.length - 1;

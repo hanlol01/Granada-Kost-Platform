@@ -2292,7 +2292,7 @@ function CorrectionPanel({
                       {payment.receipt_id ? (
                         <Button
                           className="min-h-11"
-                          variant="outline"
+                          variant="info"
                           onClick={() => setReceiptId(payment.receipt_id)}
                         >
                           Kuitansi awal

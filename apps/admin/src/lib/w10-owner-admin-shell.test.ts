@@ -107,7 +107,7 @@ test("W10 Owner entry redirects to the real portal route while Admin keeps its s
   assert.match(route, /<AppShell\b/);
 });
 
-test("W10 shared shell keeps Admin defaults while Owner injects its own navigation", () => {
+test("W10 shared shell keeps Admin defaults while Owner injects one hamburger drawer", () => {
   const appShell = source("components/layout/app-shell.tsx");
   const ownerShell = source("components/property-owner-portal/OwnerPortalShell.tsx");
 
@@ -115,8 +115,12 @@ test("W10 shared shell keeps Admin defaults while Owner injects its own navigati
   assert.match(appShell, /bottomNavigation\s*=\s*<RegistryBottomNav\s*\/>/);
   assert.match(ownerShell, /ownerPortalRouteRegistry|getVisibleOwnerPortalRoutes/);
   assert.doesNotMatch(ownerShell, /adminRouteRegistry|getVisibleRoutes/);
-  assert.match(ownerShell, /aria-label="Navigasi portal owner"/);
-  assert.match(ownerShell, /Lainnya/);
+  assert.match(ownerShell, /aria-label="Navigasi Portal Owner"/);
+  assert.match(ownerShell, /Buka menu Portal Owner/);
+  assert.match(ownerShell, /side="left"/);
+  assert.match(ownerShell, /sidebar={null}/);
+  assert.match(ownerShell, /bottomNavigation={null}/);
+  assert.doesNotMatch(ownerShell, /Lainnya|OwnerPortalBottomNavigation/);
 });
 
 test("W10 Owner page routes use URL-backed portal views", () => {
@@ -141,11 +145,11 @@ test("W10 Owner error boundaries keep recovery inside the Owner route allowlist"
   const portal = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
   assert.match(errorState, /backTo\?: string/);
-  assert.match(errorState, /backTo = \"\/\"/);
+  assert.match(errorState, /backTo = "\/"/);
   assert.match(errorState, /Kembali ke portal Owner/);
-  assert.match(portal, /backTo=\"\/property-owners\/portal\"/);
-  assert.match(portal, /backTo=\"\/property-owners\/portal\/assets\"/);
-  assert.match(portal, /backTo=\"\/property-owners\/portal\/occupancy\"/);
+  assert.match(portal, /backTo="\/property-owners\/portal"/);
+  assert.match(portal, /backTo="\/property-owners\/portal\/assets"/);
+  assert.match(portal, /backTo="\/property-owners\/portal\/occupancy"/);
   assert.match(portal, /assetsQuery\.error/);
   assert.match(portal, /Aset Owner tidak dapat dimuat/);
 });

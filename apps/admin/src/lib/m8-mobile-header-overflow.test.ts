@@ -126,7 +126,7 @@ test("M8.1-F1: AppShell TSX parses fail-closed", () => {
   );
 });
 
-test("M8.1-F1: header stacks on mobile and restores the incumbent row at sm", () => {
+test("M8.1-F1: header stays compact and keeps breadcrumbs outside the header", () => {
   const appShell = findAppShell(parseTsx(source, APP_SHELL_PATH));
   const header = findElement(appShell, "header");
   const layout = header.children.find(
@@ -135,18 +135,14 @@ test("M8.1-F1: header stacks on mobile and restores the incumbent row at sm", ()
   );
   assert.ok(layout, "header layout wrapper is missing");
   const classes = classNames(layout.openingElement);
-  for (const token of [
-    "flex",
-    "flex-col",
-    "sm:flex-row",
-    "sm:items-center",
-    "sm:justify-between",
-  ]) {
+  for (const token of ["flex", "min-h-16", "items-center"]) {
     assert.ok(classes.has(token), `header layout is missing ${token}`);
   }
+  assert.match(source, /data-header-visible/);
+  assert.match(source, /app-shell-breadcrumb/);
 });
 
-test("M8.1-F1: action row owns all controls and wraps within the mobile viewport", () => {
+test("M8.1-F1: action row owns all controls and scrolls without widening the viewport", () => {
   const appShell = findAppShell(parseTsx(source, APP_SHELL_PATH));
   const candidates: ts.JsxElement[] = [];
   visit(appShell, (node) => {
@@ -157,16 +153,7 @@ test("M8.1-F1: action row owns all controls and wraps within the mobile viewport
   assert.deepEqual(actionChildOrder(actionRow), ["actions", "Ubah tema", "Notifikasi", "UserMenu"]);
 
   const classes = classNames(actionRow.openingElement);
-  for (const token of [
-    "flex",
-    "w-full",
-    "min-w-0",
-    "max-w-full",
-    "flex-wrap",
-    "justify-end",
-    "sm:shrink-0",
-  ]) {
+  for (const token of ["flex", "min-w-0", "shrink-0", "overflow-x-auto", "justify-end"]) {
     assert.ok(classes.has(token), `action row is missing ${token}`);
   }
-  assert.equal(classes.has("shrink-0"), false, "action row must not shrink-lock on mobile");
 });

@@ -160,11 +160,11 @@ Copy terlihat memakai Bahasa Indonesia dan terminology domain yang konsisten. Gu
 
 ## Layout
 
-Admin memakai app shell full-width dengan sidebar desktop tetap, header sticky, content padding responsif, dan bottom navigation pada viewport di bawah breakpoint desktop. Header menumpuk title dan action row pada mobile, lalu kembali horizontal mulai `sm`. Tabel boleh scroll di container-nya, tetapi halaman tidak boleh overflow horizontal.
+Admin memakai app shell full-width dengan sidebar desktop tetap, header sticky yang ringkas, content padding responsif, dan bottom navigation pada viewport di bawah breakpoint desktop. Breadcrumb berada pada strip terpisah di bawah header. Pada mobile header menyembunyikan diri ketika pengguna scroll turun dan muncul kembali ketika scroll naik; action row tetap dapat digeser tanpa membuat halaman overflow horizontal. Tabel boleh scroll di container-nya.
 
 Penghuni memakai shell mobile-first dengan lebar maksimum `28rem`, bottom navigation tetap, safe-area inset, dan public catalog yang dapat melebar sampai `72rem`. Breakpoint incumbent yang aktif adalah `sm` (`640px`), `md` (`768px`), dan `lg` (`1024px`).
 
-Property Owner memakai shell desktop dan header responsif Admin, tetapi sidebar, bottom navigation, breadcrumb, dan tombol notifikasi hanya boleh membaca registry route Owner yang diizinkan. Pada mobile, tampilkan maksimal empat navigasi prioritas dan satu affordance “Lainnya”; jangan membuat horizontal menu tab sebagai pengganti route.
+Property Owner memakai shell mobile-first dengan satu drawer hamburger berwarna untuk seluruh viewport. Jangan tampilkan sidebar tetap atau bottom navigation Owner; satu pola navigasi yang sama mengurangi beban belajar pada ponsel dan desktop. Drawer, breadcrumb, dan tombol notifikasi hanya boleh membaca registry route Owner yang diizinkan.
 
 Gunakan ritme berbasis 0.25rem dengan langkah yang berulang pada frontmatter. Kelompokkan kontrol rapat; gunakan jarak section yang lebih besar untuk memisahkan konteks. Grid dan action row harus wrap atau stack saat ruang berkurang. Targetnya adalah comfortable density, scanability, dan `scrollWidth <= clientWidth`.
 
@@ -201,7 +201,7 @@ Shared Admin/Property Owner/Penghuni primitives memakai variant dan state yang s
 - **Primary:** tinggi `2.25rem`, padding horizontal `1rem`, teks medium, primary surface, dan kontras foreground semantic.
 - **Outline/Secondary/Ghost:** mempertahankan hierarchy melalui border atau tonal background; ghost tidak menambah surface saat idle.
 - **Hover/Focus/Disabled:** perubahan warna halus, focus-visible ring, disabled opacity, dan cursor yang sesuai. Icon button tetap mempunyai accessible name.
-- **Owner actions:** aksi navigasi/read-only seperti `Lihat detail`, `Lihat laporan`, atau `Unduh export` memakai primary atau outline sesuai hierarchy. `Reset filter` memakai outline/secondary dengan ikon reset—bukan destructive merah—karena tidak menghapus data.
+- **Owner actions:** aksi navigasi/read-only seperti `Lihat detail`, `Lihat laporan`, atau `Unduh export` memakai primary atau outline sesuai hierarchy. `Reset filter` memakai destructive merah sebagai penanda tindakan reset yang jelas, tanpa menghapus data.
 
 ### Inputs and Selects
 
@@ -228,7 +228,7 @@ Shared Admin/Property Owner/Penghuni primitives memakai variant dan state yang s
 - Admin sidebar mengelompokkan route berdasarkan konteks, memakai active tonal background plus bar indikator, dan scrollbar tipis yang theme-aware.
 - Admin mobile menampilkan empat route prioritas dan sheet “Lainnya”; Penghuni memakai lima item bottom navigation.
 - Active state harus terbaca tanpa bergantung pada warna saja, dan seluruh menu tetap keyboard-accessible serta dapat discroll.
-- **Property Owner navigation:** gunakan registry allowlist khusus: Dashboard, Aset Saya, Hunian & Penyewaan, Pembayaran & Pendapatan, Komplain & Maintenance, Laporan, Notifikasi, dan Profil Akun. Registry Admin tidak boleh difilter di client untuk membentuk navigasi Owner.
+- **Property Owner navigation:** gunakan drawer hamburger berwarna pada seluruh viewport dan registry allowlist khusus: Dashboard, Aset Saya, Hunian & Penyewaan, Pembayaran & Pendapatan, Komplain & Maintenance, Laporan, Notifikasi, dan Profil Akun. Registry Admin tidak boleh difilter di client untuk membentuk navigasi Owner.
 
 ### Dialogs and Sheets
 

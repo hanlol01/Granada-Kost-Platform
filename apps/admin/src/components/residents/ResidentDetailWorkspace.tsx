@@ -108,6 +108,20 @@ function formatResidentDetailDate(value: string): string {
   });
 }
 
+function jakartaDateInput(value = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: "year" | "month" | "day") =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+const jakartaStartTimestamp = (date: string): string => `${date}T00:00:00+07:00`;
+
 function formatResidentFinancialDate(value: string): string {
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
@@ -553,6 +567,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
   const [confirmCheckIn, setConfirmCheckIn] = useState(false);
+  const [activationEffectiveDate, setActivationEffectiveDate] = useState("");
+  const [checkInEffectiveDate, setCheckInEffectiveDate] = useState("");
   const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
@@ -616,6 +632,14 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const resident = detail.data;
   const residentName = resident.fullName.trim() || "Tanpa nama";
   const currentTenancy = tenancy.data ?? null;
+  const checkInMinimumDate = currentTenancy
+    ? [
+        currentTenancy.startDate,
+        currentTenancy.activatedAt
+          ? jakartaDateInput(new Date(currentTenancy.activatedAt))
+          : currentTenancy.startDate,
+      ].sort()[1]
+    : undefined;
   const canManage = hasPermission("resident.manage");
   const canActivate =
     hasPermission("lease.manage") && currentTenancy?.leaseStatus === "awaiting_activation";
@@ -681,11 +705,20 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           {canActivate ? (
             <ActivationRoomAction
               startDate={currentTenancy.startDate}
-              onActivate={() => setConfirmActivation(true)}
+              onActivate={() => {
+                setActivationEffectiveDate(currentTenancy.startDate);
+                setConfirmActivation(true);
+              }}
             />
           ) : null}
           {canConfirmCheckIn ? (
-            <Button className="min-h-11" onClick={() => setConfirmCheckIn(true)}>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                setCheckInEffectiveDate(checkInMinimumDate ?? currentTenancy.startDate);
+                setConfirmCheckIn(true);
+              }}
+            >
               <LogIn className="mr-1 h-4 w-4" /> Konfirmasi Check-in
             </Button>
           ) : null}
@@ -1284,16 +1317,34 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         description="Aktivasi membuat kontrak sewa aktif dan mengikat kamar dalam status menunggu check-in. Occupancy baru dibuat setelah check-in fisik dikonfirmasi."
         confirmLabel="Aktivasi sekarang"
         pending={activation.isPending}
+        confirmDisabled={!activationEffectiveDate}
         onConfirm={async () => {
-          if (!currentTenancy) return;
+          if (!currentTenancy || !activationEffectiveDate) return;
           await activation.mutateAsync({
             leaseId: currentTenancy.leaseId,
             idempotencyKey: newIdempotencyKey(),
+            activatedAt: jakartaStartTimestamp(activationEffectiveDate),
           });
           setConfirmActivation(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
         }}
-      />
+      >
+        <label className="grid gap-2 text-sm font-semibold text-foreground">
+          Tanggal aktivasi sebenarnya
+          <Input
+            type="date"
+            value={activationEffectiveDate}
+            min={currentTenancy?.startDate}
+            max={jakartaDateInput()}
+            onChange={(event) => setActivationEffectiveDate(event.target.value)}
+            disabled={activation.isPending}
+            required
+          />
+          <span className="text-xs font-normal leading-5 text-muted-foreground">
+            Untuk data historis, gunakan tanggal ketika masa sewa benar-benar mulai berlaku.
+          </span>
+        </label>
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirmCheckIn}
         onOpenChange={setConfirmCheckIn}
@@ -1301,16 +1352,34 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         description="Konfirmasi ini membuat occupancy aktif dan menandai kamar sebagai dihuni. Pastikan penghuni benar-benar telah menerima kamar."
         confirmLabel="Konfirmasi check-in"
         pending={checkIn.isPending}
+        confirmDisabled={!checkInEffectiveDate}
         onConfirm={async () => {
-          if (!currentTenancy) return;
+          if (!currentTenancy || !checkInEffectiveDate) return;
           await checkIn.mutateAsync({
             leaseId: currentTenancy.leaseId,
             idempotencyKey: newIdempotencyKey(),
+            checkedInAt: jakartaStartTimestamp(checkInEffectiveDate),
           });
           setConfirmCheckIn(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
         }}
-      />
+      >
+        <label className="grid gap-2 text-sm font-semibold text-foreground">
+          Tanggal check-in sebenarnya
+          <Input
+            type="date"
+            value={checkInEffectiveDate}
+            min={checkInMinimumDate}
+            max={jakartaDateInput()}
+            onChange={(event) => setCheckInEffectiveDate(event.target.value)}
+            disabled={checkIn.isPending}
+            required
+          />
+          <span className="text-xs font-normal leading-5 text-muted-foreground">
+            Tanggal ini menjadi awal layanan hunian dan dasar laporan historis Owner.
+          </span>
+        </label>
+      </ConfirmDialog>
     </AppShell>
   );
 }

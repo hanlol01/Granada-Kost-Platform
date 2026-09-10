@@ -1,6 +1,9 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Archive,
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Building2,
@@ -28,7 +31,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -44,8 +46,6 @@ import { validateOwnerAssignment } from "@/lib/property-owner-assignment-validat
 import { displayOwnerDate } from "@/lib/property-owner-date";
 import { cn } from "@/lib/utils";
 
-const today = () =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
 const accountLabel = (status: string) =>
   status === "active"
     ? "Akun aktif"
@@ -67,9 +67,59 @@ function roomGenderLabel(genderPolicy: string | null): string | null {
   if (genderPolicy === "mixed") return "Campuran";
   return null;
 }
+function compactAssetSearch(value: string): string {
+  return value.toLowerCase().replace(/[\s-]+/g, "");
+}
+function matchesAssetSearch(
+  values: readonly (string | null | undefined)[],
+  query: string,
+): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  const compactQuery = compactAssetSearch(normalizedQuery);
+  return values.some((value) => {
+    if (!value) return false;
+    const normalizedValue = value.toLowerCase();
+    return (
+      normalizedValue.includes(normalizedQuery) ||
+      (compactQuery.length > 0 && compactAssetSearch(normalizedValue).includes(compactQuery))
+    );
+  });
+}
+function ownerUnitCode(assetCode: string, kind: "building" | "room"): string | null {
+  const prefix = kind === "building" ? "RK" : "AK";
+  const match = assetCode.toUpperCase().match(new RegExp(`^${prefix}-(\\d+)`));
+  return match?.[1] ?? null;
+}
 const PAGE_SIZE = 20;
 
-type Modal = "create" | "edit" | "assign" | "reset" | "release" | "release-batch" | null;
+function previousJakartaMonth(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  let year = Number(parts.find((part) => part.type === "year")?.value);
+  let month = Number(parts.find((part) => part.type === "month")?.value) - 1;
+  if (month === 0) {
+    year -= 1;
+    month = 12;
+  }
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+type Modal =
+  | "create"
+  | "edit"
+  | "assign"
+  | "reset"
+  | "close-report"
+  | "release"
+  | "release-batch"
+  | "archive-blocked"
+  | "archive-confirm"
+  | "delete-confirm"
+  | null;
 type ReleaseTarget = {
   id: string;
   kind: "building" | "room";
@@ -77,7 +127,6 @@ type ReleaseTarget = {
 };
 type BatchReleaseItem = ReleaseTarget & {
   description: string;
-  effectiveFrom: string;
 };
 type BatchReleaseTarget = {
   kind: "building" | "room";
@@ -181,10 +230,11 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     password: string;
   } | null>(null);
   const [assignmentKind, setAssignmentKind] = useState<"building" | "room">("building");
-  const [effectiveFrom, setEffectiveFrom] = useState(today);
-  const [effectiveUntil, setEffectiveUntil] = useState("");
+  const [reportPeriod, setReportPeriod] = useState(previousJakartaMonth);
+  const [reportNotes, setReportNotes] = useState("");
   const [assignmentReason, setAssignmentReason] = useState("");
   const [assignmentSubmitAttempted, setAssignmentSubmitAttempted] = useState(false);
+  const [assignmentAssetQuery, setAssignmentAssetQuery] = useState("");
   const [buildingId, setBuildingId] = useState("");
   const [roomIds, setRoomIds] = useState<string[]>([]);
   const [releaseTarget, setReleaseTarget] = useState<ReleaseTarget | null>(null);
@@ -193,7 +243,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     kind: "building" | "room";
     ids: string[];
   } | null>(null);
-  const [batchReleaseSubmitAttempted, setBatchReleaseSubmitAttempted] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const owners = usePropertyOwners({
     q: search.trim() || undefined,
     status: status || undefined,
@@ -201,7 +251,21 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     limit: PAGE_SIZE,
   });
   const detail = usePropertyOwnerDetail(selectedId);
-  const assets = useOwnerAssetOptions(effectiveFrom || undefined);
+  const assets = useOwnerAssetOptions();
+  const assignmentAssets = useMemo(
+    () =>
+      assignmentKind === "building"
+        ? (assets.data?.rumahKostBuildings ?? [])
+        : (assets.data?.apartKostRooms ?? []),
+    [assignmentKind, assets.data],
+  );
+  const filteredAssignmentAssets = useMemo(
+    () =>
+      assignmentAssets.filter((asset) =>
+        matchesAssetSearch([asset.code, asset.name], assignmentAssetQuery),
+      ),
+    [assignmentAssetQuery, assignmentAssets],
+  );
   const mutations = usePropertyOwnerMutations();
   const selectedOwner =
     detail.data ?? owners.data?.data.find((owner) => owner.id === selectedId) ?? null;
@@ -212,25 +276,12 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     () =>
       validateOwnerAssignment({
         kind: assignmentKind,
-        effectiveFrom,
-        effectiveUntil,
         reason: assignmentReason,
         buildingId,
         roomIds,
       }),
-    [assignmentKind, assignmentReason, buildingId, effectiveFrom, effectiveUntil, roomIds],
+    [assignmentKind, assignmentReason, buildingId, roomIds],
   );
-  const batchReleaseErrors = useMemo(() => {
-    const errors: { effectiveUntil?: string; reason?: string } = {};
-    if (!effectiveUntil) errors.effectiveUntil = "Tanggal berakhir wajib diisi.";
-    else if (
-      batchReleaseTarget?.items.some((item) => effectiveUntil <= item.effectiveFrom.slice(0, 10))
-    )
-      errors.effectiveUntil =
-        "Tanggal berakhir harus setelah tanggal mulai berlaku dari seluruh aset yang dipilih.";
-    if (!assignmentReason.trim()) errors.reason = "Alasan pelepasan wajib diisi.";
-    return errors;
-  }, [assignmentReason, batchReleaseTarget, effectiveUntil]);
   useEffect(() => setOffset(0), [search, status]);
   useEffect(() => {
     setSelectedId(ownerId ?? null);
@@ -239,7 +290,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   useEffect(() => {
     setBuildingId("");
     setRoomIds([]);
-  }, [assignmentKind, effectiveFrom]);
+    setAssignmentAssetQuery("");
+  }, [assignmentKind]);
   const clearModal = () => {
     setModal(null);
     setDraft(emptyDraft());
@@ -247,13 +299,15 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     setShowResetPassword(false);
     setAssignmentReason("");
     setAssignmentSubmitAttempted(false);
-    setEffectiveUntil("");
+    setAssignmentAssetQuery("");
     setRoomIds([]);
     setBuildingId("");
     setReleaseTarget(null);
     setBatchReleaseTarget(null);
     setAssetSelection(null);
-    setBatchReleaseSubmitAttempted(false);
+    setDeleteConfirmation("");
+    setReportPeriod(previousJakartaMonth());
+    setReportNotes("");
   };
   const openCreate = () => {
     setDraft(emptyDraft());
@@ -306,39 +360,32 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
       await mutations.assignBuildings.mutateAsync({
         ownerId: selectedId,
         buildingId,
-        effectiveFrom,
-        effectiveUntil: effectiveUntil || undefined,
         reason: assignmentReason,
       });
     else
       await mutations.assignRooms.mutateAsync({
         ownerId: selectedId,
         roomIds,
-        effectiveFrom,
-        effectiveUntil: effectiveUntil || undefined,
         reason: assignmentReason,
       });
     clearModal();
   };
   const submitRelease = async () => {
-    if (!selectedId || !releaseTarget || !assignmentReason.trim() || !effectiveUntil) return;
+    if (!selectedId || !releaseTarget) return;
     await mutations.release.mutateAsync({
       ownerId: selectedId,
       assignmentId: releaseTarget.id,
       kind: releaseTarget.kind,
-      effectiveUntil,
       reason: assignmentReason,
     });
     clearModal();
   };
   const submitBatchRelease = async () => {
-    setBatchReleaseSubmitAttempted(true);
-    if (!selectedId || !batchReleaseTarget || Object.keys(batchReleaseErrors).length > 0) return;
+    if (!selectedId || !batchReleaseTarget) return;
     await mutations.releaseBatch.mutateAsync({
       ownerId: selectedId,
       assignmentIds: batchReleaseTarget.items.map((item) => item.id),
       kind: batchReleaseTarget.kind,
-      effectiveUntil,
       reason: assignmentReason,
     });
     clearModal();
@@ -368,8 +415,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
         <div>
           <h2 className="font-semibold">Ownership terpisah dari operasional</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Rumah Kost diassign per bangunan dan mencakup seluruh kamarnya. Apart Kost diassign per
-            kamar. Periode tidak dapat tumpang tindih.
+            Rumah Kost ditetapkan per bangunan dan mencakup seluruh kamarnya. Apart Kost ditetapkan
+            per kamar. Kepemilikan berlaku permanen sampai aset dilepaskan.
           </p>
         </div>
       </section>
@@ -582,30 +629,28 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           onEdit={() => selectedOwner && openEdit(selectedOwner)}
           onAssign={() => {
             setAssignmentKind("building");
-            setEffectiveFrom(today());
             setAssignmentSubmitAttempted(false);
             setModal("assign");
           }}
           onReset={() => setModal("reset")}
-          onArchive={() =>
-            selectedOwner &&
-            void mutations.archive
-              .mutateAsync(selectedOwner.id)
-              .then(() => void navigate({ to: "/property-owners" }))
-              .catch(() => undefined)
-          }
+          onCloseReport={() => setModal("close-report")}
+          onArchive={() => {
+            if (!detail.data) return;
+            setModal(detail.data.lifecycle.canArchive ? "archive-confirm" : "archive-blocked");
+          }}
+          onDeletePermanently={() => {
+            setDeleteConfirmation("");
+            setModal("delete-confirm");
+          }}
           onRelease={(target) => {
             setReleaseTarget(target);
             setAssignmentReason("");
-            setEffectiveUntil(today());
             setModal("release");
           }}
           onBulkRelease={(target) => {
             setBatchReleaseTarget(target);
             setAssetSelection(null);
             setAssignmentReason("");
-            setEffectiveUntil(today());
-            setBatchReleaseSubmitAttempted(false);
             setModal("release-batch");
           }}
           assetSelection={assetSelection}
@@ -719,8 +764,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <DialogHeader>
             <DialogTitle>Kelola kepemilikan aset</DialogTitle>
             <DialogDescription>
-              Assignment saat ini tidak menimpa riwayat. Pilih aset yang belum dialokasikan pada
-              tanggal efektif.
+              Kepemilikan berlaku langsung dan permanen sampai aset dilepaskan atau dialihkan.
+              Riwayat perubahan tetap tersimpan.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 rounded-xl bg-muted p-1">
@@ -743,71 +788,66 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               Apart Kost
             </Button>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <HeroUiDatePicker
-              id="owner-assignment-effective-from"
-              label="Mulai berlaku"
-              ariaLabel="Tanggal mulai berlaku"
-              required
-              value={effectiveFrom || undefined}
-              error={assignmentSubmitAttempted ? assignmentErrors.effectiveFrom : undefined}
-              onChange={(value) => {
-                setEffectiveFrom(value ?? "");
-                if (value && effectiveUntil && effectiveUntil < value) setEffectiveUntil("");
-              }}
-            />
-            <HeroUiDatePicker
-              id="owner-assignment-effective-until"
-              label="Berakhir pada (opsional)"
-              ariaLabel="Tanggal berakhir ownership"
-              value={effectiveUntil || undefined}
-              minDate={effectiveFrom || undefined}
-              error={assignmentSubmitAttempted ? assignmentErrors.effectiveUntil : undefined}
-              onChange={(value) => setEffectiveUntil(value ?? "")}
-            />
-            <Field
-              label="Alasan assignment"
-              required
-              className="sm:col-span-2"
-              error={assignmentSubmitAttempted ? assignmentErrors.reason : undefined}
-            >
+          <div className="grid gap-4">
+            <Field label="Catatan assignment">
               <Textarea
                 value={assignmentReason}
                 onChange={(event) => setAssignmentReason(event.target.value)}
-                placeholder="Contoh: pembelian aset investor tahap 1"
+                placeholder="Opsional, misalnya pembelian aset investor tahap 1"
               />
             </Field>
           </div>
           {assets.isLoading ? (
             <Skeleton className="h-40" />
           ) : (
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {assignmentKind === "building"
-                ? assets.data?.rumahKostBuildings.map((asset) => (
+            <>
+              <div className="relative mb-3">
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  value={assignmentAssetQuery}
+                  onChange={(event) => setAssignmentAssetQuery(event.target.value)}
+                  placeholder={
+                    assignmentKind === "room"
+                      ? "Cari nomor kamar tanpa tanda hubung, mis. AK1807"
+                      : "Cari kode bangunan tanpa tanda hubung, mis. RK01"
+                  }
+                  aria-label={assignmentKind === "room" ? "Cari nomor kamar" : "Cari kode bangunan"}
+                  className="pl-9"
+                />
+              </div>
+              {filteredAssignmentAssets.length > 0 ? (
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {filteredAssignmentAssets.map((asset) => (
                     <AssetSelection
                       key={asset.id}
                       label={asset.code}
                       option={asset}
-                      checked={buildingId === asset.id}
-                      onChange={(checked) => setBuildingId(checked ? asset.id : "")}
-                    />
-                  ))
-                : assets.data?.apartKostRooms.map((asset) => (
-                    <AssetSelection
-                      key={asset.id}
-                      label={asset.code}
-                      option={asset}
-                      checked={roomIds.includes(asset.id)}
+                      checked={
+                        assignmentKind === "building"
+                          ? buildingId === asset.id
+                          : roomIds.includes(asset.id)
+                      }
                       onChange={(checked) =>
-                        setRoomIds((current) =>
-                          checked
-                            ? [...current, asset.id]
-                            : current.filter((id) => id !== asset.id),
-                        )
+                        assignmentKind === "building"
+                          ? setBuildingId(checked ? asset.id : "")
+                          : setRoomIds((current) =>
+                              checked
+                                ? [...current, asset.id]
+                                : current.filter((id) => id !== asset.id),
+                            )
                       }
                     />
                   ))}
-            </div>
+                </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Tidak ada aset yang cocok dengan pencarian.
+                </p>
+              )}
+            </>
           )}
           {assignmentSubmitAttempted && assignmentErrors.asset ? (
             <p className="text-sm text-destructive" role="alert">
@@ -817,7 +857,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
             {assignmentKind === "building"
               ? "Bangunan Rumah Kost yang dipilih otomatis mencakup seluruh kamar di dalamnya."
-              : "Pilih satu atau lebih kamar Apart Kost. Kamar yang telah ditugaskan pada periode ini tidak dapat dipilih."}
+              : "Pilih satu atau lebih kamar Apart Kost. Kamar yang sudah dimiliki owner lain tidak dapat dipilih."}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={clearModal}>
@@ -868,6 +908,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               Batal
             </Button>
             <Button
+              variant="success"
               disabled={
                 !selectedId ||
                 draft.initialPassword.length < 10 ||
@@ -900,27 +941,83 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={modal === "close-report"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tutup laporan bulanan Owner</DialogTitle>
+            <DialogDescription>
+              Sistem menghitung pendapatan berdasarkan hari layanan dan pembayaran yang tercatat,
+              lalu mengunci hasil periode ini sebagai laporan final. Periode yang sudah ditutup
+              tidak dapat ditutup ulang.
+            </DialogDescription>
+          </DialogHeader>
+          <Field
+            label="Periode laporan"
+            required
+            hint="Hanya bulan kalender yang sudah selesai yang dapat ditutup."
+          >
+            <Input
+              type="month"
+              value={reportPeriod}
+              max={previousJakartaMonth()}
+              onChange={(event) => setReportPeriod(event.target.value)}
+              disabled={mutations.closeReportPeriod.isPending}
+            />
+          </Field>
+          <Field label="Catatan penutupan" hint="Opsional, misalnya laporan telah diperiksa Admin.">
+            <Textarea
+              value={reportNotes}
+              maxLength={500}
+              onChange={(event) => setReportNotes(event.target.value)}
+              disabled={mutations.closeReportPeriod.isPending}
+            />
+          </Field>
+          <div className="rounded-xl border border-amber-400/50 bg-amber-50 p-3 text-sm leading-6 text-amber-950 dark:bg-amber-950/25 dark:text-amber-100">
+            Pastikan tanggal aktivasi dan check-in data historis sudah sesuai sebelum menutup
+            periode.
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={clearModal}
+              disabled={mutations.closeReportPeriod.isPending}
+            >
+              Batal
+            </Button>
+            <Button
+              disabled={!selectedId || !reportPeriod || mutations.closeReportPeriod.isPending}
+              onClick={() => {
+                if (!selectedId || !reportPeriod) return;
+                void mutations.closeReportPeriod
+                  .mutateAsync({ ownerId: selectedId, period: reportPeriod, notes: reportNotes })
+                  .then(clearModal)
+                  .catch(() => undefined);
+              }}
+            >
+              {mutations.closeReportPeriod.isPending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <CalendarClock className="mr-2 size-4" />
+              )}
+              Tutup periode
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={modal === "release"} onOpenChange={(open) => !open && clearModal()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Akhiri periode kepemilikan</DialogTitle>
+            <DialogTitle>Lepaskan kepemilikan aset</DialogTitle>
             <DialogDescription>
-              {releaseTarget?.label}. Riwayat kepemilikan tetap tersimpan dan aset dapat dialihkan
-              setelah tanggal ini.
+              {releaseTarget?.label}. Kepemilikan berhenti hari ini, riwayat tetap tersimpan, dan
+              aset dapat langsung dialihkan kepada owner lain.
             </DialogDescription>
           </DialogHeader>
-          <HeroUiDatePicker
-            id="owner-release-effective-until"
-            label="Tanggal berakhir"
-            ariaLabel="Tanggal berakhir ownership"
-            required
-            value={effectiveUntil || undefined}
-            onChange={(value) => setEffectiveUntil(value ?? "")}
-          />
-          <Field label="Alasan pelepasan" required>
+          <Field label="Catatan Pelepasan">
             <Textarea
               value={assignmentReason}
               onChange={(event) => setAssignmentReason(event.target.value)}
+              placeholder="Opsional, misalnya perubahan pengelolaan aset"
             />
           </Field>
           <DialogFooter>
@@ -928,11 +1025,11 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               Batal
             </Button>
             <Button
-              variant="warning"
-              disabled={!effectiveUntil || !assignmentReason.trim() || mutations.release.isPending}
+              variant="destructive"
+              disabled={mutations.release.isPending}
               onClick={() => void submitRelease().catch(() => undefined)}
             >
-              Akhiri ownership
+              Lepaskan kepemilikan
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -940,10 +1037,10 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
       <Dialog open={modal === "release-batch"} onOpenChange={(open) => !open && clearModal()}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Akhiri periode kepemilikan terpilih</DialogTitle>
+            <DialogTitle>Lepaskan kepemilikan aset terpilih</DialogTitle>
             <DialogDescription>
-              {batchReleaseTarget?.items.length ?? 0} aset akan diakhiri pada tanggal yang sama.
-              Riwayat kepemilikan tetap tersimpan dan aset dapat dialihkan setelah tanggal ini.
+              {batchReleaseTarget?.items.length ?? 0} aset akan dilepaskan hari ini. Riwayat tetap
+              tersimpan dan seluruh aset dapat langsung dialihkan kepada owner lain.
             </DialogDescription>
           </DialogHeader>
           <section className="rounded-xl border border-slate-300 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-muted/20">
@@ -960,42 +1057,188 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               ))}
             </ul>
           </section>
-          <HeroUiDatePicker
-            id="owner-batch-release-effective-until"
-            label="Tanggal berakhir"
-            ariaLabel="Tanggal berakhir ownership terpilih"
-            required
-            value={effectiveUntil || undefined}
-            onChange={(value) => setEffectiveUntil(value ?? "")}
-          />
-          {batchReleaseSubmitAttempted && batchReleaseErrors.effectiveUntil ? (
-            <p className="text-sm text-destructive" role="alert">
-              {batchReleaseErrors.effectiveUntil}
-            </p>
-          ) : null}
-          <Field label="Alasan pelepasan" required>
+          <Field label="Catatan Pelepasan">
             <Textarea
               value={assignmentReason}
-              aria-invalid={Boolean(batchReleaseSubmitAttempted && batchReleaseErrors.reason)}
               onChange={(event) => setAssignmentReason(event.target.value)}
+              placeholder="Opsional, misalnya perubahan pengelolaan aset"
             />
           </Field>
-          {batchReleaseSubmitAttempted && batchReleaseErrors.reason ? (
-            <p className="-mt-3 text-sm text-destructive" role="alert">
-              {batchReleaseErrors.reason}
-            </p>
-          ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={clearModal}>
               Batal
             </Button>
             <Button
-              variant="warning"
+              variant="destructive"
               disabled={mutations.releaseBatch.isPending}
               onClick={() => void submitBatchRelease().catch(() => undefined)}
             >
-              Akhiri {batchReleaseTarget?.items.length ?? 0} periode
+              Lepaskan {batchReleaseTarget?.items.length ?? 0} aset
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={modal === "archive-blocked"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Owner belum dapat diarsipkan</DialogTitle>
+            <DialogDescription>
+              Lepaskan seluruh aset yang masih aktif atau terjadwal. Riwayat ownership tetap
+              tersimpan setelah aset dilepaskan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" />
+              <div className="min-w-0">
+                <p className="font-medium text-amber-950 dark:text-amber-100">
+                  Kepemilikan masih terhubung
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-amber-900 dark:text-amber-200">
+                  <li>
+                    Rumah Kost: {detail.data?.lifecycle.archiveBlockers.rumahKostBuildings ?? 0}
+                    {" bangunan"}
+                  </li>
+                  <li>
+                    Apart Kost: {detail.data?.lifecycle.archiveBlockers.apartKostRooms ?? 0}
+                    {" kamar"}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={clearModal}>
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                clearModal();
+                requestAnimationFrame(() =>
+                  document
+                    .getElementById("owner-assets")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                );
+              }}
+            >
+              Kelola dan lepaskan kepemilikan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={modal === "archive-confirm"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Arsipkan Owner Property?</DialogTitle>
+            <DialogDescription>
+              Akun login {selectedOwner?.fullName ?? "owner ini"} akan dinonaktifkan. Profil dan
+              seluruh riwayatnya tetap tersedia sebagai arsip.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={clearModal}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!selectedOwner || mutations.archive.isPending}
+              onClick={() => {
+                if (!selectedOwner) return;
+                void mutations.archive
+                  .mutateAsync(selectedOwner.id)
+                  .then(() => {
+                    clearModal();
+                    void navigate({ to: "/property-owners" });
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              {mutations.archive.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+              Arsipkan owner
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={modal === "delete-confirm"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {detail.data?.lifecycle.canDeletePermanently
+                ? "Hapus Owner Property permanen?"
+                : "Owner tidak dapat dihapus permanen"}
+            </DialogTitle>
+            <DialogDescription>
+              {detail.data?.lifecycle.canDeletePermanently
+                ? "Tindakan ini khusus akun yang dibuat keliru dan tidak dapat dibatalkan."
+                : "Owner yang pernah memiliki aset atau aktivitas keuangan wajib dipertahankan sebagai arsip."}
+            </DialogDescription>
+          </DialogHeader>
+          {detail.data?.lifecycle.canDeletePermanently ? (
+            <Field
+              label={`Ketik ${selectedOwner?.fullName ?? "nama owner"} untuk mengonfirmasi`}
+              hint="Nama harus sama persis dengan nama owner yang akan dihapus."
+            >
+              <Input
+                autoComplete="off"
+                value={deleteConfirmation}
+                onChange={(event) => setDeleteConfirmation(event.target.value)}
+                placeholder={selectedOwner?.fullName ?? "Nama owner"}
+              />
+            </Field>
+          ) : (
+            <div className="rounded-xl border border-slate-300 bg-slate-50/80 p-4 text-sm dark:border-slate-700 dark:bg-muted/25">
+              <p className="font-medium">Data yang wajib dipertahankan</p>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                {(detail.data?.lifecycle.deletionBlockers.ownershipHistory ?? 0) > 0 && (
+                  <li>
+                    Riwayat ownership: {detail.data?.lifecycle.deletionBlockers.ownershipHistory}
+                    {" catatan"}
+                  </li>
+                )}
+                {(detail.data?.lifecycle.deletionBlockers.financialRecords ?? 0) > 0 && (
+                  <li>
+                    Aktivitas keuangan: {detail.data?.lifecycle.deletionBlockers.financialRecords}
+                    {" catatan"}
+                  </li>
+                )}
+                {(detail.data?.lifecycle.deletionBlockers.accountRecords ?? 0) > 0 && (
+                  <li>
+                    Aktivitas akun: {detail.data?.lifecycle.deletionBlockers.accountRecords}
+                    {" catatan"}
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={clearModal}>
+              {detail.data?.lifecycle.canDeletePermanently ? "Batal" : "Tutup"}
+            </Button>
+            {detail.data?.lifecycle.canDeletePermanently && (
+              <Button
+                variant="destructive"
+                disabled={
+                  !selectedOwner ||
+                  deleteConfirmation.trim() !== selectedOwner.fullName ||
+                  mutations.deletePermanently.isPending
+                }
+                onClick={() => {
+                  if (!selectedOwner) return;
+                  void mutations.deletePermanently
+                    .mutateAsync(selectedOwner.id)
+                    .then(() => {
+                      clearModal();
+                      void navigate({ to: "/property-owners" });
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {mutations.deletePermanently.isPending && (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                )}
+                Hapus permanen
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1073,7 +1316,9 @@ function OwnerDetailPageContent({
   onEdit,
   onAssign,
   onReset,
+  onCloseReport,
   onArchive,
+  onDeletePermanently,
   onRelease,
   onBulkRelease,
   assetSelection,
@@ -1085,7 +1330,9 @@ function OwnerDetailPageContent({
   onEdit: () => void;
   onAssign: () => void;
   onReset: () => void;
+  onCloseReport: () => void;
   onArchive: () => void;
+  onDeletePermanently: () => void;
   onRelease: (target: ReleaseTarget) => void;
   onBulkRelease: (target: BatchReleaseTarget) => void;
   assetSelection: { kind: "building" | "room"; ids: string[] } | null;
@@ -1139,67 +1386,88 @@ function OwnerDetailPageContent({
               />
             </section>
             <div className="flex flex-wrap gap-2">
-              <Button variant="info" onClick={onEdit}>
-                <Pencil className="mr-2 size-4" />
-                Edit profil
-              </Button>
-              <Button variant="default" onClick={onAssign}>
-                <Plus className="mr-2 size-4" />
-                Kelola kepemilikan
-              </Button>
+              {detail.profileStatus === "active" && (
+                <>
+                  <Button variant="info" onClick={onEdit}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit profil
+                  </Button>
+                  <Button variant="default" onClick={onAssign}>
+                    <Plus className="mr-2 size-4" />
+                    Kelola kepemilikan
+                  </Button>
+                </>
+              )}
               {detail.credentials.resetAvailable && (
-                <Button variant="outline" onClick={onReset}>
+                <Button variant="success" onClick={onReset}>
                   <KeyRound className="mr-2 size-4" />
                   Reset password
                 </Button>
               )}
               {detail.profileStatus === "active" && (
+                <Button variant="outline" onClick={onCloseReport}>
+                  <CalendarClock className="mr-2 size-4" />
+                  Tutup laporan bulanan
+                </Button>
+              )}
+              {detail.profileStatus === "active" && (
                 <Button variant="destructive" onClick={onArchive}>
+                  <Archive className="mr-2 size-4" />
+                  Arsipkan owner
+                </Button>
+              )}
+              {detail.profileStatus === "archived" && (
+                <Button variant="destructive" onClick={onDeletePermanently}>
                   <Trash2 className="mr-2 size-4" />
-                  Arsipkan
+                  Hapus permanen
                 </Button>
               )}
             </div>
-            <AssetBlock
-              title="Rumah Kost aktif / terjadwal"
-              icon={<Building2 className="size-4" />}
-              empty="Belum ada bangunan Rumah Kost yang ditugaskan."
-              items={detail.assets.rumahKostBuildings.map((asset) => ({
-                id: asset.id,
-                title: asset.buildingCode,
-                description: `${asset.buildingName ?? "Bangunan"} · mencakup ${asset.coveredRoomCount} kamar`,
-                period: `${displayOwnerDate(asset.effectiveFrom)} — ${displayOwnerDate(asset.effectiveUntil)}`,
-                effectiveFrom: asset.effectiveFrom,
-                status: asset.assignmentStatus,
-                kind: "building" as const,
-              }))}
-              onRelease={onRelease}
-              onBulkRelease={onBulkRelease}
-              selection={assetSelection}
-              onSelectionChange={onAssetSelectionChange}
-              kind="building"
-            />
-            <AssetBlock
-              title="Kamar Apart Kost aktif / terjadwal"
-              icon={<Landmark className="size-4" />}
-              empty="Belum ada kamar Apart Kost yang ditugaskan."
-              items={detail.assets.apartKostRooms.map((asset) => ({
-                id: asset.id,
-                title: asset.roomCode,
-                description: [asset.buildingCode ?? "Bangunan", roomGenderLabel(asset.genderPolicy)]
-                  .filter(Boolean)
-                  .join(" · "),
-                period: `${displayOwnerDate(asset.effectiveFrom)} — ${displayOwnerDate(asset.effectiveUntil)}`,
-                effectiveFrom: asset.effectiveFrom,
-                status: asset.assignmentStatus,
-                kind: "room" as const,
-              }))}
-              onRelease={onRelease}
-              onBulkRelease={onBulkRelease}
-              selection={assetSelection}
-              onSelectionChange={onAssetSelectionChange}
-              kind="room"
-            />
+            <div id="owner-assets" className="scroll-mt-24 space-y-5">
+              <AssetBlock
+                key={`building-assets-${owner?.id ?? "none"}`}
+                title="Rumah Kost dimiliki"
+                icon={<Building2 className="size-4" />}
+                empty="Belum ada bangunan Rumah Kost yang ditugaskan."
+                items={detail.assets.rumahKostBuildings.map((asset) => ({
+                  id: asset.id,
+                  title: asset.buildingCode,
+                  description: `${asset.buildingName ?? "Bangunan"} · mencakup ${asset.coveredRoomCount} kamar`,
+                  ownershipSince: `Dimiliki sejak ${displayOwnerDate(asset.effectiveFrom)}`,
+                  status: asset.assignmentStatus,
+                  kind: "building" as const,
+                }))}
+                onRelease={onRelease}
+                onBulkRelease={onBulkRelease}
+                selection={assetSelection}
+                onSelectionChange={onAssetSelectionChange}
+                kind="building"
+              />
+              <AssetBlock
+                key={`room-assets-${owner?.id ?? "none"}`}
+                title="Kamar Apart Kost dimiliki"
+                icon={<Landmark className="size-4" />}
+                empty="Belum ada kamar Apart Kost yang ditugaskan."
+                items={detail.assets.apartKostRooms.map((asset) => ({
+                  id: asset.id,
+                  title: asset.roomCode,
+                  description: [
+                    asset.buildingCode ?? "Bangunan",
+                    roomGenderLabel(asset.genderPolicy),
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  ownershipSince: `Dimiliki sejak ${displayOwnerDate(asset.effectiveFrom)}`,
+                  status: asset.assignmentStatus,
+                  kind: "room" as const,
+                }))}
+                onRelease={onRelease}
+                onBulkRelease={onBulkRelease}
+                selection={assetSelection}
+                onSelectionChange={onAssetSelectionChange}
+                kind="room"
+              />
+            </div>
             <section>
               <h3 className="mb-3 flex items-center gap-2 font-semibold">
                 <CalendarClock className="size-4 text-primary" />
@@ -1211,9 +1479,9 @@ function OwnerDetailPageContent({
                     <tr>
                       <th className="p-3">Aset</th>
                       <th className="p-3">Jenis</th>
-                      <th className="p-3">Periode</th>
+                      <th className="p-3">Masa kepemilikan</th>
                       <th className="p-3">Status</th>
-                      <th className="p-3">Alasan</th>
+                      <th className="p-3">Catatan</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1227,8 +1495,9 @@ function OwnerDetailPageContent({
                           {entry.ownershipKind === "building" ? "Rumah Kost" : "Apart Kost"}
                         </td>
                         <td className="p-3">
-                          {displayOwnerDate(entry.effectiveFrom)} —{" "}
-                          {displayOwnerDate(entry.effectiveUntil)}
+                          {entry.effectiveUntil
+                            ? `${displayOwnerDate(entry.effectiveFrom)} — ${displayOwnerDate(entry.effectiveUntil)}`
+                            : `Sejak ${displayOwnerDate(entry.effectiveFrom)}`}
                         </td>
                         <td className="p-3">
                           <StatusBadge
@@ -1243,7 +1512,7 @@ function OwnerDetailPageContent({
                             {assignmentStatusLabel(entry.assignmentStatus)}
                           </StatusBadge>
                         </td>
-                        <td className="p-3 text-muted-foreground">{entry.reason}</td>
+                        <td className="p-3 text-muted-foreground">{entry.reason ?? "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1294,8 +1563,7 @@ function AssetBlock({
     id: string;
     title: string;
     description: string;
-    period: string;
-    effectiveFrom: string;
+    ownershipSince: string;
     status: AssignmentStatus;
     kind: "building" | "room";
   }[];
@@ -1305,11 +1573,29 @@ function AssetBlock({
   selection: { kind: "building" | "room"; ids: string[] } | null;
   onSelectionChange: (selection: { kind: "building" | "room"; ids: string[] } | null) => void;
 }) {
+  const [assetQuery, setAssetQuery] = useState("");
+  const [unitFilter, setUnitFilter] = useState<string | null>(null);
   const selectableItems = items.filter((item) => ["active", "scheduled"].includes(item.status));
   const isSelecting = selection?.kind === kind;
   const selectedItems = isSelecting
     ? selectableItems.filter((item) => selection.ids.includes(item.id))
     : [];
+  const normalizedQuery = assetQuery.trim().toLowerCase();
+  const compactQuery = compactAssetSearch(normalizedQuery);
+  const unitCodes = [
+    ...new Set(items.map((item) => ownerUnitCode(item.title, kind)).filter(Boolean)),
+  ].sort() as string[];
+  const filteredItems = items.filter((item) => {
+    if (unitFilter && ownerUnitCode(item.title, kind) !== unitFilter) return false;
+    if (normalizedQuery) {
+      const searchableValues = [item.title, item.description].map((value) => value.toLowerCase());
+      return searchableValues.some(
+        (value) =>
+          value.includes(normalizedQuery) || compactAssetSearch(value).includes(compactQuery),
+      );
+    }
+    return true;
+  });
   const toggleSelection = (id: string, checked: boolean) => {
     const ids = checked
       ? [...(selection?.ids ?? []), id]
@@ -1332,7 +1618,7 @@ function AssetBlock({
               </Button>
               <Button
                 size="sm"
-                variant="warning"
+                variant="destructive"
                 disabled={selectedItems.length === 0}
                 onClick={() =>
                   onBulkRelease({
@@ -1342,12 +1628,11 @@ function AssetBlock({
                       kind: item.kind,
                       label: item.title,
                       description: item.description,
-                      effectiveFrom: item.effectiveFrom,
                     })),
                   })
                 }
               >
-                Akhiri {selectedItems.length} periode
+                Lepaskan {selectedItems.length} aset
               </Button>
             </div>
           ) : (
@@ -1361,13 +1646,57 @@ function AssetBlock({
           )
         ) : null}
       </div>
+      <div className="relative mb-4">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          value={assetQuery}
+          onChange={(event) => setAssetQuery(event.target.value)}
+          placeholder={
+            kind === "room"
+              ? "Cari nomor kamar tanpa tanda hubung, mis. AK1807"
+              : "Cari kode bangunan tanpa tanda hubung, mis. RK01"
+          }
+          aria-label={kind === "room" ? "Cari nomor kamar" : "Cari kode bangunan"}
+          className="pl-9"
+        />
+      </div>
+      {unitCodes.length > 0 ? (
+        <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter cepat unit yang dimiliki">
+          <Button
+            type="button"
+            size="sm"
+            variant={unitFilter === null ? "default" : "outline"}
+            onClick={() => setUnitFilter(null)}
+          >
+            Semua unit
+          </Button>
+          {unitCodes.map((unit) => (
+            <Button
+              key={unit}
+              type="button"
+              size="sm"
+              variant={unitFilter === unit ? "default" : "outline"}
+              onClick={() => setUnitFilter(unit)}
+            >
+              {kind === "building" ? "Rumah Kost" : "Apart Kost"} Unit {unit}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-300 bg-background/80 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-background/35">
           {empty}
         </p>
+      ) : filteredItems.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-background/80 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-background/35">
+          Tidak ada kamar atau bangunan yang cocok dengan pencarian.
+        </p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {items.map((item) => {
+          {filteredItems.map((item) => {
             const canSelect = isSelecting && ["active", "scheduled"].includes(item.status);
             const Card = canSelect ? "label" : "article";
             return (
@@ -1408,15 +1737,15 @@ function AssetBlock({
                     {assignmentStatusLabel(item.status)}
                   </StatusBadge>
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">{item.period}</p>
+                <p className="mt-3 text-xs text-muted-foreground">{item.ownershipSince}</p>
                 {!isSelecting && ["active", "scheduled"].includes(item.status) && (
                   <Button
                     className="mt-4"
                     size="sm"
-                    variant="warning"
+                    variant="destructive"
                     onClick={() => onRelease({ id: item.id, kind: item.kind, label: item.title })}
                   >
-                    Akhiri periode
+                    Lepaskan kepemilikan
                   </Button>
                 )}
               </Card>

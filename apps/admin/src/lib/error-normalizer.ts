@@ -55,6 +55,16 @@ const CODE_NOTICES: Readonly<Record<string, Pick<AdminErrorNotice, "title" | "de
     description:
       "Komitmen pembayaran calon penghuni ini sudah tercatat. Buka data Minat Booking lalu pilih Lengkapi Data Penyewaan.",
   },
+  PROPERTY_OWNER_ASSIGNMENTS_STILL_ACTIVE: {
+    title: "Owner masih memiliki aset",
+    description:
+      "Lepaskan seluruh kepemilikan Rumah Kost dan Apart Kost sebelum mengarsipkan owner ini.",
+  },
+  PROPERTY_OWNER_PERMANENT_DELETE_BLOCKED: {
+    title: "Owner tidak dapat dihapus permanen",
+    description:
+      "Akun yang pernah memiliki aset atau aktivitas keuangan harus dipertahankan sebagai arsip.",
+  },
   FILE_EXTENSION_MISMATCH: {
     title: "Format file tidak sesuai",
     description:

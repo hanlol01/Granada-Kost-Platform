@@ -330,6 +330,9 @@ function serviceFor(row = reportRow(), owner = ownerId, assignmentRow = assignme
           return {
             rows: [{ id: owner, property_id: propertyId, full_name: 'Pemilik Café Жанна' }],
           };
+        if (sql.includes('recognize_property_owner_earnings'))
+          return { rows: [{ inserted_count: 0 }] };
+        if (sql.includes('AS business_date')) return { rows: [{ business_date: '2026-09-08' }] };
         if (sql.includes('assignment_key')) return { rows: [assignmentRow] };
         if (sql.includes('authorized_earnings')) return { rows: [structuredClone(row)] };
         throw new Error(`unexpected query: ${sql}`);
@@ -1026,6 +1029,8 @@ void test('out-of-period report is denied and finance is constrained by service 
     /scope\.scope_from <= earnings\.service_from AND earnings\.service_until <= scope\.scope_until/,
   );
   assert.match(calls[2].sql, /assignments\.effective_from <= earnings\.service_from/);
+  assert.match(calls[2].sql, /period_final_settlement AS/);
+  assert.match(calls[2].sql, /JOIN period_final_settlement final_settlement/);
   assert.match(
     calls[2].sql,
     /JOIN authorized_settlements settlements ON settlements\.id = notifications\.source_resource_id/,
@@ -1044,6 +1049,8 @@ void test('E3 finance is a safe, period-bound projection of the authoritative ow
   assert.equal(finance.period.period, '2026-08');
   assert.equal(finance.scope_checksum.length, 64);
   assert.equal(finance.summary.adjusted_owner_entitlement, '1999999000');
+  assert.equal(finance.summary.period_status, 'closed');
+  assert.equal(finance.summary.calculated_through, '2026-08-31');
   assert.equal(finance.summary.settlement_state, 'reconciled');
   assert.deepEqual(finance.summary.settlement_counts, {
     draft: 0,
@@ -1061,4 +1068,17 @@ void test('E3 finance is a safe, period-bound projection of the authoritative ow
 
   const controller = new PropertyOwnerPortalController(service);
   assert.deepEqual(await controller.finance(actor(), '2026-08'), finance);
+});
+
+void test('finance refreshes the idempotent owner earning ledger before reading totals', async () => {
+  const { service, calls } = serviceFor();
+
+  await service.finance(actor(), '2026-08');
+
+  const recognition = calls.find((call) => call.sql.includes('recognize_property_owner_earnings'));
+  assert.ok(recognition, 'finance must refresh recognized owner earnings');
+  assert.deepEqual(recognition.params, [propertyId]);
+  const recognitionIndex = calls.indexOf(recognition);
+  const reportIndex = calls.findIndex((call) => call.sql.includes('authorized_earnings'));
+  assert.ok(recognitionIndex >= 0 && recognitionIndex < reportIndex);
 });

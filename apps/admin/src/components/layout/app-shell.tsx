@@ -1,15 +1,17 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AppBreadcrumb } from "./Breadcrumb";
 import { RegistryBottomNav, RegistrySidebar } from "./registry-navigation";
 import { UserMenu } from "./user-menu";
+import "./app-shell.css";
 
 interface Props {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  leadingAction?: ReactNode;
   eyebrow?: string;
   sidebar?: ReactNode;
   bottomNavigation?: ReactNode;
@@ -23,6 +25,7 @@ export function AppShell({
   title,
   subtitle,
   actions,
+  leadingAction,
   eyebrow,
   sidebar = <RegistrySidebar />,
   bottomNavigation = <RegistryBottomNav />,
@@ -35,11 +38,35 @@ export function AppShell({
   // respected so changing the default does not unexpectedly override a user's
   // explicit choice on this device.
   const [dark, setDark] = useState(true);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerVisible, setHeaderVisible] = useState(true);
 
   useEffect(() => {
     const isDark = localStorage.getItem("theme") !== "light";
     setDark(isDark);
     document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = Math.max(window.scrollY, 0);
+      const focusedInHeader = headerRef.current?.contains(document.activeElement) ?? false;
+
+      if (focusedInHeader || currentScrollY < 12) {
+        setHeaderVisible(true);
+      } else if (currentScrollY > lastScrollY + 4) {
+        setHeaderVisible(false);
+      } else if (currentScrollY < lastScrollY - 4) {
+        setHeaderVisible(true);
+      }
+
+      lastScrollY = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const toggleDark = () => {
@@ -53,23 +80,31 @@ export function AppShell({
     <div className="flex min-h-screen w-full bg-background text-foreground">
       {sidebar}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-          <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-8">
-            <div className="min-w-0">
-              {eyebrow ? (
-                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                  {eyebrow}
-                </p>
-              ) : null}
-              <h1 className="truncate text-xl font-semibold tracking-tight text-foreground md:text-2xl">
-                {title}
-              </h1>
-              {subtitle ? (
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p>
-              ) : null}
-              {breadcrumb}
+        <header
+          ref={headerRef}
+          data-header-visible={headerVisible}
+          className="app-shell-header sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur"
+        >
+          <div className="flex min-h-16 items-center gap-3 px-4 py-3 md:px-8 md:py-3.5">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              {leadingAction ? <div className="shrink-0">{leadingAction}</div> : null}
+              <div className="min-w-0">
+                {eyebrow ? (
+                  <p className="mb-0.5 truncate text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">
+                    {eyebrow}
+                  </p>
+                ) : null}
+                <h1 className="truncate text-lg font-semibold tracking-tight text-foreground md:text-2xl">
+                  {title}
+                </h1>
+                {subtitle ? (
+                  <p className="mt-0.5 max-w-[min(60vw,42rem)] truncate text-xs text-muted-foreground sm:text-sm">
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
             </div>
-            <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+            <div className="app-shell-actions flex min-w-0 max-w-[52vw] shrink-0 items-center justify-end gap-1 overflow-x-auto sm:max-w-[62vw] sm:gap-2 md:max-w-none">
               {actions}
               <Button
                 variant="ghost"
@@ -95,6 +130,11 @@ export function AppShell({
             </div>
           </div>
         </header>
+        {breadcrumb ? (
+          <div className="app-shell-breadcrumb border-b border-border/70 bg-muted/20 px-4 py-2 md:px-8">
+            {breadcrumb}
+          </div>
+        ) : null}
         <main
           className={cn("flex-1 animate-fade-in px-4 py-6 pb-24 md:px-8 lg:pb-6", contentClassName)}
         >

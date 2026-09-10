@@ -121,8 +121,9 @@ export class PropertyOwnerPortalService {
           FROM property_owner_earnings earnings
           JOIN current_scope scope ON scope.room_id = earnings.room_id
           WHERE earnings.owner_profile_id = $1 AND earnings.property_id = $2
-            AND earnings.earning_status = 'recognized'
-            AND earnings.service_from IS NOT NULL AND earnings.service_until IS NOT NULL
+             AND earnings.earning_status = 'recognized'
+             AND earnings.recognized_at <= now()
+             AND earnings.service_from IS NOT NULL AND earnings.service_until IS NOT NULL
             AND earnings.service_from >= scope.scope_from
             AND (scope.scope_until IS NULL OR earnings.service_until <= scope.scope_until)
         ), current_settlement_authority AS (
@@ -908,7 +909,15 @@ export class PropertyOwnerPortalService {
    * exposes neither payment nor tenant data.
    */
   async finance(actor: UserAccessContext, periodInput: string) {
-    return this.toOwnerFinance(await this.preview(actor, periodInput));
+    const period = this.parsePeriod(periodInput);
+    const owner = await this.resolveOwner(actor);
+    const businessDate = await this.jakartaBusinessDate();
+    if (!owner) return this.toOwnerFinance(this.emptyReport(period), businessDate);
+    await this.database.client.query(
+      'SELECT recognize_property_owner_earnings($1) AS inserted_count',
+      [owner.property_id],
+    );
+    return this.toOwnerFinance(await this.buildReport(owner, actor.id, period), businessDate);
   }
 
   /**
@@ -1107,7 +1116,7 @@ export class PropertyOwnerPortalService {
     };
   }
 
-  private toOwnerFinance(report: SafeReport) {
+  private toOwnerFinance(report: SafeReport, businessDate: string) {
     const settlementCounts = {
       draft: 0,
       ready_for_review: 0,
@@ -1131,11 +1140,26 @@ export class PropertyOwnerPortalService {
           : settlementCounts.paid > 0
             ? 'reconciled'
             : 'unavailable';
+    const periodClosed = report.settlements.some(
+      (row) =>
+        row.period_start === report.period.start &&
+        row.period_end === report.period.end &&
+        ['approved', 'paid'].includes(row.settlement_status ?? ''),
+    );
+    const calculatedThrough = periodClosed
+      ? report.period.end
+      : businessDate < report.period.start
+        ? null
+        : businessDate > report.period.end
+          ? report.period.end
+          : businessDate;
 
     return {
       period: report.period,
       scope_checksum: report.scope_checksum,
       summary: {
+        period_status: periodClosed ? 'closed' : 'open',
+        calculated_through: calculatedThrough,
         gross_earned_rent: report.summary.gross_earned_rent,
         owner_entitlement: report.summary.owner_entitlement,
         management_fee: report.summary.management_fee,
@@ -1282,16 +1306,32 @@ export class PropertyOwnerPortalService {
         ), authorized_leases AS (
           SELECT lease_id AS id, room_id, service_from AS start_date, (service_until - 1) AS end_date, lease_status
           FROM authorized_lifecycle
+       ), period_final_settlement AS (
+          SELECT settlements.id
+          FROM property_owner_settlements settlements
+          WHERE settlements.owner_profile_id = $1 AND settlements.property_id = $2
+            AND settlements.period_start = $3::date AND settlements.period_end = ($4::date - 1)
+            AND settlements.settlement_status IN ('approved', 'paid')
        ), authorized_earnings AS (
           SELECT DISTINCT earnings.id, earnings.room_id, earnings.earning_month, earnings.service_from, earnings.service_until,
                  earnings.gross_collected_amount, earnings.owner_earned_amount, earnings.operator_fee_amount, earnings.earning_status
           FROM property_owner_earnings earnings
           JOIN period_scope scope ON scope.room_id = earnings.room_id
             AND scope.scope_from <= earnings.service_from AND earnings.service_until <= scope.scope_until
-          WHERE earnings.owner_profile_id = $1 AND earnings.property_id = $2
-            AND earnings.service_from IS NOT NULL AND earnings.service_until IS NOT NULL
-            AND earnings.service_from >= $3::date AND earnings.service_until <= $4::date
-            AND ((earnings.ownership_kind = 'building' AND EXISTS (
+           WHERE earnings.owner_profile_id = $1 AND earnings.property_id = $2
+             AND earnings.service_from IS NOT NULL AND earnings.service_until IS NOT NULL
+              AND earnings.recognized_at <= now()
+              AND earnings.service_from >= $3::date AND earnings.service_until <= $4::date
+             AND (
+               NOT EXISTS (SELECT 1 FROM period_final_settlement)
+               OR EXISTS (
+                 SELECT 1
+                 FROM property_owner_settlement_lines final_lines
+                 JOIN period_final_settlement final_settlement ON final_settlement.id = final_lines.settlement_id
+                 WHERE final_lines.earning_id = earnings.id
+               )
+             )
+             AND ((earnings.ownership_kind = 'building' AND EXISTS (
               SELECT 1 FROM building_owner_assignments assignments WHERE assignments.id = earnings.ownership_assignment_id
                 AND assignments.owner_profile_id = $1 AND assignments.property_id = $2
                 AND assignments.effective_from <= earnings.service_from AND earnings.service_until <= COALESCE(assignments.effective_until, 'infinity'::date)
@@ -1311,7 +1351,10 @@ export class PropertyOwnerPortalService {
            AND settlements.period_start < $4::date AND settlements.period_end >= $3::date
          GROUP BY settlements.id
        ), authorized_settlements AS (
-         SELECT * FROM settlement_authority WHERE total_line_count > 0 AND total_line_count = authorized_line_count
+         SELECT * FROM settlement_authority
+         WHERE (total_line_count > 0 AND total_line_count = authorized_line_count)
+            OR (total_line_count = 0 AND gross_amount = 0 AND owner_amount = 0
+                AND operator_fee_amount = 0 AND settlement_status IN ('approved', 'paid'))
        ), authorized_adjustments AS (
           SELECT adjustments.id, adjustments.earning_id, adjustments.settlement_id, authorized_earnings.room_id, adjustments.effective_month,
                 adjustments.adjustment_kind, adjustments.gross_amount_delta, adjustments.owner_amount_delta,
@@ -1583,6 +1626,20 @@ export class PropertyOwnerPortalService {
         message: 'Authenticated owner profile is ambiguous',
       });
     return result.rows[0];
+  }
+
+  private async jakartaBusinessDate(): Promise<string> {
+    const result = await this.database.client.query<{ business_date: string }>(
+      `SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date::text AS business_date`,
+    );
+    const businessDate = String(result.rows[0]?.business_date ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+      throw new InternalServerErrorException({
+        code: 'JAKARTA_BUSINESS_DATE_UNAVAILABLE',
+        message: 'Jakarta business date is unavailable',
+      });
+    }
+    return businessDate;
   }
 
   private parsePeriod(value: string): ReportPeriod {

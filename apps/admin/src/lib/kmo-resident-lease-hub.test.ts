@@ -228,6 +228,11 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   assert.match(source, /filePurpose: "ktp"/);
   assert.match(source, /ktp_file_id: resident\.ktpFileId/);
   assert.match(source, /<Label htmlFor="deposit">Security deposit<\/Label>/);
+  assert.match(source, /termMonths <= 5[\s\S]*shortStayMonthlyPrice/);
+  assert.match(source, /termMonths <= 11[\s\S]*mediumStayMonthlyPrice/);
+  assert.match(source, /longStayMonthlyPrice/);
+  assert.match(source, /const roomAmounts = calculateLeaseAmounts\(room, termMonths\)/);
+  assert.match(source, /currency\(roomAmounts\.monthlyRate\) \/ bulan/);
   assert.match(source, /<RupiahInput\s+id="deposit"/);
   assert.match(source, /Tarif bulanan/);
   assert.match(source, /Metode pembayaran \*/);

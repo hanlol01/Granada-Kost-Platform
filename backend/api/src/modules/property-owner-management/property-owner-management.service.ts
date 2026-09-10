@@ -16,6 +16,7 @@ import { RequestAuditContext } from '../property/types/property.types';
 import {
   AssignOwnerBuildingDto,
   AssignOwnerRoomsDto,
+  CloseOwnerReportPeriodDto,
   CreatePropertyOwnerDto,
   ListPropertyOwnersQueryDto,
   ReleaseOwnerAssignmentDto,
@@ -66,6 +67,13 @@ type OwnerCreateResponse = {
   status: 'created' | 'already_created';
   owner: PropertyOwnerView;
   temporary_password: string | null;
+};
+
+type OwnerLifecycleCounts = {
+  building_assignment_count: number;
+  room_assignment_count: number;
+  financial_record_count: number;
+  account_record_count: number;
 };
 
 @Injectable()
@@ -133,7 +141,7 @@ export class PropertyOwnerManagementService {
   async get(actor: UserAccessContext, ownerId: string, propertyId: string) {
     this.assertPropertyScope(actor, propertyId);
     const owner = await this.findOwner(ownerId, propertyId);
-    const [buildings, rooms, history] = await Promise.all([
+    const [buildings, rooms, history, lifecycleCounts] = await Promise.all([
       this.database.client.query(
         `SELECT assignments.id, assignments.effective_from, assignments.effective_until,
                 assignments.assignment_status, assignments.reason,
@@ -179,7 +187,38 @@ export class PropertyOwnerManagementService {
          ORDER BY effective_from DESC, id DESC`,
         [ownerId, propertyId],
       ),
+      this.database.client.query<OwnerLifecycleCounts>(
+        `SELECT
+           (SELECT COUNT(*)::int FROM building_owner_assignments
+             WHERE owner_profile_id = $1 AND property_id = $2) AS building_assignment_count,
+           (SELECT COUNT(*)::int FROM room_owner_assignments
+             WHERE owner_profile_id = $1 AND property_id = $2) AS room_assignment_count,
+           (
+             (SELECT COUNT(*) FROM property_owner_earnings
+               WHERE owner_profile_id = $1 AND property_id = $2)
+             + (SELECT COUNT(*) FROM property_owner_settlements
+               WHERE owner_profile_id = $1 AND property_id = $2)
+             + (SELECT COUNT(*) FROM property_owner_earning_adjustments
+               WHERE owner_profile_id = $1 AND property_id = $2)
+             + (SELECT COUNT(*) FROM property_owner_payout_destination_snapshots
+               WHERE owner_profile_id = $1 AND property_id = $2)
+             + (SELECT COUNT(*) FROM property_owner_payouts
+               WHERE owner_profile_id = $1 AND property_id = $2)
+           )::int AS financial_record_count,
+           (
+             (SELECT COUNT(*) FROM idempotency_commands WHERE actor_user_id = $3)
+             + (SELECT COUNT(*) FROM notifications WHERE recipient_user_id = $3)
+           )::int AS account_record_count`,
+        [ownerId, propertyId, owner.user_id],
+      ),
     ]);
+    const counts = lifecycleCounts.rows[0] ?? {
+      building_assignment_count: 0,
+      room_assignment_count: 0,
+      financial_record_count: 0,
+      account_record_count: 0,
+    };
+    const ownershipHistoryCount = counts.building_assignment_count + counts.room_assignment_count;
     return {
       ...this.mapOwner(owner),
       active_and_scheduled_assets: {
@@ -192,6 +231,27 @@ export class PropertyOwnerManagementService {
         login_phone: owner.phone,
         password: null,
         reset_available: owner.profile_status === 'active',
+      },
+      lifecycle: {
+        can_archive:
+          owner.profile_status === 'active' &&
+          buildings.rows.length === 0 &&
+          rooms.rows.length === 0,
+        archive_blockers: {
+          rumah_kost_buildings: buildings.rows.length,
+          apart_kost_rooms: rooms.rows.length,
+        },
+        can_delete_permanently:
+          owner.profile_status === 'archived' &&
+          ownershipHistoryCount === 0 &&
+          counts.financial_record_count === 0 &&
+          counts.account_record_count === 0,
+        deletion_blockers: {
+          owner_must_be_archived: owner.profile_status !== 'archived',
+          ownership_history: ownershipHistoryCount,
+          financial_records: counts.financial_record_count,
+          account_records: counts.account_record_count,
+        },
       },
     };
   }
@@ -605,6 +665,10 @@ export class PropertyOwnerManagementService {
         throw new ConflictException({
           code: 'PROPERTY_OWNER_ASSIGNMENTS_STILL_ACTIVE',
           message: 'Release active and scheduled ownership before archiving this owner',
+          details: {
+            rumah_kost_buildings: buildingAssignments.rows.length,
+            apart_kost_rooms: roomAssignments.rows.length,
+          },
         });
       }
       await client.query(
@@ -654,6 +718,131 @@ export class PropertyOwnerManagementService {
     });
   }
 
+  async deletePermanently(
+    actor: UserAccessContext,
+    ownerId: string,
+    propertyId: string,
+    idempotencyKey: string | undefined,
+    context: RequestAuditContext,
+  ) {
+    this.assertPropertyScope(actor, propertyId);
+    const route = 'DELETE /admin/property-owners/:ownerId/permanent';
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const fingerprint = this.fingerprint({ owner_id: ownerId, property_id: propertyId });
+    try {
+      return await this.database.transaction(async (client) => {
+        const replay = await this.claimCommand(
+          client,
+          actor,
+          propertyId,
+          route,
+          key,
+          fingerprint,
+          context,
+        );
+        if (replay) return replay;
+        const owner = await this.lockOwnerForLifecycle(client, ownerId, propertyId);
+        const countsResult = await client.query<OwnerLifecycleCounts>(
+          `SELECT
+             (SELECT COUNT(*)::int FROM building_owner_assignments
+               WHERE owner_profile_id = $1 AND property_id = $2) AS building_assignment_count,
+             (SELECT COUNT(*)::int FROM room_owner_assignments
+               WHERE owner_profile_id = $1 AND property_id = $2) AS room_assignment_count,
+             (
+               (SELECT COUNT(*) FROM property_owner_earnings
+                 WHERE owner_profile_id = $1 AND property_id = $2)
+               + (SELECT COUNT(*) FROM property_owner_settlements
+                 WHERE owner_profile_id = $1 AND property_id = $2)
+               + (SELECT COUNT(*) FROM property_owner_earning_adjustments
+                 WHERE owner_profile_id = $1 AND property_id = $2)
+               + (SELECT COUNT(*) FROM property_owner_payout_destination_snapshots
+                 WHERE owner_profile_id = $1 AND property_id = $2)
+               + (SELECT COUNT(*) FROM property_owner_payouts
+                 WHERE owner_profile_id = $1 AND property_id = $2)
+             )::int AS financial_record_count,
+             (
+               (SELECT COUNT(*) FROM idempotency_commands WHERE actor_user_id = $3)
+               + (SELECT COUNT(*) FROM notifications WHERE recipient_user_id = $3)
+             )::int AS account_record_count`,
+          [ownerId, propertyId, owner.user_id],
+        );
+        const counts = countsResult.rows[0] ?? {
+          building_assignment_count: 0,
+          room_assignment_count: 0,
+          financial_record_count: 0,
+          account_record_count: 0,
+        };
+        const ownershipHistory = counts.building_assignment_count + counts.room_assignment_count;
+        if (
+          owner.profile_status !== 'archived' ||
+          ownershipHistory > 0 ||
+          counts.financial_record_count > 0 ||
+          counts.account_record_count > 0
+        ) {
+          throw new ConflictException({
+            code: 'PROPERTY_OWNER_PERMANENT_DELETE_BLOCKED',
+            message: 'Only an archived and unused owner account can be deleted permanently',
+            details: {
+              owner_must_be_archived: owner.profile_status !== 'archived',
+              ownership_history: ownershipHistory,
+              financial_records: counts.financial_record_count,
+              account_records: counts.account_record_count,
+            },
+          });
+        }
+        await this.audit.write(
+          {
+            actorUserId: actor.id,
+            propertyId,
+            action: 'property_owner.deleted_permanently',
+            resourceType: 'property_owner_profile',
+            resourceId: ownerId,
+            beforeData: {
+              owner_profile_id: ownerId,
+              user_id: owner.user_id,
+              full_name: owner.full_name,
+              profile_status: owner.profile_status,
+            },
+            afterData: { deleted: true },
+            resultStatus: 'success',
+            ...context,
+          },
+          client,
+        );
+        await this.writeEvent(
+          client,
+          propertyId,
+          actor.id,
+          context,
+          'property_owner.deleted_permanently',
+          ownerId,
+          { owner_profile_id: ownerId, user_id: owner.user_id },
+        );
+        await client.query(
+          `DELETE FROM property_owner_profiles WHERE id = $1 AND property_id = $2`,
+          [ownerId, propertyId],
+        );
+        await client.query(`DELETE FROM users WHERE id = $1`, [owner.user_id]);
+        const response = { owner_id: ownerId, status: 'deleted' as const };
+        await this.completeCommand(client, actor.id, route, key, response, ownerId);
+        return response;
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === '23503'
+      ) {
+        throw new ConflictException({
+          code: 'PROPERTY_OWNER_PERMANENT_DELETE_BLOCKED',
+          message: 'Owner account still has protected business records',
+        });
+      }
+      throw error;
+    }
+  }
+
   async assignBuilding(
     actor: UserAccessContext,
     ownerId: string,
@@ -662,10 +851,10 @@ export class PropertyOwnerManagementService {
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, dto.property_id);
-    this.assertPeriod(dto.effective_from, dto.effective_until);
+    const reason = dto.reason?.trim() || null;
     const key = this.requireIdempotencyKey(idempotencyKey);
     const route = '/admin/property-owners/:ownerId/building-assignments';
-    const fingerprint = this.fingerprint({ ownerId, ...dto });
+    const fingerprint = this.fingerprint({ ownerId, ...dto, reason });
     return this.database.transaction(async (client) => {
       const replay = await this.claimCommand(
         client,
@@ -701,23 +890,16 @@ export class PropertyOwnerManagementService {
         `INSERT INTO building_owner_assignments (
            property_id, owner_profile_id, building_id, effective_from, effective_until,
            assignment_status, reason, created_by_user_id
-         ) VALUES ($1, $2, $3, $4::date, $5::date,
-           CASE
-             WHEN $4::date > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-               THEN 'scheduled'
-             ELSE 'active'
-           END,
-           $6, $7)
+         ) VALUES ($1, $2, $3, CASE
+           WHEN EXISTS (
+             SELECT 1 FROM building_owner_assignments history
+             WHERE history.property_id = $1 AND history.building_id = $3
+           ) THEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+           ELSE property_owner_initial_assignment_date($1)
+         END, NULL,
+           'active', $4, $5)
          RETURNING id, assignment_status`,
-        [
-          dto.property_id,
-          ownerId,
-          dto.building_id,
-          dto.effective_from,
-          dto.effective_until ?? null,
-          dto.reason.trim(),
-          actor.id,
-        ],
+        [dto.property_id, ownerId, dto.building_id, reason, actor.id],
       );
       const response = {
         assignment_id: assignment.rows[0].id,
@@ -748,7 +930,7 @@ export class PropertyOwnerManagementService {
     context: RequestAuditContext,
   ) {
     this.assertPropertyScope(actor, dto.property_id);
-    this.assertPeriod(dto.effective_from, dto.effective_until);
+    const reason = dto.reason?.trim() || null;
     const roomIds = [...new Set(dto.room_ids)].sort();
     if (roomIds.length !== dto.room_ids.length) {
       throw new BadRequestException({
@@ -758,7 +940,7 @@ export class PropertyOwnerManagementService {
     }
     const key = this.requireIdempotencyKey(idempotencyKey);
     const route = '/admin/property-owners/:ownerId/room-assignments';
-    const fingerprint = this.fingerprint({ ownerId, ...dto, room_ids: roomIds });
+    const fingerprint = this.fingerprint({ ownerId, ...dto, room_ids: roomIds, reason });
     return this.database.transaction(async (client) => {
       const replay = await this.claimCommand(
         client,
@@ -789,23 +971,16 @@ export class PropertyOwnerManagementService {
           `INSERT INTO room_owner_assignments (
              property_id, owner_profile_id, room_id, effective_from, effective_until,
              assignment_status, reason, created_by_user_id
-           ) VALUES ($1, $2, $3, $4::date, $5::date,
-             CASE
-               WHEN $4::date > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-                 THEN 'scheduled'
-               ELSE 'active'
-             END,
-             $6, $7)
+           ) VALUES ($1, $2, $3, CASE
+             WHEN EXISTS (
+               SELECT 1 FROM room_owner_assignments history
+               WHERE history.property_id = $1 AND history.room_id = $3
+             ) THEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+             ELSE property_owner_initial_assignment_date($1)
+           END, NULL,
+             'active', $4, $5)
            RETURNING id, assignment_status`,
-          [
-            dto.property_id,
-            ownerId,
-            room.id,
-            dto.effective_from,
-            dto.effective_until ?? null,
-            dto.reason.trim(),
-            actor.id,
-          ],
+          [dto.property_id, ownerId, room.id, reason, actor.id],
         );
         assignments.push({
           id: result.rows[0].id,
@@ -841,13 +1016,13 @@ export class PropertyOwnerManagementService {
     const table = kind === 'building' ? 'building_owner_assignments' : 'room_owner_assignments';
     const route = `POST /admin/property-owners/:ownerId/${kind}-assignments/:assignmentId/release`;
     const key = this.requireIdempotencyKey(idempotencyKey);
+    const reason = dto.reason?.trim() || null;
     const fingerprint = this.fingerprint({
       owner_id: ownerId,
       assignment_id: assignmentId,
       ownership_kind: kind,
       property_id: dto.property_id,
-      effective_until: dto.effective_until,
-      reason: dto.reason.trim(),
+      reason,
     });
     return this.database.transaction(async (client) => {
       const replay = await this.claimCommand(
@@ -878,24 +1053,15 @@ export class PropertyOwnerManagementService {
           message: 'Ownership assignment is unavailable or already released',
         });
       }
-      this.assertPeriod(current.rows[0].effective_from, dto.effective_until);
-      if (
-        current.rows[0].effective_until !== null &&
-        dto.effective_until >= current.rows[0].effective_until
-      ) {
-        throw new ConflictException({
-          code: 'PROPERTY_OWNER_ASSIGNMENT_RELEASE_NOT_SHORTENING',
-          message: 'Ownership release must shorten the current effective period',
-        });
-      }
       await client.query(
         `UPDATE ${table}
-         SET effective_until = $4::date,
+         SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
+             effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
              assignment_status = 'released',
-             reason = $5,
-             released_by_user_id = $6, updated_at = now()
+             reason = $4,
+             released_by_user_id = $5, updated_at = now()
          WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
-        [assignmentId, ownerId, dto.property_id, dto.effective_until, dto.reason.trim(), actor.id],
+        [assignmentId, ownerId, dto.property_id, reason, actor.id],
       );
       await this.audit.write(
         {
@@ -904,7 +1070,7 @@ export class PropertyOwnerManagementService {
           action: 'property_owner.assignment_released',
           resourceType: `${kind}_owner_assignment`,
           resourceId: assignmentId,
-          afterData: { effective_until: dto.effective_until, reason: dto.reason.trim() },
+          afterData: { released_immediately: true, reason },
           resultStatus: 'success',
           ...context,
         },
@@ -917,7 +1083,7 @@ export class PropertyOwnerManagementService {
         context,
         'property_owner.assignment_released',
         assignmentId,
-        { owner_profile_id: ownerId, ownership_kind: kind, effective_until: dto.effective_until },
+        { owner_profile_id: ownerId, ownership_kind: kind, released_immediately: true },
       );
       const response = {
         assignment_id: assignmentId,
@@ -948,13 +1114,13 @@ export class PropertyOwnerManagementService {
     const table = kind === 'building' ? 'building_owner_assignments' : 'room_owner_assignments';
     const route = `POST /admin/property-owners/:ownerId/${kind}-assignments/release-batch`;
     const key = this.requireIdempotencyKey(idempotencyKey);
+    const reason = dto.reason?.trim() || null;
     const fingerprint = this.fingerprint({
       owner_id: ownerId,
       assignment_ids: assignmentIds,
       ownership_kind: kind,
       property_id: dto.property_id,
-      effective_until: dto.effective_until,
-      reason: dto.reason.trim(),
+      reason,
     });
     return this.database.transaction(async (client) => {
       const replay = await this.claimCommand(
@@ -991,31 +1157,15 @@ export class PropertyOwnerManagementService {
             message: 'Ownership assignment is unavailable or already released',
           });
         }
-        this.assertPeriod(current.rows[0].effective_from, dto.effective_until);
-        if (
-          current.rows[0].effective_until !== null &&
-          dto.effective_until >= current.rows[0].effective_until
-        ) {
-          throw new ConflictException({
-            code: 'PROPERTY_OWNER_ASSIGNMENT_RELEASE_NOT_SHORTENING',
-            message: 'Ownership release must shorten the current effective period',
-          });
-        }
         await client.query(
           `UPDATE ${table}
-           SET effective_until = $4::date,
+           SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
+               effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
                assignment_status = 'released',
-               reason = $5,
-               released_by_user_id = $6, updated_at = now()
+               reason = $4,
+               released_by_user_id = $5, updated_at = now()
            WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
-          [
-            assignmentId,
-            ownerId,
-            dto.property_id,
-            dto.effective_until,
-            dto.reason.trim(),
-            actor.id,
-          ],
+          [assignmentId, ownerId, dto.property_id, reason, actor.id],
         );
         await this.audit.write(
           {
@@ -1024,7 +1174,7 @@ export class PropertyOwnerManagementService {
             action: 'property_owner.assignment_released',
             resourceType: `${kind}_owner_assignment`,
             resourceId: assignmentId,
-            afterData: { effective_until: dto.effective_until, reason: dto.reason.trim() },
+            afterData: { released_immediately: true, reason },
             resultStatus: 'success',
             ...context,
           },
@@ -1037,12 +1187,175 @@ export class PropertyOwnerManagementService {
           context,
           'property_owner.assignment_released',
           assignmentId,
-          { owner_profile_id: ownerId, ownership_kind: kind, effective_until: dto.effective_until },
+          { owner_profile_id: ownerId, ownership_kind: kind, released_immediately: true },
         );
         assignments.push({ assignment_id: assignmentId, ownership_kind: kind, status: 'released' });
       }
       const response = { ownership_kind: kind, assignments };
       await this.completeCommand(client, actor.id, route, key, response, ownerId);
+      return response;
+    });
+  }
+
+  async closeReportPeriod(
+    actor: UserAccessContext,
+    ownerId: string,
+    dto: CloseOwnerReportPeriodDto,
+    idempotencyKey: string | undefined,
+    context: RequestAuditContext,
+  ) {
+    this.assertPropertyScope(actor, dto.property_id);
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const route = '/admin/property-owners/:ownerId/report-periods/close';
+    const notes = dto.notes?.trim() || null;
+    const fingerprint = this.fingerprint({ ownerId, ...dto, notes });
+    const [year, month] = dto.period.split('-').map(Number);
+    const periodStart = `${dto.period}-01`;
+    const periodUntil = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+    const periodEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const businessDate = await this.jakartaBusinessDate();
+    if (periodUntil > businessDate) {
+      throw new ConflictException({
+        code: 'PROPERTY_OWNER_REPORT_PERIOD_STILL_OPEN',
+        message: 'Only a completed calendar month can be closed',
+      });
+    }
+
+    return this.database.transaction(async (client) => {
+      const replay = await this.claimCommand(
+        client,
+        actor,
+        dto.property_id,
+        route,
+        key,
+        fingerprint,
+        context,
+      );
+      if (replay) return replay;
+      await this.lockProperty(client, dto.property_id);
+      await this.lockOwner(client, ownerId, dto.property_id);
+      await client.query('SELECT recognize_property_owner_earnings($1, $2::date)', [
+        dto.property_id,
+        periodEnd,
+      ]);
+
+      const existing = await client.query<{ id: string; settlement_status: string }>(
+        `SELECT id, settlement_status
+         FROM property_owner_settlements
+         WHERE property_id = $1 AND owner_profile_id = $2
+           AND period_start = $3::date AND period_end = $4::date
+         FOR UPDATE`,
+        [dto.property_id, ownerId, periodStart, periodEnd],
+      );
+      if (existing.rows.length > 0) {
+        throw new ConflictException({
+          code: 'PROPERTY_OWNER_REPORT_PERIOD_ALREADY_CLOSED',
+          message: 'The selected Owner reporting period already has a final record',
+        });
+      }
+
+      const earnings = await client.query<{
+        id: string;
+        gross_collected_amount: string;
+        owner_earned_amount: string;
+        operator_fee_amount: string;
+      }>(
+        `SELECT earnings.id, earnings.gross_collected_amount::text,
+                earnings.owner_earned_amount::text, earnings.operator_fee_amount::text
+         FROM property_owner_earnings earnings
+         WHERE earnings.property_id = $1 AND earnings.owner_profile_id = $2
+           AND earnings.earning_status = 'recognized'
+           AND earnings.recognized_at <= now()
+           AND earnings.service_from >= $3::date AND earnings.service_until <= $4::date
+           AND NOT EXISTS (
+             SELECT 1 FROM property_owner_settlement_lines lines
+             WHERE lines.earning_id = earnings.id
+           )
+         ORDER BY earnings.service_from, earnings.id
+         FOR SHARE`,
+        [dto.property_id, ownerId, periodStart, periodUntil],
+      );
+      const totals = earnings.rows.reduce(
+        (sum, earning) => ({
+          gross: sum.gross + BigInt(earning.gross_collected_amount),
+          owner: sum.owner + BigInt(earning.owner_earned_amount),
+          fee: sum.fee + BigInt(earning.operator_fee_amount),
+        }),
+        { gross: 0n, owner: 0n, fee: 0n },
+      );
+      const settlement = await client.query<{ id: string }>(
+        `INSERT INTO property_owner_settlements (
+           property_id, owner_profile_id, period_start, period_end,
+           gross_amount, owner_amount, operator_fee_amount, settlement_status,
+           reference, notes, created_by_user_id
+         ) VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, 'draft', $8, $9, $10)
+         RETURNING id`,
+        [
+          dto.property_id,
+          ownerId,
+          periodStart,
+          periodEnd,
+          totals.gross.toString(),
+          totals.owner.toString(),
+          totals.fee.toString(),
+          `OWNER-${dto.period.replace('-', '')}`,
+          notes,
+          actor.id,
+        ],
+      );
+      const settlementId = settlement.rows[0].id;
+      if (earnings.rows.length > 0) {
+        await client.query(
+          `INSERT INTO property_owner_settlement_lines (settlement_id, earning_id)
+           SELECT $1, unnest($2::uuid[])`,
+          [settlementId, earnings.rows.map((earning) => earning.id)],
+        );
+      }
+      await client.query(
+        `UPDATE property_owner_settlements
+         SET settlement_status = 'ready_for_review', updated_at = now()
+         WHERE id = $1 AND settlement_status = 'draft'`,
+        [settlementId],
+      );
+      await client.query(
+        `UPDATE property_owner_settlements
+         SET settlement_status = 'approved', approved_by_user_id = $2, updated_at = now()
+         WHERE id = $1 AND settlement_status = 'ready_for_review'`,
+        [settlementId, actor.id],
+      );
+      const response = {
+        settlement_id: settlementId,
+        owner_id: ownerId,
+        period: dto.period,
+        period_status: 'closed' as const,
+        gross_earned_rent: totals.gross.toString(),
+        owner_entitlement: totals.owner.toString(),
+        management_fee: totals.fee.toString(),
+        earning_count: earnings.rows.length,
+      };
+      await this.audit.write(
+        {
+          actorUserId: actor.id,
+          propertyId: dto.property_id,
+          action: 'property_owner.report_period_closed',
+          resourceType: 'property_owner_settlement',
+          resourceId: settlementId,
+          afterData: response,
+          resultStatus: 'success',
+          ...context,
+        },
+        client,
+      );
+      await this.writeEvent(
+        client,
+        dto.property_id,
+        actor.id,
+        context,
+        'property_owner.report_period.closed',
+        settlementId,
+        response,
+      );
+      await this.completeCommand(client, actor.id, route, key, response, settlementId);
       return response;
     });
   }
@@ -1106,10 +1419,13 @@ export class PropertyOwnerManagementService {
         pending_settlement_amount: string;
       }>(
         `SELECT
-           COALESCE(SUM(earnings.owner_earned_amount) FILTER (WHERE earnings.earning_status = 'recognized'), 0)::text
+           COALESCE(SUM(earnings.owner_earned_amount) FILTER (
+             WHERE earnings.earning_status = 'recognized' AND earnings.recognized_at <= now()
+           ), 0)::text
              AS recognized_owner_amount,
            COALESCE(SUM(earnings.owner_earned_amount) FILTER (
-             WHERE earnings.earning_status = 'recognized' AND lines.earning_id IS NULL
+             WHERE earnings.earning_status = 'recognized' AND earnings.recognized_at <= now()
+               AND lines.earning_id IS NULL
            ), 0)::text AS pending_settlement_amount
          FROM property_owner_earnings earnings
          LEFT JOIN property_owner_settlement_lines lines ON lines.earning_id = earnings.id
@@ -1145,15 +1461,6 @@ export class PropertyOwnerManagementService {
       throw new BadRequestException({
         code: 'PROPERTY_OWNER_LOGIN_PHONE_REQUIRED',
         message: 'Phone is required for the owner account',
-      });
-    }
-  }
-
-  private assertPeriod(effectiveFrom: string, effectiveUntil?: string | null): void {
-    if (effectiveUntil && effectiveUntil <= effectiveFrom) {
-      throw new BadRequestException({
-        code: 'PROPERTY_OWNER_PERIOD_INVALID',
-        message: 'Ownership end date must be after its start date',
       });
     }
   }
@@ -1224,6 +1531,27 @@ export class PropertyOwnerManagementService {
       throw new ConflictException({
         code: 'PROPERTY_OWNER_ARCHIVED',
         message: 'Property owner is archived',
+      });
+    }
+    return result.rows[0];
+  }
+
+  private async lockOwnerForLifecycle(
+    client: PoolClient,
+    ownerId: string,
+    propertyId: string,
+  ): Promise<OwnerProfileRow> {
+    const result = await client.query<OwnerProfileRow>(
+      `SELECT profiles.*, users.user_status
+       FROM property_owner_profiles profiles JOIN users ON users.id = profiles.user_id
+       WHERE profiles.id = $1 AND profiles.property_id = $2
+       ORDER BY profiles.id FOR UPDATE OF profiles, users`,
+      [ownerId, propertyId],
+    );
+    if (result.rows.length !== 1) {
+      throw new NotFoundException({
+        code: 'PROPERTY_OWNER_NOT_FOUND',
+        message: 'Property owner was not found',
       });
     }
     return result.rows[0];

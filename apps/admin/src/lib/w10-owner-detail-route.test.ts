@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { ApiError } from "@granada-kost/api-client";
+import { parseOwnerArchiveReceipt, parseOwnerPermanentDeleteReceipt } from "./admin-property-owner";
+import { adminErrorNotice } from "./error-normalizer";
 import {
   adminRouteRegistry,
   findRouteMetadata,
@@ -100,22 +103,17 @@ test("W10 owner detail aligns the primary back action with the detail cards", ()
   );
 });
 
-test("W10 owner asset assignment uses the canonical calendar date picker", () => {
+test("W10 owner assignment is immediate and permanent without admin-supplied dates", () => {
   const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
   const assignmentStart = workspace.indexOf('<Dialog open={modal === "assign"}');
   const assignmentEnd = workspace.indexOf('<Dialog open={modal === "reset"}', assignmentStart);
   const assignmentDialog = workspace.slice(assignmentStart, assignmentEnd);
 
-  assert.match(workspace, /import\s+\{\s*HeroUiDatePicker\s*\}/);
-  assert.match(assignmentDialog, /id="owner-assignment-effective-from"/);
-  assert.match(assignmentDialog, /label="Mulai berlaku"/);
-  assert.match(assignmentDialog, /id="owner-assignment-effective-until"/);
-  assert.match(assignmentDialog, /label="Berakhir pada \(opsional\)"/);
-  assert.match(assignmentDialog, /minDate=\{effectiveFrom \|\| undefined\}/);
-  assert.doesNotMatch(assignmentDialog, /<Input\s+type="date"/);
+  assert.match(assignmentDialog, /berlaku langsung dan permanen/);
+  assert.doesNotMatch(assignmentDialog, /HeroUiDatePicker|Mulai berlaku|Berakhir pada/);
 });
 
-test("W10 owner release dialog uses the canonical calendar date picker", () => {
+test("W10 owner release is immediate and keeps its audit history", () => {
   const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
   const releaseStart = workspace.indexOf('<Dialog open={modal === "release"}');
   const releaseEnd = workspace.indexOf(
@@ -124,10 +122,9 @@ test("W10 owner release dialog uses the canonical calendar date picker", () => {
   );
   const releaseDialog = workspace.slice(releaseStart, releaseEnd);
 
-  assert.match(releaseDialog, /id="owner-release-effective-until"/);
-  assert.match(releaseDialog, /label="Tanggal berakhir"/);
-  assert.match(releaseDialog, /ariaLabel="Tanggal berakhir ownership"/);
-  assert.doesNotMatch(releaseDialog, /<Input\s+type="date"/);
+  assert.match(releaseDialog, /Lepaskan kepemilikan aset/);
+  assert.match(releaseDialog, /Kepemilikan berhenti hari ini/);
+  assert.doesNotMatch(releaseDialog, /HeroUiDatePicker|Tanggal berakhir/);
 });
 
 test("W10 owner detail supports an explicit, confirmed batch ownership release", () => {
@@ -146,10 +143,9 @@ test("W10 owner detail supports an explicit, confirmed batch ownership release",
   assert.match(assetBlock, /Pilih beberapa/);
   assert.match(assetBlock, /onBulkRelease/);
   assert.match(assetBlock, /type="checkbox"/);
-  assert.match(batchDialog, /Akhiri periode kepemilikan terpilih/);
-  assert.match(batchDialog, /Riwayat kepemilikan tetap tersimpan/);
-  assert.match(batchDialog, /id="owner-batch-release-effective-until"/);
-  assert.match(batchDialog, /label="Tanggal berakhir"/);
+  assert.match(batchDialog, /Lepaskan kepemilikan aset terpilih/);
+  assert.match(batchDialog, /Riwayat tetap/);
+  assert.doesNotMatch(batchDialog, /HeroUiDatePicker|Tanggal berakhir/);
 });
 
 test("W10 owner batch selection uses clear actions, clickable cards, and Indonesian room gender labels", () => {
@@ -165,6 +161,8 @@ test("W10 owner batch selection uses clear actions, clickable cards, and Indones
   assert.match(workspace, /genderPolicy === "male"\) return "Putra"/);
   assert.match(workspace, /genderPolicy === "female"\) return "Putri"/);
   assert.match(workspace, /roomGenderLabel\(asset\.genderPolicy\)/);
+  assert.match(assetBlock, /Filter cepat unit yang dimiliki/);
+  assert.match(assetBlock, /Rumah Kost" : "Apart Kost"\} Unit \{unit\}/);
 });
 
 test("W10 owner mutations invalidate only room-detail caches in the active property", () => {
@@ -172,4 +170,59 @@ test("W10 owner mutations invalidate only room-detail caches in the active prope
 
   assert.match(mutations, /queryKey\[0\] === "roomDetail"/);
   assert.match(mutations, /queryKey\[2\] === propertyId/);
+});
+
+test("W10 owner archive receipt accepts the compact backend response", () => {
+  assert.deepEqual(
+    parseOwnerArchiveReceipt({
+      owner_id: "11111111-1111-4111-8111-111111111111",
+      status: "archived",
+    }),
+    {
+      ownerId: "11111111-1111-4111-8111-111111111111",
+      status: "archived",
+    },
+  );
+  assert.deepEqual(
+    parseOwnerPermanentDeleteReceipt({
+      owner_id: "11111111-1111-4111-8111-111111111111",
+      status: "deleted",
+    }),
+    {
+      ownerId: "11111111-1111-4111-8111-111111111111",
+      status: "deleted",
+    },
+  );
+});
+
+test("W10 owner lifecycle gives active assignments a specific recovery message", () => {
+  const notice = adminErrorNotice(
+    new ApiError({
+      status: 409,
+      code: "PROPERTY_OWNER_ASSIGNMENTS_STILL_ACTIVE",
+      message: "raw server message",
+    }),
+  );
+  assert.equal(notice.title, "Owner masih memiliki aset");
+  assert.match(notice.description, /Lepaskan seluruh kepemilikan/);
+  assert.doesNotMatch(notice.description, /raw server message/);
+});
+
+test("W10 owner detail preflights archive and protects permanent deletion", () => {
+  const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
+  const ownerApi = source("lib/admin-property-owner.ts");
+  const service = source(
+    "../../../backend/api/src/modules/property-owner-management/property-owner-management.service.ts",
+  );
+
+  assert.match(workspace, /Owner belum dapat diarsipkan/);
+  assert.match(workspace, /Kelola dan lepaskan kepemilikan/);
+  assert.match(workspace, /getElementById\("owner-assets"\)/);
+  assert.match(workspace, /Ketik \$\{selectedOwner\?\.fullName/);
+  assert.match(ownerApi, /\.then\(parseOwnerArchiveReceipt\)/);
+  assert.match(ownerApi, /deletePermanently/);
+  assert.match(service, /PROPERTY_OWNER_PERMANENT_DELETE_BLOCKED/);
+  assert.match(service, /owner\.profile_status !== 'archived'/);
+  assert.match(service, /ownershipHistory > 0/);
+  assert.match(service, /financial_record_count > 0/);
 });

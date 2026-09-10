@@ -1,0 +1,165 @@
+/* Hallmark · genre: modern-minimal · tone: calm-operational · anchor: operational-blue · macrostructure: Mobile Owner Workbench · contrast: pass (40–41) · nav: N2 drawer · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57) */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
+
+html,
+body {
+  overflow-x: clip;
+}
+
+:root {
+  --owner-nav-background: oklch(0.24 0.07 250);
+  --owner-nav-panel: oklch(0.3 0.075 250);
+  --owner-nav-active: oklch(0.47 0.16 250);
+  --owner-nav-foreground: oklch(0.98 0.008 250);
+  --owner-nav-muted: oklch(0.82 0.025 250);
+  --owner-nav-rule: oklch(1 0 0 / 13%);
+  --owner-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --owner-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --owner-duration-press: 140ms;
+  --owner-duration-drawer-in: 280ms;
+  --owner-duration-drawer-out: 190ms;
+  --owner-finance-surface: oklch(0.25 0.065 250);
+  --owner-finance-foreground: oklch(0.985 0.005 250);
+  --owner-finance-muted: oklch(0.84 0.025 250);
+  --owner-finance-rule: oklch(1 0 0 / 14%);
+  --owner-finance-success: oklch(0.82 0.16 155);
+  --owner-finance-action: #128c7e;
+  --owner-finance-action-hover: #0f756a;
+  --owner-finance-action-foreground: #ffffff;
+  --owner-collapse-background: oklch(0.56 0.16 155);
+  --owner-collapse-background-hover: oklch(0.49 0.15 155);
+  --owner-collapse-foreground: oklch(0.99 0.01 155);
+}
+
+.owner-nav-surface {
+  background: var(--owner-nav-background);
+  color: var(--owner-nav-foreground);
+}
+
+.owner-nav-drawer[data-state="open"] {
+  transition-duration: var(--owner-duration-drawer-in);
+  transition-timing-function: var(--owner-ease-drawer);
+}
+
+.owner-nav-drawer[data-state="closed"] {
+  transition-duration: var(--owner-duration-drawer-out);
+  transition-timing-function: var(--owner-ease-out);
+}
+
+.owner-nav-link {
+  color: var(--owner-nav-muted);
+  transition: transform var(--owner-duration-press) var(--owner-ease-out);
+  touch-action: manipulation;
+}
+
+.owner-nav-link:hover {
+  background: var(--owner-nav-panel);
+  color: var(--owner-nav-foreground);
+}
+
+.owner-nav-link:active {
+  transform: scale(0.98);
+}
+
+.owner-nav-link[data-active="true"] {
+  background: var(--owner-nav-active);
+  color: var(--owner-nav-foreground);
+}
+
+.owner-nav-surface .owner-dashboard-finance-rule {
+  border-color: var(--owner-nav-rule);
+}
+
+.owner-dashboard-finance {
+  background: var(--owner-finance-surface);
+  color: var(--owner-finance-foreground);
+}
+
+.owner-dashboard-finance-muted {
+  color: var(--owner-finance-muted);
+}
+
+.owner-dashboard-finance-rule {
+  border-color: var(--owner-finance-rule);
+}
+
+.owner-dashboard-finance-success {
+  color: var(--owner-finance-success);
+}
+
+.owner-finance-action {
+  background: var(--owner-finance-action);
+  color: var(--owner-finance-action-foreground);
+  transition:
+    transform var(--owner-duration-press) var(--owner-ease-out),
+    opacity var(--owner-duration-press) var(--owner-ease-out);
+  touch-action: manipulation;
+}
+
+.owner-finance-action:hover {
+  background: var(--owner-finance-action-hover);
+  opacity: 1;
+}
+
+.owner-finance-action:active {
+  transform: scale(0.98);
+}
+
+.owner-payment-progress-value {
+  transform-origin: left center;
+  will-change: transform;
+}
+
+.owner-quick-action {
+  transition:
+    border-color var(--owner-duration-press) var(--owner-ease-out),
+    background-color var(--owner-duration-press) var(--owner-ease-out),
+    transform var(--owner-duration-press) var(--owner-ease-out);
+  touch-action: manipulation;
+}
+
+.owner-quick-action:hover {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+
+.owner-quick-action:active {
+  transform: scale(0.99);
+}
+
+.owner-collapse-action {
+  border-color: var(--owner-collapse-background) !important;
+  background: var(--owner-collapse-background) !important;
+  color: var(--owner-collapse-foreground) !important;
+}
+
+.owner-collapse-action:hover {
+  border-color: var(--owner-collapse-background-hover) !important;
+  background: var(--owner-collapse-background-hover) !important;
+  color: var(--owner-collapse-foreground) !important;
+}
+
+.owner-welcome-card {
+  border-color: oklch(0.83 0.13 155 / 80%);
+  background: oklch(0.965 0.035 155);
+}
+
+.dark .owner-welcome-card {
+  border-color: oklch(0.4 0.1 155 / 75%);
+  background: oklch(0.23 0.055 155 / 72%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owner-nav-drawer,
+  .owner-nav-link,
+  .owner-finance-action,
+  .owner-quick-action,
+  .owner-payment-progress-value {
+    transition-duration: 120ms;
+    transform: none;
+  }
+
+  .owner-portal-root .animate-pulse {
+    animation: none;
+  }
+}

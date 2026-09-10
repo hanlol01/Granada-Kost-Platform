@@ -1,6 +1,7 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Bell } from "lucide-react";
-import type { ReactNode } from "react";
+import "./AppHeader.css";
 
 export function AppHeader({
   title,
@@ -13,9 +14,38 @@ export function AppHeader({
   back?: boolean;
   action?: ReactNode;
 }) {
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerVisible, setHeaderVisible] = useState(true);
+
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = Math.max(window.scrollY, 0);
+      const focusedInHeader = headerRef.current?.contains(document.activeElement) ?? false;
+
+      if (focusedInHeader || currentScrollY < 12) {
+        setHeaderVisible(true);
+      } else if (currentScrollY > lastScrollY + 4) {
+        setHeaderVisible(false);
+      } else if (currentScrollY < lastScrollY - 4) {
+        setHeaderVisible(true);
+      }
+
+      lastScrollY = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-xl">
-      <div className="flex items-center gap-3 px-5 py-4">
+    <header
+      ref={headerRef}
+      data-header-visible={headerVisible}
+      className="resident-app-header sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur-xl"
+    >
+      <div className="flex min-h-14 items-center gap-3 px-4 py-3">
         {back && (
           <Link
             to="/"

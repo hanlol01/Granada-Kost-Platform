@@ -29,7 +29,7 @@ export type OwnerBuildingAssignment = {
   effectiveFrom: string;
   effectiveUntil: string | null;
   assignmentStatus: AssignmentStatus;
-  reason: string;
+  reason: string | null;
 };
 
 export type OwnerRoomAssignment = {
@@ -42,7 +42,7 @@ export type OwnerRoomAssignment = {
   effectiveFrom: string;
   effectiveUntil: string | null;
   assignmentStatus: AssignmentStatus;
-  reason: string;
+  reason: string | null;
 };
 
 export type OwnerHistoryItem = {
@@ -52,13 +52,24 @@ export type OwnerHistoryItem = {
   effectiveFrom: string;
   effectiveUntil: string | null;
   assignmentStatus: AssignmentStatus;
-  reason: string;
+  reason: string | null;
 };
 
 export type PropertyOwnerDetail = PropertyOwner & {
   assets: { rumahKostBuildings: OwnerBuildingAssignment[]; apartKostRooms: OwnerRoomAssignment[] };
   ownershipHistory: OwnerHistoryItem[];
   credentials: { loginEmail: string | null; loginPhone: string | null; resetAvailable: boolean };
+  lifecycle: {
+    canArchive: boolean;
+    archiveBlockers: { rumahKostBuildings: number; apartKostRooms: number };
+    canDeletePermanently: boolean;
+    deletionBlockers: {
+      ownerMustBeArchived: boolean;
+      ownershipHistory: number;
+      financialRecords: number;
+      accountRecords: number;
+    };
+  };
 };
 
 export type OwnerAssetOption = {
@@ -90,6 +101,18 @@ export type OwnerCreateReceipt = {
 export type OwnerPasswordReceipt = {
   ownerId: string;
   temporaryPassword: string | null;
+};
+export type OwnerArchiveReceipt = { ownerId: string; status: "archived" };
+export type OwnerPermanentDeleteReceipt = { ownerId: string; status: "deleted" };
+export type OwnerReportPeriodCloseReceipt = {
+  settlementId: string;
+  ownerId: string;
+  period: string;
+  periodStatus: "closed";
+  grossEarnedRent: string;
+  ownerEntitlement: string;
+  managementFee: string;
+  earningCount: number;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -152,7 +175,7 @@ function parseBuilding(value: unknown): OwnerBuildingAssignment {
       ["active", "scheduled", "ended", "released"],
       "assignment_status",
     ),
-    reason: string(value.reason, "reason"),
+    reason: nullableString(value.reason, "reason"),
   };
 }
 function parseRoom(value: unknown): OwnerRoomAssignment {
@@ -171,7 +194,7 @@ function parseRoom(value: unknown): OwnerRoomAssignment {
       ["active", "scheduled", "ended", "released"],
       "assignment_status",
     ),
-    reason: string(value.reason, "reason"),
+    reason: nullableString(value.reason, "reason"),
   };
 }
 
@@ -193,7 +216,8 @@ export function parsePropertyOwnerDetail(value: unknown): PropertyOwnerDetail {
     !isObject(value) ||
     !isObject(value.active_and_scheduled_assets) ||
     !Array.isArray(value.ownership_history) ||
-    !isObject(value.credentials)
+    !isObject(value.credentials) ||
+    !isObject(value.lifecycle)
   )
     throw new Error("Detail Owner Property tidak valid.");
   const assets = value.active_and_scheduled_assets;
@@ -218,7 +242,7 @@ export function parsePropertyOwnerDetail(value: unknown): PropertyOwnerDetail {
           ["active", "scheduled", "ended", "released"],
           "assignment_status",
         ),
-        reason: string(item.reason, "reason"),
+        reason: nullableString(item.reason, "history.reason"),
       };
     }),
     credentials: {
@@ -226,6 +250,40 @@ export function parsePropertyOwnerDetail(value: unknown): PropertyOwnerDetail {
       loginPhone: nullableString(value.credentials.login_phone, "login_phone"),
       resetAvailable: value.credentials.reset_available === true,
     },
+    lifecycle: (() => {
+      const lifecycle = value.lifecycle;
+      if (!isObject(lifecycle.archive_blockers) || !isObject(lifecycle.deletion_blockers))
+        throw new Error("Status lifecycle Owner Property tidak valid.");
+      return {
+        canArchive: lifecycle.can_archive === true,
+        archiveBlockers: {
+          rumahKostBuildings: number(
+            lifecycle.archive_blockers.rumah_kost_buildings,
+            "archive_blockers.rumah_kost_buildings",
+          ),
+          apartKostRooms: number(
+            lifecycle.archive_blockers.apart_kost_rooms,
+            "archive_blockers.apart_kost_rooms",
+          ),
+        },
+        canDeletePermanently: lifecycle.can_delete_permanently === true,
+        deletionBlockers: {
+          ownerMustBeArchived: lifecycle.deletion_blockers.owner_must_be_archived === true,
+          ownershipHistory: number(
+            lifecycle.deletion_blockers.ownership_history,
+            "deletion_blockers.ownership_history",
+          ),
+          financialRecords: number(
+            lifecycle.deletion_blockers.financial_records,
+            "deletion_blockers.financial_records",
+          ),
+          accountRecords: number(
+            lifecycle.deletion_blockers.account_records,
+            "deletion_blockers.account_records",
+          ),
+        },
+      };
+    })(),
   };
 }
 export function parseOwnerAssetOptions(value: unknown): PropertyOwnerAssetOptions {
@@ -276,6 +334,36 @@ function parseOwnerPasswordReceipt(value: unknown): OwnerPasswordReceipt {
   };
 }
 
+export function parseOwnerArchiveReceipt(value: unknown): OwnerArchiveReceipt {
+  if (!isObject(value)) throw new Error("Receipt arsip Owner Property tidak valid.");
+  return {
+    ownerId: string(value.owner_id, "owner_id"),
+    status: enumValue(value.status, ["archived"], "status"),
+  };
+}
+
+export function parseOwnerPermanentDeleteReceipt(value: unknown): OwnerPermanentDeleteReceipt {
+  if (!isObject(value)) throw new Error("Receipt hapus Owner Property tidak valid.");
+  return {
+    ownerId: string(value.owner_id, "owner_id"),
+    status: enumValue(value.status, ["deleted"], "status"),
+  };
+}
+
+function parseOwnerReportPeriodCloseReceipt(value: unknown): OwnerReportPeriodCloseReceipt {
+  if (!isObject(value)) throw new Error("Receipt penutupan laporan Owner tidak valid.");
+  return {
+    settlementId: string(value.settlement_id, "settlement_id"),
+    ownerId: string(value.owner_id, "owner_id"),
+    period: string(value.period, "period"),
+    periodStatus: enumValue(value.period_status, ["closed"], "period_status"),
+    grossEarnedRent: string(value.gross_earned_rent, "gross_earned_rent"),
+    ownerEntitlement: string(value.owner_entitlement, "owner_entitlement"),
+    managementFee: string(value.management_fee, "management_fee"),
+    earningCount: number(value.earning_count, "earning_count"),
+  };
+}
+
 const withScope = (
   propertyId: string,
   query: Record<string, string | number | undefined> = {},
@@ -318,13 +406,26 @@ export const propertyOwnerApi = {
         query: { property_id: propertyId },
         idempotencyKey,
       })
-      .then(parseOwner),
+      .then(parseOwnerArchiveReceipt),
+  deletePermanently: (ownerId: string, propertyId: string, idempotencyKey: string) =>
+    adminUxV2Requester
+      .delete(`/admin/property-owners/${encodeURIComponent(ownerId)}/permanent`, {
+        query: { property_id: propertyId },
+        idempotencyKey,
+      })
+      .then(parseOwnerPermanentDeleteReceipt),
   resetPassword: (ownerId: string, body: Record<string, unknown>, idempotencyKey: string) =>
     adminUxV2Requester
       .post(`/admin/property-owners/${encodeURIComponent(ownerId)}/reset-password`, body, {
         idempotencyKey,
       })
       .then(parseOwnerPasswordReceipt),
+  closeReportPeriod: (ownerId: string, body: Record<string, unknown>, idempotencyKey: string) =>
+    adminUxV2Requester
+      .post(`/admin/property-owners/${encodeURIComponent(ownerId)}/report-periods/close`, body, {
+        idempotencyKey,
+      })
+      .then(parseOwnerReportPeriodCloseReceipt),
   assignBuildings: (ownerId: string, body: Record<string, unknown>, idempotencyKey: string) =>
     adminUxV2Requester.post(
       `/admin/property-owners/${encodeURIComponent(ownerId)}/building-assignments`,

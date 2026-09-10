@@ -160,6 +160,15 @@ export function usePropertyOwnerMutations() {
         )(),
       onError: (error) => toastMutationError(error, "Owner belum dapat diarsipkan"),
     }),
+    deletePermanently: useMutation({
+      mutationFn: (ownerId: string) =>
+        guarded(
+          `delete-permanently:${ownerId}`,
+          (propertyId, key) => propertyOwnerApi.deletePermanently(ownerId, propertyId, key),
+          "Akun Owner Property dihapus permanen",
+        )(),
+      onError: (error) => toastMutationError(error, "Owner belum dapat dihapus permanen"),
+    }),
     resetPassword: useMutation({
       mutationFn: (input: { ownerId: string; newPassword: string }) =>
         guarded(
@@ -175,25 +184,36 @@ export function usePropertyOwnerMutations() {
         )(),
       onError: (error) => toastMutationError(error, "Gagal mereset password owner"),
     }),
-    assignBuildings: useMutation({
-      mutationFn: (input: {
-        ownerId: string;
-        buildingId: string;
-        effectiveFrom: string;
-        effectiveUntil?: string;
-        reason: string;
-      }) =>
+    closeReportPeriod: useMutation({
+      mutationFn: (input: { ownerId: string; period: string; notes?: string }) =>
         guarded(
-          `assign-building:${input.ownerId}:${input.buildingId}:${input.effectiveFrom}:${input.effectiveUntil ?? ""}:${input.reason.trim()}`,
+          `close-report-period:${input.ownerId}:${input.period}:${input.notes?.trim() ?? ""}`,
+          (propertyId, key) =>
+            propertyOwnerApi.closeReportPeriod(
+              input.ownerId,
+              {
+                property_id: propertyId,
+                period: input.period,
+                notes: input.notes?.trim() || undefined,
+              },
+              key,
+            ),
+          `Laporan Owner periode ${input.period} telah ditutup`,
+          input.ownerId,
+        )(),
+      onError: (error) => toastMutationError(error, "Laporan Owner belum dapat ditutup"),
+    }),
+    assignBuildings: useMutation({
+      mutationFn: (input: { ownerId: string; buildingId: string; reason?: string }) =>
+        guarded(
+          `assign-building:${input.ownerId}:${input.buildingId}:${input.reason?.trim() ?? ""}`,
           (propertyId, key) =>
             propertyOwnerApi.assignBuildings(
               input.ownerId,
               {
                 property_id: propertyId,
                 building_id: input.buildingId,
-                effective_from: input.effectiveFrom,
-                effective_until: input.effectiveUntil || undefined,
-                reason: input.reason,
+                reason: input.reason?.trim() || undefined,
               },
               key,
             ),
@@ -203,24 +223,16 @@ export function usePropertyOwnerMutations() {
       onError: (error) => toastMutationError(error, "Kepemilikan Rumah Kost belum tersimpan"),
     }),
     assignRooms: useMutation({
-      mutationFn: (input: {
-        ownerId: string;
-        roomIds: string[];
-        effectiveFrom: string;
-        effectiveUntil?: string;
-        reason: string;
-      }) =>
+      mutationFn: (input: { ownerId: string; roomIds: string[]; reason?: string }) =>
         guarded(
-          `assign-room:${input.ownerId}:${[...input.roomIds].sort().join(",")}:${input.effectiveFrom}:${input.effectiveUntil ?? ""}:${input.reason.trim()}`,
+          `assign-room:${input.ownerId}:${[...input.roomIds].sort().join(",")}:${input.reason?.trim() ?? ""}`,
           (propertyId, key) =>
             propertyOwnerApi.assignRooms(
               input.ownerId,
               {
                 property_id: propertyId,
                 room_ids: input.roomIds,
-                effective_from: input.effectiveFrom,
-                effective_until: input.effectiveUntil || undefined,
-                reason: input.reason,
+                reason: input.reason?.trim() || undefined,
               },
               key,
             ),
@@ -234,11 +246,10 @@ export function usePropertyOwnerMutations() {
         ownerId: string;
         assignmentId: string;
         kind: "building" | "room";
-        effectiveUntil: string;
-        reason: string;
+        reason?: string;
       }) =>
         guarded(
-          `release:${input.kind}:${input.ownerId}:${input.assignmentId}:${input.effectiveUntil}:${input.reason.trim()}`,
+          `release:${input.kind}:${input.ownerId}:${input.assignmentId}:${input.reason?.trim() ?? ""}`,
           (propertyId, key) =>
             input.kind === "building"
               ? propertyOwnerApi.releaseBuilding(
@@ -246,8 +257,7 @@ export function usePropertyOwnerMutations() {
                   input.assignmentId,
                   {
                     property_id: propertyId,
-                    effective_until: input.effectiveUntil,
-                    reason: input.reason,
+                    reason: input.reason?.trim() || undefined,
                   },
                   key,
                 )
@@ -256,12 +266,11 @@ export function usePropertyOwnerMutations() {
                   input.assignmentId,
                   {
                     property_id: propertyId,
-                    effective_until: input.effectiveUntil,
-                    reason: input.reason,
+                    reason: input.reason?.trim() || undefined,
                   },
                   key,
                 ),
-          "Periode kepemilikan diakhiri",
+          "Kepemilikan aset berhasil dilepaskan",
           input.ownerId,
         )(),
       onError: (error) => toastMutationError(error, "Pelepasan kepemilikan belum tersimpan"),
@@ -271,23 +280,21 @@ export function usePropertyOwnerMutations() {
         ownerId: string;
         assignmentIds: string[];
         kind: "building" | "room";
-        effectiveUntil: string;
-        reason: string;
+        reason?: string;
       }) =>
         guarded(
-          `release-batch:${input.kind}:${input.ownerId}:${[...input.assignmentIds].sort().join(",")}:${input.effectiveUntil}:${input.reason.trim()}`,
+          `release-batch:${input.kind}:${input.ownerId}:${[...input.assignmentIds].sort().join(",")}:${input.reason?.trim() ?? ""}`,
           (propertyId, key) => {
             const body = {
               property_id: propertyId,
               assignment_ids: input.assignmentIds,
-              effective_until: input.effectiveUntil,
-              reason: input.reason,
+              reason: input.reason?.trim() || undefined,
             };
             return input.kind === "building"
               ? propertyOwnerApi.releaseBuildingBatch(input.ownerId, body, key)
               : propertyOwnerApi.releaseRoomBatch(input.ownerId, body, key);
           },
-          `${input.assignmentIds.length} periode kepemilikan diakhiri`,
+          `${input.assignmentIds.length} kepemilikan aset berhasil dilepaskan`,
           input.ownerId,
         )(),
       onError: (error) => toastMutationError(error, "Pelepasan kepemilikan belum tersimpan"),

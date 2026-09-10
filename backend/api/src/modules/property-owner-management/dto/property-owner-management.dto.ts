@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -20,6 +20,11 @@ import {
 } from 'class-validator';
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const trimOptional = ({ value }: TransformFnParams): unknown => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+};
 
 export class ListPropertyOwnersQueryDto {
   @IsUUID()
@@ -133,19 +138,12 @@ export class AssignOwnerBuildingDto {
   @IsUUID()
   building_id!: string;
 
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_from!: string;
-
   @IsOptional()
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_until?: string;
-
+  @Transform(trimOptional)
   @IsString()
   @MinLength(3)
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 }
 
 export class AssignOwnerRoomsDto {
@@ -158,33 +156,24 @@ export class AssignOwnerRoomsDto {
   @IsUUID('4', { each: true })
   room_ids!: string[];
 
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_from!: string;
-
   @IsOptional()
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_until?: string;
-
+  @Transform(trimOptional)
   @IsString()
   @MinLength(3)
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 }
 
 export class ReleaseOwnerAssignmentDto {
   @IsUUID()
   property_id!: string;
 
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_until!: string;
-
+  @IsOptional()
+  @Transform(trimOptional)
   @IsString()
   @MinLength(3)
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 }
 
 export class ReleaseOwnerAssignmentsDto extends ReleaseOwnerAssignmentDto {
@@ -194,4 +183,17 @@ export class ReleaseOwnerAssignmentsDto extends ReleaseOwnerAssignmentDto {
   @ArrayUnique()
   @IsUUID('4', { each: true })
   assignment_ids!: string[];
+}
+
+export class CloseOwnerReportPeriodDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  period!: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  notes?: string;
 }

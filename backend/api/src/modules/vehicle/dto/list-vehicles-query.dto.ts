@@ -14,4 +14,8 @@ export class ListVehiclesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['motorcycle', 'car', 'bicycle', 'electric_scooter', 'other'])
   vehicle_type?: VehicleType;
+
+  @IsOptional()
+  @IsUUID()
+  resident_id?: string;
 }

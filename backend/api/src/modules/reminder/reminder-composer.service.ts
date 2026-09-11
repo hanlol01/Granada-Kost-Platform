@@ -10,20 +10,38 @@ import { DatabaseService } from '../../infrastructure/database/database.service'
 import { UserAccessContext } from '../iam/types/iam.types';
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import { PropertyService } from '../property/property.service';
+import {
+  formatReminderAmount,
+  formatReminderDate,
+  formatReminderRange,
+  formatReminderRoom,
+  propertyReminderName,
+  recipientDisplayName,
+  recipientSalutation,
+  type ReminderRecipientKind,
+} from './reminder-message-formatters';
 
-const PROTECTED_VARIABLES = [
-  '{{resident_name}}',
-  '{{room_number}}',
+const REQUIRED_VARIABLES = [
+  '{{salutation}}',
+  '{{room_description}}',
   '{{property_name}}',
   '{{invoice_periods}}',
   '{{invoice_total_outstanding}}',
-  '{{lease_start_date}}',
-  '{{lease_end_date}}',
   '{{payment_due_date}}',
   '{{days_remaining}}',
+  '{{lease_start_date}}',
+  '{{lease_end_date}}',
+  '{{closing}}',
+] as const;
+
+const LEGACY_VARIABLES = [
+  '{{resident_name}}',
+  '{{room_number}}',
   '{{admin_whatsapp}}',
   '{{invoice_download_links}}',
 ] as const;
+
+const ALLOWED_VARIABLES = [...REQUIRED_VARIABLES, ...LEGACY_VARIABLES] as const;
 
 type InvoiceRow = {
   id: string;
@@ -33,8 +51,13 @@ type InvoiceRow = {
   invoice_code: string;
   resident_name: string;
   room_number: string;
+  room_category: string | null;
+  room_unit_code: string | null;
+  building_name: string | null;
   property_name: string;
   resident_phone: string | null;
+  parent_name: string | null;
+  parent_phone: string | null;
   period_start: string;
   period_end: string;
   due_date: string;
@@ -42,7 +65,7 @@ type InvoiceRow = {
   lease_end: string | null;
   outstanding_amount: string;
   now_date: string;
-  admin_whatsapp: string | null;
+  now_hour: number;
 };
 
 type ReminderTemplate = {
@@ -128,7 +151,7 @@ export class ReminderComposerService {
           version.rows[0].version,
           input.title_template.trim(),
           input.body_template.trim(),
-          PROTECTED_VARIABLES,
+          REQUIRED_VARIABLES,
           user.id,
         ],
       );
@@ -173,7 +196,7 @@ export class ReminderComposerService {
         code: 'REMINDER_INVOICE_NOT_FOUND',
         message: 'Invoice tidak ditemukan dalam properti ini',
       });
-    return this.preview(user, propertyId, invoice);
+    return this.preview(user, propertyId, invoice, 'resident');
   }
 
   async residentPreview(
@@ -181,6 +204,7 @@ export class ReminderComposerService {
     propertyId: string,
     residentId: string,
     invoiceIds: string[],
+    recipientKind: ReminderRecipientKind = 'resident',
   ) {
     await this.properties.get(user, propertyId);
     const invoices = await this.loadInvoices(propertyId, invoiceIds);
@@ -192,7 +216,7 @@ export class ReminderComposerService {
         code: 'REMINDER_INVOICE_SELECTION_INVALID',
         message: 'Pilih tagihan aktif milik penghuni yang sama',
       });
-    return this.preview(user, propertyId, invoices);
+    return this.preview(user, propertyId, invoices, recipientKind);
   }
 
   async whatsappHandoff(
@@ -200,13 +224,17 @@ export class ReminderComposerService {
     propertyId: string,
     residentId: string,
     invoiceIds: string[],
+    recipientKind: ReminderRecipientKind = 'resident',
   ) {
-    const preview = await this.residentPreview(user, propertyId, residentId, invoiceIds);
+    const preview = await this.residentPreview(user, propertyId, residentId, invoiceIds, recipientKind);
     const phone = preview.recipient.phone?.replace(/\D/g, '');
     if (!phone)
       throw new BadRequestException({
         code: 'REMINDER_RECIPIENT_PHONE_MISSING',
-        message: 'Nomor WhatsApp penghuni belum tersedia',
+        message:
+          recipientKind === 'parent'
+            ? 'Nomor WhatsApp orang tua belum tersedia'
+            : 'Nomor WhatsApp penghuni belum tersedia',
       });
     return {
       channel: 'whatsapp_manual',
@@ -251,65 +279,87 @@ export class ReminderComposerService {
     return document;
   }
 
-  private async preview(user: UserAccessContext, propertyId: string, invoices: InvoiceRow[]) {
+  private async preview(
+    user: UserAccessContext,
+    propertyId: string,
+    invoices: InvoiceRow[],
+    recipientKind: ReminderRecipientKind,
+  ) {
     this.assertOutstanding(invoices);
-    const template = await this.activeTemplate(user, propertyId);
-    const links = await Promise.all(
-      invoices.map((invoice) => this.issueShareLink(propertyId, invoice.id, user.id)),
-    );
+    const activeTemplate = await this.activeTemplate(user, propertyId);
+    // Older saved templates contained an internal share URL and no recipient-aware greeting.
+    // Keep their immutable history intact, but never use them for a new message.
+    const template = REQUIRED_VARIABLES.every((variable) =>
+      `${activeTemplate.title_template}\n${activeTemplate.body_template}`.includes(variable),
+    )
+      ? activeTemplate
+      : this.defaultTemplate();
     const first = invoices[0];
     const total = invoices.reduce((sum, invoice) => sum + Number(invoice.outstanding_amount), 0);
+    const recipient = {
+      kind: recipientKind,
+      display_name: recipientDisplayName(recipientKind, first.resident_name, first.parent_name),
+      room_number: formatReminderRoom({
+        category: first.room_category,
+        roomNumber: first.room_number,
+        unitCode: first.room_unit_code,
+        buildingName: first.building_name,
+      }),
+      phone: recipientKind === 'parent' ? first.parent_phone : first.resident_phone,
+    };
+    const firstDueDate = invoices.map((invoice) => invoice.due_date).sort()[0];
     const variables: Record<string, string> = {
-      '{{resident_name}}': first.resident_name,
-      '{{room_number}}': first.room_number,
-      '{{property_name}}': first.property_name,
+      '{{salutation}}': recipientSalutation(recipientKind, first.resident_name, first.now_hour),
+      '{{resident_name}}': recipient.display_name,
+      '{{room_description}}': recipient.room_number,
+      '{{room_number}}': recipient.room_number,
+      '{{property_name}}': propertyReminderName(first.property_name),
       '{{invoice_periods}}': invoices
         .map((invoice) => `${invoice.period_start}–${invoice.period_end}`)
         .join(', '),
-      '{{invoice_total_outstanding}}': new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        maximumFractionDigits: 0,
-      }).format(total),
-      '{{lease_start_date}}': first.lease_start,
-      '{{lease_end_date}}': first.lease_end ?? 'Tidak ditentukan',
-      '{{payment_due_date}}': invoices.map((invoice) => invoice.due_date).sort()[0],
+      '{{invoice_total_outstanding}}': '',
+      '{{lease_start_date}}': '',
+      '{{lease_end_date}}': '',
+      '{{payment_due_date}}': '',
+      '{{days_remaining}}': '',
+      '{{closing}}': '',
+      '{{admin_whatsapp}}': '',
+      '{{invoice_download_links}}': '',
+    };
+    const renderedVariables = {
+      ...variables,
+      '{{invoice_periods}}': invoices
+        .map((invoice) => formatReminderRange(invoice.period_start, invoice.period_end))
+        .join(', '),
+      '{{invoice_total_outstanding}}': formatReminderAmount(total),
+      '{{lease_start_date}}': formatReminderDate(first.lease_start),
+      '{{lease_end_date}}': formatReminderDate(first.lease_end),
+      '{{payment_due_date}}': formatReminderDate(firstDueDate),
       '{{days_remaining}}': String(
-        Math.max(
-          0,
-          Math.ceil(
-            (Date.parse(invoices.map((invoice) => invoice.due_date).sort()[0]) -
-              Date.parse(first.now_date)) /
-              86400000,
-          ),
-        ),
+        Math.max(0, Math.ceil((Date.parse(firstDueDate) - Date.parse(first.now_date)) / 86400000)),
       ),
-      '{{admin_whatsapp}}': first.admin_whatsapp ?? 'Belum ditentukan',
-      '{{invoice_download_links}}': links
-        .map((link, index) => `Tagihan ${invoices[index].invoice_code}: ${link}`)
-        .join('\n'),
+      '{{closing}}':
+        recipientKind === 'parent'
+          ? 'Demikian informasi yang dapat kami sampaikan. Terima kasih atas kepercayaan Bapak/Ibu dalam memilih hunian bersama KOSTATION.'
+          : 'Demikian informasi yang dapat kami sampaikan. Terima kasih telah mempercayakan pilihan hunian Anda kepada KOSTATION.',
+      '{{admin_whatsapp}}': '',
+      '{{invoice_download_links}}': '',
     };
     return {
       template: { key: template.template_key, version: template.version },
-      recipient: {
-        resident_id: first.resident_id,
-        display_name: first.resident_name,
-        room_number: first.room_number,
-        phone: first.resident_phone,
-      },
+      recipient: { resident_id: first.resident_id, ...recipient },
       invoice_ids: invoices.map((invoice) => invoice.id),
-      invoices: invoices.map((invoice, index) => ({
+      invoices: invoices.map((invoice) => ({
         id: invoice.id,
         code: invoice.invoice_code,
         period: `${invoice.period_start}–${invoice.period_end}`,
         due_date: invoice.due_date,
         outstanding_amount: Number(invoice.outstanding_amount),
-        share_url: links[index],
       })),
       total_outstanding_amount: total,
       rendered: {
-        title: this.render(template.title_template, variables),
-        body: this.render(template.body_template, variables),
+        title: this.render(template.title_template, renderedVariables),
+        body: this.render(this.withoutDeprecatedLines(template.body_template), renderedVariables),
       },
       channels: { whatsapp: 'manual_handoff', email: 'disabled' },
     };
@@ -318,11 +368,15 @@ export class ReminderComposerService {
   private async loadInvoices(propertyId: string, invoiceIds: string[]) {
     const result = await this.database.client.query<InvoiceRow>(
       `SELECT i.id,i.resident_id,i.lease_id,i.invoice_status,i.invoice_code,i.snapshot_resident_name AS resident_name,i.snapshot_room_number AS room_number,
-              p.name AS property_name,r.phone AS resident_phone,i.snapshot_period_start_date::text AS period_start,i.snapshot_period_end_date::text AS period_end,
+              room.category AS room_category,room.unit_code AS room_unit_code,building.building_name,
+              p.name AS property_name,r.phone AS resident_phone,r.parent_name,r.parent_phone,i.snapshot_period_start_date::text AS period_start,i.snapshot_period_end_date::text AS period_end,
               i.due_date::text,l.start_date::text AS lease_start,l.end_date::text AS lease_end,
               GREATEST(i.total_amount-COALESCE(i.credit_amount,0)-COALESCE(a.allocated_amount,0),0)::text AS outstanding_amount,
-              (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS now_date,p.phone AS admin_whatsapp
+              (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS now_date,
+              EXTRACT(HOUR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int AS now_hour
        FROM invoices i JOIN properties p ON p.id=i.property_id JOIN residents r ON r.id=i.resident_id JOIN leases l ON l.id=i.lease_id
+       LEFT JOIN rooms room ON room.id=i.room_id AND room.property_id=i.property_id
+       LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
        LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS allocated_amount FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id AND pa.allocation_status='active') a ON TRUE
        WHERE i.property_id=$1 AND i.id=ANY($2::uuid[])`,
       [propertyId, invoiceIds],
@@ -397,14 +451,14 @@ export class ReminderComposerService {
     if (
       variables.some(
         (variable) =>
-          !PROTECTED_VARIABLES.includes(variable as (typeof PROTECTED_VARIABLES)[number]),
+          !ALLOWED_VARIABLES.includes(variable as (typeof ALLOWED_VARIABLES)[number]),
       )
     )
       throw new BadRequestException({
         code: 'REMINDER_TEMPLATE_VARIABLE_INVALID',
         message: 'Template memakai variabel yang tidak dikenal',
       });
-    if (PROTECTED_VARIABLES.some((variable) => !variables.includes(variable)))
+    if (REQUIRED_VARIABLES.some((variable) => !variables.includes(variable)))
       throw new BadRequestException({
         code: 'REMINDER_TEMPLATE_VARIABLE_REQUIRED',
         message: 'Variabel terlindungi tidak boleh dihapus atau diganti',
@@ -416,14 +470,23 @@ export class ReminderComposerService {
       template,
     );
   }
+  private withoutDeprecatedLines(template: string) {
+    return template
+      .split('\n')
+      .filter(
+        (line) =>
+          !line.includes('{{admin_whatsapp}}') && !line.includes('{{invoice_download_links}}'),
+      )
+      .join('\n');
+  }
   private defaultTemplate() {
     return {
       template_key: 'invoice_reminder',
       version: 1,
       title_template: 'Pengingat tagihan {{property_name}}',
       body_template:
-        'Halo {{resident_name}},\nKamar: {{room_number}}\nPeriode: {{invoice_periods}}\nSisa tagihan: {{invoice_total_outstanding}}\nJatuh tempo: {{payment_due_date}} ({{days_remaining}} hari)\nMasa sewa: {{lease_start_date}}–{{lease_end_date}}\nAdmin: {{admin_whatsapp}}\n{{invoice_download_links}}',
-      protected_variables: PROTECTED_VARIABLES,
+        '{{salutation}}\n\nKamar: {{room_description}}\nPeriode: {{invoice_periods}}\nSisa tagihan: {{invoice_total_outstanding}}\nJatuh tempo: {{payment_due_date}} ({{days_remaining}} hari lagi)\nMasa sewa: {{lease_start_date}} s.d. {{lease_end_date}}\n\nMohon melakukan pembayaran sebelum atau pada tanggal jatuh tempo. Jika pembayaran sudah dilakukan, silakan abaikan pesan ini.\n\n{{closing}}',
+      protected_variables: REQUIRED_VARIABLES,
     };
   }
 }

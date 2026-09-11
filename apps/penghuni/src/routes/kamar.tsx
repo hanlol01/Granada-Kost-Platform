@@ -47,6 +47,14 @@ type KamarSearch = {
   paymentSchedule?: "annual" | "two_month_installments";
 };
 
+const formatEffectiveDate = (value: string): string =>
+  new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(`${value}T00:00:00+07:00`));
+
 export const Route = createFileRoute("/kamar")({
   validateSearch: (raw: Record<string, unknown>): KamarSearch => ({
     gender: raw.gender === "putra" || raw.gender === "putri" ? raw.gender : undefined,
@@ -532,7 +540,7 @@ function HunianOffer({
           </div>
           {item.priceFromMonthly !== null ? (
             <div className="shrink-0 sm:text-right">
-              <p className="text-xs text-muted-foreground">Tarif bulanan</p>
+              <p className="text-xs text-muted-foreground">Mulai dari tarif 3–5 bulan</p>
               <p className="text-xl font-bold text-primary">{formatIDR(item.priceFromMonthly)}</p>
               {item.priceFromYearly !== null ? (
                 <p className="text-xs text-muted-foreground">
@@ -541,6 +549,24 @@ function HunianOffer({
               ) : null}
             </div>
           ) : null}
+        </div>
+        <div className="mt-4 grid gap-2 rounded-xl border border-border/70 bg-muted/25 p-3 text-sm sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted-foreground">3–5 bulan</p>
+            <p className="font-semibold">{formatIDR(item.shortStayMonthlyPrice)}/bulan</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">6–11 bulan</p>
+            <p className="font-semibold">{formatIDR(item.mediumStayMonthlyPrice)}/bulan</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">12+ bulan</p>
+            <p className="font-semibold">{formatIDR(item.longStayMonthlyPrice)}/bulan</p>
+          </div>
+          <p className="text-xs text-muted-foreground sm:col-span-3">
+            Tarif berlaku sejak {formatEffectiveDate(item.commercialEffectiveDate)} · kontrak 12
+            bulan {formatIDR(item.priceFromYearly ?? item.longStayMonthlyPrice * 12)}
+          </p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {item.facilitiesPreview.slice(0, 5).map((facility) => (

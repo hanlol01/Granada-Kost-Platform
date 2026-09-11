@@ -298,7 +298,10 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
             value={`${jakartaDate(billing.lease.start_date)} – ${jakartaDate(billing.lease.end_date)}`}
           />
           <SummaryRow label="Nilai sewa" value={idr(billing.lease.contract_rent)} />
-          <SummaryRow label="Tarif bulanan" value={idr(billing.lease.monthly_rate)} />
+          <SummaryRow label="Tarif bulanan kontrak" value={idr(billing.lease.monthly_rate)} />
+          <p className="rounded-xl bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+            Tarif ini adalah snapshot sesuai durasi dan tanggal efektif saat kontrak dibuat.
+          </p>
           <SummaryRow label="Sisa masa kontrak" value={`${billing.lease.remaining_days} hari`} />
         </CardContent>
       </Card>

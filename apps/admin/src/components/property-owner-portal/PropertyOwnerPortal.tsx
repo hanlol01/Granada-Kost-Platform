@@ -1,12 +1,15 @@
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import gsap from "gsap";
+import "@fontsource/noto-sans/400.css";
+import "@fontsource/noto-sans/700.css";
 import {
   ArrowLeft,
   ArrowRight,
+  BedDouble,
   Building2,
   ChevronDown,
   ChevronUp,
@@ -94,6 +97,7 @@ const statusLabel: Record<string, string> = {
   historical: "Historis",
   empty: "Belum ada cakupan",
   current: "Berjalan",
+  unpaid: "Belum dibayar",
   partially_paid: "Sebagian dibayar",
   overdue: "Terlambat",
   settled: "Lunas",
@@ -175,14 +179,6 @@ const paymentPercentage = (verified: string, invoiced: string): number => {
   }
 };
 
-const sumMoney = <T,>(items: T[], select: (item: T) => string): string => {
-  try {
-    return items.reduce((total, item) => total + BigInt(select(item)), 0n).toString();
-  } catch {
-    return "0";
-  }
-};
-
 const normalizeOwnerSearch = (value: string): string =>
   value
     .trim()
@@ -194,7 +190,7 @@ type DashboardRoomFilter =
   | "overdue"
   | "h7"
   | "partially_paid"
-  | "current"
+  | "unpaid"
   | "settled"
   | "not_available";
 
@@ -263,7 +259,7 @@ function Metric({
   actionLabel?: string;
 }) {
   return (
-    <Card className="border-border/80 bg-card shadow-sm">
+    <Card className="owner-metric-card border-border/80 bg-card shadow-sm">
       <CardContent className="flex h-full flex-col gap-4 p-5">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
           <Icon className="h-5 w-5" aria-hidden="true" />
@@ -303,8 +299,8 @@ function PortalSection({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-5">
-      <div>
+    <section className="owner-portal-section space-y-5">
+      <div className="owner-section-heading">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">{eyebrow}</p>
         <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">{title}</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
@@ -442,20 +438,23 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
     ? Math.round((portal.occupancy.occupiedCount / portal.scope.roomCount) * 100)
     : 0;
   const collectionTotals = useMemo(() => {
-    const items = collection.data?.items ?? [];
-    const invoiced = sumMoney(items, (item) => item.billing.rentInvoiced);
-    const verified = sumMoney(items, (item) => item.billing.rentVerified);
+    const summary = collection.data?.summary;
+    const contractValue = summary?.contractValueTotal ?? "0";
+    const received = summary?.rentReceivedTotal ?? "0";
     return {
-      invoiced,
-      verified,
-      percentage: paymentPercentage(verified, invoiced),
+      contractValue,
+      received,
+      outstanding: summary?.contractOutstandingTotal ?? "0",
+      projectedFee: summary?.projectedManagementFeeTotal ?? "0",
+      estimatedOwnerShare: summary?.estimatedOwnerEntitlementTotal ?? "0",
+      percentage: paymentPercentage(received, contractValue),
     };
   }, [collection.data]);
   const allPriorityRooms = useMemo(() => {
     const priority: Record<OwnerCollectionProgress["items"][number]["billing"]["state"], number> = {
       overdue: 0,
+      unpaid: 2,
       partially_paid: 2,
-      current: 3,
       settled: 4,
       not_available: 5,
     };
@@ -546,11 +545,11 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
     () => {
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduceMotion) {
-        gsap.set("[data-payment-progress]", { clearProps: "transform" });
+        gsap.set("[data-contract-progress], [data-payment-progress]", { clearProps: "transform" });
         return;
       }
       gsap.fromTo(
-        "[data-payment-progress]",
+        "[data-contract-progress], [data-payment-progress]",
         { scaleX: 0 },
         { scaleX: 1, duration: 0.4, ease: "power2.out" },
       );
@@ -560,29 +559,140 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
 
   return (
     <div ref={dashboardRef} className="space-y-6 overflow-x-clip">
-      <section
-        data-owner-reveal
-        className="owner-welcome-card flex flex-col gap-4 rounded-2xl border p-5 shadow-sm sm:flex-row sm:items-end sm:justify-between sm:p-6"
-      >
+      <section data-owner-reveal className="owner-welcome-card rounded-2xl border p-5 sm:p-6">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">Selamat datang,</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+          <p className="text-sm font-semibold text-[var(--owner-ledger-green)]">
+            Ringkasan aset Anda
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.025em] text-foreground">
             {portal.owner?.displayName ?? "Pemilik Properti"}
           </h2>
-          <p className="mt-2 max-w-xl text-base leading-7 text-muted-foreground">
-            Lihat hak pendapatan, status kamar, dan pembayaran penghuni dalam satu ringkasan.
+          <p className="mt-2 max-w-2xl text-base leading-7 text-muted-foreground">
+            Pantau nilai seluruh kontrak aktif, pembayaran penghuni, dan perkiraan hak Anda tanpa
+            harus menghitung setiap kamar satu per satu.
           </p>
         </div>
-        <label className="grid gap-2 text-sm font-semibold text-foreground sm:w-56">
-          Periode keuangan
-          <MonthYearPicker value={period} onChange={setPeriod} label="Periode keuangan dashboard" />
-        </label>
       </section>
 
-      <DashboardFinanceSnapshot ownerId={ownerId} period={period} />
+      <section
+        data-owner-reveal
+        className="owner-contract-ledger overflow-hidden rounded-2xl"
+        aria-labelledby="owner-contract-progress-title"
+      >
+        {collection.isLoading ? (
+          <div className="p-6" aria-label="Memuat progres kontrak">
+            <div className="h-5 w-40 animate-pulse rounded bg-white/15" />
+            <div className="mt-4 h-11 w-64 animate-pulse rounded bg-white/15" />
+            <div className="mt-7 h-3 animate-pulse rounded-full bg-white/10" />
+          </div>
+        ) : collection.error ? (
+          <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="owner-contract-progress-title" className="text-xl font-semibold">
+                Progres kontrak belum dapat dimuat
+              </h2>
+              <p className="owner-contract-ledger-muted mt-1 text-sm">
+                Muat ulang untuk mengambil ringkasan kontrak aktif Anda.
+              </p>
+            </div>
+            <Button
+              className="owner-ledger-action min-h-11"
+              onClick={() => void collection.refetch()}
+            >
+              Coba lagi
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="owner-contract-ledger-rule flex flex-col gap-3 border-b px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+              <div>
+                <p className="text-sm font-semibold text-[var(--owner-ledger-mint)]">
+                  Progres pembayaran seluruh sewa aktif
+                </p>
+                <h2
+                  id="owner-contract-progress-title"
+                  className="mt-1 text-xl font-semibold tracking-[-0.02em]"
+                >
+                  Target kontrak {formatOwnerMoney(collectionTotals.contractValue)}
+                </h2>
+              </div>
+              <span className="owner-ledger-badge">
+                {collection.data?.summary.activeLeaseCount ?? 0} kontrak aktif
+              </span>
+            </div>
+            <div className="p-5 sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="owner-contract-ledger-muted text-sm">Pembayaran yang sudah masuk</p>
+                  <p className="mt-1 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
+                    {formatOwnerMoney(collectionTotals.received)}
+                  </p>
+                </div>
+                <div className="lg:text-right">
+                  <p className="text-3xl font-semibold tracking-[-0.03em]">
+                    {collectionTotals.contractValue === "0"
+                      ? "—"
+                      : `${collectionTotals.percentage}%`}
+                  </p>
+                  <p className="owner-contract-ledger-muted mt-1 text-sm">
+                    dari nilai kontrak aktif
+                  </p>
+                </div>
+              </div>
+              <div className="owner-ledger-progress mt-5" aria-hidden="true">
+                <div
+                  data-contract-progress
+                  className="owner-payment-progress-value h-full rounded-full"
+                  style={{ width: `${collectionTotals.percentage}%` }}
+                />
+              </div>
+              <div className="owner-contract-ledger-rule mt-6 grid gap-5 border-y py-5 min-[480px]:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <p className="owner-contract-ledger-muted text-xs">Sisa pembayaran penghuni</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {formatOwnerMoney(collectionTotals.outstanding)}
+                  </p>
+                </div>
+                <div>
+                  <p className="owner-contract-ledger-muted text-xs">Perkiraan management fee</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {formatOwnerMoney(collectionTotals.projectedFee)}
+                  </p>
+                </div>
+                <div>
+                  <p className="owner-contract-ledger-muted text-xs">Perkiraan hak Owner</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {formatOwnerMoney(collectionTotals.estimatedOwnerShare)}
+                  </p>
+                </div>
+                <div>
+                  <p className="owner-contract-ledger-muted text-xs">Status kontrak</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {collection.data?.summary.settledLeaseCount ?? 0} lunas ·{" "}
+                    {collection.data?.summary.partialLeaseCount ?? 0} berjalan
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2" aria-label="Komposisi paket sewa">
+                {[
+                  ["3–5 bulan", collection.data?.summary.packageCounts.shortStay ?? 0],
+                  ["6–11 bulan", collection.data?.summary.packageCounts.mediumStay ?? 0],
+                  ["12+ bulan", collection.data?.summary.packageCounts.longStay ?? 0],
+                ].map(([label, count]) => (
+                  <span key={label} className="owner-ledger-chip">
+                    {label} · {count}
+                    <BedDouble className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="sr-only"> kamar</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2" aria-label="Ringkasan operasional">
-        <Card data-owner-reveal className="border-border/80 shadow-sm">
+        <Card data-owner-reveal className="owner-package-card border-border/80 shadow-sm">
           <CardContent className="p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -622,57 +732,37 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
           </CardContent>
         </Card>
 
-        <Card data-owner-reveal className="border-border/80 shadow-sm">
+        <Card data-owner-reveal className="owner-package-card border-border/80 shadow-sm">
           <CardContent className="p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Pembayaran penghuni saat ini
-                </p>
+                <p className="text-sm font-semibold text-foreground">Komposisi penyewaan aktif</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Sewa terverifikasi dari tagihan aktif
+                  Paket sewa yang sedang berjalan
                 </p>
               </div>
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                 <ReceiptText className="h-5 w-5" aria-hidden="true" />
               </div>
             </div>
-            {collection.isLoading ? (
-              <div
-                className="mt-5 h-16 animate-pulse rounded-xl bg-muted"
-                aria-label="Memuat pembayaran"
-              />
-            ) : collection.error ? (
-              <div className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-foreground">
-                Data pembayaran belum dapat dimuat.
-              </div>
-            ) : (
-              <>
-                <div className="mt-5 flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-3xl font-semibold tracking-tight text-foreground">
-                      {collectionTotals.invoiced === "0" ? "—" : `${collectionTotals.percentage}%`}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {collectionTotals.invoiced === "0" ? "belum ada tagihan" : "sudah terbayar"}
-                    </p>
-                  </div>
-                  <p className="text-right text-sm leading-6 text-muted-foreground">
-                    <strong className="block text-foreground">
-                      {formatOwnerMoney(collectionTotals.verified)}
-                    </strong>
-                    dari {formatOwnerMoney(collectionTotals.invoiced)}
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                ["3–5 bln", collection.data?.summary.packageCounts.shortStay ?? 0],
+                ["6–11 bln", collection.data?.summary.packageCounts.mediumStay ?? 0],
+                ["12+ bln", collection.data?.summary.packageCounts.longStay ?? 0],
+              ].map(([label, value]) => (
+                <div key={label} className="owner-package-stat">
+                  <p className="flex items-center justify-center gap-1.5 text-2xl font-semibold tracking-tight text-foreground">
+                    <UserRound
+                      className="h-5 w-5 text-emerald-700 dark:text-emerald-300"
+                      aria-hidden="true"
+                    />
+                    {value}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{label}</p>
                 </div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                  <div
-                    data-payment-progress
-                    className="owner-payment-progress-value h-full rounded-full bg-emerald-600"
-                    style={{ width: `${collectionTotals.percentage}%` }}
-                  />
-                </div>
-              </>
-            )}
+              ))}
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -816,7 +906,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                   <SelectItem value="overdue">Terlambat</SelectItem>
                   <SelectItem value="h7">Jatuh tempo H-7</SelectItem>
                   <SelectItem value="partially_paid">Sebagian dibayar</SelectItem>
-                  <SelectItem value="current">Berjalan</SelectItem>
+                  <SelectItem value="unpaid">Belum dibayar</SelectItem>
                   <SelectItem value="settled">Lunas</SelectItem>
                   <SelectItem value="not_available">Belum tersedia</SelectItem>
                 </SelectContent>
@@ -851,7 +941,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                 {dashboardRooms.map((item) => {
                   const percentage = paymentPercentage(
                     item.billing.rentVerified,
-                    item.billing.rentInvoiced,
+                    item.lease.contractValue,
                   );
                   return (
                     <article
@@ -876,6 +966,23 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                         <p className="mt-1 truncate text-sm text-muted-foreground">
                           {item.room.buildingName} · {item.resident.displayName}
                         </p>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                          {item.lease.termMonths} bulan · {formatOwnerMoney(item.lease.monthlyRate)}
+                          /bulan
+                          <span aria-hidden="true"> · </span>
+                          {localDate(item.lease.startDate)}–{localDate(item.lease.endDate)}
+                        </p>
+                        {item.operations.openComplaintCount > 0 ||
+                        item.operations.activeWorkOrderCount > 0 ? (
+                          <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                            {item.operations.openComplaintCount} komplain terbuka ·{" "}
+                            {item.operations.activeWorkOrderCount} penanganan aktif
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                            Tidak ada komplain atau penanganan aktif
+                          </p>
+                        )}
                       </div>
                       <div>
                         <div className="flex items-center justify-between gap-3 text-sm">
@@ -893,11 +1000,25 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                           />
                         </div>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          Sisa {formatOwnerMoney(item.billing.rentOutstanding)}
+                          Sisa kontrak {formatOwnerMoney(item.billing.contractOutstanding)}
                           {item.billing.nextDueDate
                             ? ` · jatuh tempo ${localDate(item.billing.nextDueDate)}`
                             : ""}
                         </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="block text-muted-foreground">Nilai kontrak</span>
+                            <strong className="mt-0.5 block text-foreground">
+                              {formatOwnerMoney(item.lease.contractValue)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-muted-foreground">Perkiraan hak Owner</span>
+                            <strong className="mt-0.5 block text-foreground">
+                              {formatOwnerMoney(item.commercial.estimatedOwnerEntitlement)}
+                            </strong>
+                          </div>
+                        </div>
                       </div>
                       <Button asChild className="min-h-12 w-full lg:w-auto">
                         <Link
@@ -911,7 +1032,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                   );
                 })}
               </div>
-              <div className="flex flex-col gap-3 border-t border-border/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="owner-pagination flex flex-col gap-3 border-t border-border/70 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted-foreground">
                   Menampilkan {dashboardRoomStart}–{dashboardRoomEnd} dari{" "}
                   {filteredPriorityRooms.length} kamar
@@ -975,6 +1096,28 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
         </CardContent>
       </Card>
 
+      <section data-owner-reveal className="space-y-4" aria-labelledby="owner-monthly-finance">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2
+              id="owner-monthly-finance"
+              className="text-lg font-semibold tracking-tight text-foreground"
+            >
+              Pendapatan tercatat per bulan
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Laporan akuntansi berdasarkan hari layanan. Bagian ini terpisah dari target pembayaran
+              seluruh kontrak di atas.
+            </p>
+          </div>
+          <label className="grid gap-2 text-sm font-semibold text-foreground sm:w-56">
+            Periode laporan
+            <MonthYearPicker value={period} onChange={setPeriod} label="Periode laporan keuangan" />
+          </label>
+        </div>
+        <DashboardFinanceSnapshot ownerId={ownerId} period={period} />
+      </section>
+
       <section data-owner-reveal aria-labelledby="owner-quick-actions">
         <h2 id="owner-quick-actions" className="text-base font-semibold text-foreground">
           Akses cepat
@@ -1026,7 +1169,7 @@ const assetGroupLabel: Record<OwnerKostType, string> = {
 
 function AssetCard({ asset }: { asset: OwnerPortal["assets"][number] }) {
   return (
-    <Card className="border-border/80 shadow-sm transition-[border-color,box-shadow] hover:border-primary/35 hover:shadow-md">
+    <Card className="owner-surface-card border-border/80 shadow-sm transition-[border-color,box-shadow] hover:border-primary/35 hover:shadow-md">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 pb-3">
         <div className="min-w-0">
           <CardTitle className="text-base">{asset.roomCode}</CardTitle>
@@ -1075,7 +1218,7 @@ function AssetCategory({
     <Collapsible
       open={open}
       onOpenChange={onOpenChange}
-      className="rounded-2xl border border-border/80 bg-card shadow-sm"
+      className="owner-surface-card rounded-2xl border border-border/80 bg-card shadow-sm"
     >
       <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
@@ -1160,7 +1303,7 @@ function Assets({ portal }: { portal: OwnerPortal }) {
     >
       {portal.assets.length ? (
         <div className="space-y-5">
-          <Card className="border-border/80 shadow-sm">
+          <Card className="owner-filter-surface border-border/80 shadow-sm">
             <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(11rem,0.45fr)_minmax(11rem,0.45fr)_auto] md:items-end">
               <label className="grid gap-2 text-sm font-semibold text-foreground">
                 Cari aset
@@ -1278,7 +1421,7 @@ function Assets({ portal }: { portal: OwnerPortal }) {
             </Card>
           )}
           {assetsQuery.data && assetsQuery.data.total > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
+            <div className="owner-pagination flex flex-wrap items-center justify-between gap-3 text-sm">
               <span className="text-muted-foreground">
                 Menampilkan {offset + 1}–{Math.min(offset + pageSize, assetsQuery.data.total)} dari{" "}
                 {assetsQuery.data.total} aset
@@ -1331,7 +1474,7 @@ function PeriodToolbar({
   onExport: (format: "pdf" | "xlsx") => void;
 }) {
   return (
-    <Card className="border-border/80 shadow-sm">
+    <Card className="owner-filter-surface border-border/80 shadow-sm">
       <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between">
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           Periode laporan
@@ -1398,7 +1541,7 @@ function FinanceRow({ label, value }: { label: string; value: string }) {
 
 function Rows({ title, rows }: { title: string; rows: Array<Record<string, string>> }) {
   return (
-    <Card className="border-border/80 shadow-sm">
+    <Card className="owner-data-surface border-border/80 shadow-sm">
       <CardHeader className="border-b border-border/70 pb-4">
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
@@ -1490,7 +1633,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
 
   if (collection.items.length === 0) {
     return (
-      <Card className="border-border/80 shadow-sm">
+      <Card className="owner-filter-surface border-border/80 shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
           <CardTitle className="text-base">Rincian pembayaran per kamar</CardTitle>
         </CardHeader>
@@ -1508,8 +1651,8 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
             Rincian pembayaran per kamar
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Periksa tagihan terbit, pembayaran yang telah diverifikasi, sisa tagihan, jatuh tempo,
-            H-7, dan checkpoint untuk setiap kamar aktif. Bukti transfer mentah tidak ditampilkan.
+            Periksa nilai kontrak, uang masuk, sisa pembayaran, perkiraan biaya pengelolaan, hak
+            Owner, jadwal hunian, serta tindak lanjut operasional setiap kamar.
           </p>
         </div>
         <Badge variant="outline" className="w-fit border-primary/30 bg-primary/5 text-primary">
@@ -1518,27 +1661,27 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
-          label="Belum dibayar"
-          value={formatOwnerMoney(collection.summary.rentOutstanding)}
-          description="Akumulasi tagihan aktif"
+          label="Target kontrak"
+          value={formatOwnerMoney(collection.summary.contractValueTotal)}
+          description="Seluruh sewa aktif"
           icon={ReceiptText}
         />
         <Metric
-          label="Terlambat"
-          value={`${collection.summary.overdueLeaseCount} kamar`}
-          description="Memerlukan tindak lanjut"
-          icon={CircleAlert}
+          label="Uang masuk"
+          value={formatOwnerMoney(collection.summary.rentReceivedTotal)}
+          description="Pembayaran terverifikasi"
+          icon={CircleDollarSign}
         />
         <Metric
-          label="Jatuh tempo H-7"
-          value={`${collection.summary.h7LeaseCount} kamar`}
-          description="Tujuh hari sebelum tenggat"
-          icon={ClipboardList}
+          label="Sisa pembayaran"
+          value={formatOwnerMoney(collection.summary.contractOutstandingTotal)}
+          description="Dari nilai seluruh kontrak"
+          icon={ReceiptText}
         />
         <Metric
-          label="Checkpoint"
-          value={`${collection.summary.checkpointAttentionCount} perlu perhatian`}
-          description="Sesuai ketentuan pelunasan"
+          label="Perkiraan hak Owner"
+          value={formatOwnerMoney(collection.summary.estimatedOwnerEntitlementTotal)}
+          description="Setelah management fee"
           icon={ShieldCheck}
         />
       </div>
@@ -1573,7 +1716,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 <SelectItem value="overdue">Terlambat</SelectItem>
                 <SelectItem value="h7">Jatuh tempo H-7</SelectItem>
                 <SelectItem value="partially_paid">Sebagian dibayar</SelectItem>
-                <SelectItem value="current">Berjalan</SelectItem>
+                <SelectItem value="unpaid">Belum dibayar</SelectItem>
                 <SelectItem value="settled">Lunas</SelectItem>
                 <SelectItem value="not_available">Belum tersedia</SelectItem>
               </SelectContent>
@@ -1636,10 +1779,10 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 key={item.room.code}
                 className={
                   alert
-                    ? "border-destructive/40 shadow-sm"
+                    ? "owner-critical-surface border-destructive/40 shadow-sm"
                     : h7
-                      ? "border-amber-500/45 shadow-sm"
-                      : "border-border/80 shadow-sm"
+                      ? "owner-attention-surface border-amber-500/45 shadow-sm"
+                      : "owner-data-surface border-border/80 shadow-sm"
                 }
               >
                 <CardHeader className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1664,51 +1807,49 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 </CardHeader>
                 <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
                   <FinanceRow
-                    label="Tagihan terbit"
-                    value={formatOwnerMoney(item.billing.rentInvoiced)}
+                    label="Nilai kontrak"
+                    value={formatOwnerMoney(item.lease.contractValue)}
                   />
                   <FinanceRow
-                    label="Pembayaran terverifikasi"
+                    label="Durasi dan tarif"
+                    value={`${item.lease.termMonths} bulan · ${formatOwnerMoney(item.lease.monthlyRate)}/bulan`}
+                  />
+                  <FinanceRow
+                    label="Uang masuk"
                     value={formatOwnerMoney(item.billing.rentVerified)}
                   />
                   <FinanceRow
-                    label="Sisa tagihan"
-                    value={formatOwnerMoney(item.billing.rentOutstanding)}
+                    label="Sisa pembayaran kontrak"
+                    value={formatOwnerMoney(item.billing.contractOutstanding)}
                   />
                   <FinanceRow
-                    label="Jatuh tempo berikutnya"
-                    value={localDate(item.billing.nextDueDate)}
+                    label="Perkiraan management fee"
+                    value={formatOwnerMoney(item.commercial.projectedManagementFee)}
                   />
                   <FinanceRow
-                    label="Angsuran"
-                    value={`${item.billing.installmentPaid}/${item.billing.installmentTotal} dibayar`}
+                    label="Perkiraan hak Owner"
+                    value={formatOwnerMoney(item.commercial.estimatedOwnerEntitlement)}
+                  />
+                  <FinanceRow label="Check-in" value={localDate(item.lease.startDate)} />
+                  <FinanceRow label="Check-out" value={localDate(item.lease.endDate)} />
+                  <FinanceRow
+                    label="Target pelunasan"
+                    value={localDate(item.billing.nextDueDate ?? item.settlement.effectiveDueAt)}
                   />
                   <FinanceRow
-                    label="Saldo security deposit"
-                    value={formatOwnerMoney(item.securityDeposit.balance)}
-                  />
-                  <FinanceRow
-                    label="Checkpoint"
-                    value={labelOf(item.settlement.checkpoint.status)}
-                  />
-                  <FinanceRow
-                    label="Minimum checkpoint"
-                    value={formatOwnerMoney(item.settlement.checkpoint.requiredAmount)}
-                  />
-                  <FinanceRow
-                    label="Kredit checkpoint"
-                    value={formatOwnerMoney(item.settlement.checkpoint.receivedAmount)}
-                  />
-                  <FinanceRow
-                    label="Kekurangan checkpoint"
-                    value={formatOwnerMoney(item.settlement.checkpoint.remainingAmount)}
-                  />
-                  <FinanceRow
-                    label="Tenggat checkpoint berjalan"
+                    label="Komplain"
                     value={
-                      item.settlement.checkpoint.dueAt
-                        ? localDate(item.settlement.checkpoint.dueAt)
-                        : "Tidak tercatat"
+                      item.operations.openComplaintCount > 0
+                        ? `${item.operations.openComplaintCount} terbuka · ${item.operations.latestComplaintTitle ?? "Perlu ditinjau"}`
+                        : "Tidak ada komplain aktif"
+                    }
+                  />
+                  <FinanceRow
+                    label="Penanganan"
+                    value={
+                      item.operations.activeWorkOrderCount > 0
+                        ? `${item.operations.activeWorkOrderCount} aktif · ${item.operations.latestWorkOrderTitle ?? "Sedang ditangani"}`
+                        : "Tidak ada penanganan aktif"
                     }
                   />
                   <Link
@@ -1738,7 +1879,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
         </Card>
       )}
       {filteredItems.length ? (
-        <div className="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="owner-pagination flex flex-col gap-3 border-t border-border/70 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Menampilkan {start}–{end} dari {filteredItems.length} kamar
           </p>
@@ -1780,7 +1921,7 @@ function CollectionPaymentOverview({
 }) {
   return (
     <section className="space-y-4" aria-labelledby="owner-collection-heading">
-      <div className="rounded-xl border border-primary/25 bg-primary/[0.045] px-5 py-4 shadow-sm">
+      <div className="owner-info-surface rounded-xl border border-primary/25 px-5 py-4 shadow-sm">
         <p className="text-xs font-semibold tracking-[0.14em] text-primary">
           PEMBAYARAN PENGHUNI AKTIF
         </p>
@@ -1894,7 +2035,7 @@ function Finance({
           />
         </div>
       </section>
-      <Card className="border-primary/25 bg-primary/[0.045] shadow-sm">
+      <Card className="owner-info-surface border-primary/25 shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-base">Status pencocokan periode</CardTitle>
@@ -1918,7 +2059,7 @@ function Finance({
           />
         </CardContent>
       </Card>
-      <Card className="border-border/80 shadow-sm">
+      <Card className="owner-filter-surface border-border/80 shadow-sm">
         <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(11rem,0.45fr)_minmax(11rem,0.45fr)_auto] md:items-end">
           <label className="grid gap-2 text-sm font-semibold">
             Cari kamar
@@ -2009,7 +2150,7 @@ function Reports({
 }) {
   return (
     <div className="space-y-6">
-      <Card className="border-primary/20 bg-primary/[0.045] shadow-sm">
+      <Card className="owner-info-surface border-primary/20 shadow-sm">
         <CardContent className="flex gap-4 p-5">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
             <ShieldCheck className="h-5 w-5" />
@@ -2131,7 +2272,7 @@ function OperationalFilters({
   onReset: () => void;
 }) {
   return (
-    <Card className="border-border/90 bg-card shadow-sm">
+    <Card className="owner-filter-surface border-border/90 bg-card shadow-sm">
       <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(12rem,0.7fr)_minmax(12rem,0.7fr)_auto] lg:items-end">
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           Cari kode, kamar, atau bangunan
@@ -2351,7 +2492,7 @@ function Issues({ report }: { report: OwnerReport }) {
           { value: "verified", label: "Maintenance terverifikasi" },
         ]}
       />
-      <Card className="border-border/90 shadow-sm">
+      <Card className="owner-data-surface border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
           <CardTitle className="text-base">Komplain ({complaints.length})</CardTitle>
         </CardHeader>
@@ -2376,7 +2517,7 @@ function Issues({ report }: { report: OwnerReport }) {
           )}
         </CardContent>
       </Card>
-      <Card className="border-border/90 shadow-sm">
+      <Card className="owner-data-surface border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
           <CardTitle className="text-base">Maintenance ({maintenance.length})</CardTitle>
         </CardHeader>
@@ -2460,7 +2601,7 @@ function Notifications({ report }: { report: OwnerReport }) {
           { value: "archived", label: "Diarsipkan" },
         ]}
       />
-      <Card className="border-border/90 shadow-sm">
+      <Card className="owner-data-surface border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/70 pb-4">
           <CardTitle className="text-base">Notifikasi ({notifications.length})</CardTitle>
         </CardHeader>
@@ -2573,7 +2714,7 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
       title="Profil akun"
       description="Informasi akses ditampilkan tanpa mengekspos kredensial atau data privat yang tidak diperlukan."
     >
-      <Card className="border-border/80 shadow-sm">
+      <Card className="owner-data-surface border-border/80 shadow-sm">
         <CardContent className="grid gap-6 p-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
           <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
             <UserRound className="h-7 w-7" />
@@ -2602,7 +2743,7 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-border/80 shadow-sm">
+        <Card className="owner-data-surface border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="text-base">Cakupan kepemilikan</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -2633,7 +2774,7 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 shadow-sm">
+        <Card className="owner-data-surface border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="text-base">Bantuan dan keamanan</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -2715,7 +2856,7 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
           icon={Wrench}
         />
       </section>
-      <Card className="border-border/80 shadow-sm">
+      <Card className="owner-filter-surface border-border/80 shadow-sm">
         <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.45fr)_minmax(10rem,0.45fr)_minmax(10rem,0.45fr)_auto] md:items-end">
           <label className="grid gap-2 text-sm font-semibold">
             Cari hunian
@@ -2821,7 +2962,7 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
         <div className="grid gap-4 md:grid-cols-2">
           {occupancy.data?.items.length ? (
             occupancy.data.items.map((item) => (
-              <Card key={item.roomCode} className="border-border/80 shadow-sm">
+              <Card key={item.roomCode} className="owner-data-surface border-border/80 shadow-sm">
                 <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
                   <div>
                     <CardTitle className="text-base">{item.roomCode}</CardTitle>
@@ -2907,7 +3048,7 @@ function OccupancyFoundation({ portal }: { portal: OwnerPortal }) {
         </div>
       )}
       {occupancy.data && occupancy.data.total > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 text-sm">
+        <div className="owner-pagination flex flex-wrap items-center justify-between gap-3 text-sm">
           <span className="text-muted-foreground">
             Menampilkan {offset + 1}–{Math.min(offset + pageSize, occupancy.data.total)} dari{" "}
             {occupancy.data.total} kamar

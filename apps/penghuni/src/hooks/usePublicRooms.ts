@@ -24,6 +24,10 @@ export type PublicRoomGroup = {
   availableCount: number;
   priceFromMonthly: number | null;
   priceFromYearly: number | null;
+  shortStayMonthlyPrice?: number;
+  mediumStayMonthlyPrice?: number;
+  longStayMonthlyPrice?: number;
+  commercialEffectiveDate?: string;
   publicTitle: string;
   ctaLabel: string;
 };

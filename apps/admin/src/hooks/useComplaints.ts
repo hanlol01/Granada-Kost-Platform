@@ -19,6 +19,10 @@ export type StoredComplaintStatus =
   | "reopened"
   | "closed"
   | "cancelled";
+export type ComplaintStatusGroup = "waiting" | "in_progress" | "resolved" | "closed";
+export type ComplaintSlaFilter = "breached" | "at_risk" | "on_track";
+export type ComplaintAssignmentFilter = "assigned" | "unassigned";
+export type ComplaintListSort = "newest" | "oldest" | "priority" | "sla";
 
 export type ComplaintRecord = {
   id: string;
@@ -62,8 +66,21 @@ export type ComplaintCategoryRecord = {
 
 export type UseComplaintsFilters = {
   status?: StoredComplaintStatus;
+  statusGroup?: ComplaintStatusGroup;
+  priority?: ComplaintPriority;
+  categoryId?: string;
+  sla?: ComplaintSlaFilter;
+  assignment?: ComplaintAssignmentFilter;
+  buildingId?: string;
+  roomId?: string;
+  from?: string;
+  to?: string;
+  sort?: ComplaintListSort;
+  q?: string;
   limit?: number;
   offset?: number;
+  residentId?: string;
+  enabled?: boolean;
 };
 
 export function useComplaints(
@@ -77,11 +94,23 @@ export function useComplaints(
         query: {
           property_id: currentPropertyId ?? undefined,
           status: filters.status,
+          status_group: filters.statusGroup,
+          priority: filters.priority,
+          category_id: filters.categoryId,
+          sla: filters.sla,
+          assignment: filters.assignment,
+          building_id: filters.buildingId,
+          room_id: filters.roomId,
+          from: filters.from,
+          to: filters.to,
+          sort: filters.sort,
+          q: filters.q?.trim() || undefined,
+          resident_id: filters.residentId,
           limit: filters.limit ?? 50,
           offset: filters.offset,
         },
       }),
-    enabled: Boolean(currentPropertyId),
+    enabled: Boolean(currentPropertyId) && filters.enabled !== false,
   });
 }
 

@@ -58,6 +58,10 @@ type PublicCategoryGroup = {
   }>;
   priceFromMonthly: number;
   priceFromYearly: number;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
+  commercialEffectiveDate: string;
   minimumDpPercent: number;
   securityDepositMonths: number;
   paymentSchedules: string[];
@@ -176,6 +180,10 @@ export class PublicHunianCatalogService {
       shortDescription: projection.terms.pricing_explanation,
       priceFromMonthly: Number.isFinite(group.priceFromMonthly) ? group.priceFromMonthly : null,
       priceFromYearly: Number.isFinite(group.priceFromYearly) ? group.priceFromYearly : null,
+      shortStayMonthlyPrice: group.shortStayMonthlyPrice,
+      mediumStayMonthlyPrice: group.mediumStayMonthlyPrice,
+      longStayMonthlyPrice: group.longStayMonthlyPrice,
+      commercialEffectiveDate: group.commercialEffectiveDate,
       availabilityCount: group.availabilityCount,
       facilitiesPreview: projection.facilities.map((item) => String(item.label)).slice(0, 5),
       galleryPreview: gallery.length ? [gallery[0]] : [],
@@ -300,6 +308,17 @@ export class PublicHunianCatalogService {
         first.priceFromMonthly < 0 ||
         !Number.isSafeInteger(first.priceFromYearly) ||
         first.priceFromYearly < 0 ||
+        !Number.isSafeInteger(first.shortStayMonthlyPrice) ||
+        first.shortStayMonthlyPrice < 0 ||
+        !Number.isSafeInteger(first.mediumStayMonthlyPrice) ||
+        first.mediumStayMonthlyPrice < 0 ||
+        !Number.isSafeInteger(first.longStayMonthlyPrice) ||
+        first.longStayMonthlyPrice < 0 ||
+        first.priceFromMonthly !== first.shortStayMonthlyPrice ||
+        first.priceFromYearly !== first.longStayMonthlyPrice * 12 ||
+        first.shortStayMonthlyPrice < first.mediumStayMonthlyPrice ||
+        first.mediumStayMonthlyPrice < first.longStayMonthlyPrice ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(first.commercialEffectiveDate) ||
         first.minimumDpPercent !== 25 ||
         first.securityDepositMonths !== 1 ||
         schedules !== canonicalSchedules
@@ -317,6 +336,10 @@ export class PublicHunianCatalogService {
           record.propertyId !== first.propertyId ||
           record.priceFromMonthly !== first.priceFromMonthly ||
           record.priceFromYearly !== first.priceFromYearly ||
+          record.shortStayMonthlyPrice !== first.shortStayMonthlyPrice ||
+          record.mediumStayMonthlyPrice !== first.mediumStayMonthlyPrice ||
+          record.longStayMonthlyPrice !== first.longStayMonthlyPrice ||
+          record.commercialEffectiveDate !== first.commercialEffectiveDate ||
           record.minimumDpPercent !== first.minimumDpPercent ||
           record.securityDepositMonths !== first.securityDepositMonths ||
           JSON.stringify([...record.paymentSchedules].sort()) !== schedules ||
@@ -341,6 +364,10 @@ export class PublicHunianCatalogService {
           .sort((left, right) => left.gender.localeCompare(right.gender)),
         priceFromMonthly: first.priceFromMonthly,
         priceFromYearly: first.priceFromYearly,
+        shortStayMonthlyPrice: first.shortStayMonthlyPrice,
+        mediumStayMonthlyPrice: first.mediumStayMonthlyPrice,
+        longStayMonthlyPrice: first.longStayMonthlyPrice,
+        commercialEffectiveDate: first.commercialEffectiveDate,
         minimumDpPercent: first.minimumDpPercent,
         securityDepositMonths: first.securityDepositMonths,
         paymentSchedules: [...first.paymentSchedules].sort(),

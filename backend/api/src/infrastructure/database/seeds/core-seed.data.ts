@@ -493,6 +493,7 @@ export const ROLE_PERMISSION_GRANTS: Array<readonly [string, string]> = [
     'cctv.view',
     'notification.manage',
     'report.view',
+    'report.export',
     'property_owner.manage',
     'property_owner.settlement.manage',
   ].map((permissionCode) => ['admin', permissionCode] as const),

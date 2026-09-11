@@ -127,6 +127,9 @@ function DetailContent({
   const operations = residentDetail?.operations;
   const lease = residentDetail?.lease ?? asset.lease;
   const resident = residentDetail?.resident ?? asset.resident;
+  const managementFee = Number(asset.commercial.managementFeeAmount);
+  const ownerNet = (monthlyRate: string) =>
+    formatOwnerMoney(String(Math.max(0, Number(monthlyRate) - managementFee)));
   const activity = [
     lease ? `Sewa ${label(lease.status).toLowerCase()}` : null,
     resident ? `Hunian dimulai ${date(resident.occupancyStartDate)}` : null,
@@ -184,27 +187,45 @@ function DetailContent({
           </CardHeader>
           <CardContent className="grid gap-5 pt-6 sm:grid-cols-2 xl:grid-cols-1">
             <DataItem
-              label="Harga bulanan"
-              value={formatOwnerMoney(asset.commercial.monthlyPrice)}
+              label="Tarif 3–5 bulan"
+              value={formatOwnerMoney(asset.commercial.shortStayMonthlyPrice)}
             />
             <DataItem
-              label="Nilai kontrak tahunan"
+              label="Tarif 6–11 bulan"
+              value={formatOwnerMoney(asset.commercial.mediumStayMonthlyPrice)}
+            />
+            <DataItem
+              label="Tarif 12+ bulan"
+              value={formatOwnerMoney(asset.commercial.longStayMonthlyPrice)}
+            />
+            <DataItem
+              label="Nilai kontrak 12 bulan"
               value={formatOwnerMoney(asset.commercial.annualContractValue)}
             />
-            <DataItem label="DP rekomendasi" value="Rekomendasi 25% dari nilai kontrak tahunan" />
             <DataItem
-              label="Deposit keamanan"
-              value={
-                collectionItem
-                  ? formatOwnerMoney(collectionItem.securityDeposit.required)
-                  : billing
-                    ? formatOwnerMoney(billing.securityDepositRequired)
-                    : "Belum ditentukan"
-              }
+              label="Management fee / bulan"
+              value={formatOwnerMoney(asset.commercial.managementFeeAmount)}
             />
+            <DataItem
+              label="Hak owner 3–5 bulan"
+              value={ownerNet(asset.commercial.shortStayMonthlyPrice)}
+            />
+            <DataItem
+              label="Hak owner 6–11 bulan"
+              value={ownerNet(asset.commercial.mediumStayMonthlyPrice)}
+            />
+            <DataItem
+              label="Hak owner 12+ bulan"
+              value={ownerNet(asset.commercial.longStayMonthlyPrice)}
+            />
+            <DataItem label="Tanggal efektif tarif" value={date(asset.commercial.effectiveDate)} />
             <p className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground sm:col-span-2 xl:col-span-1">
-              Nilai komersial berasal dari konfigurasi kategori dan hanya dapat diubah melalui
-              Admin.
+              Tarif mengikuti durasi kontrak. Hak owner adalah tarif dikurangi management fee;
+              penyewaan lama tetap menggunakan snapshot saat kontrak dibuat. Fee berlaku sejak{" "}
+              {asset.commercial.managementFeeEffectiveDate
+                ? date(asset.commercial.managementFeeEffectiveDate)
+                : "tanggal yang belum ditentukan"}
+              .
             </p>
           </CardContent>
         </Card>

@@ -30,6 +30,7 @@ import { ComplaintRepository } from '../repositories/complaint.repository';
 import {
   AuditActorContext,
   ComplaintFileRecord,
+  ComplaintListFilters,
   ComplaintRecord,
   ComplaintSummaryRecord,
   CreateComplaintFileInput,
@@ -93,22 +94,15 @@ export class ComplaintService {
     private readonly workOrderHistories: WorkOrderHistoryRepository,
   ) {}
 
-  list(
-    propertyId: string,
-    status?: StoredComplaintStatus,
-    limit?: number,
-    offset?: number,
-  ): Promise<ComplaintRecord[]> {
-    return this.complaints.list(propertyId, status, limit, offset);
+  list(propertyId: string, filters: ComplaintListFilters = {}): Promise<ComplaintRecord[]> {
+    return this.complaints.list(propertyId, filters);
   }
 
   listForProperties(
     propertyIds: string[],
-    status?: StoredComplaintStatus,
-    limit?: number,
-    offset?: number,
+    filters: ComplaintListFilters = {},
   ): Promise<ComplaintRecord[]> {
-    return this.complaints.listForProperties(propertyIds, status, limit, offset);
+    return this.complaints.listForProperties(propertyIds, filters);
   }
 
   listForResident(residentId: string, limit?: number, offset?: number): Promise<ComplaintRecord[]> {

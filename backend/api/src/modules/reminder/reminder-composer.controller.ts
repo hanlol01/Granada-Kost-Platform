@@ -24,6 +24,7 @@ import {
   CurrentMonthReminderPreviewDto,
   ReminderHandoffDto,
   CreateReminderAttemptDto,
+  CreateLeaseReminderAttemptDto,
   ReminderAttemptQueryDto,
   ReminderPropertyQueryDto,
   ReminderWorkspaceQueryDto,
@@ -75,14 +76,26 @@ export class ReminderComposerController {
     @Param('residentId', ParseUUIDPipe) residentId: string,
     @Body() dto: ResidentReminderPreviewDto,
   ) {
-    return this.reminders.residentPreview(user, dto.property_id, residentId, dto.invoice_ids);
+    return this.reminders.residentPreview(
+      user,
+      dto.property_id,
+      residentId,
+      dto.invoice_ids,
+      dto.recipient_kind,
+    );
   }
   @Post('residents/:residentId/whatsapp') whatsapp(
     @CurrentUser() user: UserAccessContext,
     @Param('residentId', ParseUUIDPipe) residentId: string,
     @Body() dto: ReminderHandoffDto,
   ) {
-    return this.reminders.whatsappHandoff(user, dto.property_id, residentId, dto.invoice_ids);
+    return this.reminders.whatsappHandoff(
+      user,
+      dto.property_id,
+      residentId,
+      dto.invoice_ids,
+      dto.recipient_kind,
+    );
   }
   @Post('email') email() {
     return this.reminders.emailDisabled();
@@ -102,6 +115,15 @@ export class ReminderComposerController {
     @Headers('idempotency-key') key?: string,
   ) {
     return this.history.createAttempt(user, dto.property_id, residentId, dto, key);
+  }
+
+  @Post('leases/:leaseId/attempts') leaseAttempt(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', ParseUUIDPipe) leaseId: string,
+    @Body() dto: CreateLeaseReminderAttemptDto,
+    @Headers('idempotency-key') key?: string,
+  ) {
+    return this.history.createLeaseAttempt(user, dto.property_id, leaseId, dto, key);
   }
 
   @Post('history/:attemptId/archive') archive(

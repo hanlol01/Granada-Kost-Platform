@@ -37,10 +37,11 @@ existing safe room-update command.
 - The page provides stable loading, forbidden/not-found/error recovery, honest
   empty sections, semantic responsive cards, a page-local room-number
   breadcrumb, and no rendered opaque room/property identifiers.
-- Only the production-registered lease detail receives an active quick link.
-  Resident, billing, vehicle, and complaint destinations show honest
-  unavailable copy because their current routes do not accept a safe
-  room-scoped destination.
+- The resident summary links to the property-scoped resident detail route, and
+  the billing summary deep-links to that resident's payment-history section.
+  Vehicle and complaint/work-order sections remain summary-only until their
+  dedicated routes accept validated room/resident filters; no internal rollout
+  milestone or placeholder text is rendered to Admin.
 - Existing-room edit remains a bounded Sheet. Structural changes are locked for
   active hold, occupancy, lease, maintenance, or reconciliation state; safe
   nonstructural fields remain available under the existing M15 contract.

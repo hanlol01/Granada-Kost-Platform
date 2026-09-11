@@ -29,8 +29,14 @@ export type AdminRoomDetailProjection = {
   };
   commercial: {
     source: 'current_category';
+    effective_date: string;
     monthly_price: number;
+    short_stay_monthly_price: number;
+    medium_stay_monthly_price: number;
+    long_stay_monthly_price: number;
     annual_contract_value: number;
+    management_fee_amount: number;
+    management_fee_effective_date: string;
     minimum_dp_amount: number;
     minimum_dp_label: string;
     security_deposit_required: number;
@@ -77,7 +83,7 @@ export type AdminRoomDetailProjection = {
   };
   vehicles: Array<{
     code: string;
-    plate_number: string;
+    plate_number: string | null;
     vehicle_type: string;
     parking_state: string | null;
   }>;

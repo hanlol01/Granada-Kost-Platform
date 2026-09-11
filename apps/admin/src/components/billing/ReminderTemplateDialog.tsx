@@ -16,8 +16,8 @@ import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 
 const REQUIRED_VARIABLES = [
-  "{{resident_name}}",
-  "{{room_number}}",
+  "{{salutation}}",
+  "{{room_description}}",
   "{{property_name}}",
   "{{invoice_periods}}",
   "{{invoice_total_outstanding}}",
@@ -25,22 +25,21 @@ const REQUIRED_VARIABLES = [
   "{{lease_end_date}}",
   "{{payment_due_date}}",
   "{{days_remaining}}",
-  "{{admin_whatsapp}}",
-  "{{invoice_download_links}}",
+  "{{closing}}",
 ] as const;
 
-const DEFAULT_TITLE = "Pengingat tagihan untuk {{resident_name}}";
-const DEFAULT_BODY = `Halo {{resident_name}},
+const DEFAULT_TITLE = "Pengingat tagihan {{property_name}}";
+const DEFAULT_BODY = `{{salutation}}
 
-Berikut pengingat tagihan untuk kamar {{room_number}} di {{property_name}}.
+Kamar: {{room_description}}
 Periode: {{invoice_periods}}
-Total yang belum dibayar: {{invoice_total_outstanding}}
+Sisa tagihan: {{invoice_total_outstanding}}
 Jatuh tempo: {{payment_due_date}} ({{days_remaining}} hari lagi)
-Masa sewa: {{lease_start_date}} sampai {{lease_end_date}}
+Masa sewa: {{lease_start_date}} s.d. {{lease_end_date}}
 
-{{invoice_download_links}}
+Mohon melakukan pembayaran sebelum atau pada tanggal jatuh tempo. Jika pembayaran sudah dilakukan, silakan abaikan pesan ini.
 
-Jika perlu bantuan, hubungi Admin melalui {{admin_whatsapp}}.`;
+{{closing}}`;
 
 type Template = {
   version: number;
@@ -122,8 +121,8 @@ export function ReminderTemplateDialog({ propertyId }: { propertyId: string | nu
           <DialogHeader>
             <DialogTitle>Template pengingat tagihan</DialogTitle>
             <DialogDescription>
-              Setiap penyimpanan membuat versi baru. Data penghuni, tagihan, dan tautan invoice
-              selalu diisi oleh server saat pesan dibuat.
+              Setiap penyimpanan membuat versi baru. Data penerima, kamar, dan tagihan selalu diisi
+              oleh server saat pesan dibuat.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

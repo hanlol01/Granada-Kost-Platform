@@ -65,7 +65,16 @@ export type OwnerAssetDetail = {
   kostType: OwnerKostType;
   building: { code: string; name: string; floorLabel: string; unitCode: string | null };
   genderPolicy: "male" | "female";
-  commercial: { monthlyPrice: Money; annualContractValue: Money };
+  commercial: {
+    effectiveDate: string;
+    monthlyPrice: Money;
+    shortStayMonthlyPrice: Money;
+    mediumStayMonthlyPrice: Money;
+    longStayMonthlyPrice: Money;
+    annualContractValue: Money;
+    managementFeeAmount: Money;
+    managementFeeEffectiveDate: string | null;
+  };
   lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
   resident: { displayName: string; occupancyStartDate: string } | null;
   billing: { state: "current" | "partially_paid" | "overdue" | "settled" | "not_available" };
@@ -341,20 +350,38 @@ export type OwnerFinance = {
 export type OwnerCollectionProgress = {
   summary: {
     activeLeaseCount: number;
+    settledLeaseCount: number;
+    partialLeaseCount: number;
+    unpaidLeaseCount: number;
     overdueLeaseCount: number;
     h7LeaseCount: number;
     checkpointAttentionCount: number;
     rentOutstanding: Money;
+    contractValueTotal: Money;
+    rentReceivedTotal: Money;
+    contractOutstandingTotal: Money;
+    projectedManagementFeeTotal: Money;
+    estimatedOwnerEntitlementTotal: Money;
+    packageCounts: { shortStay: number; mediumStay: number; longStay: number };
   };
   items: Array<{
     room: { code: string; buildingCode: string; buildingName: string };
     resident: { displayName: string };
-    lease: { status: "active"; startDate: string; endDate: string | null };
+    lease: {
+      status: "active";
+      startDate: string;
+      endDate: string | null;
+      termMonths: number;
+      monthlyRate: Money;
+      contractValue: Money;
+    };
     billing: {
-      state: "not_available" | "current" | "partially_paid" | "settled" | "overdue";
+      state: "not_available" | "unpaid" | "partially_paid" | "settled" | "overdue";
       rentInvoiced: Money;
       rentVerified: Money;
       rentOutstanding: Money;
+      contractOutstanding: Money;
+      rentOverpayment: Money;
       invoiceCount: number;
       overdueCount: number;
       h7Count: number;
@@ -362,6 +389,19 @@ export type OwnerCollectionProgress = {
       installmentTotal: number;
       installmentPaid: number;
       installmentNextDueDate: string | null;
+    };
+    commercial: {
+      managementFeeMonthly: Money;
+      projectedManagementFee: Money;
+      estimatedOwnerEntitlement: Money;
+    };
+    operations: {
+      openComplaintCount: number;
+      latestComplaintTitle: string | null;
+      latestComplaintStatus: string | null;
+      activeWorkOrderCount: number;
+      latestWorkOrderTitle: string | null;
+      latestWorkOrderStatus: string | null;
     };
     securityDeposit: {
       required: Money;
@@ -621,7 +661,16 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
   );
   const commercial = exact(
     root.commercial,
-    ["monthly_price", "annual_contract_value"],
+    [
+      "effective_date",
+      "monthly_price",
+      "short_stay_monthly_price",
+      "medium_stay_monthly_price",
+      "long_stay_monthly_price",
+      "annual_contract_value",
+      "management_fee_amount",
+      "management_fee_effective_date",
+    ],
     "asset_detail.commercial",
   );
   const ownership = exact(
@@ -714,11 +763,35 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
     },
     genderPolicy: enumValue(root.gender_policy, ["male", "female"], "asset_detail.gender_policy"),
     commercial: {
+      effectiveDate: date(commercial.effective_date, "asset_detail.commercial.effective_date"),
       monthlyPrice: money(commercial.monthly_price, "asset_detail.commercial.monthly_price"),
+      shortStayMonthlyPrice: money(
+        commercial.short_stay_monthly_price,
+        "asset_detail.commercial.short_stay_monthly_price",
+      ),
+      mediumStayMonthlyPrice: money(
+        commercial.medium_stay_monthly_price,
+        "asset_detail.commercial.medium_stay_monthly_price",
+      ),
+      longStayMonthlyPrice: money(
+        commercial.long_stay_monthly_price,
+        "asset_detail.commercial.long_stay_monthly_price",
+      ),
       annualContractValue: money(
         commercial.annual_contract_value,
         "asset_detail.commercial.annual_contract_value",
       ),
+      managementFeeAmount: money(
+        commercial.management_fee_amount,
+        "asset_detail.commercial.management_fee_amount",
+      ),
+      managementFeeEffectiveDate:
+        commercial.management_fee_effective_date === null
+          ? null
+          : date(
+              commercial.management_fee_effective_date,
+              "asset_detail.commercial.management_fee_effective_date",
+            ),
     },
     lease,
     resident,
@@ -1668,10 +1741,19 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
     root.summary,
     [
       "active_lease_count",
+      "settled_lease_count",
+      "partial_lease_count",
+      "unpaid_lease_count",
       "overdue_lease_count",
       "h7_lease_count",
       "checkpoint_attention_count",
       "rent_outstanding",
+      "contract_value_total",
+      "rent_received_total",
+      "contract_outstanding_total",
+      "projected_management_fee_total",
+      "estimated_owner_entitlement_total",
+      "package_counts",
     ],
     "collection_progress.summary",
   );
@@ -1680,6 +1762,18 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       activeLeaseCount: count(
         summary.active_lease_count,
         "collection_progress.summary.active_lease_count",
+      ),
+      settledLeaseCount: count(
+        summary.settled_lease_count,
+        "collection_progress.summary.settled_lease_count",
+      ),
+      partialLeaseCount: count(
+        summary.partial_lease_count,
+        "collection_progress.summary.partial_lease_count",
+      ),
+      unpaidLeaseCount: count(
+        summary.unpaid_lease_count,
+        "collection_progress.summary.unpaid_lease_count",
       ),
       overdueLeaseCount: count(
         summary.overdue_lease_count,
@@ -1694,11 +1788,61 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         summary.rent_outstanding,
         "collection_progress.summary.rent_outstanding",
       ),
+      contractValueTotal: money(
+        summary.contract_value_total,
+        "collection_progress.summary.contract_value_total",
+      ),
+      rentReceivedTotal: money(
+        summary.rent_received_total,
+        "collection_progress.summary.rent_received_total",
+      ),
+      contractOutstandingTotal: money(
+        summary.contract_outstanding_total,
+        "collection_progress.summary.contract_outstanding_total",
+      ),
+      projectedManagementFeeTotal: money(
+        summary.projected_management_fee_total,
+        "collection_progress.summary.projected_management_fee_total",
+      ),
+      estimatedOwnerEntitlementTotal: money(
+        summary.estimated_owner_entitlement_total,
+        "collection_progress.summary.estimated_owner_entitlement_total",
+      ),
+      packageCounts: (() => {
+        const packages = exact(
+          summary.package_counts,
+          ["short_stay", "medium_stay", "long_stay"],
+          "collection_progress.summary.package_counts",
+        );
+        return {
+          shortStay: count(
+            packages.short_stay,
+            "collection_progress.summary.package_counts.short_stay",
+          ),
+          mediumStay: count(
+            packages.medium_stay,
+            "collection_progress.summary.package_counts.medium_stay",
+          ),
+          longStay: count(
+            packages.long_stay,
+            "collection_progress.summary.package_counts.long_stay",
+          ),
+        };
+      })(),
     },
     items: list(root.items, "collection_progress.items", (value) => {
       const item = exact(
         value,
-        ["room", "resident", "lease", "billing", "security_deposit", "settlement"],
+        [
+          "room",
+          "resident",
+          "lease",
+          "billing",
+          "commercial",
+          "operations",
+          "security_deposit",
+          "settlement",
+        ],
         "collection_progress.item",
       );
       const room = exact(
@@ -1709,7 +1853,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
       const lease = exact(
         item.lease,
-        ["status", "start_date", "end_date"],
+        ["status", "start_date", "end_date", "term_months", "monthly_rate", "contract_value"],
         "collection_progress.item.lease",
       );
       const billing = exact(
@@ -1719,6 +1863,8 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           "rent_invoiced",
           "rent_verified",
           "rent_outstanding",
+          "contract_outstanding",
+          "rent_overpayment",
           "invoice_count",
           "overdue_count",
           "h7_count",
@@ -1728,6 +1874,23 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           "installment_next_due_date",
         ],
         "collection_progress.item.billing",
+      );
+      const commercial = exact(
+        item.commercial,
+        ["management_fee_monthly", "projected_management_fee", "estimated_owner_entitlement"],
+        "collection_progress.item.commercial",
+      );
+      const operations = exact(
+        item.operations,
+        [
+          "open_complaint_count",
+          "latest_complaint_title",
+          "latest_complaint_status",
+          "active_work_order_count",
+          "latest_work_order_title",
+          "latest_work_order_status",
+        ],
+        "collection_progress.item.operations",
       );
       const deposit = exact(
         item.security_deposit,
@@ -1773,11 +1936,17 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           ),
           startDate: date(lease.start_date, "collection_progress.item.lease.start_date"),
           endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date"),
+          termMonths: count(lease.term_months, "collection_progress.item.lease.term_months"),
+          monthlyRate: money(lease.monthly_rate, "collection_progress.item.lease.monthly_rate"),
+          contractValue: money(
+            lease.contract_value,
+            "collection_progress.item.lease.contract_value",
+          ),
         },
         billing: {
           state: enumValue(
             billing.state,
-            ["not_available", "current", "partially_paid", "settled", "overdue"] as const,
+            ["not_available", "unpaid", "partially_paid", "settled", "overdue"] as const,
             "collection_progress.item.billing.state",
           ),
           rentInvoiced: money(
@@ -1791,6 +1960,14 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           rentOutstanding: money(
             billing.rent_outstanding,
             "collection_progress.item.billing.rent_outstanding",
+          ),
+          contractOutstanding: money(
+            billing.contract_outstanding,
+            "collection_progress.item.billing.contract_outstanding",
+          ),
+          rentOverpayment: money(
+            billing.rent_overpayment,
+            "collection_progress.item.billing.rent_overpayment",
           ),
           invoiceCount: count(
             billing.invoice_count,
@@ -1817,6 +1994,58 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
             billing.installment_next_due_date,
             "collection_progress.item.billing.installment_next_due_date",
           ),
+        },
+        commercial: {
+          managementFeeMonthly: money(
+            commercial.management_fee_monthly,
+            "collection_progress.item.commercial.management_fee_monthly",
+          ),
+          projectedManagementFee: money(
+            commercial.projected_management_fee,
+            "collection_progress.item.commercial.projected_management_fee",
+          ),
+          estimatedOwnerEntitlement: money(
+            commercial.estimated_owner_entitlement,
+            "collection_progress.item.commercial.estimated_owner_entitlement",
+          ),
+        },
+        operations: {
+          openComplaintCount: count(
+            operations.open_complaint_count,
+            "collection_progress.item.operations.open_complaint_count",
+          ),
+          latestComplaintTitle:
+            operations.latest_complaint_title === null
+              ? null
+              : string(
+                  operations.latest_complaint_title,
+                  "collection_progress.item.operations.latest_complaint_title",
+                ),
+          latestComplaintStatus:
+            operations.latest_complaint_status === null
+              ? null
+              : string(
+                  operations.latest_complaint_status,
+                  "collection_progress.item.operations.latest_complaint_status",
+                ),
+          activeWorkOrderCount: count(
+            operations.active_work_order_count,
+            "collection_progress.item.operations.active_work_order_count",
+          ),
+          latestWorkOrderTitle:
+            operations.latest_work_order_title === null
+              ? null
+              : string(
+                  operations.latest_work_order_title,
+                  "collection_progress.item.operations.latest_work_order_title",
+                ),
+          latestWorkOrderStatus:
+            operations.latest_work_order_status === null
+              ? null
+              : string(
+                  operations.latest_work_order_status,
+                  "collection_progress.item.operations.latest_work_order_status",
+                ),
         },
         securityDeposit: {
           required: money(deposit.required, "collection_progress.item.security_deposit.required"),

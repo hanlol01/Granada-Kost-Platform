@@ -704,4 +704,50 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM rooms WHERE category='apartkost' AND number='AK-18/20-22')",
     ],
   },
+  {
+    version: '075_vehicle_custom_type.sql',
+    checksumSha256: 'e494b4f3ac4359a57cb1cea6d6a12e8ddc4c50d139fc2df58318843427b88e4a',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicles' AND column_name='custom_vehicle_type' AND character_maximum_length=60)",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='vehicles_custom_type_requires_other_check' AND conrelid=to_regclass('public.vehicles'))",
+    ],
+  },
+  {
+    version: '076_optional_vehicle_identity_fields.sql',
+    checksumSha256: '153b4296498893177ab7e74d9112707f67dd60b81af51d480a63c4523f022445',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicles' AND column_name='plate_number' AND is_nullable='YES')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicles' AND column_name='brand' AND is_nullable='YES')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='vehicles' AND column_name='color' AND is_nullable='YES')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='vehicles_optional_fields_nonblank_check' AND conrelid=to_regclass('public.vehicles'))",
+    ],
+  },
+  {
+    version: '077_lease_ending_reminder_attempts.sql',
+    checksumSha256: '26b52f83cb2c7114fb418d921cfa78c2ecf11e54317855ccda27a3687c6cfcb7',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='reminder_attempts' AND column_name='reminder_kind' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='reminder_attempts' AND column_name='lease_id')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='reminder_attempts_shape_check' AND conrelid=to_regclass('public.reminder_attempts'))",
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='prevent_reminder_attempt_mutation')",
+    ],
+  },
+  {
+    version: '078_reminder_attempt_recipient_kind.sql',
+    checksumSha256: '06a15397f14b823649fa77148f17ffb377e90a6b8046eb8d148b0564520d3ba1',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='reminder_attempts' AND column_name='recipient_kind' AND is_nullable='NO')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='reminder_attempts_recipient_kind_check' AND conrelid=to_regclass('public.reminder_attempts'))",
+      "pg_get_functiondef('prevent_reminder_attempt_mutation()'::regprocedure) ILIKE '%recipient_kind%'",
+    ],
+  },
+  {
+    version: '079_admin_report_export_permission.sql',
+    checksumSha256: '71f5e74a565b01dd8dc7b9f66d23d01bc2ae542a4db137e00a5f3bc4a1eef028',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM role_permissions grants JOIN roles ON roles.id=grants.role_id JOIN permissions ON permissions.id=grants.permission_id WHERE roles.code='admin' AND permissions.code='report.export')",
+      "EXISTS (SELECT 1 FROM role_permissions grants JOIN roles ON roles.id=grants.role_id JOIN permissions ON permissions.id=grants.permission_id WHERE roles.code='manager' AND permissions.code='report.export')",
+      "EXISTS (SELECT 1 FROM role_permissions grants JOIN roles ON roles.id=grants.role_id JOIN permissions ON permissions.id=grants.permission_id WHERE roles.code='owner' AND permissions.code='report.export')",
+    ],
+  },
 ] as const;

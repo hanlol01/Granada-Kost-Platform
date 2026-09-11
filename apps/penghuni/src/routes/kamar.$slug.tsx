@@ -51,6 +51,14 @@ import { PublicHunianGallery } from "@/components/public-gallery/PublicHunianGal
 const FROZEN_DISCLAIMER =
   "Ketersediaan dan nomor kamar dikonfirmasi oleh admin. Pengajuan minat booking belum menjadi booking resmi.";
 
+const formatEffectiveDate = (value: string): string =>
+  new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(`${value}T00:00:00+07:00`));
+
 export const Route = createFileRoute("/kamar/$slug")({
   head: () => ({
     meta: [
@@ -308,10 +316,24 @@ function DetailContent({
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
             Nomor kamar akan dikonfirmasi oleh admin.
           </p>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Minimum sewa {detail.leaseMinimumMonths} bulan · DP minimum {detail.dpMinimumPercent}% ·
-            deposit terpisah sebesar {detail.securityDepositMonths} bulan tarif berjalan.
-          </p>
+          <div className="mt-4 grid gap-2 rounded-lg border bg-background/70 p-3 text-xs sm:grid-cols-3">
+            <div>
+              <p className="text-muted-foreground">3–5 bulan</p>
+              <p className="font-semibold">{formatIDR(detail.shortStayMonthlyPrice)}/bulan</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">6–11 bulan</p>
+              <p className="font-semibold">{formatIDR(detail.mediumStayMonthlyPrice)}/bulan</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">12+ bulan</p>
+              <p className="font-semibold">{formatIDR(detail.longStayMonthlyPrice)}/bulan</p>
+            </div>
+            <p className="text-center text-[11px] text-muted-foreground sm:col-span-3">
+              Tarif berlaku sejak {formatEffectiveDate(detail.commercialEffectiveDate)} · kontrak 12
+              bulan {formatIDR(detail.priceFromYearly ?? detail.longStayMonthlyPrice * 12)}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -352,9 +374,6 @@ function DetailContent({
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             ["Minimum sewa", detail.minimumLeaseTerm],
-            ["Rencana pembayaran", detail.pricingExplanation],
-            ["DP", detail.dpExplanation],
-            ["Security deposit", detail.securityDepositExplanation],
             ["Metode pembayaran manual", detail.manualPaymentMethods.join(", ")],
             ["Jam kunjungan", detail.visitorHours ?? "Dikonfirmasi oleh Admin"],
           ].map(([label, value]) => (
@@ -366,10 +385,6 @@ function DetailContent({
             </Card>
           ))}
         </div>
-        <p className="mt-3 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-          DP adalah pembayaran awal sewa. Security deposit adalah dana jaminan terpisah dan tidak
-          otomatis mengurangi sewa.
-        </p>
       </section>
 
       {rules.length > 0 ? (

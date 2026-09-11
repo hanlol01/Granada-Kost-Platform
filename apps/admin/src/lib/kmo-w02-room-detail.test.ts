@@ -47,8 +47,14 @@ function detailWire() {
       },
       commercial: {
         source: "current_category",
-        monthly_price: 1_800_000,
+        effective_date: "2026-06-01",
+        monthly_price: 1_900_000,
+        short_stay_monthly_price: 1_900_000,
+        medium_stay_monthly_price: 1_850_000,
+        long_stay_monthly_price: 1_800_000,
         annual_contract_value: 21_600_000,
+        management_fee_amount: 300_000,
+        management_fee_effective_date: "2026-06-01",
         minimum_dp_amount: 5_400_000,
         minimum_dp_label: "Rekomendasi 25% dari nilai kontrak tahunan",
         security_deposit_required: 1_800_000,
@@ -142,6 +148,10 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
   assert.equal(detail.propertyId, PROPERTY_ID);
   assert.equal(detail.number, "RK-01-01");
   assert.equal(detail.commercial.minimumDpAmount, 5_400_000);
+  assert.equal(detail.commercial.shortStayMonthlyPrice, 1_900_000);
+  assert.equal(detail.commercial.mediumStayMonthlyPrice, 1_850_000);
+  assert.equal(detail.commercial.longStayMonthlyPrice, 1_800_000);
+  assert.equal(detail.commercial.managementFeeAmount, 300_000);
   assert.equal(detail.commercial.securityDepositRequired, 1_800_000);
   assert.equal(detail.ownership.displayName, "Hans");
   assert.equal(detail.ownership.ownerProfileId, OWNER_ID);
@@ -384,14 +394,11 @@ test("full page keeps every operational section, terminal state, and honest quic
   assert.match(page, /break-words/);
   assert.doesNotMatch(page, />\{detail\.(?:id|propertyId)\}</);
   assert.doesNotMatch(page, /room_id=|resident_id=|property_id=/);
-  assert.doesNotMatch(page, /href=.*\/(?:tenants|payments|vehicles|complaints)/);
+  assert.doesNotMatch(page, /KMO-W02A|filter kamar aman|filter aman/);
+  assert.match(page, /Lihat riwayat pembayaran/);
+  assert.match(page, /#riwayat-pembayaran/);
+  assert.doesNotMatch(page, /href=.*\/(?:payments|vehicles|complaints)/);
   assert.doesNotMatch(page, /WhatsApp|wa\.me|resident\.phone/);
-
-  const fakeLink = page.replace(
-    '<UnavailableLink label="Tagihan belum menerima filter kamar aman pada KMO-W02A." />',
-    '<a href="/payments?room_id=opaque">Tagihan</a>',
-  );
-  assert.match(fakeLink, /room_id=opaque/);
 });
 
 test("room detail keeps semantic status badges and aligned high-contrast data cards", () => {
@@ -408,7 +415,14 @@ test("room detail keeps operational spacing and owner-scoped navigation", () => 
   const page = source("components/rooms/RoomDetailPage.tsx");
 
   assert.match(page, /\["Unit", detail\.physical\.floorLabel\]/);
-  assert.match(page, /\["DP rekomendasi", detail\.commercial\.minimumDpLabel\]/);
+  assert.doesNotMatch(page, /\["DP minimum", detail\.commercial\.minimumDpLabel\]/);
+  assert.doesNotMatch(
+    page,
+    /\["Deposit keamanan", formatIDR\(detail\.commercial\.securityDepositRequired\)\]/,
+  );
+  assert.doesNotMatch(page, /\["Rencana pembayaran", detail\.commercial\.paymentPlanDescription\]/);
+  assert.doesNotMatch(page, /\["Rencana pembayaran",/);
+  assert.doesNotMatch(page, /label="Minimum DP"/);
   assert.match(page, /px-6 pb-6 pt-5/);
   assert.match(page, /gap-x-8 gap-y-5/);
   assert.match(page, /to="\/property-owners\/\$ownerId"/);

@@ -37,6 +37,10 @@ export class ResidentReminderPreviewDto extends ReminderPropertyQueryDto {
   @ArrayMinSize(1)
   @IsUUID('4', { each: true })
   invoice_ids!: string[];
+
+  @IsOptional()
+  @IsIn(['resident', 'parent'])
+  recipient_kind?: 'resident' | 'parent';
 }
 
 export class ReminderHandoffDto extends ResidentReminderPreviewDto {
@@ -58,7 +62,31 @@ export class CreateReminderAttemptDto extends ResidentReminderPreviewDto {
   outcome_note?: string;
 }
 
+export class CreateLeaseReminderAttemptDto extends ReminderPropertyQueryDto {
+  @IsIn(['h60', 'h30', 'h14'])
+  milestone!: 'h60' | 'h30' | 'h14';
+
+  @IsIn(['whatsapp_manual', 'manual'])
+  channel!: 'whatsapp_manual' | 'manual';
+
+  @IsIn(['previewed', 'external_opened', 'manual_sent', 'failed'])
+  outcome_status!: 'previewed' | 'external_opened' | 'manual_sent' | 'failed';
+
+  @IsOptional()
+  @IsIn(['resident', 'parent'])
+  recipient_kind?: 'resident' | 'parent';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  outcome_note?: string;
+}
+
 export class ReminderAttemptQueryDto extends ReminderPropertyQueryDto {
+  @IsOptional()
+  @IsUUID()
+  resident_id?: string;
+
   @IsOptional()
   @IsIn(['whatsapp_manual', 'manual'])
   channel?: 'whatsapp_manual' | 'manual';

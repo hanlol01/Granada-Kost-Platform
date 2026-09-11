@@ -47,6 +47,7 @@ export class VehicleController {
         query.vehicle_type,
         query.limit,
         query.offset,
+        query.resident_id,
       );
     }
     return this.vehicles.listForProperties(
@@ -55,6 +56,7 @@ export class VehicleController {
       query.vehicle_type,
       query.limit,
       query.offset,
+      query.resident_id,
     );
   }
 
@@ -94,6 +96,7 @@ export class VehicleController {
       });
     }
     const property = await this.properties.get(user, dto.property_id);
+    const tenancy = await this.residents.tenancy(user, dto.resident_id, dto.property_id);
     return this.vehicles.registerVehicle(
       {
         propertyId: dto.property_id,
@@ -102,13 +105,14 @@ export class VehicleController {
           dto.vehicle_code ?? (await this.vehicles.generateCode(property.name, property.id)),
         plateNumber: dto.plate_number,
         vehicleType: dto.vehicle_type,
+        customVehicleType: dto.custom_vehicle_type,
         brand: dto.brand,
         color: dto.color,
         year: dto.year,
         notes: dto.notes,
         snapshotResidentName: resident.fullName,
         createdByUserId: user.id,
-        snapshotRoomNumber: resident.roomNumber ?? undefined,
+        snapshotRoomNumber: tenancy?.roomNumber ?? resident.roomNumber ?? undefined,
         adminCreated: true,
       },
       auditContext(user, request),
@@ -193,6 +197,7 @@ export class VehicleController {
     return {
       plateNumber: dto.plate_number,
       vehicleType: dto.vehicle_type,
+      customVehicleType: dto.custom_vehicle_type,
       brand: dto.brand,
       color: dto.color,
       year: dto.year,

@@ -15,6 +15,11 @@ export type ReminderWorkspaceLease = {
   checkout_state: string | null;
   milestone: ReminderMilestone;
   status: "action_required";
+  latest_reminder: {
+    outcome_status: "previewed" | "external_opened" | "manual_sent" | "failed";
+    channel: "whatsapp_manual" | "manual";
+    created_at: string;
+  } | null;
 };
 
 export type ReminderWorkspace = {
@@ -41,6 +46,26 @@ function integer(value: unknown, label: string): number {
   if (!Number.isInteger(parsed)) throw new Error(`${label} tidak valid.`);
   return parsed;
 }
+
+function latestReminder(value: unknown, label: string) {
+  if (value === null || value === undefined) return null;
+  const item = record(value, label);
+  if (
+    !["previewed", "external_opened", "manual_sent", "failed"].includes(String(item.outcome_status))
+  )
+    throw new Error(`${label} tidak valid.`);
+  if (!["whatsapp_manual", "manual"].includes(String(item.channel)))
+    throw new Error(`${label} tidak valid.`);
+  return {
+    outcome_status: item.outcome_status as
+      | "previewed"
+      | "external_opened"
+      | "manual_sent"
+      | "failed",
+    channel: item.channel as "whatsapp_manual" | "manual",
+    created_at: text(item.created_at, `${label} dibuat pada`),
+  };
+}
 function lease(value: unknown, milestone: ReminderMilestone): ReminderWorkspaceLease {
   const item = record(value, "item workspace");
   return {
@@ -58,6 +83,7 @@ function lease(value: unknown, milestone: ReminderMilestone): ReminderWorkspaceL
       item.checkout_state === null ? null : text(item.checkout_state, "Status checkout"),
     milestone,
     status: "action_required",
+    latest_reminder: latestReminder(item.latest_reminder, "Reminder terakhir"),
   };
 }
 

@@ -13,23 +13,32 @@ export class CreateVehicleDto {
   @MaxLength(40)
   vehicle_code?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(30)
-  plate_number!: string;
+  plate_number?: string;
 
   @IsIn(['motorcycle', 'car', 'bicycle', 'electric_scooter', 'other'])
   vehicle_type!: VehicleType;
 
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  custom_vehicle_type?: string;
+
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(80)
-  brand!: string;
+  brand?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(40)
-  color!: string;
+  color?: string;
 
   @IsOptional()
   @IsString()

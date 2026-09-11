@@ -8,6 +8,7 @@ const propertyId = '11111111-1111-4111-8111-111111111111';
 const residentId = '22222222-2222-4222-8222-222222222222';
 const actorId = '33333333-3333-4333-8333-333333333333';
 const invoiceId = '44444444-4444-4444-8444-444444444444';
+const leaseId = '77777777-7777-4777-8777-777777777777';
 
 const actor: UserAccessContext = {
   id: actorId,
@@ -198,4 +199,103 @@ void test('W08C list excludes archived attempts by default and returns paginatio
   });
   assert.equal(result.meta.total, 1);
   assert.ok(statements.some((sql) => sql.includes('archived_at IS NULL')));
+});
+
+void test('W08D records a lease-ending reminder without requiring an invoice', async () => {
+  const statements: string[] = [];
+  const service = createService((sql) => {
+    statements.push(sql);
+    if (sql.includes('FROM leases l'))
+      return Promise.resolve({
+        rows: [
+          {
+            lease_id: leaseId,
+            property_id: propertyId,
+            resident_id: residentId,
+            resident_name: 'Uji',
+            resident_phone: '081234567890',
+            room_number: 'AK-01-01',
+            property_name: 'Granada',
+            admin_whatsapp: '081111111111',
+            lease_start_date: '2026-06-01',
+            lease_end_date: '2026-10-01',
+            days_remaining: 21,
+            outstanding_amount: '0',
+            renewal_state: null,
+            checkout_state: null,
+          },
+        ],
+      });
+    if (sql.includes('INSERT INTO reminder_attempts'))
+      return Promise.resolve({
+        rows: [
+          {
+            ...row(),
+            id: '88888888-8888-4888-8888-888888888888',
+            reminder_kind: 'lease_ending',
+            lease_id: leaseId,
+            reminder_milestone: 'h30',
+            invoice_ids: [],
+            invoice_count: 0,
+            total_outstanding_amount: '0',
+            title_snapshot: 'Pengingat keputusan perpanjangan',
+          },
+        ],
+      });
+    return Promise.resolve({ rows: [] });
+  });
+
+  const result = await service.createLeaseAttempt(
+    actor,
+    propertyId,
+    leaseId,
+    { milestone: 'h30', channel: 'manual', outcome_status: 'manual_sent' },
+    'lease-attempt-key-1',
+  );
+
+  assert.equal(result.attempt.reminder_kind, 'lease_ending');
+  assert.equal(result.attempt.lease_id, leaseId);
+  assert.equal(result.attempt.milestone, 'h30');
+  assert.equal(result.attempt.invoice_count, 0);
+  assert.ok(statements.some((sql) => sql.includes("'lease_ending'")));
+});
+
+void test('W08D rejects a lease reminder outside its milestone window', async () => {
+  const service = createService((sql) => {
+    if (sql.includes('FROM leases l'))
+      return Promise.resolve({
+        rows: [
+          {
+            lease_id: leaseId,
+            property_id: propertyId,
+            resident_id: residentId,
+            resident_name: 'Uji',
+            resident_phone: null,
+            room_number: 'AK-01-01',
+            property_name: 'Granada',
+            admin_whatsapp: null,
+            lease_start_date: '2026-06-01',
+            lease_end_date: '2026-10-01',
+            days_remaining: 21,
+            outstanding_amount: '0',
+            renewal_state: null,
+            checkout_state: null,
+          },
+        ],
+      });
+    return Promise.resolve({ rows: [] });
+  });
+
+  await assert.rejects(
+    service.createLeaseAttempt(
+      actor,
+      propertyId,
+      leaseId,
+      { milestone: 'h60', channel: 'manual', outcome_status: 'previewed' },
+      'lease-attempt-key-2',
+    ),
+    (error: unknown) =>
+      (error as { response?: { code?: unknown } }).response?.code ===
+      'REMINDER_LEASE_MILESTONE_NOT_ELIGIBLE',
+  );
 });

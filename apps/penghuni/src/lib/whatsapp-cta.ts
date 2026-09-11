@@ -25,13 +25,25 @@ export function buildWhatsAppUrl(number: string, message: string): string {
 
 // Frozen M16E inquiry template. Uses only public-safe aggregated fields.
 export function buildRoomInquiryMessage(group: PublicRoomGroup): string {
+  const pricing = [
+    group.shortStayMonthlyPrice !== undefined
+      ? `- Tarif 3–5 bulan: ${formatIDR(group.shortStayMonthlyPrice)}/bulan`
+      : null,
+    group.mediumStayMonthlyPrice !== undefined
+      ? `- Tarif 6–11 bulan: ${formatIDR(group.mediumStayMonthlyPrice)}/bulan`
+      : null,
+    group.longStayMonthlyPrice !== undefined
+      ? `- Tarif 12+ bulan: ${formatIDR(group.longStayMonthlyPrice)}/bulan`
+      : null,
+  ].filter((line): line is string => line !== null);
   return [
     "Halo Admin Kostation, saya tertarik booking kamar:",
     `- Kategori: ${group.categoryLabel}`,
     `- Untuk: ${group.genderLabel}`,
     `- Unit/Tipe: ${group.publicTitle}`,
     `- Ketersediaan: ${group.availableCount} kamar`,
-    `- Harga mulai: ${formatIDR(group.priceFromMonthly)}/bulan`,
+    ...pricing,
+    ...(pricing.length === 0 ? [`- Harga mulai: ${formatIDR(group.priceFromMonthly)}/bulan`] : []),
     "Mohon info ketersediaan dan proses bookingnya.",
   ].join("\n");
 }

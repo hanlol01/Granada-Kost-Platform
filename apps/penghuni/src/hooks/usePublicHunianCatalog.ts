@@ -86,6 +86,10 @@ export type PublicHunianCatalogItem = {
   shortDescription: string;
   priceFromMonthly: number | null;
   priceFromYearly: number | null;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
+  commercialEffectiveDate: string;
   availabilityCount: number;
   facilitiesPreview: string[];
   // M19B: cover image or first public-visible image only; [] when unpublished.
@@ -149,6 +153,10 @@ const publicCatalogItemObjectSchema = z
     shortDescription: z.string(),
     priceFromMonthly: z.number().int().nonnegative().nullable(),
     priceFromYearly: z.number().int().nonnegative().nullable(),
+    shortStayMonthlyPrice: z.number().int().nonnegative(),
+    mediumStayMonthlyPrice: z.number().int().nonnegative(),
+    longStayMonthlyPrice: z.number().int().nonnegative(),
+    commercialEffectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     availabilityCount: z.number().int().nonnegative(),
     facilitiesPreview: z.array(z.string().trim().min(1)),
     galleryPreview: z
@@ -206,6 +214,14 @@ function validateCatalogConsistency(
 ) {
   if (item.bookingLeadDefaults.category !== item.category) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Category context mismatch" });
+  }
+  if (
+    item.priceFromMonthly !== item.shortStayMonthlyPrice ||
+    item.priceFromYearly !== item.longStayMonthlyPrice * 12 ||
+    item.shortStayMonthlyPrice < item.mediumStayMonthlyPrice ||
+    item.mediumStayMonthlyPrice < item.longStayMonthlyPrice
+  ) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Commercial tier mismatch" });
   }
   const genderTotal = item.genderAvailability.reduce(
     (sum, entry) => sum + entry.availabilityCount,
@@ -307,6 +323,10 @@ export function toPublicRoomGroup(
     availableCount: availability.availabilityCount,
     priceFromMonthly: item.priceFromMonthly,
     priceFromYearly: item.priceFromYearly,
+    shortStayMonthlyPrice: item.shortStayMonthlyPrice,
+    mediumStayMonthlyPrice: item.mediumStayMonthlyPrice,
+    longStayMonthlyPrice: item.longStayMonthlyPrice,
+    commercialEffectiveDate: item.commercialEffectiveDate,
     publicTitle: item.title,
     ctaLabel: item.ctaLabel,
   };

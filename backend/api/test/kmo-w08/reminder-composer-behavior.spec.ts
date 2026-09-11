@@ -16,16 +16,17 @@ const actor = {
   sessionId: '33333333-3333-4333-8333-333333333333',
 };
 
-const title = 'Pengingat {{resident_name}} {{room_number}} {{property_name}}';
+const title = 'Pengingat {{property_name}}';
 const body = [
+  '{{salutation}}',
+  '{{room_description}}',
   '{{invoice_periods}}',
   '{{invoice_total_outstanding}}',
   '{{lease_start_date}}',
   '{{lease_end_date}}',
   '{{payment_due_date}}',
   '{{days_remaining}}',
-  '{{admin_whatsapp}}',
-  '{{invoice_download_links}}',
+  '{{closing}}',
 ].join('\n');
 
 function createService(query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>) {

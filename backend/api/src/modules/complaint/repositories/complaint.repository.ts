@@ -4,6 +4,7 @@ import { DatabaseService } from '../../../infrastructure/database/database.servi
 import { residentPropertyMembershipSql } from '../../resident/repositories/resident.repository';
 import {
   ActiveResidentComplaintContext,
+  ComplaintListFilters,
   ComplaintPriority,
   ComplaintRecord,
   ComplaintSummaryRecord,
@@ -42,44 +43,129 @@ type ComplaintRow = {
   updated_at: Date;
 };
 
+const STATUS_GROUPS: Record<NonNullable<ComplaintListFilters['statusGroup']>, string[]> = {
+  waiting: ['submitted', 'acknowledged'],
+  in_progress: ['in_progress', 'on_hold', 'escalated', 'reopened'],
+  resolved: ['resolved'],
+  closed: ['closed', 'cancelled'],
+};
+
+const SLA_DEADLINE_SQL = `CASE
+  WHEN complaints.acknowledged_at IS NULL THEN complaints.submitted_at +
+    (CASE complaints.priority WHEN 'urgent' THEN 2 WHEN 'high' THEN 4 WHEN 'medium' THEN 8 ELSE 24 END) * interval '1 hour'
+  ELSE complaints.acknowledged_at +
+    (CASE complaints.priority WHEN 'urgent' THEN 24 WHEN 'high' THEN 48 WHEN 'medium' THEN 120 ELSE 240 END) * interval '1 hour'
+END`;
+
+const SLA_BREACHED_SQL = `(complaints.response_sla_breached = true OR complaints.resolution_sla_breached = true OR
+  (complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled') AND now() > ${SLA_DEADLINE_SQL}))`;
+
+const SLA_AT_RISK_SQL = `(complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled') AND
+  complaints.response_sla_breached = false AND complaints.resolution_sla_breached = false AND
+  now() BETWEEN ${SLA_DEADLINE_SQL} -
+    (CASE WHEN complaints.acknowledged_at IS NULL
+      THEN (CASE complaints.priority WHEN 'urgent' THEN 2 WHEN 'high' THEN 4 WHEN 'medium' THEN 8 ELSE 24 END)
+      ELSE (CASE complaints.priority WHEN 'urgent' THEN 24 WHEN 'high' THEN 48 WHEN 'medium' THEN 120 ELSE 240 END)
+    END) * interval '15 minutes'
+    AND ${SLA_DEADLINE_SQL})`;
+
+const PRIORITY_ORDER_SQL = `CASE complaints.priority
+  WHEN 'urgent' THEN 4
+  WHEN 'high' THEN 3
+  WHEN 'medium' THEN 2
+  ELSE 1
+END DESC`;
+
 @Injectable()
 export class ComplaintRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(
-    propertyId: string,
-    status?: StoredComplaintStatus,
-    limit = 20,
-    offset = 0,
-  ): Promise<ComplaintRecord[]> {
+  async list(propertyId: string, filters: ComplaintListFilters = {}): Promise<ComplaintRecord[]> {
     const result = await this.database.client.query<ComplaintRow>(
-      `SELECT ${this.columns()}
-       FROM complaints
-       WHERE property_id = $1
-         AND ($2::text IS NULL OR complaint_status = $2)
-       ORDER BY submitted_at DESC
-       LIMIT $3 OFFSET $4`,
-      [propertyId, status ?? null, limit, offset],
+      ...this.listQuery([propertyId], filters),
     );
     return result.rows.map((row) => this.map(row));
   }
 
   async listForProperties(
     propertyIds: string[],
-    status?: StoredComplaintStatus,
-    limit = 20,
-    offset = 0,
+    filters: ComplaintListFilters = {},
   ): Promise<ComplaintRecord[]> {
+    if (propertyIds.length === 0) return [];
     const result = await this.database.client.query<ComplaintRow>(
-      `SELECT ${this.columns()}
-       FROM complaints
-       WHERE property_id = ANY($1::uuid[])
-         AND ($2::text IS NULL OR complaint_status = $2)
-       ORDER BY submitted_at DESC
-       LIMIT $3 OFFSET $4`,
-      [propertyIds, status ?? null, limit, offset],
+      ...this.listQuery(propertyIds, filters),
     );
     return result.rows.map((row) => this.map(row));
+  }
+
+  private listQuery(propertyIds: string[], filters: ComplaintListFilters): [string, unknown[]] {
+    const values: unknown[] = [propertyIds];
+    const predicates = ['complaints.property_id = ANY($1::uuid[])'];
+    const add = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+
+    if (filters.status) predicates.push(`complaints.complaint_status = ${add(filters.status)}`);
+    if (filters.statusGroup) {
+      predicates.push(
+        `complaints.complaint_status = ANY(${add(STATUS_GROUPS[filters.statusGroup])}::text[])`,
+      );
+    }
+    if (filters.residentId)
+      predicates.push(`complaints.resident_id = ${add(filters.residentId)}::uuid`);
+    if (filters.priority) predicates.push(`complaints.priority = ${add(filters.priority)}`);
+    if (filters.categoryId)
+      predicates.push(`complaints.category_id = ${add(filters.categoryId)}::uuid`);
+    if (filters.assignment === 'assigned')
+      predicates.push('complaints.assigned_to_user_id IS NOT NULL');
+    if (filters.assignment === 'unassigned')
+      predicates.push('complaints.assigned_to_user_id IS NULL');
+    if (filters.buildingId)
+      predicates.push(`room_filter.building_id = ${add(filters.buildingId)}::uuid`);
+    if (filters.roomId) predicates.push(`complaints.room_id = ${add(filters.roomId)}::uuid`);
+    if (filters.from)
+      predicates.push(`complaints.submitted_at >= ${add(filters.from)}::timestamptz`);
+    if (filters.to)
+      predicates.push(`complaints.submitted_at < (${add(filters.to)}::date + interval '1 day')`);
+    if (filters.q?.trim()) {
+      const term = `%${filters.q.trim()}%`;
+      const parameter = add(term);
+      predicates.push(`(
+        complaints.complaint_code ILIKE ${parameter} OR complaints.title ILIKE ${parameter} OR
+        complaints.description ILIKE ${parameter} OR complaints.snapshot_resident_name ILIKE ${parameter} OR
+        complaints.snapshot_room_number ILIKE ${parameter} OR complaints.location_note ILIKE ${parameter} OR
+        category_filter.name ILIKE ${parameter} OR category_filter.normalized_code ILIKE ${parameter} OR
+        room_filter.number ILIKE ${parameter} OR room_filter.room_code ILIKE ${parameter} OR
+        building_filter.building_code ILIKE ${parameter} OR building_filter.building_name ILIKE ${parameter}
+      )`);
+    }
+    if (filters.sla === 'breached') predicates.push(SLA_BREACHED_SQL);
+    if (filters.sla === 'at_risk') predicates.push(SLA_AT_RISK_SQL);
+    if (filters.sla === 'on_track')
+      predicates.push(`NOT ${SLA_BREACHED_SQL} AND NOT ${SLA_AT_RISK_SQL}`);
+
+    const orderBy =
+      filters.sort === 'oldest'
+        ? 'complaints.submitted_at ASC, complaints.id ASC'
+        : filters.sort === 'priority'
+          ? `${PRIORITY_ORDER_SQL}, complaints.submitted_at DESC, complaints.id DESC`
+          : filters.sort === 'sla'
+            ? `${SLA_BREACHED_SQL} DESC, ${SLA_AT_RISK_SQL} DESC, complaints.submitted_at ASC, complaints.id ASC`
+            : 'complaints.submitted_at DESC, complaints.id DESC';
+    const limit = add(filters.limit ?? 20);
+    const offset = add(filters.offset ?? 0);
+    const sql = `SELECT ${this.columns('complaints')}
+      FROM complaints
+      LEFT JOIN rooms room_filter ON room_filter.id = complaints.room_id
+        AND room_filter.property_id = complaints.property_id
+      LEFT JOIN room_buildings building_filter ON building_filter.id = room_filter.building_id
+      LEFT JOIN complaint_categories category_filter ON category_filter.id = complaints.category_id
+        AND category_filter.property_id = complaints.property_id
+      WHERE ${predicates.join('\n        AND ')}
+      ORDER BY ${orderBy}
+      LIMIT ${limit} OFFSET ${offset}`;
+    return [sql, values];
   }
 
   async listForResident(residentId: string, limit = 20, offset = 0): Promise<ComplaintRecord[]> {

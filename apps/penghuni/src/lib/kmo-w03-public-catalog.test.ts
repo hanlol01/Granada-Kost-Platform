@@ -31,6 +31,10 @@ const validCatalogItem: PublicHunianCatalogItem = {
   shortDescription: "Hunian terkelola.",
   priceFromMonthly: 1500000,
   priceFromYearly: 15000000,
+  shortStayMonthlyPrice: 1500000,
+  mediumStayMonthlyPrice: 1400000,
+  longStayMonthlyPrice: 1250000,
+  commercialEffectiveDate: "2026-06-01",
   availabilityCount: 2,
   facilitiesPreview: ["Wi-Fi"],
   galleryPreview: [galleryImage],
@@ -103,7 +107,11 @@ test("public projection is category-aggregated and parser rejects unsafe shape",
 });
 
 test("public catalog parsers enforce context, commercial, schedule, and gallery authority", () => {
-  assert.deepEqual(parsePublicHunianCatalogList([validCatalogItem], "rukost"), [validCatalogItem]);
+  const parsed = parsePublicHunianCatalogList([validCatalogItem], "rukost");
+  assert.deepEqual(parsed, [validCatalogItem]);
+  assert.equal(parsed[0]?.shortStayMonthlyPrice, 1_500_000);
+  assert.equal(parsed[0]?.mediumStayMonthlyPrice, 1_400_000);
+  assert.equal(parsed[0]?.longStayMonthlyPrice, 1_250_000);
   assert.throws(() =>
     parsePublicHunianCatalogList(
       [

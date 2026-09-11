@@ -236,6 +236,55 @@ Shared Admin/Property Owner/Penghuni primitives memakai variant dan state yang s
 - Footer stack pada mobile lalu kembali horizontal mulai `sm`.
 - Title, description, close control, validation, pending state, dan consequence copy harus tetap jelas tanpa opaque ID.
 
+## Property Owner Portal Visual Contract
+
+Portal Owner adalah ruang baca operasional yang mobile-first untuk pemilik properti. Owner harus bisa memahami kondisi aset, target kontrak aktif, progres pembayaran, dan hal yang perlu diperhatikan tanpa perlu memahami istilah teknis atau menghitung ulang angka dari beberapa kartu.
+
+### Scope Route
+
+Kontrak ini berlaku untuk seluruh route Owner yang sudah diizinkan registry, termasuk Dashboard, Aset Saya, detail aset, Hunian & Penyewaan, detail penghuni scoped, Pembayaran & Pendapatan, Laporan, Komplain & Maintenance, Notifikasi, dan Profil Akun. Redesign tidak mengubah URL, label navigasi, authority backend, atau proyeksi data Owner.
+
+### Hierarki Informasi
+
+- **Dashboard:** utamakan target total nilai seluruh kontrak aktif, pembayaran yang masuk, sisa pembayaran, estimasi management fee, dan perkiraan hak Owner. Rekap periode bulanan tetap tersedia sebagai pelengkap, bukan fakta utama yang menggantikan target kontrak.
+- **Daftar dan detail:** tampilkan identitas kamar atau penghuni yang aman, status yang dapat dipindai, nominal atau progres yang relevan, serta satu tindakan read-only yang jelas. Hindari kartu putih berulang yang hanya membungkus satu baris data.
+- **Keuangan dan laporan:** pisahkan tegas antara target kontrak, pembayaran aktual, management fee, hak Owner, dan status pencatatan. Istilah harus memakai bahasa Indonesia nonteknis yang konsisten.
+- **Kondisi perhatian:** pembayaran sebagian, pembayaran terlambat, komplain, maintenance, data belum tersedia, dan data kosong diberi penjelasan singkat tentang kondisi serta langkah baca berikutnya.
+
+### Semantic Surface Map
+
+- **Neutral surface:** daftar, identitas aset, informasi akun, dan data tanpa kondisi khusus. Gunakan canvas dan card semantic dengan border yang terlihat, bukan bidang putih datar tanpa pembeda.
+- **Information surface:** filter aktif, navigasi, detail, progres proses, dan tombol utama memakai Operational Blue atau Soft Operational Blue.
+- **Success surface:** pembayaran lunas, kondisi aman, atau realisasi valid memakai hijau/mint tonal dengan label eksplisit.
+- **Attention surface:** pembayaran sebagian, tenggat dekat, komplain aktif, atau maintenance memakai amber tonal dengan teks dan ikon yang menjelaskan penyebabnya.
+- **Critical surface:** tunggakan, kegagalan, atau kondisi yang perlu tindakan segera memakai merah tonal secara terbatas. Merah tidak dipakai untuk dekorasi.
+- **Finance surface:** ringkasan target kontrak dapat memakai bidang gelap bernuansa forest/navy yang tetap satu keluarga dengan shell. Kontras teks, angka, dan status harus lolos light dan dark mode.
+
+Warna tidak pernah menjadi satu-satunya penanda status. Badge, ikon, judul status, dan deskripsi ringkas tetap diperlukan agar kondisi terbaca oleh semua pengguna.
+
+### Component Recipes
+
+- **Header halaman:** ringkas, satu judul, satu konteks singkat, dan breadcrumb pada strip terpisah. Pada mobile header mengikuti perilaku shell: menghilang saat scroll turun dan muncul saat kembali naik.
+- **Kartu ringkasan:** satu fakta utama, konteks periode atau scope, angka yang mudah dipindai, dan status semantic. Kartu target kontrak boleh lebih dominan daripada kartu pendukung, tetapi tidak boleh menjadi dashboard dekoratif.
+- **Kartu daftar kamar:** gunakan struktur informasi berlapis, bukan grid tiga kartu identik. Pada desktop, metadata, progres pembayaran, dan tindakan dapat berada dalam satu row yang jelas. Pada mobile, susun menjadi blok vertikal dengan target sentuh minimum 44px.
+- **Filter dan pencarian:** berada dalam satu surface tonal yang terpisah dari hasil. Label selalu terlihat; reset filter memakai tombol merah yang jelas dan tidak menghapus data.
+- **Pagination:** tampilkan rentang data dan nomor halaman. Tombol `Kembali` dan `Lanjut` memakai biru sebagai aksi navigasi, dengan state disabled yang tetap terbaca dan tidak menyerupai tombol aktif.
+- **Quick action:** gunakan satu aksi utama per kartu atau section. `Detail kamar`, `Lihat laporan`, dan navigasi read-only memakai biru; ekspor atau aksi selesai yang aman dapat memakai hijau; tindakan reset memakai merah.
+- **Empty, loading, error, dan unavailable:** memiliki surface dan copy yang spesifik terhadap konteks Owner. Jangan menampilkan angka nol atau kartu kosong sebagai pengganti state yang belum tersedia.
+
+### Responsive, Accessibility, and Motion
+
+- Uji layout pada lebar 375px, 768px, 1024px, dan 1440px. Tidak boleh ada horizontal page overflow; tabel hanya boleh scroll di wrapper-nya.
+- Kontrol, tombol, pilihan filter, dan item daftar yang dapat diketuk memiliki target minimal 44px. Focus-visible, hover, keyboard navigation, screen-reader label, dan kontras teks harus konsisten.
+- Motion bersifat subtil dan hanya untuk feedback, masuknya section, atau perubahan state. Gunakan transform dan opacity dengan durasi sekitar 150-300ms.
+- Motion tidak boleh menyembunyikan fakta keuangan, memindahkan layout secara mendadak, memakai loop tak berujung, scroll hijack, marquee, atau pinning. `prefers-reduced-motion` harus membuat pengalaman menjadi statis.
+
+### Visual Guardrails
+
+- Pertahankan bahasa visual KOSTATION dan token shared. Jangan membuat palet Owner terpisah, hero marketing, ilustrasi stok, atau pola landing page pada portal operasional.
+- Hindari gradient mencolok, glow neon, badge dekoratif, dan bento kartu tanpa fungsi. Gunakan whitespace, tonal surface, border, serta hierarki angka untuk membangun kenyamanan baca.
+- Pertahankan data nyata, copy Indonesia yang jelas, dan urutan informasi incumbent. Tidak ada angka contoh, status buatan, atau penggabungan data dari browser.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -255,5 +304,5 @@ Shared Admin/Property Owner/Penghuni primitives memakai variant dan state yang s
 - **Don't** promosikan keputusan layout khusus satu halaman menjadi aturan desain global.
 - **Don't** gunakan shadow berat atau efek dekoratif sebagai pengganti hierarki.
 - **Don't** memakai DTO Admin, route Admin, data mock, atau join di browser untuk membentuk tampilan Owner.
-- **Don't** memakai merah/destructive untuk reset filter atau tindakan non-destruktif lain.
+- **Don't** memakai merah/destructive untuk tindakan non-destruktif lain di luar reset filter yang memang mengembalikan kondisi pencarian ke default.
 - **Don't** menjadikan detail penghuni Admin sebagai halaman Owner; proyeksi Owner hanya menampilkan identitas penghuni yang aman bila relevan terhadap hunian aset.

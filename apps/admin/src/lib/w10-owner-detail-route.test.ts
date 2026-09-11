@@ -103,6 +103,17 @@ test("W10 owner detail aligns the primary back action with the detail cards", ()
   );
 });
 
+test("W10 owner password dialogs provide the default shortcut without removing reveal controls", () => {
+  const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
+
+  assert.match(workspace, /const DEFAULT_OWNER_PASSWORD = "qwerty1234#"/);
+  assert.equal((workspace.match(/aria-label="Isi password default"/g) ?? []).length, 2);
+  assert.equal((workspace.match(/initialPassword: DEFAULT_OWNER_PASSWORD/g) ?? []).length, 2);
+  assert.equal((workspace.match(/className="pr-32"/g) ?? []).length, 2);
+  assert.match(workspace, /Tampilkan password awal/);
+  assert.match(workspace, /Tampilkan password baru/);
+});
+
 test("W10 owner assignment is immediate and permanent without admin-supplied dates", () => {
   const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
   const assignmentStart = workspace.indexOf('<Dialog open={modal === "assign"}');

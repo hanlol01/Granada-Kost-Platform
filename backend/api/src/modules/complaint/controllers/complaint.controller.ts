@@ -52,10 +52,27 @@ export class ComplaintController {
   @Get()
   async list(@CurrentUser() user: UserAccessContext, @Query() query: ListComplaintsQueryDto) {
     const propertyIds = await scopedPropertyIds(this.properties, user, query.property_id);
+    const filters = {
+      status: query.status,
+      statusGroup: query.status_group,
+      priority: query.priority,
+      categoryId: query.category_id,
+      sla: query.sla,
+      assignment: query.assignment,
+      buildingId: query.building_id,
+      roomId: query.room_id,
+      from: query.from,
+      to: query.to,
+      sort: query.sort,
+      q: query.q,
+      limit: query.limit,
+      offset: query.offset,
+      residentId: query.resident_id,
+    };
     if (propertyIds.length === 1) {
-      return this.complaints.list(propertyIds[0], query.status, query.limit, query.offset);
+      return this.complaints.list(propertyIds[0], filters);
     }
-    return this.complaints.listForProperties(propertyIds, query.status, query.limit, query.offset);
+    return this.complaints.listForProperties(propertyIds, filters);
   }
 
   @Get(':complaintId')

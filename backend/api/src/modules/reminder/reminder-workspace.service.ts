@@ -22,9 +22,24 @@ export type ReminderWorkspaceLeaseRow = {
 export type ReminderWorkspaceItem = ReminderWorkspaceLeaseRow & {
   milestone: ReminderMilestone;
   status: 'action_required';
+  latest_reminder: {
+    outcome_status: 'previewed' | 'external_opened' | 'manual_sent' | 'failed';
+    channel: 'whatsapp_manual' | 'manual';
+    created_at: string;
+  } | null;
 };
 
-export function buildReminderWorkspaceGroups(rows: ReminderWorkspaceLeaseRow[]) {
+export function buildReminderWorkspaceGroups(
+  rows: ReminderWorkspaceLeaseRow[],
+  latestReminders: Map<
+    string,
+    {
+      outcome_status: 'previewed' | 'external_opened' | 'manual_sent' | 'failed';
+      channel: 'whatsapp_manual' | 'manual';
+      created_at: string;
+    }
+  > = new Map(),
+) {
   const groups: Record<ReminderMilestone, ReminderWorkspaceItem[]> = { h60: [], h30: [], h14: [] };
   for (const row of rows) {
     const base = { ...row, status: 'action_required' as const };
@@ -33,10 +48,18 @@ export function buildReminderWorkspaceGroups(rows: ReminderWorkspaceLeaseRow[]) 
       row.days_remaining <= 60 &&
       !['draft', 'approved', 'activated'].includes(row.renewal_state ?? '')
     ) {
-      groups.h60.push({ ...base, milestone: 'h60' });
+      groups.h60.push({
+        ...base,
+        milestone: 'h60',
+        latest_reminder: latestReminders.get(`${row.lease_id}:h60`) ?? null,
+      });
     }
     if (row.days_remaining >= 15 && row.days_remaining <= 30 && row.renewal_state !== 'activated') {
-      groups.h30.push({ ...base, milestone: 'h30' });
+      groups.h30.push({
+        ...base,
+        milestone: 'h30',
+        latest_reminder: latestReminders.get(`${row.lease_id}:h30`) ?? null,
+      });
     }
     if (
       row.days_remaining >= 0 &&
@@ -44,7 +67,11 @@ export function buildReminderWorkspaceGroups(rows: ReminderWorkspaceLeaseRow[]) 
       row.checkout_state !== 'completed' &&
       row.checkout_state !== 'cancelled'
     ) {
-      groups.h14.push({ ...base, milestone: 'h14' });
+      groups.h14.push({
+        ...base,
+        milestone: 'h14',
+        latest_reminder: latestReminders.get(`${row.lease_id}:h14`) ?? null,
+      });
     }
   }
   return groups;
@@ -102,7 +129,42 @@ export class ReminderWorkspaceService {
        ORDER BY l.end_date ASC,l.id ASC`,
       [propertyId],
     );
-    const groups = buildReminderWorkspaceGroups(leases.rows);
+    const latestReminderRows = leases.rows.length
+      ? await this.database.client.query<{
+          lease_id: string;
+          reminder_milestone: ReminderMilestone;
+          outcome_status: 'previewed' | 'external_opened' | 'manual_sent' | 'failed';
+          channel: 'whatsapp_manual' | 'manual';
+          created_at: Date | string;
+        }>(
+          `SELECT DISTINCT ON (lease_id,reminder_milestone)
+                  lease_id,reminder_milestone,outcome_status,channel,created_at
+           FROM reminder_attempts
+           WHERE property_id=$1 AND lease_id=ANY($2::uuid[])
+             AND reminder_kind='lease_ending' AND archived_at IS NULL
+           ORDER BY lease_id,reminder_milestone,created_at DESC,id DESC`,
+          [propertyId, leases.rows.map((row) => row.lease_id)],
+        )
+      : { rows: [] };
+    const latestReminders = new Map<
+      string,
+      {
+        outcome_status: 'previewed' | 'external_opened' | 'manual_sent' | 'failed';
+        channel: 'whatsapp_manual' | 'manual';
+        created_at: string;
+      }
+    >();
+    for (const reminder of latestReminderRows.rows) {
+      latestReminders.set(`${reminder.lease_id}:${reminder.reminder_milestone}`, {
+        outcome_status: reminder.outcome_status,
+        channel: reminder.channel,
+        created_at:
+          reminder.created_at instanceof Date
+            ? reminder.created_at.toISOString()
+            : new Date(reminder.created_at).toISOString(),
+      });
+    }
+    const groups = buildReminderWorkspaceGroups(leases.rows, latestReminders);
     const currentMonth = await this.billing.currentWorklist(user, {
       property_id: propertyId,
       month: today.slice(0, 7),

@@ -14,6 +14,30 @@ export type ComplaintStatus =
 
 export type StoredComplaintStatus = Exclude<ComplaintStatus, 'assigned'>;
 
+export type ComplaintStatusGroup = 'waiting' | 'in_progress' | 'resolved' | 'closed';
+export type ComplaintSlaFilter = 'breached' | 'at_risk' | 'on_track';
+export type ComplaintAssignmentFilter = 'assigned' | 'unassigned';
+export type ComplaintListSort = 'newest' | 'oldest' | 'priority' | 'sla';
+
+/** Server-side filters for the admin complaint queue. */
+export type ComplaintListFilters = {
+  status?: StoredComplaintStatus;
+  statusGroup?: ComplaintStatusGroup;
+  priority?: ComplaintPriority;
+  categoryId?: string;
+  sla?: ComplaintSlaFilter;
+  assignment?: ComplaintAssignmentFilter;
+  buildingId?: string;
+  roomId?: string;
+  from?: string;
+  to?: string;
+  sort?: ComplaintListSort;
+  q?: string;
+  limit?: number;
+  offset?: number;
+  residentId?: string;
+};
+
 export type ComplaintCategoryRecord = {
   id: string;
   propertyId: string;

@@ -33,6 +33,7 @@ import { Route as RoomsRouteRouteImport } from './routes/rooms/route'
 import { Route as PenyewaanRouteRouteImport } from './routes/penyewaan/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RoomsIndexRouteImport } from './routes/rooms/index'
+import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as PropertyOwnersIndexRouteImport } from './routes/property-owners/index'
 import { Route as PenyewaanIndexRouteImport } from './routes/penyewaan/index'
 import { Route as TenantsResidentIdRouteImport } from './routes/tenants/$residentId'
@@ -41,6 +42,10 @@ import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
 import { Route as RoomsFasilitasRouteImport } from './routes/rooms/fasilitas'
 import { Route as RoomsApartKostRouteImport } from './routes/rooms/apart-kost'
 import { Route as RoomsRoomNumberRouteImport } from './routes/rooms/$roomNumber'
+import { Route as ReportsPaymentsRouteImport } from './routes/reports/payments'
+import { Route as ReportsLeasesRouteImport } from './routes/reports/leases'
+import { Route as ReportsFinanceRouteImport } from './routes/reports/finance'
+import { Route as ReportsExpensesRouteImport } from './routes/reports/expenses'
 import { Route as RemindersHistoryRouteImport } from './routes/reminders/history'
 import { Route as RemindersH30RouteImport } from './routes/reminders/h-30'
 import { Route as PropertyOwnersOwnerIdRouteImport } from './routes/property-owners/$ownerId'
@@ -178,6 +183,11 @@ const RoomsIndexRoute = RoomsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const ReportsIndexRoute = ReportsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ReportsRoute,
+} as any)
 const PropertyOwnersIndexRoute = PropertyOwnersIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -217,6 +227,26 @@ const RoomsRoomNumberRoute = RoomsRoomNumberRouteImport.update({
   id: '/$roomNumber',
   path: '/$roomNumber',
   getParentRoute: () => RoomsRouteRoute,
+} as any)
+const ReportsPaymentsRoute = ReportsPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => ReportsRoute,
+} as any)
+const ReportsLeasesRoute = ReportsLeasesRouteImport.update({
+  id: '/leases',
+  path: '/leases',
+  getParentRoute: () => ReportsRoute,
+} as any)
+const ReportsFinanceRoute = ReportsFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => ReportsRoute,
+} as any)
+const ReportsExpensesRoute = ReportsExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => ReportsRoute,
 } as any)
 const RemindersHistoryRoute = RemindersHistoryRouteImport.update({
   id: '/reminders/history',
@@ -328,7 +358,7 @@ export interface FileRoutesByFullPath {
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
   '/property-owners': typeof PropertyOwnersRouteWithChildren
-  '/reports': typeof ReportsRoute
+  '/reports': typeof ReportsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/syarat-ketentuan': typeof SyaratKetentuanRoute
@@ -339,6 +369,10 @@ export interface FileRoutesByFullPath {
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/reminders/h-30': typeof RemindersH30Route
   '/reminders/history': typeof RemindersHistoryRoute
+  '/reports/expenses': typeof ReportsExpensesRoute
+  '/reports/finance': typeof ReportsFinanceRoute
+  '/reports/leases': typeof ReportsLeasesRoute
+  '/reports/payments': typeof ReportsPaymentsRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -347,6 +381,7 @@ export interface FileRoutesByFullPath {
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
+  '/reports/': typeof ReportsIndexRoute
   '/rooms/': typeof RoomsIndexRoute
   '/property-owners/portal/occupancy': typeof PropertyOwnersPortalOccupancyRouteRouteWithChildren
   '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
@@ -375,7 +410,6 @@ export interface FileRoutesByTo {
   '/notifications': typeof NotificationsRoute
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
-  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/syarat-ketentuan': typeof SyaratKetentuanRoute
@@ -386,6 +420,10 @@ export interface FileRoutesByTo {
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/reminders/h-30': typeof RemindersH30Route
   '/reminders/history': typeof RemindersHistoryRoute
+  '/reports/expenses': typeof ReportsExpensesRoute
+  '/reports/finance': typeof ReportsFinanceRoute
+  '/reports/leases': typeof ReportsLeasesRoute
+  '/reports/payments': typeof ReportsPaymentsRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -394,6 +432,7 @@ export interface FileRoutesByTo {
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan': typeof PenyewaanIndexRoute
   '/property-owners': typeof PropertyOwnersIndexRoute
+  '/reports': typeof ReportsIndexRoute
   '/rooms': typeof RoomsIndexRoute
   '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
   '/property-owners/portal/finance': typeof PropertyOwnersPortalFinanceRoute
@@ -425,7 +464,7 @@ export interface FileRoutesById {
   '/parking': typeof ParkingRoute
   '/payments': typeof PaymentsRoute
   '/property-owners': typeof PropertyOwnersRouteWithChildren
-  '/reports': typeof ReportsRoute
+  '/reports': typeof ReportsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/smart-lock': typeof SmartLockRoute
   '/syarat-ketentuan': typeof SyaratKetentuanRoute
@@ -436,6 +475,10 @@ export interface FileRoutesById {
   '/property-owners/$ownerId': typeof PropertyOwnersOwnerIdRoute
   '/reminders/h-30': typeof RemindersH30Route
   '/reminders/history': typeof RemindersHistoryRoute
+  '/reports/expenses': typeof ReportsExpensesRoute
+  '/reports/finance': typeof ReportsFinanceRoute
+  '/reports/leases': typeof ReportsLeasesRoute
+  '/reports/payments': typeof ReportsPaymentsRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -444,6 +487,7 @@ export interface FileRoutesById {
   '/tenants/$residentId': typeof TenantsResidentIdRoute
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
+  '/reports/': typeof ReportsIndexRoute
   '/rooms/': typeof RoomsIndexRoute
   '/property-owners/portal/occupancy': typeof PropertyOwnersPortalOccupancyRouteRouteWithChildren
   '/property-owners/portal/account': typeof PropertyOwnersPortalAccountRoute
@@ -488,6 +532,10 @@ export interface FileRouteTypes {
     | '/property-owners/$ownerId'
     | '/reminders/h-30'
     | '/reminders/history'
+    | '/reports/expenses'
+    | '/reports/finance'
+    | '/reports/leases'
+    | '/reports/payments'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -496,6 +544,7 @@ export interface FileRouteTypes {
     | '/tenants/$residentId'
     | '/penyewaan/'
     | '/property-owners/'
+    | '/reports/'
     | '/rooms/'
     | '/property-owners/portal/occupancy'
     | '/property-owners/portal/account'
@@ -524,7 +573,6 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/parking'
     | '/payments'
-    | '/reports'
     | '/settings'
     | '/smart-lock'
     | '/syarat-ketentuan'
@@ -535,6 +583,10 @@ export interface FileRouteTypes {
     | '/property-owners/$ownerId'
     | '/reminders/h-30'
     | '/reminders/history'
+    | '/reports/expenses'
+    | '/reports/finance'
+    | '/reports/leases'
+    | '/reports/payments'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -543,6 +595,7 @@ export interface FileRouteTypes {
     | '/tenants/$residentId'
     | '/penyewaan'
     | '/property-owners'
+    | '/reports'
     | '/rooms'
     | '/property-owners/portal/account'
     | '/property-owners/portal/finance'
@@ -584,6 +637,10 @@ export interface FileRouteTypes {
     | '/property-owners/$ownerId'
     | '/reminders/h-30'
     | '/reminders/history'
+    | '/reports/expenses'
+    | '/reports/finance'
+    | '/reports/leases'
+    | '/reports/payments'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -592,6 +649,7 @@ export interface FileRouteTypes {
     | '/tenants/$residentId'
     | '/penyewaan/'
     | '/property-owners/'
+    | '/reports/'
     | '/rooms/'
     | '/property-owners/portal/occupancy'
     | '/property-owners/portal/account'
@@ -624,7 +682,7 @@ export interface RootRouteChildren {
   ParkingRoute: typeof ParkingRoute
   PaymentsRoute: typeof PaymentsRoute
   PropertyOwnersRoute: typeof PropertyOwnersRouteWithChildren
-  ReportsRoute: typeof ReportsRoute
+  ReportsRoute: typeof ReportsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SmartLockRoute: typeof SmartLockRoute
   SyaratKetentuanRoute: typeof SyaratKetentuanRoute
@@ -804,6 +862,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsIndexRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/reports/': {
+      id: '/reports/'
+      path: '/'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ReportsIndexRouteImport
+      parentRoute: typeof ReportsRoute
+    }
     '/property-owners/': {
       id: '/property-owners/'
       path: '/'
@@ -859,6 +924,34 @@ declare module '@tanstack/react-router' {
       fullPath: '/rooms/$roomNumber'
       preLoaderRoute: typeof RoomsRoomNumberRouteImport
       parentRoute: typeof RoomsRouteRoute
+    }
+    '/reports/payments': {
+      id: '/reports/payments'
+      path: '/payments'
+      fullPath: '/reports/payments'
+      preLoaderRoute: typeof ReportsPaymentsRouteImport
+      parentRoute: typeof ReportsRoute
+    }
+    '/reports/leases': {
+      id: '/reports/leases'
+      path: '/leases'
+      fullPath: '/reports/leases'
+      preLoaderRoute: typeof ReportsLeasesRouteImport
+      parentRoute: typeof ReportsRoute
+    }
+    '/reports/finance': {
+      id: '/reports/finance'
+      path: '/finance'
+      fullPath: '/reports/finance'
+      preLoaderRoute: typeof ReportsFinanceRouteImport
+      parentRoute: typeof ReportsRoute
+    }
+    '/reports/expenses': {
+      id: '/reports/expenses'
+      path: '/expenses'
+      fullPath: '/reports/expenses'
+      preLoaderRoute: typeof ReportsExpensesRouteImport
+      parentRoute: typeof ReportsRoute
     }
     '/reminders/history': {
       id: '/reminders/history'
@@ -1066,6 +1159,25 @@ const PropertyOwnersRouteWithChildren = PropertyOwnersRoute._addFileChildren(
   PropertyOwnersRouteChildren,
 )
 
+interface ReportsRouteChildren {
+  ReportsExpensesRoute: typeof ReportsExpensesRoute
+  ReportsFinanceRoute: typeof ReportsFinanceRoute
+  ReportsLeasesRoute: typeof ReportsLeasesRoute
+  ReportsPaymentsRoute: typeof ReportsPaymentsRoute
+  ReportsIndexRoute: typeof ReportsIndexRoute
+}
+
+const ReportsRouteChildren: ReportsRouteChildren = {
+  ReportsExpensesRoute: ReportsExpensesRoute,
+  ReportsFinanceRoute: ReportsFinanceRoute,
+  ReportsLeasesRoute: ReportsLeasesRoute,
+  ReportsPaymentsRoute: ReportsPaymentsRoute,
+  ReportsIndexRoute: ReportsIndexRoute,
+}
+
+const ReportsRouteWithChildren =
+  ReportsRoute._addFileChildren(ReportsRouteChildren)
+
 interface TenantsRouteChildren {
   TenantsResidentIdRoute: typeof TenantsResidentIdRoute
 }
@@ -1095,7 +1207,7 @@ const rootRouteChildren: RootRouteChildren = {
   ParkingRoute: ParkingRoute,
   PaymentsRoute: PaymentsRoute,
   PropertyOwnersRoute: PropertyOwnersRouteWithChildren,
-  ReportsRoute: ReportsRoute,
+  ReportsRoute: ReportsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SmartLockRoute: SmartLockRoute,
   SyaratKetentuanRoute: SyaratKetentuanRoute,

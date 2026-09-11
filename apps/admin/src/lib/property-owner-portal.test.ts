@@ -9,11 +9,38 @@ import {
   ownerPortalNavigation,
   parseOwnerAssetDetail,
   parseOwnerOccupancyResidentDetail,
+  parseOwnerCollectionProgress,
   parseOwnerPortal,
   parseOwnerResourcePage,
   parseOwnerFinance,
   parseOwnerReport,
 } from "./property-owner-portal";
+
+test("parses contract-wide owner collection summary without treating it as monthly income", () => {
+  const parsed = parseOwnerCollectionProgress({
+    summary: {
+      active_lease_count: 10,
+      settled_lease_count: 2,
+      partial_lease_count: 6,
+      unpaid_lease_count: 2,
+      overdue_lease_count: 1,
+      h7_lease_count: 1,
+      checkpoint_attention_count: 1,
+      rent_outstanding: "0",
+      contract_value_total: "163200000",
+      rent_received_total: "98950000",
+      contract_outstanding_total: "64250000",
+      projected_management_fee_total: "30000000",
+      estimated_owner_entitlement_total: "133200000",
+      package_counts: { short_stay: 2, medium_stay: 2, long_stay: 6 },
+    },
+    items: [],
+  });
+
+  assert.equal(parsed.summary.contractValueTotal, "163200000");
+  assert.equal(parsed.summary.contractOutstandingTotal, "64250000");
+  assert.deepEqual(parsed.summary.packageCounts, { shortStay: 2, mediumStay: 2, longStay: 6 });
+});
 
 const source = (relativePath: string): string =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -55,7 +82,16 @@ const assetDetail = () => ({
     unit_code: "05",
   },
   gender_policy: "female",
-  commercial: { monthly_price: "1800000", annual_contract_value: "21600000" },
+  commercial: {
+    effective_date: "2026-06-01",
+    monthly_price: "1900000",
+    short_stay_monthly_price: "1900000",
+    medium_stay_monthly_price: "1850000",
+    long_stay_monthly_price: "1800000",
+    annual_contract_value: "21600000",
+    management_fee_amount: "300000",
+    management_fee_effective_date: "2026-06-01",
+  },
   lease: { status: "active", start_date: "2026-08-06", end_date: "2027-02-06" },
   resident: { display_name: "PUTRI", occupancy_start_date: "2026-08-06" },
   billing: { state: "partially_paid" },
@@ -271,7 +307,12 @@ void test("owner asset filters and groups only authoritative Rumah and Apart roo
 });
 
 void test("owner asset detail parser accepts safe detail and rejects tenant PII", () => {
-  assert.equal(parseOwnerAssetDetail(assetDetail()).roomCode, "AK-05-03");
+  const parsed = parseOwnerAssetDetail(assetDetail());
+  assert.equal(parsed.roomCode, "AK-05-03");
+  assert.equal(parsed.commercial.shortStayMonthlyPrice, "1900000");
+  assert.equal(parsed.commercial.mediumStayMonthlyPrice, "1850000");
+  assert.equal(parsed.commercial.longStayMonthlyPrice, "1800000");
+  assert.equal(parsed.commercial.managementFeeAmount, "300000");
   const unsafe = assetDetail() as ReturnType<typeof assetDetail> & {
     resident: Record<string, unknown>;
   };

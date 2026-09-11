@@ -18,10 +18,11 @@ type ReasonInput = IdInput & { reason: string };
 export type CreateVehicleInput = {
   propertyId: string;
   residentId: string;
-  plateNumber: string;
+  plateNumber?: string;
   vehicleType: VehicleRecord["vehicleType"];
-  brand: string;
-  color: string;
+  customVehicleType?: string;
+  brand?: string;
+  color?: string;
   year?: string;
   notes?: string;
 };
@@ -29,7 +30,17 @@ export type CreateVehicleInput = {
 export function useCreateVehicle() {
   const qc = useQueryClient();
   return useMutation<VehicleRecord, unknown, CreateVehicleInput>({
-    mutationFn: ({ propertyId, residentId, plateNumber, vehicleType, brand, color, year, notes }) =>
+    mutationFn: ({
+      propertyId,
+      residentId,
+      plateNumber,
+      vehicleType,
+      customVehicleType,
+      brand,
+      color,
+      year,
+      notes,
+    }) =>
       apiClient.post<VehicleRecord>(
         "/vehicles",
         {
@@ -37,6 +48,7 @@ export function useCreateVehicle() {
           resident_id: residentId,
           plate_number: plateNumber,
           vehicle_type: vehicleType,
+          custom_vehicle_type: customVehicleType || undefined,
           brand,
           color,
           year: year || undefined,

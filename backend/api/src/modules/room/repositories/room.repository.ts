@@ -447,6 +447,10 @@ export class RoomRepository {
       available_count: string;
       price_from_monthly: number | string;
       price_from_yearly: number | string;
+      short_stay_monthly_price: number | string;
+      medium_stay_monthly_price: number | string;
+      long_stay_monthly_price: number | string;
+      commercial_effective_date: string;
       minimum_dp_percent: number;
       security_deposit_months: number;
       payment_schedules: string[];
@@ -466,6 +470,10 @@ export class RoomRepository {
               count(rooms.id) AS available_count,
               min(commercial_version.monthly_price) AS price_from_monthly,
               min(commercial_version.annual_contract_value) AS price_from_yearly,
+              min(commercial_version.short_stay_monthly_price) AS short_stay_monthly_price,
+              min(commercial_version.medium_stay_monthly_price) AS medium_stay_monthly_price,
+              min(commercial_version.long_stay_monthly_price) AS long_stay_monthly_price,
+              commercial_version.effective_date::text AS commercial_effective_date,
               min(commercial_version.minimum_dp_percent) AS minimum_dp_percent,
               min(commercial_version.security_deposit_months) AS security_deposit_months,
               commercial_version.payment_schedules
@@ -478,7 +486,9 @@ export class RoomRepository {
         AND kost_type.status = 'active'
         AND kost_type.deleted_at IS NULL
        JOIN LATERAL (
-         SELECT version.monthly_price, version.annual_contract_value,
+         SELECT version.effective_date, version.monthly_price, version.annual_contract_value,
+                version.short_stay_monthly_price, version.medium_stay_monthly_price,
+                version.long_stay_monthly_price,
                 version.minimum_dp_percent, version.security_deposit_months,
                 version.payment_schedules
          FROM kost_type_commercial_versions version
@@ -499,7 +509,8 @@ export class RoomRepository {
           AND ($1::text IS NULL OR room_buildings.category = $1)
           AND ($2::text IS NULL OR room_buildings.gender_policy = $2)
        GROUP BY room_buildings.property_id, room_buildings.category,
-                room_buildings.gender_policy, commercial_version.payment_schedules
+                room_buildings.gender_policy, commercial_version.effective_date,
+                commercial_version.payment_schedules
        ORDER BY room_buildings.category, room_buildings.gender_policy`,
       [filters.category ?? null, filters.gender ?? null],
     );
@@ -510,6 +521,10 @@ export class RoomRepository {
       availableCount: Number(row.available_count),
       priceFromMonthly: Number(row.price_from_monthly),
       priceFromYearly: Number(row.price_from_yearly),
+      shortStayMonthlyPrice: Number(row.short_stay_monthly_price),
+      mediumStayMonthlyPrice: Number(row.medium_stay_monthly_price),
+      longStayMonthlyPrice: Number(row.long_stay_monthly_price),
+      commercialEffectiveDate: String(row.commercial_effective_date),
       minimumDpPercent: Number(row.minimum_dp_percent),
       securityDepositMonths: Number(row.security_deposit_months),
       paymentSchedules: [...row.payment_schedules],

@@ -35,6 +35,7 @@ import { PropertyOwnerManagementModule } from './modules/property-owner-manageme
 import { ReminderModule } from './modules/reminder/reminder.module';
 import { ExpenseModule } from './modules/expense/expense.module';
 import { ActivityLogModule } from './modules/activity-log/activity-log.module';
+import { ReportModule } from './modules/report/report.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { ActivityLogModule } from './modules/activity-log/activity-log.module';
     ReminderModule,
     ExpenseModule,
     ActivityLogModule,
+    ReportModule,
     SmartLockModule,
     FileModule,
     PaymentGatewayModule,

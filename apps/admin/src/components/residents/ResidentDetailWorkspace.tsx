@@ -5,12 +5,9 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   Archive,
-  BadgeInfo,
-  Bell,
   Building2,
   CalendarCheck2,
   CalendarClock,
-  Car,
   CircleAlert,
   Clock3,
   CreditCard,
@@ -37,6 +34,7 @@ import { FilePreviewModal } from "@/components/file/FilePreviewModal";
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
+import { ResidentOperationalCards } from "@/components/residents/ResidentOperationalCards";
 import { TransferPanel } from "@/components/leases/TransferPanel";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
@@ -1261,23 +1259,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           ) : null}
         </section>
 
-        <section className="grid gap-5 md:grid-cols-3" aria-label="Operasional terkait">
-          <DeferredPanel
-            icon={<Car className="h-5 w-5" />}
-            title="Kendaraan & parkir"
-            description="Riwayat kendaraan terhubung pada pekerjaan operasional berikutnya."
-          />
-          <DeferredPanel
-            icon={<MessageSquare className="h-5 w-5" />}
-            title="Komplain"
-            description="Komplain penghuni akan terhubung pada pekerjaan operasional berikutnya."
-          />
-          <DeferredPanel
-            icon={<Bell className="h-5 w-5" />}
-            title="Notifikasi & reminder"
-            description="Riwayat pengingat tersedia setelah modul reminder diaktifkan."
-          />
-        </section>
+        <ResidentOperationalCards residentId={resident.id} />
       </div>
 
       <ResidentFormDialog
@@ -3013,28 +2995,6 @@ function HonestEmpty({
       <p className="font-medium">{title}</p>
       <p className="mt-1 max-w-sm text-xs text-muted-foreground">{description}</p>
     </div>
-  );
-}
-function DeferredPanel({
-  icon,
-  title,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex min-h-40 flex-col justify-center pt-6">
-        <div className="mb-3 text-muted-foreground">{icon}</div>
-        <p className="font-medium">{title}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        <p className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <BadgeInfo className="h-3.5 w-3.5" /> Belum ada data yang dihubungkan.
-        </p>
-      </CardContent>
-    </Card>
   );
 }
 function maskKtp(value: string): string {

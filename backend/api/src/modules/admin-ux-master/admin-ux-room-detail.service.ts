@@ -279,7 +279,7 @@ export class AdminUxRoomDetailService {
            GROUP BY vehicle.id, vehicle.vehicle_code, vehicle.plate_number, vehicle.vehicle_type
            ORDER BY vehicle.vehicle_code, vehicle.id
            LIMIT 20`,
-        [propertyId, occupancyResidentId],
+        [propertyId, billingResidentId],
       ),
       client.query<Row>(
         `SELECT complaint.complaint_code, category.name AS category_name,
@@ -424,14 +424,19 @@ export class AdminUxRoomDetailService {
               room.primary_photo_file_id, room.import_notes, room.updated_at,
               building.building_code, building.building_name,
               kost_type.category, kost_type.name AS kost_type_name,
-              commercial_version.effective_date AS commercial_effective_date,
+              commercial_version.effective_date::text AS commercial_effective_date,
               commercial_version.monthly_price,
+              commercial_version.short_stay_monthly_price,
+              commercial_version.medium_stay_monthly_price,
+              commercial_version.long_stay_monthly_price,
               commercial_version.annual_contract_value AS yearly_price,
               (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
                 AS deposit_amount,
               commercial_version.minimum_dp_percent,
               commercial_version.security_deposit_months,
               commercial_version.payment_schedules,
+              management_fee.monthly_fee_amount AS management_fee_amount,
+              management_fee.effective_date::text AS management_fee_effective_date,
               EXISTS (
                 SELECT 1 FROM booking_lead_holds active_hold
                 WHERE active_hold.property_id = room.property_id
@@ -457,7 +462,9 @@ export class AdminUxRoomDetailService {
         AND kost_type.deleted_at IS NULL
        LEFT JOIN LATERAL (
          SELECT DISTINCT ON (version.kost_type_id)
-                version.effective_date, version.monthly_price, version.annual_contract_value,
+                version.effective_date, version.monthly_price,
+                version.short_stay_monthly_price, version.medium_stay_monthly_price,
+                version.long_stay_monthly_price, version.annual_contract_value,
                 version.minimum_dp_percent, version.security_deposit_months,
                 version.payment_schedules
          FROM kost_type_commercial_versions version
@@ -465,6 +472,14 @@ export class AdminUxRoomDetailService {
            AND version.effective_date <= CURRENT_DATE
          ORDER BY version.kost_type_id, version.effective_date DESC, version.id DESC
        ) commercial_version ON true
+       LEFT JOIN LATERAL (
+         SELECT fee.monthly_fee_amount, fee.effective_date
+         FROM property_management_fee_versions fee
+         WHERE fee.property_id = room.property_id
+           AND fee.effective_date <= CURRENT_DATE
+         ORDER BY fee.effective_date DESC, fee.id DESC
+         LIMIT 1
+       ) management_fee ON true
        WHERE room.property_id = $1
          AND room.number = $2
        ORDER BY room.id`,
@@ -496,6 +511,10 @@ export class AdminUxRoomDetailService {
   ): AdminRoomDetailProjection {
     const annual = money(room.yearly_price);
     const monthly = money(room.monthly_price);
+    const shortStayMonthly = money(room.short_stay_monthly_price ?? monthly);
+    const mediumStayMonthly = money(room.medium_stay_monthly_price ?? shortStayMonthly);
+    const longStayMonthly = money(room.long_stay_monthly_price ?? annual / 12);
+    const managementFee = money(room.management_fee_amount ?? 0);
     const minimumDpPercent = Number(room.minimum_dp_percent ?? 25);
     const minimumDp = Math.ceil((annual * minimumDpPercent) / 100);
     const verifiedInvoice = money(billing.verified_invoice_allocated);
@@ -554,8 +573,14 @@ export class AdminUxRoomDetailService {
       },
       commercial: {
         source: 'current_category',
+        effective_date: text(room.commercial_effective_date),
         monthly_price: monthly,
+        short_stay_monthly_price: shortStayMonthly,
+        medium_stay_monthly_price: mediumStayMonthly,
+        long_stay_monthly_price: longStayMonthly,
         annual_contract_value: annual,
+        management_fee_amount: managementFee,
+        management_fee_effective_date: text(room.management_fee_effective_date),
         minimum_dp_amount: minimumDp,
         minimum_dp_label: `Rekomendasi ${minimumDpPercent}% dari nilai kontrak tahunan`,
         security_deposit_required: money(room.deposit_amount),

@@ -180,8 +180,14 @@ export type RoomDetail = {
   };
   commercial: {
     source: "current_category";
+    effectiveDate: string;
     monthlyPrice: number;
+    shortStayMonthlyPrice: number;
+    mediumStayMonthlyPrice: number;
+    longStayMonthlyPrice: number;
     annualContractValue: number;
+    managementFeeAmount: number;
+    managementFeeEffectiveDate: string;
     minimumDpAmount: number;
     minimumDpLabel: string;
     securityDepositRequired: number;
@@ -228,7 +234,7 @@ export type RoomDetail = {
   };
   vehicles: Array<{
     code: string;
-    plateNumber: string;
+    plateNumber: string | null;
     vehicleType: string;
     parkingState: string | null;
   }>;
@@ -1740,8 +1746,14 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     data.commercial,
     [
       "source",
+      "effective_date",
       "monthly_price",
+      "short_stay_monthly_price",
+      "medium_stay_monthly_price",
+      "long_stay_monthly_price",
       "annual_contract_value",
+      "management_fee_amount",
+      "management_fee_effective_date",
       "minimum_dp_amount",
       "minimum_dp_label",
       "security_deposit_required",
@@ -1761,6 +1773,11 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     typeof physical.public_visible !== "boolean" ||
     typeof physical.structural_edit_locked !== "boolean" ||
     commercial.source !== "current_category" ||
+    commercial.monthly_price !== commercial.short_stay_monthly_price ||
+    commercial.annual_contract_value !== commercial.long_stay_monthly_price * 12 ||
+    commercial.short_stay_monthly_price < commercial.medium_stay_monthly_price ||
+    commercial.medium_stay_monthly_price < commercial.long_stay_monthly_price ||
+    commercial.management_fee_amount >= commercial.long_stay_monthly_price ||
     !Array.isArray(commercial.facilities)
   ) {
     throw new Error("Invalid room detail authority.");
@@ -1851,7 +1868,10 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
         );
         return {
           code: requiredString(record.code, "vehicle code"),
-          plateNumber: requiredString(record.plate_number, "vehicle plate"),
+          plateNumber:
+            record.plate_number === null
+              ? null
+              : requiredString(record.plate_number, "vehicle plate"),
           vehicleType: exactEnum(record.vehicle_type, VEHICLE_TYPES, "vehicle type"),
           parkingState:
             record.parking_state === null
@@ -2010,8 +2030,26 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     },
     commercial: {
       source: "current_category",
+      effectiveDate: dateLike(commercial.effective_date, "commercial effective date"),
       monthlyPrice: safeMoney(commercial.monthly_price, "monthly price"),
+      shortStayMonthlyPrice: safeMoney(
+        commercial.short_stay_monthly_price,
+        "short stay monthly price",
+      ),
+      mediumStayMonthlyPrice: safeMoney(
+        commercial.medium_stay_monthly_price,
+        "medium stay monthly price",
+      ),
+      longStayMonthlyPrice: safeMoney(
+        commercial.long_stay_monthly_price,
+        "long stay monthly price",
+      ),
       annualContractValue: safeMoney(commercial.annual_contract_value, "annual value"),
+      managementFeeAmount: safeMoney(commercial.management_fee_amount, "management fee"),
+      managementFeeEffectiveDate: dateLike(
+        commercial.management_fee_effective_date,
+        "management fee effective date",
+      ),
       minimumDpAmount: safeMoney(commercial.minimum_dp_amount, "minimum DP"),
       minimumDpLabel: requiredString(commercial.minimum_dp_label, "minimum DP label"),
       securityDepositRequired: safeMoney(commercial.security_deposit_required, "security deposit"),

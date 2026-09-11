@@ -275,13 +275,52 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             </p>
             <DefinitionGrid
               items={[
-                ["Harga bulanan", formatIDR(detail.commercial.monthlyPrice)],
-                ["Nilai kontrak tahunan", formatIDR(detail.commercial.annualContractValue)],
-                ["DP rekomendasi", detail.commercial.minimumDpLabel],
-                ["Deposit keamanan", formatIDR(detail.commercial.securityDepositRequired)],
-                ["Rencana pembayaran", detail.commercial.paymentPlanDescription],
+                ["Tarif 3–5 bulan", formatIDR(detail.commercial.shortStayMonthlyPrice)],
+                ["Tarif 6–11 bulan", formatIDR(detail.commercial.mediumStayMonthlyPrice)],
+                ["Tarif 12+ bulan", formatIDR(detail.commercial.longStayMonthlyPrice)],
+                ["Nilai kontrak 12 bulan", formatIDR(detail.commercial.annualContractValue)],
+                ["Management fee / bulan", formatIDR(detail.commercial.managementFeeAmount)],
+                [
+                  "Hak owner 3–5 bulan",
+                  formatIDR(
+                    Math.max(
+                      0,
+                      detail.commercial.shortStayMonthlyPrice -
+                        detail.commercial.managementFeeAmount,
+                    ),
+                  ),
+                ],
+                [
+                  "Hak owner 6–11 bulan",
+                  formatIDR(
+                    Math.max(
+                      0,
+                      detail.commercial.mediumStayMonthlyPrice -
+                        detail.commercial.managementFeeAmount,
+                    ),
+                  ),
+                ],
+                [
+                  "Hak owner 12+ bulan",
+                  formatIDR(
+                    Math.max(
+                      0,
+                      detail.commercial.longStayMonthlyPrice -
+                        detail.commercial.managementFeeAmount,
+                    ),
+                  ),
+                ],
+                ["Tanggal efektif tarif", formatDate(detail.commercial.effectiveDate)],
+                [
+                  "Tanggal efektif management fee",
+                  formatDate(detail.commercial.managementFeeEffectiveDate),
+                ],
               ]}
             />
+            <p className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-5 text-foreground/70">
+              Tarif mengikuti durasi kontrak. Penyewaan lama tetap memakai snapshot tarif saat
+              kontrak dibuat; angka hak owner sudah dikurangi management fee.
+            </p>
             <div className="mt-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Fasilitas kategori
@@ -354,7 +393,12 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                     ["Mulai hunian", formatDate(detail.resident.occupancyStart)],
                   ]}
                 />
-                <UnavailableLink label="Detail penghuni belum menerima filter aman pada KMO-W02A." />
+                <SafeAction
+                  href={detail.links.resident}
+                  enabledLabel="Buka detail penghuni"
+                  unavailableLabel="Detail penghuni belum tersedia"
+                  icon={UserRound}
+                />
               </>
             ) : (
               <EmptySectionCopy text="Belum ada penghuni aktif pada kamar ini." />
@@ -374,7 +418,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                       detail.lease.endDate ? formatDate(detail.lease.endDate) : "Belum ditetapkan",
                     ],
                     ["Durasi", `${detail.lease.durationMonths} bulan`],
-                    ["Rencana pembayaran", operationalLabel(detail.lease.paymentPlan)],
                     [
                       "Status hunian",
                       detail.lease.occupancyState
@@ -417,7 +460,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
               label="Menunggu konfirmasi"
               value={formatIDR(detail.billing.awaitingConfirmationAmount)}
             />
-            <Metric label="Minimum DP" value={formatIDR(detail.billing.minimumDpAmount)} />
             <Metric
               label="DP terverifikasi"
               value={moneyOrUnavailable(detail.billing.dpVerifiedAmount)}
@@ -429,7 +471,14 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             />
           </div>
           <p className="mt-3 text-sm text-foreground/75">{detail.billing.dpProgressLabel}</p>
-          <UnavailableLink label="Tagihan belum menerima filter kamar aman pada KMO-W02A." />
+          {detail.links.resident ? (
+            <SafeAction
+              href={`${detail.links.resident}#riwayat-pembayaran`}
+              enabledLabel="Lihat riwayat pembayaran"
+              unavailableLabel="Riwayat pembayaran belum tersedia"
+              icon={CreditCard}
+            />
+          ) : null}
         </DetailSection>
 
         <div className="grid items-stretch gap-5 xl:grid-cols-2">
@@ -439,7 +488,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                 {detail.vehicles.map((vehicle) => (
                   <li key={vehicle.code} className="py-3 first:pt-0 last:pb-0">
                     <p className="break-words font-medium text-foreground">
-                      {vehicle.code} · {vehicle.plateNumber}
+                      {vehicle.code} · {vehicle.plateNumber || "—"}
                     </p>
                     <p className="text-sm text-foreground/70">
                       {operationalLabel(vehicle.vehicleType)} ·{" "}
@@ -453,7 +502,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             ) : (
               <EmptySectionCopy text="Belum ada kendaraan aktif yang terkait penghuni kamar ini." />
             )}
-            <UnavailableLink label="Kendaraan belum menerima filter kamar aman pada KMO-W02A." />
           </DetailSection>
 
           <DetailSection title="Komplain dan work order" icon={MessageSquareWarning}>
@@ -486,7 +534,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             ) : (
               <EmptySectionCopy text="Tidak ada komplain aktif untuk kamar ini." />
             )}
-            <UnavailableLink label="Komplain belum menerima filter kamar aman pada KMO-W02A." />
           </DetailSection>
         </div>
 

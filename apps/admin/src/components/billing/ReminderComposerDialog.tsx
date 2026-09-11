@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { FileText, Mail, MessageCircle, Send } from "lucide-react";
+import { FileText, Mail, Send } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -10,11 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 import { adminUxV2Requester } from "@/lib/admin-ux-api";
 import { formatIDR } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import { cn } from "@/lib/utils";
 
+type RecipientKind = "resident" | "parent";
 type Invoice = {
   id: string;
   invoice_code: string;
@@ -25,18 +28,26 @@ type Invoice = {
   invoice_status: string;
 };
 type Preview = {
-  recipient: { display_name: string; room_number: string; phone: string | null };
+  recipient: {
+    kind: RecipientKind;
+    display_name: string;
+    room_number: string;
+    phone: string | null;
+  };
   invoices: Array<{
     id: string;
     code: string;
     period: string;
     due_date: string;
     outstanding_amount: number;
-    share_url: string;
   }>;
   total_outstanding_amount: number;
   rendered: { title: string; body: string };
   channels: { whatsapp: string; email: string };
+};
+const recipientLabel: Record<RecipientKind, string> = {
+  resident: "Preview Penghuni",
+  parent: "Preview Orang Tua",
 };
 
 export function ReminderComposerDialog({
@@ -44,11 +55,13 @@ export function ReminderComposerDialog({
   residentId,
   invoices,
   currentMonthInvoiceId,
+  triggerClassName,
 }: {
   propertyId: string | null;
   residentId: string;
   invoices: Invoice[];
   currentMonthInvoiceId?: string;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const eligible = useMemo(
@@ -61,23 +74,26 @@ export function ReminderComposerDialog({
     [invoices],
   );
   const [selected, setSelected] = useState<string[]>([]);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [recipientKind, setRecipientKind] = useState<RecipientKind>("resident");
+  const [previews, setPreviews] = useState<Partial<Record<RecipientKind, Preview>>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recordedStatus, setRecordedStatus] = useState<
     "previewed" | "external_opened" | "manual_sent" | null
   >(null);
+  const preview = previews[recipientKind] ?? null;
+  const targetIds = (nextSelected = selected) =>
+    currentMonthInvoiceId ? [currentMonthInvoiceId] : nextSelected;
 
-  function toggle(id: string, checked: boolean) {
-    setSelected((items) =>
-      checked ? [...new Set([...items, id])] : items.filter((item) => item !== id),
-    );
-    setPreview(null);
+  function resetDialog() {
+    setSelected([]);
+    setRecipientKind("resident");
+    setPreviews({});
     setError(null);
     setRecordedStatus(null);
   }
-  async function createPreview() {
-    if (!propertyId || !selected.length) return;
+  async function createPreview(kind: RecipientKind, invoiceIds = targetIds()) {
+    if (!propertyId || !invoiceIds.length) return;
     setBusy(true);
     setError(null);
     try {
@@ -85,13 +101,14 @@ export function ReminderComposerDialog({
         `/admin/reminders/residents/${encodeURIComponent(residentId)}/attempts`,
         {
           property_id: propertyId,
-          invoice_ids: currentMonthInvoiceId ? [currentMonthInvoiceId] : selected,
+          invoice_ids: invoiceIds,
+          recipient_kind: kind,
           channel: "whatsapp_manual",
           outcome_status: "previewed",
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      setPreview(result.preview);
+      setPreviews((current) => ({ ...current, [kind]: result.preview }));
       setRecordedStatus("previewed");
     } catch {
       setError(
@@ -101,82 +118,98 @@ export function ReminderComposerDialog({
       setBusy(false);
     }
   }
-  async function openWhatsApp() {
-    if (!propertyId || !selected.length) return;
+  function toggle(id: string, checked: boolean) {
+    const next = checked ? [...new Set([...selected, id])] : selected.filter((item) => item !== id);
+    setSelected(next);
+    setPreviews({});
+    setError(null);
+    setRecordedStatus(null);
+    void createPreview("resident", targetIds(next));
+  }
+  async function chooseRecipient(kind: RecipientKind) {
+    setRecipientKind(kind);
+    if (!previews[kind]) await createPreview(kind);
+  }
+  async function record(
+    outcome_status: "external_opened" | "manual_sent",
+    channel: "whatsapp_manual" | "manual",
+  ) {
+    const invoiceIds = targetIds();
+    if (!propertyId || !invoiceIds.length) return null;
     setBusy(true);
     setError(null);
     try {
-      const result = await adminUxV2Requester.post<{ action: { url: string } }>(
+      const result = await adminUxV2Requester.post<{
+        action: { url: string } | null;
+        preview: Preview;
+      }>(
         `/admin/reminders/residents/${encodeURIComponent(residentId)}/attempts`,
         {
           property_id: propertyId,
-          invoice_ids: currentMonthInvoiceId ? [currentMonthInvoiceId] : selected,
-          channel: "whatsapp_manual",
-          outcome_status: "external_opened",
+          invoice_ids: invoiceIds,
+          recipient_kind: recipientKind,
+          channel,
+          outcome_status,
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      window.open(result.action.url, "_blank", "noopener,noreferrer");
-      setRecordedStatus("external_opened");
+      setPreviews((current) => ({ ...current, [recipientKind]: result.preview }));
+      setRecordedStatus(outcome_status);
+      return result;
     } catch {
       setError(
-        "WhatsApp tidak dapat dibuka. Pastikan nomor penghuni tersedia dan tagihan masih aktif.",
+        recipientKind === "parent"
+          ? "WhatsApp orang tua belum dapat dibuka. Pastikan nomor orang tua tersedia dan tagihan masih aktif."
+          : "WhatsApp penghuni belum dapat dibuka. Pastikan nomor penghuni tersedia dan tagihan masih aktif.",
       );
+      return null;
     } finally {
       setBusy(false);
     }
+  }
+  async function openWhatsApp() {
+    const result = await record("external_opened", "whatsapp_manual");
+    if (result?.action?.url) window.open(result.action.url, "_blank", "noopener,noreferrer");
   }
   async function recordManualSent() {
-    if (
-      !propertyId ||
-      !selected.length ||
-      !window.confirm("Catat bahwa pesan sudah dikirim manual?")
-    )
-      return;
-    setBusy(true);
-    setError(null);
-    try {
-      await adminUxV2Requester.post(
-        `/admin/reminders/residents/${encodeURIComponent(residentId)}/attempts`,
-        {
-          property_id: propertyId,
-          invoice_ids: currentMonthInvoiceId ? [currentMonthInvoiceId] : selected,
-          channel: "manual",
-          outcome_status: "manual_sent",
-        },
-        { idempotencyKey: newIdempotencyKey() },
-      );
-      setRecordedStatus("manual_sent");
-    } catch {
-      setError("Tindakan manual belum tercatat. Pastikan tagihan masih aktif, lalu coba lagi.");
-    } finally {
-      setBusy(false);
-    }
+    if (!window.confirm("Catat bahwa pesan sudah dikirim manual?")) return;
+    await record("manual_sent", "manual");
   }
+
   return (
     <>
       <Button
-        className="min-h-11"
+        className={cn("min-h-11", triggerClassName)}
         variant="info"
         disabled={!propertyId || eligible.length === 0}
         onClick={() => {
-          setSelected(eligible.map((invoice) => invoice.id));
-          setPreview(null);
+          const initial = eligible.map((invoice) => invoice.id);
+          setSelected(initial);
+          setRecipientKind("resident");
+          setPreviews({});
           setError(null);
+          setRecordedStatus(null);
           setOpen(true);
+          void createPreview("resident", currentMonthInvoiceId ? [currentMonthInvoiceId] : initial);
         }}
       >
         <Send className="mr-2 h-4 w-4" />
         {currentMonthInvoiceId ? "Pengingat tagihan" : "Buat pengingat"}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) resetDialog();
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Susun pengingat tagihan</DialogTitle>
             <DialogDescription>
               {currentMonthInvoiceId
-                ? "Tagihan bulan ini sudah dipilih oleh sistem. Nilai, periode, dan tautan invoice selalu dihitung ulang oleh server."
-                : "Pilih tagihan yang masih memiliki sisa. Nilai, periode, dan tautan invoice selalu dihitung ulang oleh server."}
+                ? "Tagihan bulan ini telah dipilih. Preview dibuat otomatis dari data tagihan terbaru."
+                : "Pilih tagihan yang masih memiliki sisa. Preview dibuat otomatis dari data tagihan terbaru."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -202,7 +235,8 @@ export function ReminderComposerDialog({
                     </Badge>
                   </span>
                   <span className="mt-1 block text-sm text-muted-foreground">
-                    {invoice.coverage_start}–{invoice.coverage_end} · jatuh tempo {invoice.due_date}
+                    {invoice.coverage_start} s.d. {invoice.coverage_end} · jatuh tempo{" "}
+                    {invoice.due_date}
                   </span>
                 </span>
               </label>
@@ -220,17 +254,37 @@ export function ReminderComposerDialog({
                 {error}
               </p>
             ) : null}
+            {busy && !preview ? (
+              <p className="rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm text-muted-foreground">
+                Menyiapkan preview pesan...
+              </p>
+            ) : null}
             {preview ? (
               <section
                 className="space-y-3 rounded-xl border border-primary/25 bg-primary/5 p-4"
                 aria-label="Preview pengingat"
               >
-                <div className="flex items-center gap-2 text-primary">
-                  <FileText className="h-4 w-4" />
-                  <p className="font-semibold">
-                    Preview untuk {preview.recipient.display_name} · Kamar{" "}
-                    {preview.recipient.room_number}
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-primary">
+                    <FileText className="h-4 w-4" />
+                    <p className="font-semibold">Preview untuk {preview.recipient.display_name}</p>
+                  </div>
+                  <div className="inline-flex rounded-lg bg-background p-1 ring-1 ring-border">
+                    {(Object.keys(recipientLabel) as RecipientKind[]).map((kind) => (
+                      <Button
+                        key={kind}
+                        type="button"
+                        size="sm"
+                        variant={recipientKind === kind ? "default" : "ghost"}
+                        className="min-h-8 px-3"
+                        aria-pressed={recipientKind === kind}
+                        disabled={busy}
+                        onClick={() => void chooseRecipient(kind)}
+                      >
+                        {recipientLabel[kind]}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 <p className="text-sm font-semibold">
                   Total tersisa: {formatIDR(preview.total_outstanding_amount)}
@@ -242,7 +296,7 @@ export function ReminderComposerDialog({
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  WhatsApp dibuka secara manual. Email belum diaktifkan dan tidak akan dikirim.
+                  WhatsApp dibuka secara manual. Email belum tersedia dan tidak akan dikirim.
                 </p>
                 {recordedStatus ? (
                   <Badge
@@ -261,47 +315,28 @@ export function ReminderComposerDialog({
             ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="secondary" className="min-h-11" onClick={() => setOpen(false)}>
+            <Button variant="destructive" className="min-h-11" onClick={() => setOpen(false)}>
               Batal
-            </Button>
-            <Button
-              className="min-h-11"
-              variant="outline"
-              disabled={busy || selected.length === 0}
-              onClick={() => void createPreview()}
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              {busy ? "Menyiapkan..." : "Tinjau pesan"}
             </Button>
             {preview ? (
               <Button
-                className="min-h-11"
+                className="min-h-11 bg-[#25D366] text-white hover:bg-[#1ebe5d] hover:text-white"
                 disabled={busy || !preview.recipient.phone}
                 onClick={() => void openWhatsApp()}
               >
-                <MessageCircle className="mr-2 h-4 w-4" />
+                <WhatsAppIcon className="mr-2 h-4 w-4" />
                 Buka WhatsApp
               </Button>
             ) : null}
             {preview ? (
-              <Button
-                className="min-h-11"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void recordManualSent()}
-              >
+              <Button className="min-h-11" disabled={busy} onClick={() => void recordManualSent()}>
                 <Send className="mr-2 h-4 w-4" />
                 Catat dikirim manual
               </Button>
             ) : null}
-            <Button
-              className="min-h-11"
-              variant="outline"
-              disabled
-              title="Pengiriman email belum diaktifkan"
-            >
+            <Button className="min-h-11" disabled title="Pengiriman email belum diaktifkan">
               <Mail className="mr-2 h-4 w-4" />
-              Email nonaktif
+              Email belum tersedia
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -32,7 +32,7 @@ type RegisterVehicleInput = Omit<
   CreateVehicleInput,
   'plateNumber' | 'vehicleStatus' | 'approvedByUserId'
 > & {
-  plateNumber: string;
+  plateNumber?: string | null;
   adminCreated?: boolean;
 };
 
@@ -52,8 +52,9 @@ export class VehicleService {
     vehicleType?: VehicleType,
     limit?: number,
     offset?: number,
+    residentId?: string,
   ): Promise<VehicleRecord[]> {
-    return this.vehicles.list(propertyId, status, vehicleType, limit, offset);
+    return this.vehicles.list(propertyId, status, vehicleType, limit, offset, residentId);
   }
 
   listForProperties(
@@ -62,8 +63,16 @@ export class VehicleService {
     vehicleType?: VehicleType,
     limit?: number,
     offset?: number,
+    residentId?: string,
   ): Promise<VehicleRecord[]> {
-    return this.vehicles.listForProperties(propertyIds, status, vehicleType, limit, offset);
+    return this.vehicles.listForProperties(
+      propertyIds,
+      status,
+      vehicleType,
+      limit,
+      offset,
+      residentId,
+    );
   }
 
   listForResident(residentId: string, limit?: number, offset?: number): Promise<VehicleRecord[]> {
@@ -105,12 +114,23 @@ export class VehicleService {
     input: RegisterVehicleInput,
     context: AuditActorContext = {},
   ): Promise<VehicleRecord> {
-    const plateNumber = VehiclePlateNormalizer.normalize(input.plateNumber);
+    const plateNumber = input.plateNumber?.trim()
+      ? VehiclePlateNormalizer.normalize(input.plateNumber)
+      : null;
+    const brand = input.brand?.trim() || null;
+    const color = input.color?.trim() || null;
+    const customVehicleType = input.customVehicleType?.trim() || undefined;
+    if (customVehicleType && input.vehicleType !== 'other') {
+      throw new BadRequestException({
+        code: 'VEHICLE_CUSTOM_TYPE_INVALID',
+        message: 'Custom vehicle type is only allowed for other vehicles',
+      });
+    }
     return this.command(
       context,
       input.propertyId,
       '/vehicles',
-      { ...input, plateNumber },
+      { ...input, plateNumber, customVehicleType },
       async (client) => {
         const settings = await this.vehicles.settings(input.propertyId, client);
         const maxVehicles = settings?.maxVehiclesPerResident ?? 3;
@@ -125,7 +145,9 @@ export class VehicleService {
             message: 'Resident has reached vehicle limit',
           });
         }
-        await this.assertPlateAvailable(input.propertyId, plateNumber, undefined, client);
+        if (plateNumber) {
+          await this.assertPlateAvailable(input.propertyId, plateNumber, undefined, client);
+        }
         const vehicleStatus: VehicleStatus =
           input.adminCreated || settings?.parkingRequiresApproval === false
             ? 'active'
@@ -134,6 +156,9 @@ export class VehicleService {
           {
             ...input,
             plateNumber,
+            brand,
+            color,
+            customVehicleType,
             vehicleStatus,
             approvedByUserId: vehicleStatus === 'active' ? context.actorUserId : undefined,
           },
@@ -185,6 +210,9 @@ export class VehicleService {
     context: AuditActorContext = {},
   ): Promise<VehicleRecord> {
     const patch = { ...input };
+    if (patch.customVehicleType !== undefined) {
+      patch.customVehicleType = patch.customVehicleType?.trim() || null;
+    }
     if (patch.plateNumber) {
       patch.plateNumber = VehiclePlateNormalizer.normalize(patch.plateNumber);
     }
@@ -192,6 +220,12 @@ export class VehicleService {
       const current = await this.vehicles.findByIdForUpdate(vehicleId, client);
       if (!current)
         throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+      if (patch.customVehicleType && (patch.vehicleType ?? current.vehicleType) !== 'other') {
+        throw new BadRequestException({
+          code: 'VEHICLE_CUSTOM_TYPE_REQUIRES_OTHER',
+          message: 'Custom vehicle type can only be used with vehicle type other',
+        });
+      }
       if (patch.plateNumber)
         await this.assertPlateAvailable(current.propertyId, patch.plateNumber, current.id, client);
       const updated = await this.vehicles.update(current.id, patch, client);

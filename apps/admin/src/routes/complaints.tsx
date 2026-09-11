@@ -13,16 +13,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, ForbiddenState, LoadingState } from "@/components/state";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import {
   useComplaints,
   useComplaintCategories,
   useComplaintFiles,
   type ComplaintCategoryRecord,
+  type ComplaintAssignmentFilter,
   type ComplaintPriority,
   type ComplaintRecord,
+  type ComplaintSlaFilter,
+  type ComplaintStatusGroup,
+  type ComplaintListSort,
   type StoredComplaintStatus,
 } from "@/hooks/useComplaints";
+import { useRooms, type RoomRecord } from "@/hooks/useRooms";
 import {
   useAcknowledgeComplaint,
   useCancelComplaint,
@@ -74,14 +86,56 @@ export const Route = createFileRoute("/complaints")({ component: ComplaintsPage 
 
 type ComplaintTab = "all" | "open" | "in_progress" | "resolved" | "closed";
 
+const COMPLAINT_TAB_META: ReadonlyArray<{
+  value: ComplaintTab;
+  label: string;
+  icon: LucideIcon;
+  activeClass: string;
+}> = [
+  {
+    value: "all",
+    label: "Semua",
+    icon: Inbox,
+    activeClass: "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground",
+  },
+  {
+    value: "open",
+    label: "Menunggu",
+    icon: Clock,
+    activeClass:
+      "data-[state=active]:bg-warning/20 data-[state=active]:text-warning-foreground data-[state=active]:ring-1 data-[state=active]:ring-warning/30",
+  },
+  {
+    value: "in_progress",
+    label: "Diproses",
+    icon: Loader2,
+    activeClass:
+      "data-[state=active]:bg-primary-soft data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-primary/25",
+  },
+  {
+    value: "resolved",
+    label: "Selesai",
+    icon: CheckCircle2,
+    activeClass:
+      "data-[state=active]:bg-success data-[state=active]:text-success-foreground data-[state=active]:ring-1 data-[state=active]:ring-success/70",
+  },
+  {
+    value: "closed",
+    label: "Ditutup",
+    icon: Ban,
+    activeClass:
+      "data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground data-[state=active]:ring-1 data-[state=active]:ring-destructive/70",
+  },
+];
+
 function isComplaintTab(value: string): value is ComplaintTab {
   return ["all", "open", "in_progress", "resolved", "closed"].includes(value);
 }
 
-function tabToStatusFilter(tab: ComplaintTab): StoredComplaintStatus | undefined {
+function tabToStatusGroup(tab: ComplaintTab): ComplaintStatusGroup | undefined {
   switch (tab) {
     case "open":
-      return "submitted";
+      return "waiting";
     case "in_progress":
       return "in_progress";
     case "resolved":
@@ -170,6 +224,16 @@ const CAN_CANCEL: StoredComplaintStatus[] = [
 function ComplaintsPage() {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<ComplaintTab>("all");
+  const [priority, setPriority] = useState<ComplaintPriority | "">("");
+  const [categoryId, setCategoryId] = useState("");
+  const [sla, setSla] = useState<ComplaintSlaFilter | "">("");
+  const [assignment, setAssignment] = useState<ComplaintAssignmentFilter | "">("");
+  const [buildingId, setBuildingId] = useState("");
+  const [roomId, setRoomId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sort, setSort] = useState<ComplaintListSort>("newest");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [selected, setSelected] = useState<ComplaintRecord | null>(null);
   const [dispatchTarget, setDispatchTarget] = useState<ComplaintRecord | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ComplaintRecord | null>(null);
@@ -190,9 +254,23 @@ function ComplaintsPage() {
     user.permissions.includes("maintenance.manage"),
   );
 
-  const status = tabToStatusFilter(tab);
-  const { data, isLoading, error, refetch, isFetching } = useComplaints({ status, limit: 100 });
+  const statusGroup = tabToStatusGroup(tab);
+  const { data, isLoading, error, refetch, isFetching } = useComplaints({
+    statusGroup,
+    priority: priority || undefined,
+    categoryId: categoryId || undefined,
+    sla: sla || undefined,
+    assignment: assignment || undefined,
+    buildingId: buildingId || undefined,
+    roomId: roomId || undefined,
+    from: dateFrom || undefined,
+    to: dateTo || undefined,
+    sort,
+    q,
+    limit: 100,
+  });
   const categoriesQuery = useComplaintCategories();
+  const roomsQuery = useRooms();
   const routeState = resolveComplaintRouteState({
     complaints: data,
     categories: categoriesQuery.data,
@@ -234,20 +312,30 @@ function ComplaintsPage() {
     return map;
   }, [categoriesQuery.data]);
 
-  const items = complaintRecords;
+  const roomOptions = useMemo<RoomRecord[]>(() => roomsQuery.data ?? [], [roomsQuery.data]);
+  const buildingOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; label: string }>();
+    roomOptions.forEach((room) => {
+      if (!room.buildingId) return;
+      byId.set(room.buildingId, {
+        id: room.buildingId,
+        label: room.buildingName
+          ? `${room.buildingName}${room.buildingCode ? ` (${room.buildingCode})` : ""}`
+          : (room.buildingCode ?? room.buildingId),
+      });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [roomOptions]);
+  const filteredRoomOptions = useMemo(
+    () =>
+      roomOptions
+        .filter((room) => !buildingId || room.buildingId === buildingId)
+        .sort((a, b) => a.number.localeCompare(b.number)),
+    [roomOptions, buildingId],
+  );
 
-  const filtered = useMemo(() => {
-    if (!q) return items;
-    const needle = q.toLowerCase();
-    return items.filter(
-      (c) =>
-        c.snapshotResidentName.toLowerCase().includes(needle) ||
-        c.title.toLowerCase().includes(needle) ||
-        c.description.toLowerCase().includes(needle) ||
-        (c.snapshotRoomNumber?.toLowerCase().includes(needle) ?? false) ||
-        (categoryById.get(c.categoryId)?.toLowerCase().includes(needle) ?? false),
-    );
-  }, [items, q, categoryById]);
+  const items = complaintRecords;
+  const filtered = items;
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -258,12 +346,52 @@ function ComplaintsPage() {
     return { total, done, inProgress };
   }, [items]);
   const slaBreachedCount = items.filter((item) => item.resolutionSlaBreached).length;
-  const activeFilterCount = Number(Boolean(q.trim())) + Number(tab !== "all");
-  const filterSignature = `${q}:${tab}`;
+  const activeFilterCount =
+    Number(Boolean(q.trim())) +
+    Number(tab !== "all") +
+    Number(Boolean(priority)) +
+    Number(Boolean(categoryId)) +
+    Number(Boolean(sla)) +
+    Number(Boolean(assignment)) +
+    Number(Boolean(buildingId)) +
+    Number(Boolean(roomId)) +
+    Number(Boolean(dateFrom)) +
+    Number(Boolean(dateTo)) +
+    Number(sort !== "newest");
+  const advancedFilterCount =
+    Number(Boolean(assignment)) +
+    Number(Boolean(buildingId)) +
+    Number(Boolean(roomId)) +
+    Number(Boolean(dateFrom)) +
+    Number(Boolean(dateTo)) +
+    Number(sort !== "newest");
+  const filterSignature = `${q}:${tab}:${priority}:${categoryId}:${sla}:${assignment}:${buildingId}:${roomId}:${dateFrom}:${dateTo}:${sort}`;
+  const categoryName = categoryId ? categoryById.get(categoryId) : undefined;
+  const buildingName = buildingId
+    ? buildingOptions.find((building) => building.id === buildingId)?.label
+    : undefined;
+  const roomName = roomId ? roomOptions.find((room) => room.id === roomId)?.number : undefined;
   const filterCriteria = [
-    q.trim() ? `pencarian \"${q.trim()}\"` : "",
+    q.trim() ? `pencarian "${q.trim()}"` : "",
     tab !== "all"
       ? `status: ${{ open: "Menunggu", in_progress: "Diproses", resolved: "Selesai", closed: "Ditutup" }[tab]}`
+      : "",
+    categoryName ? `kategori: ${categoryName}` : "",
+    priority
+      ? `prioritas: ${{ urgent: "Mendesak", high: "Tinggi", medium: "Sedang", low: "Rendah" }[priority]}`
+      : "",
+    sla
+      ? `target waktu: ${{ breached: "Melewati target", at_risk: "Mendekati target", on_track: "Masih dalam target" }[sla]}`
+      : "",
+    assignment
+      ? `penugasan: ${assignment === "assigned" ? "Sudah ditugaskan" : "Belum ditugaskan"}`
+      : "",
+    buildingName ? `bangunan: ${buildingName}` : "",
+    roomName ? `kamar: ${roomName}` : "",
+    dateFrom ? `mulai: ${dateFrom}` : "",
+    dateTo ? `sampai: ${dateTo}` : "",
+    sort !== "newest"
+      ? `urutan: ${{ oldest: "Paling lama", priority: "Prioritas tertinggi", sla: "Target waktu" }[sort]}`
       : "",
   ].filter(Boolean);
 
@@ -309,6 +437,20 @@ function ComplaintsPage() {
   const retryPrimaryQueries = () => {
     void refetch();
     void categoriesQuery.refetch();
+  };
+
+  const resetFilters = () => {
+    setQ("");
+    setTab("all");
+    setPriority("");
+    setCategoryId("");
+    setSla("");
+    setAssignment("");
+    setBuildingId("");
+    setRoomId("");
+    setDateFrom("");
+    setDateTo("");
+    setSort("newest");
   };
 
   switch (routeState) {
@@ -494,18 +636,17 @@ function ComplaintsPage() {
       </Card>
 
       <Card className="mt-4">
-        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <CardHeader className="flex flex-col gap-3">
           <CardTitle className="text-base">Daftar Tiket</CardTitle>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-72">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari komplain..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari nama penghuni, kamar, bangunan, kode, atau isi komplain..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="h-10 pl-9"
+              aria-label="Cari komplain"
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -514,14 +655,180 @@ function ComplaintsPage() {
             onValueChange={(v) => setTab(isComplaintTab(v) ? v : "all")}
             className="mb-4"
           >
-            <TabsList>
-              <TabsTrigger value="all">Semua</TabsTrigger>
-              <TabsTrigger value="open">Menunggu</TabsTrigger>
-              <TabsTrigger value="in_progress">Diproses</TabsTrigger>
-              <TabsTrigger value="resolved">Selesai</TabsTrigger>
-              <TabsTrigger value="closed">Ditutup</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-2 items-stretch gap-1.5 rounded-xl border border-border/80 bg-muted/60 p-1.5 sm:grid-cols-5">
+              {COMPLAINT_TAB_META.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <TabsTrigger
+                    key={item.value}
+                    value={item.value}
+                    aria-label={`Filter tiket: ${item.label}`}
+                    className={cn(
+                      "min-h-11 gap-2 rounded-lg px-2 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
+                      item.value === "closed" && "col-span-2 sm:col-span-1",
+                      item.activeClass,
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{item.label}</span>
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </Tabs>
+
+          <div className="rounded-xl border border-border/80 bg-muted/20 p-3 md:p-4">
+            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+              <Select
+                value={categoryId || "all"}
+                onValueChange={(value) => setCategoryId(value === "all" ? "" : value)}
+              >
+                <SelectTrigger aria-label="Filter kategori" className="h-10 bg-background">
+                  <SelectValue placeholder="Semua kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua kategori</SelectItem>
+                  {Array.from(categoryById.entries()).map(([id, name]) => (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={priority || "all"}
+                onValueChange={(value) =>
+                  setPriority(value === "all" ? "" : (value as ComplaintPriority))
+                }
+              >
+                <SelectTrigger aria-label="Filter prioritas" className="h-10 bg-background">
+                  <SelectValue placeholder="Semua prioritas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua prioritas</SelectItem>
+                  <SelectItem value="urgent">Mendesak</SelectItem>
+                  <SelectItem value="high">Tinggi</SelectItem>
+                  <SelectItem value="medium">Sedang</SelectItem>
+                  <SelectItem value="low">Rendah</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={sla || "all"}
+                onValueChange={(value) =>
+                  setSla(value === "all" ? "" : (value as ComplaintSlaFilter))
+                }
+              >
+                <SelectTrigger aria-label="Filter target waktu" className="h-10 bg-background">
+                  <SelectValue placeholder="Semua target waktu" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua target waktu</SelectItem>
+                  <SelectItem value="breached">Melewati target</SelectItem>
+                  <SelectItem value="at_risk">Mendekati target</SelectItem>
+                  <SelectItem value="on_track">Masih dalam target</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 whitespace-nowrap"
+                onClick={() => setAdvancedOpen((open) => !open)}
+                aria-expanded={advancedOpen}
+              >
+                Filter lainnya{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="h-10 whitespace-nowrap"
+                onClick={resetFilters}
+              >
+                Reset filter
+              </Button>
+            </div>
+            {advancedOpen ? (
+              <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                <Select
+                  value={assignment || "all"}
+                  onValueChange={(value) =>
+                    setAssignment(value === "all" ? "" : (value as ComplaintAssignmentFilter))
+                  }
+                >
+                  <SelectTrigger aria-label="Filter penugasan" className="h-10 bg-background">
+                    <SelectValue placeholder="Semua penugasan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua penugasan</SelectItem>
+                    <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
+                    <SelectItem value="assigned">Sudah ditugaskan</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={buildingId || "all"}
+                  onValueChange={(value) => {
+                    setBuildingId(value === "all" ? "" : value);
+                    setRoomId("");
+                  }}
+                >
+                  <SelectTrigger aria-label="Filter bangunan" className="h-10 bg-background">
+                    <SelectValue placeholder="Semua bangunan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua bangunan</SelectItem>
+                    {buildingOptions.map((building) => (
+                      <SelectItem key={building.id} value={building.id}>
+                        {building.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={roomId || "all"}
+                  onValueChange={(value) => setRoomId(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger aria-label="Filter kamar" className="h-10 bg-background">
+                    <SelectValue placeholder="Semua kamar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua kamar</SelectItem>
+                    {filteredRoomOptions.map((room) => (
+                      <SelectItem key={room.id} value={room.id}>
+                        {room.number}
+                        {room.buildingName ? ` · ${room.buildingName}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="grid grid-cols-2 gap-2.5 sm:col-span-2 xl:col-span-2">
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(event) => setDateFrom(event.target.value)}
+                    aria-label="Tanggal mulai"
+                    className="h-10 bg-background"
+                  />
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(event) => setDateTo(event.target.value)}
+                    aria-label="Tanggal sampai"
+                    className="h-10 bg-background"
+                  />
+                </div>
+                <Select value={sort} onValueChange={(value) => setSort(value as ComplaintListSort)}>
+                  <SelectTrigger aria-label="Urutkan komplain" className="h-10 bg-background">
+                    <SelectValue placeholder="Urutkan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Paling baru</SelectItem>
+                    <SelectItem value="oldest">Paling lama</SelectItem>
+                    <SelectItem value="priority">Prioritas tertinggi</SelectItem>
+                    <SelectItem value="sla">Target waktu terdekat</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
 
           {!isLoading && !isFetching ? (
             <FilterResultNotice

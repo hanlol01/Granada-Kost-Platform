@@ -19,16 +19,20 @@ export type VehicleRecord = {
   propertyId: string;
   residentId: string;
   vehicleCode: string;
-  plateNumber: string;
+  plateNumber: string | null;
   vehicleType: VehicleType;
-  brand: string;
-  color: string;
+  customVehicleType: string | null;
+  brand: string | null;
+  color: string | null;
   year: string | null;
   vehicleStatus: VehicleStatus;
   notes: string | null;
   approvedAt: string | null;
   snapshotResidentName: string;
   snapshotRoomNumber: string | null;
+  currentRoomNumber: string | null;
+  currentBuildingName: string | null;
+  currentBuildingCode: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -48,6 +52,8 @@ export type UseVehiclesFilters = {
   vehicleType?: VehicleType;
   limit?: number;
   offset?: number;
+  residentId?: string;
+  enabled?: boolean;
 };
 
 export function useVehicles(filters: UseVehiclesFilters = {}): UseQueryResult<VehicleRecord[]> {
@@ -60,11 +66,12 @@ export function useVehicles(filters: UseVehiclesFilters = {}): UseQueryResult<Ve
           property_id: currentPropertyId ?? undefined,
           status: filters.status,
           vehicle_type: filters.vehicleType,
+          resident_id: filters.residentId,
           limit: filters.limit ?? 50,
           offset: filters.offset,
         },
       }),
-    enabled: Boolean(currentPropertyId),
+    enabled: Boolean(currentPropertyId) && filters.enabled !== false,
   });
 }
 

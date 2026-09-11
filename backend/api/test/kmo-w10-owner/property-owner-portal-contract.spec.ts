@@ -526,6 +526,14 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
                 resident_display_name: 'PUTRI',
                 lease_start_date: '2026-08-06',
                 lease_end_date: '2027-02-06',
+                term_months: 6,
+                monthly_rate: '1850000',
+                contract_value: '11100000',
+                management_fee_monthly: '300000',
+                projected_management_fee: '1800000',
+                estimated_owner_entitlement: '9300000',
+                contract_outstanding: '8400000',
+                rent_overpayment: '0',
                 rent_invoiced: '10800000',
                 rent_verified: '2700000',
                 rent_outstanding: '8100000',
@@ -541,6 +549,12 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
                 deposit_deducted: '0',
                 deposit_refunded: '0',
                 deposit_balance: '300000',
+                open_complaint_count: 1,
+                latest_complaint_title: 'AC kurang dingin',
+                latest_complaint_status: 'in_progress',
+                active_work_order_count: 1,
+                latest_work_order_title: 'Periksa AC',
+                latest_work_order_status: 'assigned',
                 settlement_state: 'open',
                 original_due_at: '2026-10-08T16:59:59.999Z',
                 effective_due_at: '2026-10-08T16:59:59.999Z',
@@ -561,9 +575,23 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
 
   const progress = await service.collectionProgress(actor());
   assert.equal(progress.summary.active_lease_count, 1);
+  assert.equal(progress.summary.contract_value_total, '11100000');
+  assert.equal(progress.summary.rent_received_total, '2700000');
+  assert.equal(progress.summary.contract_outstanding_total, '8400000');
+  assert.equal(progress.summary.projected_management_fee_total, '1800000');
+  assert.equal(progress.summary.estimated_owner_entitlement_total, '9300000');
+  assert.deepEqual(progress.summary.package_counts, {
+    short_stay: 0,
+    medium_stay: 1,
+    long_stay: 0,
+  });
   assert.equal(progress.summary.h7_lease_count, 1);
   assert.equal(progress.summary.rent_outstanding, '8100000');
   assert.equal(progress.items[0]?.billing.rent_verified, '2700000');
+  assert.equal(progress.items[0]?.billing.contract_outstanding, '8400000');
+  assert.equal(progress.items[0]?.lease.term_months, 6);
+  assert.equal(progress.items[0]?.commercial.management_fee_monthly, '300000');
+  assert.equal(progress.items[0]?.operations.open_complaint_count, 1);
   assert.equal(progress.items[0]?.billing.rent_outstanding, '8100000');
   assert.equal(progress.items[0]?.settlement.checkpoint.remaining_amount, '1800000');
   assert.doesNotMatch(
@@ -575,6 +603,10 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
   assert.match(sql, /lease\.lease_status = 'active'/);
   assert.match(sql, /invoice\.lease_id = lease\.id/);
   assert.match(sql, /payment_allocations/);
+  assert.match(sql, /lease\.contract_rent_amount/);
+  assert.match(sql, /property_management_fee_versions/);
+  assert.match(sql, /projected_management_fee/);
+  assert.match(sql, /operations_summary/);
   assert.match(sql, /lease_deposit_transactions/);
   assert.match(sql, /lease_settlement_v2_current_projection v2/);
   assert.match(

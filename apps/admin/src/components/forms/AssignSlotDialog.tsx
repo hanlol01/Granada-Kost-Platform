@@ -101,7 +101,7 @@ export function AssignSlotDialog({ open, onOpenChange, slot }: AssignSlotDialogP
                 ) : (
                   list.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
-                      {v.plateNumber} · {v.brand} · {v.snapshotResidentName}
+                      {v.plateNumber || "—"} · {v.brand || "—"} · {v.snapshotResidentName}
                     </SelectItem>
                   ))
                 )}

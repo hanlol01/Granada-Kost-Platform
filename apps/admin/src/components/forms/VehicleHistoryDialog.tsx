@@ -19,7 +19,9 @@ export function VehicleHistoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>Riwayat kendaraan{vehicle ? ` · ${vehicle.plateNumber}` : ""}</DialogTitle>
+          <DialogTitle>
+            Riwayat kendaraan{vehicle?.plateNumber ? ` · ${vehicle.plateNumber}` : ""}
+          </DialogTitle>
         </DialogHeader>
         {history.error ? (
           <ErrorState

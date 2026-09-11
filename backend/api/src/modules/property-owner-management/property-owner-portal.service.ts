@@ -342,8 +342,14 @@ export class PropertyOwnerPortalService {
               CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
               kost_types.category AS kost_type,
               buildings.building_code, buildings.building_name, rooms.floor_label, rooms.unit_code,
-              rooms.gender_policy, commercial.monthly_price::text AS monthly_price,
+              rooms.gender_policy, commercial.effective_date::text AS commercial_effective_date,
+              commercial.monthly_price::text AS monthly_price,
+              commercial.short_stay_monthly_price::text AS short_stay_monthly_price,
+              commercial.medium_stay_monthly_price::text AS medium_stay_monthly_price,
+              commercial.long_stay_monthly_price::text AS long_stay_monthly_price,
               commercial.annual_contract_value::text AS annual_contract_value,
+              management_fee.monthly_fee_amount::text AS management_fee_amount,
+              management_fee.effective_date::text AS management_fee_effective_date,
               lease.lease_status, lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
               resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
               COALESCE(billing.billing_state, 'not_available') AS billing_state,
@@ -370,12 +376,21 @@ export class PropertyOwnerPortalService {
          AND kost_types.category = rooms.category
          AND kost_types.deleted_at IS NULL
        JOIN LATERAL (
-         SELECT monthly_price, annual_contract_value
+         SELECT effective_date, monthly_price, annual_contract_value,
+                short_stay_monthly_price, medium_stay_monthly_price, long_stay_monthly_price
          FROM kost_type_commercial_versions
          WHERE kost_type_id = kost_types.id AND effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
          ORDER BY effective_date DESC, id DESC
          LIMIT 1
        ) commercial ON true
+       LEFT JOIN LATERAL (
+         SELECT monthly_fee_amount, effective_date
+         FROM property_management_fee_versions
+         WHERE property_id = $2
+           AND effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+         ORDER BY effective_date DESC, id DESC
+         LIMIT 1
+       ) management_fee ON true
        LEFT JOIN LATERAL (
          SELECT id, lease_status, start_date, end_date, resident_id, occupancy_id
          FROM leases
@@ -447,8 +462,29 @@ export class PropertyOwnerPortalService {
       },
       gender_policy: this.enumValue(row.gender_policy, ['male', 'female'], 'asset.gender_policy'),
       commercial: {
+        effective_date: this.date(row.commercial_effective_date, 'asset.commercial_effective_date'),
         monthly_price: this.money(row.monthly_price, 'asset.monthly_price'),
+        short_stay_monthly_price: this.money(
+          row.short_stay_monthly_price,
+          'asset.short_stay_monthly_price',
+        ),
+        medium_stay_monthly_price: this.money(
+          row.medium_stay_monthly_price,
+          'asset.medium_stay_monthly_price',
+        ),
+        long_stay_monthly_price: this.money(
+          row.long_stay_monthly_price,
+          'asset.long_stay_monthly_price',
+        ),
         annual_contract_value: this.money(row.annual_contract_value, 'asset.annual_contract_value'),
+        management_fee_amount: this.money(
+          row.management_fee_amount ?? '0',
+          'asset.management_fee_amount',
+        ),
+        management_fee_effective_date: this.nullableDate(
+          row.management_fee_effective_date,
+          'asset.management_fee_effective_date',
+        ),
       },
       lease:
         leaseStatus === null
@@ -955,10 +991,66 @@ export class PropertyOwnerPortalService {
        ), active_leases AS (
          SELECT lease.id, lease.property_id, lease.room_id, lease.resident_id,
                 lease.start_date, lease.end_date, lease.security_deposit_required_amount,
-                lease.snapshot_monthly_price
+                lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount
          FROM leases lease
          JOIN scoped_rooms scope ON scope.room_id = lease.room_id
          WHERE lease.property_id = $2 AND lease.lease_status = 'active'
+       ), commercial_base AS (
+         SELECT lease.id AS lease_id,
+                COALESCE(
+                  lease.term_months,
+                  CASE WHEN lease.end_date IS NOT NULL
+                    THEN GREATEST(
+                      1,
+                      (EXTRACT(YEAR FROM age(lease.end_date, lease.start_date)) * 12
+                        + EXTRACT(MONTH FROM age(lease.end_date, lease.start_date)))::int
+                    )
+                    ELSE 0
+                  END
+                )::int AS term_months,
+                COALESCE(lease.snapshot_monthly_price, 0)::bigint AS monthly_rate,
+                COALESCE(
+                  lease.contract_rent_amount,
+                  lease.snapshot_monthly_price * COALESCE(lease.term_months, 0),
+                  0
+                )::bigint AS contract_value,
+                COALESCE(fee.monthly_fee_amount, policy.operator_room_month_fee, 0)::bigint
+                  AS management_fee_monthly
+         FROM active_leases lease
+         LEFT JOIN LATERAL (
+           SELECT versions.monthly_fee_amount
+           FROM property_management_fee_versions versions
+           WHERE versions.property_id = lease.property_id
+             AND versions.effective_date <= lease.start_date
+           ORDER BY versions.effective_date DESC, versions.id DESC
+           LIMIT 1
+         ) fee ON true
+         LEFT JOIN LATERAL (
+           SELECT policies.operator_room_month_fee
+           FROM property_owner_commercial_policies policies
+           WHERE policies.property_id = lease.property_id
+             AND policies.policy_status = 'active'
+             AND policies.effective_from <= lease.start_date
+             AND (policies.effective_until IS NULL OR lease.start_date < policies.effective_until)
+           ORDER BY policies.effective_from DESC, policies.id DESC
+           LIMIT 1
+         ) policy ON true
+       ), commercial_projection AS (
+         SELECT base.*,
+                GREATEST(
+                  0,
+                  LEAST(
+                    base.contract_value,
+                    CASE WHEN base.monthly_rate > 0
+                      THEN ROUND(
+                        base.contract_value::numeric * base.management_fee_monthly
+                          / base.monthly_rate
+                      )::bigint
+                      ELSE 0
+                    END
+                  )
+                )::bigint AS projected_management_fee
+         FROM commercial_base base
        ), invoice_summary AS (
          SELECT lease.id AS lease_id,
                 COALESCE(sum(invoice.total_amount) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_invoiced,
@@ -996,6 +1088,40 @@ export class PropertyOwnerPortalService {
          FROM active_leases lease
          LEFT JOIN lease_deposit_transactions ledger ON ledger.property_id = lease.property_id AND ledger.lease_id = lease.id
          GROUP BY lease.id, lease.security_deposit_required_amount
+       ), operations_summary AS (
+         SELECT lease.id AS lease_id,
+                COALESCE(complaint.open_count, 0)::int AS open_complaint_count,
+                complaint.latest_title AS latest_complaint_title,
+                complaint.latest_status AS latest_complaint_status,
+                COALESCE(work_order.active_count, 0)::int AS active_work_order_count,
+                work_order.latest_title AS latest_work_order_title,
+                work_order.latest_status AS latest_work_order_status
+         FROM active_leases lease
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) FILTER (
+                    WHERE complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
+                  )::int AS open_count,
+                  (ARRAY_AGG(complaints.title ORDER BY complaints.created_at DESC))[1]
+                    AS latest_title,
+                  (ARRAY_AGG(complaints.complaint_status ORDER BY complaints.created_at DESC))[1]
+                    AS latest_status
+           FROM complaints
+           WHERE complaints.property_id = lease.property_id
+             AND complaints.room_id = lease.room_id
+             AND complaints.resident_id = lease.resident_id
+         ) complaint ON true
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*) FILTER (
+                    WHERE work_orders.work_order_status NOT IN ('completed', 'verified', 'cancelled')
+                  )::int AS active_count,
+                  (ARRAY_AGG(work_orders.title ORDER BY work_orders.created_at DESC))[1]
+                    AS latest_title,
+                  (ARRAY_AGG(work_orders.work_order_status ORDER BY work_orders.created_at DESC))[1]
+                    AS latest_status
+           FROM maintenance_work_orders work_orders
+           WHERE work_orders.property_id = lease.property_id
+             AND work_orders.room_id = lease.room_id
+         ) work_order ON true
         ), settlement_projection AS (
           SELECT lease.id AS lease_id,
                  settlement.state AS settlement_state,
@@ -1062,14 +1188,37 @@ export class PropertyOwnerPortalService {
        SELECT rooms.room_code, buildings.building_code, buildings.building_name,
               resident.full_name AS resident_display_name,
               lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
-              invoice_summary.*, installment_summary.*, deposit_summary.*, settlement_projection.*
+              commercial_projection.term_months,
+              commercial_projection.monthly_rate::text,
+              commercial_projection.contract_value::text,
+              commercial_projection.management_fee_monthly::text,
+              commercial_projection.projected_management_fee::text,
+              GREATEST(
+                commercial_projection.contract_value
+                  - commercial_projection.projected_management_fee,
+                0
+              )::text AS estimated_owner_entitlement,
+              GREATEST(
+                commercial_projection.contract_value
+                  - invoice_summary.rent_verified::bigint,
+                0
+              )::text AS contract_outstanding,
+              GREATEST(
+                invoice_summary.rent_verified::bigint
+                  - commercial_projection.contract_value,
+                0
+              )::text AS rent_overpayment,
+              invoice_summary.*, installment_summary.*, deposit_summary.*,
+              operations_summary.*, settlement_projection.*
        FROM active_leases lease
        JOIN rooms ON rooms.id = lease.room_id AND rooms.property_id = lease.property_id
        JOIN room_buildings buildings ON buildings.id = rooms.building_id AND buildings.property_id = rooms.property_id
        JOIN residents resident ON resident.id = lease.resident_id AND resident.property_id = lease.property_id
        JOIN invoice_summary ON invoice_summary.lease_id = lease.id
+       JOIN commercial_projection ON commercial_projection.lease_id = lease.id
        JOIN installment_summary ON installment_summary.lease_id = lease.id
        JOIN deposit_summary ON deposit_summary.lease_id = lease.id
+       JOIN operations_summary ON operations_summary.lease_id = lease.id
        LEFT JOIN settlement_projection ON settlement_projection.lease_id = lease.id
        ORDER BY rooms.room_code`,
       [owner.id, owner.property_id],
@@ -1081,6 +1230,9 @@ export class PropertyOwnerPortalService {
     return {
       summary: {
         active_lease_count: items.length,
+        settled_lease_count: items.filter((item) => item.billing.state === 'settled').length,
+        partial_lease_count: items.filter((item) => item.billing.state === 'partially_paid').length,
+        unpaid_lease_count: items.filter((item) => item.billing.state === 'unpaid').length,
         overdue_lease_count: items.filter((item) => item.billing.overdue_count > 0).length,
         h7_lease_count: items.filter(
           (item) => item.billing.h7_count > 0 || item.settlement.reminder_stage === 'H-7',
@@ -1091,6 +1243,36 @@ export class PropertyOwnerPortalService {
         rent_outstanding: items
           .reduce<bigint>((total, item) => total + BigInt(item.billing.rent_outstanding), 0n)
           .toString(),
+        contract_value_total: items
+          .reduce<bigint>((total, item) => total + BigInt(item.lease.contract_value), 0n)
+          .toString(),
+        rent_received_total: items
+          .reduce<bigint>((total, item) => total + BigInt(item.billing.rent_verified), 0n)
+          .toString(),
+        contract_outstanding_total: items
+          .reduce<bigint>((total, item) => total + BigInt(item.billing.contract_outstanding), 0n)
+          .toString(),
+        projected_management_fee_total: items
+          .reduce<bigint>(
+            (total, item) => total + BigInt(item.commercial.projected_management_fee),
+            0n,
+          )
+          .toString(),
+        estimated_owner_entitlement_total: items
+          .reduce<bigint>(
+            (total, item) => total + BigInt(item.commercial.estimated_owner_entitlement),
+            0n,
+          )
+          .toString(),
+        package_counts: {
+          short_stay: items.filter(
+            (item) => item.lease.term_months >= 3 && item.lease.term_months <= 5,
+          ).length,
+          medium_stay: items.filter(
+            (item) => item.lease.term_months >= 6 && item.lease.term_months <= 11,
+          ).length,
+          long_stay: items.filter((item) => item.lease.term_months >= 12).length,
+        },
       },
       items,
     };
@@ -1712,10 +1894,19 @@ export class PropertyOwnerPortalService {
   private emptyCollectionSummary() {
     return {
       active_lease_count: 0,
+      settled_lease_count: 0,
+      partial_lease_count: 0,
+      unpaid_lease_count: 0,
       overdue_lease_count: 0,
       h7_lease_count: 0,
       checkpoint_attention_count: 0,
       rent_outstanding: '0',
+      contract_value_total: '0',
+      rent_received_total: '0',
+      contract_outstanding_total: '0',
+      projected_management_fee_total: '0',
+      estimated_owner_entitlement_total: '0',
+      package_counts: { short_stay: 0, medium_stay: 0, long_stay: 0 },
     };
   }
 
@@ -1726,10 +1917,15 @@ export class PropertyOwnerPortalService {
     const invoiceCount = this.count(row.invoice_count, 'owner_collection.invoice_count');
     const overdueCount = this.count(row.overdue_count, 'owner_collection.overdue_count');
     const h7Count = this.count(row.h7_count, 'owner_collection.h7_count');
-    const outstanding = BigInt(rentOutstanding);
+    const contractValue = this.money(row.contract_value, 'owner_collection.contract_value');
+    const contractOutstanding = this.money(
+      row.contract_outstanding,
+      'owner_collection.contract_outstanding',
+    );
     const verified = BigInt(rentVerified);
+    const outstanding = BigInt(contractOutstanding);
     const billingState =
-      invoiceCount === 0
+      BigInt(contractValue) === 0n && invoiceCount === 0
         ? 'not_available'
         : overdueCount > 0
           ? 'overdue'
@@ -1737,7 +1933,7 @@ export class PropertyOwnerPortalService {
             ? 'settled'
             : verified > 0n
               ? 'partially_paid'
-              : 'current';
+              : 'unpaid';
 
     const checkpointStatus = this.enumValue(
       row.checkpoint_status ?? 'not_available',
@@ -1766,12 +1962,17 @@ export class PropertyOwnerPortalService {
         status: 'active' as const,
         start_date: this.date(row.lease_start_date, 'owner_collection.lease_start_date'),
         end_date: this.nullableDate(row.lease_end_date, 'owner_collection.lease_end_date'),
+        term_months: this.count(row.term_months, 'owner_collection.term_months'),
+        monthly_rate: this.money(row.monthly_rate, 'owner_collection.monthly_rate'),
+        contract_value: contractValue,
       },
       billing: {
         state: billingState,
         rent_invoiced: rentInvoiced,
         rent_verified: rentVerified,
         rent_outstanding: rentOutstanding,
+        contract_outstanding: contractOutstanding,
+        rent_overpayment: this.money(row.rent_overpayment, 'owner_collection.rent_overpayment'),
         invoice_count: invoiceCount,
         overdue_count: overdueCount,
         h7_count: h7Count,
@@ -1781,6 +1982,46 @@ export class PropertyOwnerPortalService {
         installment_next_due_date: this.nullableDate(
           row.installment_next_due_date,
           'owner_collection.installment_next_due_date',
+        ),
+      },
+      commercial: {
+        management_fee_monthly: this.money(
+          row.management_fee_monthly,
+          'owner_collection.management_fee_monthly',
+        ),
+        projected_management_fee: this.money(
+          row.projected_management_fee,
+          'owner_collection.projected_management_fee',
+        ),
+        estimated_owner_entitlement: this.money(
+          row.estimated_owner_entitlement,
+          'owner_collection.estimated_owner_entitlement',
+        ),
+      },
+      operations: {
+        open_complaint_count: this.count(
+          row.open_complaint_count,
+          'owner_collection.open_complaint_count',
+        ),
+        latest_complaint_title: this.nullableText(
+          row.latest_complaint_title,
+          'owner_collection.latest_complaint_title',
+        ),
+        latest_complaint_status: this.nullableText(
+          row.latest_complaint_status,
+          'owner_collection.latest_complaint_status',
+        ),
+        active_work_order_count: this.count(
+          row.active_work_order_count,
+          'owner_collection.active_work_order_count',
+        ),
+        latest_work_order_title: this.nullableText(
+          row.latest_work_order_title,
+          'owner_collection.latest_work_order_title',
+        ),
+        latest_work_order_status: this.nullableText(
+          row.latest_work_order_status,
+          'owner_collection.latest_work_order_status',
         ),
       },
       security_deposit: {

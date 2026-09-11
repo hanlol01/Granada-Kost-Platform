@@ -92,6 +92,7 @@ function ownerUnitCode(assetCode: string, kind: "building" | "room"): string | n
   return match?.[1] ?? null;
 }
 const PAGE_SIZE = 20;
+const DEFAULT_OWNER_PASSWORD = "qwerty1234#";
 
 function previousJakartaMonth(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -712,21 +713,40 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                     onChange={(event) =>
                       setDraft({ ...draft, initialPassword: event.target.value })
                     }
-                    className="pr-11"
+                    className="pr-32"
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    aria-label={
-                      showInitialPassword ? "Sembunyikan password awal" : "Tampilkan password awal"
-                    }
-                    aria-pressed={showInitialPassword}
-                    onClick={() => setShowInitialPassword((visible) => !visible)}
-                  >
-                    {showInitialPassword ? <EyeOff /> : <Eye />}
-                  </Button>
+                  <div className="absolute inset-y-0 right-1 flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      aria-label="Isi password default"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          initialPassword: DEFAULT_OWNER_PASSWORD,
+                        }))
+                      }
+                    >
+                      Default
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground"
+                      aria-label={
+                        showInitialPassword
+                          ? "Sembunyikan password awal"
+                          : "Tampilkan password awal"
+                      }
+                      aria-pressed={showInitialPassword}
+                      onClick={() => setShowInitialPassword((visible) => !visible)}
+                    >
+                      {showInitialPassword ? <EyeOff /> : <Eye />}
+                    </Button>
+                  </div>
                 </div>
               </Field>
             )}
@@ -886,21 +906,38 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                 type={showResetPassword ? "text" : "password"}
                 value={draft.initialPassword}
                 onChange={(event) => setDraft({ ...draft, initialPassword: event.target.value })}
-                className="pr-11"
+                className="pr-32"
               />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-                aria-label={
-                  showResetPassword ? "Sembunyikan password baru" : "Tampilkan password baru"
-                }
-                aria-pressed={showResetPassword}
-                onClick={() => setShowResetPassword((visible) => !visible)}
-              >
-                {showResetPassword ? <EyeOff /> : <Eye />}
-              </Button>
+              <div className="absolute inset-y-0 right-1 flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2"
+                  aria-label="Isi password default"
+                  onClick={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      initialPassword: DEFAULT_OWNER_PASSWORD,
+                    }))
+                  }
+                >
+                  Default
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground"
+                  aria-label={
+                    showResetPassword ? "Sembunyikan password baru" : "Tampilkan password baru"
+                  }
+                  aria-pressed={showResetPassword}
+                  onClick={() => setShowResetPassword((visible) => !visible)}
+                >
+                  {showResetPassword ? <EyeOff /> : <Eye />}
+                </Button>
+              </div>
             </div>
           </Field>
           <DialogFooter>

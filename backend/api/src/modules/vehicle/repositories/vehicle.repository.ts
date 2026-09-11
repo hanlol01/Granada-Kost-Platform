@@ -18,10 +18,11 @@ type VehicleRow = {
   property_id: string;
   resident_id: string;
   vehicle_code: string;
-  plate_number: string;
+  plate_number: string | null;
   vehicle_type: VehicleType;
-  brand: string;
-  color: string;
+  custom_vehicle_type: string | null;
+  brand: string | null;
+  color: string | null;
   year: string | null;
   vehicle_status: VehicleStatus;
   notes: string | null;
@@ -33,6 +34,9 @@ type VehicleRow = {
   deactivated_at: Date | null;
   snapshot_resident_name: string;
   snapshot_room_number: string | null;
+  current_room_number?: string | null;
+  current_building_name?: string | null;
+  current_building_code?: string | null;
   created_by_user_id: string;
   created_at: Date;
   updated_at: Date;
@@ -48,16 +52,19 @@ export class VehicleRepository {
     vehicleType?: VehicleType,
     limit = 20,
     offset = 0,
+    residentId?: string,
   ): Promise<VehicleRecord[]> {
     const result = await this.database.client.query<VehicleRow>(
-      `SELECT ${this.columns()}
-       FROM vehicles
-       WHERE property_id = $1
-         AND ($2::text IS NULL OR vehicle_status = $2)
-         AND ($3::text IS NULL OR vehicle_type = $3)
-       ORDER BY created_at DESC
-       LIMIT $4 OFFSET $5`,
-      [propertyId, status ?? null, vehicleType ?? null, limit, offset],
+      `SELECT ${this.columns('vehicle')}, ${this.currentContextColumns()}
+       FROM vehicles vehicle
+       ${this.currentContextJoin()}
+       WHERE vehicle.property_id = $1
+         AND ($2::text IS NULL OR vehicle.vehicle_status = $2)
+         AND ($3::text IS NULL OR vehicle.vehicle_type = $3)
+         AND ($4::uuid IS NULL OR vehicle.resident_id = $4)
+       ORDER BY vehicle.created_at DESC
+       LIMIT $5 OFFSET $6`,
+      [propertyId, status ?? null, vehicleType ?? null, residentId ?? null, limit, offset],
     );
     return result.rows.map((row) => this.map(row));
   }
@@ -68,26 +75,30 @@ export class VehicleRepository {
     vehicleType?: VehicleType,
     limit = 20,
     offset = 0,
+    residentId?: string,
   ): Promise<VehicleRecord[]> {
     const result = await this.database.client.query<VehicleRow>(
-      `SELECT ${this.columns()}
-       FROM vehicles
-       WHERE property_id = ANY($1::uuid[])
-         AND ($2::text IS NULL OR vehicle_status = $2)
-         AND ($3::text IS NULL OR vehicle_type = $3)
-       ORDER BY created_at DESC
-       LIMIT $4 OFFSET $5`,
-      [propertyIds, status ?? null, vehicleType ?? null, limit, offset],
+      `SELECT ${this.columns('vehicle')}, ${this.currentContextColumns()}
+       FROM vehicles vehicle
+       ${this.currentContextJoin()}
+       WHERE vehicle.property_id = ANY($1::uuid[])
+         AND ($2::text IS NULL OR vehicle.vehicle_status = $2)
+         AND ($3::text IS NULL OR vehicle.vehicle_type = $3)
+         AND ($4::uuid IS NULL OR vehicle.resident_id = $4)
+       ORDER BY vehicle.created_at DESC
+       LIMIT $5 OFFSET $6`,
+      [propertyIds, status ?? null, vehicleType ?? null, residentId ?? null, limit, offset],
     );
     return result.rows.map((row) => this.map(row));
   }
 
   async listForResident(residentId: string, limit = 20, offset = 0): Promise<VehicleRecord[]> {
     const result = await this.database.client.query<VehicleRow>(
-      `SELECT ${this.columns()}
-       FROM vehicles
-       WHERE resident_id = $1
-       ORDER BY created_at DESC
+      `SELECT ${this.columns('vehicle')}, ${this.currentContextColumns()}
+       FROM vehicles vehicle
+       ${this.currentContextJoin()}
+       WHERE vehicle.resident_id = $1
+       ORDER BY vehicle.created_at DESC
        LIMIT $2 OFFSET $3`,
       [residentId, limit, offset],
     );
@@ -251,12 +262,12 @@ export class VehicleRepository {
   async create(input: CreateVehicleInput, client?: PoolClient): Promise<VehicleRecord> {
     const result = await (client ?? this.database.client).query<VehicleRow>(
       `INSERT INTO vehicles (
-         property_id, resident_id, vehicle_code, plate_number, vehicle_type, brand, color, year,
+         property_id, resident_id, vehicle_code, plate_number, vehicle_type, custom_vehicle_type, brand, color, year,
          vehicle_status, notes, approved_by_user_id, approved_at, snapshot_resident_name,
          snapshot_room_number, created_by_user_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-               CASE WHEN $9 = 'active' THEN now() ELSE NULL END, $12, $13, $14)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+               CASE WHEN $10 = 'active' THEN now() ELSE NULL END, $13, $14, $15)
        RETURNING ${this.columns()}`,
       [
         input.propertyId,
@@ -264,6 +275,7 @@ export class VehicleRepository {
         input.vehicleCode,
         input.plateNumber,
         input.vehicleType,
+        input.customVehicleType ?? null,
         input.brand,
         input.color,
         input.year ?? null,
@@ -287,10 +299,15 @@ export class VehicleRepository {
       `UPDATE vehicles
        SET plate_number = COALESCE($2, plate_number),
            vehicle_type = COALESCE($3, vehicle_type),
-           brand = COALESCE($4, brand),
-           color = COALESCE($5, color),
-           year = CASE WHEN $6::boolean THEN $7 ELSE year END,
-           notes = CASE WHEN $8::boolean THEN $9 ELSE notes END,
+           custom_vehicle_type = CASE
+             WHEN $3::text IS NOT NULL AND $3::text <> 'other' THEN NULL
+             WHEN $4::boolean THEN $5
+             ELSE custom_vehicle_type
+           END,
+           brand = COALESCE($6, brand),
+           color = COALESCE($7, color),
+           year = CASE WHEN $8::boolean THEN $9 ELSE year END,
+           notes = CASE WHEN $10::boolean THEN $11 ELSE notes END,
            updated_at = now()
        WHERE id = $1
        RETURNING ${this.columns()}`,
@@ -298,6 +315,8 @@ export class VehicleRepository {
         id,
         input.plateNumber ?? null,
         input.vehicleType ?? null,
+        Object.prototype.hasOwnProperty.call(input, 'customVehicleType'),
+        input.customVehicleType ?? null,
         input.brand ?? null,
         input.color ?? null,
         Object.prototype.hasOwnProperty.call(input, 'year'),
@@ -384,10 +403,38 @@ export class VehicleRepository {
 
   private columns(prefix?: string): string {
     const p = prefix ? `${prefix}.` : '';
-    return `${p}id, ${p}property_id, ${p}resident_id, ${p}vehicle_code, ${p}plate_number, ${p}vehicle_type, ${p}brand, ${p}color, ${p}year,
+    return `${p}id, ${p}property_id, ${p}resident_id, ${p}vehicle_code, ${p}plate_number, ${p}vehicle_type, ${p}custom_vehicle_type, ${p}brand, ${p}color, ${p}year,
             ${p}vehicle_status, ${p}notes, ${p}approved_by_user_id, ${p}approved_at, ${p}reject_reason, ${p}suspend_reason,
             ${p}deactivation_reason, ${p}deactivated_at, ${p}snapshot_resident_name, ${p}snapshot_room_number,
             ${p}created_by_user_id, ${p}created_at, ${p}updated_at`;
+  }
+
+  private currentContextJoin(): string {
+    return `LEFT JOIN LATERAL (
+              SELECT room.number AS room_number,
+                     building.building_name,
+                     building.building_code
+              FROM leases lease
+              JOIN rooms room
+                ON room.id = lease.room_id
+               AND room.property_id = lease.property_id
+              JOIN room_buildings building
+                ON building.id = room.building_id
+               AND building.property_id = room.property_id
+              WHERE lease.property_id = vehicle.property_id
+                AND lease.resident_id = vehicle.resident_id
+                AND lease.lease_status IN ('awaiting_activation', 'active')
+              ORDER BY CASE lease.lease_status WHEN 'active' THEN 0 ELSE 1 END,
+                       lease.created_at DESC,
+                       lease.id DESC
+              LIMIT 1
+            ) current_context ON true`;
+  }
+
+  private currentContextColumns(): string {
+    return `COALESCE(current_context.room_number, vehicle.snapshot_room_number) AS current_room_number,
+            current_context.building_name AS current_building_name,
+            current_context.building_code AS current_building_code`;
   }
 
   private map(row: VehicleRow): VehicleRecord {
@@ -398,6 +445,7 @@ export class VehicleRepository {
       vehicleCode: row.vehicle_code,
       plateNumber: row.plate_number,
       vehicleType: row.vehicle_type,
+      customVehicleType: row.custom_vehicle_type,
       brand: row.brand,
       color: row.color,
       year: row.year,
@@ -411,6 +459,9 @@ export class VehicleRepository {
       deactivatedAt: row.deactivated_at,
       snapshotResidentName: row.snapshot_resident_name,
       snapshotRoomNumber: row.snapshot_room_number,
+      currentRoomNumber: row.current_room_number ?? row.snapshot_room_number,
+      currentBuildingName: row.current_building_name ?? null,
+      currentBuildingCode: row.current_building_code ?? null,
       createdByUserId: row.created_by_user_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

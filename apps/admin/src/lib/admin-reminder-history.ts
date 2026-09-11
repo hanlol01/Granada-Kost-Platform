@@ -1,11 +1,16 @@
 export type ReminderHistoryChannel = "whatsapp_manual" | "manual";
 export type ReminderHistoryStatus = "previewed" | "external_opened" | "manual_sent" | "failed";
+export type ReminderHistoryKind = "invoice" | "lease_ending";
+export type ReminderHistoryMilestone = "h60" | "h30" | "h14";
 
 export type ReminderHistoryAttempt = {
   id: string;
   property_id: string;
   resident_id: string;
   actor_user_id: string;
+  reminder_kind: ReminderHistoryKind;
+  lease_id: string | null;
+  milestone: ReminderHistoryMilestone | null;
   channel: ReminderHistoryChannel;
   outcome_status: ReminderHistoryStatus;
   invoice_ids: string[];

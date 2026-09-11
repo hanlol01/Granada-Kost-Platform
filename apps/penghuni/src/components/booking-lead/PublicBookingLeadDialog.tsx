@@ -323,6 +323,26 @@ export function PublicBookingLeadDialog({
                   {item.priceFromYearly ? ` • ${formatIDR(item.priceFromYearly)}/tahun` : ""}
                 </p>
               ) : null}
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                <span>
+                  3–5 bln
+                  <strong className="mt-0.5 block text-foreground">
+                    {formatIDR(item.shortStayMonthlyPrice)}
+                  </strong>
+                </span>
+                <span>
+                  6–11 bln
+                  <strong className="mt-0.5 block text-foreground">
+                    {formatIDR(item.mediumStayMonthlyPrice)}
+                  </strong>
+                </span>
+                <span>
+                  12+ bln
+                  <strong className="mt-0.5 block text-foreground">
+                    {formatIDR(item.longStayMonthlyPrice)}
+                  </strong>
+                </span>
+              </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Nomor kamar akan dikonfirmasi oleh admin.
               </p>

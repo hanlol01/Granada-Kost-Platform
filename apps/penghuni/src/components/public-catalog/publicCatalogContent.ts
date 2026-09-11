@@ -109,7 +109,7 @@ export const faqItems = [
   ],
   [
     "Bagaimana sistem pembayarannya?",
-    "Pilihan pembayaran mengikuti ketentuan hunian. Admin akan menjelaskan nilai kontrak, DP rekomendasi, dan jadwal pelunasan sebelum aktivasi sewa.",
+    "Pilihan pembayaran mengikuti ketentuan hunian. Admin akan menjelaskan nilai kontrak dan jadwal pelunasan sebelum aktivasi sewa.",
   ],
   [
     "Apakah gedung putra dan putri terpisah?",

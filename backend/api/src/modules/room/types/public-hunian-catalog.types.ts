@@ -26,6 +26,10 @@ export type PublicHunianCatalogListItem = {
   shortDescription: string;
   priceFromMonthly: number | null;
   priceFromYearly: number | null;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
+  commercialEffectiveDate: string;
   availabilityCount: number;
   facilitiesPreview: string[];
   galleryPreview: PublicHunianCatalogGalleryItem[];

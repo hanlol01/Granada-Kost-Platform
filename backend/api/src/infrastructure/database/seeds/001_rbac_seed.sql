@@ -139,6 +139,7 @@ WITH grants(role_code, permission_code) AS (
     ('admin', 'cctv.view'),
     ('admin', 'notification.manage'),
     ('admin', 'report.view'),
+    ('admin', 'report.export'),
     ('technician', 'complaint.manage'),
     ('technician', 'maintenance.manage'),
     ('resident', 'property.read'),

@@ -55,6 +55,9 @@ import {
   Play,
   PowerOff,
   History,
+  UserRound,
+  BedDouble,
+  RotateCcw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -170,6 +173,20 @@ const TYPE_ICON: Record<VehicleType, LucideIcon> = {
 };
 
 type TransitionKind = "approve" | "reject" | "suspend" | "reactivate" | "deactivate";
+type VehicleTypeFilter = "all" | VehicleType | `custom:${string}`;
+
+const vehicleTypeLabel = (vehicle: VehicleRecord): string =>
+  vehicle.customVehicleType ||
+  {
+    motorcycle: "Motor",
+    car: "Mobil",
+    bicycle: "Sepeda",
+    electric_scooter: "Skuter listrik",
+    other: "Lainnya",
+  }[vehicle.vehicleType];
+
+const vehicleIdentity = (vehicle: VehicleRecord): string =>
+  [vehicle.brand, vehicle.plateNumber].filter(Boolean).join(" · ") || vehicle.vehicleCode;
 
 function VehicleStatusBadge({ status }: { status: VehicleStatus }) {
   const meta = STATUS_LABEL[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
@@ -203,7 +220,8 @@ function availableActions(status: VehicleStatus): TransitionKind[] {
 function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | VehicleStatus>("all");
-  const [type, setType] = useState<"all" | VehicleType>("all");
+  const [type, setType] = useState<VehicleTypeFilter>("all");
+  const [building, setBuilding] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [pending, setPending] = useState<{ vehicle: VehicleRecord; kind: TransitionKind } | null>(
     null,
@@ -215,7 +233,8 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
 
   const { data, isLoading, error, refetch, isFetching } = useVehicles({
     status: status === "all" ? undefined : status,
-    vehicleType: type === "all" ? undefined : type,
+    vehicleType:
+      type === "all" ? undefined : type.startsWith("custom:") ? "other" : (type as VehicleType),
     limit: 100,
   });
 
@@ -227,21 +246,52 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    if (!q) return data;
     const needle = q.toLowerCase();
-    return data.filter(
-      (v) =>
-        v.plateNumber.toLowerCase().includes(needle) ||
-        v.vehicleCode.toLowerCase().includes(needle) ||
-        v.snapshotResidentName.toLowerCase().includes(needle) ||
-        (v.snapshotRoomNumber?.toLowerCase().includes(needle) ?? false),
-    );
-  }, [data, q]);
+    return data.filter((vehicle) => {
+      const matchesSearch =
+        !needle ||
+        (vehicle.plateNumber?.toLowerCase().includes(needle) ?? false) ||
+        vehicle.vehicleCode.toLowerCase().includes(needle) ||
+        vehicle.snapshotResidentName.toLowerCase().includes(needle) ||
+        vehicleTypeLabel(vehicle).toLowerCase().includes(needle) ||
+        (vehicle.currentRoomNumber?.toLowerCase().includes(needle) ?? false) ||
+        (vehicle.currentBuildingName?.toLowerCase().includes(needle) ?? false) ||
+        (vehicle.currentBuildingCode?.toLowerCase().includes(needle) ?? false);
+      const matchesBuilding = building === "all" || vehicle.currentBuildingCode === building;
+      const matchesCustomType =
+        !type.startsWith("custom:") || vehicle.customVehicleType === type.slice("custom:".length);
+      return matchesSearch && matchesBuilding && matchesCustomType;
+    });
+  }, [building, data, q, type]);
 
-  const hasFilter = q !== "" || status !== "all" || type !== "all";
+  const buildings = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const vehicle of data ?? []) {
+      if (vehicle.currentBuildingCode) {
+        options.set(
+          vehicle.currentBuildingCode,
+          vehicle.currentBuildingName || vehicle.currentBuildingCode,
+        );
+      }
+    }
+    return [...options].sort((left, right) => left[1].localeCompare(right[1], "id-ID"));
+  }, [data]);
+
+  const customTypes = useMemo(
+    () =>
+      [...new Set((data ?? []).map((vehicle) => vehicle.customVehicleType).filter(Boolean))].sort(
+        (left, right) => left!.localeCompare(right!, "id-ID"),
+      ) as string[],
+    [data],
+  );
+
+  const hasFilter = q !== "" || status !== "all" || type !== "all" || building !== "all";
   const activeFilterCount =
-    Number(Boolean(q.trim())) + Number(status !== "all") + Number(type !== "all");
-  const filterSignature = `${q}:${status}:${type}`;
+    Number(Boolean(q.trim())) +
+    Number(status !== "all") +
+    Number(type !== "all") +
+    Number(building !== "all");
+  const filterSignature = `${q}:${status}:${type}:${building}`;
   const filterCriteria = [
     q.trim() ? `pencarian "${q.trim()}"` : "",
     status !== "all"
@@ -258,14 +308,19 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
       : "",
     type !== "all"
       ? `jenis kendaraan: ${
-          {
-            motorcycle: "Motor",
-            car: "Mobil",
-            bicycle: "Sepeda",
-            electric_scooter: "Skuter listrik",
-            other: "Lainnya",
-          }[type]
+          type.startsWith("custom:")
+            ? type.slice("custom:".length)
+            : {
+                motorcycle: "Motor",
+                car: "Mobil",
+                bicycle: "Sepeda",
+                electric_scooter: "Skuter listrik",
+                other: "Lainnya",
+              }[type as VehicleType]
         }`
+      : "",
+    building !== "all"
+      ? `bangunan: ${buildings.find(([code]) => code === building)?.[1] ?? building}`
       : "",
   ].filter(Boolean);
   const pendingApprovalCount =
@@ -358,13 +413,13 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
             : "Status kendaraan berubah melalui proses persetujuan, penolakan, suspend, atau aktivasi kembali."
         }
       />
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(18rem,1fr)_13rem_13rem_15rem_auto]">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari plat, kode, penghuni, atau kamar..."
+            placeholder="Cari plat, kode, penghuni, kamar, atau bangunan..."
             className="pl-9"
           />
         </div>
@@ -382,8 +437,8 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
             <SelectItem value="inactive">Tidak Aktif</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={type} onValueChange={(v) => setType(v as "all" | VehicleType)}>
-          <SelectTrigger className="sm:w-44">
+        <Select value={type} onValueChange={(v) => setType(v as VehicleTypeFilter)}>
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -393,8 +448,39 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
             <SelectItem value="bicycle">Sepeda</SelectItem>
             <SelectItem value="electric_scooter">Skuter Listrik</SelectItem>
             <SelectItem value="other">Lainnya</SelectItem>
+            {customTypes.map((customType) => (
+              <SelectItem key={customType} value={`custom:${customType}`}>
+                {customType}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
+        <Select value={building} onValueChange={setBuilding}>
+          <SelectTrigger>
+            <SelectValue placeholder="Semua bangunan" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Bangunan</SelectItem>
+            {buildings.map(([code, name]) => (
+              <SelectItem key={code} value={code}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={() => {
+            setQ("");
+            setStatus("all");
+            setType("all");
+            setBuilding("all");
+          }}
+          disabled={!hasFilter}
+        >
+          <RotateCcw className="mr-1.5 h-4 w-4" /> Reset filter
+        </Button>
       </div>
 
       {!isLoading && !isFetching && !error ? (
@@ -489,25 +575,25 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                             </Link>
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {v.snapshotRoomNumber ? (
+                            {v.currentRoomNumber ? (
                               <Link
                                 to="/rooms/$roomNumber"
-                                params={{ roomNumber: v.snapshotRoomNumber }}
+                                params={{ roomNumber: v.currentRoomNumber }}
                                 className="hover:text-primary hover:underline"
                               >
-                                Kamar {v.snapshotRoomNumber}
+                                Kamar {v.currentRoomNumber}
                               </Link>
                             ) : (
                               "—"
                             )}
                           </p>
                           <p className="hidden">
-                            {v.snapshotRoomNumber ? `Kamar ${v.snapshotRoomNumber}` : "–"}
+                            {v.currentRoomNumber ? `Kamar ${v.currentRoomNumber}` : "–"}
                           </p>
                         </td>
-                        <td className="px-5 py-3 font-mono text-xs">{v.plateNumber}</td>
+                        <td className="px-5 py-3 font-mono text-xs">{v.plateNumber || "—"}</td>
                         <td className="px-5 py-3 text-muted-foreground capitalize">
-                          {v.vehicleType.replace("_", " ")}
+                          {vehicleTypeLabel(v)}
                         </td>
                         <td className="px-5 py-3">
                           <VehicleStatusBadge status={v.vehicleStatus} />
@@ -521,6 +607,25 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    to="/tenants/$residentId"
+                                    params={{ residentId: v.residentId }}
+                                  >
+                                    <UserRound className="mr-2 h-3.5 w-3.5" /> Lihat penghuni
+                                  </Link>
+                                </DropdownMenuItem>
+                                {v.currentRoomNumber ? (
+                                  <DropdownMenuItem asChild>
+                                    <Link
+                                      to="/rooms/$roomNumber"
+                                      params={{ roomNumber: v.currentRoomNumber }}
+                                    >
+                                      <BedDouble className="mr-2 h-3.5 w-3.5" /> Lihat kamar
+                                    </Link>
+                                  </DropdownMenuItem>
+                                ) : null}
+                                <DropdownMenuSeparator />
                                 {actions.map((kind, idx) => (
                                   <div key={kind}>
                                     {idx > 0 ? <DropdownMenuSeparator /> : null}
@@ -581,12 +686,27 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">
-                        {v.brand} · <span className="font-mono text-xs">{v.plateNumber}</span>
-                      </p>
+                      <p className="font-medium truncate">{vehicleIdentity(v)}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {v.snapshotResidentName}
-                        {v.snapshotRoomNumber ? ` · Kamar ${v.snapshotRoomNumber}` : ""}
+                        <Link
+                          to="/tenants/$residentId"
+                          params={{ residentId: v.residentId }}
+                          className="hover:text-primary hover:underline"
+                        >
+                          {v.snapshotResidentName}
+                        </Link>
+                        {v.currentRoomNumber ? (
+                          <>
+                            {" · "}
+                            <Link
+                              to="/rooms/$roomNumber"
+                              params={{ roomNumber: v.currentRoomNumber }}
+                              className="hover:text-primary hover:underline"
+                            >
+                              Kamar {v.currentRoomNumber}
+                            </Link>
+                          </>
+                        ) : null}
                       </p>
                     </div>
                     <VehicleStatusBadge status={v.vehicleStatus} />
@@ -598,6 +718,22 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link to="/tenants/$residentId" params={{ residentId: v.residentId }}>
+                              <UserRound className="mr-2 h-3.5 w-3.5" /> Lihat penghuni
+                            </Link>
+                          </DropdownMenuItem>
+                          {v.currentRoomNumber ? (
+                            <DropdownMenuItem asChild>
+                              <Link
+                                to="/rooms/$roomNumber"
+                                params={{ roomNumber: v.currentRoomNumber }}
+                              >
+                                <BedDouble className="mr-2 h-3.5 w-3.5" /> Lihat kamar
+                              </Link>
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuSeparator />
                           {actions.map((kind) => (
                             <DropdownMenuItem
                               key={kind}
@@ -639,9 +775,7 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
         onOpenChange={(o) => !o && setPending(null)}
         title={pending ? transitionMeta(pending.kind).title : ""}
         description={
-          pending
-            ? `${pending.vehicle.brand} · ${pending.vehicle.plateNumber} (${pending.vehicle.vehicleCode})`
-            : null
+          pending ? `${vehicleIdentity(pending.vehicle)} (${pending.vehicle.vehicleCode})` : null
         }
         confirmLabel={pending ? transitionMeta(pending.kind).confirm : "Konfirmasi"}
         destructive={pending ? transitionMeta(pending.kind).destructive : false}

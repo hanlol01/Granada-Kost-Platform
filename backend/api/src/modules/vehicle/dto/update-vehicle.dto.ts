@@ -15,6 +15,12 @@ export class UpdateVehicleDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(60)
+  custom_vehicle_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
   @MaxLength(80)
   brand?: string;
 

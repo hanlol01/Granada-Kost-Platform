@@ -62,6 +62,7 @@ void test('workspace is property-scoped and combines current-month billing autho
         if (sql.trim().startsWith('SELECT (now() AT TIME ZONE'))
           return { rows: [{ today: '2026-08-18' }] };
         if (sql.includes('FROM leases l')) return { rows: [row()] };
+        if (sql.includes('FROM reminder_attempts')) return { rows: [] };
         throw new Error('unexpected query');
       },
     },

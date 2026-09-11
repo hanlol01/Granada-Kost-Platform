@@ -15,10 +15,11 @@ export type VehicleRecord = {
   propertyId: string;
   residentId: string;
   vehicleCode: string;
-  plateNumber: string;
+  plateNumber: string | null;
   vehicleType: VehicleType;
-  brand: string;
-  color: string;
+  customVehicleType: string | null;
+  brand: string | null;
+  color: string | null;
   year: string | null;
   vehicleStatus: VehicleStatus;
   notes: string | null;
@@ -30,6 +31,9 @@ export type VehicleRecord = {
   deactivatedAt: Date | null;
   snapshotResidentName: string;
   snapshotRoomNumber: string | null;
+  currentRoomNumber: string | null;
+  currentBuildingName: string | null;
+  currentBuildingCode: string | null;
   createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -86,10 +90,11 @@ export type CreateVehicleInput = {
   propertyId: string;
   residentId: string;
   vehicleCode: string;
-  plateNumber: string;
+  plateNumber?: string | null;
   vehicleType: VehicleType;
-  brand: string;
-  color: string;
+  customVehicleType?: string;
+  brand?: string | null;
+  color?: string | null;
   year?: string;
   vehicleStatus: VehicleStatus;
   notes?: string;
@@ -100,10 +105,11 @@ export type CreateVehicleInput = {
 };
 
 export type UpdateVehicleInput = {
-  plateNumber?: string;
+  plateNumber?: string | null;
   vehicleType?: VehicleType;
-  brand?: string;
-  color?: string;
+  customVehicleType?: string | null;
+  brand?: string | null;
+  color?: string | null;
   year?: string | null;
   notes?: string | null;
 };

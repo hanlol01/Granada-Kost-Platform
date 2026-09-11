@@ -82,6 +82,10 @@ export type PublicCatalogGroupRecord = {
   availableCount: number;
   priceFromMonthly: number;
   priceFromYearly: number;
+  shortStayMonthlyPrice: number;
+  mediumStayMonthlyPrice: number;
+  longStayMonthlyPrice: number;
+  commercialEffectiveDate: string;
   minimumDpPercent: number;
   securityDepositMonths: number;
   paymentSchedules: string[];

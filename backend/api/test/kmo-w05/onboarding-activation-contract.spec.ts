@@ -648,6 +648,47 @@ test('direct onboarding records ordered staged payments as DP, installments, and
   assert.equal(response.initialPayment.status, 'verified');
 });
 
+test('direct 12-month onboarding accepts booking fee followed by installment and final settlement', async () => {
+  const harness = createOnboardingHarness({
+    expectedInitialRentCredit: 21_600_000,
+    expectedPaymentClassifications: ['booking_fee', 'down_payment', 'full_settlement'],
+  });
+  const response = await harness.service.commit(
+    actor as never,
+    {
+      ...onboardingDto,
+      dp_verified_amount: 0,
+      booking_fee_paid_amount: 0,
+      security_deposit_funded_amount: 0,
+      payment_entries: [
+        {
+          purpose: 'booking_fee',
+          amount: 10_800_000,
+          method: 'cash',
+          paid_at: '2026-07-20',
+        },
+        {
+          purpose: 'rent',
+          amount: 5_400_000,
+          method: 'cash',
+          paid_at: '2026-08-20',
+        },
+        {
+          purpose: 'rent',
+          amount: 5_400_000,
+          method: 'cash',
+          paid_at: '2026-09-11',
+        },
+      ],
+    },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+
+  assert.equal(response.initialPayment.dpRecordedAmount, 21_600_000);
+  assert.equal(response.initialPayment.status, 'verified');
+});
+
 test('direct onboarding rejects staged payments that are out of chronological order', async () => {
   const harness = createOnboardingHarness({ expectedInitialRentCredit: 5_400_000 });
   await assert.rejects(

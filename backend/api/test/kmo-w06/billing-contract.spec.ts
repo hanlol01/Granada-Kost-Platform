@@ -301,6 +301,7 @@ type HarnessOptions = {
   paymentPurpose?: 'rent' | 'dp';
   paymentCode?: string;
   commandFingerprint?: string | null;
+  enforceOnboardingRentCreditConstraint?: boolean;
   initialIntents?: Array<{ invoice_id: string; intended_amount: string }>;
   contractSettlement?: {
     state?: 'awaiting_activation' | 'open';
@@ -323,6 +324,12 @@ function paymentHarness(options: HarnessOptions = {}) {
   ];
   let receiptNumberSequence = 0;
   let transactionNumberSequence = 0;
+  const recordedPayments: Array<{
+    purpose: string;
+    status: string;
+    amount: number;
+    commandFingerprint: string | null;
+  }> = [];
   const client = {
     query: async (statement: string, params: readonly unknown[] = []) => {
       const normalized = sql(statement);
@@ -443,6 +450,8 @@ function paymentHarness(options: HarnessOptions = {}) {
           rowCount: ids.length,
         };
       }
+      if (/issuer\.display_name AS issued_by_name/.test(normalized))
+        return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/FROM lease_contract_settlements settlement/.test(normalized)) {
         const settlement = options.contractSettlement;
         if (!settlement) return { rows: [], rowCount: 0 };
@@ -494,7 +503,13 @@ function paymentHarness(options: HarnessOptions = {}) {
           rows: [{ passed: options.contractSettlement?.deadlinePassed ?? false }],
           rowCount: 1,
         };
-      if (/INSERT INTO payments/.test(normalized))
+      if (/INSERT INTO payments/.test(normalized)) {
+        recordedPayments.push({
+          purpose: String(params[6]),
+          status: String(params[5]),
+          amount: Number(params[7]),
+          commandFingerprint: params[10] === null ? null : String(params[10]),
+        });
         return {
           rows: [
             {
@@ -516,6 +531,7 @@ function paymentHarness(options: HarnessOptions = {}) {
           ],
           rowCount: 1,
         };
+      }
       if (/INSERT INTO payment_allocation_intents/.test(normalized)) {
         intents.push({ invoice_id: String(params[3]), intended_amount: String(params[4]) });
         return { rows: [], rowCount: 1 };
@@ -533,10 +549,30 @@ function paymentHarness(options: HarnessOptions = {}) {
           rowCount: 1,
         };
       }
-      if (/issuer\.display_name AS issued_by_name/.test(normalized))
-        return { rows: [receiptAuthorityRow()], rowCount: 1 };
       if (/INSERT INTO payment_receipts/.test(normalized))
         return { rows: [{ id: RECEIPT_ID }], rowCount: 1 };
+      if (
+        options.enforceOnboardingRentCreditConstraint &&
+        /UPDATE onboarding_commitments commitment/.test(normalized)
+      ) {
+        const excludesBookingFee = /NOT LIKE 'onboarding:%:booking_fee:%'/.test(normalized);
+        const projectedDpAmount = recordedPayments
+          .filter(
+            (payment) =>
+              payment.purpose === 'dp' &&
+              payment.status === 'verified' &&
+              (!excludesBookingFee || !payment.commandFingerprint?.includes(':booking_fee:')),
+          )
+          .reduce((total, payment) => total + payment.amount, 0);
+        if (projectedDpAmount + 10_800_000 > 21_600_000) {
+          const error = new Error(
+            'new row for relation "onboarding_commitments" violates check constraint "onboarding_commitments_rent_credit_limit_check"',
+          ) as Error & { code: string; constraint: string };
+          error.code = '23514';
+          error.constraint = 'onboarding_commitments_rent_credit_limit_check';
+          throw error;
+        }
+      }
       return { rows: [], rowCount: 1 };
     },
   };
@@ -1105,6 +1141,100 @@ test('verified onboarding cash returns the receipt reference needed by the succe
   assert.deepEqual(result.receipts, [
     { id: RECEIPT_ID, purpose: 'down_payment', amount: 1_000_000 },
   ]);
+});
+
+test('onboarding keeps booking fee separate from DP when a later rent payment is recorded', async () => {
+  const harness = paymentHarness({
+    invoiceOutstanding: 21_600_000,
+    enforceOnboardingRentCreditConstraint: true,
+  });
+
+  const result = await harness.service.recordInitialOnboardingPaymentsInTransaction(
+    harness.client as never,
+    {
+      propertyId: PROPERTY_ID,
+      residentId: RESIDENT_ID,
+      leaseId: LEASE_ID,
+      firstRentInvoiceId: INVOICE_1,
+      rentPayments: [
+        {
+          classification: 'booking_fee',
+          amount: 10_800_000,
+          method: 'bank_transfer',
+          status: 'verified',
+          evidenceFileIds: [],
+          paidAt: '2026-07-05',
+        },
+        {
+          classification: 'down_payment',
+          amount: 5_400_000,
+          method: 'bank_transfer',
+          status: 'verified',
+          evidenceFileIds: [],
+          paidAt: '2026-08-08',
+        },
+      ],
+      commandFingerprint: 'c'.repeat(64),
+      actor: actor as never,
+      context: {},
+    },
+  );
+
+  assert.equal(result.dpRecordedAmount, 16_200_000);
+  assert.equal(result.status, 'verified');
+});
+
+test('onboarding records the full booking fee, installment, and settlement scenario', async () => {
+  const harness = paymentHarness({
+    invoiceOutstanding: 21_600_000,
+    enforceOnboardingRentCreditConstraint: true,
+  });
+
+  const result = await harness.service.recordInitialOnboardingPaymentsInTransaction(
+    harness.client as never,
+    {
+      propertyId: PROPERTY_ID,
+      residentId: RESIDENT_ID,
+      leaseId: LEASE_ID,
+      firstRentInvoiceId: INVOICE_1,
+      rentPayments: [
+        {
+          classification: 'booking_fee',
+          amount: 10_800_000,
+          method: 'bank_transfer',
+          status: 'verified',
+          evidenceFileIds: [],
+          paidAt: '2026-07-05',
+        },
+        {
+          classification: 'down_payment',
+          amount: 5_400_000,
+          method: 'bank_transfer',
+          status: 'verified',
+          evidenceFileIds: [],
+          paidAt: '2026-08-08',
+        },
+        {
+          classification: 'full_settlement',
+          amount: 5_400_000,
+          method: 'bank_transfer',
+          status: 'verified',
+          evidenceFileIds: [],
+          paidAt: '2026-09-07',
+        },
+      ],
+      commandFingerprint: 'd'.repeat(64),
+      actor: actor as never,
+      context: {},
+    },
+  );
+
+  assert.equal(result.dpRecordedAmount, 21_600_000);
+  assert.equal(result.status, 'verified');
+  assert.deepEqual(
+    result.receipts.map((receipt) => receipt.purpose),
+    ['booking_fee', 'down_payment', 'full_settlement'],
+  );
 });
 
 test('reversal appends compensating allocation and receipt records without mutating original authority', async () => {

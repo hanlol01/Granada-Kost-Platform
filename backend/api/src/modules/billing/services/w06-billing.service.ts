@@ -4541,9 +4541,13 @@ export class W06BillingService {
              FROM payments payment
              LEFT JOIN payment_reversals reversal ON reversal.payment_id=payment.id
              WHERE payment.property_id=commitment.property_id
-               AND payment.lease_id=commitment.lease_id
-               AND payment.payment_purpose='dp'
-               AND payment.payment_status='verified'
+              AND payment.lease_id=commitment.lease_id
+              AND payment.payment_purpose='dp'
+              AND (
+                payment.command_fingerprint IS NULL
+                OR payment.command_fingerprint NOT LIKE 'onboarding:%:booking_fee:%'
+              )
+              AND payment.payment_status='verified'
                AND reversal.id IS NULL
                AND EXISTS (SELECT 1 FROM payment_allocations allocation WHERE allocation.payment_id=payment.id)
            ),0),

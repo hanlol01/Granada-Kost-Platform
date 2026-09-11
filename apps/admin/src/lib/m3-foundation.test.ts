@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ADMIN_UX_V2_ACCEPT, createAdminUxV2Requester } from "./admin-ux-api";
+import { createAccessTokenRefreshCoordinator } from "./api";
 import { mapSnakeToCamel } from "./admin-ux-mapper";
 import {
   getRouteAccessDecision,
@@ -140,6 +141,28 @@ test("M3 requester restores a missing access token before a protected request", 
   assert.equal(refreshCount, 1);
   assert.equal(authFailureCount, 0);
   assert.equal(authorization, "Bearer restored-token");
+});
+
+test("M3 shares one rotating refresh token request across concurrent API clients", async () => {
+  let refreshCount = 0;
+  let releaseRefresh!: (value: boolean) => void;
+  const refreshGate = new Promise<boolean>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const refresh = createAccessTokenRefreshCoordinator(() => ({
+    refresh: async () => {
+      refreshCount += 1;
+      return refreshGate;
+    },
+  }));
+
+  const first = refresh();
+  const second = refresh();
+  await Promise.resolve();
+  assert.equal(refreshCount, 1);
+
+  releaseRefresh(true);
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
 });
 
 test("M3 query keys are canonical, property-scoped, and do not retain NIK", () => {

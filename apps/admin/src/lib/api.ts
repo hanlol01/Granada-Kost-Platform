@@ -4,16 +4,40 @@ import { ApiClient, type TokenProvider } from "@granada-kost/api-client";
 import { env } from "./env";
 
 let tokenProviderRef: TokenProvider | null = null;
-let accessTokenRefresh: Promise<boolean> | null = null;
+
+export function createAccessTokenRefreshCoordinator(
+  getProvider: () => Pick<TokenProvider, "refresh"> | null,
+): () => Promise<boolean> {
+  let inFlight: Promise<boolean> | null = null;
+
+  return async () => {
+    if (inFlight) return inFlight;
+    const provider = getProvider();
+    if (!provider) return false;
+
+    const refresh = Promise.resolve()
+      .then(() => provider.refresh())
+      .finally(() => {
+        if (inFlight === refresh) inFlight = null;
+      });
+    inFlight = refresh;
+    return refresh;
+  };
+}
 
 export function registerTokenProvider(provider: TokenProvider): void {
   tokenProviderRef = provider;
 }
 
+const runAccessTokenRefresh = createAccessTokenRefreshCoordinator(() => tokenProviderRef);
+
 const proxyTokenProvider: TokenProvider = {
   getAccessToken: () => tokenProviderRef?.getAccessToken() ?? null,
   setAccessToken: (token) => tokenProviderRef?.setAccessToken(token),
-  refresh: async () => (tokenProviderRef ? tokenProviderRef.refresh() : false),
+  // ApiClient and the Admin UX V2 requester both pass through this one
+  // coordinator. Refresh tokens rotate, so concurrent refresh requests must
+  // never race each other after a long-running form session.
+  refresh: runAccessTokenRefresh,
   onAuthFailure: () => tokenProviderRef?.onAuthFailure?.(),
 };
 
@@ -38,12 +62,7 @@ export function getAccessToken(): string | null {
 // Admin UX V2 preserves its own envelopes, so it cannot use ApiClient's legacy
 // success-envelope unwrapping. These helpers retain the same auth lifecycle.
 export async function refreshAccessToken(): Promise<boolean> {
-  if (accessTokenRefresh) return accessTokenRefresh;
-  const refresh = proxyTokenProvider.refresh().finally(() => {
-    if (accessTokenRefresh === refresh) accessTokenRefresh = null;
-  });
-  accessTokenRefresh = refresh;
-  return refresh;
+  return runAccessTokenRefresh();
 }
 
 export function notifyAuthFailure(): void {

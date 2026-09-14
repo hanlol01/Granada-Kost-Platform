@@ -30,6 +30,35 @@ void test('invoice renderer uses the same branded PDF authority as payment recei
   assert.equal(loaded.getPageCount(), 1);
 });
 
+void test('invoice renderer emphasizes the current outstanding balance in the invoice and terbilang', async () => {
+  const result = await createBillingInvoicePdf({
+    invoiceCode: 'INV-OUTSTANDING-20260914',
+    invoiceStatus: 'partially_paid',
+    invoicePurpose: 'rent',
+    residentName: 'Siti Penghuni',
+    roomNumber: 'RK-03-01',
+    buildingCode: 'RK-03',
+    coverageStart: '2026-08-01',
+    coverageEnd: '2027-07-31',
+    dueDate: '2026-08-28',
+    totalAmount: 21_600_000,
+    outstandingAmount: 15_800_000,
+    issuedAt: new Date('2026-09-14T11:00:00+07:00'),
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /Tagihan yang perlu dibayar\s*:\s*Rp\. 15\.800\.000,-/);
+  assert.match(text, /Nilai tagihan awal\s*:\s*Rp\. 21\.600\.000,-/);
+  assert.match(text, /Sudah dibayarkan\s*:\s*Rp\. 5\.800\.000,-/);
+  assert.match(text, /Sisa tagihan\s*:\s*Rp\. 15\.800\.000,-/);
+  assert.match(text, /Lima Belas Juta Delapan Ratus Ribu Rupiah/);
+  assert.doesNotMatch(text, /Dua Puluh Satu Juta Enam Ratus Ribu Rupiah/);
+});
+
 void test('branded receipt renderer creates a one-page PDF with the canonical receipt data', async () => {
   const result = await createBillingReceiptPdf({
     receiptCode: 'RCT-TEST-20260827',

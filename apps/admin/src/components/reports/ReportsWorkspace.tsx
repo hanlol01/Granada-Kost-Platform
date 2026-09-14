@@ -241,7 +241,7 @@ const valueLabels: Record<string, string> = {
   deposit_refund: "Deposit dikembalikan",
   normal_expiry: "Akhir masa sewa",
   resident_early_termination: "Berhenti lebih awal",
-  notice_received: "Pemberitahuan tercatat",
+  notice_received: "Rencana check-out tersimpan",
   scheduled: "Check-out dijadwalkan",
   inspection_required: "Menunggu inspeksi kamar",
   settlement_pending: "Menunggu penyelesaian akhir",
@@ -587,7 +587,7 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                         onChange={(event) => update("checkout_status", event.target.value)}
                       >
                         <option value="">Semua status</option>
-                        <option value="notice_received">Pemberitahuan tercatat</option>
+                        <option value="notice_received">Rencana check-out tersimpan</option>
                         <option value="scheduled">Check-out dijadwalkan</option>
                         <option value="inspection_required">Menunggu inspeksi</option>
                         <option value="settlement_pending">Menunggu penyelesaian</option>

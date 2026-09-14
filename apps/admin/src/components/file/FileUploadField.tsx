@@ -98,12 +98,16 @@ export function FileUploadField({
   const preview = useFilePreview(value?.id ?? null);
   const policy = FILE_PURPOSE_POLICIES[filePurpose];
   const busy = disabled || isPreparing || upload.isUploading || remove.isPending;
+  const onBusyChangeRef = useRef(onBusyChange);
 
   useEffect(() => {
-    onBusyChange?.(isPreparing || upload.isUploading || remove.isPending);
-  }, [isPreparing, onBusyChange, remove.isPending, upload.isUploading]);
+    onBusyChangeRef.current = onBusyChange;
+  }, [onBusyChange]);
+  useEffect(() => {
+    onBusyChangeRef.current?.(isPreparing || upload.isUploading || remove.isPending);
+  }, [isPreparing, remove.isPending, upload.isUploading]);
 
-  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
   useEffect(() => {
     return () => {

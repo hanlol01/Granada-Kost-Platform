@@ -8,6 +8,7 @@ import {
   type ResidentDetail,
   type ResidentPage,
   type ContractSettlementStage,
+  type CheckoutFinancialStatus,
   type RentPaymentStatus,
   type ResidentStatus,
   type ResidentTenancy,
@@ -19,6 +20,7 @@ export type {
   ResidentListRecord,
   RentPaymentStatus,
   ContractSettlementStage,
+  CheckoutFinancialStatus,
   ResidentStatus,
 } from "@/lib/admin-resident";
 export type ResidentRecord = ResidentDetail;
@@ -29,6 +31,7 @@ export type UseResidentsFilters = {
   gender?: "male" | "female" | "other";
   tenancyStatus?: "awaiting_activation" | "active" | "none";
   settlementStage?: Exclude<ContractSettlementStage, "none">;
+  checkoutFinancialStatus?: Exclude<CheckoutFinancialStatus, "none">;
   settlementDueWithinDays?: number;
   leaseEndWithinDays?: number;
   createdFrom?: string;
@@ -53,6 +56,7 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
             gender: filters.gender,
             tenancy_status: filters.tenancyStatus,
             contract_settlement_stage: filters.settlementStage,
+            checkout_financial_status: filters.checkoutFinancialStatus,
             settlement_due_within_days: filters.settlementDueWithinDays,
             lease_end_within_days: filters.leaseEndWithinDays,
             created_from: filters.createdFrom,

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   completedBookingLeadResidentId,
   parseBookingLeadCompletionQuote,
@@ -143,4 +145,35 @@ test("completion quote parser requires its requested property and compatible act
 
   quote.data.property_id = "77777777-7777-4777-8777-777777777777";
   assert.throws(() => parseBookingLeadCompletionQuote(quote, propertyId, "2026-08-01", 3));
+});
+
+test("changed move-in date and one-month special terms always request a fresh matching quote", () => {
+  const hookSource = readFileSync(
+    fileURLToPath(new URL("../hooks/useBookingLeadCompletion.ts", import.meta.url)),
+    "utf8",
+  );
+  const dialogSource = readFileSync(
+    fileURLToPath(
+      new URL("../components/booking-leads/CompleteBookingLeadDialog.tsx", import.meta.url),
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    hookSource,
+    /queryKey: \["booking-lead-completion-quote", currentPropertyId, leadId, startDate, termMonths\]/,
+  );
+  assert.match(hookSource, /startDate && termMonths >= 1/);
+  assert.match(dialogSource, /effectiveMonthlyPrice \* termMonths/);
+  assert.match(dialogSource, /startDate,[\s\S]{0,80}termMonths,[\s\S]{0,120}pricingSource/);
+  assert.match(dialogSource, /lead\.preferredMoveInDate !== startDate/);
+  assert.match(dialogSource, /Tanggal rencana masuk diperbarui/);
+  assert.match(
+    dialogSource,
+    /Tarif, tanggal akhir, durasi, total sewa, dan pembayaran awal dihitung ulang/,
+  );
+  assert.match(
+    dialogSource,
+    /aria-label="Tarif bulanan yang disepakati"[\s\S]{0,180}formatOnChange/,
+  );
 });

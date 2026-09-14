@@ -49,14 +49,14 @@ before editing; extend the existing checkout authority rather than replacing it:
 
 Resident detail must derive the action from the current lease and open command:
 
-| Condition | Label |
-| --- | --- |
-| Active lease, no open checkout | `Mulai proses check-out` |
-| Open checkout | `Lanjutkan proses check-out` |
-| Physical complete, financial open | `Lihat penyelesaian check-out` |
-| Fully complete | `Lihat riwayat check-out` |
-| Awaiting activation | `Batalkan penyewaan` |
-| No active or historical checkout context | Hide the checkout action. |
+| Condition                                | Label                          |
+| ---------------------------------------- | ------------------------------ |
+| Active lease, no open checkout           | `Mulai proses check-out`       |
+| Open checkout                            | `Lanjutkan proses check-out`   |
+| Physical complete, financial open        | `Lihat penyelesaian check-out` |
+| Fully complete                           | `Lihat riwayat check-out`      |
+| Awaiting activation                      | `Batalkan penyewaan`           |
+| No active or historical checkout context | Hide the checkout action.      |
 
 The action opens the full checkout route/panel, not a destructive one-click
 mutation.
@@ -70,19 +70,21 @@ notice_received
     → settlement_pending
     → completed
 
-notice_received or scheduled → cancelled (before physical handover only)
+notice_received, scheduled, inspection_required, or settlement_pending → cancelled
+    → operational lease, occupancy, room, and eligible parking restored
+    → Admin may start again from an empty first stage
 ```
 
 Display labels are:
 
-| Technical state | User-facing label |
-| --- | --- |
-| `notice_received` | Pemberitahuan tercatat |
-| `scheduled` | Check-out dijadwalkan |
-| `inspection_required` | Menunggu inspeksi kamar |
-| `settlement_pending` | Menunggu penyelesaian akhir |
-| `completed` | Check-out selesai |
-| `cancelled` | Check-out dibatalkan |
+| Technical state       | User-facing label           |
+| --------------------- | --------------------------- |
+| `notice_received`     | Rencana check-out tersimpan |
+| `scheduled`           | Check-out dijadwalkan       |
+| `inspection_required` | Menunggu inspeksi kamar     |
+| `settlement_pending`  | Menunggu penyelesaian akhir |
+| `completed`           | Check-out selesai           |
+| `cancelled`           | Check-out dibatalkan        |
 
 Keep the existing financial authorities separate from the checkout command:
 
@@ -119,7 +121,8 @@ cannot precede lease start.
 For early termination, missing notice days are `max(0, 14 − notice days)`. Use
 the anchored rental period and the lease snapshot monthly tariff to calculate a
 daily rate and recommended short-notice compensation. Admin may reduce or waive
-the recommendation only with a reason and evidence. Approved short-notice
+the recommendation only with a reason. Supporting evidence is optional, but when
+supplied it remains attached to the audit trail. Approved short-notice
 compensation belongs to the Property Owner as contractual compensation and does
 not create an additional monthly management fee.
 
@@ -170,8 +173,12 @@ only after Admin records transfer method, reference, timestamp, and evidence.
 
 ## Handover and inspection
 
-Handover evidence covers returned keys/access, inventory, parking/vehicles,
-utilities, actual handover time, and room condition. At handover, end occupancy
+Handover records cover returned keys/access, inventory, parking/vehicles,
+utilities, actual handover time, and room condition. The operational upload
+groups for short notice, compensation adjustment, keys/access, inventory, and
+inspection are optional; required structured confirmations and reasons remain
+authoritative. Financial disbursement, deposit-offset, refund-adjustment, and
+damage-deduction evidence remain mandatory. At handover, end occupancy
 and resident physical access and set the room to `inspection_required`. Checkout
 inspection records whether further review or maintenance is required. The
 existing room-inspection resolution then moves a passed room to `vacant` or a
@@ -193,14 +200,18 @@ work orders, and expenses remain linked and are not silently closed.
   hidden from Owner.
 - Admin reports filter by exit type, operational status, financial status, date,
   refund, amount due, damage, and same-day departure.
-- Historical documents and settlements are append-only. A correction creates a
-  linked revision; it never silently revives a closed lease.
+- Historical documents and final settlements are append-only. A completed
+  check-out never silently revives a closed lease.
 
-Cancellation is allowed only before physical handover and requires a reason.
-After handover, corrections use a formal revision that preserves the original
-command and documents. For abandonment or an unreachable resident, Admin uses
-early termination; the actual checkout date is the documented date possession
-was recovered, not an unsupported backdate.
+Admin may use “Batalkan & mulai ulang” before the final settlement is issued,
+including after handover or inspection. The previous command and its audit
+records remain stored, while the active lease, occupancy, room, and eligible
+parking assignment are restored before a new empty process begins. No supervisor
+approval is part of this operating model. Once the command is `completed`, its
+financial decision and documents remain immutable and the restart action is no
+longer available. For abandonment or an unreachable resident, Admin uses early
+termination; the actual checkout date is the documented date possession was
+recovered, not an unsupported backdate.
 
 ## Documents and notifications
 
@@ -226,19 +237,19 @@ settlement, and completion through the existing manual/outbox authority.
 
 ## Edge-case decision matrix
 
-| Scenario | Required result |
-| --- | --- |
-| Same-day departure | Early termination, zero notice days, exception reason/evidence, recommended 14-day compensation. |
-| Resident cannot be contacted | Admin records possession recovery evidence; no guessed historical checkout date. |
-| Payment arrives while quote is open | Invalidate and recalculate the preview before final approval. |
-| Damage exceeds deposit | Consume available deposit as damage deduction; excess becomes explicit damage amount due. |
-| Rent and deposit are both refundable | Preserve two refund components and one transfer total. |
-| Amount due after handover | Room lifecycle may continue after inspection; limited resident finance access stays active. |
-| Open vehicle or parking record | Release resident parking/access at handover and retain history. |
-| Open complaint or work order | Keep it open and linked; checkout does not mark operational work complete. |
-| Ownership changes mid-contract | Attribute earned service and compensation using effective ownership scope; preserve both owners' history. |
-| Duplicate or concurrent command | Lock the lease and replay the first idempotent result or return a safe conflict. |
-| Resident has another active lease | Scope every action to the selected lease; do not deactivate unrelated access. |
+| Scenario                             | Required result                                                                                                                     |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Same-day departure                   | Early termination, zero notice days, mandatory exception reason, optional supporting evidence, and recommended 14-day compensation. |
+| Resident cannot be contacted         | Admin records possession recovery evidence; no guessed historical checkout date.                                                    |
+| Payment arrives while quote is open  | Invalidate and recalculate the preview before final approval.                                                                       |
+| Damage exceeds deposit               | Consume available deposit as damage deduction; excess becomes explicit damage amount due.                                           |
+| Rent and deposit are both refundable | Preserve two refund components and one transfer total.                                                                              |
+| Amount due after handover            | Room lifecycle may continue after inspection; limited resident finance access stays active.                                         |
+| Open vehicle or parking record       | Release resident parking/access at handover and retain history.                                                                     |
+| Open complaint or work order         | Keep it open and linked; checkout does not mark operational work complete.                                                          |
+| Ownership changes mid-contract       | Attribute earned service and compensation using effective ownership scope; preserve both owners' history.                           |
+| Duplicate or concurrent command      | Lock the lease and replay the first idempotent result or return a safe conflict.                                                    |
+| Resident has another active lease    | Scope every action to the selected lease; do not deactivate unrelated access.                                                       |
 
 ## Required RED and acceptance evidence
 

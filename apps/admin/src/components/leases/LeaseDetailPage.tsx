@@ -197,6 +197,7 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
             <CheckoutPanel
               leaseId={leaseId}
               propertyId={data.lease.propertyId}
+              onCompleted={() => Promise.all([detail.refetch(), billing.refetch()])}
               onClose={() => onSearchChange({ panel: "detail" })}
             />
           ) : (

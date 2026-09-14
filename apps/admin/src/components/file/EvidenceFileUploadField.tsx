@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Eye, Loader2, Paperclip, Plus, Trash2 } from "lucide-react";
 import { type FilePurpose, type FileResponse } from "@granada-kost/domain";
 import { Button } from "@/components/ui/button";
@@ -54,9 +54,13 @@ export function EvidenceFileUploadField({
   const remove = useFileDelete({ silent: true });
   const busy = uploadBusy || remove.isPending;
   const canAdd = values.length < maxFiles;
+  const onBusyChangeRef = useRef(onBusyChange);
 
-  useEffect(() => onBusyChange?.(busy), [busy, onBusyChange]);
-  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useEffect(() => {
+    onBusyChangeRef.current = onBusyChange;
+  }, [onBusyChange]);
+  useEffect(() => onBusyChangeRef.current?.(busy), [busy]);
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
   const appendFile = (file: FileResponse | null) => {
     if (!file) return;

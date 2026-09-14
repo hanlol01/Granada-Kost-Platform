@@ -119,7 +119,7 @@ export type CheckoutCompleteInput = {
 
 export type CheckoutRefundSettlementInput = {
   paymentMethod: "cash" | "bank_transfer" | "qris" | "ewallet" | "other";
-  externalReference: string;
+  externalReference?: string;
   evidenceFileIds: string[];
   notes?: string;
 };
@@ -545,6 +545,53 @@ export const adminUxLeaseApi = {
           { idempotencyKey },
         ),
       ),
+
+    editNotice: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutNoticeInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/edit-notice",
+          {
+            exit_type: input.exitType,
+            effective_date: input.effectiveDate,
+            reason: input.reason.trim(),
+            request_source: input.requestSource,
+            notice_exception_reason: text(input.noticeExceptionReason),
+            internal_note: text(input.internalNote),
+          },
+          { idempotencyKey },
+        ),
+      ),
+
+    editApproval: (
+      leaseId: string,
+      commandId: string,
+      input: CheckoutApprovalInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/edit-approval",
+          {
+            approved_short_notice_charge: input.approvedShortNoticeCharge,
+            short_notice_waiver_reason: text(input.shortNoticeWaiverReason),
+            short_notice_waiver_evidence_file_ids: input.shortNoticeWaiverEvidenceFileIds,
+          },
+          { idempotencyKey },
+        ),
+      ),
     schedule: (
       leaseId: string,
       commandId: string,
@@ -708,7 +755,7 @@ export const adminUxLeaseApi = {
             "/settle",
           {
             payment_method: input.paymentMethod,
-            external_reference: input.externalReference.trim(),
+            external_reference: text(input.externalReference),
             evidence_file_ids: input.evidenceFileIds,
             notes: text(input.notes),
           },
@@ -719,7 +766,7 @@ export const adminUxLeaseApi = {
       leaseId: string,
       commandId: string,
       refundId: string,
-      reason: string,
+      reason: string | undefined,
       idempotencyKey: string,
     ) =>
       data<{ refundId: string; settlementStatus: string; lateSettlement: boolean }>(
@@ -731,7 +778,25 @@ export const adminUxLeaseApi = {
             "/refunds/" +
             encodeURIComponent(refundId) +
             "/waive",
-          { reason: reason.trim() },
+          { reason: text(reason) },
+          { idempotencyKey },
+        ),
+      ),
+    requestRevision: (
+      leaseId: string,
+      commandId: string,
+      stage: number,
+      reason: string,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/revision-request",
+          { stage, reason: reason.trim() },
           { idempotencyKey },
         ),
       ),

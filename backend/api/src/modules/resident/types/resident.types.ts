@@ -40,6 +40,15 @@ export type ResidentContractSettlementStage =
   | 'paid_in_full'
   | 'preactivation_cancelled';
 
+export type ResidentCheckoutFinancialStatus =
+  | 'none'
+  | 'in_progress'
+  | 'refund_pending'
+  | 'refund_settled'
+  | 'refund_waived'
+  | 'amount_due'
+  | 'closed';
+
 export type EmergencyContactRecord = {
   id: string;
   residentId: string;
@@ -84,6 +93,9 @@ export type ResidentRecord = {
   contractSettlementRemainingAmount: number;
   contractSettlementCheckpointRequiredAmount: number;
   leaseExpiredAdminActionRequired: boolean;
+  checkoutFinancialStatus: ResidentCheckoutFinancialStatus;
+  checkoutRefundAmount: number;
+  checkoutRefundDueDate: string | null;
   roomNumber: string | null;
   leaseStart: string | null;
   leaseEnd: string | null;

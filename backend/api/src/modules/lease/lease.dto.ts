@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 
 import {
   ArrayMaxSize,
@@ -20,6 +20,12 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+
+const trimOptionalString = ({ value }: TransformFnParams): unknown => {
+  if (typeof value !== 'string') return value as unknown;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
 
 export class LeasePaginationQueryDto {
   @IsOptional()
@@ -452,6 +458,9 @@ export class CreateLeaseCheckoutNoticeDto {
   internal_note?: string;
 }
 
+/** Edits are intentionally separate from creating a checkout command. */
+export class EditLeaseCheckoutNoticeDto extends CreateLeaseCheckoutNoticeDto {}
+
 export class ApproveLeaseCheckoutDto {
   @Type(() => Number)
   @IsInt()
@@ -470,6 +479,8 @@ export class ApproveLeaseCheckoutDto {
   @IsUUID('4', { each: true })
   short_notice_waiver_evidence_file_ids?: string[];
 }
+
+export class EditLeaseCheckoutApprovalDto extends ApproveLeaseCheckoutDto {}
 
 export class LeaseCheckoutInventoryItemDto {
   @IsString()
@@ -710,13 +721,28 @@ export class CancelLeaseCheckoutDto {
   reason!: string;
 }
 
+/** A formal correction request keeps completed operational and financial records immutable. */
+export class CreateLeaseCheckoutRevisionDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(5)
+  stage!: number;
+
+  @IsString()
+  @Length(3, 2000)
+  reason!: string;
+}
+
 export class SettleRefundDto {
   @IsIn(['cash', 'bank_transfer', 'qris', 'ewallet', 'other'])
   payment_method!: 'cash' | 'bank_transfer' | 'qris' | 'ewallet' | 'other';
 
+  @Transform(trimOptionalString)
+  @IsOptional()
   @IsString()
   @Length(1, 256)
-  external_reference!: string;
+  external_reference?: string;
 
   @IsOptional()
   @IsUUID('4')
@@ -736,7 +762,9 @@ export class SettleRefundDto {
 }
 
 export class WaiveRefundDto {
+  @Transform(trimOptionalString)
+  @IsOptional()
   @IsString()
   @Length(3, 2000)
-  reason!: string;
+  reason?: string;
 }

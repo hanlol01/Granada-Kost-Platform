@@ -21,6 +21,7 @@ import {
   CancelLeaseCheckoutDto,
   ApproveLeaseCheckoutDto,
   CompleteLeaseCheckoutDto,
+  CreateLeaseCheckoutRevisionDto,
   CreateLeaseCheckoutNoticeDto,
   RecordLeaseCheckoutHandoverDto,
   RecordLeaseCheckoutInspectionDto,
@@ -61,6 +62,7 @@ type CheckoutRow = {
   approved_at: Date | null;
   physical_checkout_confirmed_at: Date | null;
   actual_checkout_date: string | null;
+  planned_lease_end_date?: string | null;
   inspection_room_status?: 'inspection_required' | 'maintenance' | null;
   final_settlement_id?: string | null;
   recommended_refund_amount?: string | null;
@@ -78,6 +80,18 @@ type CheckoutRow = {
   exit_refund_amount?: string | null;
   exit_refund_status?: string | null;
   exit_refund_due_date?: string | null;
+  exit_refund_payment_method?: string | null;
+  exit_refund_external_reference?: string | null;
+  exit_refund_settlement_reason?: string | null;
+  exit_refund_settled_at?: Date | null;
+  exit_refund_transaction_code?: string | null;
+  exit_refund_evidence_files?: Array<{
+    id: string;
+    original_filename: string;
+    sanitized_filename: string;
+    mime_type: string;
+    file_size_bytes: number;
+  }>;
   documents?: Array<{
     id: string;
     document_code: string;
@@ -236,6 +250,36 @@ export class LeaseCheckoutService {
               settlement.decision_status AS settlement_decision_status,
               refund.id AS exit_refund_id,refund.amount AS exit_refund_amount,
               refund.refund_status AS exit_refund_status,refund.refund_due_date::text AS exit_refund_due_date,
+              refund.payment_method AS exit_refund_payment_method,
+              refund.external_reference AS exit_refund_external_reference,
+              refund.settlement_reason AS exit_refund_settlement_reason,
+              refund.settled_at AS exit_refund_settled_at,
+              refund.transaction_code AS exit_refund_transaction_code,
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                  'id',file.id,'original_filename',file.original_filename,
+                  'sanitized_filename',file.sanitized_filename,'mime_type',file.mime_type,
+                  'file_size_bytes',file.file_size_bytes
+                ) ORDER BY file.created_at,file.id)
+                FROM files file
+                WHERE file.property_id=command.property_id
+                  AND file.is_deleted=FALSE
+                  AND (
+                    file.id=refund.evidence_file_id
+                    OR EXISTS (
+                      SELECT 1
+                      FROM lease_checkout_evidence evidence
+                      WHERE evidence.checkout_command_id=command.id
+                        AND evidence.property_id=command.property_id
+                        AND evidence.evidence_category='refund'
+                        AND evidence.file_id=file.id
+                        AND (
+                          evidence.metadata->>'refund_id' IS NULL
+                          OR evidence.metadata->>'refund_id'=refund.id::text
+                        )
+                    )
+                  )
+              ),'[]'::jsonb) AS exit_refund_evidence_files,
               COALESCE((
                 SELECT jsonb_agg(jsonb_build_object(
                   'id',document.id,'document_code',document.document_code,
@@ -375,10 +419,10 @@ export class LeaseCheckoutService {
         }
         const requestSource = dto.request_source;
         const noticeExceptionEvidence = this.evidenceIds(dto.notice_exception_evidence_file_ids);
-        if (quote.missingNoticeDays > 0 && (!exceptionReason || !noticeExceptionEvidence.length))
+        if (quote.missingNoticeDays > 0 && !exceptionReason)
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_NOTICE_EXCEPTION_EVIDENCE_REQUIRED',
-            message: 'A checkout with less than 14 days notice requires a reason and evidence',
+            message: 'A checkout with less than 14 days notice requires a reason',
           });
         const existing = await client.query<{ id: string }>(
           `SELECT id FROM lease_checkout_commands WHERE lease_id=$1 AND state IN ('notice_received','scheduled','inspection_required','settlement_pending') FOR UPDATE`,
@@ -500,6 +544,108 @@ export class LeaseCheckoutService {
     );
   }
 
+  async editNotice(
+    user: UserAccessContext,
+    leaseId: string,
+    commandId: string,
+    dto: CreateLeaseCheckoutNoticeDto,
+    key: string | undefined,
+    context: LeaseAuditContext,
+  ) {
+    return this.transition(
+      user,
+      leaseId,
+      commandId,
+      'edit_notice',
+      key,
+      dto,
+      context,
+      async (client, checkout, today) => {
+        if (!['notice_received', 'scheduled'].includes(checkout.state))
+          throw new ConflictException({
+            code: 'CHECKOUT_STATE_CONFLICT',
+            message: 'Checkout notice can only be edited before handover',
+          });
+        const lease = await this.lockLease(client, leaseId);
+        this.assertActive(lease);
+        if (dto.effective_date < today)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_EFFECTIVE_DATE_PAST',
+            message: 'Checkout effective date cannot be in the past',
+          });
+        let quote;
+        try {
+          quote = buildLeaseExitNoticeQuote({
+            exitType: dto.exit_type,
+            leaseStartDate: lease.start_date,
+            plannedEndDate: lease.end_date,
+            noticeDate: today,
+            effectiveDate: dto.effective_date,
+            monthlyRateAmount: Number(lease.snapshot_monthly_price),
+          });
+        } catch (error) {
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_EXIT_POLICY_INVALID',
+            message: error instanceof Error ? error.message : 'Checkout exit policy is invalid',
+          });
+        }
+        const exceptionReason = dto.notice_exception_reason?.trim() || null;
+        if (quote.missingNoticeDays > 0 && !exceptionReason)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_NOTICE_EXCEPTION_EVIDENCE_REQUIRED',
+            message: 'A checkout with less than 14 days notice requires a reason',
+          });
+        const updated = await client.query<CheckoutRow>(
+          `UPDATE lease_checkout_commands
+           SET state='notice_received', scheduled_by_user_id=NULL, scheduled_at=NULL,
+               approved_by_user_id=NULL, approved_at=NULL, approved_short_notice_charge=NULL,
+               short_notice_waiver_reason=NULL, effective_date=$2::date, exit_type=$3,
+               request_source=$4, notice_reason=$5, notice_exception_reason=$6, internal_note=$7,
+               notice_days=$8, missing_notice_days=$9, payment_period_days=$10,
+               daily_rate_amount=$11, recommended_short_notice_charge=$12, updated_at=now()
+           WHERE id=$1
+           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,
+                     notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
+                     exit_type,request_source,notice_days,missing_notice_days,payment_period_days,
+                     daily_rate_amount,recommended_short_notice_charge,approved_short_notice_charge,
+                     short_notice_waiver_reason,approved_at,physical_checkout_confirmed_at,actual_checkout_date::text`,
+          [
+            checkout.id,
+            dto.effective_date,
+            dto.exit_type,
+            dto.request_source,
+            dto.reason.trim(),
+            exceptionReason,
+            dto.internal_note?.trim() || null,
+            quote.noticeDays,
+            quote.missingNoticeDays,
+            quote.paymentPeriodDays,
+            quote.dailyRateAmount,
+            quote.recommendedShortNoticeCharge,
+          ],
+        );
+        await this.history(
+          client,
+          checkout.property_id,
+          checkout.lease_id,
+          'checkout_notice_edited',
+          user.id,
+          today,
+          {
+            checkout_command_id: checkout.id,
+            previous_state: checkout.state,
+            approval_reset: checkout.state === 'scheduled',
+            effective_date: dto.effective_date,
+            exit_type: dto.exit_type,
+            notice_days: quote.noticeDays,
+            recommended_short_notice_charge: quote.recommendedShortNoticeCharge,
+          },
+        );
+        return updated.rows[0];
+      },
+    );
+  }
+
   async schedule(
     user: UserAccessContext,
     leaseId: string,
@@ -522,17 +668,17 @@ export class LeaseCheckoutService {
         if (dto.approved_short_notice_charge > recommended)
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_SHORT_NOTICE_CHARGE_EXCEEDS_RECOMMENDATION',
-            message: 'Kompensasi pemberitahuan singkat tidak boleh melebihi rekomendasi server',
+            message: 'Kompensasi pemberitahuan singkat tidak boleh melebihi batas kebijakan',
           });
         const waiverReason = dto.short_notice_waiver_reason?.trim() || null;
         const waiverEvidence = this.evidenceIds(dto.short_notice_waiver_evidence_file_ids);
         if (
           dto.approved_short_notice_charge < recommended &&
-          (!waiverReason || waiverReason.length < 3 || !waiverEvidence.length)
+          (!waiverReason || waiverReason.length < 3)
         )
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED',
-            message: 'Pengurangan kompensasi pemberitahuan singkat memerlukan alasan dan bukti',
+            message: 'Pengurangan kompensasi pemberitahuan singkat memerlukan alasan',
           });
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands
@@ -577,6 +723,82 @@ export class LeaseCheckoutService {
     );
   }
 
+  async editApproval(
+    user: UserAccessContext,
+    leaseId: string,
+    commandId: string,
+    dto: ApproveLeaseCheckoutDto,
+    key: string | undefined,
+    context: LeaseAuditContext,
+  ) {
+    return this.transition(
+      user,
+      leaseId,
+      commandId,
+      'edit_approval',
+      key,
+      dto,
+      context,
+      async (client, checkout, today) => {
+        this.requireState(checkout, 'scheduled');
+        const recommended = Number(checkout.recommended_short_notice_charge ?? 0);
+        if (dto.approved_short_notice_charge > recommended)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_SHORT_NOTICE_CHARGE_EXCEEDS_RECOMMENDATION',
+            message: 'Kompensasi pemberitahuan singkat tidak boleh melebihi batas kebijakan',
+          });
+        const waiverReason = dto.short_notice_waiver_reason?.trim() || null;
+        const waiverEvidence = this.evidenceIds(dto.short_notice_waiver_evidence_file_ids);
+        if (
+          dto.approved_short_notice_charge < recommended &&
+          (!waiverReason || waiverReason.length < 3)
+        )
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED',
+            message: 'Pengurangan kompensasi pemberitahuan singkat memerlukan alasan',
+          });
+        const updated = await client.query<CheckoutRow>(
+          `UPDATE lease_checkout_commands
+           SET approved_short_notice_charge=$2, short_notice_waiver_reason=$3, updated_at=now()
+           WHERE id=$1
+           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,
+                     notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
+                     exit_type,request_source,notice_days,missing_notice_days,payment_period_days,
+                     daily_rate_amount,recommended_short_notice_charge,approved_short_notice_charge,
+                     short_notice_waiver_reason,approved_at,physical_checkout_confirmed_at,actual_checkout_date::text`,
+          [checkout.id, dto.approved_short_notice_charge, waiverReason],
+        );
+        if (waiverEvidence.length)
+          await this.insertEvidence(
+            client,
+            checkout,
+            'short_notice_waiver',
+            waiverEvidence,
+            user.id,
+            {
+              recommended_amount: recommended,
+              approved_amount: dto.approved_short_notice_charge,
+              reason: waiverReason,
+            },
+          );
+        await this.history(
+          client,
+          checkout.property_id,
+          checkout.lease_id,
+          'checkout_approval_edited',
+          user.id,
+          today,
+          {
+            checkout_command_id: checkout.id,
+            approved_short_notice_charge: dto.approved_short_notice_charge,
+            short_notice_waived: dto.approved_short_notice_charge < recommended,
+          },
+        );
+        return updated.rows[0];
+      },
+    );
+  }
+
   async handover(
     user: UserAccessContext,
     leaseId: string,
@@ -600,11 +822,6 @@ export class LeaseCheckoutService {
         const keyAccessEvidence = this.evidenceIds(dto.key_access_file_ids);
         const inventoryEvidence = this.evidenceIds(dto.inventory_file_ids);
         const parkingEvidence = this.evidenceIds(dto.parking_file_ids);
-        if (!keyAccessEvidence.length || !inventoryEvidence.length)
-          throw new UnprocessableEntityException({
-            code: 'CHECKOUT_HANDOVER_FILE_EVIDENCE_REQUIRED',
-            message: 'Key/access and inventory handover each require at least one evidence file',
-          });
         if (checkout.exit_type) {
           if (!checkout.approved_at)
             throw new ConflictException({
@@ -756,11 +973,6 @@ export class LeaseCheckoutService {
       async (client, checkout, today) => {
         this.requireState(checkout, 'inspection_required');
         const inspectionEvidence = this.evidenceIds(dto.inspection_file_ids);
-        if (!inspectionEvidence.length)
-          throw new UnprocessableEntityException({
-            code: 'CHECKOUT_INSPECTION_FILE_EVIDENCE_REQUIRED',
-            message: 'Room inspection requires at least one evidence file',
-          });
         if (checkout.exit_type && !checkout.physical_checkout_confirmed_at)
           throw new ConflictException({
             code: 'CHECKOUT_PHYSICAL_CONFIRMATION_REQUIRED',
@@ -1038,7 +1250,7 @@ export class LeaseCheckoutService {
           if (finalRefund > quote.recommendedRefundAmount)
             throw new UnprocessableEntityException({
               code: 'CHECKOUT_REFUND_EXCEEDS_RECOMMENDATION',
-              message: 'Final refund cannot exceed the server recommendation',
+              message: 'Pengembalian dana final tidak boleh melebihi hasil perhitungan',
             });
           if (
             finalRefund !== quote.recommendedRefundAmount &&
@@ -1605,6 +1817,55 @@ export class LeaseCheckoutService {
     );
   }
 
+  async requestRevision(
+    user: UserAccessContext,
+    leaseId: string,
+    commandId: string,
+    dto: CreateLeaseCheckoutRevisionDto,
+    key: string | undefined,
+    context: LeaseAuditContext,
+  ) {
+    return this.transition(
+      user,
+      leaseId,
+      commandId,
+      'revision_request',
+      key,
+      dto,
+      context,
+      async (client, checkout, today) => {
+        const completedStage =
+          checkout.state === 'inspection_required'
+            ? 3
+            : checkout.state === 'settlement_pending'
+              ? 4
+              : checkout.state === 'completed'
+                ? 5
+                : 0;
+        if (!completedStage || dto.stage > completedStage)
+          throw new ConflictException({
+            code: 'CHECKOUT_REVISION_FORBIDDEN',
+            message: 'A checkout revision can only target a recorded stage after handover',
+          });
+        await this.history(
+          client,
+          checkout.property_id,
+          checkout.lease_id,
+          'checkout_revision_requested',
+          user.id,
+          today,
+          {
+            checkout_command_id: checkout.id,
+            stage: dto.stage,
+            checkout_state: checkout.state,
+            reason: dto.reason.trim(),
+          },
+        );
+        return checkout;
+      },
+    );
+  }
+
   async cancel(
     user: UserAccessContext,
     leaseId: string,
@@ -1622,11 +1883,18 @@ export class LeaseCheckoutService {
       dto,
       context,
       async (client, checkout, today) => {
-        if (!['notice_received', 'scheduled'].includes(checkout.state))
+        if (
+          !['notice_received', 'scheduled', 'inspection_required', 'settlement_pending'].includes(
+            checkout.state,
+          )
+        )
           throw new ConflictException({
             code: 'CHECKOUT_CANCELLATION_FORBIDDEN',
-            message: 'Checkout can only be cancelled before handover',
+            message: 'Check-out yang sudah selesai tidak dapat dimulai ulang',
           });
+        const restartAfterHandover = Boolean(checkout.physical_checkout_confirmed_at);
+        if (restartAfterHandover)
+          await this.restoreOperationalStateForCheckoutRestart(client, checkout, user.id);
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands SET state='cancelled',cancelled_by_user_id=$2,cancelled_at=now(),cancellation_reason=$3,updated_at=now() WHERE id=$1
            RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
@@ -1642,7 +1910,11 @@ export class LeaseCheckoutService {
           'checkout_cancelled',
           user.id,
           today,
-          { checkout_command_id: checkout.id },
+          {
+            checkout_command_id: checkout.id,
+            previous_state: checkout.state,
+            restart_after_handover: restartAfterHandover,
+          },
         );
         return updated.rows[0];
       },
@@ -1789,7 +2061,9 @@ export class LeaseCheckoutService {
               settled?.payment_method ?? null,
               settled?.external_reference ?? null,
               refundEvidence[0] ?? null,
-              status === 'settled' ? settled?.notes?.trim() || null : waived?.reason.trim(),
+              status === 'settled'
+                ? settled?.notes?.trim() || null
+                : waived?.reason?.trim() || null,
               user.id,
               transactionCode,
             ],
@@ -1836,7 +2110,7 @@ export class LeaseCheckoutService {
               status,
               settled?.payment_method ?? null,
               settled?.external_reference ?? null,
-              waived?.reason.trim() ?? null,
+              waived?.reason?.trim() || null,
               user.id,
               JSON.stringify({ checkout_command_id: commandId, late_settlement: late }),
               transactionCode,
@@ -2462,25 +2736,18 @@ export class LeaseCheckoutService {
   }
 
   private async assertEvidenceComplete(client: PoolClient, checkout: CheckoutRow) {
-    const result = await client.query<{ evidence_category: string; has_file: boolean }>(
-      `SELECT evidence_category,bool_or(file_id IS NOT NULL) AS has_file
+    const result = await client.query<{ evidence_category: string }>(
+      `SELECT DISTINCT evidence_category
        FROM lease_checkout_evidence
-       WHERE checkout_command_id=$1 AND property_id=$2
-       GROUP BY evidence_category`,
+       WHERE checkout_command_id=$1 AND property_id=$2`,
       [checkout.id, checkout.property_id],
     );
-    const categories = new Map(result.rows.map((row) => [row.evidence_category, row.has_file]));
+    const categories = new Set(result.rows.map((row) => row.evidence_category));
     for (const category of ['keys_access', 'inventory', 'parking', 'inspection'])
       if (!categories.has(category))
         throw new UnprocessableEntityException({
           code: 'CHECKOUT_EVIDENCE_REQUIRED',
-          message: `Checkout ${category} evidence is required`,
-        });
-    for (const category of ['keys_access', 'inventory', 'inspection'])
-      if (!categories.get(category))
-        throw new UnprocessableEntityException({
-          code: 'CHECKOUT_FILE_EVIDENCE_REQUIRED',
-          message: `Checkout ${category} requires an attached evidence file`,
+          message: `Checkout ${category} confirmation is required`,
         });
   }
   private assertHandoverConfirmations(dto: RecordLeaseCheckoutHandoverDto) {
@@ -2729,6 +2996,118 @@ export class LeaseCheckoutService {
       [checkout.lease_id, checkout.property_id, checkout.resident_id],
     );
   }
+  private async restoreOperationalStateForCheckoutRestart(
+    client: PoolClient,
+    checkout: CheckoutRow,
+    actorId: string,
+  ) {
+    if (!checkout.planned_lease_end_date)
+      throw new ConflictException({
+        code: 'CHECKOUT_RESTART_PLANNED_END_REQUIRED',
+        message: 'Tanggal akhir penyewaan awal diperlukan sebelum check-out dapat dimulai ulang',
+      });
+
+    const settlement = await client.query<{ id: string }>(
+      `SELECT id FROM lease_exit_final_settlements
+       WHERE checkout_command_id=$1
+       LIMIT 1
+       FOR UPDATE`,
+      [checkout.id],
+    );
+    if (settlement.rows[0])
+      throw new ConflictException({
+        code: 'CHECKOUT_RESTART_FINAL_SETTLEMENT_EXISTS',
+        message: 'Check-out dengan penyelesaian akhir tidak dapat dimulai ulang',
+      });
+
+    const leaseUpdated = await client.query(
+      `UPDATE leases
+       SET lease_status='active',end_date=$2::date,closed_at=NULL,closed_by_user_id=NULL,
+           close_reason=NULL,updated_by_user_id=$3,updated_at=now()
+       WHERE id=$1 AND property_id=$4 AND lease_status='ended'
+         AND close_reason IN ('resident_early_termination','normal_expiry')`,
+      [checkout.lease_id, checkout.planned_lease_end_date, actorId, checkout.property_id],
+    );
+    if (leaseUpdated.rowCount !== 1)
+      throw new ConflictException({
+        code: 'CHECKOUT_RESTART_LEASE_CONFLICT',
+        message: 'Penyewaan tidak dapat dipulihkan untuk memulai ulang check-out',
+      });
+
+    const occupancyUpdated = await client.query(
+      `UPDATE occupancies
+       SET occupancy_status='active',end_date=NULL,closed_by_user_id=NULL,updated_at=now()
+       WHERE id=$1 AND property_id=$2 AND occupancy_status='ended'`,
+      [checkout.occupancy_id, checkout.property_id],
+    );
+    if (occupancyUpdated.rowCount !== 1)
+      throw new ConflictException({
+        code: 'CHECKOUT_RESTART_OCCUPANCY_CONFLICT',
+        message: 'Status hunian tidak dapat dipulihkan untuk memulai ulang check-out',
+      });
+
+    const roomUpdated = await client.query(
+      `UPDATE rooms
+       SET room_status='occupied',updated_by_user_id=$3,updated_at=now()
+       WHERE id=$1 AND property_id=$2 AND room_status IN ('inspection_required','maintenance')`,
+      [checkout.room_id, checkout.property_id, actorId],
+    );
+    if (roomUpdated.rowCount !== 1)
+      throw new ConflictException({
+        code: 'CHECKOUT_RESTART_ROOM_CONFLICT',
+        message: 'Status kamar tidak dapat dipulihkan untuk memulai ulang check-out',
+      });
+
+    await this.restoreResidentParking(client, checkout, actorId);
+  }
+  private async restoreResidentParking(client: PoolClient, checkout: CheckoutRow, actorId: string) {
+    const released = await client.query<{ slot_id: string; vehicle_id: string }>(
+      `SELECT history.slot_id,history.vehicle_id
+       FROM parking_assignment_histories history
+       JOIN parking_slots slot ON slot.id=history.slot_id
+       JOIN parking_zones zone ON zone.id=slot.zone_id AND zone.property_id=history.property_id
+       WHERE history.property_id=$2
+         AND history.action='released'
+         AND history.metadata->>'checkout_command_id'=$1
+       ORDER BY history.effective_at,history.id
+       FOR UPDATE OF slot`,
+      [checkout.id, checkout.property_id],
+    );
+    const restored = new Set<string>();
+    for (const assignment of released.rows) {
+      if (restored.has(assignment.slot_id)) continue;
+      const slot = await client.query(
+        `UPDATE parking_slots
+         SET slot_status='occupied',vehicle_id=$2,updated_at=now()
+         WHERE id=$1 AND slot_status='available' AND vehicle_id IS NULL`,
+        [assignment.slot_id, assignment.vehicle_id],
+      );
+      if (slot.rowCount !== 1)
+        throw new ConflictException({
+          code: 'CHECKOUT_RESTART_PARKING_CONFLICT',
+          message: 'A released parking slot is no longer available',
+        });
+      await client.query(
+        `INSERT INTO parking_assignment_histories(
+           property_id,slot_id,vehicle_id,action,reason,actor_user_id,metadata
+         ) VALUES($1,$2,$3,'assigned','Checkout restarted',$4,$5::jsonb)`,
+        [
+          checkout.property_id,
+          assignment.slot_id,
+          assignment.vehicle_id,
+          actorId,
+          JSON.stringify({
+            source: 'lease_checkout',
+            checkout_command_id: checkout.id,
+            lease_id: checkout.lease_id,
+            room_id: checkout.room_id,
+            checkout_restarted: true,
+          }),
+        ],
+      );
+      restored.add(assignment.slot_id);
+    }
+  }
   private async lockOccupancyAndRoom(client: PoolClient, checkout: CheckoutRow) {
     const occupancy = await client.query<{ id: string }>(
       `SELECT id FROM occupancies WHERE id=$1 AND property_id=$2 AND occupancy_status='active' FOR UPDATE`,
@@ -2799,7 +3178,7 @@ export class LeaseCheckoutService {
       `SELECT id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
               exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
               approved_short_notice_charge,short_notice_waiver_reason,approved_at,
-              physical_checkout_confirmed_at,actual_checkout_date::text
+              physical_checkout_confirmed_at,actual_checkout_date::text,planned_lease_end_date::text
        FROM lease_checkout_commands WHERE id=$1 AND lease_id=$2 FOR UPDATE`,
       [id, leaseId],
     );

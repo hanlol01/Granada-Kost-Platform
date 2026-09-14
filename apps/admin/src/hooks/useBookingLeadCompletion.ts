@@ -44,7 +44,7 @@ export function useBookingLeadCompletionQuote(
   const { currentPropertyId } = useProperty();
   return useQuery({
     queryKey: ["booking-lead-completion-quote", currentPropertyId, leadId, startDate, termMonths],
-    enabled: Boolean(currentPropertyId && leadId && startDate && termMonths >= 3),
+    enabled: Boolean(currentPropertyId && leadId && startDate && termMonths >= 1),
     queryFn: () =>
       requestBookingLeadCompletionQuote(leadId!, currentPropertyId!, startDate, termMonths),
   });

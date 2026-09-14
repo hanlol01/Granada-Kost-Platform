@@ -121,9 +121,13 @@ function snapshot(
       rent_refundable_amount: 0,
       rent_amount_due_before_deposit_offset: 174_195,
       deposit_liability_amount: 1_800_000,
+      documented_damage_amount: 150_000,
       deposit_deduction_amount: 150_000,
+      damage_amount_due: 0,
       deposit_rent_offset_amount: 174_195,
       refundable_deposit_amount: 1_475_805,
+      gross_refund_amount: 1_475_805,
+      gross_amount_due: 0,
       recommended_refund_amount: 1_475_805,
       final_refund_amount: 1_475_805,
       final_rent_refund_amount: 0,
@@ -174,10 +178,24 @@ void test('M6 checkout and final-settlement PDFs reuse the official branded docu
     assert.doesNotMatch(source, /file_id|content_path|storage_path/i);
     const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const rendered = await getDocument({ data: new Uint8Array(result.content) }).promise;
-    const page = await rendered.getPage(1);
-    const pageContent = await page.getTextContent();
-    const text = pageContent.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+    const textParts: string[] = [];
+    for (let pageNumber = 1; pageNumber <= rendered.numPages; pageNumber += 1) {
+      const page = await rendered.getPage(pageNumber);
+      const pageContent = await page.getTextContent();
+      textParts.push(pageContent.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+    }
+    const text = textParts.join(' ');
     assert.doesNotMatch(text, /pukul\s+\d{2}[.:]\d{2}/i);
+    assert.doesNotMatch(
+      text,
+      /lease_settlement_v2|inspection required|complete|returned|refund pending|security deposit|final settlement/i,
+    );
+    assert.match(text, /Menunggu pengembalian dana/);
+    if (kind === 'checkout_handover') {
+      assert.match(text, /Perlu inspeksi lanjutan/);
+      assert.match(text, /Lengkap/);
+      assert.match(text, /Dikembalikan/);
+    }
   }
 });
 

@@ -250,6 +250,28 @@ function label(value: string): string {
     .join(' ');
 }
 
+const officialDocumentStatusLabel: Record<string, string> = {
+  inspection_required: 'Perlu inspeksi lanjutan',
+  maintenance: 'Masuk perawatan',
+  complete: 'Lengkap',
+  returned: 'Dikembalikan',
+  partial: 'Sebagian',
+  damaged: 'Rusak',
+  missing: 'Tidak ditemukan',
+  not_applicable: 'Tidak berlaku',
+  refund_pending: 'Menunggu pengembalian dana',
+  amount_due: 'Masih ada kewajiban',
+  closed: 'Selesai',
+  pending: 'Menunggu pembayaran',
+  settled: 'Sudah dibayarkan',
+  waived: 'Hak pengembalian dana dilepaskan',
+  reversed: 'Dibatalkan',
+};
+
+function officialDocumentLabel(value: string): string {
+  return officialDocumentStatusLabel[value] ?? label(value);
+}
+
 function propertyAddressText(
   propertyName: string | null | undefined,
   propertyAddress: string | null | undefined,
@@ -601,17 +623,38 @@ function terbilang(value: number): string {
 }
 
 function wrapText(font: PDFFont, text: string, size: number, width: number): string[] {
+  const splitLongWord = (word: string): string[] => {
+    if (font.widthOfTextAtSize(word, size) <= width) return [word];
+
+    const fragments: string[] = [];
+    let fragment = '';
+    for (const character of word) {
+      const candidate = `${fragment}${character}`;
+      if (fragment && font.widthOfTextAtSize(candidate, size) > width) {
+        fragments.push(fragment);
+        fragment = character;
+      } else {
+        fragment = candidate;
+      }
+    }
+    if (fragment) fragments.push(fragment);
+    return fragments;
+  };
+
   const lines: string[] = [];
   for (const paragraph of text.split(/\r?\n/)) {
     const words = paragraph.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
     let line = '';
     for (const word of words) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (line && font.widthOfTextAtSize(candidate, size) > width) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = candidate;
+      const fragments = splitLongWord(word);
+      for (const fragment of fragments) {
+        const candidate = line ? `${line} ${fragment}` : fragment;
+        if (line && font.widthOfTextAtSize(candidate, size) > width) {
+          lines.push(line);
+          line = fragment;
+        } else {
+          line = candidate;
+        }
       }
     }
     if (line) lines.push(line);
@@ -1009,7 +1052,7 @@ export async function createLeaseExitOfficialDocumentPdf(
       ? snapshot.lease.exit_type === 'normal_expiry'
         ? 'BERITA ACARA SERAH TERIMA CHECK-OUT'
         : 'BERITA ACARA CHECK-OUT PENGHENTIAN DINI'
-      : 'PERNYATAAN FINAL SETTLEMENT SEWA';
+      : 'PERNYATAAN PENYELESAIAN AKHIR SEWA';
   let page!: PDFPage;
   let y = 0;
 
@@ -1079,15 +1122,25 @@ export async function createLeaseExitOfficialDocumentPdf(
   };
 
   const row = (name: string, value: string, valueColor = navy) => {
-    const lines = wrapText(regular, value || '-', 9, 326);
-    const height = Math.max(20, lines.length * 12 + 5);
+    const nameLines = wrapText(bold, name, 9, 120);
+    const valueLines = wrapText(regular, value || '-', 9, 316);
+    const lineCount = Math.max(nameLines.length, valueLines.length);
+    const height = Math.max(20, lineCount * 12 + 5);
     ensure(height);
     page.drawCircle({ x: 61, y: y - 7, size: 2, color: softNavy });
-    page.drawText(name, { x: 72, y: y - 10, size: 9, font: bold, color: navy });
-    page.drawText(':', { x: 205, y: y - 10, size: 9, font: regular, color: muted });
-    lines.forEach((line, index) => {
+    nameLines.forEach((line, index) => {
       page.drawText(line, {
-        x: 218,
+        x: 72,
+        y: y - 10 - index * 12,
+        size: 9,
+        font: bold,
+        color: navy,
+      });
+    });
+    page.drawText(':', { x: 198, y: y - 10, size: 9, font: regular, color: muted });
+    valueLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: 211,
         y: y - 10 - index * 12,
         size: 9,
         font: regular,
@@ -1098,6 +1151,35 @@ export async function createLeaseExitOfficialDocumentPdf(
   };
 
   const moneyRow = (name: string, value: number) => row(name, idr(value));
+
+  const paymentHistoryRow = (payment: LeaseExitOfficialDocumentSnapshot['payments'][number]) => {
+    const status = payment.payment_status === 'reversed' ? 'Dibalik/reversal' : 'Terverifikasi';
+    const detail = `${receiptPurpose[payment.payment_purpose] ?? label(payment.payment_purpose)} · ${idr(payment.amount)} · ${receiptDate(payment.paid_at)} · ${paymentMethodLabel[payment.payment_method] ?? label(payment.payment_method)} · ${status}${payment.receipt_code ? ` · Kuitansi ${payment.receipt_code}` : ''}`;
+    const codeLines = wrapText(bold, payment.payment_code, 9, 450);
+    const detailLines = wrapText(regular, detail, 9, 438);
+    const height = Math.max(26, codeLines.length * 12 + detailLines.length * 12 + 8);
+    ensure(height);
+    page.drawCircle({ x: 61, y: y - 7, size: 2, color: softNavy });
+    codeLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: 72,
+        y: y - 10 - index * 12,
+        size: 9,
+        font: bold,
+        color: navy,
+      });
+    });
+    detailLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: 72,
+        y: y - 10 - codeLines.length * 12 - index * 12,
+        size: 9,
+        font: regular,
+        color: navy,
+      });
+    });
+    y -= height;
+  };
 
   addPage();
   section('A. Identitas dokumen dan kontrak');
@@ -1111,7 +1193,6 @@ export async function createLeaseExitOfficialDocumentPdf(
     `${receiptDate(snapshot.lease.start_date)} s.d. ${receiptDate(snapshot.lease.planned_end_date)}`,
   );
   row('Tanggal check-out', receiptDate(snapshot.lease.actual_checkout_date, true));
-  row('Versi kebijakan', snapshot.lease.policy_version);
   row('Dikonfirmasi oleh', snapshot.authority.checkout_confirmed_by);
   row('Tanggal penerbitan', receiptDate(snapshot.issued_at));
 
@@ -1121,7 +1202,7 @@ export async function createLeaseExitOfficialDocumentPdf(
     row('Inventaris', yesNo(snapshot.handover.inventory_confirmed));
     row('Parkir', yesNo(snapshot.handover.parking_confirmed));
     row('Pemeriksaan kamar', yesNo(snapshot.handover.inspection_confirmed));
-    row('Hasil kamar', label(snapshot.room.checkout_result));
+    row('Hasil kamar', officialDocumentLabel(snapshot.room.checkout_result));
     row('Pemeriksa', snapshot.authority.inspection_recorded_by);
     row('Tanggal pemeriksaan', receiptDate(snapshot.authority.inspection_recorded_at));
 
@@ -1131,7 +1212,7 @@ export async function createLeaseExitOfficialDocumentPdf(
     snapshot.handover.inventory_items.forEach((item, index) => {
       row(
         `Item ${index + 1}`,
-        `${item.name} · Seharusnya ${item.expected_quantity} · Dikembalikan ${item.returned_quantity} · ${label(item.condition)}${item.notes ? ` · ${item.notes}` : ''}`,
+        `${item.name} · Seharusnya ${item.expected_quantity} · Dikembalikan ${item.returned_quantity} · ${officialDocumentLabel(item.condition)}${item.notes ? ` · ${item.notes}` : ''}`,
       );
     });
 
@@ -1141,7 +1222,7 @@ export async function createLeaseExitOfficialDocumentPdf(
     snapshot.handover.key_access_items.forEach((item, index) => {
       row(
         `Akses ${index + 1}`,
-        `${item.name} · Seharusnya ${item.expected_quantity} · Dikembalikan ${item.returned_quantity} · ${label(item.status)}${item.notes ? ` · ${item.notes}` : ''}`,
+        `${item.name} · Seharusnya ${item.expected_quantity} · Dikembalikan ${item.returned_quantity} · ${officialDocumentLabel(item.status)}${item.notes ? ` · ${item.notes}` : ''}`,
       );
     });
 
@@ -1165,13 +1246,7 @@ export async function createLeaseExitOfficialDocumentPdf(
 
     section('D. Riwayat pembayaran kontrak');
     if (snapshot.payments.length === 0) row('Pembayaran', 'Belum ada pembayaran terverifikasi.');
-    snapshot.payments.forEach((payment) => {
-      const status = payment.payment_status === 'reversed' ? 'Dibalik/reversal' : 'Terverifikasi';
-      row(
-        payment.payment_code,
-        `${receiptPurpose[payment.payment_purpose] ?? label(payment.payment_purpose)} · ${idr(payment.amount)} · ${receiptDate(payment.paid_at)} · ${paymentMethodLabel[payment.payment_method] ?? label(payment.payment_method)} · ${status}${payment.receipt_code ? ` · Kuitansi ${payment.receipt_code}` : ''}`,
-      );
-    });
+    snapshot.payments.forEach(paymentHistoryRow);
 
     section('E. Pemberitahuan penghentian');
     row('Tanggal pemberitahuan', receiptDate(snapshot.notice.recorded_date));
@@ -1181,65 +1256,75 @@ export async function createLeaseExitOfficialDocumentPdf(
       `${snapshot.notice.actual_days} hari dari ketentuan ${snapshot.notice.required_days} hari`,
     );
     row('Alasan', snapshot.notice.reason);
-    moneyRow('Biaya notice pendek', snapshot.notice.approved_short_notice_charge);
+    moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
     if (snapshot.notice.waiver_reason) row('Alasan keringanan', snapshot.notice.waiver_reason);
   }
 
-  section(kind === 'checkout_handover' ? 'F. Ringkasan final settlement' : 'B. Perhitungan sewa');
+  section(kind === 'checkout_handover' ? 'F. Ringkasan penyelesaian akhir' : 'B. Perhitungan sewa');
   moneyRow('Nilai kontrak', snapshot.lease.contract_rent_amount);
   moneyRow('Pembayaran sewa terverifikasi', snapshot.settlement.verified_rent_payment_amount);
-  moneyRow('Kredit invoice sebelumnya', snapshot.settlement.existing_invoice_credit_amount);
+  moneyRow('Kredit tagihan sebelumnya', snapshot.settlement.existing_invoice_credit_amount);
   moneyRow('Sewa yang telah menjadi hak', snapshot.settlement.earned_rent_amount);
   moneyRow('Kredit sewa belum terpakai', snapshot.settlement.rent_refundable_amount);
   moneyRow('Kredit sewa belum jatuh tempo', snapshot.settlement.unearned_invoice_credit_amount);
-  moneyRow('Biaya pemberitahuan pendek', snapshot.notice.approved_short_notice_charge);
+  moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
   moneyRow(
-    'Sisa kewajiban sebelum offset deposit',
+    'Sisa kewajiban sebelum penggunaan jaminan',
     snapshot.settlement.rent_amount_due_before_deposit_offset,
   );
 
   section(
-    kind === 'checkout_handover' ? 'G. Deposit dan hasil akhir' : 'C. Deposit dan hasil akhir',
+    kind === 'checkout_handover'
+      ? 'G. Jaminan kamar dan hasil akhir'
+      : 'C. Jaminan kamar dan hasil akhir',
   );
-  moneyRow('Security deposit awal', snapshot.settlement.deposit_liability_amount);
+  moneyRow('Jaminan kamar awal', snapshot.settlement.deposit_liability_amount);
   moneyRow('Kerusakan terdokumentasi', snapshot.settlement.documented_damage_amount);
-  moneyRow('Kerusakan dipotong dari deposit', snapshot.settlement.deposit_deduction_amount);
-  moneyRow('Kerusakan di luar deposit', snapshot.settlement.damage_amount_due);
-  moneyRow('Offset deposit ke kewajiban sewa', snapshot.settlement.deposit_rent_offset_amount);
-  moneyRow('Deposit dapat dikembalikan', snapshot.settlement.refundable_deposit_amount);
-  moneyRow('Total hak pengembalian sebelum perhitungan akhir', snapshot.settlement.gross_refund_amount);
-  moneyRow('Total kewajiban sebelum perhitungan akhir', snapshot.settlement.gross_amount_due);
-  moneyRow('Rekomendasi refund', snapshot.settlement.recommended_refund_amount);
-  moneyRow('Refund final', snapshot.settlement.final_refund_amount);
-  moneyRow('Komponen refund sewa', snapshot.settlement.final_rent_refund_amount);
-  moneyRow('Komponen refund deposit', snapshot.settlement.final_deposit_refund_amount);
+  moneyRow('Kerusakan dipotong dari jaminan kamar', snapshot.settlement.deposit_deduction_amount);
+  moneyRow('Kerusakan di luar jaminan kamar', snapshot.settlement.damage_amount_due);
+  moneyRow('Jaminan untuk kewajiban sewa', snapshot.settlement.deposit_rent_offset_amount);
+  moneyRow('Jaminan yang dapat dikembalikan', snapshot.settlement.refundable_deposit_amount);
+  moneyRow(
+    'Total pengembalian sebelum penyelesaian akhir',
+    snapshot.settlement.gross_refund_amount,
+  );
+  moneyRow('Total kewajiban sebelum penyelesaian akhir', snapshot.settlement.gross_amount_due);
+  moneyRow('Rekomendasi pengembalian dana', snapshot.settlement.recommended_refund_amount);
+  moneyRow('Pengembalian dana final', snapshot.settlement.final_refund_amount);
+  moneyRow('Komponen pengembalian sewa', snapshot.settlement.final_rent_refund_amount);
+  moneyRow('Komponen pengembalian jaminan kamar', snapshot.settlement.final_deposit_refund_amount);
   moneyRow('Penyesuaian Admin', snapshot.settlement.refund_adjustment_amount);
   if (snapshot.settlement.refund_adjustment_reason)
     row('Alasan penyesuaian', snapshot.settlement.refund_adjustment_reason);
   moneyRow('Sisa harus dibayar penghuni', snapshot.settlement.amount_due);
-  row('Status final settlement', label(snapshot.settlement.decision_status));
-  row('Status refund', snapshot.refund.status ? label(snapshot.refund.status) : 'Tidak ada refund');
+  row('Status penyelesaian akhir', officialDocumentLabel(snapshot.settlement.decision_status));
+  row(
+    'Status pengembalian dana',
+    snapshot.refund.status
+      ? officialDocumentLabel(snapshot.refund.status)
+      : 'Tidak ada pengembalian dana',
+  );
   if (snapshot.refund.due_date)
-    row('Target pembayaran refund', receiptDate(snapshot.refund.due_date));
+    row('Target pembayaran pengembalian dana', receiptDate(snapshot.refund.due_date));
   if (snapshot.refund.transaction_code)
-    row('Kode transaksi refund', snapshot.refund.transaction_code);
+    row('Kode transaksi pengembalian dana', snapshot.refund.transaction_code);
   if (snapshot.refund.external_reference)
-    row('Referensi eksternal refund', snapshot.refund.external_reference);
+    row('Referensi eksternal pengembalian dana', snapshot.refund.external_reference);
 
   section(kind === 'checkout_handover' ? 'H. Konfirmasi dan distribusi' : 'D. Ketentuan dokumen');
   row(
     'Pernyataan',
     kind === 'checkout_handover'
-      ? 'Dokumen ini mencatat serah terima fisik dan merangkum final settlement yang berwenang. Kuitansi setiap pembayaran tetap tersedia sebagai dokumen terpisah.'
-      : 'Pernyataan final settlement ini adalah sumber nominal yang berwenang. Kuitansi pembayaran sebelumnya tetap sah dan tidak diubah oleh dokumen ini.',
+      ? 'Dokumen ini mencatat serah terima fisik dan merangkum penyelesaian akhir yang sah. Kuitansi setiap pembayaran tetap tersedia sebagai dokumen terpisah.'
+      : 'Pernyataan penyelesaian akhir ini adalah sumber nominal yang sah. Kuitansi pembayaran sebelumnya tetap sah dan tidak diubah oleh dokumen ini.',
   );
   row(
     'Status lanjutan',
     snapshot.refund.status === 'pending'
-      ? 'Refund masih menunggu pembayaran. Bukti pengembalian dana diterbitkan setelah pembayaran refund dicatat.'
+      ? 'Pengembalian dana masih menunggu pembayaran. Bukti pengembalian dana diterbitkan setelah pembayarannya dicatat.'
       : snapshot.settlement.amount_due > 0
         ? 'Masih terdapat jumlah yang harus dibayar oleh penghuni.'
-        : 'Kewajiban final settlement telah ditutup.',
+        : 'Kewajiban penyelesaian akhir telah ditutup.',
   );
 
   ensure(145);
@@ -1270,7 +1355,7 @@ export async function createLeaseExitOfficialDocumentPdf(
       font: regular,
       color: muted,
     });
-    current.drawText('Dokumen resmi dimediasi server · Waktu Asia/Jakarta', {
+    current.drawText('Dokumen resmi diterbitkan · Waktu Asia/Jakarta', {
       x: 52,
       y: 30,
       size: 7.5,

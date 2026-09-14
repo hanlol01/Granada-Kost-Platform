@@ -33,6 +33,14 @@ export type ContractSettlementStage =
   | "termination_pending"
   | "paid_in_full"
   | "preactivation_cancelled";
+export type CheckoutFinancialStatus =
+  | "none"
+  | "in_progress"
+  | "refund_pending"
+  | "refund_settled"
+  | "refund_waived"
+  | "amount_due"
+  | "closed";
 
 export type ResidentListRecord = {
   id: string;
@@ -50,6 +58,9 @@ export type ResidentListRecord = {
   contractSettlementRemainingAmount: number;
   contractSettlementCheckpointRequiredAmount: number;
   leaseExpiredAdminActionRequired: boolean;
+  checkoutFinancialStatus: CheckoutFinancialStatus;
+  checkoutRefundAmount: number;
+  checkoutRefundDueDate: string | null;
   residentStatus: ResidentStatus;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +73,9 @@ export type ResidentDetail = Omit<
   | "contractSettlementDueDate"
   | "contractSettlementRemainingAmount"
   | "contractSettlementCheckpointRequiredAmount"
+  | "checkoutFinancialStatus"
+  | "checkoutRefundAmount"
+  | "checkoutRefundDueDate"
 > & {
   userId: string | null;
   phone: string | null;
@@ -241,6 +255,9 @@ const LIST_KEYS = [
   "contract_settlement_remaining_amount",
   "contract_settlement_checkpoint_required_amount",
   "lease_expired_admin_action_required",
+  "checkout_financial_status",
+  "checkout_refund_amount",
+  "checkout_refund_due_date",
   "resident_status",
   "created_at",
   "updated_at",
@@ -301,6 +318,17 @@ function parseListRecord(value: unknown): ResidentListRecord {
       typeof item.lease_expired_admin_action_required === "boolean"
         ? item.lease_expired_admin_action_required
         : invalid(),
+    checkoutFinancialStatus: enumValue(item.checkout_financial_status, [
+      "none",
+      "in_progress",
+      "refund_pending",
+      "refund_settled",
+      "refund_waived",
+      "amount_due",
+      "closed",
+    ]),
+    checkoutRefundAmount: integer(item.checkout_refund_amount),
+    checkoutRefundDueDate: date(item.checkout_refund_due_date, true),
     residentStatus: enumValue(item.resident_status, [
       "draft",
       "pending_activation",

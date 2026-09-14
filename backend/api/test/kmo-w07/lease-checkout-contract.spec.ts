@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -29,6 +30,27 @@ async function reserveLocalPort(): Promise<number> {
 
 test('W07D wiring exports the checkout authority', () => {
   assert.equal(typeof LeaseCheckoutService, 'function');
+});
+
+test('checkout refund permits optional references while retaining payout evidence history', async () => {
+  const dto = await source('src/modules/lease/lease.dto.ts');
+  const service = await source('src/modules/lease/lease-checkout.service.ts');
+  const migration = await source(
+    'src/infrastructure/database/migrations/085_optional_checkout_refund_annotations.sql',
+  );
+  const manifestEntry = MIGRATION_MANIFEST.find(
+    (entry) => entry.version === '085_optional_checkout_refund_annotations.sql',
+  );
+
+  assert.ok(manifestEntry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), manifestEntry.checksumSha256);
+  assert.match(dto, /external_reference\?: string/);
+  assert.match(dto, /reason\?: string/);
+  assert.match(service, /exit_refund_evidence_files/);
+  assert.match(service, /evidence_category='refund'/);
+  assert.match(migration, /evidence_file_id IS NOT NULL/);
+  assert.doesNotMatch(migration, /char_length\(trim\(COALESCE\(external_reference/);
+  assert.doesNotMatch(migration, /char_length\(trim\(COALESCE\(settlement_reason/);
 });
 
 test('W07D migration creates sole checkout authority, evidence, credit evidence, and deny-by-default gate', async () => {
@@ -74,6 +96,22 @@ test('checkout Stage 3 deliberately rolls out the gate for existing operational 
   assert.ok(entry);
   assert.equal(entry.checksumSha256.length, 64);
   assert.ok(entry.sentinels.some((value) => value.includes('migration 083')));
+});
+
+test('checkout revision and edit events are accepted by the lease history vocabulary', async () => {
+  const migration = await source(
+    'src/infrastructure/database/migrations/084_lease_checkout_revision_history.sql',
+  );
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '084_lease_checkout_revision_history.sql',
+  );
+
+  assert.match(migration, /checkout_notice_edited/);
+  assert.match(migration, /checkout_approval_edited/);
+  assert.match(migration, /checkout_revision_requested/);
+  assert.ok(entry);
+  assert.equal(entry.checksumSha256.length, 64);
+  assert.ok(entry.sentinels.some((value) => value.includes('checkout_revision_requested')));
 });
 
 test('W07D routes are Admin-only and completion is financially authorised', async () => {
@@ -123,19 +161,20 @@ test('Stage 3 links every final amount due to W06 invoice authority and reconcil
   assert.match(checkout, /payableDamageAmount/);
 });
 
-test('Stage 3 requires file evidence for financial exceptions, handover, and inspection', async () => {
+test('Stage 3 keeps evidence uploads optional while preserving required confirmations and reasons', async () => {
   const dto = await source('src/modules/lease/lease.dto.ts');
   const checkout = await source('src/modules/lease/lease-checkout.service.ts');
 
   assert.match(dto, /notice_exception_evidence_file_ids\?: string\[\]/);
   assert.match(dto, /short_notice_waiver_evidence_file_ids\?: string\[\]/);
-  assert.match(checkout, /CHECKOUT_NOTICE_EXCEPTION_EVIDENCE_REQUIRED/);
-  assert.match(checkout, /CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED/);
+  assert.match(checkout, /A checkout with less than 14 days notice requires a reason/);
+  assert.match(checkout, /Pengurangan kompensasi pemberitahuan singkat memerlukan alasan/);
   assert.match(checkout, /snapshot_monthly_price AS monthly_rate_amount/);
-  assert.match(checkout, /CHECKOUT_HANDOVER_FILE_EVIDENCE_REQUIRED/);
-  assert.match(checkout, /CHECKOUT_INSPECTION_FILE_EVIDENCE_REQUIRED/);
-  assert.match(checkout, /bool_or\(file_id IS NOT NULL\) AS has_file/);
-  assert.match(checkout, /for \(const category of \['keys_access', 'inventory', 'inspection'\]\)/);
+  assert.match(checkout, /SELECT DISTINCT evidence_category/);
+  assert.match(checkout, /Checkout \$\{category\} confirmation is required/);
+  assert.doesNotMatch(checkout, /CHECKOUT_HANDOVER_FILE_EVIDENCE_REQUIRED/);
+  assert.doesNotMatch(checkout, /CHECKOUT_INSPECTION_FILE_EVIDENCE_REQUIRED/);
+  assert.doesNotMatch(checkout, /bool_or\(file_id IS NOT NULL\) AS has_file/);
 });
 
 test('Stage 3 scopes parking release to the selected lease and preserves unrelated active leases', async () => {

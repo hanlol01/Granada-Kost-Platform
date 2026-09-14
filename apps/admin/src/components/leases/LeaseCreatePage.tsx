@@ -29,6 +29,7 @@ import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
   DialogContent,
@@ -1429,7 +1430,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     return (
       <AppShell
         title="Komitmen onboarding tersimpan"
-        subtitle="Lease masih menunggu aktivasi; kamar belum menjadi occupied."
+        subtitle="Penyewaan masih menunggu aktivasi; kamar belum berstatus dihuni."
       >
         <Card className="mx-auto max-w-3xl border-success/30">
           <CardHeader>
@@ -2069,7 +2070,7 @@ function ResidentAndLeaseStep({
                   Periode baru: {startDate ? formatIndonesianDate(startDate) : "belum dipilih"} ·{" "}
                   {termMonths} bulan · berakhir{" "}
                   {endDate ? formatIndonesianDate(endDate) : "belum dihitung"}. Jumlah sewa dan sisa
-                  pembayaran akan dihitung ulang, lalu diverifikasi server saat penyewaan dikomit.
+                  pembayaran akan dihitung ulang, lalu diperiksa kembali saat penyewaan disimpan.
                 </p>
               ) : null}
             </aside>
@@ -2110,7 +2111,7 @@ function ResidentAndLeaseStep({
                     key={months}
                     type="button"
                     variant={termMonths === months ? "default" : "outline"}
-                    className="min-h-11 px-2"
+                    className="min-h-11 border border-primary/60 px-2 hover:border-primary"
                     onClick={() => onTermMonths(months)}
                     disabled={leaseTermsLocked}
                   >
@@ -2129,7 +2130,7 @@ function ResidentAndLeaseStep({
               <Button
                 type="button"
                 variant={pricingSource === "negotiated" ? "success" : "outline"}
-                className="min-h-11 w-full"
+                className="min-h-11 w-full border border-primary/60 hover:border-primary"
                 onClick={() =>
                   onPricingSource(pricingSource === "negotiated" ? "standard" : "negotiated")
                 }
@@ -2146,21 +2147,21 @@ function ResidentAndLeaseStep({
               <div>
                 <p className="font-semibold text-success">Kesepakatan khusus</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Durasi 1–2 bulan wajib memakai mode ini. Tarif final akan diverifikasi server
+                  Durasi 1–2 bulan wajib memakai mode ini. Tarif final akan diperiksa kembali
                   terhadap harga kategori dan management fee yang berlaku.
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="agreed-monthly-price">Tarif bulanan yang disepakati *</Label>
-                <Input
+                <Label htmlFor="agreed-monthly-price">
+                  Tarif bulanan yang disepakati<span className="text-destructive"> *</span>
+                </Label>
+                <CurrencyInput
                   id="agreed-monthly-price"
-                  inputMode="numeric"
-                  value={agreedMonthlyPrice > 0 ? formatIdrInput(agreedMonthlyPrice) : ""}
+                  value={agreedMonthlyPrice}
                   placeholder="Contoh: 1.750.000"
-                  onChange={(event) =>
-                    onAgreedMonthlyPrice(Number(normalizeDigits(event.target.value)) || 0)
-                  }
-                  aria-invalid={Boolean(pricingErrors.agreedMonthlyPrice)}
+                  onValueChange={onAgreedMonthlyPrice}
+                  formatOnChange
+                  error={Boolean(pricingErrors.agreedMonthlyPrice)}
                   disabled={leaseTermsLocked}
                 />
                 {pricingErrors.agreedMonthlyPrice ? (
@@ -2170,7 +2171,9 @@ function ResidentAndLeaseStep({
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="pricing-agreement-reason">Catatan kesepakatan *</Label>
+                <Label htmlFor="pricing-agreement-reason">
+                  Catatan kesepakatan<span className="text-destructive"> *</span>
+                </Label>
                 <Textarea
                   id="pricing-agreement-reason"
                   value={pricingAgreementReason}

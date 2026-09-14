@@ -318,10 +318,30 @@ test("resident detail keeps historical dates behind an exception control", () =>
   );
 
   assert.match(source, /Aktifkan kamar & check-in/);
-  assert.match(source, /Tanggal aktual berbeda\?/);
-  assert.match(source, /Aktivasi saja/);
+  assert.match(source, /Penyesuaian pencatatan/);
+  assert.match(source, /Sesuaikan tanggal aktual/);
+  assert.match(source, /Aktifkan tanpa check-in/);
+  assert.match(source, /Aktifkan kamar saja/);
+  assert.match(source, /Gunakan hanya bila penghuni belum menerima kamar/);
   assert.match(source, /confirmCheckIn: !activationOnly/);
   assert.doesNotMatch(source, /Tanggal aktivasi sebenarnya[\s\S]{0,500}required/);
+});
+
+test("new lease custom pricing uses the shared Rupiah field and blue duration boundaries", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../components/leases/LeaseCreatePage.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(source, /import \{ CurrencyInput \} from "@\/components\/ui\/currency-input"/);
+  assert.match(source, /id="agreed-monthly-price"[\s\S]{0,240}formatOnChange/);
+  assert.match(
+    source,
+    /Tarif bulanan yang disepakati<span className="text-destructive"> \*<\/span>/,
+  );
+  assert.match(source, /Catatan kesepakatan<span className="text-destructive"> \*<\/span>/);
+  assert.match(source, /key=\{months\}[\s\S]{0,220}border-primary/);
+  assert.match(source, /Gunakan durasi & tarif khusus/);
 });
 
 test("physical check-in is a separate exact command that creates occupancy", async () => {
@@ -542,7 +562,7 @@ test("booking-lead lease flow explains its recorded period and a revised calcula
   assert.match(page, /Tanggal mulai dan durasi di bawah dapat disesuaikan/);
   assert.match(
     page,
-    /Jumlah sewa dan sisa\s+pembayaran akan dihitung ulang,\s+lalu diverifikasi server/,
+    /Jumlah sewa dan sisa\s+pembayaran akan dihitung ulang,\s+lalu diperiksa kembali/,
   );
   assert.match(page, /bookingPeriod\.startDate !== startDate/);
   assert.match(page, /bookingPeriod\.termMonths !== termMonths/);

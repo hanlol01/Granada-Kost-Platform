@@ -69,6 +69,9 @@ function listItem() {
     contract_settlement_remaining_amount: 0,
     contract_settlement_checkpoint_required_amount: 0,
     lease_expired_admin_action_required: false,
+    checkout_financial_status: "none",
+    checkout_refund_amount: 0,
+    checkout_refund_due_date: null,
     resident_status: "active",
     created_at: "2026-07-31T00:00:00.000Z",
     updated_at: "2026-07-31T00:00:00.000Z",
@@ -129,6 +132,9 @@ test("resident list parser preserves exact property-scoped pagination without li
   assert.equal("ktpNumber" in parsed.data[0], false);
   assert.equal(parsed.data[0].rentPaymentStatus, "none");
   assert.equal(parsed.data[0].leaseExpiredAdminActionRequired, false);
+  assert.equal(parsed.data[0].checkoutFinancialStatus, "none");
+  assert.equal(parsed.data[0].checkoutRefundAmount, 0);
+  assert.equal(parsed.data[0].checkoutRefundDueDate, null);
 
   for (const invalid of [
     { data: [listItem()], meta: { limit: 20, offset: 0 } },
@@ -146,6 +152,10 @@ test("resident list parser preserves exact property-scoped pagination without li
     },
     {
       data: [{ ...listItem(), contract_settlement_stage: "unrecognized" }],
+      meta: { limit: 20, offset: 0, total: 1 },
+    },
+    {
+      data: [{ ...listItem(), checkout_financial_status: "unknown" }],
       meta: { limit: 20, offset: 0, total: 1 },
     },
   ]) {

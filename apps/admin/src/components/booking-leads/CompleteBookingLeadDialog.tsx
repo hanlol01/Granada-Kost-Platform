@@ -262,8 +262,8 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
             </DialogTitle>
             <DialogDescription>
               {receipt
-                ? "Kamar dan komitmen pembayaran telah disimpan. Penghuni belum aktif dan kamar belum occupied."
-                : "Catat komitmen pembayaran awal setelah tahan kamar. Nilai final selalu dihitung ulang oleh server."}
+                ? "Kamar dan komitmen pembayaran telah disimpan. Penghuni belum aktif dan kamar belum dihuni."
+                : "Catat komitmen pembayaran awal setelah tahan kamar. Nilai akhir selalu dihitung ulang oleh sistem."}
             </DialogDescription>
           </DialogHeader>
 
@@ -393,7 +393,7 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                           key={months}
                           type="button"
                           variant={termMonths === months ? "default" : "outline"}
-                          className="min-h-11 w-full px-2"
+                          className="min-h-11 w-full border border-primary/60 px-2 hover:border-primary"
                           onClick={() => setTermMonths(months)}
                         >
                           {months} bulan
@@ -402,6 +402,14 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                     </div>
                   </label>
                 </div>
+                {lead.preferredMoveInDate && startDate && lead.preferredMoveInDate !== startDate ? (
+                  <NoticeAlert
+                    tone="info"
+                    density="compact"
+                    title="Tanggal rencana masuk diperbarui"
+                    description={`Tarif, tanggal akhir, durasi, total sewa, dan pembayaran awal dihitung ulang untuk ${formatIndonesianDate(startDate)}.`}
+                  />
+                ) : null}
                 <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-4 text-center">
                   <p className="text-sm font-medium text-muted-foreground">Tanggal sewa berakhir</p>
                   <p className="mt-1 text-lg font-semibold" aria-live="polite">
@@ -474,11 +482,15 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                 {pricingSource === "negotiated" ? (
                   <div className="grid gap-4">
                     <label className="grid gap-2 text-sm font-medium">
-                      Tarif bulanan yang disepakati
+                      <span>
+                        Tarif bulanan yang disepakati
+                        <span className="text-destructive"> *</span>
+                      </span>
                       <CurrencyInput
                         aria-label="Tarif bulanan yang disepakati"
                         value={agreedMonthlyPrice}
                         onValueChange={setAgreedMonthlyPrice}
+                        formatOnChange
                         error={
                           submitAttempted &&
                           (!Number.isSafeInteger(agreedMonthlyPrice) ||
@@ -491,7 +503,9 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                       </span>
                     </label>
                     <label className="grid gap-2 text-sm font-medium">
-                      Alasan kesepakatan khusus
+                      <span>
+                        Alasan kesepakatan khusus<span className="text-destructive"> *</span>
+                      </span>
                       <Textarea
                         className="min-h-24 resize-y"
                         value={pricingAgreementReason}

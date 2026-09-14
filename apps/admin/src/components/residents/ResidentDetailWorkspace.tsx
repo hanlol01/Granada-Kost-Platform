@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowUpRight,
-  Archive,
   Building2,
   CalendarCheck2,
   CalendarClock,
@@ -37,10 +36,11 @@ import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
 import { ResidentOperationalCards } from "@/components/residents/ResidentOperationalCards";
 import { TransferPanel } from "@/components/leases/TransferPanel";
-import { CheckoutPanel } from "@/components/leases/CheckoutPanel";
+import { CheckoutPanel, type CheckoutEntryFocus } from "@/components/leases/CheckoutPanel";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +99,16 @@ const paymentPlan = {
 } as const;
 
 const gender = { male: "Putra", female: "Putri", other: "Lainnya" } as const;
+
+function checkoutDocumentLabel(documentKind: string) {
+  return (
+    {
+      checkout_handover: "Berita acara check-out",
+      final_settlement: "Rincian penyelesaian akhir",
+      refund_receipt: "Kuitansi pengembalian dana",
+    }[documentKind] ?? "Dokumen check-out"
+  );
+}
 
 function formatResidentDetailDate(value: string): string {
   return new Date(`${value}T00:00:00Z`).toLocaleDateString("id-ID", {
@@ -578,7 +588,10 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [transferOpen, setTransferOpen] = useState(false);
   const transferPanelRef = useRef<HTMLElement | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutEntryFocus, setCheckoutEntryFocus] = useState<CheckoutEntryFocus>("overview");
   const [checkoutCommand, setCheckoutCommand] = useState<CheckoutCommand | null>(null);
+  const [checkoutLoadError, setCheckoutLoadError] = useState<string | null>(null);
+  const [checkoutReloadNonce, setCheckoutReloadNonce] = useState(0);
   const checkoutPanelRef = useRef<HTMLElement | null>(null);
   const checkoutLeaseId = tenancy.data?.leaseId ?? billing.data?.lease.id ?? null;
   const canReadCheckout = hasRole("admin") && hasPermission("lease.manage");
@@ -586,6 +599,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   useEffect(() => {
     if (!checkoutLeaseId || !canReadCheckout) {
       setCheckoutCommand(null);
+      setCheckoutLoadError(null);
       return;
     }
     let current = true;
@@ -595,14 +609,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         if (!current) return;
         const latest = commands[0] ?? null;
         setCheckoutCommand(latest?.state === "cancelled" ? null : latest);
+        setCheckoutLoadError(null);
       })
       .catch(() => {
-        if (current) setCheckoutCommand(null);
+        if (!current) return;
+        setCheckoutCommand(null);
+        setCheckoutLoadError(
+          "Status penyelesaian check-out belum dapat dimuat. Muat ulang untuk mencoba kembali.",
+        );
       });
     return () => {
       current = false;
     };
-  }, [canReadCheckout, checkoutLeaseId]);
+  }, [canReadCheckout, checkoutLeaseId, checkoutReloadNonce]);
 
   useEffect(() => {
     if (!transferOpen) return;
@@ -720,6 +739,10 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         }
       : null,
   );
+  const refundPending =
+    checkoutCommand?.state === "completed" &&
+    checkoutCommand.exitRefundStatus === "pending" &&
+    Boolean(checkoutCommand.exitRefundId);
   const transferFlagEnabled = isAdminUxLeaseTransferEnabled();
   const canTransferEntry =
     transferFlagEnabled &&
@@ -807,7 +830,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               className="min-h-11"
               onClick={() => {
                 setTransferOpen(false);
-                setCheckoutOpen((open) => !open);
+                if (checkoutOpen) {
+                  setCheckoutOpen(false);
+                  return;
+                }
+                setCheckoutEntryFocus("overview");
+                setCheckoutOpen(true);
               }}
             >
               {checkoutOpen ? (
@@ -875,18 +903,67 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           <CheckoutPanel
             leaseId={checkoutLeaseId}
             propertyId={currentPropertyId}
+            initialFocus={checkoutEntryFocus}
+            onChanged={async (nextCommand) => {
+              setCheckoutCommand(nextCommand);
+              setCheckoutLoadError(null);
+              await billing.refetch();
+            }}
+            onCompleted={() =>
+              Promise.all([
+                detail.refetch(),
+                tenancy.refetch(),
+                billing.refetch(),
+                bookingProgress.refetch(),
+              ])
+            }
             onClose={() => {
               setCheckoutOpen(false);
-              void adminUxLeaseApi.checkout.list(checkoutLeaseId).then(({ commands }) => {
-                const latest = commands[0] ?? null;
-                setCheckoutCommand(latest?.state === "cancelled" ? null : latest);
-              });
+              void adminUxLeaseApi.checkout
+                .list(checkoutLeaseId)
+                .then(({ commands }) => {
+                  const latest = commands[0] ?? null;
+                  setCheckoutCommand(latest?.state === "cancelled" ? null : latest);
+                  setCheckoutLoadError(null);
+                })
+                .catch(() =>
+                  setCheckoutLoadError(
+                    "Status penyelesaian check-out belum dapat dimuat. Muat ulang untuk mencoba kembali.",
+                  ),
+                );
             }}
           />
         </section>
       ) : null}
 
+      {checkoutOpen ? (
+        <div
+          role="separator"
+          aria-label="Pemisah proses check-out dan informasi penghuni"
+          className="my-8 h-px w-full bg-border/80"
+        />
+      ) : null}
+
       <div className="space-y-5">
+        {checkoutLoadError ? (
+          <NoticeAlert
+            tone="destructive"
+            attention="subtle"
+            title="Status check-out belum tersedia"
+            description={checkoutLoadError}
+            action={
+              <Button
+                type="button"
+                variant="default"
+                className="min-h-11"
+                onClick={() => setCheckoutReloadNonce((value) => value + 1)}
+              >
+                <RotateCcw className="mr-1.5 h-4 w-4" /> Muat ulang status
+              </Button>
+            }
+          />
+        ) : null}
+
         <Card>
           <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary-soft text-2xl font-semibold text-primary">
@@ -897,11 +974,76 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               <div className="mt-2 flex flex-wrap gap-2">
                 <AccountStatusPill status={resident.accountStatus} />
                 <ResidentStatusPill status={resident.residentStatus} />
+                {resident.residentStatus === "inactive" && billing.data?.exit_documents.length ? (
+                  <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
+                    Sudah checkout
+                  </span>
+                ) : null}
+                {refundPending ? (
+                  <span className="inline-flex rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning">
+                    Menunggu pengembalian dana
+                  </span>
+                ) : null}
                 {settlement ? <ContractPaymentBadges settlement={settlement} /> : null}
               </div>
             </div>
+            {resident.residentStatus === "inactive" && billing.data?.exit_documents.length ? (
+              <div className="flex flex-wrap gap-2 sm:ml-auto sm:justify-end">
+                {billing.data.exit_documents.map((document) => (
+                  <Button
+                    key={`profile-checkout-document-${document.id}`}
+                    type="button"
+                    variant="info"
+                    className="min-h-11"
+                    onClick={() =>
+                      void downloadLeaseExitDocument(
+                        billing.data!.lease.id,
+                        document.checkout_command_id,
+                        document.id,
+                        document.document_code,
+                      )
+                    }
+                  >
+                    <Download className="mr-1.5 h-4 w-4" />
+                    {checkoutDocumentLabel(document.document_kind)}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
+
+        {refundPending && checkoutCommand && !checkoutOpen ? (
+          <NoticeAlert
+            tone="warning"
+            attention="subtle"
+            title="Tindak lanjut pengembalian dana"
+            description={
+              <span>
+                Pengembalian dana menunggu pembayaran sebesar{" "}
+                <strong>{rupiah(checkoutCommand.exitRefundAmount ?? 0)}</strong>.
+                {checkoutCommand.exitRefundDueDate
+                  ? ` Target pembayaran paling lambat ${formatResidentDetailDate(checkoutCommand.exitRefundDueDate)}.`
+                  : ""}
+              </span>
+            }
+            action={
+              <Button
+                type="button"
+                variant="default"
+                className="min-h-11"
+                onClick={() => {
+                  setTransferOpen(false);
+                  setCheckoutEntryFocus("refund");
+                  setCheckoutOpen(true);
+                }}
+              >
+                <WalletCards className="mr-1.5 h-4 w-4" />
+                {canManageBilling ? "Catat pengembalian dana" : "Lihat rincian pengembalian dana"}
+              </Button>
+            }
+          />
+        ) : null}
 
         {resident.residentStatus === "archived" ? (
           <NoticeAlert
@@ -1329,53 +1471,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               )}
             </CardContent>
           </Card>
-          {billing.data?.exit_documents.length ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Archive className="h-4 w-4 text-primary" /> Dokumen checkout dan penyelesaian
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {billing.data.exit_documents.map((document) => (
-                  <div
-                    key={document.id}
-                    className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {
-                          {
-                            checkout_handover: "Berita acara checkout",
-                            final_settlement: "Rincian penyelesaian akhir",
-                            refund_receipt: "Kuitansi refund",
-                          }[document.document_kind]
-                        }
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {document.document_code} Â·{" "}
-                        {formatResidentFinancialDate(document.issued_at)}
-                      </p>
-                    </div>
-                    <Button
-                      className="min-h-11"
-                      variant="outline"
-                      onClick={() =>
-                        void downloadLeaseExitDocument(
-                          billing.data!.lease.id,
-                          document.checkout_command_id,
-                          document.id,
-                          document.document_code,
-                        )
-                      }
-                    >
-                      <Download className="mr-1.5 h-4 w-4" /> Unduh PDF
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
         </section>
 
         <ResidentOperationalCards residentId={resident.id} />
@@ -1420,7 +1515,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             ? "Gunakan pilihan ini hanya jika kontrak sudah aktif tetapi penghuni belum menerima kamar."
             : "Untuk alur normal, aktivasi kontrak dan check-in dicatat bersamaan mengikuti tanggal mulai sewa."
         }
-        confirmLabel={activationOnly ? "Aktivasi saja" : "Aktifkan & check-in"}
+        confirmLabel={activationOnly ? "Aktifkan kamar saja" : "Aktifkan & check-in"}
         pending={activation.isPending}
         confirmDisabled={!activationEffectiveDate || (!activationOnly && !checkInEffectiveDate)}
         onConfirm={async () => {
@@ -1456,66 +1551,92 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-10"
-              disabled={activation.isPending}
-              onClick={() => {
-                if (showActivationDates && currentTenancy) {
-                  setActivationEffectiveDate(currentTenancy.startDate);
-                  setCheckInEffectiveDate(currentTenancy.startDate);
-                }
-                setShowActivationDates((visible) => !visible);
-              }}
-            >
-              <CalendarClock className="mr-1.5 h-4 w-4" />
-              {showActivationDates ? "Gunakan tanggal mulai sewa" : "Tanggal aktual berbeda?"}
-            </Button>
-            <Button
-              type="button"
-              variant={activationOnly ? "info" : "outline"}
-              className="min-h-10"
-              disabled={activation.isPending}
-              onClick={() => setActivationOnly((value) => !value)}
-            >
-              <LogIn className="mr-1.5 h-4 w-4" />
-              {activationOnly ? "Kembali ke aktivasi & check-in" : "Aktivasi saja"}
-            </Button>
+          <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Penyesuaian pencatatan</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Alur normal tidak memerlukan perubahan. Pilih salah satu penyesuaian berikut hanya
+                bila kondisi sebenarnya berbeda.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-background p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Tanggal berbeda</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Gunakan untuk pencatatan historis saat tanggal aktual tidak sama dengan tanggal
+                    mulai sewa.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={showActivationDates ? "info" : "outline"}
+                  className="min-h-11 w-full justify-center whitespace-nowrap px-3 text-sm"
+                  aria-pressed={showActivationDates}
+                  disabled={activation.isPending}
+                  onClick={() => {
+                    if (showActivationDates && currentTenancy) {
+                      setActivationEffectiveDate(currentTenancy.startDate);
+                      setCheckInEffectiveDate(currentTenancy.startDate);
+                    }
+                    setShowActivationDates((visible) => !visible);
+                  }}
+                >
+                  <CalendarClock className="mr-1.5 h-4 w-4" />
+                  {showActivationDates ? "Gunakan tanggal mulai sewa" : "Sesuaikan tanggal aktual"}
+                </Button>
+              </div>
+              <div className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-background p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Belum check-in fisik</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Gunakan hanya bila penghuni belum menerima kamar. Check-in dapat dicatat nanti.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={activationOnly ? "info" : "outline"}
+                  className="min-h-11 w-full justify-center whitespace-nowrap px-3 text-sm"
+                  aria-pressed={activationOnly}
+                  disabled={activation.isPending}
+                  onClick={() => setActivationOnly((value) => !value)}
+                >
+                  <LogIn className="mr-1.5 h-4 w-4" />
+                  {activationOnly ? "Aktifkan sekaligus check-in" : "Aktifkan tanpa check-in"}
+                </Button>
+              </div>
+            </div>
           </div>
 
           {showActivationDates ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-foreground">
-                Tanggal aktivasi sebenarnya
-                <Input
-                  type="date"
-                  value={activationEffectiveDate}
-                  min={currentTenancy?.startDate}
-                  max={jakartaDateInput()}
-                  onChange={(event) => {
-                    const nextActivationDate = event.target.value;
-                    setActivationEffectiveDate(nextActivationDate);
-                    if (checkInEffectiveDate < nextActivationDate) {
-                      setCheckInEffectiveDate(nextActivationDate);
-                    }
-                  }}
-                  disabled={activation.isPending}
-                />
-              </label>
+              <HeroUiDatePicker
+                id="resident-activation-date"
+                label="Tanggal aktivasi sebenarnya"
+                value={activationEffectiveDate}
+                minDate={currentTenancy?.startDate}
+                maxDate={jakartaDateInput()}
+                required
+                disabled={activation.isPending}
+                onChange={(value) => {
+                  const nextActivationDate = value ?? "";
+                  setActivationEffectiveDate(nextActivationDate);
+                  if (checkInEffectiveDate < nextActivationDate) {
+                    setCheckInEffectiveDate(nextActivationDate);
+                  }
+                }}
+              />
               {!activationOnly ? (
-                <label className="grid gap-2 text-sm font-semibold text-foreground">
-                  Tanggal check-in sebenarnya
-                  <Input
-                    type="date"
-                    value={checkInEffectiveDate}
-                    min={activationEffectiveDate || currentTenancy?.startDate}
-                    max={jakartaDateInput()}
-                    onChange={(event) => setCheckInEffectiveDate(event.target.value)}
-                    disabled={activation.isPending}
-                  />
-                </label>
+                <HeroUiDatePicker
+                  id="resident-check-in-date"
+                  label="Tanggal check-in sebenarnya"
+                  value={checkInEffectiveDate}
+                  minDate={activationEffectiveDate || currentTenancy?.startDate}
+                  maxDate={jakartaDateInput()}
+                  required
+                  disabled={activation.isPending}
+                  onChange={(value) => setCheckInEffectiveDate(value ?? "")}
+                />
               ) : null}
               <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
                 Gunakan penyesuaian hanya jika tanggal historis memang berbeda dari tanggal mulai
@@ -1564,20 +1685,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             onClick={() => setShowCheckInDate((visible) => !visible)}
           >
             <CalendarClock className="mr-1.5 h-4 w-4" />
-            {showCheckInDate ? "Sembunyikan penyesuaian" : "Tanggal aktual berbeda?"}
+            {showCheckInDate ? "Gunakan tanggal hari ini" : "Sesuaikan tanggal check-in"}
           </Button>
           {showCheckInDate ? (
-            <label className="grid gap-2 text-sm font-semibold text-foreground">
-              Tanggal check-in sebenarnya
-              <Input
-                type="date"
-                value={checkInEffectiveDate}
-                min={checkInMinimumDate}
-                max={jakartaDateInput()}
-                onChange={(event) => setCheckInEffectiveDate(event.target.value)}
-                disabled={checkIn.isPending}
-              />
-            </label>
+            <HeroUiDatePicker
+              id="resident-check-in-only-date"
+              label="Tanggal check-in sebenarnya"
+              value={checkInEffectiveDate}
+              minDate={checkInMinimumDate}
+              maxDate={jakartaDateInput()}
+              required
+              disabled={checkIn.isPending}
+              onChange={(value) => setCheckInEffectiveDate(value ?? "")}
+            />
           ) : null}
         </div>
       </ConfirmDialog>
@@ -2771,8 +2891,8 @@ function FinalizeTerminationDialog({
               Saldo sewa sebelum settlement: {rupiah(settlement.outstanding_amount)}
             </p>
             <p className="mt-1 text-muted-foreground">
-              Estimasi potongan deposit untuk tunggakan: {rupiah(estimatedRentOffset)}. Server akan
-              menghitung ulang seluruh settlement saat disimpan.
+              Estimasi potongan deposit untuk tunggakan: {rupiah(estimatedRentOffset)}. Nilai akhir
+              akan dihitung ulang saat penyelesaian disimpan.
             </p>
           </div>
           <label className="block text-sm font-medium">

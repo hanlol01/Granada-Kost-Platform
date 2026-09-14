@@ -30,6 +30,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useResidents,
+  type CheckoutFinancialStatus,
   type ContractSettlementStage,
   type RentPaymentStatus,
   type ResidentListRecord,
@@ -62,6 +63,42 @@ function validateSearch(raw: Record<string, unknown>): TenantRouteSearch {
       ? raw.bookingLeadId
       : undefined;
   return { flow: raw.flow === "new-lease" ? "new-lease" : undefined, bookingLeadId };
+}
+
+export function CheckoutFinancialStatusPill({
+  status,
+}: {
+  status: ResidentListRecord["checkoutFinancialStatus"];
+}) {
+  const presentation: Record<CheckoutFinancialStatus, { label: string; className: string }> = {
+    none: { label: "Belum ada check-out", className: "bg-muted text-muted-foreground" },
+    in_progress: { label: "Proses check-out berjalan", className: "bg-primary-soft text-primary" },
+    refund_pending: {
+      label: "Menunggu pengembalian dana",
+      className: "bg-warning/15 text-warning",
+    },
+    refund_settled: {
+      label: "Pengembalian dana selesai",
+      className: "bg-success/15 text-success",
+    },
+    refund_waived: {
+      label: "Hak pengembalian dilepaskan",
+      className: "bg-muted text-muted-foreground",
+    },
+    amount_due: {
+      label: "Tagihan akhir belum lunas",
+      className: "bg-destructive/15 text-destructive",
+    },
+    closed: { label: "Penyelesaian check-out selesai", className: "bg-success/15 text-success" },
+  };
+  const current = presentation[status];
+  return (
+    <span
+      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
+    >
+      {current.label}
+    </span>
+  );
 }
 
 export const Route = createFileRoute("/tenants")({
@@ -255,6 +292,9 @@ function TenantsPage() {
   const [settlementStage, setSettlementStage] = useState<
     Exclude<ContractSettlementStage, "none"> | "all"
   >("all");
+  const [checkoutFinancialStatus, setCheckoutFinancialStatus] = useState<
+    Exclude<CheckoutFinancialStatus, "none"> | "all"
+  >("all");
   const [deadlineTarget, setDeadlineTarget] = useState<DeadlineTarget>("settlement");
   const [deadlineWithinDays, setDeadlineWithinDays] = useState("");
   const [createdFrom, setCreatedFrom] = useState("");
@@ -275,6 +315,8 @@ function TenantsPage() {
     gender: gender === "all" ? undefined : gender,
     tenancyStatus: tenancyStatus === "all" ? undefined : tenancyStatus,
     settlementStage: settlementStage === "all" ? undefined : settlementStage,
+    checkoutFinancialStatus:
+      checkoutFinancialStatus === "all" ? undefined : checkoutFinancialStatus,
     settlementDueWithinDays:
       deadlineTarget === "settlement" && deadlineWithinDays !== ""
         ? Number(deadlineWithinDays)
@@ -297,6 +339,7 @@ function TenantsPage() {
     gender !== "all" ||
     tenancyStatus !== "all" ||
     settlementStage !== "all" ||
+    checkoutFinancialStatus !== "all" ||
     deadlineWithinDays !== "" ||
     Boolean(createdFrom) ||
     Boolean(createdTo);
@@ -307,6 +350,7 @@ function TenantsPage() {
     Number(gender !== "all") +
     Number(tenancyStatus !== "all") +
     Number(settlementStage !== "all") +
+    Number(checkoutFinancialStatus !== "all") +
     Number(deadlineWithinDays !== "") +
     Number(Boolean(createdFrom)) +
     Number(Boolean(createdTo));
@@ -317,6 +361,7 @@ function TenantsPage() {
     gender,
     tenancyStatus,
     settlementStage,
+    checkoutFinancialStatus,
     deadlineTarget,
     deadlineWithinDays,
     createdFrom,
@@ -382,6 +427,18 @@ function TenantsPage() {
           }[settlementStage]
         }`
       : "",
+    checkoutFinancialStatus !== "all"
+      ? `status penyelesaian check-out: ${
+          {
+            in_progress: "Proses check-out berjalan",
+            refund_pending: "Menunggu pengembalian dana",
+            refund_settled: "Pengembalian dana selesai",
+            refund_waived: "Hak pengembalian dilepaskan",
+            amount_due: "Tagihan akhir belum lunas",
+            closed: "Penyelesaian check-out selesai",
+          }[checkoutFinancialStatus]
+        }`
+      : "",
     deadlineWithinDays !== ""
       ? `${deadlineTargetCopy[deadlineTarget].resultLabel} dalam ${deadlineWithinDays} hari`
       : "",
@@ -405,6 +462,7 @@ function TenantsPage() {
     setGender("all");
     setTenancyStatus("all");
     setSettlementStage("all");
+    setCheckoutFinancialStatus("all");
     setDeadlineTarget("settlement");
     setDeadlineWithinDays("");
     setCreatedFrom("");
@@ -591,6 +649,28 @@ function TenantsPage() {
                 <SelectItem value="preactivation_cancelled">Dibatalkan pra-aktivasi</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={checkoutFinancialStatus}
+              onValueChange={(value) => {
+                setCheckoutFinancialStatus(
+                  value as Exclude<CheckoutFinancialStatus, "none"> | "all",
+                );
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter status penyelesaian check-out">
+                <SelectValue placeholder="Status penyelesaian check-out" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua status check-out</SelectItem>
+                <SelectItem value="in_progress">Proses check-out berjalan</SelectItem>
+                <SelectItem value="refund_pending">Menunggu pengembalian dana</SelectItem>
+                <SelectItem value="refund_settled">Pengembalian dana selesai</SelectItem>
+                <SelectItem value="refund_waived">Hak pengembalian dilepaskan</SelectItem>
+                <SelectItem value="amount_due">Tagihan akhir belum lunas</SelectItem>
+                <SelectItem value="closed">Penyelesaian check-out selesai</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="grid gap-2 md:col-span-2 sm:grid-cols-2 xl:col-span-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
               <Select
                 value={deadlineTarget}
@@ -739,6 +819,7 @@ function TenantsPage() {
                     <th className="px-4 py-3 font-medium">Status Pembayaran</th>
                     <th className="px-4 py-3 font-medium">Tahap Pelunasan</th>
                     <th className="px-4 py-3 font-medium">Status Penghuni</th>
+                    <th className="px-4 py-3 font-medium">Status Check-out</th>
                     <th className="px-4 py-3 text-right font-medium">Aksi</th>
                   </tr>
                 </thead>
@@ -783,6 +864,23 @@ function TenantsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <ResidentStatusPill status={resident.residentStatus} />
+                      </td>
+                      <td className="px-4 py-3">
+                        {resident.checkoutFinancialStatus === "none" ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <CheckoutFinancialStatusPill
+                              status={resident.checkoutFinancialStatus}
+                            />
+                            {resident.checkoutFinancialStatus === "refund_pending" &&
+                            resident.checkoutRefundAmount > 0 ? (
+                              <p className="text-xs font-semibold text-foreground">
+                                {formatIDR(resident.checkoutRefundAmount)}
+                              </p>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button asChild variant="default" size="sm" className="min-h-11">
@@ -838,6 +936,9 @@ function TenantsPage() {
                         </span>
                       ) : null}
                       <ResidentStatusPill status={resident.residentStatus} />
+                      {resident.checkoutFinancialStatus !== "none" ? (
+                        <CheckoutFinancialStatusPill status={resident.checkoutFinancialStatus} />
+                      ) : null}
                     </div>
                   </div>
                 </Link>

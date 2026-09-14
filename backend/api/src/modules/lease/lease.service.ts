@@ -1247,7 +1247,7 @@ export class LeaseService {
             status,
             settlement?.payment_method ?? null,
             settlement?.external_reference ?? null,
-            waive?.reason.trim() ?? null,
+            waive?.reason?.trim() || null,
             user.id,
             JSON.stringify(
               status === 'settled' ? { notes_present: Boolean(settlement?.notes) } : {},

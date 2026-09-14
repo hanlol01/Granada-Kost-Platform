@@ -66,6 +66,12 @@ The shared dependency and release gates are in
   property has not enabled the capability.
 - No production migration, service restart, release switch, commit or deploy is
   authorized by this checkpoint.
+- Checkout UX correction work standardizes shared date and Rupiah inputs,
+  confirmation dialogs, semantic button colors, focus after every stage transition,
+  and an Admin-only “Batalkan & mulai ulang” action through the pre-settlement
+  stages. Operational uploads are optional while financial evidence remains
+  mandatory. Restart restores operational lease state without deleting the prior
+  command or audit history; completed financial settlements remain immutable.
 
 ## Agent entry contract
 

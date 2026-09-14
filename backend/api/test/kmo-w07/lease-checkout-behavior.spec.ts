@@ -73,6 +73,7 @@ function harness(options: Options = {}) {
       ? new Date('2026-09-27T00:00:00.000Z')
       : null,
     actual_checkout_date: options.actualCheckoutDate ?? null,
+    planned_lease_end_date: '2027-02-28',
   });
   const client = {
     query: async (sql: string, params: readonly unknown[] = []) => {
@@ -149,10 +150,13 @@ function harness(options: Options = {}) {
           rows: ((params[0] as string[] | undefined) ?? []).map((id) => ({ id })),
           rowCount: ((params[0] as string[] | undefined) ?? []).length,
         };
-      if (/SELECT evidence_category,bool_or\(file_id IS NOT NULL\) AS has_file/.test(q))
+      if (
+        /SELECT (?:DISTINCT )?evidence_category/.test(q) &&
+        /FROM lease_checkout_evidence/.test(q)
+      )
         return {
           rows: (options.evidence ?? ['keys_access', 'inventory', 'parking', 'inspection']).map(
-            (evidence_category) => ({ evidence_category, has_file: true }),
+            (evidence_category) => ({ evidence_category }),
           ),
           rowCount: 4,
         };
@@ -357,6 +361,10 @@ function harness(options: Options = {}) {
         state = 'scheduled';
         return { rows: [command()], rowCount: 1 };
       }
+      if (/SET state='cancelled'/.test(q)) {
+        state = 'cancelled';
+        return { rows: [command()], rowCount: 1 };
+      }
       if (/INSERT INTO lease_checkout_commands/.test(q)) return { rows: [command()], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
@@ -447,7 +455,7 @@ void test('W07D completion fails closed when required evidence is absent and doe
   assert.ok(!h.queries.some((q) => /UPDATE occupancies SET occupancy_status='ended'/.test(q)));
 });
 
-void test('M5 short notice creates a server recommendation while property-owner remains denied', async () => {
+void test('M5 short notice creates a policy recommendation while property-owner remains denied', async () => {
   const h = harness({ state: 'notice_received' });
   const result = await h.service.notice(
     admin as never,
@@ -521,7 +529,6 @@ void test('M5 approval cannot exceed the recommendation and reductions require a
     {
       approved_short_notice_charge: 50_000,
       short_notice_waiver_reason: 'Kondisi darurat disetujui pengelola',
-      short_notice_waiver_evidence_file_ids: [EVIDENCE_FILE_ID],
     },
     '1234567890123456',
     context,
@@ -593,6 +600,59 @@ void test('M5 physical handover ends occupancy and lease while keeping the room 
   assert.ok(h.queries.some((query) => /room_status='inspection_required'/.test(query)));
   assert.ok(h.queries.some((query) => /physical_checkout_confirmed_at/.test(query)));
   assert.ok(!h.queries.some((query) => /INSERT INTO lease_deposit_transactions/.test(query)));
+});
+
+void test('M5 Admin can cancel and restart after handover before final settlement', async () => {
+  const h = harness({
+    state: 'settlement_pending',
+    m5Exit: true,
+    physicalConfirmed: true,
+    actualCheckoutDate: '2026-10-01',
+    leaseStatus: 'ended',
+  });
+
+  const result = await h.service.cancel(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    { reason: 'Data serah-terima perlu dicatat ulang' },
+    '1234567890123456',
+    context,
+  );
+
+  assert.equal(result.status, 200);
+  assert.ok(h.queries.some((query) => /UPDATE leases SET lease_status='active'/.test(query)));
+  assert.ok(
+    h.queries.some((query) => /UPDATE occupancies SET occupancy_status='active'/.test(query)),
+  );
+  assert.ok(h.queries.some((query) => /UPDATE rooms SET room_status='occupied'/.test(query)));
+  assert.ok(h.queries.some((query) => /SET state='cancelled'/.test(query)));
+  assert.ok(h.queries.some((query) => /FROM parking_assignment_histories history/.test(query)));
+});
+
+void test('M5 completed checkout cannot be restarted after the final settlement', async () => {
+  const h = harness({
+    state: 'completed',
+    m5Exit: true,
+    physicalConfirmed: true,
+    actualCheckoutDate: '2026-10-01',
+    leaseStatus: 'ended',
+  });
+
+  await assert.rejects(
+    h.service.cancel(
+      admin as never,
+      LEASE_ID,
+      COMMAND_ID,
+      { reason: 'Mencoba membuka kembali penyelesaian final' },
+      '1234567890123456',
+      context,
+    ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_CANCELLATION_FORBIDDEN',
+  );
+
+  assert.ok(!h.queries.some((query) => /UPDATE leases SET lease_status='active'/.test(query)));
+  assert.deepEqual(h.events, ['begin', 'rollback']);
 });
 
 void test('M5 final settlement keeps deposit separate and creates the authoritative exit refund', async () => {
@@ -702,7 +762,7 @@ void test('M5 explicit deposit offset can settle a short-notice charge outside r
   assert.ok(!h.queries.some((query) => /checkout_invoice_offset/.test(query)));
 });
 
-void test('M5 settlement preview uses the same server authority without creating financial records', async () => {
+void test('M5 settlement preview uses the same calculation authority without creating financial records', async () => {
   const h = harness({
     state: 'settlement_pending',
     m5Exit: true,
@@ -732,7 +792,6 @@ void test('M5 refund settlement closes the exit refund and its linked deposit di
     EXIT_REFUND_ID,
     {
       payment_method: 'bank_transfer',
-      external_reference: 'BANK-REFUND-20261001',
       evidence_file_id: EVIDENCE_FILE_ID,
     },
     '1234567890123456',
@@ -748,6 +807,22 @@ void test('M5 refund settlement closes the exit refund and its linked deposit di
         /UPDATE lease_deposit_transactions/.test(query) && /transaction_type='refund'/.test(query),
     ),
   );
+});
+
+void test('M5 refund waiver can be recorded without an unavailable resident reason', async () => {
+  const h = harness({ state: 'completed', m5Exit: true, physicalConfirmed: true });
+  const result = await h.service.waiveRefund(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    EXIT_REFUND_ID,
+    {},
+    '1234567890123456',
+    context,
+  );
+
+  assert.equal(result.status, 200);
+  assert.ok(h.queries.some((query) => /UPDATE lease_exit_refunds/.test(query)));
 });
 
 void test('W07D completion rolls back when a terminal write fails', async () => {

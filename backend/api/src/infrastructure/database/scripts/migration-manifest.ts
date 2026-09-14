@@ -787,4 +787,22 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "col_description('public.property_feature_flags'::regclass, (SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='property_feature_flags' AND column_name='lease_checkout')) ILIKE '%enabled for operational Admin lease properties by migration 083%'",
     ],
   },
+  {
+    version: '084_lease_checkout_revision_history.sql',
+    checksumSha256: '5536dd6bb0f34bf6322fe16e7dd827aece8f250eb7fe2bf54762e42b712bccd8',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_history_event_type_check' AND conrelid=to_regclass('public.lease_history') AND pg_get_constraintdef(oid) ILIKE '%checkout_notice_edited%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_history_event_type_check' AND conrelid=to_regclass('public.lease_history') AND pg_get_constraintdef(oid) ILIKE '%checkout_approval_edited%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_history_event_type_check' AND conrelid=to_regclass('public.lease_history') AND pg_get_constraintdef(oid) ILIKE '%checkout_revision_requested%')",
+    ],
+  },
+  {
+    version: '085_optional_checkout_refund_annotations.sql',
+    checksumSha256: '73a3e9663b0b8c7791844cabd27bf3724b5258e4e568787a8d75a0b99506ce56',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_exit_refunds_completion_check' AND conrelid=to_regclass('public.lease_exit_refunds') AND pg_get_constraintdef(oid) ILIKE '%evidence_file_id IS NOT NULL%')",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_exit_refunds_completion_check' AND conrelid=to_regclass('public.lease_exit_refunds') AND pg_get_constraintdef(oid) ILIKE '%external_reference%')",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_refund_settlements_reason_check' AND conrelid=to_regclass('public.lease_refund_settlements'))",
+    ],
+  },
 ] as const;

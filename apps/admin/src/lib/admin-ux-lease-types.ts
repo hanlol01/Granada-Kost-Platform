@@ -147,6 +147,18 @@ export type CheckoutCommand = {
   exitRefundAmount: number | null;
   exitRefundStatus: "pending" | "settled" | "waived" | "reversed" | null;
   exitRefundDueDate: string | null;
+  exitRefundPaymentMethod?: "cash" | "bank_transfer" | "qris" | "ewallet" | "other" | null;
+  exitRefundExternalReference?: string | null;
+  exitRefundSettlementReason?: string | null;
+  exitRefundSettledAt?: string | null;
+  exitRefundTransactionCode?: string | null;
+  exitRefundEvidenceFiles?: Array<{
+    id: string;
+    originalFilename: string;
+    sanitizedFilename: string;
+    mimeType: string;
+    fileSizeBytes: number;
+  }>;
   documents?: Array<{
     id: string;
     documentCode: string;

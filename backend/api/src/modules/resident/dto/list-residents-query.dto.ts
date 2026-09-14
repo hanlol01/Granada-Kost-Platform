@@ -65,6 +65,17 @@ export class ListResidentsQueryDto {
   contract_settlement_stage?: string;
 
   @IsOptional()
+  @IsIn([
+    'in_progress',
+    'refund_pending',
+    'refund_settled',
+    'refund_waived',
+    'amount_due',
+    'closed',
+  ])
+  checkout_financial_status?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)

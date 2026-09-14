@@ -23,9 +23,12 @@ import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
   ApproveLeaseCheckoutDto,
+  EditLeaseCheckoutApprovalDto,
   CancelLeaseCheckoutDto,
   CompleteLeaseCheckoutDto,
   CreateLeaseCheckoutNoticeDto,
+  CreateLeaseCheckoutRevisionDto,
+  EditLeaseCheckoutNoticeDto,
   RecordLeaseCheckoutHandoverDto,
   RecordLeaseCheckoutInspectionDto,
   SettleRefundDto,
@@ -82,6 +85,38 @@ export class LeaseCheckoutController {
     return this.respond(
       response,
       await this.checkout.notice(user, leaseId, dto, key, auditContext(request)),
+    );
+  }
+
+  @Post(':commandId/edit-notice')
+  async editNotice(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: EditLeaseCheckoutNoticeDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.editNotice(user, leaseId, commandId, dto, key, auditContext(request)),
+    );
+  }
+
+  @Post(':commandId/edit-approval')
+  async editApproval(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: EditLeaseCheckoutApprovalDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.editApproval(user, leaseId, commandId, dto, key, auditContext(request)),
     );
   }
 
@@ -210,6 +245,30 @@ export class LeaseCheckoutController {
         leaseId,
         commandId,
         refundId,
+        dto,
+        key,
+        auditContext(request),
+      ),
+    );
+  }
+
+  @Post(':commandId/revision-request')
+  @HttpCode(HttpStatus.OK)
+  async requestRevision(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: CreateLeaseCheckoutRevisionDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.requestRevision(
+        user,
+        leaseId,
+        commandId,
         dto,
         key,
         auditContext(request),

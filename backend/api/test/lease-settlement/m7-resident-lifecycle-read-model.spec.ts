@@ -59,7 +59,7 @@ void test('M7 pre-activation cancellation archives materialized residents with a
 
 void test('M7 resident reads hide non-operational history by default and expose it explicitly', () => {
   const defaultOperationalPredicate =
-    /\$3::text IS NULL AND residents\.resident_status IN \('active','pending_activation'\)/g;
+    /\$3::text IS NULL AND \$14::text IS NULL[\s\S]{0,100}residents\.resident_status IN \('active','pending_activation'\)/g;
   assert.equal(residentRepository.match(defaultOperationalPredicate)?.length, 2);
   assert.match(residentRepository, /LEFT JOIN resident_admin_lifecycle_projection projection/);
   assert.match(residentRepository, /residents\.resident_status\s*=\s*\$3/);
@@ -69,6 +69,14 @@ void test('M7 resident reads hide non-operational history by default and expose 
   assert.match(residentController, /archive_reason: resident\.archiveReason/);
   assert.match(residentController, /archive_source: resident\.archiveSource/);
   assert.match(residentController, /archived_at: resident\.archivedAt/);
+});
+
+void test('resident list projects and filters the latest checkout financial status', () => {
+  assert.match(residentRepository, /checkout_financial_status/);
+  assert.match(residentRepository, /lease_exit_final_settlements/);
+  assert.match(residentRepository, /lease_exit_refunds/);
+  assert.match(residentRepository, /query\.checkout_financial_status/);
+  assert.match(residentController, /checkout_financial_status/);
 });
 
 void test('M7 resident billing exposes one chronological financial timeline without duplicate ledger refunds', () => {

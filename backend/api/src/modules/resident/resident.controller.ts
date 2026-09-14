@@ -280,6 +280,9 @@ export class ResidentController {
         contract_settlement_checkpoint_required_amount:
           resident.contractSettlementCheckpointRequiredAmount,
         lease_expired_admin_action_required: resident.leaseExpiredAdminActionRequired,
+        checkout_financial_status: resident.checkoutFinancialStatus,
+        checkout_refund_amount: resident.checkoutRefundAmount,
+        checkout_refund_due_date: resident.checkoutRefundDueDate,
         resident_status: resident.residentStatus,
         created_at: resident.createdAt,
         updated_at: resident.updatedAt,

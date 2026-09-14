@@ -250,7 +250,8 @@ function propertyAddressText(
 export async function createBillingInvoicePdf(
   data: BillingInvoiceDocumentData,
 ): Promise<BillingInvoiceDocument> {
-  const paidAmount = data.totalAmount - data.outstandingAmount;
+  const outstandingAmount = Math.max(0, data.outstandingAmount);
+  const paidAmount = Math.max(0, data.totalAmount - outstandingAmount);
   const document = await PDFDocument.create();
   const page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
@@ -322,18 +323,20 @@ export async function createBillingInvoicePdf(
   };
   const rows: Array<[string, string]> = [
     ['Ditagihkan kepada', data.residentName],
-    ['Total tagihan', idr(data.totalAmount)],
+    ['Tagihan yang perlu dibayar', idr(outstandingAmount)],
     ['Untuk pembayaran', data.invoicePurpose === 'rent' ? 'Sewa kamar' : 'Tagihan lainnya'],
     ['Periode', `${receiptDate(data.coverageStart)} s.d. ${receiptDate(data.coverageEnd)}`],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Jatuh tempo', receiptDate(data.dueDate, true)],
     ['Status invoice', statusLabels[data.invoiceStatus] ?? label(data.invoiceStatus)],
+    ['Nilai tagihan awal', idr(data.totalAmount)],
     ['Sudah dibayarkan', idr(Math.max(0, paidAmount))],
-    ['Sisa tagihan', idr(data.outstandingAmount)],
+    ['Sisa tagihan', idr(outstandingAmount)],
     ['Diterbitkan', receiptDate(data.issuedAt, true)],
   ];
   let y = 642;
   for (const [labelText, value] of rows) {
+    const isCurrentAmountDue = labelText === 'Tagihan yang perlu dibayar';
     const valueLines = wrapText(regular, value, 10, 258);
     const rowHeight = Math.max(22, valueLines.length * 13 + 6);
     page.drawCircle({ x: 69, y: y - 7, size: 2.5, color: softNavy });
@@ -345,13 +348,13 @@ export async function createBillingInvoicePdf(
         y: y - 10 - index * 13,
         size: 10,
         font: regular,
-        color: navy,
+        color: isCurrentAmountDue ? terbilangRed : navy,
       });
     });
     y -= rowHeight;
   }
 
-  const terbilangLines = wrapText(italic, terbilang(data.totalAmount), 10, 422);
+  const terbilangLines = wrapText(italic, terbilang(outstandingAmount), 10, 422);
   const terbilangHeight = 34 + terbilangLines.length * 13;
   y -= 8;
   page.drawRectangle({

@@ -101,6 +101,9 @@ function tenancy() {
     end_date: "2026-10-31",
     term_months: 3,
     payment_plan_type: "annual_full",
+    agreed_monthly_price: 1_900_000,
+    contract_rent_amount: 5_700_000,
+    pricing_source: "standard",
   };
 }
 
@@ -170,6 +173,8 @@ test("resident detail is a full page with canonical tenancy rather than a dialog
   assert.match(workspace, /Penyewaan dan kamar/);
   assert.match(workspace, /Ringkasan Penyewaan dan Pembayaran/);
   assert.match(workspace, /Aktivasi kamar/);
+  assert.match(workspace, /"Tanggal check-in"/);
+  assert.match(workspace, /currentTenancy\.checkedInAt/);
   assert.match(workspace, /Kendaraan & parkir/);
   assert.match(workspace, /aria-label=\{`Lihat \$\{payment\.evidence\.length\} bukti transfer`\}/);
   assert.match(workspace, /Bukti belum dilampirkan/);
@@ -280,6 +285,9 @@ test("lease entry remains a full-page two-stage lifecycle flow", async () => {
   assert.match(source, /Booking fee bila diisi minimal/);
   assert.match(source, /onPaymentChoiceChange/);
   assert.match(source, /Rekomendasi DP 25%/);
+  assert.match(source, /clearLabel="Hapus nominal rekomendasi uang muka"/);
+  assert.match(source, /setPaidRent\(0\);[\s\S]*setConfirmed\(false\);/);
+  assert.doesNotMatch(source, /Target DP 25% adalah/);
   assert.match(source, /paymentChoiceSelected/);
   assert.match(source, /paymentMethodSelected/);
   assert.match(source, /selectedRoom\?\.kostType\.monthlyPrice \?\? 0/);
@@ -341,6 +349,9 @@ test("tenancy projection exposes an awaiting activation lease without claiming o
   assert.equal(parsed?.bookingLeadId, "44444444-4444-4444-8444-444444444444");
   assert.equal(parsed?.roomNumber, "AK-18F-3A");
   assert.equal(parsed?.termMonths, 3);
+  assert.equal(parsed?.agreedMonthlyPrice, 1_900_000);
+  assert.equal(parsed?.contractRentAmount, 5_700_000);
+  assert.equal(parsed?.pricingSource, "standard");
 
   assert.throws(() =>
     parseResidentTenancy(

@@ -51,7 +51,8 @@ Known structural gaps that this plan closes:
 - resident identity, education, parent contact, and lease-facing profile fields
   are incomplete;
 - current lease statuses and billing cycles do not express draft activation,
-  the approved 3–120-month direct-onboarding term policy, or its derived schedules;
+  standard 3–120-month terms, negotiated 1–120-month agreements, or their
+  generalized checkpoint schedules;
 - DP and security deposit are not represented as two explicit obligations;
 - payment reversal, receipt, manual other-charge, expense, reminder-template,
   reminder-history, and report-export evidence need canonical models;
@@ -257,6 +258,11 @@ development application remains unproven. Initial business values:
 - security deposit: optional and freely entered; Rp0 is valid and a nonzero
   amount is a separate refundable liability.
 
+These values describe the earlier category-authority baseline. New contract
+quotes resolve the effective duration tiers in `CONTEXT.md` and
+`POL-BILLING-001`; ADR 0001 adds a separate reference/agreed tariff snapshot for
+negotiated agreements without rewriting that historical migration.
+
 Room-level tariff, deposit, DP, and facility overrides are prohibited.
 `kost_type_content_facilities` is the source-implemented target category
 facility authority; canonical application remains deferred.
@@ -375,7 +381,8 @@ Normalize target statuses:
 Add:
 
 - nullable `booking_lead_id`;
-- `term_months`, minimum `3`;
+- `term_months`, constrained to `1–120`; a 1–2 month term additionally requires
+  negotiated pricing source and complete agreement audit metadata;
 - `payment_plan_type` (`annual_full|two_month_installments|monthly_installments`);
 - `contract_rent_amount`;
 - `dp_required_amount` (legacy column name retained for the snapshot of the
@@ -383,7 +390,8 @@ Add:
 - `booking_fee_paid_amount`;
 - `security_deposit_required_amount`;
 - `signed_at`, `activated_at`, `completed_at`;
-- snapshot building/category/gender/rate/deposit/policy fields;
+- snapshot building/category/gender/agreed-rate/reference-rate/pricing-source/
+  agreement-audit/deposit/policy fields;
 - `renewed_from_lease_id` and existing transfer lineage.
 
 Only `active` leases participate in active uniqueness. A room may have one
@@ -394,16 +402,23 @@ conversion authority.
 
 Represents contractual rent schedule independently from payments:
 
-- a 3–120-month lease generates deterministic installments from its immutable
+- a 1–120-month lease generates deterministic checkpoints from its immutable
   commercial snapshot;
-- an exact 12-month multiple may use the annual category rate; other ordinary
-  terms use the monthly category rate;
+- a standard agreement uses its effective duration-tier rate; a negotiated
+  agreement uses its agreed-rate snapshot while preserving the reference rate;
 - `sequence_number`, coverage start/end, due date, scheduled amount;
 - `invoice_id` after invoice generation;
 - status derived from invoice balance, not freely edited.
 
 Unique `(lease_id, sequence_number)` and `(lease_id, coverage_start_date)`.
 Coverage periods must be contiguous, non-overlapping, and inside the lease.
+
+The implemented settlement-checkpoint authority is separate from invoice
+principal. Existing `lease_settlement_v2` snapshots remain immutable. New
+agreements use `lease_settlement_v3`, extending the existing policy-snapshot and
+checkpoint tables for terms 1–120 and final offsets 0–3. A checkpoint is a
+cumulative payment target; it must not duplicate contract rent in invoices or
+allocations.
 
 #### `occupancies`
 
@@ -605,8 +620,11 @@ The implementation migration must include mutation-sensitive tests for:
 3. one active building owner assignment;
 4. no active resident archive;
 5. gender compatibility on lease activation and room transfer;
-6. 3–120-month ordinary term and exact schedule coverage;
-7. `initial_rent_credit_required >= ceil(contract_rent_amount * 25 / 100)`;
+6. standard 3–120-month and negotiated 1–120-month constraint behavior plus exact
+   schedule coverage;
+7. activation readiness requires verified rent credit of at least
+   `min(snapshot_monthly_price, contract_rent_amount)`; the 25% value remains a
+   recommendation, not a database minimum;
 8. security-deposit amount independent from DP;
 9. active allocations not exceeding payment or invoice balance;
 10. immutable verified payment/receipt/deposit/expense/reminder evidence;
@@ -743,7 +761,7 @@ until an explicit remediation package is approved. A migration must not select a
 | `QA-OPS-001`         | Migration ledger rejects checksum drift and skips an already-applied migration.                                                          |
 | `QA-PROPERTY-001`    | Building ownership backfill gives 26/26 buildings KOSTATION default ownership and zero overlaps.                                         |
 | `QA-RESIDENT-001`    | Account reconciliation detects duplicate email/phone/user identity and performs no partial linking.                                      |
-| `QA-LEASE-001`       | New 3–120-month schedules reconcile exactly to the immutable commercial snapshot.                                                        |
+| `QA-LEASE-001`       | New 1–120-month schedules reconcile exactly to the immutable commercial snapshot, including standard and negotiated agreements.         |
 | `QA-BILLING-001`     | Booking Fee/DP rent credits and security deposit reconcile independently; report excludes deposit liability from revenue.                |
 | `QA-PAYMENT-001`     | Multi-invoice allocation, proof, receipt, reversal, and invoice balances remain atomic.                                                  |
 | `QA-SETTLEMENT-001`  | Contract balance accepts partial pre-deadline payment, requires full settlement after final deadline, and records one audited extension. |

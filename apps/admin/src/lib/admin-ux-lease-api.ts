@@ -60,11 +60,15 @@ export type CheckoutNoticeInput = {
   exitType: "resident_early_termination" | "normal_expiry";
   effectiveDate: string;
   reason: string;
+  requestSource: "resident" | "parent" | "admin" | "other";
   noticeExceptionReason?: string;
+  noticeExceptionEvidenceFileIds?: string[];
+  internalNote?: string;
 };
 export type CheckoutApprovalInput = {
   approvedShortNoticeCharge: number;
   shortNoticeWaiverReason?: string;
+  shortNoticeWaiverEvidenceFileIds?: string[];
 };
 export type CheckoutHandoverInput = {
   keyAccessConfirmed: boolean;
@@ -533,7 +537,10 @@ export const adminUxLeaseApi = {
             exit_type: input.exitType,
             effective_date: input.effectiveDate,
             reason: input.reason.trim(),
+            request_source: input.requestSource,
             notice_exception_reason: text(input.noticeExceptionReason),
+            notice_exception_evidence_file_ids: input.noticeExceptionEvidenceFileIds,
+            internal_note: text(input.internalNote),
           },
           { idempotencyKey },
         ),
@@ -554,6 +561,7 @@ export const adminUxLeaseApi = {
           {
             approved_short_notice_charge: input.approvedShortNoticeCharge,
             short_notice_waiver_reason: text(input.shortNoticeWaiverReason),
+            short_notice_waiver_evidence_file_ids: input.shortNoticeWaiverEvidenceFileIds,
           },
           { idempotencyKey },
         ),

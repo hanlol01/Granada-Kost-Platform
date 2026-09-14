@@ -21,6 +21,12 @@ export type BillingInvoiceDocumentData = {
   dueDate: string;
   totalAmount: number;
   outstandingAmount: number;
+  leaseTermMonths?: number | null;
+  agreedMonthlyPrice?: number | null;
+  contractRentAmount?: number | null;
+  cumulativeRentPaid?: number | null;
+  contractRemainingAmount?: number | null;
+  pricingSource?: 'standard' | 'negotiated' | null;
   issuedAt: Date | null;
   propertyName?: string;
   propertyAddress?: string | null;
@@ -56,6 +62,8 @@ export type BillingReceiptDocumentData = {
   leaseTermMonths?: number | null;
   periodLabel?: string;
   contractRentAmount?: number | null;
+  agreedMonthlyPrice?: number | null;
+  pricingSource?: 'standard' | 'negotiated' | null;
   rentPaymentSequence?: number | null;
   totalRentReceived?: number | null;
   remainingRentAmount?: number | null;
@@ -76,6 +84,8 @@ export type BillingReceiptDocument = {
   content: Buffer;
 };
 
+export const BILLING_DOCUMENT_RENDERER_VERSION = 'room-label-v2';
+
 export type ContractPaidDocumentSnapshot = {
   documentCode: string;
   residentName: string;
@@ -83,6 +93,10 @@ export type ContractPaidDocumentSnapshot = {
   buildingCode: string | null;
   leaseStart: string;
   leaseEnd: string;
+  leaseTermMonths?: number;
+  referenceMonthlyPrice?: number;
+  agreedMonthlyPrice?: number;
+  pricingSource?: 'standard' | 'negotiated';
   contractRentAmount: number;
   initialRentCredit: number;
   additionalRentPayments: number;
@@ -106,6 +120,8 @@ export type LeaseExitOfficialDocumentKind =
   | 'refund_receipt';
 
 export type LeaseExitOfficialDocumentSnapshot = {
+  /** Presentation revision; the financial and occupancy facts remain immutable. */
+  renderer_version?: string;
   document_code: string;
   document_kind: LeaseExitOfficialDocumentKind;
   issued_at: string;
@@ -194,9 +210,13 @@ export type LeaseExitOfficialDocumentSnapshot = {
     rent_refundable_amount: number;
     rent_amount_due_before_deposit_offset: number;
     deposit_liability_amount: number;
+    documented_damage_amount: number;
     deposit_deduction_amount: number;
+    damage_amount_due: number;
     deposit_rent_offset_amount: number;
     refundable_deposit_amount: number;
+    gross_refund_amount: number;
+    gross_amount_due: number;
     recommended_refund_amount: number;
     final_refund_amount: number;
     final_rent_refund_amount: number;
@@ -332,6 +352,21 @@ export async function createBillingInvoicePdf(
     ['Sisa tagihan', idr(data.outstandingAmount)],
     ['Diterbitkan', receiptDate(data.issuedAt, true)],
   ];
+  if (data.invoicePurpose === 'rent' && data.contractRentAmount != null) {
+    rows.splice(
+      3,
+      0,
+      ['Durasi kontrak', `${data.leaseTermMonths ?? 0} bulan`],
+      ['Tarif bulanan kontrak', idr(data.agreedMonthlyPrice ?? 0)],
+      [
+        'Sumber tarif',
+        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+      ],
+      ['Nilai kontrak', idr(data.contractRentAmount)],
+      ['Akumulasi pembayaran sewa', idr(data.cumulativeRentPaid ?? 0)],
+      ['Sisa kewajiban kontrak', idr(data.contractRemainingAmount ?? data.contractRentAmount)],
+    );
+  }
   let y = 642;
   for (const [labelText, value] of rows) {
     const valueLines = wrapText(regular, value, 10, 258);
@@ -422,6 +457,16 @@ const receiptAsset = (name: string) => {
   const apiAsset = join(__dirname, '..', 'assets', name);
   if (existsSync(apiAsset)) return readFileSync(apiAsset);
 
+  const workspaceAssets = [
+    join(process.cwd(), 'backend', 'api', 'src', 'modules', 'billing', 'assets', name),
+    join(process.cwd(), 'src', 'modules', 'billing', 'assets', name),
+    join(process.cwd(), 'apps', 'admin', 'public', 'images', 'brand', name),
+    join(process.cwd(), '..', '..', 'apps', 'admin', 'public', 'images', 'brand', name),
+  ];
+  for (const workspaceAsset of workspaceAssets) {
+    if (existsSync(workspaceAsset)) return readFileSync(workspaceAsset);
+  }
+
   // The signature is a shared brand asset already committed with both web apps.
   // API releases are built from the full monorepo, so resolve that canonical copy
   // when an asset has not been duplicated under the API source tree.
@@ -496,17 +541,20 @@ function leaseDuration(termMonths?: number | null): string | null {
 
 function formatRoomDescription(roomNumber: string, buildingCode?: string | null): string {
   const normalizedRoom = roomNumber.trim();
-  const fullMatch = normalizedRoom.match(/^(RK|AK)[-_](\d{1,3})[-_](\d{1,3})$/i);
-  const building = (fullMatch?.[1] ?? buildingCode ?? '').trim().toUpperCase();
-  const segments = fullMatch
-    ? [fullMatch[2], fullMatch[3]]
-    : normalizedRoom.split(/[-_\s]+/).filter(Boolean);
+  const normalizedBuilding = buildingCode?.trim().toUpperCase() ?? '';
+  const buildingMatch = normalizedBuilding.match(/^(RK|AK)[-_](\d{1,3})$/);
+  const roomMatch = normalizedRoom.match(/(?:^|[-_/])(\d{1,3})$/);
 
-  if (/^(RK|AK)$/.test(building) && segments.length >= 2) {
-    const room = segments[segments.length - 2];
-    const unit = segments[segments.length - 1];
-    const propertyType = building === 'RK' ? 'Rumah Kost' : 'Apart Kost';
-    return `${propertyType} · Kamar No.${room}, Unit ${unit}`;
+  if (buildingMatch && roomMatch) {
+    const propertyType = buildingMatch[1] === 'RK' ? 'Rumah Kost' : 'Apart Kost';
+    return `${propertyType} · Unit ${Number(buildingMatch[2])}, Kamar ${Number(roomMatch[1])}`;
+  }
+
+  // Compatibility for older snapshots that did not persist building_code.
+  const legacyMatch = normalizedRoom.match(/^(RK|AK)[-_](\d{1,3}).*[-_/](\d{1,3})$/i);
+  if (legacyMatch) {
+    const propertyType = legacyMatch[1].toUpperCase() === 'RK' ? 'Rumah Kost' : 'Apart Kost';
+    return `${propertyType} · Unit ${Number(legacyMatch[2])}, Kamar ${Number(legacyMatch[3])}`;
   }
 
   return normalizedRoom || '-';
@@ -710,6 +758,17 @@ export async function createBillingReceiptPdf(
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Pembayaran via', method],
   ];
+  if (!data.detailRows && data.agreedMonthlyPrice != null) {
+    rows.splice(
+      6,
+      0,
+      ['Tarif bulanan kontrak', idr(data.agreedMonthlyPrice)],
+      [
+        'Sumber tarif',
+        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+      ],
+    );
+  }
   let y = data.documentStatusNote ? 626 : 642;
   for (const [labelText, value] of rows) {
     const valueLines = wrapText(regular, value, 10, 258);
@@ -823,6 +882,19 @@ export function createContractPaidDocumentPdf(
       ? data.transactionCodes.join(', ')
       : 'Sesuai riwayat pembayaran terverifikasi';
   const period = receiptPeriod(data.leaseStart, data.leaseEnd);
+  const commercialRows: Array<[string, string]> = [];
+  if (data.leaseTermMonths && data.agreedMonthlyPrice) {
+    commercialRows.push(
+      ['Durasi kontrak', `${data.leaseTermMonths} bulan`],
+      ['Tarif per bulan', idr(data.agreedMonthlyPrice)],
+    );
+    if (data.pricingSource) {
+      commercialRows.push([
+        'Sumber tarif',
+        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+      ]);
+    }
+  }
 
   return createBillingReceiptPdf({
     receiptCode: data.documentCode,
@@ -848,6 +920,7 @@ export function createContractPaidDocumentPdf(
       ['Nama penghuni', data.residentName],
       ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
       ['Periode sewa', period],
+      ...commercialRows,
       ['Total sewa kontrak', idr(data.contractRentAmount)],
       ['Total pembayaran diterima', idr(data.totalRentReceived)],
       ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
@@ -1126,9 +1199,13 @@ export async function createLeaseExitOfficialDocumentPdf(
     kind === 'checkout_handover' ? 'G. Deposit dan hasil akhir' : 'C. Deposit dan hasil akhir',
   );
   moneyRow('Security deposit awal', snapshot.settlement.deposit_liability_amount);
-  moneyRow('Potongan kerusakan', snapshot.settlement.deposit_deduction_amount);
+  moneyRow('Kerusakan terdokumentasi', snapshot.settlement.documented_damage_amount);
+  moneyRow('Kerusakan dipotong dari deposit', snapshot.settlement.deposit_deduction_amount);
+  moneyRow('Kerusakan di luar deposit', snapshot.settlement.damage_amount_due);
   moneyRow('Offset deposit ke kewajiban sewa', snapshot.settlement.deposit_rent_offset_amount);
   moneyRow('Deposit dapat dikembalikan', snapshot.settlement.refundable_deposit_amount);
+  moneyRow('Total hak pengembalian sebelum perhitungan akhir', snapshot.settlement.gross_refund_amount);
+  moneyRow('Total kewajiban sebelum perhitungan akhir', snapshot.settlement.gross_amount_due);
   moneyRow('Rekomendasi refund', snapshot.settlement.recommended_refund_amount);
   moneyRow('Refund final', snapshot.settlement.final_refund_amount);
   moneyRow('Komponen refund sewa', snapshot.settlement.final_rent_refund_amount);

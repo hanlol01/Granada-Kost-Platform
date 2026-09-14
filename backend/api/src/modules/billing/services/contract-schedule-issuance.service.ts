@@ -5,10 +5,7 @@ import {
   buildContractSchedule,
   type ContractPaymentPlan,
 } from '../helpers/contract-schedule.helper';
-import {
-  buildLeaseSettlementPolicySchedule,
-  SUPPORTED_LEASE_SETTLEMENT_TERMS,
-} from '../helpers/lease-settlement-policy.helper';
+import { buildLeaseSettlementPolicyScheduleV3 } from '../helpers/lease-settlement-policy.helper';
 
 /**
  * Canonical, transactional W05/W06 contract-schedule issuance authority.
@@ -61,10 +58,10 @@ export class ContractScheduleIssuanceService {
     client: PoolClient,
     input: ContractScheduleIssuanceInput,
   ): Promise<ContractScheduleIssuanceResult> {
-    if (!SUPPORTED_LEASE_SETTLEMENT_TERMS.includes(input.termMonths as 3 | 6 | 12))
+    if (!Number.isInteger(input.termMonths) || input.termMonths < 1 || input.termMonths > 120)
       throw new UnprocessableEntityException({
         code: 'LEASE_SETTLEMENT_TERM_NOT_SUPPORTED',
-        message: 'New lease settlement supports only 3, 6, or 12 month terms',
+        message: 'New lease settlement supports terms from 1 through 120 months',
       });
     const schedule = buildContractSchedule({
       startDate: input.startDate,
@@ -160,7 +157,7 @@ export class ContractScheduleIssuanceService {
         code: 'CONTRACT_SCHEDULE_FIRST_INVOICE_MISSING',
         message: 'Initial rent invoice could not be issued',
       });
-    const settlementPolicy = buildLeaseSettlementPolicySchedule({
+    const settlementPolicy = buildLeaseSettlementPolicyScheduleV3({
       leaseStartDate: input.startDate,
       termMonths: input.termMonths,
       monthlyRentAmount: input.snapshotMonthlyPrice,
@@ -228,7 +225,7 @@ export class ContractScheduleIssuanceService {
       );
     }
     // The due date is deliberately assigned only at activation. A committed or
-    // approved schedule is not an occupancy. The v2 checkpoints retain their
+    // approved schedule is not an occupancy. The v3 checkpoints retain their
     // commercial date anchor, while their actionable status is projected only
     // after the lease becomes active.
     await client.query(

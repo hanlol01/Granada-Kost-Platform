@@ -123,4 +123,7 @@ export type ResidentTenancyRecord = {
   endDate: string;
   termMonths: number;
   paymentPlanType: 'annual_full' | 'monthly_installments' | 'two_month_installments';
+  agreedMonthlyPrice: number;
+  contractRentAmount: number;
+  pricingSource: 'standard' | 'negotiated';
 };

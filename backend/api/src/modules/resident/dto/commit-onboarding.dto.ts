@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -15,6 +16,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   Length,
   ValidateNested,
 } from 'class-validator';
@@ -69,7 +71,16 @@ export class CommitOnboardingDto {
   @IsUUID('4') @IsOptional() ktp_file_id?: string;
   @IsUUID('4') @IsOptional() profile_photo_file_id?: string;
   @IsDateString() start_date!: string;
-  @IsInt() @Min(3) @Max(120) term_months!: number;
+  @IsInt() @Min(1) @Max(120) term_months!: number;
+  @IsOptional() @IsIn(['standard', 'negotiated']) pricing_source?: 'standard' | 'negotiated';
+  @IsOptional() @IsInt() @Min(1) agreed_monthly_price?: number;
+  @IsOptional()
+  @Transform(optionalTrim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  pricing_agreement_reason?: string;
+  @IsOptional() @IsBoolean() pricing_variance_acknowledged?: boolean;
   @IsIn(['monthly', 'yearly']) billing_cycle!: 'monthly' | 'yearly';
   @IsIn(['annual_full', 'two_month_installments', 'monthly_installments']) payment_plan_type!:
     | 'annual_full'

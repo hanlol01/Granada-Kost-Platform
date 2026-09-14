@@ -15,13 +15,17 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 import { CommitOnboardingDto } from '../../src/modules/resident/dto/commit-onboarding.dto';
 import { OnboardingController } from '../../src/modules/resident/onboarding.controller';
 import { LeaseActivationController } from '../../src/modules/lease/lease-activation.controller';
+import { ActivateLeaseDto } from '../../src/modules/lease/dto/activate-lease.dto';
 import { CreatePublicBookingLeadDto } from '../../src/modules/booking-lead/dto/create-public-booking-lead.dto';
 import { calculateOnboardingCommercial } from '../../src/modules/resident/types/onboarding.types';
 import { OnboardingService } from '../../src/modules/resident/onboarding.service';
 import { LeaseActivationService } from '../../src/modules/lease/lease-activation.service';
 import { W06BillingService } from '../../src/modules/billing/services/w06-billing.service';
 
-const root = resolve(__dirname, '../..');
+const apiWorkspaceSuffix = join('backend', 'api');
+const root = process.cwd().endsWith(apiWorkspaceSuffix)
+  ? process.cwd()
+  : resolve(process.cwd(), apiWorkspaceSuffix);
 const migration = readFileSync(
   resolve(
     root,
@@ -84,6 +88,7 @@ type HarnessOptions = {
   expectedBookingFeeAmount?: number;
   expectedInitialRentCredit?: number;
   expectedPaymentClassifications?: string[];
+  checkInFailure?: Error;
 };
 
 function normalizedSql(sql: string): string {
@@ -380,6 +385,8 @@ function createActivationHarness(options: HarnessOptions = {}) {
           ],
           rowCount: 1,
         };
+      if (/SELECT renewed_from_lease_id FROM leases/.test(normalized))
+        return { rows: [{ renewed_from_lease_id: null }], rowCount: 1 };
       if (/FROM leases l/.test(normalized))
         return { rows: [activationLease(options.roomOverrides)], rowCount: 1 };
       if (/AS activation_is_available/.test(normalized))
@@ -451,6 +458,20 @@ function createActivationHarness(options: HarnessOptions = {}) {
         if (options.auditFailure) throw options.auditFailure;
       },
     } as never,
+    {
+      confirmLocked: async (transactionClient: unknown) => {
+        assert.equal(transactionClient, client);
+        events.push('check-in');
+        if (options.checkInFailure) throw options.checkInFailure;
+        return {
+          leaseId: LEASE_ID,
+          occupancyId: OCCUPANCY_ID,
+          occupancyStatus: 'active',
+          roomStatus: 'occupied',
+          checkedInAt: '2026-08-01T00:00:00.000Z',
+        };
+      },
+    } as never,
   );
   return { client, events, queries, service };
 }
@@ -507,9 +528,31 @@ test('onboarding DTO rejects identity injection and preserves explicit commercia
     0,
   );
   assert.equal(withoutEmail.visitor_email, undefined);
+  assert.equal(
+    (
+      await validate(
+        plainToInstance(CommitOnboardingDto, {
+          ...valid,
+          term_months: 2,
+          pricing_source: 'negotiated',
+          agreed_monthly_price: 1_950_000,
+          pricing_agreement_reason: 'Kesepakatan sewa singkat',
+          pricing_variance_acknowledged: false,
+        }),
+        { whitelist: true, forbidNonWhitelisted: true },
+      )
+    ).length,
+    0,
+  );
   for (const input of [
     { ...valid, user_id: 'x' },
-    { ...valid, term_months: 2 },
+    { ...valid, term_months: 0 },
+    {
+      ...valid,
+      pricing_source: 'negotiated',
+      agreed_monthly_price: 1_950_000,
+      pricing_agreement_reason: 'x',
+    },
     { ...valid, gender: 'other' },
     { ...valid, contract_rent_amount: 1 },
   ]) {
@@ -579,7 +622,7 @@ test('three-month full payment accepts Rp1.000.000 booking credit plus Rp4.400.0
   assert.ok(leaseInsert, 'onboarding must create an awaiting-activation lease');
   assert.match(
     leaseInsert.sql,
-    /security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id\) VALUES\([\s\S]*?\$20,now\(\),\$21,\$21\)/,
+    /security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id\) VALUES\([\s\S]*?\$20,\$21,\$22::date,\$23,\$24,\$25,\$26,now\(\),now\(\),\$26,\$26\)/,
     'lease INSERT must bind exactly one expression for each final target column',
   );
   assert.doesNotMatch(
@@ -1020,6 +1063,7 @@ test('authorization completes before transaction lookup for onboarding and activ
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   await assert.rejects(
     onboarding.commit(actor as never, onboardingDto, IDEMPOTENCY_KEY, {}),
@@ -1035,6 +1079,7 @@ test('authorization completes before transaction lookup for onboarding and activ
       },
     } as never,
     { assertCanReadProperty: async () => Promise.reject(sentinel) } as never,
+    {} as never,
     {} as never,
   );
   await assert.rejects(
@@ -1117,6 +1162,16 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
         };
       if (/FROM files/.test(normalized))
         return { rows: [{ id: PAYMENT_EVIDENCE_ID }], rowCount: 1 };
+      if (/SELECT next_financial_transaction_code/.test(normalized))
+        return {
+          rows: [
+            {
+              code:
+                paymentSequence === 0 ? 'TRX-20260801-000001-LUNAS' : 'TRX-20260801-000002-DEPOSIT',
+            },
+          ],
+          rowCount: 1,
+        };
       if (/SELECT i\.id,i\.property_id/.test(normalized))
         return {
           rows: [
@@ -1382,6 +1437,91 @@ test('activation rechecks the full tuple and leaves physical occupancy for check
     })
     .filter(Boolean);
   assert.deepEqual(lockOrder, ['tuple', 'hold', 'occupancy', 'lease', 'mutation']);
+});
+
+test('normal activation confirms physical check-in inside the same transaction', async () => {
+  const harness = createActivationHarness();
+  const response = await harness.service.activate(
+    actor as never,
+    LEASE_ID,
+    {
+      property_id: PROPERTY_ID,
+      activated_at: '2026-08-01T00:00:00.000Z',
+      confirm_check_in: true,
+      checked_in_at: '2026-08-01T00:00:00.000Z',
+    },
+    IDEMPOTENCY_KEY,
+    {},
+  );
+
+  assert.equal(response.data.occupancyStatus, 'active');
+  assert.ok(harness.events.indexOf('check-in') > harness.events.indexOf('audit'));
+  assert.ok(harness.events.indexOf('check-in') < harness.events.indexOf('commit'));
+});
+
+test('combined activation rolls back when physical check-in fails', async () => {
+  const sentinel = new Error('check-in failed');
+  const harness = createActivationHarness({ checkInFailure: sentinel });
+
+  await assert.rejects(
+    harness.service.activate(
+      actor as never,
+      LEASE_ID,
+      {
+        property_id: PROPERTY_ID,
+        activated_at: '2026-08-01T00:00:00.000Z',
+        confirm_check_in: true,
+        checked_in_at: '2026-08-01T00:00:00.000Z',
+      },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    sentinel,
+  );
+
+  assert.deepEqual(harness.events.slice(-3), ['check-in', 'rollback', 'release']);
+  assert.equal(
+    harness.queries.some(({ sql }) => /UPDATE idempotency_commands/.test(sql)),
+    false,
+  );
+});
+
+test('activation DTO accepts the explicit combined check-in mode and rejects malformed values', async () => {
+  const accepted = plainToInstance(ActivateLeaseDto, {
+    property_id: PROPERTY_ID,
+    activated_at: '2026-08-01T00:00:00.000Z',
+    confirm_check_in: true,
+    checked_in_at: '2026-08-01T00:00:00.000Z',
+  });
+  assert.equal((await validate(accepted)).length, 0);
+
+  const rejected = plainToInstance(ActivateLeaseDto, {
+    property_id: PROPERTY_ID,
+    confirm_check_in: 'yes',
+    checked_in_at: 'not-a-date',
+  });
+  assert.ok((await validate(rejected)).length >= 2);
+});
+
+test('activation rejects a physical check-in date without explicit combined confirmation', async () => {
+  const harness = createActivationHarness();
+
+  await assert.rejects(
+    harness.service.activate(
+      actor as never,
+      LEASE_ID,
+      {
+        property_id: PROPERTY_ID,
+        checked_in_at: '2026-08-01T00:00:00.000Z',
+      },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message === 'checked_in_at requires confirm_check_in to be true',
+  );
+  assert.equal(harness.events.includes('begin'), false);
 });
 
 test('activation rejects a lease before its Jakarta start date without lifecycle mutation', async () => {

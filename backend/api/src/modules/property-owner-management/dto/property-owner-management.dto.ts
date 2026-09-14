@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBooleanString,
   IsDateString,
   IsEmail,
   IsIn,
@@ -196,4 +197,128 @@ export class CloseOwnerReportPeriodDto extends PropertyOwnerPropertyQueryDto {
   @MinLength(3)
   @MaxLength(500)
   notes?: string;
+}
+
+export class OwnerSettlementReportQueryDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  period!: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @IsIn(['rukost', 'apartkost'])
+  category?: 'rukost' | 'apartkost';
+
+  @IsOptional()
+  @IsIn(['not_prepared', 'draft', 'ready_for_review', 'approved', 'paid', 'void'])
+  review_status?: 'not_prepared' | 'draft' | 'ready_for_review' | 'approved' | 'paid' | 'void';
+
+  @IsOptional()
+  @IsIn(['not_published', 'published'])
+  publication_status?: 'not_published' | 'published';
+
+  @IsOptional()
+  @IsIn(['not_paid', 'partially_paid', 'paid'])
+  payout_status?: 'not_paid' | 'partially_paid' | 'paid';
+
+  @IsOptional()
+  @IsBooleanString()
+  actionable_only?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset = 0;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 20;
+}
+
+export class OwnerSettlementPeriodDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  period!: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class RecordOwnerPayoutDto extends OwnerSettlementPeriodDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @IsIn(['bank_transfer', 'cash', 'other'])
+  method!: 'bank_transfer' | 'cash' | 'other';
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(150)
+  reference!: string;
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(150)
+  @Matches(/\*/)
+  destination_mask!: string;
+
+  @IsDateString({ strict: true })
+  transferred_at!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  evidence_file_ids?: string[];
+}
+
+export class CreateOwnerSettlementAdjustmentDto extends OwnerSettlementPeriodDto {
+  @IsIn(['reversal', 'refund', 'transfer_proration', 'clawback'])
+  adjustment_kind!: 'reversal' | 'refund' | 'transfer_proration' | 'clawback';
+
+  @Type(() => Number)
+  @IsInt()
+  gross_amount_delta!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  owner_amount_delta!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  operator_fee_amount_delta!: number;
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
+
+  @IsUUID('4')
+  earning_id!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  evidence_file_ids?: string[];
 }

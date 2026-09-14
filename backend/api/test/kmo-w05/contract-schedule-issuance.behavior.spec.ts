@@ -7,6 +7,52 @@ const PROPERTY_ID = '11111111-1111-4111-8111-111111111111';
 const LEASE_ID = '22222222-2222-4222-8222-222222222222';
 const ACTOR_ID = '33333333-3333-4333-8333-333333333333';
 
+void test('one-month custom lease issues one invoice and a v3 activation settlement', async () => {
+  const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
+  const client = {
+    query: (sql: string, params: readonly unknown[] = []) => {
+      queries.push({ sql, params });
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    },
+  } as unknown as PoolClient;
+
+  const result = await new ContractScheduleIssuanceService().issueScheduleInTransaction(client, {
+    propertyId: PROPERTY_ID,
+    leaseId: LEASE_ID,
+    startDate: '2026-08-24',
+    termMonths: 1,
+    paymentPlanType: 'annual_full',
+    contractRentAmount: 1_950_000,
+    billingCycle: 'monthly',
+    snapshotMonthlyPrice: 1_950_000,
+    snapshotRoomNumber: 'RK-01-01',
+    snapshotBuildingCode: 'RK-01',
+    snapshotCategoryName: 'Rumah Kost',
+    initialRentCredit: 1_950_000,
+    actorUserId: ACTOR_ID,
+  });
+
+  assert.equal(result.installmentCount, 1);
+  const policyInsert = queries.find(({ sql }) =>
+    sql.includes('INSERT INTO lease_settlement_policy_snapshots('),
+  );
+  assert.ok(policyInsert);
+  assert.equal(policyInsert.params[3], 'lease_settlement_v3');
+  assert.equal(policyInsert.params[8], 0);
+  const checkpoints = queries.filter(({ sql }) =>
+    sql.includes('INSERT INTO lease_settlement_checkpoints('),
+  );
+  assert.equal(checkpoints.length, 1);
+  assert.deepEqual(
+    {
+      code: checkpoints[0]?.params[4],
+      sequence: checkpoints[0]?.params[5],
+      dueDate: checkpoints[0]?.params[7],
+    },
+    { code: 'final_settlement', sequence: 1, dueDate: '2026-08-24' },
+  );
+});
+
 void test('contract schedule invoice issuance supplies the lease predicate parameter', async () => {
   const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
   const client = {
@@ -48,7 +94,7 @@ void test('contract schedule invoice issuance supplies the lease predicate param
   );
 });
 
-void test('new supported lease schedules persist the immutable v2 checkpoint policy', async () => {
+void test('new supported lease schedules persist the immutable v3 checkpoint policy', async () => {
   const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
   const client = {
     query: (sql: string, params: readonly unknown[] = []) => {
@@ -87,4 +133,8 @@ void test('new supported lease schedules persist the immutable v2 checkpoint pol
   );
   const settlement = queries.find(({ sql }) => sql.includes('policy_snapshot_id'));
   assert.ok(settlement, 'settlement must retain the policy snapshot authority');
+  const policyInsert = queries.find(({ sql }) =>
+    sql.includes('INSERT INTO lease_settlement_policy_snapshots('),
+  );
+  assert.equal(policyInsert?.params[3], 'lease_settlement_v3');
 });

@@ -47,6 +47,15 @@ test('W09A vehicle commands are transactional, idempotent, audited, and outbox-b
   assert.match(service, /findByIdForUpdate/);
 });
 
+test('W09A vehicle mutations scope idempotency commands to the vehicle property', async () => {
+  const service = await source('src/modules/vehicle/services/vehicle.service.ts');
+  assert.equal(
+    (service.match(/this\.command\(context, existing\.propertyId/g) ?? []).length,
+    2,
+    'update and status transition commands must use the vehicle property id',
+  );
+});
+
 test('W09A parking assignment and setup commands preserve transaction history and outbox evidence', async () => {
   const service = await source('src/modules/parking/services/parking.service.ts');
   assert.match(service, /async assignSlot/);

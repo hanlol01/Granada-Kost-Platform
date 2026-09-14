@@ -9,6 +9,54 @@ import { MIGRATION_MANIFEST, type MigrationManifestEntry } from './migration-man
 const LEDGER_VERSION = '021_schema_migration_ledger.sql';
 const ADVISORY_LOCK_KEY = 4_600_217_001;
 
+// Development databases created from the pre-reconciliation branch may still
+// carry the owner/room migrations under their former numbers. Accept those
+// exact, checksum-verified rows as aliases so the official runner can advance
+// them without rewriting the ledger or replaying already-applied SQL.
+const LEGACY_LEDGER_ALIASES = new Map([
+  [
+    '069_optional_property_owner_assignment_notes.sql',
+    {
+      canonical: '070_optional_property_owner_assignment_notes.sql',
+      checksum: '21027d6696a1c261cf56b3178140d79a62710352ec1f8365e910279a4f606457',
+    },
+  ],
+  [
+    '070_permanent_property_ownership.sql',
+    {
+      canonical: '071_permanent_property_ownership.sql',
+      checksum: 'bda591f4fb50bad861d5013a10cbcc27d25c366ca6463544fa80e0fa7c662e28',
+    },
+  ],
+  [
+    '071_property_owner_earning_recognition.sql',
+    {
+      canonical: '072_property_owner_earning_recognition.sql',
+      checksum: 'f557b717a23fe254ffbaa9ee90c2691926a78bd9e2c9fd2ffc56614d4b7f4d11',
+    },
+  ],
+  [
+    '072_owner_historical_scope_and_period_close.sql',
+    {
+      canonical: '073_owner_historical_scope_and_period_close.sql',
+      checksum: '96654bc7cb2f119f3db40f44955eaaf99696a12be35c415a0c5d8d1c4061ebc4',
+    },
+  ],
+  [
+    '073_rename_apart_kost_rooms.sql',
+    {
+      canonical: '069_rename_apart_kost_rooms.sql',
+      checksum: '9a23cbaa110089ae1acee5211b8c4a9e8eeffe7756b7148cf38e2d705fae9a5a',
+    },
+  ],
+]);
+const LEGACY_REMOVED_MIGRATIONS = new Map([
+  [
+    '074_correct_apart_kost_room_18_22_code.sql',
+    '2f097763a1bf744659e4b53cde40312b2664341c687b7c51f1adf05ad73f2e6b',
+  ],
+]);
+
 export type MigrationSource = MigrationManifestEntry & { rawBytes: Buffer; sql: string };
 export type MigrationRunResult = { applied: number; baselined: number; alreadyApplied: number };
 
@@ -19,12 +67,16 @@ function sha256(value: string | Buffer): string {
 function checksumMatchesManifest(source: MigrationSource): boolean {
   if (sha256(source.rawBytes) === source.checksumSha256) return true;
 
-  // Migrations 001-018 and 024 were originally checksummed from a Windows
-  // checkout. Git archives those text blobs with LF on Linux, while their
-  // canonical ledger checksums remain CRLF-based. Treat only that exact
-  // line-ending conversion as equivalent; any SQL/content drift still fails.
+  // Git may materialize a checked-in SQL blob with CRLF on Windows while the
+  // canonical ledger checksum was generated from LF (or vice versa). Treat
+  // only that exact line-ending conversion as equivalent; any SQL/content
+  // drift still fails.
+  const canonicalLfBytes = Buffer.from(source.sql.replace(/\r\n/g, '\n'), 'utf8');
   const canonicalCrlfBytes = Buffer.from(source.sql.replace(/\r?\n/g, '\r\n'), 'utf8');
-  return sha256(canonicalCrlfBytes) === source.checksumSha256;
+  return (
+    sha256(canonicalLfBytes) === source.checksumSha256 ||
+    sha256(canonicalCrlfBytes) === source.checksumSha256
+  );
 }
 
 export function executableSql(sql: string): string {
@@ -174,6 +226,24 @@ export async function runMigrations(
     const manifestByVersion = new Map(sources.map((source) => [source.version, source]));
     const appliedVersions = new Set<string>();
     for (const row of rows.rows) {
+      const legacyAlias = LEGACY_LEDGER_ALIASES.get(row.version);
+      if (legacyAlias) {
+        if (
+          legacyAlias.checksum !== row.checksum_sha256 ||
+          appliedVersions.has(legacyAlias.canonical)
+        ) {
+          throw new Error('Migration ledger checksum or version drift detected');
+        }
+        appliedVersions.add(legacyAlias.canonical);
+        continue;
+      }
+      const removedMigrationChecksum = LEGACY_REMOVED_MIGRATIONS.get(row.version);
+      if (removedMigrationChecksum) {
+        if (removedMigrationChecksum !== row.checksum_sha256) {
+          throw new Error('Migration ledger checksum or version drift detected');
+        }
+        continue;
+      }
       const expected = manifestByVersion.get(row.version);
       if (!expected || expected.checksumSha256 !== row.checksum_sha256) {
         throw new Error('Migration ledger checksum or version drift detected');

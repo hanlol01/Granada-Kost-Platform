@@ -40,6 +40,11 @@ const response = {
     startDate: "2026-08-01",
     endDate: "2027-07-31",
     termMonths: 12,
+    pricingSource: "standard",
+    pricingTier: "long_stay",
+    referenceMonthlyPrice: 1800000,
+    agreedMonthlyPrice: 1800000,
+    pricingAgreementReason: null,
     billingCycle: "monthly",
     paymentPlanType: "two_month_installments",
     contractRentAmount: 21600000,
@@ -69,6 +74,27 @@ const response = {
     temporaryPassword: "one-time",
   },
 };
+
+test("onboarding parser accepts an authoritative one-month negotiated snapshot", () => {
+  const parsed = parseAdminOnboarding({
+    data: {
+      ...response.data,
+      termMonths: 1,
+      endDate: "2026-08-31",
+      contractRentAmount: 2100000,
+      dpRequiredAmount: 2100000,
+      pricingSource: "negotiated",
+      pricingTier: "short_stay",
+      referenceMonthlyPrice: 1900000,
+      agreedMonthlyPrice: 2100000,
+      pricingAgreementReason: "Kesepakatan sewa satu bulan",
+    },
+  });
+
+  assert.equal(parsed.termMonths, 1);
+  assert.equal(parsed.pricingSource, "negotiated");
+  assert.equal(parsed.agreedMonthlyPrice, 2100000);
+});
 const payload: OnboardingPayload = {
   property_id: id,
   visitor_name: "Resident",
@@ -250,6 +276,52 @@ test("activation stays a separate explicit command with an exact response envelo
   assert.deepEqual(calls[0].body, { property_id: id });
   assert.equal(calls[0].key, "w05-activation-key-0001");
   assert.throws(() => parseLeaseActivation({ data: { leaseId, leaseStatus: "active" } }));
+});
+
+test("normal resident activation requests atomic activation and check-in with the lease start date", async () => {
+  const leaseId = "22222222-2222-4222-8222-222222222222";
+  const calls: Array<{ path: string; body: object; key: string }> = [];
+  const effectiveAt = "2026-08-01T00:00:00.000Z";
+  const result = await requestLeaseActivation(
+    async (path, body, options) => {
+      calls.push({ path, body, key: options.idempotencyKey });
+      return {
+        data: {
+          leaseId,
+          leaseStatus: "active",
+          occupancyStatus: "active",
+          roomNumber: "RK-01-01",
+        },
+      };
+    },
+    leaseId,
+    id,
+    "w05-combined-activation-key-0001",
+    effectiveAt,
+    true,
+    effectiveAt,
+  );
+
+  assert.equal(result.occupancyStatus, "active");
+  assert.deepEqual(calls[0].body, {
+    property_id: id,
+    activated_at: effectiveAt,
+    confirm_check_in: true,
+    checked_in_at: effectiveAt,
+  });
+});
+
+test("resident detail keeps historical dates behind an exception control", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(source, /Aktifkan kamar & check-in/);
+  assert.match(source, /Tanggal aktual berbeda\?/);
+  assert.match(source, /Aktivasi saja/);
+  assert.match(source, /confirmCheckIn: !activationOnly/);
+  assert.doesNotMatch(source, /Tanggal aktivasi sebenarnya[\s\S]{0,500}required/);
 });
 
 test("physical check-in is a separate exact command that creates occupancy", async () => {

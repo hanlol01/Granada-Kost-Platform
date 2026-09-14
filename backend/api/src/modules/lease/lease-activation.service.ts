@@ -13,6 +13,7 @@ import { UserAccessContext } from '../iam/types/iam.types';
 import { PropertyService } from '../property/property.service';
 import { RequestAuditContext } from '../property/types/property.types';
 import { ActivateLeaseDto } from './dto/activate-lease.dto';
+import { LeaseCheckInService } from './lease-check-in.service';
 
 type ActivationLeaseRow = {
   id: string;
@@ -124,6 +125,7 @@ export class LeaseActivationService {
     private readonly database: DatabaseService,
     private readonly properties: PropertyService,
     private readonly audit: AuditRepository,
+    private readonly checkIns: LeaseCheckInService,
   ) {}
 
   async activate(
@@ -138,6 +140,11 @@ export class LeaseActivationService {
       throw new BadRequestException({
         code: 'IDEMPOTENCY_KEY_REQUIRED',
         message: 'A valid Idempotency-Key is required',
+      });
+    if (dto.checked_in_at && dto.confirm_check_in !== true)
+      throw new BadRequestException({
+        code: 'CHECK_IN_CONFIRMATION_REQUIRED',
+        message: 'checked_in_at requires confirm_check_in to be true',
       });
     const fingerprint = createHash('sha256').update(JSON.stringify({ leaseId, dto })).digest('hex');
     await this.properties.assertCanReadProperty(actor, dto.property_id);
@@ -161,7 +168,7 @@ export class LeaseActivationService {
       if (!claim.rowCount)
         return { data: await this.replay(client, actor.id, idempotencyKey, fingerprint) };
 
-      const response = await this.activateLocked(client, {
+      let response = await this.activateLocked(client, {
         propertyId: dto.property_id,
         leaseId,
         activatedAt: dto.activated_at ?? null,
@@ -169,6 +176,16 @@ export class LeaseActivationService {
         source: 'manual_exception',
         correlationId: context.correlationId ?? null,
       });
+      if (dto.confirm_check_in === true) {
+        await this.checkIns.confirmLocked(client, actor, leaseId, {
+          propertyId: dto.property_id,
+          checkedInAt: dto.checked_in_at ?? dto.activated_at ?? null,
+          notes: dto.note,
+          attemptKey: `lease-check-in:combined:${leaseId}:${idempotencyKey}`,
+          context,
+        });
+        response = { ...response, occupancyStatus: 'active' };
+      }
       await client.query(
         `UPDATE idempotency_commands
             SET command_status='succeeded',response_status=200,response_body=$4::jsonb,
@@ -354,6 +371,22 @@ export class LeaseActivationService {
     },
   ): Promise<LeaseActivationResponse> {
     const { propertyId, leaseId } = input;
+    const lineage = await client.query<{ renewed_from_lease_id: string | null }>(
+      `SELECT renewed_from_lease_id
+         FROM leases
+        WHERE id=$1 AND property_id=$2
+        FOR UPDATE`,
+      [leaseId, propertyId],
+    );
+    const genericLease = lineage.rows[0];
+    if (!genericLease)
+      throw new NotFoundException({ code: 'LEASE_NOT_FOUND', message: 'Lease is unavailable' });
+    if (genericLease.renewed_from_lease_id)
+      throw new ConflictException({
+        code: 'RENEWAL_ACTIVATION_REQUIRES_W07C_COMMAND',
+        message: 'Renewal successors must be activated through the authorized renewal command',
+      });
+
     const row = await client.query<ActivationLeaseRow>(
       `SELECT
          l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.start_date,l.end_date,
@@ -384,11 +417,6 @@ export class LeaseActivationService {
     const lease = row.rows[0];
     if (!lease)
       throw new NotFoundException({ code: 'LEASE_NOT_FOUND', message: 'Lease is unavailable' });
-    if (input.source === 'manual_exception' && lease.renewed_from_lease_id)
-      throw new ConflictException({
-        code: 'RENEWAL_ACTIVATION_REQUIRES_W07C_COMMAND',
-        message: 'Renewal successors must be activated through the authorized renewal command',
-      });
     if (lease.lease_status !== 'awaiting_activation')
       throw new ConflictException({
         code: 'LEASE_NOT_READY',
@@ -445,7 +473,8 @@ export class LeaseActivationService {
       lease.room_category === lease.kost_type_category &&
       lease.room_category === lease.commitment_category &&
       lease.commitment_gender === lease.resident_gender &&
-      (lease.room_gender_policy === 'mixed' || lease.room_gender_policy === lease.resident_gender) &&
+      (lease.room_gender_policy === 'mixed' ||
+        lease.room_gender_policy === lease.resident_gender) &&
       lease.building_gender_policy === lease.resident_gender &&
       lease.kost_type_status === 'active' &&
       lease.kost_type_deleted_at === null;
@@ -529,7 +558,8 @@ export class LeaseActivationService {
     if (contractSettlement?.policy_snapshot_id) {
       if (
         !contractSettlement.initial_month_minimum_amount ||
-        Number(financial.verified_rent_credit) < Number(contractSettlement.initial_month_minimum_amount)
+        Number(financial.verified_rent_credit) <
+          Number(contractSettlement.initial_month_minimum_amount)
       )
         throw new ConflictException({
           code: 'LEASE_ACTIVATION_FINANCIAL_OBLIGATION_UNMET',
@@ -639,7 +669,12 @@ export class LeaseActivationService {
                 SET state='open',activated_at=COALESCE($3::timestamptz,now()),
                     original_due_at=$4::timestamptz,updated_at=now()
               WHERE id=$1 AND property_id=$2 AND state='awaiting_activation'`,
-            [contractSettlement.id, propertyId, activatedAt, contractSettlement.final_checkpoint_due_at],
+            [
+              contractSettlement.id,
+              propertyId,
+              activatedAt,
+              contractSettlement.final_checkpoint_due_at,
+            ],
           )
         : await client.query(
             `WITH activation AS (SELECT COALESCE($3::timestamptz,now()) AS activated_at)

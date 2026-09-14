@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import type { FileResponse } from "@granada-kost/domain";
+import { ApiError, type FileResponse } from "@granada-kost/domain";
 import {
   AlertCircle,
   CalendarCheck2,
+  Calculator,
   CheckCircle2,
   Download,
   Loader2,
   Plus,
   Trash2,
+  XCircle,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -27,7 +31,8 @@ import type { CheckoutCommand, CheckoutSettlementQuote } from "@/lib/admin-ux-le
 import { jakartaToday } from "@/lib/admin-ux-lease-helpers";
 import { newIdempotencyKey } from "@/lib/idempotency";
 
-type Props = { leaseId: string; onClose: () => void };
+type Props = { leaseId: string; propertyId: string; onClose: () => void };
+type CheckoutMode = "resident_early_termination" | "same_day" | "normal_expiry";
 type HandoverConfirmation = { keyAccess: boolean; inventory: boolean; parking: boolean };
 type InventoryDraft = {
   key: number;
@@ -83,6 +88,21 @@ const accessDraft = (key: number): AccessDraft => ({
 });
 
 function messageFrom(error: unknown) {
+  if (ApiError.isApiError(error) && error.code === "LEASE_CHECKOUT_DISABLED") {
+    return "Proses check-out belum diaktifkan untuk properti ini. Hubungi pengelola sistem sebelum mencoba kembali.";
+  }
+  if (
+    ApiError.isApiError(error) &&
+    error.code === "CHECKOUT_SHORT_NOTICE_CHARGE_EXCEEDS_RECOMMENDATION"
+  ) {
+    return "Kompensasi pemberitahuan singkat melebihi batas rekomendasi sistem. Kurangi nominal, lalu coba kembali.";
+  }
+  if (
+    ApiError.isApiError(error) &&
+    error.code === "CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED"
+  ) {
+    return "Pengurangan kompensasi memerlukan alasan dan bukti persetujuan.";
+  }
   return error instanceof Error ? error.message : "Checkout tidak dapat diproses. Coba lagi.";
 }
 
@@ -92,16 +112,32 @@ const rupiah = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+const checkoutStateLabel: Record<string, string> = {
+  notice_received: "Pemberitahuan tercatat",
+  scheduled: "Check-out terjadwal",
+  inspection_required: "Menunggu inspeksi kamar",
+  settlement_pending: "Menunggu penyelesaian keuangan",
+  completed: "Proses check-out selesai",
+  cancelled: "Proses dibatalkan",
+};
+
 /** W07D command UI. It never invokes compatibility close/refund endpoints. */
-export function CheckoutPanel({ leaseId, onClose }: Props) {
+export function CheckoutPanel({ leaseId, propertyId, onClose }: Props) {
   const [command, setCommand] = useState<CheckoutCommand | null>(null);
   const [effectiveDate, setEffectiveDate] = useState(jakartaToday());
-  const [exitType, setExitType] = useState<"resident_early_termination" | "normal_expiry">(
-    "resident_early_termination",
-  );
+  const [exitMode, setExitMode] = useState<CheckoutMode>("resident_early_termination");
   const [reason, setReason] = useState("");
-  const [approvedShortNoticeCharge, setApprovedShortNoticeCharge] = useState("0");
+  const [requestSource, setRequestSource] = useState<"resident" | "parent" | "admin" | "other">(
+    "resident",
+  );
+  const [noticeExceptionReason, setNoticeExceptionReason] = useState("");
+  const [noticeExceptionEvidence, setNoticeExceptionEvidence] = useState<FileResponse[]>([]);
+  const [noticeExceptionEvidenceBusy, setNoticeExceptionEvidenceBusy] = useState(false);
+  const [internalNote, setInternalNote] = useState("");
+  const [approvedShortNoticeCharge, setApprovedShortNoticeCharge] = useState(0);
   const [waiverReason, setWaiverReason] = useState("");
+  const [waiverEvidence, setWaiverEvidence] = useState<FileResponse[]>([]);
+  const [waiverEvidenceBusy, setWaiverEvidenceBusy] = useState(false);
   const [roomResult, setRoomResult] = useState<"inspection_required" | "maintenance">(
     "inspection_required",
   );
@@ -114,8 +150,16 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
   const [accessItems, setAccessItems] = useState<AccessDraft[]>([accessDraft(2)]);
   const [utilityReadings, setUtilityReadings] = useState<UtilityDraft[]>([]);
   const [nextHandoverKey, setNextHandoverKey] = useState(3);
+  const [keyAccessEvidence, setKeyAccessEvidence] = useState<FileResponse[]>([]);
+  const [keyAccessEvidenceBusy, setKeyAccessEvidenceBusy] = useState(false);
+  const [inventoryEvidence, setInventoryEvidence] = useState<FileResponse[]>([]);
+  const [inventoryEvidenceBusy, setInventoryEvidenceBusy] = useState(false);
+  const [parkingEvidence, setParkingEvidence] = useState<FileResponse[]>([]);
+  const [parkingEvidenceBusy, setParkingEvidenceBusy] = useState(false);
+  const [inspectionEvidence, setInspectionEvidence] = useState<FileResponse[]>([]);
+  const [inspectionEvidenceBusy, setInspectionEvidenceBusy] = useState(false);
   const [notes, setNotes] = useState("");
-  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [damages, setDamages] = useState<DamageDraft[]>([]);
   const [nextDamageKey, setNextDamageKey] = useState(1);
   const [depositOffsetAmount, setDepositOffsetAmount] = useState("0");
@@ -139,8 +183,43 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorAlertRef = useRef<HTMLDivElement>(null);
+  const checkoutPanelRef = useRef<HTMLDivElement>(null);
+  const focusCheckoutPanelAfterCommandChange = useRef(false);
+  const [checkoutPanelHighlighted, setCheckoutPanelHighlighted] = useState(false);
   const intentKey = useRef<string | null>(null);
   const key = () => (intentKey.current ??= newIdempotencyKey());
+  const exitType = exitMode === "normal_expiry" ? "normal_expiry" : "resident_early_termination";
+  const commandId = command?.id;
+  const commandState = command?.state;
+
+  useEffect(() => {
+    if (exitMode === "same_day") setEffectiveDate(jakartaToday());
+  }, [exitMode]);
+
+  useEffect(() => {
+    if (!error) return;
+    const alert = errorAlertRef.current;
+    if (!alert) return;
+    alert.scrollIntoView({ behavior: "smooth", block: "center" });
+    alert.focus({ preventScroll: true });
+  }, [error]);
+
+  useEffect(() => {
+    if (!focusCheckoutPanelAfterCommandChange.current || !commandId) return;
+    focusCheckoutPanelAfterCommandChange.current = false;
+    const panel = checkoutPanelRef.current;
+    if (!panel) return;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panel.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+    panel.focus({ preventScroll: true });
+    setCheckoutPanelHighlighted(true);
+    const timeout = window.setTimeout(() => setCheckoutPanelHighlighted(false), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [commandId, commandState]);
 
   useEffect(() => {
     let current = true;
@@ -152,7 +231,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
         if (current) {
           const open = openCheckout(commands);
           setCommand(open);
-          setApprovedShortNoticeCharge(String(open?.recommendedShortNoticeCharge ?? 0));
+          setApprovedShortNoticeCharge(Number(open?.recommendedShortNoticeCharge ?? 0));
           if (open?.inspectionRoomStatus) setRoomResult(open.inspectionRoomStatus);
         }
       })
@@ -184,11 +263,20 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     perform(async () => {
       const result = await adminUxLeaseApi.checkout.notice(
         leaseId,
-        { exitType, effectiveDate, reason },
+        {
+          exitType,
+          effectiveDate,
+          reason,
+          requestSource,
+          noticeExceptionReason: noticeExceptionReason.trim() || undefined,
+          noticeExceptionEvidenceFileIds: noticeExceptionEvidence.map((file) => file.id),
+          internalNote: internalNote.trim() || undefined,
+        },
         key(),
       );
+      focusCheckoutPanelAfterCommandChange.current = true;
       setCommand(result.checkout);
-      setApprovedShortNoticeCharge(String(result.checkout.recommendedShortNoticeCharge ?? 0));
+      setApprovedShortNoticeCharge(Number(result.checkout.recommendedShortNoticeCharge ?? 0));
     });
 
   const damageInput = () =>
@@ -289,19 +377,18 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     if (!command) return;
     return perform(async () => {
       if (command.state === "notice_received") {
-        setCommand(
-          (
-            await adminUxLeaseApi.checkout.schedule(
-              leaseId,
-              command.id,
-              {
-                approvedShortNoticeCharge: Number(approvedShortNoticeCharge),
-                shortNoticeWaiverReason: waiverReason || undefined,
-              },
-              key(),
-            )
-          ).checkout,
+        const result = await adminUxLeaseApi.checkout.schedule(
+          leaseId,
+          command.id,
+          {
+            approvedShortNoticeCharge: Number(approvedShortNoticeCharge),
+            shortNoticeWaiverReason: waiverReason || undefined,
+            shortNoticeWaiverEvidenceFileIds: waiverEvidence.map((file) => file.id),
+          },
+          key(),
         );
+        focusCheckoutPanelAfterCommandChange.current = true;
+        setCommand(result.checkout);
       } else if (command.state === "scheduled") {
         setCommand(
           (
@@ -333,6 +420,9 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                   unit: reading.unit,
                   outstandingUsageNotes: reading.outstandingUsageNotes || undefined,
                 })),
+                keyAccessFileIds: keyAccessEvidence.map((file) => file.id),
+                inventoryFileIds: inventoryEvidence.map((file) => file.id),
+                parkingFileIds: parkingEvidence.map((file) => file.id),
                 notes: notes || undefined,
               },
               key(),
@@ -345,7 +435,11 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
             await adminUxLeaseApi.checkout.inspection(
               leaseId,
               command.id,
-              { roomStatusAfter: roomResult, notes: notes || undefined },
+              {
+                roomStatusAfter: roomResult,
+                inspectionFileIds: inspectionEvidence.map((file) => file.id),
+                notes: notes || undefined,
+              },
               key(),
             )
           ).checkout,
@@ -354,11 +448,12 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     });
   };
 
-  const cancel = () => {
+  const cancel = (reason: string) => {
     if (!command) return;
     return perform(async () => {
-      await adminUxLeaseApi.checkout.cancel(leaseId, command.id, cancellationReason, key());
+      await adminUxLeaseApi.checkout.cancel(leaseId, command.id, reason, key());
       setCommand(null);
+      setCancelDialogOpen(false);
     });
   };
 
@@ -387,14 +482,31 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
         !reading.utilityType.trim() || !reading.checkoutReading.trim() || !reading.unit.trim(),
     );
   const canRecordHandover =
-    handover.keyAccess && handover.inventory && handover.parking && !handoverDetailInvalid;
+    handover.keyAccess &&
+    handover.inventory &&
+    handover.parking &&
+    !handoverDetailInvalid &&
+    keyAccessEvidence.length > 0 &&
+    inventoryEvidence.length > 0 &&
+    !keyAccessEvidenceBusy &&
+    !inventoryEvidenceBusy &&
+    !parkingEvidenceBusy;
+  const inspectionInvalid = inspectionEvidence.length === 0 || inspectionEvidenceBusy;
   const recommendedCharge = Number(command?.recommendedShortNoticeCharge ?? 0);
+  const isEarlyTermination = command?.exitType === "resident_early_termination";
+  const monthlyRateAmount = Number(command?.monthlyRateAmount ?? 0);
+  const paymentPeriodDays = Number(command?.paymentPeriodDays ?? 0);
+  const dailyRateAmount = Number(command?.dailyRateAmount ?? 0);
+  const missingNoticeDays = Number(command?.missingNoticeDays ?? 0);
+  const noticeCalculationAvailable = monthlyRateAmount > 0 && paymentPeriodDays > 0;
   const approvedCharge = Number(approvedShortNoticeCharge);
+  const approvedChargeExceedsRecommendation = approvedCharge > recommendedCharge;
   const approvalInvalid =
     !Number.isSafeInteger(approvedCharge) ||
     approvedCharge < 0 ||
-    approvedCharge > recommendedCharge ||
-    (approvedCharge < recommendedCharge && waiverReason.trim().length < 3);
+    approvedChargeExceedsRecommendation ||
+    (approvedCharge < recommendedCharge &&
+      (waiverReason.trim().length < 3 || waiverEvidence.length === 0 || waiverEvidenceBusy));
   const damageInvalid = damages.some((item) => {
     const amount = Number(item.amount);
     return (
@@ -425,9 +537,18 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
     damageInvalid || damageUploadBusy || offsetInvalid || depositOffsetEvidenceBusy;
   const refundSettlementInvalid =
     !refundReference.trim() || refundEvidence.length === 0 || refundEvidenceBusy;
+  const noticeDays = effectiveDate
+    ? Math.floor(
+        (Date.parse(`${effectiveDate}T00:00:00+07:00`) -
+          Date.parse(`${jakartaToday()}T00:00:00+07:00`)) /
+          86_400_000,
+      )
+    : -1;
+  const noticeExceptionRequired =
+    exitType === "resident_early_termination" && noticeDays >= 0 && noticeDays < 14;
   const next =
     command?.state === "notice_received"
-      ? "Setujui & jadwalkan checkout"
+      ? "Setujui & jadwalkan check-out"
       : command?.state === "scheduled"
         ? "Catat serah-terima"
         : command?.state === "inspection_required"
@@ -435,21 +556,32 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
           : null;
 
   return (
-    <Card className="border-border bg-card shadow-sm">
+    <Card
+      ref={checkoutPanelRef}
+      tabIndex={-1}
+      aria-labelledby="checkout-panel-title"
+      className={`scroll-mt-24 border-border bg-card shadow-sm transition-shadow duration-300 ${
+        checkoutPanelHighlighted
+          ? "ring-2 ring-primary/50 ring-offset-2 ring-offset-background"
+          : ""
+      }`}
+    >
       <CardHeader className="space-y-2 border-b border-border pb-5">
-        <CardTitle className="flex items-center gap-2 text-foreground">
+        <CardTitle id="checkout-panel-title" className="flex items-center gap-2 text-foreground">
           <CalendarCheck2 className="h-5 w-5 text-primary" />
-          Checkout
+          Proses check-out
         </CardTitle>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          Penutupan sewa melalui pemberitahuan, serah-terima, inspeksi, dan rekonsiliasi deposit.
-          Kamar tidak pernah menjadi kosong secara langsung.
+          Selesaikan pemberitahuan, serah-terima, inspeksi, dan keputusan keuangan secara bertahap.
+          Kamar baru berubah status setelah serah-terima dikonfirmasi.
         </p>
       </CardHeader>
       <CardContent className="space-y-5 pt-5">
         {error ? (
           <div
+            ref={errorAlertRef}
             role="alert"
+            tabIndex={-1}
             className="flex gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -466,17 +598,16 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
             <label className="grid gap-2 text-sm font-medium text-foreground">
               Jenis keluar
               <Select
-                value={exitType}
-                onValueChange={(value) => setExitType(value as typeof exitType)}
+                value={exitMode}
+                onValueChange={(value) => setExitMode(value as CheckoutMode)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="resident_early_termination">
-                    Penghentian dini penghuni
-                  </SelectItem>
-                  <SelectItem value="normal_expiry">Checkout masa sewa berakhir</SelectItem>
+                  <SelectItem value="resident_early_termination">Berhenti lebih awal</SelectItem>
+                  <SelectItem value="same_day">Check-out mendadak (hari ini)</SelectItem>
+                  <SelectItem value="normal_expiry">Masa sewa berakhir</SelectItem>
                 </SelectContent>
               </Select>
             </label>
@@ -486,18 +617,78 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                 type="date"
                 value={effectiveDate}
                 onChange={(event) => setEffectiveDate(event.target.value)}
+                disabled={exitMode === "same_day"}
               />
             </label>
             <p className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
-              Penghentian dini memiliki notice 14 hari. Sistem menghitung rekomendasi biaya untuk
-              notice yang kurang; Admin memutuskan pada tahap persetujuan.
+              {exitMode === "normal_expiry"
+                ? "Tanggal efektif mengikuti akhir masa sewa. Tidak ada kompensasi kekurangan masa pemberitahuan."
+                : "Pengakhiran dini memerlukan pemberitahuan 14 hari. Sistem menghitung kompensasi untuk hari yang kurang; Admin memutuskan pada tahap persetujuan."}
             </p>
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Sumber permintaan
+              <Select
+                value={requestSource}
+                onValueChange={(value) => setRequestSource(value as typeof requestSource)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="resident">Penghuni</SelectItem>
+                  <SelectItem value="parent">Orang tua / wali</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="other">Pihak lainnya</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
             <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
               Alasan pemberitahuan
               <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
             </label>
+            {noticeExceptionRequired ? (
+              <div className="space-y-4 rounded-lg border border-warning/35 bg-warning/5 p-4 md:col-span-2">
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Penjelasan pemberitahuan kurang dari 14 hari
+                  <Textarea
+                    value={noticeExceptionReason}
+                    onChange={(event) => setNoticeExceptionReason(event.target.value)}
+                    placeholder="Jelaskan alasan keberangkatan mendadak atau kekurangan waktu pemberitahuan."
+                  />
+                </label>
+                <EvidenceFileUploadField
+                  propertyId={propertyId}
+                  label="Bukti pendukung pemberitahuan singkat"
+                  description="Wajib untuk check-out mendadak atau pemberitahuan kurang dari 14 hari."
+                  values={noticeExceptionEvidence}
+                  onChange={setNoticeExceptionEvidence}
+                  onBusyChange={setNoticeExceptionEvidenceBusy}
+                  required
+                />
+              </div>
+            ) : null}
+            <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
+              Catatan internal (opsional)
+              <Textarea
+                value={internalNote}
+                onChange={(event) => setInternalNote(event.target.value)}
+                placeholder="Hanya terlihat oleh tim operasional."
+              />
+            </label>
             <div className="md:col-span-2">
-              <Button disabled={!reason.trim() || pending} onClick={submitNotice}>
+              <Button
+                disabled={
+                  !reason.trim() ||
+                  !effectiveDate ||
+                  noticeDays < 0 ||
+                  (noticeExceptionRequired &&
+                    (!noticeExceptionReason.trim() ||
+                      noticeExceptionEvidence.length === 0 ||
+                      noticeExceptionEvidenceBusy)) ||
+                  pending
+                }
+                onClick={submitNotice}
+              >
                 {pending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -511,55 +702,227 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
           <div className="space-y-5">
             <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                Status checkout
+                Status proses
               </p>
               <p className="mt-1 text-base font-semibold capitalize text-foreground">
-                {command.state.replaceAll("_", " ")}
+                {checkoutStateLabel[command.state] ?? command.state.replaceAll("_", " ")}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Efektif {command.effectiveDate} · Pemberitahuan {command.noticeRecordedDate}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {command.exitType === "normal_expiry"
-                  ? "Checkout normal saat masa sewa berakhir"
+                  ? "Check-out normal saat masa sewa berakhir"
                   : "Permintaan penghentian dini penghuni"}
               </p>
+              {["notice_received", "scheduled"].includes(command.state) ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-md border border-destructive/25 bg-destructive/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Rencana berubah?</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Batalkan proses sebelum serah-terima untuk mengembalikan penyewaan ke kondisi
+                      aktif. Riwayat pembatalan tetap tersimpan untuk audit.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="shrink-0"
+                    disabled={pending}
+                    onClick={() => setCancelDialogOpen(true)}
+                  >
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Tidak melanjutkan checkout
+                  </Button>
+                </div>
+              ) : null}
             </div>
             {command.state === "notice_received" ? (
-              <fieldset className="grid gap-4 rounded-md border border-border p-4 md:grid-cols-2">
+              <fieldset className="space-y-4 rounded-lg border border-border p-4">
                 <legend className="px-1 text-sm font-semibold text-foreground">
-                  Persetujuan notice dan biaya
+                  Persetujuan jadwal keluar dan kompensasi
                 </legend>
-                <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-                  <p>Notice tercatat: {command.noticeDays ?? 0} hari</p>
-                  <p>Kekurangan notice: {command.missingNoticeDays ?? 0} hari</p>
-                  <p className="font-medium text-foreground">
-                    Rekomendasi: {rupiah.format(recommendedCharge)}
+                <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                  Tetapkan jadwal keluar dan, bila berlaku, kompensasi karena masa pemberitahuan
+                  kurang. Penyelesaian sewa, deposit, dan kerusakan dihitung setelah serah-terima
+                  serta inspeksi kamar.
+                </p>
+                <div className="space-y-4 rounded-lg border border-primary/25 bg-primary/5 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex gap-2.5">
+                      <Calculator
+                        className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                        aria-hidden="true"
+                      />
+                      <div>
+                        <p className="font-semibold text-foreground">
+                          Kompensasi masa pemberitahuan
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {isEarlyTermination
+                            ? "Dihitung dari tarif sewa dan hari pada periode bulanan yang memuat tanggal efektif keluar."
+                            : "Tidak berlaku ketika penghuni keluar sesuai akhir masa sewa."}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="self-start rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning-foreground">
+                      {isEarlyTermination ? "Maksimum berdasarkan kebijakan" : "Tidak berlaku"}
+                    </span>
+                  </div>
+                  {isEarlyTermination ? (
+                    <>
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border/70 py-3 tabular-nums sm:grid-cols-3">
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Tarif sewa per bulan</dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {monthlyRateAmount > 0
+                              ? rupiah.format(monthlyRateAmount)
+                              : "Tidak tersedia"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Hari pada periode tarif</dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {paymentPeriodDays} hari
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Pemberitahuan tercatat</dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {command.noticeDays ?? 0} hari
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Tarif harian</dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {rupiah.format(dailyRateAmount)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">
+                            Hari yang belum diberitahukan
+                          </dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {missingNoticeDays} dari 14 hari
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Maksimum kompensasi</dt>
+                          <dd className="mt-0.5 font-semibold text-foreground">
+                            {rupiah.format(recommendedCharge)}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="space-y-1.5 border-b border-border/70 pb-4">
+                        <p className="text-xs font-medium text-foreground">Rumus kompensasi</p>
+                        {noticeCalculationAvailable ? (
+                          <p className="font-semibold text-foreground tabular-nums">
+                            {rupiah.format(monthlyRateAmount)} ÷ {paymentPeriodDays} hari ×{" "}
+                            {missingNoticeDays} hari = {rupiah.format(recommendedCharge)}
+                          </p>
+                        ) : (
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            Rincian tarif kontrak tidak tersedia pada data lama. Batas rekomendasi
+                            server tetap berlaku.
+                          </p>
+                        )}
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Nilai akhir dibulatkan satu kali ke Rupiah penuh agar tidak terjadi
+                          selisih pembulatan harian.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <label className="grid w-full max-w-md gap-2 text-sm font-medium text-foreground">
+                          Kompensasi kekurangan masa pemberitahuan
+                          <CurrencyInput
+                            value={approvedShortNoticeCharge}
+                            onValueChange={setApprovedShortNoticeCharge}
+                            formatOnChange
+                            onClear={() => setApprovedShortNoticeCharge(0)}
+                            error={approvedChargeExceedsRecommendation}
+                            aria-invalid={approvedChargeExceedsRecommendation}
+                            aria-describedby={
+                              approvedChargeExceedsRecommendation
+                                ? "checkout-short-notice-charge-help checkout-short-notice-charge-error"
+                                : "checkout-short-notice-charge-help"
+                            }
+                            aria-label="Kompensasi kekurangan masa pemberitahuan"
+                          />
+                          <span
+                            id="checkout-short-notice-charge-help"
+                            className="text-xs font-normal leading-5 text-muted-foreground"
+                          >
+                            Nominal ini hanya untuk kekurangan masa pemberitahuan. Sewa yang telah
+                            menjadi hak, sisa pembayaran, deposit, dan kerusakan dicatat terpisah
+                            pada penyelesaian akhir.
+                          </span>
+                          {approvedChargeExceedsRecommendation ? (
+                            <span
+                              id="checkout-short-notice-charge-error"
+                              role="alert"
+                              className="flex gap-2 rounded-md border border-destructive/35 bg-destructive/5 p-3 text-xs font-normal leading-5 text-destructive"
+                            >
+                              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span>
+                                Nominal melebihi batas maksimum {rupiah.format(recommendedCharge)}.
+                                Kurangi nominal ini. Biaya sewa atau kerusakan dicatat pada
+                                penyelesaian akhir dengan alasan dan bukti terpisah.
+                              </span>
+                            </span>
+                          ) : null}
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex gap-2.5 rounded-md border border-border/80 bg-background/60 p-3 text-xs leading-5 text-muted-foreground">
+                      <CheckCircle2
+                        className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                        aria-hidden="true"
+                      />
+                      <p>
+                        Tidak ada kompensasi kekurangan masa pemberitahuan. Tahap penyelesaian akhir
+                        tetap mencatat sewa, deposit, dan kerusakan bila ada.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2.5 rounded-md border border-border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+                  <CheckCircle2
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden="true"
+                  />
+                  <p>
+                    <span className="font-medium text-foreground">
+                      Penyelesaian akhir belum dihitung.
+                    </span>{" "}
+                    Setelah serah-terima dan inspeksi, sistem menghitung sewa yang menjadi hak,
+                    pengembalian pembayaran, deposit, serta tagihan akhir.
                   </p>
                 </div>
-                <label className="grid gap-2 text-sm font-medium text-foreground">
-                  Biaya short-notice yang disetujui
-                  <Input
-                    inputMode="numeric"
-                    value={approvedShortNoticeCharge}
-                    onChange={(event) =>
-                      setApprovedShortNoticeCharge(event.target.value.replace(/\D/g, ""))
-                    }
-                  />
-                </label>
-                {approvedCharge < recommendedCharge ? (
-                  <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
-                    Alasan waiver/pengurangan
-                    <Textarea
-                      value={waiverReason}
-                      onChange={(event) => setWaiverReason(event.target.value)}
+                {isEarlyTermination && approvedCharge < recommendedCharge ? (
+                  <div className="space-y-4 rounded-lg border border-warning/35 bg-warning/5 p-4">
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      Alasan pengurangan atau penghapusan biaya
+                      <Textarea
+                        value={waiverReason}
+                        onChange={(event) => setWaiverReason(event.target.value)}
+                      />
+                    </label>
+                    <EvidenceFileUploadField
+                      propertyId={propertyId}
+                      label="Bukti persetujuan penyesuaian biaya"
+                      description="Wajib apabila nominal yang disetujui lebih rendah dari rekomendasi sistem."
+                      values={waiverEvidence}
+                      onChange={setWaiverEvidence}
+                      onBusyChange={setWaiverEvidenceBusy}
+                      required
                     />
-                  </label>
+                  </div>
                 ) : null}
               </fieldset>
             ) : null}
             {command.state === "scheduled" ? (
-              <fieldset className="space-y-3 rounded-md border border-border p-4">
+              <fieldset className="space-y-4 rounded-lg border border-border p-4">
                 <legend className="px-1 text-sm font-semibold text-foreground">
                   Konfirmasi serah-terima
                 </legend>
@@ -589,6 +952,43 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                     <span>{label}</span>
                   </label>
                 ))}
+
+                <div className="grid gap-4 rounded-lg border border-primary/20 bg-primary/5 p-4 md:grid-cols-2 md:gap-0 md:divide-x md:divide-border/70">
+                  <div className="min-w-0 md:pr-4">
+                    <EvidenceFileUploadField
+                      propertyId={propertyId}
+                      label="Bukti pengembalian kunci dan akses"
+                      description="Wajib. Unggah foto atau dokumen yang menunjukkan kunci, kartu akses, remote, atau akses digital telah direkonsiliasi."
+                      alignHeader
+                      values={keyAccessEvidence}
+                      onChange={setKeyAccessEvidence}
+                      onBusyChange={setKeyAccessEvidenceBusy}
+                      required
+                    />
+                  </div>
+                  <div className="min-w-0 md:pl-4">
+                    <EvidenceFileUploadField
+                      propertyId={propertyId}
+                      label="Bukti pemeriksaan inventaris"
+                      description="Wajib. Unggah foto kondisi inventaris saat kamar diserahterimakan."
+                      alignHeader
+                      values={inventoryEvidence}
+                      onChange={setInventoryEvidence}
+                      onBusyChange={setInventoryEvidenceBusy}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 p-4">
+                  <EvidenceFileUploadField
+                    propertyId={propertyId}
+                    label="Bukti rekonsiliasi kendaraan dan parkir (opsional)"
+                    description="Gunakan bila ada stiker, kartu parkir, kendaraan, atau akses parkir yang dikembalikan. Konfirmasi tertulis tetap cukup bila penghuni tidak memiliki kendaraan."
+                    values={parkingEvidence}
+                    onChange={setParkingEvidence}
+                    onBusyChange={setParkingEvidenceBusy}
+                  />
+                </div>
 
                 <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -992,21 +1392,32 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                   </Select>
                 </label>
                 {command.state === "inspection_required" ? (
-                  <Textarea
-                    placeholder="Catatan inspeksi (opsional)"
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                  />
+                  <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                    <EvidenceFileUploadField
+                      propertyId={propertyId}
+                      label="Bukti hasil inspeksi kamar"
+                      description="Wajib. Unggah foto atau dokumen kondisi kamar yang mendukung hasil inspeksi."
+                      values={inspectionEvidence}
+                      onChange={setInspectionEvidence}
+                      onBusyChange={setInspectionEvidenceBusy}
+                      required
+                    />
+                    <Textarea
+                      placeholder="Catatan inspeksi (opsional)"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                    />
+                  </div>
                 ) : null}
               </div>
             ) : null}
             {command.state === "settlement_pending" ? (
               <div className="space-y-5 rounded-lg border border-border p-4">
                 <div>
-                  <p className="font-semibold text-foreground">Rekonsiliasi final</p>
+                  <p className="font-semibold text-foreground">Penyelesaian keuangan akhir</p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Sistem menghitung sewa terpakai, pembayaran terverifikasi, biaya notice,
-                    deposit, dan potongan secara terpisah. Hitung ulang rekomendasi setiap kali
+                    Sistem menghitung sewa terpakai, pembayaran terverifikasi, kompensasi
+                    pemberitahuan, deposit, dan kerusakan secara terpisah. Hitung ulang setiap kali
                     rincian diubah.
                   </p>
                 </div>
@@ -1164,7 +1575,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                   onClick={previewSettlement}
                 >
                   {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Hitung rekomendasi final
+                  Hitung rincian akhir
                 </Button>
 
                 {settlementQuote ? (
@@ -1189,7 +1600,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                         </strong>
                       </p>
                       <p>
-                        Biaya short-notice
+                        Kompensasi pemberitahuan singkat
                         <strong className="block text-foreground">
                           {rupiah.format(settlementQuote.approvedShortNoticeCharge)}
                         </strong>
@@ -1201,23 +1612,78 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                         </strong>
                       </p>
                       <p>
-                        Total potongan
+                        Kerusakan terdokumentasi
+                        <strong className="block text-foreground">
+                          {rupiah.format(settlementQuote.documentedDamageAmount)}
+                        </strong>
+                      </p>
+                      <p>
+                        Kerusakan dipotong dari deposit
                         <strong className="block text-foreground">
                           {rupiah.format(settlementQuote.depositDeductionAmount)}
                         </strong>
                       </p>
                       <p>
-                        Sisa kewajiban penghuni
+                        Kerusakan di luar deposit
                         <strong className="block text-foreground">
-                          {rupiah.format(settlementQuote.amountDue)}
+                          {rupiah.format(settlementQuote.damageAmountDue)}
+                        </strong>
+                      </p>
+                      <p>
+                        Deposit untuk tunggakan sewa
+                        <strong className="block text-foreground">
+                          {rupiah.format(settlementQuote.depositRentOffsetAmount)}
+                        </strong>
+                      </p>
+                      <p>
+                        Deposit yang dapat dikembalikan
+                        <strong className="block text-foreground">
+                          {rupiah.format(settlementQuote.refundableDepositAmount)}
                         </strong>
                       </p>
                     </div>
+                    <div className="grid gap-3 border-t border-primary/20 pt-4 sm:grid-cols-2">
+                      <div className="rounded-lg border border-success/30 bg-success/10 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-success">
+                          Total hak pengembalian
+                        </p>
+                        <strong className="mt-1 block text-lg text-foreground">
+                          {rupiah.format(settlementQuote.grossRefundAmount)}
+                        </strong>
+                      </div>
+                      <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
+                          Total kewajiban
+                        </p>
+                        <strong className="mt-1 block text-lg text-foreground">
+                          {rupiah.format(settlementQuote.grossAmountDue)}
+                        </strong>
+                      </div>
+                      <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 sm:col-span-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                          Hasil bersih
+                        </p>
+                        <strong className="mt-1 block text-lg text-foreground">
+                          {settlementQuote.amountDue > 0
+                            ? `Penghuni perlu membayar ${rupiah.format(settlementQuote.amountDue)}`
+                            : settlementQuote.recommendedRefundAmount > 0
+                              ? `Penghuni menerima ${rupiah.format(settlementQuote.recommendedRefundAmount)}`
+                              : "Tidak ada tagihan atau pengembalian dana"}
+                        </strong>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Sisa kewajiban penghuni
+                      <strong className="block text-foreground">
+                        {rupiah.format(settlementQuote.amountDue)}
+                      </strong>
+                    </p>
                     <p className="border-t border-primary/20 pt-3 text-sm font-semibold text-primary">
-                      Rekomendasi refund: {rupiah.format(settlementQuote.recommendedRefundAmount)}
+                      Rekomendasi pengembalian dana:{" "}
+                      {rupiah.format(settlementQuote.recommendedRefundAmount)}
                     </p>
                     <label className="grid gap-2 text-sm font-medium text-foreground">
-                      Refund final yang diputuskan Admin
+                      Pengembalian dana final yang diputuskan Admin
                       <Input
                         inputMode="numeric"
                         value={finalRefundAmount}
@@ -1229,7 +1695,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                     {finalRefund !== settlementQuote.recommendedRefundAmount ? (
                       <div className="space-y-4">
                         <label className="grid gap-2 text-sm font-medium text-foreground">
-                          Alasan penyesuaian refund
+                          Alasan penyesuaian pengembalian dana
                           <Textarea
                             value={refundAdjustmentReason}
                             onChange={(event) => setRefundAdjustmentReason(event.target.value)}
@@ -1237,7 +1703,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                         </label>
                         <EvidenceFileUploadField
                           propertyId={command.propertyId}
-                          label="Bukti penyesuaian refund"
+                          label="Bukti penyesuaian pengembalian dana"
                           description="Wajib saat keputusan Admin lebih rendah dari rekomendasi sistem."
                           values={refundAdjustmentEvidence}
                           onChange={setRefundAdjustmentEvidence}
@@ -1255,7 +1721,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                       ) : (
                         <CheckCircle2 className="mr-2 h-4 w-4" />
                       )}
-                      Tetapkan final settlement
+                      Tetapkan penyelesaian akhir
                     </Button>
                   </div>
                 ) : null}
@@ -1265,7 +1731,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
             {command.state === "completed" ? (
               <div className="space-y-5 rounded-lg border border-border p-4">
                 <div>
-                  <p className="font-semibold text-foreground">Checkout selesai</p>
+                  <p className="font-semibold text-foreground">Check-out selesai</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Keputusan final tersimpan dan tidak dihitung ulang dari data UI.
                   </p>
@@ -1273,25 +1739,25 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                 {command.finalSettlementId ? (
                   <div className="grid gap-3 rounded-md bg-muted/30 p-4 text-sm sm:grid-cols-3">
                     <p>
-                      Rekomendasi refund
+                      Rekomendasi pengembalian dana
                       <strong className="block text-foreground">
                         {rupiah.format(command.recommendedRefundAmount ?? 0)}
                       </strong>
                     </p>
                     <p>
-                      Refund final
+                      Pengembalian dana final
                       <strong className="block text-foreground">
                         {rupiah.format(command.finalRefundAmount ?? 0)}
                       </strong>
                     </p>
                     <p>
-                      Komponen refund sewa
+                      Pengembalian dana sewa
                       <strong className="block text-foreground">
                         {rupiah.format(command.finalRentRefundAmount ?? 0)}
                       </strong>
                     </p>
                     <p>
-                      Komponen refund deposit
+                      Pengembalian deposit
                       <strong className="block text-foreground">
                         {rupiah.format(command.finalDepositRefundAmount ?? 0)}
                       </strong>
@@ -1313,7 +1779,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                 {(command.documents ?? []).length ? (
                   <div className="space-y-3 rounded-md border border-primary/20 bg-primary/5 p-4">
                     <div>
-                      <p className="font-semibold text-foreground">Dokumen resmi checkout</p>
+                      <p className="font-semibold text-foreground">Dokumen resmi check-out</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         PDF yang sudah diterbitkan bersifat tetap dan memakai template kuitansi
                         resmi.
@@ -1333,10 +1799,10 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                             <Download className="mr-2 h-4 w-4" />
                           )}
                           {document.documentKind === "checkout_handover"
-                            ? "Berita acara checkout"
+                            ? "Berita acara check-out"
                             : document.documentKind === "final_settlement"
-                              ? "Final settlement"
-                              : "Kuitansi refund"}
+                              ? "Penyelesaian akhir"
+                              : "Kuitansi pengembalian dana"}
                         </Button>
                       ))}
                     </div>
@@ -1345,14 +1811,15 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                 {command.exitRefundId && command.exitRefundStatus === "pending" ? (
                   <div className="space-y-4 rounded-md border border-success/30 bg-success/5 p-4">
                     <p className="font-semibold text-success">
-                      Refund menunggu pembayaran: {rupiah.format(command.exitRefundAmount ?? 0)}
+                      Pengembalian dana menunggu pembayaran:{" "}
+                      {rupiah.format(command.exitRefundAmount ?? 0)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Target pembayaran paling lambat {command.exitRefundDueDate ?? "-"}.
                     </p>
                     <div className="grid gap-4 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-foreground">
-                        Metode refund
+                        Metode pengembalian dana
                         <Select
                           value={refundMethod}
                           onValueChange={(value) => setRefundMethod(value as typeof refundMethod)}
@@ -1380,7 +1847,7 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                     <EvidenceFileUploadField
                       propertyId={command.propertyId}
                       label="Bukti pembayaran refund"
-                      description="Wajib sebelum refund dinyatakan selesai."
+                      description="Wajib sebelum pengembalian dana dinyatakan selesai."
                       values={refundEvidence}
                       onChange={setRefundEvidence}
                       onBusyChange={setRefundEvidenceBusy}
@@ -1397,11 +1864,11 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                       disabled={pending || refundSettlementInvalid}
                       onClick={settleExitRefund}
                     >
-                      Catat refund telah dibayar
+                      Catat pengembalian telah dibayar
                     </Button>
                     <div className="border-t border-success/20 pt-4">
                       <label className="grid gap-2 text-sm font-medium text-foreground">
-                        Alasan penghuni melepaskan hak refund
+                        Alasan penghuni melepaskan hak pengembalian dana
                         <Textarea
                           value={refundWaiverReason}
                           onChange={(event) => setRefundWaiverReason(event.target.value)}
@@ -1413,13 +1880,14 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                         disabled={pending || refundWaiverReason.trim().length < 3}
                         onClick={waiveExitRefund}
                       >
-                        Catat refund dilepaskan
+                        Catat hak pengembalian dilepaskan
                       </Button>
                     </div>
                   </div>
                 ) : command.exitRefundId ? (
                   <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-                    Status refund: {command.exitRefundStatus?.replaceAll("_", " ") ?? "-"}
+                    Status pengembalian dana:{" "}
+                    {command.exitRefundStatus?.replaceAll("_", " ") ?? "-"}
                   </p>
                 ) : null}
               </div>
@@ -1430,7 +1898,8 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                   disabled={
                     pending ||
                     (command.state === "notice_received" && approvalInvalid) ||
-                    (command.state === "scheduled" && !canRecordHandover)
+                    (command.state === "scheduled" && !canRecordHandover) ||
+                    (command.state === "inspection_required" && inspectionInvalid)
                   }
                   onClick={advance}
                 >
@@ -1442,23 +1911,6 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
                   {next}
                 </Button>
               ) : null}
-              {["notice_received", "scheduled"].includes(command.state) ? (
-                <div className="flex min-w-72 flex-1 gap-2">
-                  <Input
-                    aria-label="Alasan pembatalan checkout"
-                    placeholder="Alasan pembatalan"
-                    value={cancellationReason}
-                    onChange={(event) => setCancellationReason(event.target.value)}
-                  />
-                  <Button
-                    variant="destructive"
-                    disabled={pending || !cancellationReason.trim()}
-                    onClick={cancel}
-                  >
-                    Batalkan
-                  </Button>
-                </div>
-              ) : null}
             </div>
           </div>
         )}
@@ -1466,6 +1918,23 @@ export function CheckoutPanel({ leaseId, onClose }: Props) {
           Tutup
         </Button>
       </CardContent>
+      <ConfirmDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        title="Tidak melanjutkan proses check-out?"
+        description="Pemberitahuan check-out akan ditandai dibatalkan. Penyewaan dan kamar tetap aktif, sementara alasan pembatalan disimpan di riwayat audit."
+        confirmLabel="Batalkan proses check-out"
+        cancelLabel="Kembali"
+        destructive
+        pending={pending}
+        reason={{
+          label: "Alasan pembatalan",
+          placeholder: "Contoh: Penghuni memutuskan tetap melanjutkan masa sewa.",
+          helperText: "Wajib diisi minimal 3 karakter agar perubahan dapat ditelusuri.",
+          minLength: 3,
+        }}
+        onConfirm={(reason) => (reason ? cancel(reason) : undefined)}
+      />
     </Card>
   );
 }

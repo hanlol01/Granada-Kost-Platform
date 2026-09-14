@@ -194,7 +194,11 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
           />
         ) : search.panel === "checkout" ? (
           isAdmin && canManage ? (
-            <CheckoutPanel leaseId={leaseId} onClose={() => onSearchChange({ panel: "detail" })} />
+            <CheckoutPanel
+              leaseId={leaseId}
+              propertyId={data.lease.propertyId}
+              onClose={() => onSearchChange({ panel: "detail" })}
+            />
           ) : (
             <ActionDeniedPanel
               title="Checkout memerlukan Admin"

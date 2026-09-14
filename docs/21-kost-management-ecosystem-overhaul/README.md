@@ -71,25 +71,28 @@ implement.
 10. [`PUBLIC_AND_PENGHUNI_EXPERIENCE.md`](PUBLIC_AND_PENGHUNI_EXPERIENCE.md) —
     public catalog and authenticated Penghuni application.
 11. [`PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md`](PROPERTY_OWNER_SCOPE_AND_EXPERIENCE.md)
-    — mixed-asset ownership, read-only Owner access, and settlement authority.
-12. [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
-    — the bounded, prioritized W10 ownership delivery sequence; planning only.
-13. [`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md)
-    — W10-D reconciliation boundary, controlled runtime QA, rollback, and release evidence.
-14. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
-    transaction, idempotency, audit, file, cache, and adapter contracts.
-15. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
-    — detailed money, reminder, notification, expense, and report behavior.
-16. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
-    vertical slices.
-17. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
-    required automated, migration, runtime, and release evidence.
-18. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
-    and implementation status.
-19. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
-    and review protocol.
-20. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
-    derived from third-party screenshots and rejected reference behavior.
+     — mixed-asset ownership, read-only Owner access, and settlement authority.
+12. [`OWNER_SETTLEMENT_AND_PROGRESS_REPORT.md`](OWNER_SETTLEMENT_AND_PROGRESS_REPORT.md)
+     — live contract-payment progress, monthly Owner settlement, publication,
+     payout, documents, and the Admin `Setoran Owner` workspace.
+13. [`PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md`](PROPERTY_OWNER_PRIORITY_IMPLEMENTATION_PLAN.md)
+     — the bounded, prioritized W10 ownership delivery sequence; planning only.
+14. [`PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md`](PROPERTY_OWNER_RECONCILIATION_AND_RUNTIME_RUNBOOK.md)
+     — W10-D reconciliation boundary, controlled runtime QA, rollback, and release evidence.
+15. [`API_AND_INTEGRATION_CONTRACT.md`](API_AND_INTEGRATION_CONTRACT.md) — API,
+     transaction, idempotency, audit, file, cache, and adapter contracts.
+16. [`BILLING_REMINDER_NOTIFICATION_REPORTING.md`](BILLING_REMINDER_NOTIFICATION_REPORTING.md)
+     — detailed money, reminder, notification, expense, and report behavior.
+17. [`IMPLEMENTATION_ROADMAP.md`](IMPLEMENTATION_ROADMAP.md) — dependency-ordered
+     vertical slices.
+18. [`QA_ACCEPTANCE_AND_RELEASE_GATES.md`](QA_ACCEPTANCE_AND_RELEASE_GATES.md) —
+     required automated, migration, runtime, and release evidence.
+19. [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) — requirement ownership
+     and implementation status.
+20. [`EXECUTOR_REVIEWER_RUNBOOK.md`](EXECUTOR_REVIEWER_RUNBOOK.md) — execution
+     and review protocol.
+21. [`REFERENCE_ADAPTATION_LOG.md`](REFERENCE_ADAPTATION_LOG.md) — decisions
+     derived from third-party screenshots and rejected reference behavior.
 
 The architecture set has four distinct jobs: visual relationships live in
 `DATABASE_ARCHITECTURE.md`, detailed target rules live in

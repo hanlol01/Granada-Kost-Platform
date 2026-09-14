@@ -6,7 +6,9 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 import { LeaseRenewalScheduler } from '../../src/modules/lease/lease-renewal.scheduler';
 import { LeaseRenewalService } from '../../src/modules/lease/lease-renewal.service';
 
-const root = resolve(__dirname, '../..');
+const root = process.cwd().endsWith(resolve('backend', 'api'))
+  ? process.cwd()
+  : resolve(process.cwd(), 'backend', 'api');
 async function source(path: string): Promise<string> {
   return readFile(resolve(root, path), 'utf8');
 }
@@ -68,7 +70,7 @@ test('W07C controller uses Admin-only actor split and keeps owner read-only', as
 
 test('W07C generic activation is explicitly denied for a renewal successor', async () => {
   const activation = await source('src/modules/lease/lease-activation.service.ts');
-  assert.match(activation, /renewed_from_lease_id IS NOT NULL/);
+  assert.match(activation, /if \(genericLease\.renewed_from_lease_id\)/);
   assert.match(activation, /RENEWAL_ACTIVATION_REQUIRES_W07C_COMMAND/);
   assert.ok(
     activation.indexOf('RENEWAL_ACTIVATION_REQUIRES_W07C_COMMAND') <
@@ -107,6 +109,33 @@ test('W07C service keeps approval, W06-credit authorization, and cutover distinc
   assert.match(cutover, /INSERT INTO occupancies\(/);
   assert.match(cutover, /'check_out'/);
   assert.match(cutover, /'check_in'/);
+});
+
+test('W07C successor preserves the approved commercial pricing snapshot', async () => {
+  const renewal = await source('src/modules/lease/lease-renewal.service.ts');
+  const dto = await source('src/modules/lease/lease.dto.ts');
+
+  assert.match(dto, /@Min\(1\)[\s\S]*term_months/);
+  assert.match(dto, /pricing_source\?: 'standard' \| 'negotiated'/);
+  assert.match(dto, /agreed_monthly_price\?: number/);
+  assert.match(dto, /pricing_agreement_reason\?: string/);
+  assert.match(dto, /pricing_variance_acknowledged\?: boolean/);
+
+  const approval = renewal.slice(
+    renewal.indexOf('async approve('),
+    renewal.indexOf('async prepareFinancials('),
+  );
+  for (const column of [
+    'snapshot_reference_monthly_price',
+    'pricing_source',
+    'pricing_agreement_reason',
+    'pricing_agreed_by_user_id',
+    'pricing_agreed_at',
+  ]) {
+    assert.match(approval, new RegExp(column), column);
+  }
+  assert.match(approval, /buildCommercialSnapshot/);
+  assert.match(renewal, /resolveLeaseCommercialAgreement/);
 });
 
 test('W07C process and property gates are independent and fail closed', async () => {

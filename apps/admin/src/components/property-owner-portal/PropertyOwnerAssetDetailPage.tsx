@@ -135,7 +135,7 @@ function DetailContent({
     resident ? `Hunian dimulai ${date(resident.occupancyStartDate)}` : null,
     asset.lifecycle.transferState ? `Pindah kamar: ${label(asset.lifecycle.transferState)}` : null,
     asset.lifecycle.renewalState ? `Perpanjangan: ${label(asset.lifecycle.renewalState)}` : null,
-    asset.lifecycle.checkoutState ? `Checkout: ${label(asset.lifecycle.checkoutState)}` : null,
+    asset.lifecycle.checkoutState ? `Check-out: ${label(asset.lifecycle.checkoutState)}` : null,
   ].filter((item): item is string => item !== null);
   return (
     <div className="space-y-6">
@@ -160,6 +160,72 @@ function DetailContent({
           </div>
         </div>
       </section>
+      {asset.lifecycle.checkoutState ? (
+        <section className="rounded-2xl border border-warning/30 bg-warning/[0.06] p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-warning-foreground">
+                Proses check-out kamar
+              </p>
+              <p className="mt-2 text-lg font-semibold text-foreground">
+                {label(asset.lifecycle.checkoutState)}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Tanggal efektif {date(asset.lifecycle.checkoutEffectiveDate)}
+                {asset.lifecycle.checkoutActualDate
+                  ? ` · Keluar ${date(asset.lifecycle.checkoutActualDate)}`
+                  : ""}
+              </p>
+            </div>
+            {asset.lifecycle.checkoutSettlement ? (
+              <div className="grid min-w-64 gap-3 rounded-xl border border-border/70 bg-background/75 p-4 sm:min-w-[34rem] sm:grid-cols-2">
+                <DataItem
+                  label="Sewa sampai tanggal keluar"
+                  value={formatOwnerMoney(asset.lifecycle.checkoutSettlement.earnedRentAmount)}
+                />
+                <DataItem
+                  label="Kompensasi pemberitahuan disetujui"
+                  value={formatOwnerMoney(
+                    asset.lifecycle.checkoutSettlement.shortNoticeCompensation,
+                  )}
+                />
+                <DataItem
+                  label="Management fee tercatat"
+                  value={formatOwnerMoney(asset.lifecycle.checkoutSettlement.managementFeeAmount)}
+                />
+                <DataItem
+                  label="Hak Owner tercatat"
+                  value={formatOwnerMoney(
+                    asset.lifecycle.checkoutSettlement.ownerEntitlementAmount,
+                  )}
+                />
+                <DataItem
+                  label="Tagihan akhir"
+                  value={formatOwnerMoney(asset.lifecycle.checkoutSettlement.amountDue)}
+                />
+                <DataItem
+                  label="Pengembalian dana"
+                  value={formatOwnerMoney(asset.lifecycle.checkoutSettlement.refundAmount)}
+                />
+                <div className="sm:col-span-2">
+                  <DataItem
+                    label="Status penyelesaian"
+                    value={label(asset.lifecycle.checkoutSettlement.status)}
+                  />
+                </div>
+              </div>
+            ) : (
+              <Badge className="border-warning/30 bg-warning/15 text-warning-foreground">
+                Penyelesaian keuangan belum ditetapkan
+              </Badge>
+            )}
+          </div>
+          <p className="mt-4 border-t border-warning/20 pt-4 text-xs leading-5 text-muted-foreground">
+            Portal hanya menampilkan status operasional dan hasil keuangan. Alasan pribadi penghuni
+            serta catatan internal tetap dilindungi.
+          </p>
+        </section>
+      ) : null}
       <section className="grid items-stretch gap-4 xl:grid-cols-3">
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/70 pb-4">

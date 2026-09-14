@@ -27,11 +27,11 @@ delivery are explicitly outside the initial release.
 
 | ID                     | Decision/invariant                                                                                                                                                       |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POL-LEASE-001`        | Ordinary direct onboarding accepts a whole-number lease term from three through 120 months; a 1–2 month exception needs later owner approval.                            |
-| `POL-BILLING-001`      | Initial category tariff is Rp1,800,000/month and Rp21,600,000/year; room-level tariff override is prohibited.                                                            |
-| `POL-BILLING-002`      | Contract rent and schedule derive from the immutable lease snapshot: exact 12-month multiples may use annual category pricing; other ordinary terms use monthly pricing. |
+| `POL-LEASE-001`        | Standard direct onboarding accepts 3–120 months; an explicit negotiated agreement accepts 1–120 months, with 1–2 months available only through that path.               |
+| `POL-BILLING-001`      | The effective category authority uses the 3–5, 6–11, and 12+ month tiers in `CONTEXT.md`; room-level tariff override is prohibited.                                      |
+| `POL-BILLING-002`      | Contract rent derives from the immutable agreed-rate snapshot multiplied by duration; negotiated agreements also preserve the standard reference rate.                  |
 | `POL-BILLING-003`      | Lease commercial terms are immutable snapshots; later category edits never rewrite an existing contract.                                                                 |
-| `POL-PAYMENT-001`      | Verified Booking Fee plus DP is initial rent credit that reduces rent receivable. The 25% contract-value calculation is a recommended prefill, not a blocking gate.      |
+| `POL-PAYMENT-001`      | Verified Booking Fee plus DP is rent credit. Activation requires at least one agreed month, capped by contract value; 25% is a recommended prefill, not the gate.         |
 | `POL-PAYMENT-002`      | Security deposit is optional, freely entered, may be Rp0, and remains refundable subject to documented deductions.                                                       |
 | `POL-PAYMENT-003`      | Bank transfer is primary; cash is an audited operational exception with an authorized recorder and receipt.                                                              |
 | `POL-PAYMENT-004`      | Every payment is recorded; transfer proof is mandatory, while cash evidence is optional because receipt and recorder are retained.                                       |
@@ -94,8 +94,9 @@ edit.
 
 - Start date may be historical, current, or future; activation remains a
   separate authoritative check-in command.
-- The lease end date is derived from the chosen whole-number term (3–120
-  months) and displayed in Indonesian date format.
+- The lease end date is derived from the chosen whole-number term: standard
+  agreements support 3–120 months and explicit negotiated agreements support
+  1–120 months. Dates are displayed in Indonesian format.
 - Daily proration is not part of the initial release.
 - A term is a whole number of months. The normal Admin shortcuts are 3, 6, and
   12 months.
@@ -108,13 +109,17 @@ edit.
 
 - The immutable lease snapshot determines contract rent, coverage, invoice
   periods, and due dates.
-- An exact multiple of 12 months may use the category annual price; another
-  ordinary term uses the category monthly price.
+- Standard agreements use the effective duration-tier price. Negotiated
+  agreements use their immutable agreed-rate snapshot while preserving the
+  standard reference rate.
+- `lease_settlement_v3` records cumulative payment checkpoints for new 1–120
+  month agreements. These checkpoints do not create duplicate invoice principal;
+  existing `lease_settlement_v2` schedules remain immutable.
 - No overlapping or missing coverage range is permitted.
-- The first invoice must be issued before activation. A verified initial rent
-  credit is required; 25% of contract rent is the recommended default and may
-  be recorded below that recommendation. The first invoice need not be fully
-  settled unless a later policy says otherwise.
+- The contract-rent invoice/obligation must exist before activation. Verified
+  rent credit must cover at least one agreed month, capped by contract value;
+  25% of contract rent is only the recommended default and may be recorded below
+  that recommendation without making the lease activation-ready.
 
 ### 4.4 Initial rent-credit recommendation
 
@@ -927,12 +932,12 @@ Owner cache additionally binds to building-scope version.
 
 | ID               | Scenario                                                                                                                                       |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `QA-LEASE-001`   | Twelve-month full plan creates one exact installment/invoice.                                                                                  |
-| `QA-LEASE-002`   | A 3–120 month snapshot-derived schedule creates contiguous invoice coverage totaling contract rent.                                            |
+| `QA-LEASE-001`   | Contract invoice/obligation principal equals the immutable contract value without duplication by settlement checkpoints.                       |
+| `QA-LEASE-002`   | A new 1–120 month v3 checkpoint schedule reconciles to the snapshot while existing v2 schedules remain unchanged.                             |
 | `QA-BILLING-001` | Rp21,600,000 contract displays a recommended DP of Rp5,400,000 and retains an independent deposit record.                                      |
 | `QA-BILLING-002` | Price edit affects only new agreements.                                                                                                        |
 | `QA-BILLING-003` | No automatic late fee is generated.                                                                                                            |
-| `QA-BILLING-004` | Activation denies missing contract, required deposit, start date, room, account, or identity; the DP recommendation is not an activation gate. |
+| `QA-BILLING-004` | Activation denies missing contract, start date, room, account, identity, or one-month verified rent-credit coverage; optional deposit and the 25% recommendation are not activation gates. |
 
 ### 16.2 Payment
 

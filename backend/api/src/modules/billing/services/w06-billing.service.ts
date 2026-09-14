@@ -29,6 +29,7 @@ import {
 } from '../dto/w06-billing.dto';
 import { CreateMyPaymentProofDto } from '../dto/create-my-payment-proof.dto';
 import {
+  BILLING_DOCUMENT_RENDERER_VERSION,
   createBillingInvoicePdf,
   createBillingReceiptPdf,
   createContractPaidDocumentPdf,
@@ -60,6 +61,7 @@ type LeaseTupleRow = {
   security_deposit_required_amount: string;
   payment_plan_type: 'annual_full' | 'monthly_installments' | 'two_month_installments';
   snapshot_monthly_price: string;
+  pricing_source: 'standard' | 'negotiated';
   snapshot_room_number: string;
   snapshot_kost_type_name: string;
   building_code: string | null;
@@ -97,6 +99,23 @@ type InvoiceLockRow = {
   total_amount: string;
   credit_amount: string;
   allocated_amount: string;
+};
+
+type CheckoutFinalChargeInput = {
+  propertyId: string;
+  leaseId: string;
+  residentId: string;
+  checkoutCommandId: string;
+  amount: number;
+  dueDate: string;
+  description: string;
+  evidenceFileIds: string[];
+  componentBreakdown: {
+    rentBalanceAmount: number;
+    shortNoticeAmount: number;
+    damageAmount: number;
+  };
+  actorUserId: string;
 };
 
 type AllocationIntentRow = { invoice_id: string; intended_amount: string };
@@ -288,6 +307,12 @@ type InvoiceDocumentRow = {
   property_name: string;
   property_address: string | null;
   issued_by_name: string | null;
+  lease_term_months: number | null;
+  agreed_monthly_price: string | number | null;
+  contract_rent_amount: string | number | null;
+  cumulative_rent_paid: string | number | null;
+  contract_remaining_amount: string | number | null;
+  pricing_source: 'standard' | 'negotiated' | null;
 };
 type ReceiptDocumentRow = {
   receipt_code: string;
@@ -305,6 +330,8 @@ type ReceiptDocumentRow = {
   lease_end: string | null;
   lease_term_months: number | null;
   contract_rent_amount: string | number | null;
+  agreed_monthly_price: string | number | null;
+  pricing_source: 'standard' | 'negotiated' | null;
   rent_payment_sequence: string | number | null;
   total_rent_received: string | number | null;
   remaining_rent_amount: string | number | null;
@@ -319,6 +346,15 @@ type ReceiptDocumentRow = {
   booking_receipt_code?: string | null;
   reversal_reason: string | null;
   allocations: Array<{ invoice_code: string; amount: string | number }>;
+};
+type StoredReceiptSnapshot = {
+  document?: Partial<ReceiptDocumentRow> & {
+    renderer_version?: string;
+    issued_at?: string | Date;
+    paid_at?: string | Date | null;
+    final_settlement_due_at?: string | Date | null;
+  };
+  reason?: unknown;
 };
 type ReceiptAuthorityRow = Omit<
   ReceiptDocumentRow,
@@ -1133,7 +1169,13 @@ export class W06BillingService {
         context,
       );
       if (replay) return { data: replay };
-      await this.lockLeaseTuple(client, scope.property_id, scope.lease_id, scope.resident_id);
+      const lease = await this.lockLeaseTuple(
+        client,
+        scope.property_id,
+        scope.lease_id,
+        scope.resident_id,
+        true,
+      );
       const invoice = await client.query<InvoiceLockRow>(
         `SELECT i.id,i.property_id,i.resident_id,i.lease_id,i.invoice_status,i.invoice_purpose,i.due_date::text,i.total_amount,i.credit_amount,
                 COALESCE(a.net,0) AS allocated_amount
@@ -1148,6 +1190,13 @@ export class W06BillingService {
           code: 'PAYMENT_INVOICE_NOT_ELIGIBLE',
           message: 'Invoice cannot receive a proof',
         });
+      if (lease.lease_status === 'ended')
+        await this.lockAndValidateInvoices(
+          client,
+          lease,
+          [{ invoice_id: dto.invoice_id, amount: dto.claimed_amount }],
+          dto.payment_purpose,
+        );
       const expectedPurpose = dto.payment_purpose === 'other_charge' ? 'other_charge' : 'rent';
       if (
         dto.payment_purpose !== 'security_deposit' &&
@@ -1737,6 +1786,7 @@ export class W06BillingService {
         dto.property_id,
         dto.lease_id,
         dto.resident_id,
+        true,
       );
       const verificationDecision = this.paymentVerificationPolicy?.decide(
         dto.property_id,
@@ -1938,6 +1988,7 @@ export class W06BillingService {
         dto.property_id,
         scope.rows[0].lease_id,
         scope.rows[0].resident_id,
+        true,
       );
       const paymentResult = await client.query<PaymentRow>(
         `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes,command_fingerprint
@@ -2092,6 +2143,7 @@ export class W06BillingService {
         dto.property_id,
         scope.rows[0].lease_id,
         scope.rows[0].resident_id,
+        true,
       );
       const paymentResult = await client.query<PaymentRow>(
         `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes
@@ -2211,6 +2263,7 @@ export class W06BillingService {
         dto.property_id,
         scope.rows[0].lease_id,
         scope.rows[0].resident_id,
+        true,
       );
       const proofResult = await client.query<{
         id: string;
@@ -2491,6 +2544,7 @@ export class W06BillingService {
         dto.property_id,
         scope.rows[0].lease_id,
         scope.rows[0].resident_id,
+        true,
       );
       const paymentResult = await client.query<PaymentRow>(
         `SELECT id,property_id,resident_id,lease_id,payment_code,payment_method,payment_status,payment_purpose,amount,paid_at,verified_at,proof_id,reference_number,notes FROM payments WHERE id=$1 AND property_id=$2 FOR UPDATE`,
@@ -2772,6 +2826,119 @@ export class W06BillingService {
     });
   }
 
+  /**
+   * W06 authority seam used by W07D after physical checkout. The caller owns
+   * the surrounding property/lease transaction; this method only issues the
+   * payable invoice and its evidence without creating a second transaction.
+   */
+  async issueCheckoutFinalChargeInTransaction(
+    client: PoolClient,
+    input: CheckoutFinalChargeInput,
+  ): Promise<{ invoiceId: string; invoiceCode: string }> {
+    if (!Number.isSafeInteger(input.amount) || input.amount <= 0)
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_FINAL_CHARGE_INVALID',
+        message: 'Checkout final charge must use a positive whole Rupiah amount',
+      });
+    const lease = await this.lockLeaseTuple(
+      client,
+      input.propertyId,
+      input.leaseId,
+      input.residentId,
+      true,
+    );
+    await this.validateEvidence(
+      client,
+      input.evidenceFileIds,
+      input.propertyId,
+      input.actorUserId,
+      false,
+      'complaint_attachment',
+    );
+    const periodKey = `CHECKOUT-${input.checkoutCommandId}`;
+    const period = await client.query<{ id: string }>(
+      `INSERT INTO billing_periods(property_id,period_key,start_date,end_date,due_date,status,created_by_user_id)
+       VALUES($1,$2,$3::date,$3::date,$3::date,'open',$4)
+       ON CONFLICT(property_id,period_key) DO UPDATE SET updated_at=billing_periods.updated_at
+       RETURNING id`,
+      [input.propertyId, periodKey, input.dueDate, input.actorUserId],
+    );
+    const fingerprint = this.fingerprint({
+      checkout_command_id: input.checkoutCommandId,
+      component: 'checkout_final_adjustment',
+      amount: input.amount,
+      breakdown: input.componentBreakdown,
+    });
+    const invoice = await client.query<{ id: string; invoice_code: string }>(
+      `INSERT INTO invoices(
+         property_id,resident_id,room_id,occupancy_id,billing_period_id,lease_id,invoice_code,
+         invoice_status,subtotal_amount,total_amount,due_date,issued_at,snapshot_period_key,
+         snapshot_period_start_date,snapshot_period_end_date,snapshot_room_number,
+         snapshot_resident_name,snapshot_monthly_price,cycle_start_date,cycle_end_date,
+         snapshot_billing_cycle,snapshot_rent_amount,generation_source,invoice_purpose,
+         other_charge_type,other_charge_description,authority_source,snapshot_building_code,
+         snapshot_category_name,snapshot_contract_rent_amount,snapshot_payment_plan_type,
+         created_by_user_id,command_fingerprint
+       ) VALUES(
+         $1,$2,$3,$4,$5,$6,$7,'issued',$8,$8,$9::date,now(),$10,$9::date,$9::date,$11,
+         $12,$13,$9::date,$9::date,'monthly',$13,'manual','other_charge',
+         'checkout_final_adjustment',$14,'other_charge',$15,$16,$17,$18,$19,$20
+       )
+       ON CONFLICT(property_id,command_fingerprint) WHERE command_fingerprint IS NOT NULL
+       DO UPDATE SET updated_at=invoices.updated_at
+       RETURNING id,invoice_code`,
+      [
+        input.propertyId,
+        input.residentId,
+        lease.room_id,
+        lease.occupancy_id,
+        period.rows[0].id,
+        lease.id,
+        `OTH-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`,
+        input.amount,
+        input.dueDate,
+        periodKey,
+        lease.snapshot_room_number,
+        lease.resident_name,
+        lease.snapshot_monthly_price,
+        input.description.trim(),
+        lease.building_code,
+        lease.snapshot_kost_type_name,
+        lease.contract_rent_amount,
+        lease.payment_plan_type,
+        input.actorUserId,
+        fingerprint,
+      ],
+    );
+    const issued = invoice.rows[0];
+    await client.query(
+      `INSERT INTO invoice_line_items(invoice_id,line_type,description,quantity,unit_amount,total_amount,sort_order,metadata)
+       SELECT $1,'other',$2,1,$3,$3,0,$4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM invoice_line_items WHERE invoice_id=$1 AND line_type='other'
+       )`,
+      [
+        issued.id,
+        input.description.trim(),
+        input.amount,
+        JSON.stringify({
+          category: 'checkout_final_adjustment',
+          checkout_command_id: input.checkoutCommandId,
+          component_breakdown: input.componentBreakdown,
+          evidence_file_ids: input.evidenceFileIds,
+        }),
+      ],
+    );
+    for (const fileId of [...new Set(input.evidenceFileIds)].sort())
+      await client.query(
+        `INSERT INTO invoice_evidence_files(property_id,invoice_id,file_id,evidence_kind,created_by_user_id)
+         VALUES($1,$2,$3,'damage_evidence',$4)
+         ON CONFLICT DO NOTHING`,
+        [input.propertyId, issued.id, fileId, input.actorUserId],
+      );
+    return { invoiceId: issued.id, invoiceCode: issued.invoice_code };
+  }
+
   async voidInvoice(
     user: UserAccessContext,
     invoiceId: string,
@@ -2995,8 +3162,9 @@ export class W06BillingService {
     const stored = await this.database.client.query<{
       receipt_code: string;
       document_content: Buffer | null;
+      safe_snapshot: StoredReceiptSnapshot;
     }>(
-      `SELECT receipt_code,document_content
+      `SELECT receipt_code,document_content,safe_snapshot
        FROM payment_receipts
        WHERE id=$1 AND property_id=$2`,
       [receiptId, propertyId],
@@ -3006,10 +3174,25 @@ export class W06BillingService {
         code: 'RECEIPT_DOCUMENT_NOT_FOUND',
         message: 'Receipt document not found',
       });
-    if (stored.rows[0].document_content) {
+    const storedRow = stored.rows[0];
+    const snapshotDocument = storedRow.safe_snapshot?.document;
+    if (
+      storedRow.document_content &&
+      snapshotDocument?.renderer_version === BILLING_DOCUMENT_RENDERER_VERSION
+    ) {
       const safeCode =
-        stored.rows[0].receipt_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
-      return { filename: `${safeCode}.pdf`, content: stored.rows[0].document_content };
+        storedRow.receipt_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
+      return { filename: `${safeCode}.pdf`, content: storedRow.document_content };
+    }
+
+    // Re-render older persisted receipts from their immutable issuance snapshot.
+    // The original bytes and checksum remain untouched for audit purposes.
+    if (storedRow.document_content && snapshotDocument) {
+      const snapshotRow = this.receiptRowFromSnapshot(snapshotDocument, storedRow.safe_snapshot);
+      if (snapshotRow) return this.createReceiptDocument(snapshotRow);
+      const safeCode =
+        storedRow.receipt_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
+      return { filename: `${safeCode}.pdf`, content: storedRow.document_content };
     }
 
     // Compatibility path for receipts issued before M6. New receipts always
@@ -3094,6 +3277,75 @@ export class W06BillingService {
     return this.createReceiptDocument(row);
   }
 
+  private receiptRowFromSnapshot(
+    document: NonNullable<StoredReceiptSnapshot['document']>,
+    snapshot: StoredReceiptSnapshot,
+  ): ReceiptDocumentRow | null {
+    const required = [
+      document.receipt_code,
+      document.receipt_kind,
+      document.amount,
+      document.issued_at,
+      document.payment_code,
+      document.payment_method,
+      document.payment_purpose,
+      document.resident_name,
+      document.room_number,
+      document.lease_start,
+      document.property_name,
+    ];
+    if (required.some((value) => value == null || String(value).trim() === '')) return null;
+
+    const issuedAt = new Date(document.issued_at as string | Date);
+    const paidAt = document.paid_at == null ? null : new Date(document.paid_at);
+    const finalDueAt =
+      document.final_settlement_due_at == null ? null : new Date(document.final_settlement_due_at);
+    if (
+      Number.isNaN(issuedAt.getTime()) ||
+      (paidAt && Number.isNaN(paidAt.getTime())) ||
+      (finalDueAt && Number.isNaN(finalDueAt.getTime()))
+    )
+      return null;
+
+    return {
+      receipt_code: String(document.receipt_code),
+      receipt_kind: document.receipt_kind === 'reversal' ? 'reversal' : 'payment',
+      amount: String(document.amount),
+      issued_at: issuedAt,
+      payment_code: String(document.payment_code),
+      payment_method: String(document.payment_method),
+      payment_purpose: String(document.payment_purpose),
+      paid_at: paidAt,
+      resident_name: String(document.resident_name),
+      room_number: String(document.room_number),
+      building_code: String(document.building_code ?? ''),
+      lease_start: String(document.lease_start),
+      lease_end: document.lease_end == null ? null : String(document.lease_end),
+      lease_term_months:
+        document.lease_term_months == null ? null : Number(document.lease_term_months),
+      contract_rent_amount: document.contract_rent_amount ?? null,
+      agreed_monthly_price: document.agreed_monthly_price ?? null,
+      pricing_source: document.pricing_source === 'negotiated' ? 'negotiated' : 'standard',
+      rent_payment_sequence: document.rent_payment_sequence ?? null,
+      total_rent_received: document.total_rent_received ?? null,
+      remaining_rent_amount: document.remaining_rent_amount ?? null,
+      final_settlement_due_at: finalDueAt,
+      payment_period_start:
+        document.payment_period_start == null ? null : String(document.payment_period_start),
+      payment_period_end:
+        document.payment_period_end == null ? null : String(document.payment_period_end),
+      property_name: String(document.property_name),
+      property_address: String(document.property_address ?? ''),
+      issued_by_name: document.issued_by_name == null ? null : String(document.issued_by_name),
+      settles_rent_contract: document.settles_rent_contract === true,
+      booking_payment_type: document.booking_payment_type ?? null,
+      booking_receipt_code:
+        document.booking_receipt_code == null ? null : String(document.booking_receipt_code),
+      reversal_reason: typeof snapshot.reason === 'string' ? snapshot.reason : null,
+      allocations: Array.isArray(document.allocations) ? document.allocations : [],
+    };
+  }
+
   private createReceiptDocument(row: ReceiptDocumentRow): Promise<BillingReceiptDocument> {
     const reversal = row.receipt_kind === 'reversal';
     const paymentClassification =
@@ -3138,6 +3390,9 @@ export class W06BillingService {
       leaseTermMonths: row.lease_term_months,
       contractRentAmount:
         row.contract_rent_amount == null ? null : this.money(row.contract_rent_amount),
+      agreedMonthlyPrice:
+        row.agreed_monthly_price == null ? null : this.money(row.agreed_monthly_price),
+      pricingSource: row.pricing_source,
       rentPaymentSequence:
         row.rent_payment_sequence == null ? null : Number(row.rent_payment_sequence),
       totalRentReceived:
@@ -3626,6 +3881,7 @@ export class W06BillingService {
         payment_plan: lease.payment_plan_type,
         contract_rent: this.money(lease.contract_rent_amount),
         monthly_rate: this.money(lease.snapshot_monthly_price),
+        pricing_source: lease.pricing_source,
         remaining_days: Math.max(0, Number(lease.remaining_days)),
         note: 'DP adalah kredit sewa; deposit keamanan adalah liabilitas terpisah dan tidak dihitung sebagai sewa.',
       },
@@ -3692,9 +3948,17 @@ export class W06BillingService {
                     invoice.due_date::text,invoice.total_amount,invoice.issued_at,
                     property.name AS property_name,property.address AS property_address,
                     issuer.display_name AS issued_by_name,
-                   GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount
-              FROM invoices invoice
-              JOIN properties property ON property.id=invoice.property_id
+                    GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount,
+                    lease.term_months AS lease_term_months,
+                    lease.snapshot_monthly_price AS agreed_monthly_price,
+                    lease.contract_rent_amount,
+                    COALESCE(contract_payment.net,0) AS cumulative_rent_paid,
+                    GREATEST(COALESCE(lease.contract_rent_amount,0)-COALESCE(contract_payment.net,0),0)
+                      AS contract_remaining_amount,
+                    COALESCE(lease.pricing_source,'standard') AS pricing_source
+               FROM invoices invoice
+               JOIN properties property ON property.id=invoice.property_id
+               LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
               LEFT JOIN users issuer ON issuer.id=invoice.created_by_user_id
               LEFT JOIN LATERAL (
                 SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
@@ -3703,7 +3967,25 @@ export class W06BillingService {
                   LEFT JOIN payment_reversal_allocations reversal_allocation
                     ON reversal_allocation.original_allocation_id=payment_allocation.id
                  WHERE payment_allocation.invoice_id=invoice.id
-              ) allocation ON true`;
+               ) allocation ON true
+               LEFT JOIN LATERAL (
+                 SELECT COALESCE(sum(
+                          contract_invoice.credit_amount + COALESCE(invoice_payment.net,0)
+                        ),0) AS net
+                   FROM invoices contract_invoice
+                   LEFT JOIN LATERAL (
+                     SELECT COALESCE(sum(contract_allocation.allocated_amount),0)
+                            - COALESCE(sum(contract_reversal.reversed_amount),0) AS net
+                       FROM payment_allocations contract_allocation
+                       LEFT JOIN payment_reversal_allocations contract_reversal
+                         ON contract_reversal.original_allocation_id=contract_allocation.id
+                      WHERE contract_allocation.invoice_id=contract_invoice.id
+                   ) invoice_payment ON true
+                  WHERE contract_invoice.property_id=invoice.property_id
+                    AND contract_invoice.lease_id=invoice.lease_id
+                    AND contract_invoice.invoice_purpose='rent'
+                    AND contract_invoice.invoice_status<>'void'
+               ) contract_payment ON true`;
   }
 
   private renderInvoiceDocument(row: InvoiceDocumentRow): Promise<BillingInvoiceDocument> {
@@ -3719,6 +4001,16 @@ export class W06BillingService {
       dueDate: row.due_date,
       totalAmount: this.money(row.total_amount),
       outstandingAmount: this.money(row.outstanding_amount),
+      leaseTermMonths: row.lease_term_months,
+      agreedMonthlyPrice:
+        row.agreed_monthly_price == null ? null : this.money(row.agreed_monthly_price),
+      contractRentAmount:
+        row.contract_rent_amount == null ? null : this.money(row.contract_rent_amount),
+      cumulativeRentPaid:
+        row.cumulative_rent_paid == null ? null : this.money(row.cumulative_rent_paid),
+      contractRemainingAmount:
+        row.contract_remaining_amount == null ? null : this.money(row.contract_remaining_amount),
+      pricingSource: row.pricing_source,
       issuedAt: row.issued_at,
       propertyName: row.property_name,
       propertyAddress: row.property_address,
@@ -4254,6 +4546,27 @@ export class W06BillingService {
         code: 'PAYMENT_INVOICE_SCOPE_MISMATCH',
         message: 'One or more invoices are unavailable',
       });
+    if (lease.lease_status === 'ended') {
+      if (!['rent', 'other_charge'].includes(purpose))
+        throw new ConflictException({
+          code: 'CHECKOUT_FINAL_PAYMENT_PURPOSE_INVALID',
+          message: 'An ended lease only accepts payment for its linked final invoices',
+        });
+      const linked = await client.query<{ invoice_id: string }>(
+        `SELECT final_link.invoice_id
+           FROM lease_exit_final_invoice_links final_link
+          WHERE final_link.property_id=$1
+            AND final_link.lease_id=$2
+            AND final_link.invoice_id=ANY($3::uuid[])
+          ORDER BY final_link.invoice_id`,
+        [lease.property_id, lease.id, ids],
+      );
+      if (linked.rows.length !== ids.length)
+        throw new ConflictException({
+          code: 'CHECKOUT_FINAL_INVOICE_REQUIRED',
+          message: 'Payment for an ended lease must target its final settlement invoice',
+        });
+    }
     const requested = new Map(allocations.map((item) => [item.invoice_id, item.amount]));
     for (const invoice of result.rows) {
       if (
@@ -4491,6 +4804,41 @@ export class W06BillingService {
           )`,
       [invoiceId, propertyId],
     );
+    await client.query(
+      `UPDATE lease_exit_final_settlements final_settlement
+          SET decision_status=CASE WHEN EXISTS (
+                SELECT 1
+                  FROM lease_exit_final_invoice_links final_link
+                  JOIN invoices linked_invoice
+                    ON linked_invoice.id=final_link.invoice_id
+                   AND linked_invoice.property_id=final_link.property_id
+                  LEFT JOIN LATERAL (
+                    SELECT COALESCE(sum(payment_allocation.allocated_amount
+                             - COALESCE(reversal.reversed_amount,0)),0) AS net
+                      FROM payment_allocations payment_allocation
+                      LEFT JOIN LATERAL (
+                        SELECT COALESCE(sum(reversal_allocation.reversed_amount),0) AS reversed_amount
+                          FROM payment_reversal_allocations reversal_allocation
+                         WHERE reversal_allocation.original_allocation_id=payment_allocation.id
+                      ) reversal ON true
+                     WHERE payment_allocation.invoice_id=linked_invoice.id
+                  ) allocation ON true
+                 WHERE final_link.final_settlement_id=final_settlement.id
+                   AND linked_invoice.invoice_status<>'void'
+                   AND GREATEST(
+                     linked_invoice.total_amount-linked_invoice.credit_amount-COALESCE(allocation.net,0),
+                     0
+                   )>0
+              ) THEN 'amount_due' ELSE 'closed' END
+        WHERE final_settlement.property_id=$2
+          AND final_settlement.amount_due>0
+          AND EXISTS (
+            SELECT 1 FROM lease_exit_final_invoice_links reconciled_link
+             WHERE reconciled_link.final_settlement_id=final_settlement.id
+               AND reconciled_link.invoice_id=$1
+          )`,
+      [invoiceId, propertyId],
+    );
   }
 
   private async invalidateContractPaidDocumentIfReopened(
@@ -4568,6 +4916,7 @@ export class W06BillingService {
     propertyId: string,
     leaseId: string,
     residentId: string,
+    allowCheckoutSettlement = false,
   ) {
     const result = await client.query<LeaseTupleRow>(
       `${this.leaseTupleSql()} WHERE l.id=$1 AND l.property_id=$2 AND l.resident_id=$3 FOR UPDATE OF l,resident,room,building`,
@@ -4578,7 +4927,26 @@ export class W06BillingService {
         code: 'LEASE_BILLING_SCOPE_NOT_FOUND',
         message: 'Lease billing context not found',
       });
-    if (!['awaiting_activation', 'active'].includes(result.rows[0].lease_status))
+    const checkoutSettlementLease =
+      allowCheckoutSettlement &&
+      result.rows[0].lease_status === 'ended' &&
+      Boolean(
+        (
+          await client.query(
+            `SELECT 1
+               FROM lease_exit_final_settlements final_settlement
+              WHERE final_settlement.property_id=$1
+                AND final_settlement.lease_id=$2
+                AND final_settlement.amount_due>0
+              LIMIT 1`,
+            [propertyId, leaseId],
+          )
+        ).rowCount,
+      );
+    if (
+      !['awaiting_activation', 'active'].includes(result.rows[0].lease_status) &&
+      !checkoutSettlementLease
+    )
       throw new ConflictException({
         code: 'LEASE_BILLING_STATUS_INVALID',
         message: 'Lease cannot accept billing activity',
@@ -4586,7 +4954,7 @@ export class W06BillingService {
     return result.rows[0];
   }
   private leaseTupleSql() {
-    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.payment_plan_type,l.snapshot_monthly_price,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
+    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
   }
   private async lockProperty(client: PoolClient, propertyId: string) {
     const result = await client.query(`SELECT id FROM properties WHERE id=$1 FOR UPDATE`, [
@@ -4723,8 +5091,10 @@ export class W06BillingService {
                resident.full_name AS resident_name,room.number AS room_number,
                building.building_code AS building_code,
                lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
-               lease.term_months AS lease_term_months,
-               lease.contract_rent_amount,
+                lease.term_months AS lease_term_months,
+                lease.contract_rent_amount,
+                lease.snapshot_monthly_price AS agreed_monthly_price,
+                COALESCE(lease.pricing_source,'standard') AS pricing_source,
                rent_payment_order.rent_payment_sequence,
                rent_ledger.total_rent_received,
                GREATEST(COALESCE(lease.contract_rent_amount,0)-rent_ledger.total_rent_received,0)
@@ -4911,6 +5281,7 @@ export class W06BillingService {
     const immutableSnapshot = {
       ...snapshot,
       document: {
+        renderer_version: BILLING_DOCUMENT_RENDERER_VERSION,
         receipt_code: receiptCode,
         receipt_kind: kind,
         amount,
@@ -4927,6 +5298,8 @@ export class W06BillingService {
         lease_end: authority.lease_end,
         lease_term_months: authority.lease_term_months,
         contract_rent_amount: authority.contract_rent_amount,
+        agreed_monthly_price: authority.agreed_monthly_price,
+        pricing_source: authority.pricing_source,
         rent_payment_sequence: authority.rent_payment_sequence,
         total_rent_received: authority.total_rent_received,
         remaining_rent_amount: authority.remaining_rent_amount,

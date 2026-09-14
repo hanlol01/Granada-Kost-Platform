@@ -23,7 +23,10 @@ import {
 import { CompleteBookingLeadDto } from './dto/complete-booking-lead.dto';
 import { CancelBookingLeadPaymentCommitmentDto } from './dto/cancel-booking-lead-payment-commitment.dto';
 import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
-import { resolveDurationPricing } from '../billing/helpers/duration-pricing.helper';
+import {
+  resolveLeaseCommercialAgreement,
+  type LeaseCommercialAgreement,
+} from '../billing/helpers/duration-pricing.helper';
 
 type ContextRow = {
   lead_id: string;
@@ -52,6 +55,7 @@ type ContextRow = {
   short_stay_monthly_price: string | number | null;
   medium_stay_monthly_price: string | number | null;
   long_stay_monthly_price: string | number | null;
+  management_fee_amount: string | number | null;
 };
 
 type CommitmentRow = {
@@ -74,6 +78,13 @@ type CommitmentRow = {
   term_months: number;
   end_date: string | Date;
   contract_rent_amount: string | number | null;
+  snapshot_pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
+  snapshot_reference_monthly_price: string | number;
+  snapshot_monthly_price: string | number;
+  pricing_source: 'standard' | 'negotiated';
+  pricing_agreement_reason: string | null;
+  pricing_agreed_by_user_id: string | null;
+  pricing_agreed_at: Date;
   billing_cycle: string;
   payment_plan_type: string;
   materialized_onboarding_commitment_id: string | null;
@@ -129,6 +140,12 @@ export type LeadPaymentCommitmentResponse = {
   billing_cycle: string;
   payment_plan_type: string;
   materialized_onboarding_commitment_id: string | null;
+  snapshot_pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
+  snapshot_reference_monthly_price: number;
+  snapshot_monthly_price: number;
+  pricing_source: 'standard' | 'negotiated';
+  pricing_agreement_reason: string | null;
+  pricing_agreed_at: string;
 };
 
 export type BookingLeadCompletionQuote = {
@@ -139,6 +156,9 @@ export type BookingLeadCompletionQuote = {
   end_date: string;
   contract_rent_amount: number;
   suggested_dp_amount: number;
+  pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
+  reference_monthly_price: number;
+  management_fee_amount: number;
   lead: {
     id: string;
     category: string;
@@ -292,7 +312,8 @@ export class BookingLeadCompletionService {
 
       const context = await this.lockContext(client, leadId, dto.property_id, true, dto.start_date);
       this.assertEligible(context);
-      const rentTotal = this.contractRent(context, dto);
+      const agreement = this.commercialAgreement(context, dto);
+      const rentTotal = agreement.contractRent;
       this.assertPayment(dto, rentTotal);
       const endDate = await this.endDate(client, dto.start_date, dto.term_months);
       const verificationDecision = this.paymentVerificationPolicy?.decide(
@@ -328,7 +349,10 @@ export class BookingLeadCompletionService {
             property_id, booking_lead_id, hold_id, room_id, payment_type, receipt_code, transaction_code,
             rent_credit_amount, security_deposit_amount, payment_method, verification_status,
             payment_note, payment_evidence_file_ids, paid_at, start_date, term_months, end_date,
-            billing_cycle, payment_plan_type, contract_rent_amount, created_by_user_id
+            billing_cycle, payment_plan_type, contract_rent_amount,
+            snapshot_pricing_tier, snapshot_reference_monthly_price, snapshot_monthly_price,
+            pricing_source, pricing_agreement_reason, pricing_agreed_by_user_id, pricing_agreed_at,
+            created_by_user_id
           ) VALUES(
             $1,$2,$3,$4,$5,
             next_billing_document_number(
@@ -350,7 +374,8 @@ export class BookingLeadCompletionService {
               COALESCE($12::timestamptz,now())
             ),
             $6,$7,$8,$9,$10,$11::uuid[],COALESCE($12::timestamptz,now()),
-            $13::date,$14,$15::date,$16,$17,$18,$19
+            $13::date,$14,$15::date,$16,$17,$18,
+            $20,$21,$22,$23,$24,$19,now(),$19
           )
           RETURNING *`,
         [
@@ -373,6 +398,11 @@ export class BookingLeadCompletionService {
           dto.payment_plan_type,
           rentTotal,
           actorUserId,
+          agreement.pricingTier,
+          agreement.referenceMonthlyPrice,
+          agreement.agreedMonthlyPrice,
+          agreement.pricingSource,
+          agreement.agreementReason,
         ],
       );
       const commitment = inserted.rows[0];
@@ -819,9 +849,16 @@ export class BookingLeadCompletionService {
       // `complete()` remains the only command that rejects a second completion.
       this.assertEligible(value, value.lead_status === 'onboarding');
       const billingCycle = termMonths % 12 === 0 ? 'yearly' : 'monthly';
-      const contractRentAmount = this.contractRent(value, {
+      const referenceAgreement = this.commercialAgreement(value, {
         billing_cycle: billingCycle,
         term_months: termMonths,
+        pricing_source: termMonths < 3 ? 'negotiated' : 'standard',
+        agreed_monthly_price:
+          termMonths < 3
+            ? Number(value.short_stay_monthly_price ?? value.monthly_price)
+            : undefined,
+        pricing_agreement_reason: termMonths < 3 ? 'Reference quote only' : undefined,
+        pricing_variance_acknowledged: true,
       });
       const endDate = await this.endDate(client, startDate, termMonths);
       await client.query('COMMIT');
@@ -832,8 +869,11 @@ export class BookingLeadCompletionService {
           term_months: termMonths,
           billing_cycle: billingCycle,
           end_date: endDate,
-          contract_rent_amount: contractRentAmount,
-          suggested_dp_amount: Math.ceil(contractRentAmount * 0.25),
+          contract_rent_amount: referenceAgreement.contractRent,
+          suggested_dp_amount: Math.ceil(referenceAgreement.contractRent * 0.25),
+          pricing_tier: referenceAgreement.pricingTier,
+          reference_monthly_price: referenceAgreement.referenceMonthlyPrice,
+          management_fee_amount: Number(value.management_fee_amount ?? 0),
           lead: {
             id: value.lead_id,
             category: value.category,
@@ -1231,7 +1271,8 @@ export class BookingLeadCompletionService {
         room.room_status,
         commercial.monthly_price, commercial.annual_contract_value AS yearly_price,
         commercial.short_stay_monthly_price, commercial.medium_stay_monthly_price,
-        commercial.long_stay_monthly_price
+        commercial.long_stay_monthly_price,
+        management_fee.monthly_fee_amount AS management_fee_amount
        FROM booking_leads lead
          LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status IN ('active','committed')
        LEFT JOIN rooms room ON room.id=hold.room_id AND room.property_id=lead.property_id
@@ -1269,6 +1310,14 @@ export class BookingLeadCompletionService {
             commercial_version.effective_date ASC
           LIMIT 1
        ) commercial ON true
+       LEFT JOIN LATERAL (
+         SELECT fee.monthly_fee_amount
+         FROM property_management_fee_versions fee
+         WHERE fee.property_id=lead.property_id
+           AND fee.effective_date<=commercial_effective.target_date
+         ORDER BY fee.effective_date DESC,fee.id DESC
+         LIMIT 1
+       ) management_fee ON true
        WHERE lead.id=$1 AND lead.property_id=$2
        ORDER BY commercial.effective_date DESC NULLS LAST
        LIMIT 1${lock ? ' FOR UPDATE OF lead' : ''}`,
@@ -1353,18 +1402,42 @@ export class BookingLeadCompletionService {
     );
   }
 
-  private contractRent(
+  private commercialAgreement(
     row: ContextRow,
-    terms: Pick<CompleteBookingLeadDto, 'billing_cycle' | 'term_months'>,
-  ): number {
-    return resolveDurationPricing(
-      {
-        shortStayMonthlyPrice: Number(row.short_stay_monthly_price ?? row.monthly_price),
-        mediumStayMonthlyPrice: Number(row.medium_stay_monthly_price ?? row.monthly_price),
-        longStayMonthlyPrice: Number(row.long_stay_monthly_price ?? Number(row.yearly_price) / 12),
-      },
-      terms.term_months,
-    ).contractRent;
+    terms: Pick<
+      CompleteBookingLeadDto,
+      | 'billing_cycle'
+      | 'term_months'
+      | 'pricing_source'
+      | 'agreed_monthly_price'
+      | 'pricing_agreement_reason'
+      | 'pricing_variance_acknowledged'
+    >,
+  ): LeaseCommercialAgreement {
+    try {
+      return resolveLeaseCommercialAgreement(
+        {
+          shortStayMonthlyPrice: Number(row.short_stay_monthly_price ?? row.monthly_price),
+          mediumStayMonthlyPrice: Number(row.medium_stay_monthly_price ?? row.monthly_price),
+          longStayMonthlyPrice: Number(
+            row.long_stay_monthly_price ?? Number(row.yearly_price) / 12,
+          ),
+        },
+        {
+          termMonths: terms.term_months,
+          pricingSource: terms.pricing_source ?? 'standard',
+          agreedMonthlyPrice: terms.agreed_monthly_price,
+          managementFeeAmount: Number(row.management_fee_amount ?? 0),
+          agreementReason: terms.pricing_agreement_reason,
+          varianceAcknowledged: terms.pricing_variance_acknowledged,
+        },
+      );
+    } catch (error) {
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_COMMERCIAL_AGREEMENT_INVALID',
+        message: error instanceof Error ? error.message : 'Commercial agreement is invalid',
+      });
+    }
   }
 
   private assertQuoteTerms(startDate: string, termMonths: number): void {
@@ -1382,10 +1455,10 @@ export class BookingLeadCompletionService {
         code: 'BOOKING_LEAD_QUOTE_START_DATE_INVALID',
         message: 'Quote requires a valid lease start date',
       });
-    if (!Number.isSafeInteger(termMonths) || termMonths < 3 || termMonths > 120)
+    if (!Number.isSafeInteger(termMonths) || termMonths < 1 || termMonths > 120)
       throw new BadRequestException({
         code: 'BOOKING_LEAD_QUOTE_TERM_INVALID',
-        message: 'Quote requires a lease term between 3 and 120 months',
+        message: 'Quote requires a lease term between 1 and 120 months',
       });
   }
 
@@ -1555,6 +1628,12 @@ export class BookingLeadCompletionService {
       billing_cycle: row.billing_cycle,
       payment_plan_type: row.payment_plan_type,
       materialized_onboarding_commitment_id: row.materialized_onboarding_commitment_id,
+      snapshot_pricing_tier: row.snapshot_pricing_tier,
+      snapshot_reference_monthly_price: Number(row.snapshot_reference_monthly_price),
+      snapshot_monthly_price: Number(row.snapshot_monthly_price),
+      pricing_source: row.pricing_source,
+      pricing_agreement_reason: row.pricing_agreement_reason,
+      pricing_agreed_at: this.iso(row.pricing_agreed_at),
     };
   }
   private idempotencyKey(value: string | undefined): string {

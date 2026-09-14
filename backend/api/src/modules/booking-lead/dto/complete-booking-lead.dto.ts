@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -12,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 const trimOptional = ({ value }: TransformFnParams): unknown => {
@@ -28,9 +30,29 @@ export class CompleteBookingLeadDto {
   start_date!: string;
 
   @IsInt()
-  @Min(3)
+  @Min(1)
   @Max(120)
   term_months!: number;
+
+  @IsOptional()
+  @IsIn(['standard', 'negotiated'])
+  pricing_source?: 'standard' | 'negotiated';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  agreed_monthly_price?: number;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  pricing_agreement_reason?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pricing_variance_acknowledged?: boolean;
 
   @IsIn(['monthly', 'yearly'])
   billing_cycle!: 'monthly' | 'yearly';

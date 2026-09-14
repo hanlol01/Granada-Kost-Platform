@@ -23,16 +23,20 @@ const titles: Record<ReportType, string> = {
   payments: 'Laporan Pembayaran',
   expenses: 'Laporan Pengeluaran',
   finance: 'Laporan Arus Kas Operasional',
+  'property-owners': 'Laporan Hak dan Setoran Owner',
 };
 
 const methodologies: Record<ReportType, string> = {
-  leases: 'Nilai kontrak memakai snapshot komersial yang tersimpan saat penyewaan dibuat.',
+  leases:
+    'Nilai kontrak memakai snapshot komersial saat penyewaan dibuat. Status check-out dan penyelesaian akhir berasal dari satu perintah check-out terbaru yang tercatat.',
   payments:
     'Penerimaan hanya dihitung sebagai kas ketika pembayaran berstatus terverifikasi dan tidak dibalik.',
   expenses:
     'Kas keluar hanya dihitung dari pengeluaran berstatus dibayar; pembatalan dan pembalikan tidak menambah beban.',
   finance:
     'Arus kas operasional memisahkan penerimaan sewa, deposit sebagai kewajiban, pengeluaran, dan hak Owner yang tercatat.',
+  'property-owners':
+    'Laporan hanya memuat periode Owner yang telah disetujui dan diterbitkan. Deposit keamanan tidak dihitung sebagai pendapatan.',
 };
 
 @Injectable()
@@ -110,7 +114,9 @@ export class ReportService {
           ? await this.payments(query)
           : type === 'expenses'
             ? await this.expenses(query)
-            : await this.finance(query);
+            : type === 'finance'
+              ? await this.finance(query)
+              : await this.propertyOwners(query);
     return {
       report_type: type,
       title: titles[type],
@@ -146,19 +152,84 @@ export class ReportService {
       search: `concat_ws(' ', resident.full_name, l.lease_code, rm.room_code, building.building_name, building.building_code)`,
     });
     if (query.payment_plan) this.add(parts, `l.payment_plan_type =`, query.payment_plan);
+    if (query.exit_type) this.add(parts, `checkout.exit_type =`, query.exit_type);
+    if (query.checkout_status) this.add(parts, `checkout.checkout_status =`, query.checkout_status);
+    if (query.financial_status)
+      this.add(parts, `checkout.financial_status =`, query.financial_status);
+    if (query.same_day)
+      parts.where.push(
+        query.same_day === 'yes'
+          ? `checkout.exit_type='resident_early_termination' AND checkout.notice_days=0`
+          : `(checkout.id IS NULL OR checkout.exit_type<>'resident_early_termination' OR checkout.notice_days<>0)`,
+      );
+    if (query.has_refund)
+      parts.where.push(
+        query.has_refund === 'yes'
+          ? `COALESCE(checkout.final_refund_amount,0)>0`
+          : `COALESCE(checkout.final_refund_amount,0)=0`,
+      );
+    if (query.has_amount_due)
+      parts.where.push(
+        query.has_amount_due === 'yes'
+          ? `COALESCE(checkout.amount_due,0)>0`
+          : `COALESCE(checkout.amount_due,0)=0`,
+      );
+    if (query.has_damage)
+      parts.where.push(
+        query.has_damage === 'yes'
+          ? `COALESCE(checkout.documented_damage_amount,0)>0`
+          : `COALESCE(checkout.documented_damage_amount,0)=0`,
+      );
     const from = `FROM leases l
       JOIN residents resident ON resident.id = l.resident_id
       JOIN rooms rm ON rm.id = l.room_id
       JOIN room_buildings building ON building.id = rm.building_id
+      LEFT JOIN LATERAL (
+        SELECT command.id,command.exit_type,command.state AS checkout_status,
+               command.notice_days,command.actual_checkout_date::text,
+               command.inspection_room_status AS room_result,
+               settlement.decision_status AS financial_status,
+               COALESCE(settlement.final_refund_amount,0)::bigint AS final_refund_amount,
+               COALESCE(settlement.amount_due,0)::bigint AS amount_due,
+               COALESCE(settlement.documented_damage_amount,0)::bigint AS documented_damage_amount
+        FROM lease_checkout_commands command
+        LEFT JOIN lease_exit_final_settlements settlement
+          ON settlement.checkout_command_id=command.id
+        WHERE command.lease_id=l.id AND command.exit_type IS NOT NULL
+        ORDER BY command.created_at DESC,command.id DESC
+        LIMIT 1
+      ) checkout ON true
       WHERE l.property_id = $1 AND ${parts.where.join(' AND ')}`;
     const page = await this.database.client.query(
       `SELECT l.id, l.lease_code, resident.full_name AS resident_name, resident.gender,
               rm.room_code, building.building_name, rm.category, l.lease_status,
               l.start_date::text, l.end_date::text, COALESCE(l.term_months, 0)::int AS term_months,
               COALESCE(l.payment_plan_type, '-') AS payment_plan,
-              COALESCE(l.snapshot_pricing_tier, '-') AS pricing_tier,
-              COALESCE(l.snapshot_monthly_price, 0)::int AS monthly_price,
-              COALESCE(l.contract_rent_amount, l.snapshot_yearly_price, 0)::int AS contract_value,
+               COALESCE(l.snapshot_pricing_tier, '-') AS pricing_tier,
+               COALESCE(l.pricing_source, 'standard') AS pricing_source,
+               COALESCE(l.snapshot_reference_monthly_price, l.snapshot_monthly_price, 0)::int AS reference_monthly_price,
+               COALESCE(l.snapshot_monthly_price, 0)::int AS agreed_monthly_price,
+               COALESCE(l.snapshot_monthly_price, 0)::int AS monthly_price,
+               COALESCE(l.snapshot_monthly_price, 0)::int
+                 - COALESCE(l.snapshot_reference_monthly_price, l.snapshot_monthly_price, 0)::int
+                 AS monthly_price_variance,
+               CASE
+                 WHEN COALESCE(l.snapshot_reference_monthly_price, 0) > 0
+                   THEN round(
+                     (l.snapshot_monthly_price - l.snapshot_reference_monthly_price)::numeric
+                     * 100 / l.snapshot_reference_monthly_price,
+                     2
+                   )
+                 ELSE 0
+               END AS monthly_price_variance_percent,
+               l.pricing_agreement_reason,
+               COALESCE(l.contract_rent_amount, l.snapshot_yearly_price, 0)::int AS contract_value,
+              checkout.exit_type,checkout.checkout_status,checkout.actual_checkout_date,
+              checkout.room_result,checkout.financial_status,
+              COALESCE(checkout.final_refund_amount,0)::int AS final_refund_amount,
+              COALESCE(checkout.amount_due,0)::int AS final_amount_due,
+              COALESCE(checkout.documented_damage_amount,0)::int AS documented_damage_amount,
+              COALESCE(checkout.notice_days=0 AND checkout.exit_type='resident_early_termination',false) AS same_day_departure,
               count(*) OVER()::int AS total_count
        ${from}
        ORDER BY l.start_date DESC, l.lease_code DESC
@@ -171,6 +242,12 @@ export class ReportService {
               count(*) FILTER (WHERE l.start_date BETWEEN $2::date AND $3::date)::int AS started_contracts,
               count(*) FILTER (WHERE l.end_date BETWEEN $2::date AND $3::date)::int AS ended_contracts,
               count(*) FILTER (WHERE l.end_date BETWEEN $3::date AND ($3::date + 30))::int AS ending_soon,
+              count(*) FILTER (WHERE checkout.id IS NOT NULL)::int AS checkout_total,
+              count(*) FILTER (WHERE checkout.checkout_status NOT IN ('completed','cancelled'))::int AS checkout_in_progress,
+              count(*) FILTER (WHERE checkout.notice_days=0 AND checkout.exit_type='resident_early_termination')::int AS same_day_departures,
+              COALESCE(sum(checkout.final_refund_amount),0)::bigint AS checkout_refund,
+              COALESCE(sum(checkout.amount_due),0)::bigint AS checkout_amount_due,
+              COALESCE(sum(checkout.documented_damage_amount),0)::bigint AS checkout_damage,
               COALESCE(sum(COALESCE(l.contract_rent_amount, l.snapshot_yearly_price, 0)), 0)::bigint AS contract_value
        ${from}`,
       parts.params.slice(0, -2),
@@ -371,6 +448,63 @@ export class ReportService {
     };
   }
 
+  private async propertyOwners(query: NormalizedQuery) {
+    const params: unknown[] = [query.property_id, query.date_from, query.date_to];
+    const conditions = [
+      `settlements.property_id=$1`,
+      `settlements.period_start >= date_trunc('month',$2::date)::date`,
+      `settlements.period_end <= (date_trunc('month',$3::date) + interval '1 month - 1 day')::date`,
+      `settlements.settlement_status IN ('approved','paid')`,
+      `publications.publication_status='published'`,
+    ];
+    if (query.q?.trim()) {
+      params.push(`%${query.q.trim().toLowerCase()}%`);
+      conditions.push(
+        `lower(concat_ws(' ', profiles.full_name, publications.document_number, settlements.reference)) LIKE $${params.length}`,
+      );
+    }
+    if (query.status) {
+      params.push(query.status);
+      conditions.push(`settlements.settlement_status=$${params.length}`);
+    }
+    const from = `FROM property_owner_settlements settlements
+      JOIN property_owner_profiles profiles ON profiles.id=settlements.owner_profile_id
+      JOIN property_owner_settlement_publications publications
+        ON publications.settlement_id=settlements.id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(CASE WHEN payout_kind='payout' THEN payout_amount ELSE -payout_amount END),0)::bigint AS paid_amount
+        FROM property_owner_payouts payouts WHERE payouts.settlement_id=settlements.id
+      ) payout ON true
+      WHERE ${conditions.join(' AND ')}`;
+    const pageParams = [...params, query.limit, query.offset];
+    const page = await this.database.client.query(
+      `SELECT profiles.full_name AS owner_name, settlements.period_start::text,
+              settlements.period_end::text, publications.document_number,
+              settlements.gross_amount::int AS gross_amount,
+              settlements.operator_fee_amount::int AS management_fee,
+              settlements.owner_amount::int AS owner_entitlement,
+              payout.paid_amount::int AS paid_to_owner,
+              GREATEST(settlements.owner_amount-payout.paid_amount,0)::int AS outstanding_to_owner,
+              settlements.settlement_status AS status,
+              publications.published_at::text, COUNT(*) OVER()::int AS total_count
+       ${from}
+       ORDER BY settlements.period_start DESC, profiles.full_name
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      pageParams,
+    );
+    const summary = await this.database.client.query(
+      `SELECT COUNT(*)::int AS total_owner_reports,
+              COALESCE(SUM(settlements.gross_amount),0)::bigint AS gross_amount,
+              COALESCE(SUM(settlements.operator_fee_amount),0)::bigint AS management_fee,
+              COALESCE(SUM(settlements.owner_amount),0)::bigint AS owner_entitlement,
+              COALESCE(SUM(payout.paid_amount),0)::bigint AS paid_to_owner,
+              COALESCE(SUM(GREATEST(settlements.owner_amount-payout.paid_amount,0)),0)::bigint AS outstanding_to_owner
+       ${from}`,
+      params,
+    );
+    return this.data(page, summary);
+  }
+
   private commonFilters(
     parts: QueryParts,
     query: NormalizedQuery,
@@ -496,6 +630,13 @@ export class ReportService {
       payment_plan: query.payment_plan ?? null,
       date_basis: query.date_basis ?? null,
       has_evidence: query.has_evidence ?? null,
+      exit_type: query.exit_type ?? null,
+      checkout_status: query.checkout_status ?? null,
+      financial_status: query.financial_status ?? null,
+      same_day: query.same_day ?? null,
+      has_refund: query.has_refund ?? null,
+      has_amount_due: query.has_amount_due ?? null,
+      has_damage: query.has_damage ?? null,
     };
     return createHash('sha256').update(JSON.stringify(filter)).digest('hex');
   }

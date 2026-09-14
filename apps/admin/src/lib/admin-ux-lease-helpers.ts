@@ -19,6 +19,19 @@ export type LeaseDetailRouteSearch = {
   tab: LeaseDetailTab;
 };
 
+export type CheckoutActionContext = {
+  state:
+    | "notice_received"
+    | "scheduled"
+    | "inspection_required"
+    | "settlement_pending"
+    | "completed"
+    | "cancelled";
+  decisionStatus: "refund_pending" | "amount_due" | "closed" | null;
+  refundStatus: "pending" | "settled" | "waived" | "reversed" | null;
+  amountDue: number | null;
+};
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
@@ -80,6 +93,29 @@ export function normalizeLeaseDetailSearch(raw: Record<string, unknown>): LeaseD
         ? raw.tab
         : "ringkasan",
   };
+}
+
+/**
+ * Resident-detail action copy is derived from both physical checkout and final
+ * financial state. A completed handover must not be presented as fully closed
+ * while a refund or final balance still requires action.
+ */
+export function checkoutActionLabel(
+  leaseStatus: "awaiting_activation" | "active" | "ended" | "completed" | null,
+  checkout: CheckoutActionContext | null,
+): string | null {
+  if (leaseStatus === "awaiting_activation") return "Batalkan penyewaan";
+  if (!checkout) return leaseStatus === "active" ? "Mulai proses check-out" : null;
+  if (checkout.state === "cancelled")
+    return leaseStatus === "active" ? "Mulai proses check-out" : null;
+  if (checkout.state !== "completed") return "Lanjutkan proses check-out";
+
+  const financialOpen =
+    checkout.decisionStatus === "refund_pending" ||
+    checkout.decisionStatus === "amount_due" ||
+    checkout.refundStatus === "pending" ||
+    (checkout.amountDue ?? 0) > 0;
+  return financialOpen ? "Lihat penyelesaian check-out" : "Lihat riwayat check-out";
 }
 
 /** Business dates are displayed as Jakarta dates; the server remains authoritative. */

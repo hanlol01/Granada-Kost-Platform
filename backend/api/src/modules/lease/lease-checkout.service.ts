@@ -9,6 +9,7 @@ import {
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import {
+  BILLING_DOCUMENT_RENDERER_VERSION,
   createLeaseExitOfficialDocumentPdf,
   type LeaseExitOfficialDocumentKind,
   type LeaseExitOfficialDocumentSnapshot,
@@ -46,11 +47,13 @@ type CheckoutRow = {
   notice_recorded_date: string;
   notice_reason: string;
   notice_exception_reason: string | null;
+  internal_note: string | null;
   exit_type: 'resident_early_termination' | 'normal_expiry' | null;
   request_source: string | null;
   notice_days: number | null;
   missing_notice_days: number | null;
   payment_period_days: number | null;
+  monthly_rate_amount?: string | null;
   daily_rate_amount: string | null;
   recommended_short_notice_charge: string | null;
   approved_short_notice_charge: string | null;
@@ -65,6 +68,10 @@ type CheckoutRow = {
   final_rent_refund_amount?: string | null;
   final_deposit_refund_amount?: string | null;
   refund_adjustment_amount?: string | null;
+  documented_damage_amount?: string | null;
+  damage_amount_due?: string | null;
+  gross_refund_amount?: string | null;
+  gross_amount_due?: string | null;
   amount_due?: string | null;
   settlement_decision_status?: string | null;
   exit_refund_id?: string | null;
@@ -92,10 +99,26 @@ type LeaseRow = {
 };
 type InvoiceRow = {
   id: string;
+  invoice_purpose: 'rent';
   total_amount: string;
   credit_amount: string;
   net_allocated: string;
 };
+
+function currentInvoiceOutstanding(invoices: InvoiceRow[]): number {
+  return invoices.reduce(
+    (sum, invoice) =>
+      sum +
+      Math.max(
+        Number(invoice.total_amount) -
+          Number(invoice.credit_amount) -
+          Number(invoice.net_allocated),
+        0,
+      ),
+    0,
+  );
+}
+
 type LedgerRow = { direction: 'credit' | 'debit'; amount: string };
 type IdempotencyRow = {
   request_fingerprint: string;
@@ -140,9 +163,13 @@ type ExitDocumentContextRow = {
   rent_refundable_amount: string;
   rent_amount_due_before_deposit_offset: string;
   deposit_liability_amount: string;
+  documented_damage_amount: string;
   deposit_deduction_amount: string;
+  damage_amount_due: string;
   deposit_rent_offset_amount: string;
   refundable_deposit_amount: string;
+  gross_refund_amount: string;
+  gross_amount_due: string;
   recommended_refund_amount: string;
   final_refund_amount: string;
   final_rent_refund_amount: string;
@@ -193,16 +220,19 @@ export class LeaseCheckoutService {
     const result = await this.leases.query<CheckoutRow>(
       `SELECT command.id,command.property_id,command.lease_id,command.occupancy_id,command.resident_id,
               command.room_id,command.state,command.effective_date::text,command.notice_recorded_date::text,
-              command.notice_reason,command.notice_exception_reason,command.exit_type,command.request_source,
+              command.notice_reason,command.notice_exception_reason,command.internal_note,command.exit_type,command.request_source,
               command.notice_days,command.missing_notice_days,command.payment_period_days,
+              checkout_lease.snapshot_monthly_price AS monthly_rate_amount,
               command.daily_rate_amount,command.recommended_short_notice_charge,
               command.approved_short_notice_charge,command.short_notice_waiver_reason,command.approved_at,
               command.physical_checkout_confirmed_at,command.actual_checkout_date::text,
               command.inspection_room_status,
               settlement.id AS final_settlement_id,
               settlement.recommended_refund_amount,settlement.final_refund_amount,
-              settlement.final_rent_refund_amount,settlement.final_deposit_refund_amount,
-              settlement.refund_adjustment_amount,settlement.amount_due,
+               settlement.final_rent_refund_amount,settlement.final_deposit_refund_amount,
+               settlement.refund_adjustment_amount,settlement.documented_damage_amount,
+               settlement.damage_amount_due,settlement.gross_refund_amount,
+               settlement.gross_amount_due,settlement.amount_due,
               settlement.decision_status AS settlement_decision_status,
               refund.id AS exit_refund_id,refund.amount AS exit_refund_amount,
               refund.refund_status AS exit_refund_status,refund.refund_due_date::text AS exit_refund_due_date,
@@ -216,6 +246,9 @@ export class LeaseCheckoutService {
                   AND document.property_id=command.property_id
               ),'[]'::jsonb) AS documents
        FROM lease_checkout_commands command
+       JOIN leases checkout_lease
+         ON checkout_lease.id=command.lease_id
+        AND checkout_lease.property_id=command.property_id
        LEFT JOIN lease_exit_final_settlements settlement ON settlement.checkout_command_id=command.id
        LEFT JOIN lease_exit_refunds refund ON refund.final_settlement_id=settlement.id
        WHERE command.lease_id=$1 ORDER BY command.created_at DESC`,
@@ -234,9 +267,12 @@ export class LeaseCheckoutService {
     this.assertAdmin(user, scope.property_id);
     const result = await this.leases.query<{
       document_code: string;
+      document_kind: LeaseExitOfficialDocumentKind;
+      safe_snapshot: LeaseExitOfficialDocumentSnapshot;
       document_content: Buffer;
     }>(
-      `SELECT document.document_code,document.document_content
+      `SELECT document.document_code,document.document_kind,document.safe_snapshot,
+              document.document_content
        FROM lease_exit_documents document
        WHERE document.id=$1 AND document.property_id=$2
          AND document.lease_id=$3 AND document.checkout_command_id=$4`,
@@ -248,18 +284,18 @@ export class LeaseCheckoutService {
         code: 'LEASE_EXIT_DOCUMENT_NOT_FOUND',
         message: 'Lease exit document not found',
       });
-    return {
-      filename: `${row.document_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80)}.pdf`,
-      content: row.document_content,
-    };
+    return this.renderStoredExitDocument(row);
   }
 
   async myDocumentFile(user: UserAccessContext, documentId: string) {
     const result = await this.leases.query<{
       document_code: string;
+      document_kind: LeaseExitOfficialDocumentKind;
+      safe_snapshot: LeaseExitOfficialDocumentSnapshot;
       document_content: Buffer;
     }>(
-      `SELECT document.document_code,document.document_content
+      `SELECT document.document_code,document.document_kind,document.safe_snapshot,
+              document.document_content
        FROM lease_exit_documents document
        JOIN residents resident
          ON resident.id=document.resident_id AND resident.property_id=document.property_id
@@ -272,10 +308,26 @@ export class LeaseCheckoutService {
         code: 'LEASE_EXIT_DOCUMENT_NOT_FOUND',
         message: 'Lease exit document not found',
       });
-    return {
-      filename: `${row.document_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80)}.pdf`,
-      content: row.document_content,
-    };
+    return this.renderStoredExitDocument(row);
+  }
+
+  private async renderStoredExitDocument(row: {
+    document_code: string;
+    document_kind: LeaseExitOfficialDocumentKind;
+    safe_snapshot: LeaseExitOfficialDocumentSnapshot;
+    document_content: Buffer;
+  }) {
+    if (row.safe_snapshot.renderer_version === BILLING_DOCUMENT_RENDERER_VERSION) {
+      return {
+        filename: `${row.document_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80)}.pdf`,
+        content: row.document_content,
+      };
+    }
+
+    // Older official files retain their original bytes and checksum in storage;
+    // downloads receive a presentation-only revision rendered from that same
+    // immutable snapshot so historical room labels are corrected consistently.
+    return createLeaseExitOfficialDocumentPdf(row.document_kind, row.safe_snapshot);
   }
 
   async notice(
@@ -321,10 +373,13 @@ export class LeaseCheckoutService {
             message: error instanceof Error ? error.message : 'Checkout exit policy is invalid',
           });
         }
-        const requestSource =
-          dto.exit_type === 'normal_expiry'
-            ? 'admin_recorded_normal_expiry'
-            : 'admin_recorded_resident_request';
+        const requestSource = dto.request_source;
+        const noticeExceptionEvidence = this.evidenceIds(dto.notice_exception_evidence_file_ids);
+        if (quote.missingNoticeDays > 0 && (!exceptionReason || !noticeExceptionEvidence.length))
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_NOTICE_EXCEPTION_EVIDENCE_REQUIRED',
+            message: 'A checkout with less than 14 days notice requires a reason and evidence',
+          });
         const existing = await client.query<{ id: string }>(
           `SELECT id FROM lease_checkout_commands WHERE lease_id=$1 AND state IN ('notice_received','scheduled','inspection_required','settlement_pending') FOR UPDATE`,
           [lease.id],
@@ -336,13 +391,13 @@ export class LeaseCheckoutService {
           });
         const inserted = await client.query<CheckoutRow>(
           `INSERT INTO lease_checkout_commands(
-             property_id,lease_id,occupancy_id,resident_id,room_id,effective_date,notice_recorded_date,notice_reason,notice_exception_reason,created_by_user_id,
+             property_id,lease_id,occupancy_id,resident_id,room_id,effective_date,notice_recorded_date,notice_reason,notice_exception_reason,internal_note,created_by_user_id,
              exit_type,request_source,requested_by_user_id,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
              planned_lease_end_date
            )
-         VALUES($1,$2,$3,$4,$5,$6::date,$7::date,$8,$9,$10,$11,$12,$10,$13,$14,$15,$16,$17,$18::date)
+         VALUES($1,$2,$3,$4,$5,$6::date,$7::date,$8,$9,$10,$11,$12,$13,$11,$14,$15,$16,$17,$18,$19::date)
          ON CONFLICT DO NOTHING
-          RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+          RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                     exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                     approved_short_notice_charge,short_notice_waiver_reason,approved_at,
                     physical_checkout_confirmed_at,actual_checkout_date::text`,
@@ -356,6 +411,7 @@ export class LeaseCheckoutService {
             today,
             dto.reason.trim(),
             exceptionReason,
+            dto.internal_note?.trim() || null,
             user.id,
             dto.exit_type,
             requestSource,
@@ -373,6 +429,18 @@ export class LeaseCheckoutService {
             code: 'CHECKOUT_ALREADY_OPEN',
             message: 'Lease already has a non-terminal checkout command',
           });
+        if (noticeExceptionEvidence.length)
+          await this.insertEvidence(
+            client,
+            checkout,
+            'notice_exception',
+            noticeExceptionEvidence,
+            user.id,
+            {
+              missing_notice_days: quote.missingNoticeDays,
+              reason: exceptionReason,
+            },
+          );
         await this.history(
           client,
           scope.property_id,
@@ -383,6 +451,7 @@ export class LeaseCheckoutService {
           {
             checkout_command_id: checkout.id,
             reason: dto.reason.trim(),
+            request_source: requestSource,
             notice_exception: Boolean(exceptionReason),
             exit_type: dto.exit_type,
             notice_days: quote.noticeDays,
@@ -420,7 +489,12 @@ export class LeaseCheckoutService {
         return {
           resourceType: 'lease_checkout_command',
           resourceId: checkout.id,
-          data: { checkout },
+          data: {
+            checkout: {
+              ...checkout,
+              monthly_rate_amount: lease.snapshot_monthly_price,
+            },
+          },
         };
       },
     );
@@ -448,28 +522,42 @@ export class LeaseCheckoutService {
         if (dto.approved_short_notice_charge > recommended)
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_SHORT_NOTICE_CHARGE_EXCEEDS_RECOMMENDATION',
-            message: 'Approved short-notice charge cannot exceed the server recommendation',
+            message: 'Kompensasi pemberitahuan singkat tidak boleh melebihi rekomendasi server',
           });
         const waiverReason = dto.short_notice_waiver_reason?.trim() || null;
+        const waiverEvidence = this.evidenceIds(dto.short_notice_waiver_evidence_file_ids);
         if (
           dto.approved_short_notice_charge < recommended &&
-          (!waiverReason || waiverReason.length < 3)
+          (!waiverReason || waiverReason.length < 3 || !waiverEvidence.length)
         )
           throw new UnprocessableEntityException({
-            code: 'CHECKOUT_SHORT_NOTICE_WAIVER_REASON_REQUIRED',
-            message: 'Reducing the recommended short-notice charge requires a waiver reason',
+            code: 'CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED',
+            message: 'Pengurangan kompensasi pemberitahuan singkat memerlukan alasan dan bukti',
           });
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands
            SET state='scheduled',scheduled_by_user_id=$2,scheduled_at=now(),approved_by_user_id=$2,approved_at=now(),
                approved_short_notice_charge=$3,short_notice_waiver_reason=$4,updated_at=now()
            WHERE id=$1
-         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                    exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                    approved_short_notice_charge,short_notice_waiver_reason,approved_at,
                    physical_checkout_confirmed_at,actual_checkout_date::text`,
           [checkout.id, user.id, dto.approved_short_notice_charge, waiverReason],
         );
+        if (waiverEvidence.length)
+          await this.insertEvidence(
+            client,
+            checkout,
+            'short_notice_waiver',
+            waiverEvidence,
+            user.id,
+            {
+              recommended_amount: recommended,
+              approved_amount: dto.approved_short_notice_charge,
+              reason: waiverReason,
+            },
+          );
         await this.history(
           client,
           checkout.property_id,
@@ -509,6 +597,14 @@ export class LeaseCheckoutService {
         this.requireState(checkout, 'scheduled');
         this.assertHandoverConfirmations(dto);
         this.assertHandoverDetails(dto);
+        const keyAccessEvidence = this.evidenceIds(dto.key_access_file_ids);
+        const inventoryEvidence = this.evidenceIds(dto.inventory_file_ids);
+        const parkingEvidence = this.evidenceIds(dto.parking_file_ids);
+        if (!keyAccessEvidence.length || !inventoryEvidence.length)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_HANDOVER_FILE_EVIDENCE_REQUIRED',
+            message: 'Key/access and inventory handover each require at least one evidence file',
+          });
         if (checkout.exit_type) {
           if (!checkout.approved_at)
             throw new ConflictException({
@@ -524,26 +620,19 @@ export class LeaseCheckoutService {
           this.assertActive(lease);
           this.assertCheckoutTuple(checkout, lease);
           await this.lockOccupancyAndRoom(client, checkout);
-          await this.lockResidentParking(client, checkout.property_id, checkout.resident_id);
+          await this.lockResidentParking(client, checkout);
         }
-        await this.insertEvidence(
-          client,
-          checkout,
-          'keys_access',
-          dto.key_access_file_ids,
-          user.id,
-          {
-            confirmed: true,
-            items: dto.key_access_items ?? [],
-            notes: dto.notes?.trim() || null,
-          },
-        );
-        await this.insertEvidence(client, checkout, 'inventory', dto.inventory_file_ids, user.id, {
+        await this.insertEvidence(client, checkout, 'keys_access', keyAccessEvidence, user.id, {
+          confirmed: true,
+          items: dto.key_access_items ?? [],
+          notes: dto.notes?.trim() || null,
+        });
+        await this.insertEvidence(client, checkout, 'inventory', inventoryEvidence, user.id, {
           confirmed: true,
           items: dto.inventory_items ?? [],
           notes: dto.notes?.trim() || null,
         });
-        await this.insertEvidence(client, checkout, 'parking', dto.parking_file_ids, user.id, {
+        await this.insertEvidence(client, checkout, 'parking', parkingEvidence, user.id, {
           confirmed: true,
           notes: dto.notes?.trim() || null,
         });
@@ -625,7 +714,7 @@ export class LeaseCheckoutService {
                actual_checkout_date=CASE WHEN exit_type IS NOT NULL THEN $3::date ELSE actual_checkout_date END,
                updated_at=now()
            WHERE id=$1
-         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                    exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                    approved_short_notice_charge,short_notice_waiver_reason,approved_at,physical_checkout_confirmed_at,actual_checkout_date::text`,
           [checkout.id, user.id, today],
@@ -666,19 +755,20 @@ export class LeaseCheckoutService {
       context,
       async (client, checkout, today) => {
         this.requireState(checkout, 'inspection_required');
+        const inspectionEvidence = this.evidenceIds(dto.inspection_file_ids);
+        if (!inspectionEvidence.length)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_INSPECTION_FILE_EVIDENCE_REQUIRED',
+            message: 'Room inspection requires at least one evidence file',
+          });
         if (checkout.exit_type && !checkout.physical_checkout_confirmed_at)
           throw new ConflictException({
             code: 'CHECKOUT_PHYSICAL_CONFIRMATION_REQUIRED',
             message: 'Room inspection requires confirmed physical checkout',
           });
-        await this.insertEvidence(
-          client,
-          checkout,
-          'inspection',
-          dto.inspection_file_ids,
-          user.id,
-          { notes_present: Boolean(dto.notes) },
-        );
+        await this.insertEvidence(client, checkout, 'inspection', inspectionEvidence, user.id, {
+          notes_present: Boolean(dto.notes),
+        });
         if (checkout.exit_type) {
           const roomUpdated = await client.query(
             `UPDATE rooms SET room_status=$2,updated_by_user_id=$3,updated_at=now()
@@ -693,7 +783,7 @@ export class LeaseCheckoutService {
         }
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands SET state='settlement_pending',inspection_room_status=$2,inspection_recorded_by_user_id=$3,inspection_recorded_at=now(),updated_at=now() WHERE id=$1
-         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+         RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                    exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                    approved_short_notice_charge,short_notice_waiver_reason,approved_at,physical_checkout_confirmed_at,actual_checkout_date::text`,
           [checkout.id, dto.room_status_after, user.id],
@@ -765,8 +855,7 @@ export class LeaseCheckoutService {
         await this.assertEvidenceComplete(client, checkout);
         const invoices = await this.lockInvoices(client, lease.id);
         const balance = await this.lockDepositBalance(client, lease.id);
-        if (!checkout.exit_type)
-          await this.lockResidentParking(client, checkout.property_id, checkout.resident_id);
+        if (!checkout.exit_type) await this.lockResidentParking(client, checkout);
         let credited = 0;
         let unearnedInvoiceCredit = 0;
         if (!checkout.exit_type) {
@@ -781,11 +870,21 @@ export class LeaseCheckoutService {
         }
         const damage = dto.damage_deductions ?? [];
         const damageTotal = damage.reduce((sum, row) => sum + row.amount, 0);
-        if (damageTotal > balance - credited)
+        if (!Number.isSafeInteger(damageTotal) || damageTotal < 0)
+          throw new UnprocessableEntityException({
+            code: 'CHECKOUT_DAMAGE_AMOUNT_INVALID',
+            message: 'Documented damage must use non-negative whole Rupiah amounts',
+          });
+        if (!checkout.exit_type && damageTotal > balance - credited)
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_DEPOSIT_EXCEEDED',
             message: 'Damage deductions exceed remaining deposit balance',
           });
+        let remainingDepositForDamage = Math.max(
+          balance - credited - (checkout.exit_type ? (dto.deposit_rent_offset_amount ?? 0) : 0),
+          0,
+        );
+        let appliedDamageDeductionTotal = 0;
         for (const deduction of damage) {
           const deductionEvidence = this.evidenceIds(
             deduction.evidence_file_ids,
@@ -797,25 +896,47 @@ export class LeaseCheckoutService {
               message: 'A damage deduction requires at least one evidence file',
             });
           await this.assertFiles(client, checkout.property_id, deductionEvidence);
-          const entry = await client.query<{ id: string }>(
-            `INSERT INTO lease_deposit_transactions(property_id,lease_id,transaction_type,direction,amount,reason_type,reason,evidence_file_id,settlement_status,settled_at,settled_by_user_id,metadata,created_by_user_id)
-           VALUES($1,$2,'deduction','debit',$3,'checkout_damage',$4,$5,'settled',now(),$6,$7::jsonb,$6) RETURNING id`,
-            [
-              checkout.property_id,
-              lease.id,
-              deduction.amount,
-              deduction.reason.trim(),
-              deductionEvidence[0],
-              user.id,
-              JSON.stringify({ checkout_command_id: checkout.id }),
-            ],
-          );
+          const appliedAmount = Math.min(deduction.amount, remainingDepositForDamage);
+          remainingDepositForDamage -= appliedAmount;
+          appliedDamageDeductionTotal += appliedAmount;
+          const directAmount = deduction.amount - appliedAmount;
+          const fundingParty =
+            appliedAmount > 0 && directAmount > 0
+              ? 'resident_deposit_and_direct'
+              : appliedAmount > 0
+                ? 'resident_deposit'
+                : 'resident_direct';
+          const entry =
+            appliedAmount > 0
+              ? await client.query<{ id: string }>(
+                  `INSERT INTO lease_deposit_transactions(property_id,lease_id,transaction_type,direction,amount,reason_type,reason,evidence_file_id,settlement_status,settled_at,settled_by_user_id,metadata,created_by_user_id)
+                   VALUES($1,$2,'deduction','debit',$3,'checkout_damage',$4,$5,'settled',now(),$6,$7::jsonb,$6) RETURNING id`,
+                  [
+                    checkout.property_id,
+                    lease.id,
+                    appliedAmount,
+                    deduction.reason.trim(),
+                    deductionEvidence[0],
+                    user.id,
+                    JSON.stringify({
+                      checkout_command_id: checkout.id,
+                      documented_damage_amount: deduction.amount,
+                      responsible_party: 'resident',
+                      funding_party: fundingParty,
+                    }),
+                  ],
+                )
+              : null;
           await this.insertEvidence(client, checkout, 'damage', deductionEvidence, user.id, {
-            deposit_transaction_id: entry.rows[0].id,
-            amount: deduction.amount,
+            deposit_transaction_id: entry?.rows[0]?.id ?? null,
+            documented_damage_amount: deduction.amount,
+            deposit_deduction_amount: appliedAmount,
+            damage_amount_due: directAmount,
+            responsible_party: 'resident',
+            funding_party: fundingParty,
           });
         }
-        let refundAmount = balance - credited - damageTotal;
+        let refundAmount = balance - credited - appliedDamageDeductionTotal;
         let refundId: string | null = null;
         let refundDueDate: string | null = null;
         let finalSettlementId: string | null = null;
@@ -891,6 +1012,18 @@ export class LeaseCheckoutService {
               reason: offsetReason,
             });
           }
+          const settlementNetCredit = Math.min(
+            quote.grossRefundAmount,
+            currentInvoiceOutstanding(invoices),
+          );
+          if (settlementNetCredit > 0)
+            await this.applySettlementNetCredits(
+              client,
+              checkout,
+              invoices,
+              settlementNetCredit,
+              user.id,
+            );
           const finalRefund = dto.final_refund_amount ?? quote.recommendedRefundAmount;
           const adjustmentReason = dto.refund_adjustment_reason?.trim() || null;
           const adjustmentEvidence = this.evidenceIds(
@@ -934,8 +1067,9 @@ export class LeaseCheckoutService {
                deposit_liability_amount,deposit_deduction_amount,deposit_rent_offset_amount,refundable_deposit_amount,
                recommended_refund_amount,final_refund_amount,final_rent_refund_amount,final_deposit_refund_amount,
                refund_adjustment_amount,refund_adjustment_reason,refund_adjustment_evidence_file_id,
+               documented_damage_amount,damage_amount_due,gross_refund_amount,gross_amount_due,
                amount_due,decision_status,approved_by_user_id
-             ) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+             ) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
              RETURNING id`,
             [
               checkout.property_id,
@@ -966,12 +1100,106 @@ export class LeaseCheckoutService {
               refundAdjustmentAmount,
               adjustmentReason,
               adjustmentEvidence[0] ?? null,
+              quote.documentedDamageAmount,
+              quote.damageAmountDue,
+              quote.grossRefundAmount,
+              quote.grossAmountDue,
               quote.amountDue,
               decisionStatus,
               user.id,
             ],
           );
           finalSettlementId = settlement.rows[0].id;
+          if (amountDue > 0) {
+            const currentRentInvoices = await this.lockInvoices(client, lease.id);
+            let rentComponent = Math.min(amountDue, currentInvoiceOutstanding(currentRentInvoices));
+            let rentLinkedAmount = 0;
+            for (const invoice of currentRentInvoices) {
+              if (rentComponent <= 0) break;
+              const outstanding = Math.max(
+                Number(invoice.total_amount) -
+                  Number(invoice.credit_amount) -
+                  Number(invoice.net_allocated),
+                0,
+              );
+              const linkedAmount = Math.min(rentComponent, outstanding);
+              if (linkedAmount <= 0) continue;
+              await client.query(
+                `INSERT INTO lease_exit_final_invoice_links(
+                   property_id,final_settlement_id,checkout_command_id,lease_id,invoice_id,
+                   component_type,linked_amount,created_by_user_id
+                 ) VALUES($1,$2,$3,$4,$5,'rent_balance',$6,$7)`,
+                [
+                  checkout.property_id,
+                  finalSettlementId,
+                  checkout.id,
+                  lease.id,
+                  invoice.id,
+                  linkedAmount,
+                  user.id,
+                ],
+              );
+              rentComponent -= linkedAmount;
+              rentLinkedAmount += linkedAmount;
+            }
+            const finalAdjustmentAmount = amountDue - rentLinkedAmount;
+            if (finalAdjustmentAmount > 0) {
+              // The final adjustment is paid in this documented order: approved
+              // short-notice compensation first, then resident-funded damage.
+              // Keeping the payable split inside the invoice snapshot lets Owner
+              // recognition attribute only collected compensation and never
+              // mistake asset-recovery money for rent income.
+              const payableShortNoticeAmount = Math.min(
+                finalAdjustmentAmount,
+                quote.approvedShortNoticeCharge,
+              );
+              const payableDamageAmount = Math.max(
+                finalAdjustmentAmount - payableShortNoticeAmount,
+                0,
+              );
+              const damageEvidenceFileIds = [
+                ...new Set(
+                  damage.flatMap((item) =>
+                    this.evidenceIds(item.evidence_file_ids, item.evidence_file_id),
+                  ),
+                ),
+              ].sort();
+              const finalInvoice = await this.w06Billing.issueCheckoutFinalChargeInTransaction(
+                client,
+                {
+                  propertyId: checkout.property_id,
+                  leaseId: lease.id,
+                  residentId: checkout.resident_id,
+                  checkoutCommandId: checkout.id,
+                  amount: finalAdjustmentAmount,
+                  dueDate: today,
+                  description: 'Tagihan akhir proses check-out',
+                  evidenceFileIds: damageEvidenceFileIds,
+                  componentBreakdown: {
+                    rentBalanceAmount: rentLinkedAmount,
+                    shortNoticeAmount: payableShortNoticeAmount,
+                    damageAmount: payableDamageAmount,
+                  },
+                  actorUserId: user.id,
+                },
+              );
+              await client.query(
+                `INSERT INTO lease_exit_final_invoice_links(
+                   property_id,final_settlement_id,checkout_command_id,lease_id,invoice_id,
+                   component_type,linked_amount,created_by_user_id
+                 ) VALUES($1,$2,$3,$4,$5,'final_adjustment',$6,$7)`,
+                [
+                  checkout.property_id,
+                  finalSettlementId,
+                  checkout.id,
+                  lease.id,
+                  finalInvoice.invoiceId,
+                  finalAdjustmentAmount,
+                  user.id,
+                ],
+              );
+            }
+          }
           await this.insertEvidence(client, checkout, 'settlement', adjustmentEvidence, user.id, {
             final_settlement_id: finalSettlementId,
             recommended_refund_amount: quote.recommendedRefundAmount,
@@ -979,6 +1207,11 @@ export class LeaseCheckoutService {
             final_rent_refund_amount: finalRentRefundAmount,
             final_deposit_refund_amount: finalDepositRefundAmount,
             refund_adjustment_amount: refundAdjustmentAmount,
+            documented_damage_amount: quote.documentedDamageAmount,
+            deposit_deduction_amount: quote.depositDeductionAmount,
+            damage_amount_due: quote.damageAmountDue,
+            gross_refund_amount: quote.grossRefundAmount,
+            gross_amount_due: quote.grossAmountDue,
             amount_due: quote.amountDue,
           });
           const depositAdjustmentAmount = quote.refundableDepositAmount - finalDepositRefundAmount;
@@ -994,7 +1227,7 @@ export class LeaseCheckoutService {
                 lease.id,
                 depositAdjustmentAmount,
                 adjustmentReason,
-                adjustmentEvidence,
+                adjustmentEvidence[0] ?? null,
                 user.id,
                 JSON.stringify({
                   checkout_command_id: checkout.id,
@@ -1139,7 +1372,7 @@ export class LeaseCheckoutService {
         );
         const completed = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands SET state='completed',completion_room_status=$2,completed_by_user_id=$3,completed_at=now(),updated_at=now() WHERE id=$1
-           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                      exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                      approved_short_notice_charge,short_notice_waiver_reason,approved_at,
                      physical_checkout_confirmed_at,actual_checkout_date::text`,
@@ -1278,10 +1511,10 @@ export class LeaseCheckoutService {
       const invoices = await this.lockInvoices(client, lease.id);
       const balance = await this.lockDepositBalance(client, lease.id);
       const damageTotal = (dto.damage_deductions ?? []).reduce((sum, row) => sum + row.amount, 0);
-      if (!Number.isSafeInteger(damageTotal) || damageTotal < 0 || damageTotal > balance)
+      if (!Number.isSafeInteger(damageTotal) || damageTotal < 0)
         throw new UnprocessableEntityException({
-          code: 'CHECKOUT_DEPOSIT_EXCEEDED',
-          message: 'Damage deductions exceed the authoritative deposit balance',
+          code: 'CHECKOUT_DAMAGE_AMOUNT_INVALID',
+          message: 'Documented damage must use non-negative whole Rupiah amounts',
         });
       const quote = this.buildFinalSettlementQuote(
         checkout,
@@ -1307,9 +1540,13 @@ export class LeaseCheckoutService {
             rent_refundable_amount: quote.rentRefundableAmount,
             rent_amount_due_before_deposit_offset: quote.rentAmountDueBeforeDepositOffset,
             deposit_liability_amount: quote.depositLiabilityAmount,
+            documented_damage_amount: quote.documentedDamageAmount,
             deposit_deduction_amount: quote.depositDeductionAmount,
+            damage_amount_due: quote.damageAmountDue,
             deposit_rent_offset_amount: quote.depositRentOffsetAmount,
             refundable_deposit_amount: quote.refundableDepositAmount,
+            gross_refund_amount: quote.grossRefundAmount,
+            gross_amount_due: quote.grossAmountDue,
             recommended_refund_amount: quote.recommendedRefundAmount,
             amount_due: quote.amountDue,
           },
@@ -1392,7 +1629,7 @@ export class LeaseCheckoutService {
           });
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands SET state='cancelled',cancelled_by_user_id=$2,cancelled_at=now(),cancellation_reason=$3,updated_at=now() WHERE id=$1
-           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+           RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
                      exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
                      approved_short_notice_charge,short_notice_waiver_reason,approved_at,
                      physical_checkout_confirmed_at,actual_checkout_date::text`,
@@ -1707,8 +1944,10 @@ export class LeaseCheckoutService {
               COALESCE(invoice_adjustment.amount,0) AS unearned_invoice_credit_amount,
               settlement.contract_outstanding_amount,settlement.rent_refundable_amount,
               settlement.rent_amount_due_before_deposit_offset,
-              settlement.deposit_liability_amount,settlement.deposit_deduction_amount,
-              settlement.deposit_rent_offset_amount,settlement.refundable_deposit_amount,
+               settlement.deposit_liability_amount,settlement.documented_damage_amount,
+               settlement.deposit_deduction_amount,settlement.damage_amount_due,
+               settlement.deposit_rent_offset_amount,settlement.refundable_deposit_amount,
+               settlement.gross_refund_amount,settlement.gross_amount_due,
               settlement.recommended_refund_amount,settlement.final_refund_amount,
               settlement.final_rent_refund_amount,settlement.final_deposit_refund_amount,
               settlement.refund_adjustment_amount,settlement.refund_adjustment_reason,
@@ -1876,9 +2115,13 @@ export class LeaseCheckoutService {
           authority.rent_amount_due_before_deposit_offset,
         ),
         deposit_liability_amount: Number(authority.deposit_liability_amount),
+        documented_damage_amount: Number(authority.documented_damage_amount),
         deposit_deduction_amount: Number(authority.deposit_deduction_amount),
+        damage_amount_due: Number(authority.damage_amount_due),
         deposit_rent_offset_amount: Number(authority.deposit_rent_offset_amount),
         refundable_deposit_amount: Number(authority.refundable_deposit_amount),
+        gross_refund_amount: Number(authority.gross_refund_amount),
+        gross_amount_due: Number(authority.gross_amount_due),
         recommended_refund_amount: Number(authority.recommended_refund_amount),
         final_refund_amount: Number(authority.final_refund_amount),
         final_rent_refund_amount: Number(authority.final_rent_refund_amount),
@@ -1911,6 +2154,7 @@ export class LeaseCheckoutService {
           message: 'Official lease-exit document number could not be issued',
         });
       const snapshot: LeaseExitOfficialDocumentSnapshot = {
+        renderer_version: BILLING_DOCUMENT_RENDERER_VERSION,
         document_code: documentCode,
         document_kind: kind,
         ...baseSnapshot,
@@ -2022,7 +2266,7 @@ export class LeaseCheckoutService {
         verifiedRentPaymentAmount: verifiedRentPayment,
         existingInvoiceCreditAmount: existingInvoiceCredit,
         depositLiabilityAmount: depositBalance,
-        depositDeductionAmount: damageTotal,
+        documentedDamageAmount: damageTotal,
         approvedShortNoticeCharge: Number(checkout.approved_short_notice_charge ?? 0),
         depositRentOffsetAmount: depositOffset,
       });
@@ -2101,6 +2345,59 @@ export class LeaseCheckoutService {
     return credited;
   }
 
+  private async applySettlementNetCredits(
+    client: PoolClient,
+    checkout: CheckoutRow,
+    invoices: InvoiceRow[],
+    balance: number,
+    actorId: string,
+  ) {
+    let remaining = balance;
+    for (const invoice of invoices) {
+      if (remaining === 0) break;
+      const outstanding = Math.max(
+        Number(invoice.total_amount) -
+          Number(invoice.credit_amount) -
+          Number(invoice.net_allocated),
+        0,
+      );
+      const amount = Math.min(remaining, outstanding);
+      if (amount === 0) continue;
+      await client.query(
+        `INSERT INTO lease_exit_invoice_adjustments(
+           property_id,checkout_command_id,lease_id,invoice_id,adjustment_type,amount,
+           invoice_credit_before_amount,created_by_user_id
+         ) VALUES($1,$2,$3,$4,'final_settlement_netting',$5,$6,$7)`,
+        [
+          checkout.property_id,
+          checkout.id,
+          checkout.lease_id,
+          invoice.id,
+          amount,
+          Number(invoice.credit_amount),
+          actorId,
+        ],
+      );
+      await client.query(
+        `UPDATE invoices SET credit_amount=credit_amount+$2,updated_at=now()
+         WHERE id=$1 AND property_id=$3`,
+        [invoice.id, amount, checkout.property_id],
+      );
+      await this.w06Billing.reconcileInvoiceLifecycleInTransaction(
+        client,
+        checkout.property_id,
+        invoice.id,
+      );
+      invoice.credit_amount = String(Number(invoice.credit_amount) + amount);
+      remaining -= amount;
+    }
+    if (remaining !== 0)
+      throw new ConflictException({
+        code: 'CHECKOUT_FINAL_NETTING_CONFLICT',
+        message: 'Final settlement could not be reconciled against the rent invoices',
+      });
+  }
+
   private async applyInvoiceCredits(
     client: PoolClient,
     checkout: CheckoutRow,
@@ -2165,16 +2462,25 @@ export class LeaseCheckoutService {
   }
 
   private async assertEvidenceComplete(client: PoolClient, checkout: CheckoutRow) {
-    const result = await client.query<{ evidence_category: string }>(
-      `SELECT DISTINCT evidence_category FROM lease_checkout_evidence WHERE checkout_command_id=$1 AND property_id=$2`,
+    const result = await client.query<{ evidence_category: string; has_file: boolean }>(
+      `SELECT evidence_category,bool_or(file_id IS NOT NULL) AS has_file
+       FROM lease_checkout_evidence
+       WHERE checkout_command_id=$1 AND property_id=$2
+       GROUP BY evidence_category`,
       [checkout.id, checkout.property_id],
     );
-    const categories = new Set(result.rows.map((row) => row.evidence_category));
+    const categories = new Map(result.rows.map((row) => [row.evidence_category, row.has_file]));
     for (const category of ['keys_access', 'inventory', 'parking', 'inspection'])
       if (!categories.has(category))
         throw new UnprocessableEntityException({
           code: 'CHECKOUT_EVIDENCE_REQUIRED',
           message: `Checkout ${category} evidence is required`,
+        });
+    for (const category of ['keys_access', 'inventory', 'inspection'])
+      if (!categories.get(category))
+        throw new UnprocessableEntityException({
+          code: 'CHECKOUT_FILE_EVIDENCE_REQUIRED',
+          message: `Checkout ${category} requires an attached evidence file`,
         });
   }
   private assertHandoverConfirmations(dto: RecordLeaseCheckoutHandoverDto) {
@@ -2280,7 +2586,7 @@ export class LeaseCheckoutService {
   }
   private async lockInvoices(client: PoolClient, leaseId: string) {
     const result = await client.query<InvoiceRow>(
-      `SELECT i.id,i.total_amount,i.credit_amount,COALESCE(allocation.net,0) AS net_allocated FROM invoices i LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id) allocation ON true WHERE i.lease_id=$1 AND i.invoice_status<>'void' ORDER BY i.due_date,i.id FOR UPDATE OF i`,
+      `SELECT i.id,i.invoice_purpose,i.total_amount,i.credit_amount,COALESCE(allocation.net,0) AS net_allocated FROM invoices i LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id) allocation ON true WHERE i.lease_id=$1 AND i.invoice_purpose='rent' AND i.invoice_status<>'void' ORDER BY i.due_date,i.id FOR UPDATE OF i`,
       [leaseId],
     );
     return result.rows;
@@ -2301,35 +2607,126 @@ export class LeaseCheckoutService {
       });
     return balance;
   }
-  private async lockResidentParking(client: PoolClient, propertyId: string, residentId: string) {
+  private async lockResidentParking(client: PoolClient, checkout: CheckoutRow) {
     await client.query(
-      `SELECT slot.id FROM parking_slots slot JOIN parking_zones zone ON zone.id=slot.zone_id JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id WHERE zone.property_id=$1 AND vehicle.property_id=$1 AND vehicle.resident_id=$2 ORDER BY slot.id FOR UPDATE OF slot, vehicle`,
-      [propertyId, residentId],
+      `WITH checkout_scope AS (
+         SELECT lease.property_id,lease.resident_id,lease.snapshot_room_number,
+                room.number AS current_room_number,
+                NOT EXISTS (
+                  SELECT 1 FROM leases other
+                  WHERE other.property_id=lease.property_id
+                    AND other.resident_id=lease.resident_id
+                    AND other.id<>lease.id
+                    AND other.lease_status IN ('awaiting_activation','active')
+                ) AS is_only_current_lease
+         FROM leases lease
+         JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+         WHERE lease.id=$1 AND lease.property_id=$2 AND lease.resident_id=$3
+       )
+       SELECT slot.id
+       FROM parking_slots slot
+       JOIN parking_zones zone ON zone.id=slot.zone_id
+       JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id
+       JOIN checkout_scope scope
+         ON scope.property_id=zone.property_id
+        AND scope.property_id=vehicle.property_id
+        AND scope.resident_id=vehicle.resident_id
+       WHERE (
+         NULLIF(trim(vehicle.snapshot_room_number),'') IN (
+           NULLIF(trim(scope.current_room_number),''),
+           NULLIF(trim(scope.snapshot_room_number),'')
+         )
+         OR (NULLIF(trim(vehicle.snapshot_room_number),'') IS NULL AND scope.is_only_current_lease)
+       )
+       ORDER BY slot.id
+       FOR UPDATE OF slot,vehicle`,
+      [checkout.lease_id, checkout.property_id, checkout.resident_id],
     );
   }
   private async releaseResidentParking(client: PoolClient, checkout: CheckoutRow, actorId: string) {
     await client.query(
-      `WITH released AS (
+      `WITH checkout_scope AS (
+         SELECT lease.property_id,lease.resident_id,lease.snapshot_room_number,
+                room.number AS current_room_number,
+                NOT EXISTS (
+                  SELECT 1 FROM leases other
+                  WHERE other.property_id=lease.property_id
+                    AND other.resident_id=lease.resident_id
+                    AND other.id<>lease.id
+                    AND other.lease_status IN ('awaiting_activation','active')
+                ) AS is_only_current_lease
+         FROM leases lease
+         JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+         WHERE lease.id=$1 AND lease.property_id=$2 AND lease.resident_id=$3
+       ),released AS (
          SELECT slot.id,slot.vehicle_id,zone.property_id
          FROM parking_slots slot
          JOIN parking_zones zone ON zone.id=slot.zone_id
          JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id
-         WHERE zone.property_id=$1 AND vehicle.property_id=$1 AND vehicle.resident_id=$2
+         JOIN checkout_scope scope
+           ON scope.property_id=zone.property_id
+          AND scope.property_id=vehicle.property_id
+          AND scope.resident_id=vehicle.resident_id
+         WHERE (
+             NULLIF(trim(vehicle.snapshot_room_number),'') IN (
+               NULLIF(trim(scope.current_room_number),''),
+               NULLIF(trim(scope.snapshot_room_number),'')
+             )
+             OR (NULLIF(trim(vehicle.snapshot_room_number),'') IS NULL AND scope.is_only_current_lease)
+           )
            AND slot.slot_status='occupied'
          FOR UPDATE OF slot,vehicle
        )
        INSERT INTO parking_assignment_histories(property_id,slot_id,vehicle_id,action,reason,actor_user_id,metadata)
-       SELECT property_id,id,vehicle_id,'released','Physical checkout confirmed',$3,
-              jsonb_build_object('source','lease_checkout','checkout_command_id',$4::uuid)
+       SELECT property_id,id,vehicle_id,'released','Physical checkout confirmed',$4,
+              jsonb_build_object(
+                'source','lease_checkout',
+                'checkout_command_id',$5::uuid,
+                'lease_id',$1::uuid,
+                'room_id',$6::uuid
+              )
        FROM released`,
-      [checkout.property_id, checkout.resident_id, actorId, checkout.id],
+      [
+        checkout.lease_id,
+        checkout.property_id,
+        checkout.resident_id,
+        actorId,
+        checkout.id,
+        checkout.room_id,
+      ],
     );
     await client.query(
-      `UPDATE parking_slots slot SET slot_status='available',vehicle_id=NULL,updated_at=now()
-       FROM parking_zones zone JOIN vehicles vehicle ON vehicle.id=slot.vehicle_id
-       WHERE slot.zone_id=zone.id AND zone.property_id=$1 AND vehicle.property_id=$1
-         AND vehicle.resident_id=$2 AND slot.slot_status='occupied'`,
-      [checkout.property_id, checkout.resident_id],
+      `WITH checkout_scope AS (
+         SELECT lease.property_id,lease.resident_id,lease.snapshot_room_number,
+                room.number AS current_room_number,
+                NOT EXISTS (
+                  SELECT 1 FROM leases other
+                  WHERE other.property_id=lease.property_id
+                    AND other.resident_id=lease.resident_id
+                    AND other.id<>lease.id
+                    AND other.lease_status IN ('awaiting_activation','active')
+                ) AS is_only_current_lease
+         FROM leases lease
+         JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+         WHERE lease.id=$1 AND lease.property_id=$2 AND lease.resident_id=$3
+       )
+       UPDATE parking_slots slot
+       SET slot_status='available',vehicle_id=NULL,updated_at=now()
+       FROM parking_zones zone,vehicles vehicle,checkout_scope scope
+       WHERE slot.zone_id=zone.id
+         AND vehicle.id=slot.vehicle_id
+         AND zone.property_id=scope.property_id
+         AND vehicle.property_id=scope.property_id
+         AND vehicle.resident_id=scope.resident_id
+         AND (
+           NULLIF(trim(vehicle.snapshot_room_number),'') IN (
+             NULLIF(trim(scope.current_room_number),''),
+             NULLIF(trim(scope.snapshot_room_number),'')
+           )
+           OR (NULLIF(trim(vehicle.snapshot_room_number),'') IS NULL AND scope.is_only_current_lease)
+         )
+         AND slot.slot_status='occupied'`,
+      [checkout.lease_id, checkout.property_id, checkout.resident_id],
     );
   }
   private async lockOccupancyAndRoom(client: PoolClient, checkout: CheckoutRow) {
@@ -2399,7 +2796,7 @@ export class LeaseCheckoutService {
   }
   private async lockCheckout(client: PoolClient, id: string, leaseId: string) {
     const result = await client.query<CheckoutRow>(
-      `SELECT id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,
+      `SELECT id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,
               exit_type,request_source,notice_days,missing_notice_days,payment_period_days,daily_rate_amount,recommended_short_notice_charge,
               approved_short_notice_charge,short_notice_waiver_reason,approved_at,
               physical_checkout_confirmed_at,actual_checkout_date::text

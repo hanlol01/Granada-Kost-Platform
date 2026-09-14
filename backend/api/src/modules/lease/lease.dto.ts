@@ -306,9 +306,28 @@ export class CreateLeaseRenewalIntentDto {
 export class ApproveLeaseRenewalDto {
   @Type(() => Number)
   @IsInt()
-  @Min(3)
+  @Min(1)
   @Max(120)
   term_months!: number;
+
+  @IsOptional()
+  @IsIn(['standard', 'negotiated'])
+  pricing_source?: 'standard' | 'negotiated';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  agreed_monthly_price?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 500)
+  pricing_agreement_reason?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pricing_variance_acknowledged?: boolean;
 
   @IsIn(['monthly', 'yearly'])
   billing_cycle!: 'monthly' | 'yearly';
@@ -412,10 +431,25 @@ export class CreateLeaseCheckoutNoticeDto {
   @Length(1, 2000)
   reason!: string;
 
+  @IsIn(['resident', 'parent', 'admin', 'other'])
+  request_source!: 'resident' | 'parent' | 'admin' | 'other';
+
   @IsOptional()
   @IsString()
   @Length(1, 2000)
   notice_exception_reason?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  notice_exception_evidence_file_ids?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  internal_note?: string;
 }
 
 export class ApproveLeaseCheckoutDto {
@@ -428,6 +462,13 @@ export class ApproveLeaseCheckoutDto {
   @IsString()
   @Length(1, 2000)
   short_notice_waiver_reason?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  short_notice_waiver_evidence_file_ids?: string[];
 }
 
 export class LeaseCheckoutInventoryItemDto {
@@ -539,16 +580,22 @@ export class RecordLeaseCheckoutHandoverDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   key_access_file_ids?: string[];
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   inventory_file_ids?: string[];
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   parking_file_ids?: string[];
 
@@ -564,6 +611,8 @@ export class RecordLeaseCheckoutInspectionDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
   @IsUUID('4', { each: true })
   inspection_file_ids?: string[];
 

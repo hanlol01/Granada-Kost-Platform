@@ -98,9 +98,10 @@ Public/Admin inquiry
 Direct Admin onboarding starts at `Onboarding draft` without fabricating a
 Booking Lead. A public visitor never selects an exact room.
 
-Before `Commit Onboarding`, lead-based onboarding may revise only the proposed
-lease period (valid start date and 3–120-month duration). The final quote is
-derived again from the authoritative room/category commercial schedule. The
+Before `Commit Onboarding`, lead-based onboarding may revise the proposed lease
+period and, through the explicit negotiated-agreement path, its agreed tariff.
+The server re-resolves the reference tariff and rebuilds the immutable commercial
+snapshot defined by ADR 0001 before commit. The
 Lead Payment Commitment remains an immutable historical record: its rent credit
 must fit within the revised contract rent, otherwise commit fails closed until
 the lead is explicitly corrected or cancelled.
@@ -204,13 +205,16 @@ persisted status is never sufficient.
 - parent/emergency contacts;
 - required KTP/KK/KTM or approved document references;
 - authoritative category, room, building, floor, and gender compatibility;
-- valid historical/current/future contractual dates, a 3–120-month term, and
-  immutable tariff snapshot;
+- valid historical/current/future contractual dates; either a standard 3–120
+  month term or an explicit negotiated 1–120 month agreement; and the immutable
+  reference/agreed tariff snapshot;
 - schedule derived from the commercial snapshot;
 - accepted/versioned terms and agreement evidence;
-- a recorded initial-rent credit. The UI pre-fills a 25% contract-value DP
-  recommendation, but an authorized admin may record a lower agreed DP; Booking
-  Fee remains a separate rent credit of Rp0 or at least Rp1.000.000;
+- verified rent credit of at least one agreed month, capped by total contract
+  value, for activation readiness. The UI pre-fills a 25% contract-value DP
+  recommendation, but an authorized admin may record a lower payment that does
+  not yet satisfy activation; Booking Fee remains a separate rent credit of Rp0
+  or at least Rp1.000.000;
 - optional security-deposit liability recorded separately; an amount of Rp0 is
   valid and does not block the initial-rent gate;
 - room/check-in inventory readiness;
@@ -303,7 +307,7 @@ Authority: `POL-LEASE-001` through `POL-LEASE-004`,
 
 | Command | Transition | Contract |
 | --- | --- | --- |
-| `CreateLeaseDraft` | — → `draft` | 3–120-month ordinary term, snapshot category tariff, and exact resident/onboarding scope. |
+| `CreateLeaseDraft` | — → `draft` | Standard 3–120-month term or explicit negotiated 1–120-month agreement, immutable reference/agreed tariff snapshot, and exact resident/onboarding scope. |
 | `CommitRoomAndQuote` | `draft` → `awaiting_activation` | Exact eligible room locked; active hold promoted/released; room remains `reserved`. |
 | `ActivateLease` | `awaiting_activation` → `active` | Atomic activation contract in Section 24. |
 | `TransferWithAddendum` | `active` → `active` | Same commercial contract; append addendum and room-transfer event. |
@@ -377,12 +381,13 @@ constraint would be invalidated.
 | `completed` | Every scheduled charge is paid, voided, credited, or settled at checkout. |
 | `cancelled` | Pre-activation plan abandoned; issued records require explicit void, not deletion. |
 
-The schedule covers the committed 3–120-month term and is derived from the
-immutable commercial snapshot. An exact 12-month multiple may use the annual
-category rate; other ordinary terms use the monthly category rate. Booking Fee
-and DP are allocated against rent obligations and reduce their remaining
-balance. An Admin may record one payment that settles multiple issued
-obligations.
+The schedule covers the committed 1–120-month term and is derived from the
+immutable agreed-tariff snapshot. Standard contracts resolve the effective
+duration tier; negotiated contracts preserve their approved agreed rate. The
+checkpoint rules in the custom-agreement handoff preserve existing 3/6/12
+outcomes and deterministically cover every supported duration. Booking Fee and
+DP are allocated against rent obligations and reduce their remaining balance.
+An Admin may record one payment that settles multiple issued obligations.
 
 ### 12.2 Invoice states
 
@@ -766,11 +771,12 @@ Under locks, verify:
 - normalized identity is not ambiguous;
 - room is still reserved for this onboarding/lease and is gender compatible;
 - no active occupancy or competing lease claims the room/resident;
-- contract duration is 3–120 months unless a future exception authority is
-  explicitly approved;
+- contract duration is a standard 3–120 month term or an explicit negotiated
+  1–120 month agreement under ADR 0001;
 - commercial snapshot and accepted terms are present;
 - verified non-reversed initial rent credit is recorded against the immutable
-  contract quote; the 25% contract-value figure remains a recommendation only;
+  contract quote and covers at least one agreed month, capped by contract value;
+  the 25% contract-value figure remains a recommendation only;
 - an optional recorded security deposit is represented as a separate liability;
 - billing schedule reconciles to contract value;
 - contractual start date has been reached using database time;

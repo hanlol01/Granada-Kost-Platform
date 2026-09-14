@@ -54,6 +54,12 @@ function payload() {
         end_date: "2026-11-01",
         billing_cycle: "monthly",
         payment_plan_type: "monthly_installments",
+        snapshot_pricing_tier: "short_stay",
+        snapshot_reference_monthly_price: 1800000,
+        snapshot_monthly_price: 1800000,
+        pricing_source: "standard",
+        pricing_agreement_reason: null,
+        pricing_agreed_at: "2026-08-01T00:00:00.000Z",
         materialized_onboarding_commitment_id: null,
       },
     },
@@ -115,12 +121,17 @@ test("completion quote parser requires its requested property and compatible act
       end_date: "2026-11-01",
       contract_rent_amount: 5400000,
       suggested_dp_amount: 1350000,
+      pricing_tier: "short_stay",
+      reference_monthly_price: 1800000,
+      management_fee_amount: 300000,
     },
   };
   const parsed = parseBookingLeadCompletionQuote(quote, propertyId, "2026-08-01", 3);
   assert.equal(parsed.propertyId, propertyId);
   assert.equal(parsed.room.monthlyPrice, 1800000);
   assert.equal(parsed.contractRentAmount, 5400000);
+  assert.equal(parsed.referenceMonthlyPrice, 1800000);
+  assert.equal(parsed.managementFeeAmount, 300000);
 
   const dateDrift = structuredClone(quote);
   dateDrift.data.start_date = "2026-08-02";

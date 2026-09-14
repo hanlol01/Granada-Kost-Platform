@@ -19,6 +19,13 @@ export type AdminReportFilters = {
   payment_plan?: string;
   date_basis?: string;
   has_evidence?: string;
+  exit_type?: string;
+  checkout_status?: string;
+  financial_status?: string;
+  same_day?: string;
+  has_refund?: string;
+  has_amount_due?: string;
+  has_damage?: string;
   limit?: number;
   offset?: number;
 };

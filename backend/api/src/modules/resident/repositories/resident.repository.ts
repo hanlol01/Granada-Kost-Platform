@@ -80,6 +80,9 @@ type ResidentTenancyRow = {
   end_date: string;
   term_months: number;
   payment_plan_type: ResidentTenancyRecord['paymentPlanType'];
+  snapshot_monthly_price: string | number;
+  contract_rent_amount: string | number;
+  pricing_source: ResidentTenancyRecord['pricingSource'];
 };
 
 export type ResidentSelfContext = {
@@ -97,6 +100,9 @@ export type ResidentSelfContext = {
   leaseEnd: string | null;
   termMonths: number | null;
   paymentPlanType: string | null;
+  agreedMonthlyPrice: number | null;
+  contractRentAmount: number | null;
+  pricingSource: 'standard' | 'negotiated' | null;
 };
 
 export type PropertyOwnerResidentSummary = {
@@ -300,7 +306,8 @@ export class ResidentRepository {
               lifecycle.activated_at,lifecycle.checked_in_at,
               rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
               buildings.building_code,leases.start_date::text,leases.end_date::text,
-              leases.term_months,leases.payment_plan_type
+              leases.term_months,leases.payment_plan_type,leases.snapshot_monthly_price,
+              leases.contract_rent_amount,leases.pricing_source
        FROM leases
        JOIN rooms ON rooms.id=leases.room_id AND rooms.property_id=leases.property_id
        JOIN room_buildings AS buildings
@@ -332,6 +339,9 @@ export class ResidentRepository {
       endDate: row.end_date,
       termMonths: Number(row.term_months),
       paymentPlanType: row.payment_plan_type,
+      agreedMonthlyPrice: Number(row.snapshot_monthly_price),
+      contractRentAmount: Number(row.contract_rent_amount),
+      pricingSource: row.pricing_source,
     }));
   }
 
@@ -490,6 +500,9 @@ export class ResidentRepository {
       lease_end: string | null;
       term_months: number | null;
       payment_plan_type: string | null;
+      agreed_monthly_price: string | number | null;
+      contract_rent_amount: string | number | null;
+      pricing_source: 'standard' | 'negotiated' | null;
     }>(
       `SELECT residents.full_name AS display_name,
               residents.phone,
@@ -503,8 +516,11 @@ export class ResidentRepository {
               lease_authority.lease_status,
               lease_authority.lease_start,
               lease_authority.lease_end,
-              lease_authority.term_months,
-              lease_authority.payment_plan_type
+               lease_authority.term_months,
+               lease_authority.payment_plan_type,
+               lease_authority.agreed_monthly_price,
+               lease_authority.contract_rent_amount,
+               lease_authority.pricing_source
        FROM residents
        JOIN occupancies ON occupancies.resident_id = residents.id
        JOIN rooms ON rooms.id = occupancies.room_id
@@ -516,8 +532,11 @@ export class ResidentRepository {
          SELECT leases.lease_status,
                 leases.start_date::text AS lease_start,
                 leases.end_date::text AS lease_end,
-                leases.term_months,
-                leases.payment_plan_type
+                 leases.term_months,
+                 leases.payment_plan_type,
+                 leases.snapshot_monthly_price AS agreed_monthly_price,
+                 leases.contract_rent_amount,
+                 leases.pricing_source
          FROM leases
          WHERE leases.resident_id = residents.id
            AND leases.room_id = rooms.id
@@ -554,6 +573,11 @@ export class ResidentRepository {
       leaseEnd: row.lease_end,
       termMonths: row.term_months,
       paymentPlanType: row.payment_plan_type,
+      agreedMonthlyPrice:
+        row.agreed_monthly_price == null ? null : Number(row.agreed_monthly_price),
+      contractRentAmount:
+        row.contract_rent_amount == null ? null : Number(row.contract_rent_amount),
+      pricingSource: row.pricing_source,
     }));
   }
 

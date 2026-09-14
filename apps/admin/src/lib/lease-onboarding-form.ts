@@ -39,7 +39,12 @@ export function isValidDateOnly(value: string): boolean {
 }
 
 export function calculateLeaseEndDate(startDate: string, termMonths: number): string {
-  if (!isValidDateOnly(startDate) || !Number.isInteger(termMonths) || termMonths < 3) {
+  if (
+    !isValidDateOnly(startDate) ||
+    !Number.isInteger(termMonths) ||
+    termMonths < 1 ||
+    termMonths > 120
+  ) {
     return "";
   }
 
@@ -147,8 +152,8 @@ export function validateNewLeaseDraft(input: NewLeaseDraftValidationInput): NewL
   if (!isValidDateOnly(input.startDate)) {
     errors.startDate = "Tanggal mulai sewa wajib diisi.";
   }
-  if (!Number.isInteger(input.termMonths) || input.termMonths < 3) {
-    errors.termMonths = "Durasi sewa minimal 3 bulan.";
+  if (!Number.isInteger(input.termMonths) || input.termMonths < 1 || input.termMonths > 120) {
+    errors.termMonths = "Durasi sewa harus 1–120 bulan.";
   }
 
   const ktpNumber = input.ktpNumber?.trim() ?? "";

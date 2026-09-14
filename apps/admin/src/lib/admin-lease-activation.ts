@@ -104,14 +104,18 @@ export function requestLeaseActivation(
   propertyId: string,
   idempotencyKey: string,
   activatedAt?: string,
+  confirmCheckIn = false,
+  checkedInAt?: string,
 ): Promise<LeaseActivationResponse> {
   if (!UUID.test(leaseId) || !UUID.test(propertyId) || !idempotencyKey.trim())
     throw new Error("LEASE_ACTIVATION_REQUEST_INVALID");
-  return post(
-    `/leases/${encodeURIComponent(leaseId)}/activate`,
-    activatedAt
-      ? { property_id: propertyId, activated_at: activatedAt }
-      : { property_id: propertyId },
-    { idempotencyKey },
-  ).then(parseLeaseActivation);
+  const body: Record<string, unknown> = { property_id: propertyId };
+  if (activatedAt) body.activated_at = activatedAt;
+  if (confirmCheckIn) {
+    body.confirm_check_in = true;
+    if (checkedInAt) body.checked_in_at = checkedInAt;
+  }
+  return post(`/leases/${encodeURIComponent(leaseId)}/activate`, body, { idempotencyKey }).then(
+    parseLeaseActivation,
+  );
 }

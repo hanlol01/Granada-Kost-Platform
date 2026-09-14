@@ -56,6 +56,47 @@ export class ReportQueryDto {
   has_evidence?: 'yes' | 'no';
 
   @IsOptional()
+  @IsIn(['normal_expiry', 'resident_early_termination'])
+  exit_type?: 'normal_expiry' | 'resident_early_termination';
+
+  @IsOptional()
+  @IsIn([
+    'notice_received',
+    'scheduled',
+    'inspection_required',
+    'settlement_pending',
+    'completed',
+    'cancelled',
+  ])
+  checkout_status?:
+    | 'notice_received'
+    | 'scheduled'
+    | 'inspection_required'
+    | 'settlement_pending'
+    | 'completed'
+    | 'cancelled';
+
+  @IsOptional()
+  @IsIn(['refund_pending', 'amount_due', 'closed'])
+  financial_status?: 'refund_pending' | 'amount_due' | 'closed';
+
+  @IsOptional()
+  @IsIn(['yes', 'no'])
+  same_day?: 'yes' | 'no';
+
+  @IsOptional()
+  @IsIn(['yes', 'no'])
+  has_refund?: 'yes' | 'no';
+
+  @IsOptional()
+  @IsIn(['yes', 'no'])
+  has_amount_due?: 'yes' | 'no';
+
+  @IsOptional()
+  @IsIn(['yes', 'no'])
+  has_damage?: 'yes' | 'no';
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

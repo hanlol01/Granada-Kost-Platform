@@ -18,6 +18,14 @@ export type LeaseSettlementPolicySchedule = {
   checkpoints: LeaseSettlementCheckpointSchedule[];
 };
 
+export type LeaseSettlementPolicyScheduleV3 = {
+  policyVersion: 'lease_settlement_v3';
+  checkpointAnchorDay: number;
+  initialMonthMinimumAmount: number;
+  finalSettlementOffsetMonths: 0 | 1 | 2 | 3;
+  checkpoints: LeaseSettlementCheckpointSchedule[];
+};
+
 type LeaseSettlementPolicyInput = {
   leaseStartDate: string;
   termMonths: number;
@@ -101,10 +109,113 @@ export function buildLeaseSettlementPolicySchedule(
   };
 }
 
+/**
+ * Calculates the settlement policy for newly committed leases. Checkpoints are
+ * cumulative payment targets and never represent additional rent principal.
+ */
+export function buildLeaseSettlementPolicyScheduleV3(
+  input: LeaseSettlementPolicyInput,
+): LeaseSettlementPolicyScheduleV3 {
+  const leaseStartDate = parseBusinessDate(input.leaseStartDate);
+  const termMonths = assertTermWithinRange(input.termMonths);
+  const monthlyRentAmount = assertPositiveMoney(input.monthlyRentAmount, 'monthly rent');
+  const anchorDay = leaseStartDate.getUTCDate();
+  const dueDate = (monthsFromActivation: number) =>
+    formatBusinessDate(addCalendarMonthsPreservingAnchor(leaseStartDate, monthsFromActivation));
+
+  if (termMonths === 1) {
+    return {
+      policyVersion: 'lease_settlement_v3',
+      checkpointAnchorDay: anchorDay,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths: 0,
+      checkpoints: [buildFinalSettlementCheckpoint(1, dueDate(0))],
+    };
+  }
+
+  if (termMonths === 2) {
+    return {
+      policyVersion: 'lease_settlement_v3',
+      checkpointAnchorDay: anchorDay,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths: 1,
+      checkpoints: [buildFinalSettlementCheckpoint(1, dueDate(1))],
+    };
+  }
+
+  const checkpointOneMinimum = assertPositiveMoney(
+    monthlyRentAmount * 2,
+    'checkpoint one cumulative minimum',
+  );
+
+  if (termMonths === 3) {
+    return {
+      policyVersion: 'lease_settlement_v3',
+      checkpointAnchorDay: anchorDay,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths: 2,
+      checkpoints: [
+        buildMonthlyCoverageCheckpoint('checkpoint_1', 1, dueDate(1), checkpointOneMinimum),
+        buildFinalSettlementCheckpoint(2, dueDate(2)),
+      ],
+    };
+  }
+
+  const checkpointTwoMinimum = assertPositiveMoney(
+    monthlyRentAmount * 3,
+    'checkpoint two cumulative minimum',
+  );
+  return {
+    policyVersion: 'lease_settlement_v3',
+    checkpointAnchorDay: anchorDay,
+    initialMonthMinimumAmount: monthlyRentAmount,
+    finalSettlementOffsetMonths: 3,
+    checkpoints: [
+      buildMonthlyCoverageCheckpoint('checkpoint_1', 1, dueDate(1), checkpointOneMinimum),
+      buildMonthlyCoverageCheckpoint('checkpoint_2', 2, dueDate(2), checkpointTwoMinimum),
+      buildFinalSettlementCheckpoint(3, dueDate(3)),
+    ],
+  };
+}
+
+function buildMonthlyCoverageCheckpoint(
+  code: 'checkpoint_1' | 'checkpoint_2',
+  sequence: 1 | 2,
+  dueDate: string,
+  minimumRequiredAmount: number,
+): LeaseSettlementCheckpointSchedule {
+  return {
+    code,
+    sequence,
+    dueDate,
+    settlementMode: 'minimum_monthly_coverage',
+    minimumRequiredAmount,
+  };
+}
+
+function buildFinalSettlementCheckpoint(
+  sequence: 1 | 2 | 3,
+  dueDate: string,
+): LeaseSettlementCheckpointSchedule {
+  return {
+    code: 'final_settlement',
+    sequence,
+    dueDate,
+    settlementMode: 'exact_remaining_balance',
+    minimumRequiredAmount: null,
+  };
+}
+
 function assertSupportedTerm(value: number): SupportedLeaseSettlementTerm {
   if (!SUPPORTED_LEASE_SETTLEMENT_TERMS.includes(value as SupportedLeaseSettlementTerm))
     throw new RangeError('Lease settlement policy supports only 3, 6, or 12 months');
   return value as SupportedLeaseSettlementTerm;
+}
+
+function assertTermWithinRange(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 120)
+    throw new RangeError('Lease settlement policy supports 1 through 120 months');
+  return value;
 }
 
 function assertPositiveMoney(value: number, label: string): number {

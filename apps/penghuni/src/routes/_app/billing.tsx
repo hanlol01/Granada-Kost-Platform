@@ -299,6 +299,11 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
           />
           <SummaryRow label="Nilai sewa" value={idr(billing.lease.contract_rent)} />
           <SummaryRow label="Tarif bulanan kontrak" value={idr(billing.lease.monthly_rate)} />
+          {billing.lease.pricing_source === "negotiated" ? (
+            <Badge variant="outline" className="border-sky-500/35 bg-sky-500/10 text-sky-700">
+              Tarif kesepakatan khusus
+            </Badge>
+          ) : null}
           <p className="rounded-xl bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             Tarif ini adalah snapshot sesuai durasi dan tanggal efektif saat kontrak dibuat.
           </p>

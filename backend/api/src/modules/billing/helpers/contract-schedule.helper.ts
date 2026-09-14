@@ -23,8 +23,8 @@ export function minimumDpAmount(contractRentAmount: number): number {
 }
 
 export function buildContractSchedule(input: ContractScheduleInput): ContractScheduleItem[] {
-  if (!Number.isSafeInteger(input.termMonths) || input.termMonths < 3) {
-    throw new RangeError('Lease term must be at least 3 months');
+  if (!Number.isSafeInteger(input.termMonths) || input.termMonths < 1 || input.termMonths > 120) {
+    throw new RangeError('Lease term must be between 1 and 120 months');
   }
   if (input.paymentPlanType === 'two_month_installments' && input.termMonths % 2 !== 0) {
     throw new RangeError('Two-month installments require an even lease term');

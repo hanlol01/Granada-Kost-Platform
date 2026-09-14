@@ -64,6 +64,51 @@ export function useCreateVehicle() {
   });
 }
 
+export type UpdateVehicleInput = {
+  vehicleId: string;
+  plateNumber?: string;
+  vehicleType?: VehicleRecord["vehicleType"];
+  customVehicleType?: string;
+  brand?: string;
+  color?: string;
+  year?: string;
+  notes?: string;
+};
+
+export function useUpdateVehicle() {
+  const qc = useQueryClient();
+  return useMutation<VehicleRecord, unknown, UpdateVehicleInput>({
+    mutationFn: ({
+      vehicleId,
+      plateNumber,
+      vehicleType,
+      customVehicleType,
+      brand,
+      color,
+      year,
+      notes,
+    }) =>
+      apiClient.patch<VehicleRecord>(
+        `/vehicles/${vehicleId}`,
+        {
+          plate_number: plateNumber,
+          vehicle_type: vehicleType,
+          custom_vehicle_type: customVehicleType,
+          brand,
+          color,
+          year,
+          notes,
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      ),
+    onSuccess: () => {
+      toastMutationSuccess("Perubahan kendaraan disimpan");
+      qc.invalidateQueries({ queryKey: ["vehicles"] });
+    },
+    onError: (err) => toastMutationError(err, "Gagal menyimpan perubahan kendaraan"),
+  });
+}
+
 export function useApproveVehicle() {
   const qc = useQueryClient();
   return useMutation<VehicleRecord, unknown, IdInput>({

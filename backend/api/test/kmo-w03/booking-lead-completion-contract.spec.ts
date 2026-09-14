@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { BookingLeadCompletionService } from '../../src/modules/booking-lead/booking-lead-completion.service';
 
-const root = join(import.meta.dirname, '..', '..');
+const apiWorkspaceSuffix = join('backend', 'api');
+const root = process.cwd().endsWith(apiWorkspaceSuffix)
+  ? process.cwd()
+  : join(process.cwd(), apiWorkspaceSuffix);
 const source = (relativePath: string) => readFileSync(join(root, relativePath), 'utf8');
 
 test('completion is a property-authorized, idempotent lead command and not direct onboarding', () => {
@@ -180,7 +183,7 @@ test('progress projection keeps a property-scoped active tenancy resident and le
   assert.match(service, /lease\.property_id=lead\.property_id/);
 });
 
-test('completion quote remains available after a paid hold is committed, even after its provisional 24-hour expiry', async () => {
+test('completion quote exposes a one-month negotiated comparison after a paid hold is committed', async () => {
   const queries: string[] = [];
   const client = {
     query: async (statement: string) => {
@@ -219,14 +222,20 @@ test('completion quote remains available after a paid hold is committed, even af
     room_status: 'reserved',
     monthly_price: 1_800_000,
     yearly_price: 21_600_000,
+    short_stay_monthly_price: 1_900_000,
+    medium_stay_monthly_price: 1_850_000,
+    long_stay_monthly_price: 1_800_000,
+    management_fee_amount: 300_000,
   });
-  service.contractRent = () => 5_400_000;
-  service.endDate = async () => '2026-11-30';
+  service.endDate = async () => '2026-09-30';
 
-  const result = await service.quote('lead-1', 'property-1', '2026-08-31', 3);
+  const result = await service.quote('lead-1', 'property-1', '2026-08-31', 1);
 
-  assert.equal(result.data.contract_rent_amount, 5_400_000);
-  assert.equal(result.data.end_date, '2026-11-30');
+  assert.equal(result.data.contract_rent_amount, 1_900_000);
+  assert.equal(result.data.reference_monthly_price, 1_900_000);
+  assert.equal(result.data.pricing_tier, 'short_stay');
+  assert.equal(result.data.management_fee_amount, 300_000);
+  assert.equal(result.data.end_date, '2026-09-30');
   assert.ok(queries.includes('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'));
   assert.ok(queries.includes('COMMIT'));
 });

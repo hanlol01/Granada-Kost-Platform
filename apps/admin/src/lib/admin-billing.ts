@@ -181,6 +181,7 @@ export type ResidentBilling = {
     payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
     contract_rent: number;
     monthly_rate: number;
+    pricing_source: "standard" | "negotiated";
     remaining_days: number;
     note: string;
   };
@@ -809,6 +810,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       "payment_plan",
       "contract_rent",
       "monthly_rate",
+      "pricing_source",
       "remaining_days",
       "note",
     ],
@@ -1042,6 +1044,11 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       ),
       contract_rent: integer(lease.contract_rent, "Nilai kontrak"),
       monthly_rate: integer(lease.monthly_rate, "Tarif bulanan"),
+      pricing_source: oneOf(
+        lease.pricing_source,
+        ["standard", "negotiated"] as const,
+        "Sumber tarif",
+      ),
       remaining_days: integer(lease.remaining_days, "Sisa hari"),
       note: text(lease.note, "Catatan sewa"),
     },

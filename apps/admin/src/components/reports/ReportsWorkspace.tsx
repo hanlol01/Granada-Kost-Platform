@@ -27,35 +27,40 @@ import {
 } from "@/lib/admin-reports";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
-
+import { reportTabs } from "./report-tabs";
 const PAGE_SIZE = 20;
 
-const reportTabs = [
-  {
-    type: "leases",
-    route: "/reports/leases",
-    label: "Penyewaan",
-    description: "Kontrak dan masa sewa",
-  },
-  {
-    type: "payments",
-    route: "/reports/payments",
-    label: "Pembayaran",
-    description: "Kas masuk terverifikasi",
-  },
-  {
-    type: "expenses",
-    route: "/reports/expenses",
-    label: "Pengeluaran",
-    description: "Biaya operasional",
-  },
-  {
-    type: "finance",
-    route: "/reports/finance",
-    label: "Keuangan",
-    description: "Arus kas operasional",
-  },
-] as const;
+export function ReportNavigation({ active }: { active: (typeof reportTabs)[number]["type"] }) {
+  return (
+    <nav
+      aria-label="Jenis laporan"
+      className="grid gap-2 rounded-xl border bg-card p-2 sm:grid-cols-2 xl:grid-cols-5"
+    >
+      {reportTabs.map((tab) => (
+        <Button
+          key={tab.type}
+          asChild
+          variant={tab.type === active ? "default" : "ghost"}
+          className="h-auto justify-start px-4 py-3 text-left"
+        >
+          <Link to={tab.route}>
+            <span>
+              <span className="block font-semibold">{tab.label}</span>
+              <span
+                className={cn(
+                  "mt-0.5 block text-xs",
+                  tab.type === active ? "text-primary-foreground/75" : "text-muted-foreground",
+                )}
+              >
+                {tab.description}
+              </span>
+            </span>
+          </Link>
+        </Button>
+      ))}
+    </nav>
+  );
+}
 
 const summaryLabels: Record<string, string> = {
   total_contracts: "Total kontrak",
@@ -64,6 +69,12 @@ const summaryLabels: Record<string, string> = {
   ended_contracts: "Berakhir pada periode",
   ending_soon: "Berakhir ≤ 30 hari",
   contract_value: "Nilai kontrak",
+  checkout_total: "Kontrak dengan check-out",
+  checkout_in_progress: "Check-out berlangsung",
+  same_day_departures: "Check-out mendadak",
+  checkout_refund: "Pengembalian akhir",
+  checkout_amount_due: "Tagihan akhir",
+  checkout_damage: "Kerusakan tercatat",
   total_payments: "Total pembayaran",
   verified_rent: "Sewa terverifikasi",
   deposit_collected: "Deposit diterima",
@@ -89,7 +100,16 @@ const summaryLabels: Record<string, string> = {
 
 const moneyKeys = new Set([
   "contract_value",
+  "checkout_refund",
+  "checkout_amount_due",
+  "checkout_damage",
+  "final_refund_amount",
+  "final_amount_due",
+  "documented_damage_amount",
   "monthly_price",
+  "reference_monthly_price",
+  "agreed_monthly_price",
+  "monthly_price_variance",
   "amount",
   "verified_rent",
   "deposit_collected",
@@ -125,6 +145,12 @@ const columnLabels: Record<string, string> = {
   term_months: "Durasi",
   payment_plan: "Rencana bayar",
   pricing_tier: "Paket harga",
+  pricing_source: "Sumber tarif",
+  reference_monthly_price: "Tarif acuan / bulan",
+  agreed_monthly_price: "Tarif kontrak / bulan",
+  monthly_price_variance: "Selisih nominal",
+  monthly_price_variance_percent: "Selisih (%)",
+  pricing_agreement_reason: "Catatan kesepakatan (internal)",
   monthly_price: "Tarif / bulan",
   contract_value: "Nilai kontrak",
   payment_code: "Kode pembayaran",
@@ -142,6 +168,15 @@ const columnLabels: Record<string, string> = {
   reference: "Referensi",
   description: "Aktivitas",
   movement: "Arah",
+  exit_type: "Jenis check-out",
+  checkout_status: "Status operasional",
+  actual_checkout_date: "Tanggal keluar aktual",
+  room_result: "Hasil kamar",
+  financial_status: "Status keuangan akhir",
+  final_refund_amount: "Pengembalian akhir",
+  final_amount_due: "Tagihan akhir",
+  documented_damage_amount: "Kerusakan tercatat",
+  same_day_departure: "Check-out mendadak",
 };
 
 function localDate() {
@@ -183,6 +218,8 @@ const valueLabels: Record<string, string> = {
   completed: "Selesai",
   cancelled: "Dibatalkan",
   transferred: "Pindah kamar",
+  standard: "Tarif standar",
+  negotiated: "Kesepakatan khusus",
   verified: "Terverifikasi",
   pending_confirmation: "Menunggu konfirmasi",
   rejected: "Ditolak",
@@ -202,6 +239,16 @@ const valueLabels: Record<string, string> = {
   cash_out: "Kas keluar",
   deposit: "Deposit masuk",
   deposit_refund: "Deposit dikembalikan",
+  normal_expiry: "Akhir masa sewa",
+  resident_early_termination: "Berhenti lebih awal",
+  notice_received: "Pemberitahuan tercatat",
+  scheduled: "Check-out dijadwalkan",
+  inspection_required: "Menunggu inspeksi kamar",
+  settlement_pending: "Menunggu penyelesaian akhir",
+  refund_pending: "Pengembalian belum dibayar",
+  amount_due: "Tagihan akhir belum dibayar",
+  closed: "Keuangan selesai",
+  maintenance: "Dalam perawatan",
 };
 
 function display(key: string, value: ReportScalar) {
@@ -226,8 +273,22 @@ const visibleColumns: Record<AdminReportType, string[]> = {
     "start_date",
     "end_date",
     "term_months",
-    "monthly_price",
+    "pricing_source",
+    "reference_monthly_price",
+    "agreed_monthly_price",
+    "monthly_price_variance",
+    "monthly_price_variance_percent",
     "contract_value",
+    "exit_type",
+    "checkout_status",
+    "actual_checkout_date",
+    "room_result",
+    "financial_status",
+    "final_refund_amount",
+    "final_amount_due",
+    "documented_damage_amount",
+    "same_day_departure",
+    "pricing_agreement_reason",
   ],
   payments: [
     "payment_code",
@@ -289,6 +350,13 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
       "payment_plan",
       "date_basis",
       "has_evidence",
+      "exit_type",
+      "checkout_status",
+      "financial_status",
+      "same_day",
+      "has_refund",
+      "has_amount_due",
+      "has_damage",
     ];
     keys.forEach((key) => {
       const value = params.get(key);
@@ -362,33 +430,7 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
   return (
     <AppShell title="Laporan" subtitle="Ringkasan resmi untuk operasional dan keuangan properti">
       <div className="space-y-5">
-        <nav
-          aria-label="Jenis laporan"
-          className="grid gap-2 rounded-xl border bg-card p-2 sm:grid-cols-2 xl:grid-cols-4"
-        >
-          {reportTabs.map((tab) => (
-            <Button
-              key={tab.type}
-              asChild
-              variant={tab.type === type ? "default" : "ghost"}
-              className="h-auto justify-start px-4 py-3 text-left"
-            >
-              <Link to={tab.route}>
-                <span>
-                  <span className="block font-semibold">{tab.label}</span>
-                  <span
-                    className={cn(
-                      "mt-0.5 block text-xs",
-                      tab.type === type ? "text-primary-foreground/75" : "text-muted-foreground",
-                    )}
-                  >
-                    {tab.description}
-                  </span>
-                </span>
-              </Link>
-            </Button>
-          ))}
-        </nav>
+        <ReportNavigation active={type} />
 
         <Card>
           <CardHeader className="pb-4">
@@ -517,6 +559,89 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                     <option value="two_month_installments">Angsuran dua bulanan</option>
                   </select>
                 </label>
+                <section className="rounded-xl border border-primary/20 bg-primary/5 p-4 md:col-span-2 xl:col-span-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Penyelesaian check-out</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Saring kontrak berdasarkan proses keluar, hasil keuangan, dan kondisi khusus.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="space-y-1 text-sm font-medium">
+                      Jenis check-out
+                      <select
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                        value={draft.exit_type ?? ""}
+                        onChange={(event) => update("exit_type", event.target.value)}
+                      >
+                        <option value="">Semua jenis</option>
+                        <option value="normal_expiry">Akhir masa sewa</option>
+                        <option value="resident_early_termination">Berhenti lebih awal</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm font-medium">
+                      Status operasional
+                      <select
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                        value={draft.checkout_status ?? ""}
+                        onChange={(event) => update("checkout_status", event.target.value)}
+                      >
+                        <option value="">Semua status</option>
+                        <option value="notice_received">Pemberitahuan tercatat</option>
+                        <option value="scheduled">Check-out dijadwalkan</option>
+                        <option value="inspection_required">Menunggu inspeksi</option>
+                        <option value="settlement_pending">Menunggu penyelesaian</option>
+                        <option value="completed">Proses selesai</option>
+                        <option value="cancelled">Dibatalkan</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm font-medium">
+                      Status keuangan akhir
+                      <select
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                        value={draft.financial_status ?? ""}
+                        onChange={(event) => update("financial_status", event.target.value)}
+                      >
+                        <option value="">Semua status</option>
+                        <option value="refund_pending">Pengembalian belum dibayar</option>
+                        <option value="amount_due">Tagihan belum dibayar</option>
+                        <option value="closed">Keuangan selesai</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm font-medium">
+                      Check-out mendadak
+                      <select
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                        value={draft.same_day ?? ""}
+                        onChange={(event) => update("same_day", event.target.value)}
+                      >
+                        <option value="">Semua data</option>
+                        <option value="yes">Ya</option>
+                        <option value="no">Tidak</option>
+                      </select>
+                    </label>
+                    {(
+                      [
+                        ["has_refund", "Pengembalian dana"],
+                        ["has_amount_due", "Tagihan akhir"],
+                        ["has_damage", "Kerusakan tercatat"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label key={key} className="space-y-1 text-sm font-medium">
+                        {label}
+                        <select
+                          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                          value={draft[key] ?? ""}
+                          onChange={(event) => update(key, event.target.value)}
+                        >
+                          <option value="">Semua data</option>
+                          <option value="yes">Ada</option>
+                          <option value="no">Tidak ada</option>
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </section>
               </>
             ) : null}
             {type === "payments" ? (
@@ -703,6 +828,8 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                                 >
                                   {key === "status" ||
                                   key === "lease_status" ||
+                                  key === "checkout_status" ||
+                                  key === "financial_status" ||
                                   key === "movement" ? (
                                     <Badge variant="outline" className="capitalize">
                                       {display(key, row[key])}

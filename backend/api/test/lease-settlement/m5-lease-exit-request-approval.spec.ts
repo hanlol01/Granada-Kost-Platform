@@ -91,6 +91,23 @@ void test('M5 preserves the original anchor around month-end and caps missing no
   assert.equal(quote.recommendedShortNoticeCharge, 900_000);
 });
 
+void test('same-day checkout shows the full fourteen-day recommendation for its anchored period', () => {
+  const quote = buildLeaseExitNoticeQuote({
+    exitType: 'resident_early_termination',
+    leaseStartDate: '2026-08-01',
+    plannedEndDate: '2027-08-01',
+    noticeDate: '2026-09-14',
+    effectiveDate: '2026-09-14',
+    monthlyRateAmount: 1_800_000,
+  });
+
+  assert.equal(quote.noticeDays, 0);
+  assert.equal(quote.missingNoticeDays, 14);
+  assert.equal(quote.paymentPeriodDays, 30);
+  assert.equal(quote.dailyRateAmount, 60_000);
+  assert.equal(quote.recommendedShortNoticeCharge, 840_000);
+});
+
 void test('normal expiry never creates short-notice charges and cannot precede the planned end', () => {
   const quote = buildLeaseExitNoticeQuote({
     exitType: 'normal_expiry',
@@ -125,7 +142,7 @@ void test('M5 final settlement recommends refundable rent and deposit as separat
     verifiedRentPaymentAmount: 2_800_000,
     existingInvoiceCreditAmount: 0,
     depositLiabilityAmount: 1_800_000,
-    depositDeductionAmount: 200_000,
+    documentedDamageAmount: 200_000,
     approvedShortNoticeCharge: 300_000,
     depositRentOffsetAmount: 0,
   });
@@ -148,7 +165,7 @@ void test('M5 only offsets deposit against rent through an explicit bounded deci
     verifiedRentPaymentAmount: 1_000_000,
     existingInvoiceCreditAmount: 0,
     depositLiabilityAmount: 1_800_000,
-    depositDeductionAmount: 200_000,
+    documentedDamageAmount: 200_000,
     approvedShortNoticeCharge: 0,
   };
   const withoutOffset = buildLeaseExitFinancialQuote({
@@ -156,8 +173,11 @@ void test('M5 only offsets deposit against rent through an explicit bounded deci
     depositRentOffsetAmount: 0,
   });
   assert.equal(withoutOffset.rentAmountDueBeforeDepositOffset, 800_000);
-  assert.equal(withoutOffset.amountDue, 800_000);
   assert.equal(withoutOffset.refundableDepositAmount, 1_600_000);
+  assert.equal(withoutOffset.grossAmountDue, 800_000);
+  assert.equal(withoutOffset.grossRefundAmount, 1_600_000);
+  assert.equal(withoutOffset.recommendedRefundAmount, 800_000);
+  assert.equal(withoutOffset.amountDue, 0);
 
   const withOffset = buildLeaseExitFinancialQuote({
     ...input,
@@ -165,9 +185,56 @@ void test('M5 only offsets deposit against rent through an explicit bounded deci
   });
   assert.equal(withOffset.amountDue, 0);
   assert.equal(withOffset.refundableDepositAmount, 800_000);
+  assert.equal(withOffset.grossAmountDue, 0);
+  assert.equal(withOffset.grossRefundAmount, 800_000);
   assert.equal(withOffset.recommendedRefundAmount, 800_000);
   assert.throws(
     () => buildLeaseExitFinancialQuote({ ...input, depositRentOffsetAmount: 800_001 }),
     /exceeds the permitted amount/,
   );
+});
+
+void test('Stage 3 applies rent offset before damage and exposes damage above the remaining deposit', () => {
+  const quote = buildLeaseExitFinancialQuote({
+    leaseStartDate: '2026-08-01',
+    actualCheckoutDate: '2026-08-31',
+    contractRentAmount: 21_600_000,
+    monthlyRateAmount: 1_800_000,
+    verifiedRentPaymentAmount: 1_400_000,
+    existingInvoiceCreditAmount: 0,
+    depositLiabilityAmount: 1_000_000,
+    documentedDamageAmount: 900_000,
+    approvedShortNoticeCharge: 0,
+    depositRentOffsetAmount: 400_000,
+  });
+
+  assert.equal(quote.rentAmountDueBeforeDepositOffset, 400_000);
+  assert.equal(quote.depositRentOffsetAmount, 400_000);
+  assert.equal(quote.depositDeductionAmount, 600_000);
+  assert.equal(quote.damageAmountDue, 300_000);
+  assert.equal(quote.refundableDepositAmount, 0);
+  assert.equal(quote.amountDue, 300_000);
+});
+
+void test('Stage 3 nets refundable rent against damage due while preserving both gross components', () => {
+  const quote = buildLeaseExitFinancialQuote({
+    leaseStartDate: '2026-08-01',
+    actualCheckoutDate: '2026-08-31',
+    contractRentAmount: 21_600_000,
+    monthlyRateAmount: 1_800_000,
+    verifiedRentPaymentAmount: 2_300_000,
+    existingInvoiceCreditAmount: 0,
+    depositLiabilityAmount: 200_000,
+    documentedDamageAmount: 1_000_000,
+    approvedShortNoticeCharge: 0,
+    depositRentOffsetAmount: 0,
+  });
+
+  assert.equal(quote.rentRefundableAmount, 500_000);
+  assert.equal(quote.depositDeductionAmount, 200_000);
+  assert.equal(quote.damageAmountDue, 800_000);
+  assert.equal(quote.grossRefundAmount, 500_000);
+  assert.equal(quote.grossAmountDue, 800_000);
+  assert.equal(quote.recommendedRefundAmount, 0);
+  assert.equal(quote.amountDue, 300_000);
 });

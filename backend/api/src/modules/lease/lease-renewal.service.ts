@@ -22,7 +22,7 @@ import {
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type { BillingCycle, IdempotentResult, LeaseAuditContext } from './lease.types';
-import { resolveDurationPricing } from '../billing/helpers/duration-pricing.helper';
+import { resolveLeaseCommercialAgreement } from '../billing/helpers/duration-pricing.helper';
 
 type LeaseRow = {
   id: string;
@@ -66,6 +66,7 @@ type CommercialRoomRow = {
   short_stay_monthly_price: string | null;
   medium_stay_monthly_price: string | null;
   long_stay_monthly_price: string | null;
+  management_fee_amount: string | null;
   commercial_effective_date: string;
 };
 
@@ -117,6 +118,11 @@ type CommercialSnapshot = {
   snapshot_deposit_amount: number;
   snapshot_pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
   snapshot_commercial_effective_date: string;
+  snapshot_reference_monthly_price: number;
+  pricing_source: 'standard' | 'negotiated';
+  pricing_agreement_reason: string | null;
+  pricing_agreed_by_user_id: string;
+  pricing_agreed_at: string;
   room_number: string;
   kost_type_id: string;
   kost_type_name: string;
@@ -303,7 +309,7 @@ export class LeaseRenewalService {
           expectedEffectiveDate,
         );
         this.assertCommercialRoom(room, scope.property_id);
-        const snapshot = this.buildCommercialSnapshot(predecessor, room, terms);
+        const snapshot = this.buildCommercialSnapshot(predecessor, room, terms, user.id);
         const successorEndDate = this.addMonthsInclusive(expectedEffectiveDate, terms.term_months);
         const successor = await client.query<{ id: string; lease_code: string }>(
           `INSERT INTO leases(
@@ -311,12 +317,15 @@ export class LeaseRenewalService {
              start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,
              snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,
              snapshot_pricing_tier,snapshot_commercial_effective_date,
+             snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,
+             pricing_agreed_by_user_id,pricing_agreed_at,
              snapshot_room_number,snapshot_kost_type_name,renewed_from_lease_id,
              term_months,payment_plan_type,contract_rent_amount,dp_required_amount,
              security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id
            ) VALUES(
              $1,$2,$3,$4,NULL,$5,'awaiting_activation',$6::date,$7::date,$8,$9,$6::date,
-             $10,$11,$12,$13,$14::date,$15,$16,$17,$18,$19,$20,$21,0,now(),$22,$22
+             $10,$11,$12,$13,$14::date,$15,$16,$17,$18,$19::timestamptz,
+             $20,$21,$22,$23,$24,$25,$26,0,now(),$18,$18
            ) RETURNING id,lease_code`,
           [
             scope.property_id,
@@ -333,6 +342,11 @@ export class LeaseRenewalService {
             snapshot.snapshot_deposit_amount,
             snapshot.snapshot_pricing_tier,
             snapshot.snapshot_commercial_effective_date,
+            snapshot.snapshot_reference_monthly_price,
+            snapshot.pricing_source,
+            snapshot.pricing_agreement_reason,
+            snapshot.pricing_agreed_by_user_id,
+            snapshot.pricing_agreed_at,
             snapshot.room_number,
             snapshot.kost_type_name,
             predecessor.id,
@@ -340,7 +354,6 @@ export class LeaseRenewalService {
             snapshot.payment_plan_type,
             snapshot.contract_rent_amount,
             snapshot.dp_recommended_amount,
-            user.id,
           ],
         );
         if (!successor.rows[0])
@@ -1476,6 +1489,7 @@ export class LeaseRenewalService {
                rb.building_code,kcv.monthly_price::text AS monthly_price,kcv.annual_contract_value::text AS yearly_price,
                kcv.short_stay_monthly_price::text,kcv.medium_stay_monthly_price::text,
                kcv.long_stay_monthly_price::text,
+               management_fee.monthly_fee_amount::text AS management_fee_amount,
                kcv.effective_date::text AS commercial_effective_date
        FROM rooms r
        JOIN room_buildings rb ON rb.id=r.building_id
@@ -1487,6 +1501,14 @@ export class LeaseRenewalService {
           WHERE kost_type_id=kt.id AND effective_date<=$2::date
           ORDER BY effective_date DESC,id DESC LIMIT 1
        ) kcv ON true
+       LEFT JOIN LATERAL (
+           SELECT fee.monthly_fee_amount
+           FROM property_management_fee_versions fee
+          WHERE fee.property_id=r.property_id
+            AND fee.effective_date<=$2::date
+          ORDER BY fee.effective_date DESC,fee.id DESC
+          LIMIT 1
+       ) management_fee ON true
        WHERE r.id=$1
        FOR UPDATE OF r,rb,kt`,
       [roomId, effectiveDate],
@@ -1610,19 +1632,39 @@ export class LeaseRenewalService {
       term_months: number;
       billing_cycle: BillingCycle;
       payment_plan_type: ContractPaymentPlan;
+      pricing_source: 'standard' | 'negotiated';
+      agreed_monthly_price?: number;
+      pricing_agreement_reason?: string;
+      pricing_variance_acknowledged?: boolean;
     },
+    actorUserId: string,
   ): CommercialSnapshot {
-    const pricing = resolveDurationPricing(
-      {
-        shortStayMonthlyPrice: Number(room.short_stay_monthly_price ?? room.monthly_price),
-        mediumStayMonthlyPrice: Number(room.medium_stay_monthly_price ?? room.monthly_price),
-        longStayMonthlyPrice: Number(
-          room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
-        ),
-      },
-      terms.term_months,
-    );
-    const monthly = pricing.monthlyRate;
+    let pricing: ReturnType<typeof resolveLeaseCommercialAgreement>;
+    try {
+      pricing = resolveLeaseCommercialAgreement(
+        {
+          shortStayMonthlyPrice: Number(room.short_stay_monthly_price ?? room.monthly_price),
+          mediumStayMonthlyPrice: Number(room.medium_stay_monthly_price ?? room.monthly_price),
+          longStayMonthlyPrice: Number(
+            room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
+          ),
+        },
+        {
+          termMonths: terms.term_months,
+          pricingSource: terms.pricing_source,
+          agreedMonthlyPrice: terms.agreed_monthly_price,
+          managementFeeAmount: Number(room.management_fee_amount ?? 0),
+          agreementReason: terms.pricing_agreement_reason,
+          varianceAcknowledged: terms.pricing_variance_acknowledged,
+        },
+      );
+    } catch (error) {
+      throw new UnprocessableEntityException({
+        code: 'RENEWAL_COMMERCIAL_INVALID',
+        message: error instanceof Error ? error.message : 'Renewal commercial snapshot is invalid',
+      });
+    }
+    const monthly = pricing.agreedMonthlyPrice;
     const yearly = Number(room.yearly_price);
     const rent = pricing.contractRent;
     if (!Number.isSafeInteger(rent) || rent < 0)
@@ -1631,14 +1673,21 @@ export class LeaseRenewalService {
         message: 'Renewal commercial snapshot is invalid',
       });
     return {
-      ...terms,
+      term_months: terms.term_months,
+      billing_cycle: terms.billing_cycle,
+      payment_plan_type: terms.payment_plan_type,
       contract_rent_amount: rent,
       dp_recommended_amount: Math.ceil(rent * 0.25),
       snapshot_monthly_price: monthly,
       snapshot_yearly_price: yearly,
       snapshot_deposit_amount: Number(predecessor.snapshot_deposit_amount),
-      snapshot_pricing_tier: pricing.tier,
+      snapshot_pricing_tier: pricing.pricingTier,
       snapshot_commercial_effective_date: room.commercial_effective_date,
+      snapshot_reference_monthly_price: pricing.referenceMonthlyPrice,
+      pricing_source: pricing.pricingSource,
+      pricing_agreement_reason: pricing.agreementReason,
+      pricing_agreed_by_user_id: actorUserId,
+      pricing_agreed_at: new Date().toISOString(),
       room_number: room.room_number,
       kost_type_id: room.kost_type_id as string,
       kost_type_name: room.kost_type_name as string,
@@ -1655,6 +1704,10 @@ export class LeaseRenewalService {
     term_months: number;
     billing_cycle: BillingCycle;
     payment_plan_type: ContractPaymentPlan;
+    pricing_source: 'standard' | 'negotiated';
+    agreed_monthly_price?: number;
+    pricing_agreement_reason?: string;
+    pricing_variance_acknowledged?: boolean;
   } {
     if (dto.billing_cycle === 'yearly' && dto.term_months % 12 !== 0)
       throw new UnprocessableEntityException({
@@ -1670,6 +1723,10 @@ export class LeaseRenewalService {
       term_months: dto.term_months,
       billing_cycle: dto.billing_cycle,
       payment_plan_type: dto.payment_plan_type,
+      pricing_source: dto.pricing_source ?? 'standard',
+      agreed_monthly_price: dto.agreed_monthly_price,
+      pricing_agreement_reason: dto.pricing_agreement_reason,
+      pricing_variance_acknowledged: dto.pricing_variance_acknowledged,
     };
   }
 
@@ -1685,7 +1742,18 @@ export class LeaseRenewalService {
       ) ||
       !Number.isSafeInteger(value.contract_rent_amount) ||
       !Number.isSafeInteger(value.snapshot_monthly_price) ||
+      !Number.isSafeInteger(value.snapshot_reference_monthly_price) ||
       !Number.isSafeInteger(value.snapshot_yearly_price) ||
+      !['standard', 'negotiated'].includes(String(value.pricing_source)) ||
+      typeof value.pricing_agreed_by_user_id !== 'string' ||
+      typeof value.pricing_agreed_at !== 'string' ||
+      (value.pricing_source === 'standard' &&
+        (value.snapshot_monthly_price !== value.snapshot_reference_monthly_price ||
+          value.pricing_agreement_reason != null)) ||
+      (value.pricing_source === 'negotiated' &&
+        (typeof value.pricing_agreement_reason !== 'string' ||
+          value.pricing_agreement_reason.trim().length < 3 ||
+          value.pricing_agreement_reason.trim().length > 500)) ||
       typeof value.room_number !== 'string' ||
       typeof value.kost_type_name !== 'string'
     ) {
@@ -1718,6 +1786,9 @@ export class LeaseRenewalService {
       payment_plan_type: snapshot.payment_plan_type ?? null,
       contract_rent_amount: snapshot.contract_rent_amount ?? null,
       dp_recommended_amount: snapshot.dp_recommended_amount ?? null,
+      snapshot_reference_monthly_price: snapshot.snapshot_reference_monthly_price ?? null,
+      snapshot_monthly_price: snapshot.snapshot_monthly_price ?? null,
+      pricing_source: snapshot.pricing_source ?? null,
       first_invoice_id: command.first_invoice_id,
       financial_prepared_at: command.financial_prepared_at,
       activation_authorized_at: command.activation_authorized_at,

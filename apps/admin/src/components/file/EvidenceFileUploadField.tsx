@@ -26,6 +26,7 @@ type EvidenceFileUploadFieldProps = {
   onBusyChange?: (busy: boolean) => void;
   deleteOnRemove?: boolean;
   className?: string;
+  alignHeader?: boolean;
 };
 
 export function EvidenceFileUploadField({
@@ -44,6 +45,7 @@ export function EvidenceFileUploadField({
   onBusyChange,
   deleteOnRemove = true,
   className,
+  alignHeader = false,
 }: EvidenceFileUploadFieldProps) {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileResponse | null>(null);
@@ -92,18 +94,34 @@ export function EvidenceFileUploadField({
       data-validation-target={invalid ? "true" : undefined}
       tabIndex={invalid ? -1 : undefined}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div
+        className={cn(
+          alignHeader
+            ? "grid content-start gap-2"
+            : "flex flex-wrap items-start justify-between gap-2",
+        )}
+      >
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-semibold text-foreground">
             {label}
             {required ? <span className="ml-1 text-destructive">*</span> : null}
           </p>
           {description ? (
-            <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+            <p
+              className={cn(
+                "text-xs leading-5 text-muted-foreground",
+                alignHeader && "md:min-h-10",
+              )}
+            >
+              {description}
+            </p>
           ) : null}
         </div>
         <span
-          className="shrink-0 rounded-md border border-amber-400/50 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm shadow-amber-400/20 dark:text-amber-300"
+          className={cn(
+            "rounded-md border border-amber-400/50 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm shadow-amber-400/20 dark:text-amber-300",
+            alignHeader ? "justify-self-start" : "shrink-0",
+          )}
           aria-live="polite"
         >
           {values.length} dari maksimal {maxFiles} file

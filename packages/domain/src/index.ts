@@ -9,7 +9,10 @@ export const PRODUCT_LANGUAGE = {
 export * from "./envelopes";
 export * from "./errors";
 export * from "./enums";
-export * from "./kmo-lifecycle";
+// Keep the source extension explicit so ESM runtimes do not resolve the
+// untracked CommonJS build artifact (`kmo-lifecycle.js`) that may sit beside
+// the TypeScript source during local development.
+export * from "./kmo-lifecycle.ts";
 export * from "./auth";
 export * from "./money";
 export * from "./date";

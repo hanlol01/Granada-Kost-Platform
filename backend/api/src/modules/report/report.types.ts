@@ -1,4 +1,10 @@
-export const REPORT_TYPES = ['leases', 'payments', 'expenses', 'finance'] as const;
+export const REPORT_TYPES = [
+  'leases',
+  'payments',
+  'expenses',
+  'finance',
+  'property-owners',
+] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export type ReportScalar = string | number | boolean | null;

@@ -634,7 +634,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
             setModal("assign");
           }}
           onReset={() => setModal("reset")}
-          onCloseReport={() => setModal("close-report")}
+          onCloseReport={() => void navigate({ to: "/reports/property-owners" })}
           onArchive={() => {
             if (!detail.data) return;
             setModal(detail.data.lifecycle.canArchive ? "archive-confirm" : "archive-blocked");
@@ -1444,7 +1444,7 @@ function OwnerDetailPageContent({
               {detail.profileStatus === "active" && (
                 <Button variant="outline" onClick={onCloseReport}>
                   <CalendarClock className="mr-2 size-4" />
-                  Tutup laporan bulanan
+                  Kelola laporan Owner
                 </Button>
               )}
               {detail.profileStatus === "active" && (

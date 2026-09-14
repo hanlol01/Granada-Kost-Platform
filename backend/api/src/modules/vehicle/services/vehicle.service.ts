@@ -209,6 +209,7 @@ export class VehicleService {
     input: UpdateVehicleInput,
     context: AuditActorContext = {},
   ): Promise<VehicleRecord> {
+    const existing = await this.get(vehicleId);
     const patch = { ...input };
     if (patch.customVehicleType !== undefined) {
       patch.customVehicleType = patch.customVehicleType?.trim() || null;
@@ -216,33 +217,50 @@ export class VehicleService {
     if (patch.plateNumber) {
       patch.plateNumber = VehiclePlateNormalizer.normalize(patch.plateNumber);
     }
-    return this.command(context, vehicleId, `/vehicles/${vehicleId}`, patch, async (client) => {
-      const current = await this.vehicles.findByIdForUpdate(vehicleId, client);
-      if (!current)
-        throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
-      if (patch.customVehicleType && (patch.vehicleType ?? current.vehicleType) !== 'other') {
-        throw new BadRequestException({
-          code: 'VEHICLE_CUSTOM_TYPE_REQUIRES_OTHER',
-          message: 'Custom vehicle type can only be used with vehicle type other',
-        });
-      }
-      if (patch.plateNumber)
-        await this.assertPlateAvailable(current.propertyId, patch.plateNumber, current.id, client);
-      const updated = await this.vehicles.update(current.id, patch, client);
-      if (!updated)
-        throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
-      await this.writeVehicleAudit(VEHICLE_AUDIT_ACTIONS.update, updated, context, current, client);
-      await this.writeVehicleEvent(
-        client,
-        updated.propertyId,
-        `vehicle:${updated.id}:updated:${context.idempotencyKey}`,
-        'vehicle.updated',
-        updated.id,
-        context,
-        { vehicle_id: updated.id },
-      );
-      return updated;
-    });
+    return this.command(
+      context,
+      existing.propertyId,
+      `/vehicles/${vehicleId}`,
+      patch,
+      async (client) => {
+        const current = await this.vehicles.findByIdForUpdate(vehicleId, client);
+        if (!current)
+          throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+        if (patch.customVehicleType && (patch.vehicleType ?? current.vehicleType) !== 'other') {
+          throw new BadRequestException({
+            code: 'VEHICLE_CUSTOM_TYPE_REQUIRES_OTHER',
+            message: 'Custom vehicle type can only be used with vehicle type other',
+          });
+        }
+        if (patch.plateNumber)
+          await this.assertPlateAvailable(
+            current.propertyId,
+            patch.plateNumber,
+            current.id,
+            client,
+          );
+        const updated = await this.vehicles.update(current.id, patch, client);
+        if (!updated)
+          throw new NotFoundException({ code: 'VEHICLE_NOT_FOUND', message: 'Vehicle not found' });
+        await this.writeVehicleAudit(
+          VEHICLE_AUDIT_ACTIONS.update,
+          updated,
+          context,
+          current,
+          client,
+        );
+        await this.writeVehicleEvent(
+          client,
+          updated.propertyId,
+          `vehicle:${updated.id}:updated:${context.idempotencyKey}`,
+          'vehicle.updated',
+          updated.id,
+          context,
+          { vehicle_id: updated.id },
+        );
+        return updated;
+      },
+    );
   }
 
   async updateVehicleForUser(
@@ -337,9 +355,10 @@ export class VehicleService {
       notes?: string;
     } = {},
   ): Promise<VehicleRecord> {
+    const existing = await this.get(vehicleId);
     return this.command(
       context,
-      vehicleId,
+      existing.propertyId,
       `/vehicles/${vehicleId}/${auditAction}`,
       { toStatus, ...options },
       async (client) => {

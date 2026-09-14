@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useResidents } from "@/hooks/useResidents";
-import { useCreateVehicle } from "@/hooks/useVehicleMutations";
+import { useCreateVehicle, useUpdateVehicle } from "@/hooks/useVehicleMutations";
 import { useProperty } from "@/lib/property";
-import type { VehicleType } from "@/hooks/useVehicles";
+import type { VehicleRecord, VehicleType } from "@/hooks/useVehicles";
 import type { ResidentListRecord } from "@/lib/admin-resident";
 import { cn } from "@/lib/utils";
 
@@ -217,13 +217,17 @@ function VehicleTypePicker({
 export function CreateVehicleDialog({
   open,
   onOpenChange,
+  vehicle = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  vehicle?: VehicleRecord | null;
 }) {
   const { currentPropertyId } = useProperty();
   const residents = useResidents({ limit: 100 });
   const create = useCreateVehicle();
+  const update = useUpdateVehicle();
+  const editing = vehicle !== null;
   const [residentId, setResidentId] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
   const [vehicleType, setVehicleType] = useState<VehicleType>("motorcycle");
@@ -235,34 +239,47 @@ export function CreateVehicleDialog({
 
   useEffect(() => {
     if (!open) return;
-    setResidentId("");
-    setPlateNumber("");
-    setVehicleType("motorcycle");
-    setCustomVehicleType("");
-    setBrand("");
-    setColor("");
-    setYear("");
-    setNotes("");
-  }, [open]);
+    setResidentId(vehicle?.residentId ?? "");
+    setPlateNumber(vehicle?.plateNumber ?? "");
+    setVehicleType(vehicle?.vehicleType ?? "motorcycle");
+    setCustomVehicleType(vehicle?.customVehicleType ?? "");
+    setBrand(vehicle?.brand ?? "");
+    setColor(vehicle?.color ?? "");
+    setYear(vehicle?.year ?? "");
+    setNotes(vehicle?.notes ?? "");
+  }, [open, vehicle]);
 
-  const canSubmit = Boolean(currentPropertyId && residentId);
-  const pending = create.isPending;
+  const canSubmit = editing ? Boolean(vehicle) : Boolean(currentPropertyId && residentId);
+  const pending = create.isPending || update.isPending;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!currentPropertyId || !canSubmit) return;
+    if (!canSubmit) return;
     try {
-      await create.mutateAsync({
-        propertyId: currentPropertyId,
-        residentId,
-        plateNumber: plateNumber.trim() || undefined,
-        vehicleType,
-        customVehicleType: customVehicleType || undefined,
-        brand: brand.trim() || undefined,
-        color: color.trim() || undefined,
-        year: year.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
+      if (editing && vehicle) {
+        await update.mutateAsync({
+          vehicleId: vehicle.id,
+          plateNumber: plateNumber.trim() || undefined,
+          vehicleType,
+          customVehicleType: customVehicleType || undefined,
+          brand: brand.trim() || undefined,
+          color: color.trim() || undefined,
+          year: year.trim() || undefined,
+          notes: notes.trim() || undefined,
+        });
+      } else if (currentPropertyId) {
+        await create.mutateAsync({
+          propertyId: currentPropertyId,
+          residentId,
+          plateNumber: plateNumber.trim() || undefined,
+          vehicleType,
+          customVehicleType: customVehicleType || undefined,
+          brand: brand.trim() || undefined,
+          color: color.trim() || undefined,
+          year: year.trim() || undefined,
+          notes: notes.trim() || undefined,
+        });
+      }
       onOpenChange(false);
     } catch {
       // Mutation feedback is handled by the shared hook.
@@ -273,21 +290,34 @@ export function CreateVehicleDialog({
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>Daftarkan kendaraan</DialogTitle>
+          <DialogTitle>{editing ? "Edit kendaraan" : "Daftarkan kendaraan"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4" noValidate>
-          <div className="space-y-1.5">
-            <Label>Penghuni *</Label>
-            <ResidentPicker
-              residents={residents.data?.data ?? []}
-              value={residentId}
-              onChange={setResidentId}
-              disabled={pending || residents.isLoading}
-            />
-            <p className="text-xs text-muted-foreground">
-              Kendaraan tetap terikat pada penghuni dan properti ini.
-            </p>
-          </div>
+          {editing && vehicle ? (
+            <div className="space-y-1.5">
+              <Label>Penghuni</Label>
+              <div className="rounded-md border border-input bg-muted/30 px-3 py-2.5 text-sm">
+                {vehicle.snapshotResidentName}
+                {vehicle.currentRoomNumber ? ` · Kamar ${vehicle.currentRoomNumber}` : ""}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Penghuni dan properti tidak dapat diubah dari form ini.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Penghuni *</Label>
+              <ResidentPicker
+                residents={residents.data?.data ?? []}
+                value={residentId}
+                onChange={setResidentId}
+                disabled={pending || residents.isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Kendaraan tetap terikat pada penghuni dan properti ini.
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Nomor polisi</Label>
@@ -355,6 +385,8 @@ export function CreateVehicleDialog({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Menyimpan...
                 </>
+              ) : editing ? (
+                "Simpan perubahan"
               ) : (
                 "Simpan kendaraan"
               )}

@@ -21,6 +21,10 @@ export type OnboardingPayload = {
   ktp_file_id?: string;
   start_date: string;
   term_months: number;
+  pricing_source?: "standard" | "negotiated";
+  agreed_monthly_price?: number;
+  pricing_agreement_reason?: string;
+  pricing_variance_acknowledged?: boolean;
   billing_cycle: "monthly" | "yearly";
   payment_plan_type: "annual_full" | "two_month_installments" | "monthly_installments";
   accepted_terms_version: string;
@@ -51,6 +55,11 @@ export type OnboardingResponse = {
   startDate: string;
   endDate: string;
   termMonths: number;
+  pricingSource: "standard" | "negotiated";
+  pricingTier: "short_stay" | "medium_stay" | "long_stay";
+  referenceMonthlyPrice: number;
+  agreedMonthlyPrice: number;
+  pricingAgreementReason: string | null;
   billingCycle: "monthly" | "yearly";
   paymentPlanType: "annual_full" | "monthly_installments" | "two_month_installments";
   contractRentAmount: number;
@@ -106,6 +115,11 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
         "leaseId",
         "leaseStatus",
         "paymentPlanType",
+        "pricingAgreementReason",
+        "pricingSource",
+        "pricingTier",
+        "referenceMonthlyPrice",
+        "agreedMonthlyPrice",
         "roomNumber",
         "securityDepositRequiredAmount",
         "startDate",
@@ -124,6 +138,11 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
   const termMonths = d.termMonths;
   const billingCycle = d.billingCycle;
   const paymentPlanType = d.paymentPlanType;
+  const pricingSource = d.pricingSource;
+  const pricingTier = d.pricingTier;
+  const referenceMonthlyPrice = d.referenceMonthlyPrice;
+  const agreedMonthlyPrice = d.agreedMonthlyPrice;
+  const pricingAgreementReason = d.pricingAgreementReason ?? null;
   const roomNumber = d.roomNumber;
   const startDate = d.startDate;
   const endDate = d.endDate;
@@ -153,12 +172,23 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
     typeof startDate !== "string" ||
     typeof endDate !== "string" ||
     !Number.isInteger(termMonths) ||
-    (termMonths as number) < 3 ||
+    (termMonths as number) < 1 ||
     (termMonths as number) > 120 ||
     !["monthly", "yearly"].includes(billingCycle as string) ||
     !["annual_full", "monthly_installments", "two_month_installments"].includes(
       paymentPlanType as string,
     ) ||
+    !["standard", "negotiated"].includes(pricingSource as string) ||
+    !["short_stay", "medium_stay", "long_stay"].includes(pricingTier as string) ||
+    !Number.isSafeInteger(referenceMonthlyPrice) ||
+    (referenceMonthlyPrice as number) <= 0 ||
+    !Number.isSafeInteger(agreedMonthlyPrice) ||
+    (agreedMonthlyPrice as number) <= 0 ||
+    (pricingAgreementReason !== null && typeof pricingAgreementReason !== "string") ||
+    (pricingSource === "standard" &&
+      (agreedMonthlyPrice !== referenceMonthlyPrice || pricingAgreementReason !== null)) ||
+    (pricingSource === "negotiated" &&
+      (typeof pricingAgreementReason !== "string" || pricingAgreementReason.trim().length < 3)) ||
     !Number.isSafeInteger(contractRentAmount) ||
     !Number.isSafeInteger(dpRequiredAmount) ||
     !Number.isSafeInteger(securityDepositRequiredAmount) ||
@@ -224,6 +254,11 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
     termMonths: termMonths as number,
     billingCycle: billingCycle as OnboardingResponse["billingCycle"],
     paymentPlanType: paymentPlanType as OnboardingResponse["paymentPlanType"],
+    pricingSource: pricingSource as OnboardingResponse["pricingSource"],
+    pricingTier: pricingTier as OnboardingResponse["pricingTier"],
+    referenceMonthlyPrice: referenceMonthlyPrice as number,
+    agreedMonthlyPrice: agreedMonthlyPrice as number,
+    pricingAgreementReason: pricingAgreementReason as string | null,
     contractRentAmount: contractRentAmount as number,
     dpRequiredAmount: dpRequiredAmount as number,
     securityDepositRequiredAmount: securityDepositRequiredAmount as number,

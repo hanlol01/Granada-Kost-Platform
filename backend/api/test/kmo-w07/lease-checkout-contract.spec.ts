@@ -57,6 +57,25 @@ test('W07D migration is registered with checksum and sentinels', () => {
   assert.ok(entry.sentinels.some((value) => value.includes('refund_due_date')));
 });
 
+test('checkout Stage 3 deliberately rolls out the gate for existing operational properties', async () => {
+  const migration = await source(
+    'src/infrastructure/database/migrations/083_enable_lease_checkout_for_operational_properties.sql',
+  );
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '083_enable_lease_checkout_for_operational_properties.sql',
+  );
+
+  assert.match(migration, /UPDATE property_feature_flags/);
+  assert.match(migration, /SET lease_checkout = TRUE/);
+  assert.match(migration, /WHERE admin_ux_read = TRUE[\s\S]*lease_write = TRUE/);
+  assert.match(migration, /lease_checkout = FALSE/);
+  assert.doesNotMatch(migration, /UPDATE\s+leases/i);
+  assert.doesNotMatch(migration, /UPDATE\s+occupancies/i);
+  assert.ok(entry);
+  assert.equal(entry.checksumSha256.length, 64);
+  assert.ok(entry.sentinels.some((value) => value.includes('migration 083')));
+});
+
 test('W07D routes are Admin-only and completion is financially authorised', async () => {
   const controller = await source('src/modules/lease/lease-checkout.controller.ts');
   assert.match(controller, /@RequireRoles\('admin'\)/);
@@ -72,6 +91,85 @@ test('W07D notice handles the open-command unique race with a stable business co
   const checkout = await source('src/modules/lease/lease-checkout.service.ts');
   assert.match(checkout, /INSERT INTO lease_checkout_commands[\s\S]*ON CONFLICT DO NOTHING/);
   assert.match(checkout, /code: 'CHECKOUT_ALREADY_OPEN'/);
+});
+
+test('Stage 3 links every final amount due to W06 invoice authority and reconciles payment reversals', async () => {
+  const migration = await source(
+    'src/infrastructure/database/migrations/082_lease_checkout_stage3_authority.sql',
+  );
+  const checkout = await source('src/modules/lease/lease-checkout.service.ts');
+  const billing = await source('src/modules/billing/services/w06-billing.service.ts');
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS lease_exit_final_invoice_links/);
+  assert.match(migration, /component_type IN \('rent_balance','final_adjustment'\)/);
+  assert.match(migration, /final_settlement_netting/);
+  assert.match(migration, /checkout_final_adjustment/);
+  assert.match(migration, /notice_exception','short_notice_waiver/);
+  assert.match(checkout, /issueCheckoutFinalChargeInTransaction/);
+  assert.match(checkout, /component_type,linked_amount[\s\S]*'rent_balance'/);
+  assert.match(checkout, /component_type,linked_amount[\s\S]*'final_adjustment'/);
+  assert.match(checkout, /applySettlementNetCredits/);
+  assert.match(checkout, /i\.invoice_purpose='rent'/);
+  assert.match(billing, /'manual','other_charge'/);
+  assert.match(billing, /'checkout_final_adjustment'/);
+  assert.match(billing, /UPDATE lease_exit_final_settlements final_settlement/);
+  assert.match(billing, /THEN 'amount_due' ELSE 'closed' END/);
+  assert.match(billing, /CHECKOUT_FINAL_INVOICE_REQUIRED/);
+  assert.match(migration, /earning_source IN \('rent_service','checkout_short_notice'\)/);
+  assert.match(migration, /recognize_property_owner_checkout_compensations/);
+  assert.match(migration, /NEW\.operator_fee_amount<>0/);
+  assert.match(migration, /shortNoticeAmount/);
+  assert.match(checkout, /payableShortNoticeAmount/);
+  assert.match(checkout, /payableDamageAmount/);
+});
+
+test('Stage 3 requires file evidence for financial exceptions, handover, and inspection', async () => {
+  const dto = await source('src/modules/lease/lease.dto.ts');
+  const checkout = await source('src/modules/lease/lease-checkout.service.ts');
+
+  assert.match(dto, /notice_exception_evidence_file_ids\?: string\[\]/);
+  assert.match(dto, /short_notice_waiver_evidence_file_ids\?: string\[\]/);
+  assert.match(checkout, /CHECKOUT_NOTICE_EXCEPTION_EVIDENCE_REQUIRED/);
+  assert.match(checkout, /CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED/);
+  assert.match(checkout, /snapshot_monthly_price AS monthly_rate_amount/);
+  assert.match(checkout, /CHECKOUT_HANDOVER_FILE_EVIDENCE_REQUIRED/);
+  assert.match(checkout, /CHECKOUT_INSPECTION_FILE_EVIDENCE_REQUIRED/);
+  assert.match(checkout, /bool_or\(file_id IS NOT NULL\) AS has_file/);
+  assert.match(checkout, /for \(const category of \['keys_access', 'inventory', 'inspection'\]\)/);
+});
+
+test('Stage 3 scopes parking release to the selected lease and preserves unrelated active leases', async () => {
+  const checkout = await source('src/modules/lease/lease-checkout.service.ts');
+
+  assert.match(checkout, /other\.id<>lease\.id/);
+  assert.match(checkout, /other\.lease_status IN \('awaiting_activation','active'\)/);
+  assert.match(checkout, /vehicle\.snapshot_room_number/);
+  assert.match(checkout, /scope\.current_room_number/);
+  assert.match(checkout, /scope\.snapshot_room_number/);
+  assert.match(checkout, /scope\.is_only_current_lease/);
+  assert.match(checkout, /'lease_id',\$1::uuid/);
+  assert.match(checkout, /'room_id',\$6::uuid/);
+});
+
+test('Stage 3 keeps checkout traceable in Admin reports and hides private notes from Owner', async () => {
+  const reports = await source('src/modules/report/report.service.ts');
+  const reportDto = await source('src/modules/report/dto/report-query.dto.ts');
+  const ownerPortal = await source(
+    'src/modules/property-owner-management/property-owner-portal.service.ts',
+  );
+
+  assert.match(reportDto, /exit_type\?: 'normal_expiry' \| 'resident_early_termination'/);
+  assert.match(reportDto, /checkout_status\?:/);
+  assert.match(reportDto, /financial_status\?: 'refund_pending' \| 'amount_due' \| 'closed'/);
+  assert.match(reports, /lease_checkout_commands command/);
+  assert.match(reports, /lease_exit_final_settlements settlement/);
+  assert.match(reports, /same_day_departures/);
+  assert.match(reports, /documented_damage_amount/);
+  assert.match(ownerPortal, /checkout_settlement_status/);
+  assert.match(ownerPortal, /checkout_short_notice_amount/);
+  assert.match(ownerPortal, /checkout_owner_entitlement_amount/);
+  assert.doesNotMatch(ownerPortal, /command\.internal_note/);
+  assert.doesNotMatch(ownerPortal, /command\.notice_reason/);
 });
 
 void test(

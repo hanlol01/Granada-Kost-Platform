@@ -149,10 +149,10 @@ function harness(options: Options = {}) {
           rows: ((params[0] as string[] | undefined) ?? []).map((id) => ({ id })),
           rowCount: ((params[0] as string[] | undefined) ?? []).length,
         };
-      if (/SELECT DISTINCT evidence_category/.test(q))
+      if (/SELECT evidence_category,bool_or\(file_id IS NOT NULL\) AS has_file/.test(q))
         return {
           rows: (options.evidence ?? ['keys_access', 'inventory', 'parking', 'inspection']).map(
-            (evidence_category) => ({ evidence_category }),
+            (evidence_category) => ({ evidence_category, has_file: true }),
           ),
           rowCount: 4,
         };
@@ -385,6 +385,14 @@ function harness(options: Options = {}) {
     },
   };
   const w06 = {
+    issueCheckoutFinalChargeInTransaction: async () => {
+      await Promise.resolve();
+      events.push('w06-final-charge');
+      return {
+        invoiceId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        invoiceCode: 'INV-CHECKOUT-TEST',
+      };
+    },
     reconcileInvoiceLifecycleInTransaction: async () => {
       await Promise.resolve();
       events.push('w06-reconcile');
@@ -448,6 +456,9 @@ void test('M5 short notice creates a server recommendation while property-owner 
       exit_type: 'resident_early_termination',
       effective_date: '2026-10-02',
       reason: 'Pindah',
+      request_source: 'resident',
+      notice_exception_reason: 'Permintaan keluar mendadak dari penghuni',
+      notice_exception_evidence_file_ids: [EVIDENCE_FILE_ID],
     },
     '1234567890123456',
     context,
@@ -463,6 +474,7 @@ void test('M5 short notice creates a server recommendation while property-owner 
           exit_type: 'resident_early_termination',
           effective_date: '2026-10-20',
           reason: 'Pindah',
+          request_source: 'resident',
         },
         '1234567890123456',
         context,
@@ -499,7 +511,7 @@ void test('M5 approval cannot exceed the recommendation and reductions require a
         '1234567890123456',
         context,
       ),
-    (error: unknown) => errorCode(error) === 'CHECKOUT_SHORT_NOTICE_WAIVER_REASON_REQUIRED',
+    (error: unknown) => errorCode(error) === 'CHECKOUT_SHORT_NOTICE_WAIVER_AUTHORITY_REQUIRED',
   );
   const waived = harness({ state: 'notice_received', recommendedShortNoticeCharge: 100_000 });
   const approved = await waived.service.schedule(
@@ -509,6 +521,7 @@ void test('M5 approval cannot exceed the recommendation and reductions require a
     {
       approved_short_notice_charge: 50_000,
       short_notice_waiver_reason: 'Kondisi darurat disetujui pengelola',
+      short_notice_waiver_evidence_file_ids: [EVIDENCE_FILE_ID],
     },
     '1234567890123456',
     context,
@@ -566,6 +579,8 @@ void test('M5 physical handover ends occupancy and lease while keeping the room 
         },
       ],
       utility_readings: [],
+      key_access_file_ids: [EVIDENCE_FILE_ID],
+      inventory_file_ids: [EVIDENCE_FILE_ID],
     },
     '1234567890123456',
     context,

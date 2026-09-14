@@ -20,8 +20,8 @@ import {
   ERROR_CODES,
   isErrorEnvelope,
   type ApiErrorCode,
-  type SuccessEnvelope,
 } from "@granada-kost/domain";
+import { unwrapResponsePayload } from "./response-payload";
 
 export type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -36,6 +36,8 @@ export type RequestOptions = {
   retryOnNetworkError?: boolean;
   // Skip auth header (e.g. login endpoint). Defaults to false.
   anonymous?: boolean;
+  // Preserve resource payloads whose own collection field is named `data`.
+  unwrapData?: boolean;
 };
 
 export type TokenProvider = {
@@ -135,7 +137,7 @@ export class ApiClient {
       this.tokenProvider.onAuthFailure?.();
     }
 
-    return this.parseResponse<T>(response, correlationId);
+    return this.parseResponse<T>(response, correlationId, options.unwrapData !== false);
   }
 
   private buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -221,7 +223,11 @@ export class ApiClient {
     return this.refreshInFlight;
   }
 
-  private async parseResponse<T>(response: Response, correlationId: string): Promise<T> {
+  private async parseResponse<T>(
+    response: Response,
+    correlationId: string,
+    unwrapData: boolean,
+  ): Promise<T> {
     const contentType = response.headers.get("content-type") ?? "";
     const serverCorrelationId = response.headers.get("x-correlation-id") ?? correlationId;
 
@@ -268,10 +274,7 @@ export class ApiClient {
     }
 
     // Success path: unwrap SuccessEnvelope when present.
-    if (payload && typeof payload === "object" && "data" in payload) {
-      return (payload as SuccessEnvelope<T>).data;
-    }
-    return payload as T;
+    return unwrapResponsePayload<T>(payload, unwrapData);
   }
 
   private normalizeErrorPayload(

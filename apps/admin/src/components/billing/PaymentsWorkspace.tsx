@@ -1098,6 +1098,11 @@ function ResidentBillingPanel({
 function SummaryGrid({ data }: { data: ResidentBilling }) {
   const items = [
     ["Nilai kontrak", formatIDR(data.lease.contract_rent)],
+    ["Tarif bulanan kontrak", formatIDR(data.lease.monthly_rate)],
+    [
+      "Sumber tarif",
+      data.lease.pricing_source === "negotiated" ? "Kesepakatan khusus" : "Tarif standar",
+    ],
     ["Sewa ditagihkan", formatIDR(data.summary.rent_invoiced)],
     ["Sewa dibayar", formatIDR(data.summary.rent_paid)],
     ["Sewa belum dibayar", formatIDR(data.summary.rent_outstanding)],

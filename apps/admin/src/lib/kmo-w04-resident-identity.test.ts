@@ -9,11 +9,48 @@ import {
   parseResidentDetail,
   parseResidentPage,
   parseResidentPasswordResetReceipt,
+  parseResidentTenancy,
 } from "./admin-resident";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ID = "11111111-1111-4111-8111-111111111111";
 const PROPERTY_ID = "22222222-2222-4222-8222-222222222222";
+
+test("resident tenancy accepts the immutable commercial projection used by checkout", () => {
+  const parsed = parseResidentTenancy(
+    {
+      data: {
+        resident_id: ID,
+        property_id: PROPERTY_ID,
+        lease_id: "33333333-3333-4333-8333-333333333333",
+        booking_lead_id: null,
+        lease_status: "active",
+        activation_state: "checked_in",
+        occupancy_id: "44444444-4444-4444-8444-444444444444",
+        room_status: "occupied",
+        activated_at: "2026-08-01T00:00:00.000Z",
+        checked_in_at: "2026-08-01T01:00:00.000Z",
+        room_number: "RK-01-11",
+        kost_type_name: "Rumah Kost",
+        building_code: "RK-01",
+        start_date: "2026-08-01",
+        end_date: "2026-11-01",
+        term_months: 3,
+        payment_plan_type: "annual_full",
+        agreed_monthly_price: 1_800_000,
+        contract_rent_amount: 5_400_000,
+        pricing_source: "standard",
+      },
+    },
+    PROPERTY_ID,
+    ID,
+  );
+
+  assert.equal(parsed?.leaseStatus, "active");
+  assert.equal(parsed?.agreedMonthlyPrice, 1_800_000);
+  assert.equal(parsed?.contractRentAmount, 5_400_000);
+  assert.equal(parsed?.pricingSource, "standard");
+});
 
 function listItem() {
   return {

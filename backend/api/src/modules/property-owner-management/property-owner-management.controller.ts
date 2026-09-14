@@ -23,16 +23,21 @@ import {
   AssignOwnerBuildingDto,
   AssignOwnerRoomsDto,
   CloseOwnerReportPeriodDto,
+  CreateOwnerSettlementAdjustmentDto,
   CreatePropertyOwnerDto,
   ListPropertyOwnersQueryDto,
+  OwnerSettlementPeriodDto,
+  OwnerSettlementReportQueryDto,
   PropertyOwnerAssetOptionsQueryDto,
   PropertyOwnerPropertyQueryDto,
   ReleaseOwnerAssignmentDto,
   ReleaseOwnerAssignmentsDto,
   ResetPropertyOwnerPasswordDto,
+  RecordOwnerPayoutDto,
   UpdatePropertyOwnerDto,
 } from './dto/property-owner-management.dto';
 import { PropertyOwnerManagementService } from './property-owner-management.service';
+import { PropertyOwnerReportService } from './property-owner-report.service';
 
 function auditContext(request: RequestWithCorrelationId) {
   return {
@@ -47,7 +52,10 @@ function auditContext(request: RequestWithCorrelationId) {
 @RequirePermissions('property_owner.manage')
 @Controller('admin/property-owners')
 export class PropertyOwnerManagementController {
-  constructor(private readonly owners: PropertyOwnerManagementService) {}
+  constructor(
+    private readonly owners: PropertyOwnerManagementService,
+    private readonly ownerReports: PropertyOwnerReportService,
+  ) {}
 
   @Get()
   list(@CurrentUser() actor: UserAccessContext, @Query() query: ListPropertyOwnersQueryDto) {
@@ -244,13 +252,96 @@ export class PropertyOwnerManagementController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.owners.closeReportPeriod(
-      actor,
-      ownerId,
-      dto,
-      idempotencyKey,
-      auditContext(request),
-    );
+    return this.ownerReports.prepare(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+}
+
+@UseGuards(JwtAuthGuard, RbacGuard)
+@RequireRoles('owner', 'manager', 'admin')
+@RequirePermissions('property_owner.settlement.manage')
+@Controller('admin/property-owner-reports')
+export class PropertyOwnerReportController {
+  constructor(private readonly reports: PropertyOwnerReportService) {}
+
+  @Get()
+  list(@CurrentUser() actor: UserAccessContext, @Query() query: OwnerSettlementReportQueryDto) {
+    return this.reports.list(actor, query);
+  }
+
+  @Get(':ownerId/periods/:period')
+  detail(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Param('period') period: string,
+    @Query() query: PropertyOwnerPropertyQueryDto,
+  ) {
+    return this.reports.detail(actor, ownerId, query.property_id, period);
+  }
+
+  @Post(':ownerId/prepare')
+  prepare(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: OwnerSettlementPeriodDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.prepare(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Post(':ownerId/submit-review')
+  submitReview(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: OwnerSettlementPeriodDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.submitReview(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Post(':ownerId/approve')
+  approve(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: OwnerSettlementPeriodDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.approve(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Post(':ownerId/publish')
+  publish(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: OwnerSettlementPeriodDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.publish(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Post(':ownerId/payouts')
+  payout(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: RecordOwnerPayoutDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.recordPayout(actor, ownerId, dto, idempotencyKey, auditContext(request));
+  }
+
+  @Post(':ownerId/adjustments')
+  adjustment(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Body() dto: CreateOwnerSettlementAdjustmentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.reports.addAdjustment(actor, ownerId, dto, idempotencyKey, auditContext(request));
   }
 }
 

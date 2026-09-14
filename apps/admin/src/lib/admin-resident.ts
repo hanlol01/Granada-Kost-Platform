@@ -123,6 +123,9 @@ export type ResidentTenancy = {
   endDate: string;
   termMonths: number;
   paymentPlanType: "annual_full" | "monthly_installments" | "two_month_installments";
+  agreedMonthlyPrice: number;
+  contractRentAmount: number;
+  pricingSource: "standard" | "negotiated";
 };
 
 export type ResidentAccountReceipt = {
@@ -471,6 +474,9 @@ export function parseResidentTenancy(
     "end_date",
     "term_months",
     "payment_plan_type",
+    "agreed_monthly_price",
+    "contract_rent_amount",
+    "pricing_source",
   ]);
   const propertyId = uuid(item.property_id) as string;
   const residentId = uuid(item.resident_id) as string;
@@ -506,6 +512,9 @@ export function parseResidentTenancy(
       "monthly_installments",
       "two_month_installments",
     ] as const),
+    agreedMonthlyPrice: integer(item.agreed_monthly_price),
+    contractRentAmount: integer(item.contract_rent_amount),
+    pricingSource: enumValue(item.pricing_source, ["standard", "negotiated"] as const),
   };
 }
 

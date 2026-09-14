@@ -42,6 +42,7 @@ import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
 import { Route as RoomsFasilitasRouteImport } from './routes/rooms/fasilitas'
 import { Route as RoomsApartKostRouteImport } from './routes/rooms/apart-kost'
 import { Route as RoomsRoomNumberRouteImport } from './routes/rooms/$roomNumber'
+import { Route as ReportsPropertyOwnersRouteImport } from './routes/reports/property-owners'
 import { Route as ReportsPaymentsRouteImport } from './routes/reports/payments'
 import { Route as ReportsLeasesRouteImport } from './routes/reports/leases'
 import { Route as ReportsFinanceRouteImport } from './routes/reports/finance'
@@ -228,6 +229,11 @@ const RoomsRoomNumberRoute = RoomsRoomNumberRouteImport.update({
   path: '/$roomNumber',
   getParentRoute: () => RoomsRouteRoute,
 } as any)
+const ReportsPropertyOwnersRoute = ReportsPropertyOwnersRouteImport.update({
+  id: '/property-owners',
+  path: '/property-owners',
+  getParentRoute: () => ReportsRoute,
+} as any)
 const ReportsPaymentsRoute = ReportsPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
@@ -373,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/reports/finance': typeof ReportsFinanceRoute
   '/reports/leases': typeof ReportsLeasesRoute
   '/reports/payments': typeof ReportsPaymentsRoute
+  '/reports/property-owners': typeof ReportsPropertyOwnersRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -424,6 +431,7 @@ export interface FileRoutesByTo {
   '/reports/finance': typeof ReportsFinanceRoute
   '/reports/leases': typeof ReportsLeasesRoute
   '/reports/payments': typeof ReportsPaymentsRoute
+  '/reports/property-owners': typeof ReportsPropertyOwnersRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -479,6 +487,7 @@ export interface FileRoutesById {
   '/reports/finance': typeof ReportsFinanceRoute
   '/reports/leases': typeof ReportsLeasesRoute
   '/reports/payments': typeof ReportsPaymentsRoute
+  '/reports/property-owners': typeof ReportsPropertyOwnersRoute
   '/rooms/$roomNumber': typeof RoomsRoomNumberRoute
   '/rooms/apart-kost': typeof RoomsApartKostRoute
   '/rooms/fasilitas': typeof RoomsFasilitasRoute
@@ -536,6 +545,7 @@ export interface FileRouteTypes {
     | '/reports/finance'
     | '/reports/leases'
     | '/reports/payments'
+    | '/reports/property-owners'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -587,6 +597,7 @@ export interface FileRouteTypes {
     | '/reports/finance'
     | '/reports/leases'
     | '/reports/payments'
+    | '/reports/property-owners'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -641,6 +652,7 @@ export interface FileRouteTypes {
     | '/reports/finance'
     | '/reports/leases'
     | '/reports/payments'
+    | '/reports/property-owners'
     | '/rooms/$roomNumber'
     | '/rooms/apart-kost'
     | '/rooms/fasilitas'
@@ -925,6 +937,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomsRoomNumberRouteImport
       parentRoute: typeof RoomsRouteRoute
     }
+    '/reports/property-owners': {
+      id: '/reports/property-owners'
+      path: '/property-owners'
+      fullPath: '/reports/property-owners'
+      preLoaderRoute: typeof ReportsPropertyOwnersRouteImport
+      parentRoute: typeof ReportsRoute
+    }
     '/reports/payments': {
       id: '/reports/payments'
       path: '/payments'
@@ -1164,6 +1183,7 @@ interface ReportsRouteChildren {
   ReportsFinanceRoute: typeof ReportsFinanceRoute
   ReportsLeasesRoute: typeof ReportsLeasesRoute
   ReportsPaymentsRoute: typeof ReportsPaymentsRoute
+  ReportsPropertyOwnersRoute: typeof ReportsPropertyOwnersRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
 }
 
@@ -1172,6 +1192,7 @@ const ReportsRouteChildren: ReportsRouteChildren = {
   ReportsFinanceRoute: ReportsFinanceRoute,
   ReportsLeasesRoute: ReportsLeasesRoute,
   ReportsPaymentsRoute: ReportsPaymentsRoute,
+  ReportsPropertyOwnersRoute: ReportsPropertyOwnersRoute,
   ReportsIndexRoute: ReportsIndexRoute,
 }
 

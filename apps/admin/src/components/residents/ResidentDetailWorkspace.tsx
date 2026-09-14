@@ -17,6 +17,7 @@ import {
   Landmark,
   KeyRound,
   LogIn,
+  LogOut,
   MessageSquare,
   Pencil,
   ReceiptText,
@@ -36,6 +37,7 @@ import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
 import { ResidentOperationalCards } from "@/components/residents/ResidentOperationalCards";
 import { TransferPanel } from "@/components/leases/TransferPanel";
+import { CheckoutPanel } from "@/components/leases/CheckoutPanel";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,8 +71,9 @@ import {
   type ResidentBilling,
 } from "@/lib/admin-billing";
 import type { ResidentDetail, ResidentTenancy } from "@/lib/admin-resident";
-import { canRunTransferTopUp } from "@/lib/admin-ux-lease-helpers";
-import { downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
+import { canRunTransferTopUp, checkoutActionLabel } from "@/lib/admin-ux-lease-helpers";
+import { adminUxLeaseApi, downloadLeaseExitDocument } from "@/lib/admin-ux-lease-api";
+import type { CheckoutCommand } from "@/lib/admin-ux-lease-types";
 import { formatFileSize } from "@/lib/file-utils";
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseTransferEnabled } from "@/lib/features";
@@ -269,7 +272,7 @@ function ActivationRoomAction({
 
   return (
     <Button className="min-h-11" onClick={onActivate}>
-      <CalendarCheck2 className="mr-1 h-4 w-4" /> Aktivasi kamar
+      <CalendarCheck2 className="mr-1 h-4 w-4" /> Aktifkan kamar & check-in
     </Button>
   );
 }
@@ -567,10 +570,39 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [confirmCheckIn, setConfirmCheckIn] = useState(false);
   const [activationEffectiveDate, setActivationEffectiveDate] = useState("");
   const [checkInEffectiveDate, setCheckInEffectiveDate] = useState("");
+  const [activationOnly, setActivationOnly] = useState(false);
+  const [showActivationDates, setShowActivationDates] = useState(false);
+  const [showCheckInDate, setShowCheckInDate] = useState(false);
   const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
   const transferPanelRef = useRef<HTMLElement | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutCommand, setCheckoutCommand] = useState<CheckoutCommand | null>(null);
+  const checkoutPanelRef = useRef<HTMLElement | null>(null);
+  const checkoutLeaseId = tenancy.data?.leaseId ?? billing.data?.lease.id ?? null;
+  const canReadCheckout = hasRole("admin") && hasPermission("lease.manage");
+
+  useEffect(() => {
+    if (!checkoutLeaseId || !canReadCheckout) {
+      setCheckoutCommand(null);
+      return;
+    }
+    let current = true;
+    void adminUxLeaseApi.checkout
+      .list(checkoutLeaseId)
+      .then(({ commands }) => {
+        if (!current) return;
+        const latest = commands[0] ?? null;
+        setCheckoutCommand(latest?.state === "cancelled" ? null : latest);
+      })
+      .catch(() => {
+        if (current) setCheckoutCommand(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [canReadCheckout, checkoutLeaseId]);
 
   useEffect(() => {
     if (!transferOpen) return;
@@ -583,6 +615,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
 
     return () => window.cancelAnimationFrame(frame);
   }, [transferOpen]);
+
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      checkoutPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      checkoutPanelRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [checkoutOpen]);
   const [guidanceFocusId, setGuidanceFocusId] = useState<string | null>(null);
   const [paymentHistoryHighlighted, setPaymentHistoryHighlighted] = useState(false);
 
@@ -660,6 +701,25 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const settlement = billing.data?.contract_settlement ?? null;
   const canManageBilling = hasPermission("billing.manage");
   const canManageTermination = hasRole("admin") && hasPermission("lease.manage");
+  const checkoutLeaseStatus = currentTenancy?.leaseStatus
+    ? currentTenancy.leaseStatus
+    : billing.data?.lease.status === "awaiting_activation" ||
+        billing.data?.lease.status === "active" ||
+        billing.data?.lease.status === "ended" ||
+        billing.data?.lease.status === "completed"
+      ? billing.data.lease.status
+      : null;
+  const checkoutLabel = checkoutActionLabel(
+    checkoutLeaseStatus,
+    checkoutCommand
+      ? {
+          state: checkoutCommand.state,
+          decisionStatus: checkoutCommand.settlementDecisionStatus,
+          refundStatus: checkoutCommand.exitRefundStatus,
+          amountDue: checkoutCommand.amountDue,
+        }
+      : null,
+  );
   const transferFlagEnabled = isAdminUxLeaseTransferEnabled();
   const canTransferEntry =
     transferFlagEnabled &&
@@ -697,7 +757,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               className="min-h-11"
               onClick={() => setCancellationOpen(true)}
             >
-              <RotateCcw className="mr-1 h-4 w-4" /> Batalkan dan Refund
+              <RotateCcw className="mr-1 h-4 w-4" /> Batalkan penyewaan
             </Button>
           ) : null}
           {canActivate ? (
@@ -705,15 +765,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               startDate={currentTenancy.startDate}
               onActivate={() => {
                 setActivationEffectiveDate(currentTenancy.startDate);
+                setCheckInEffectiveDate(currentTenancy.startDate);
+                setActivationOnly(false);
+                setShowActivationDates(false);
                 setConfirmActivation(true);
               }}
             />
           ) : null}
-          {canConfirmCheckIn ? (
+          {canConfirmCheckIn && currentTenancy ? (
             <Button
               className="min-h-11"
               onClick={() => {
-                setCheckInEffectiveDate(checkInMinimumDate ?? currentTenancy.startDate);
+                setCheckInEffectiveDate(jakartaDateInput());
+                setShowCheckInDate(false);
                 setConfirmCheckIn(true);
               }}
             >
@@ -732,6 +796,26 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 <ArrowLeftRight className="mr-1 h-4 w-4" />
               )}
               {transferOpen ? "Batal Pindah Kamar" : "Pindah Kamar"}
+            </Button>
+          ) : null}
+          {canManageTermination &&
+          checkoutLeaseId &&
+          checkoutLabel &&
+          checkoutLabel !== "Batalkan penyewaan" ? (
+            <Button
+              variant={checkoutOpen ? "destructive" : "default"}
+              className="min-h-11"
+              onClick={() => {
+                setTransferOpen(false);
+                setCheckoutOpen((open) => !open);
+              }}
+            >
+              {checkoutOpen ? (
+                <XCircle className="mr-1 h-4 w-4" />
+              ) : (
+                <LogOut className="mr-1 h-4 w-4" />
+              )}
+              {checkoutOpen ? "Tutup proses check-out" : checkoutLabel}
             </Button>
           ) : null}
         </div>
@@ -777,6 +861,27 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             onOpenLease={(leaseId) =>
               void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })
             }
+          />
+        </section>
+      ) : null}
+
+      {checkoutOpen && checkoutLeaseId && currentPropertyId ? (
+        <section
+          ref={checkoutPanelRef}
+          tabIndex={-1}
+          aria-label="Proses check-out penghuni"
+          className="scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <CheckoutPanel
+            leaseId={checkoutLeaseId}
+            propertyId={currentPropertyId}
+            onClose={() => {
+              setCheckoutOpen(false);
+              void adminUxLeaseApi.checkout.list(checkoutLeaseId).then(({ commands }) => {
+                const latest = commands[0] ?? null;
+                setCheckoutCommand(latest?.state === "cancelled" ? null : latest);
+              });
+            }}
           />
         </section>
       ) : null}
@@ -865,6 +970,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                                 ? "Aktivasi terjadwal"
                                 : "Belum tersedia",
                     ],
+                    [
+                      "Tanggal check-in",
+                      currentTenancy.checkedInAt
+                        ? formatResidentDetailTimestamp(currentTenancy.checkedInAt)
+                        : "Belum tercatat",
+                    ],
                     ["Tanggal mulai", formatResidentDetailDate(currentTenancy.startDate)],
                     ["Tanggal berakhir", formatResidentDetailDate(currentTenancy.endDate)],
                     ["Durasi sewa", `${currentTenancy.termMonths} bulan`],
@@ -886,6 +997,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     ["Tanggal mulai", formatResidentDetailDate(billing.data.lease.start_date)],
                     ["Tanggal berakhir", formatResidentDetailDate(billing.data.lease.end_date)],
                     ["Total sewa kontrak", rupiah(billing.data.lease.contract_rent)],
+                    ["Tarif bulanan kontrak", rupiah(billing.data.lease.monthly_rate)],
+                    [
+                      "Sumber tarif",
+                      billing.data.lease.pricing_source === "negotiated"
+                        ? "Kesepakatan khusus"
+                        : "Tarif standar",
+                    ],
                   ]}
                 />
               ) : (
@@ -916,6 +1034,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 <DefinitionGrid
                   rows={[
                     ["Total sewa kontrak", rupiah(billing.data!.lease.contract_rent)],
+                    ["Tarif bulanan kontrak", rupiah(billing.data!.lease.monthly_rate)],
                     ["Sewa sudah dibayar", rupiah(summary.rent_paid)],
                     ["Sisa pembayaran sewa", rupiah(summary.rent_outstanding)],
                     [
@@ -1295,37 +1414,116 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
       <ConfirmDialog
         open={confirmActivation}
         onOpenChange={setConfirmActivation}
-        title="Aktivasi kamar dan penyewaan"
-        description="Aktivasi membuat kontrak sewa aktif dan mengikat kamar dalam status menunggu check-in. Occupancy baru dibuat setelah check-in fisik dikonfirmasi."
-        confirmLabel="Aktivasi sekarang"
+        title={activationOnly ? "Aktivasi kamar dan penyewaan" : "Aktifkan kamar & check-in"}
+        description={
+          activationOnly
+            ? "Gunakan pilihan ini hanya jika kontrak sudah aktif tetapi penghuni belum menerima kamar."
+            : "Untuk alur normal, aktivasi kontrak dan check-in dicatat bersamaan mengikuti tanggal mulai sewa."
+        }
+        confirmLabel={activationOnly ? "Aktivasi saja" : "Aktifkan & check-in"}
         pending={activation.isPending}
-        confirmDisabled={!activationEffectiveDate}
+        confirmDisabled={!activationEffectiveDate || (!activationOnly && !checkInEffectiveDate)}
         onConfirm={async () => {
           if (!currentTenancy || !activationEffectiveDate) return;
           await activation.mutateAsync({
             leaseId: currentTenancy.leaseId,
             idempotencyKey: newIdempotencyKey(),
             activatedAt: jakartaStartTimestamp(activationEffectiveDate),
+            confirmCheckIn: !activationOnly,
+            checkedInAt:
+              !activationOnly && checkInEffectiveDate
+                ? jakartaStartTimestamp(checkInEffectiveDate)
+                : undefined,
           });
           setConfirmActivation(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
         }}
       >
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          Tanggal aktivasi sebenarnya
-          <Input
-            type="date"
-            value={activationEffectiveDate}
-            min={currentTenancy?.startDate}
-            max={jakartaDateInput()}
-            onChange={(event) => setActivationEffectiveDate(event.target.value)}
-            disabled={activation.isPending}
-            required
-          />
-          <span className="text-xs font-normal leading-5 text-muted-foreground">
-            Untuk data historis, gunakan tanggal ketika masa sewa benar-benar mulai berlaku.
-          </span>
-        </label>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
+            <p className="text-sm font-semibold text-foreground">
+              {activationOnly ? "Tanggal aktivasi" : "Tanggal aktivasi dan check-in"}
+            </p>
+            <p className="mt-1 text-base font-semibold text-primary">
+              {activationEffectiveDate
+                ? formatResidentDetailDate(activationEffectiveDate)
+                : "Belum ditentukan"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {showActivationDates
+                ? "Tanggal disesuaikan untuk pencatatan historis."
+                : "Otomatis mengikuti tanggal mulai sewa yang sudah dicatat."}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-10"
+              disabled={activation.isPending}
+              onClick={() => {
+                if (showActivationDates && currentTenancy) {
+                  setActivationEffectiveDate(currentTenancy.startDate);
+                  setCheckInEffectiveDate(currentTenancy.startDate);
+                }
+                setShowActivationDates((visible) => !visible);
+              }}
+            >
+              <CalendarClock className="mr-1.5 h-4 w-4" />
+              {showActivationDates ? "Gunakan tanggal mulai sewa" : "Tanggal aktual berbeda?"}
+            </Button>
+            <Button
+              type="button"
+              variant={activationOnly ? "info" : "outline"}
+              className="min-h-10"
+              disabled={activation.isPending}
+              onClick={() => setActivationOnly((value) => !value)}
+            >
+              <LogIn className="mr-1.5 h-4 w-4" />
+              {activationOnly ? "Kembali ke aktivasi & check-in" : "Aktivasi saja"}
+            </Button>
+          </div>
+
+          {showActivationDates ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-foreground">
+                Tanggal aktivasi sebenarnya
+                <Input
+                  type="date"
+                  value={activationEffectiveDate}
+                  min={currentTenancy?.startDate}
+                  max={jakartaDateInput()}
+                  onChange={(event) => {
+                    const nextActivationDate = event.target.value;
+                    setActivationEffectiveDate(nextActivationDate);
+                    if (checkInEffectiveDate < nextActivationDate) {
+                      setCheckInEffectiveDate(nextActivationDate);
+                    }
+                  }}
+                  disabled={activation.isPending}
+                />
+              </label>
+              {!activationOnly ? (
+                <label className="grid gap-2 text-sm font-semibold text-foreground">
+                  Tanggal check-in sebenarnya
+                  <Input
+                    type="date"
+                    value={checkInEffectiveDate}
+                    min={activationEffectiveDate || currentTenancy?.startDate}
+                    max={jakartaDateInput()}
+                    onChange={(event) => setCheckInEffectiveDate(event.target.value)}
+                    disabled={activation.isPending}
+                  />
+                </label>
+              ) : null}
+              <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+                Gunakan penyesuaian hanya jika tanggal historis memang berbeda dari tanggal mulai
+                sewa. Data penghuni lama tidak perlu diaktifkan ulang.
+              </p>
+            </div>
+          ) : null}
+        </div>
       </ConfirmDialog>
       <ConfirmDialog
         open={confirmCheckIn}
@@ -1346,21 +1544,42 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
         }}
       >
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          Tanggal check-in sebenarnya
-          <Input
-            type="date"
-            value={checkInEffectiveDate}
-            min={checkInMinimumDate}
-            max={jakartaDateInput()}
-            onChange={(event) => setCheckInEffectiveDate(event.target.value)}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
+            <p className="text-sm font-semibold text-foreground">Tanggal check-in</p>
+            <p className="mt-1 text-base font-semibold text-primary">
+              {checkInEffectiveDate
+                ? formatResidentDetailDate(checkInEffectiveDate)
+                : "Belum ditentukan"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Otomatis menggunakan tanggal hari ini. Ubah hanya untuk pencatatan historis.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-10"
             disabled={checkIn.isPending}
-            required
-          />
-          <span className="text-xs font-normal leading-5 text-muted-foreground">
-            Tanggal ini menjadi awal layanan hunian dan dasar laporan historis Owner.
-          </span>
-        </label>
+            onClick={() => setShowCheckInDate((visible) => !visible)}
+          >
+            <CalendarClock className="mr-1.5 h-4 w-4" />
+            {showCheckInDate ? "Sembunyikan penyesuaian" : "Tanggal aktual berbeda?"}
+          </Button>
+          {showCheckInDate ? (
+            <label className="grid gap-2 text-sm font-semibold text-foreground">
+              Tanggal check-in sebenarnya
+              <Input
+                type="date"
+                value={checkInEffectiveDate}
+                min={checkInMinimumDate}
+                max={jakartaDateInput()}
+                onChange={(event) => setCheckInEffectiveDate(event.target.value)}
+                disabled={checkIn.isPending}
+              />
+            </label>
+          ) : null}
+        </div>
       </ConfirmDialog>
     </AppShell>
   );

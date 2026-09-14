@@ -58,6 +58,7 @@ import {
   UserRound,
   BedDouble,
   RotateCcw,
+  Pencil,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -227,6 +228,7 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
     null,
   );
   const [historyTarget, setHistoryTarget] = useState<VehicleRecord | null>(null);
+  const [editTarget, setEditTarget] = useState<VehicleRecord | null>(null);
 
   const { hasPermission } = useAuth();
   const canManage = hasPermission("vehicle.manage");
@@ -607,6 +609,10 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setEditTarget(v)}>
+                                  <Pencil className="mr-2 h-3.5 w-3.5" /> Edit kendaraan
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem asChild>
                                   <Link
                                     to="/tenants/$residentId"
@@ -718,6 +724,10 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setEditTarget(v)}>
+                            <Pencil className="mr-2 h-3.5 w-3.5" /> Edit kendaraan
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem asChild>
                             <Link to="/tenants/$residentId" params={{ residentId: v.residentId }}>
                               <UserRound className="mr-2 h-3.5 w-3.5" /> Lihat penghuni
@@ -793,6 +803,11 @@ function VehiclesPage({ workspaceNavigation }: { workspaceNavigation: ReactNode 
       />
 
       <CreateVehicleDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateVehicleDialog
+        vehicle={editTarget}
+        open={editTarget !== null}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+      />
       <VehicleHistoryDialog
         vehicle={historyTarget}
         open={historyTarget !== null}

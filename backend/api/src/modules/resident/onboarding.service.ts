@@ -15,7 +15,8 @@ import { RequestAuditContext } from '../property/types/property.types';
 import { ResidentAccountService } from './resident-account.service';
 import { CommitOnboardingDto } from './dto/commit-onboarding.dto';
 import {
-  calculateOnboardingCommercial,
+  calculateOnboardingCommercialAgreement,
+  calculateOnboardingCommercialFromSnapshot,
   OnboardingCommitmentResponse,
 } from './types/onboarding.types';
 import { W06BillingService } from '../billing/services/w06-billing.service';
@@ -48,6 +49,7 @@ type RoomRow = {
   long_stay_monthly_price: number | string;
   commercial_effective_date: string;
   security_deposit_amount: number | string;
+  management_fee_amount: number | string | null;
 };
 type OnboardingHoldRow = {
   id: string;
@@ -77,6 +79,12 @@ type LeadPaymentCommitmentRow = {
   end_date: string;
   billing_cycle: 'monthly' | 'yearly';
   payment_plan_type: 'monthly_installments' | 'two_month_installments' | 'annual_full';
+  snapshot_pricing_tier: 'short_stay' | 'medium_stay' | 'long_stay';
+  snapshot_reference_monthly_price: string | number;
+  snapshot_monthly_price: string | number;
+  pricing_source: 'standard' | 'negotiated';
+  pricing_agreement_reason: string | null;
+  pricing_agreed_at: Date;
   materialized_onboarding_commitment_id: string | null;
   created_at: Date;
 };
@@ -290,8 +298,10 @@ export class OnboardingService {
                     rent_credit_amount::bigint AS rent_credit_amount,
                     security_deposit_amount::bigint AS security_deposit_amount,
                     payment_method,verification_status,payment_note,payment_evidence_file_ids,
-                    start_date::text,term_months,end_date::text,billing_cycle,payment_plan_type,
-                    materialized_onboarding_commitment_id,paid_at,created_at
+                     start_date::text,term_months,end_date::text,billing_cycle,payment_plan_type,
+                     snapshot_pricing_tier,snapshot_reference_monthly_price::bigint,
+                     snapshot_monthly_price::bigint,pricing_source,pricing_agreement_reason,pricing_agreed_at,
+                     materialized_onboarding_commitment_id,paid_at,created_at
              FROM booking_lead_payment_commitments
              WHERE booking_lead_id=$1 AND property_id=$2
              FOR UPDATE`,
@@ -308,10 +318,24 @@ export class OnboardingService {
               code: 'BOOKING_LEAD_PAYMENT_COMMITMENT_REQUIRED',
               message: 'Booking lead payment commitment is unavailable or already materialized',
             });
-          // The lead payment commitment is immutable evidence of money received.
-          // Before onboarding is committed, the final tenancy period can still be
-          // adjusted. The recalculated commercial snapshot and the total-credit
-          // guard below remain the final authority.
+          const committedReason = leadPaymentCommitment.pricing_agreement_reason?.trim() ?? null;
+          const requestedReason = dto.pricing_agreement_reason?.trim() ?? committedReason;
+          if (
+            dto.start_date !== leadPaymentCommitment.start_date ||
+            dto.term_months !== Number(leadPaymentCommitment.term_months) ||
+            dto.billing_cycle !== leadPaymentCommitment.billing_cycle ||
+            (dto.pricing_source ?? leadPaymentCommitment.pricing_source) !==
+              leadPaymentCommitment.pricing_source ||
+            (dto.agreed_monthly_price ?? Number(leadPaymentCommitment.snapshot_monthly_price)) !==
+              Number(leadPaymentCommitment.snapshot_monthly_price) ||
+            requestedReason !== committedReason
+          ) {
+            throw new ConflictException({
+              code: 'BOOKING_LEAD_COMMERCIAL_SNAPSHOT_MISMATCH',
+              message:
+                'Paid booking period and tariff are locked; use an authorized correction flow',
+            });
+          }
         }
         let existingResident: ExistingResidentRow | null = null;
         if (dto.resident_id) {
@@ -345,7 +369,8 @@ export class OnboardingService {
                  kcv.medium_stay_monthly_price::bigint AS medium_stay_monthly_price,
                  kcv.long_stay_monthly_price::bigint AS long_stay_monthly_price,
                  kcv.effective_date::text AS commercial_effective_date,
-                (kcv.monthly_price * kcv.security_deposit_months)::bigint AS security_deposit_amount
+                (kcv.monthly_price * kcv.security_deposit_months)::bigint AS security_deposit_amount,
+                management_fee.monthly_fee_amount::bigint AS management_fee_amount
          FROM rooms r
          JOIN room_buildings rb ON rb.id=r.building_id
          JOIN kost_types kt ON kt.id=r.kost_type_id
@@ -362,6 +387,14 @@ export class OnboardingService {
              id ASC
            LIMIT 1
          ) kcv ON true
+         LEFT JOIN LATERAL (
+           SELECT fee.monthly_fee_amount
+           FROM property_management_fee_versions fee
+           WHERE fee.property_id=r.property_id
+             AND fee.effective_date<=$3::date
+           ORDER BY fee.effective_date DESC,fee.id DESC
+           LIMIT 1
+         ) management_fee ON true
          WHERE r.id=$1 AND r.property_id=$2
          FOR UPDATE OF r,rb,kt`,
           [roomId, dto.property_id, dto.start_date, leadPaymentCommitment !== null],
@@ -526,24 +559,50 @@ export class OnboardingService {
           dto.property_id,
           context,
         );
-        const monthlyPrice = Number(room.monthly_price);
         const yearlyPrice = Number(room.yearly_price);
-        let commercial: ReturnType<typeof calculateOnboardingCommercial>;
+        let commercial: ReturnType<typeof calculateOnboardingCommercialAgreement>;
         try {
-          commercial = calculateOnboardingCommercial(
-            {
-              shortStayMonthlyPrice: Number(room.short_stay_monthly_price ?? room.monthly_price),
-              mediumStayMonthlyPrice: Number(room.medium_stay_monthly_price ?? room.monthly_price),
-              longStayMonthlyPrice: Number(
-                room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
-              ),
-            },
-            dto.term_months,
-          );
-        } catch {
-          throw new ConflictException({
-            code: 'ONBOARDING_COMMERCIAL_INVALID',
-            message: 'Commercial authority is invalid for onboarding',
+          const committedReason = leadPaymentCommitment?.pricing_agreement_reason?.trim() ?? null;
+          const preservesLeadSnapshot = Boolean(leadPaymentCommitment);
+          commercial = preservesLeadSnapshot
+            ? calculateOnboardingCommercialFromSnapshot({
+                termMonths: Number(leadPaymentCommitment!.term_months),
+                pricingTier: leadPaymentCommitment!.snapshot_pricing_tier,
+                referenceMonthlyPrice: Number(
+                  leadPaymentCommitment!.snapshot_reference_monthly_price,
+                ),
+                agreedMonthlyPrice: Number(leadPaymentCommitment!.snapshot_monthly_price),
+                pricingSource: leadPaymentCommitment!.pricing_source,
+                pricingAgreementReason: committedReason,
+              })
+            : calculateOnboardingCommercialAgreement(
+                {
+                  shortStayMonthlyPrice: Number(
+                    room.short_stay_monthly_price ?? room.monthly_price,
+                  ),
+                  mediumStayMonthlyPrice: Number(
+                    room.medium_stay_monthly_price ?? room.monthly_price,
+                  ),
+                  longStayMonthlyPrice: Number(
+                    room.long_stay_monthly_price ?? Number(room.yearly_price) / 12,
+                  ),
+                },
+                {
+                  termMonths: dto.term_months,
+                  pricingSource: dto.pricing_source ?? 'standard',
+                  agreedMonthlyPrice: dto.agreed_monthly_price,
+                  managementFeeAmount: Number(room.management_fee_amount ?? 0),
+                  agreementReason: dto.pricing_agreement_reason,
+                  varianceAcknowledged: dto.pricing_variance_acknowledged,
+                },
+              );
+        } catch (error) {
+          throw new BadRequestException({
+            code: 'ONBOARDING_COMMERCIAL_AGREEMENT_INVALID',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Commercial agreement is invalid for onboarding',
           });
         }
         const { contractRent, dpRequired, depositRequired } = commercial;
@@ -823,7 +882,7 @@ export class OnboardingService {
         const endDate = new Date(`${dto.start_date}T00:00:00.000Z`);
         endDate.setUTCMonth(endDate.getUTCMonth() + dto.term_months);
         const commitment = await client.query<{ id: string }>(
-          `INSERT INTO onboarding_commitments(property_id,booking_lead_id,hold_id,resident_id,room_id,category,gender,status,term_months,billing_cycle,payment_plan_type,start_date,end_date,contract_rent_amount,dp_required_amount,dp_verified_amount,security_deposit_required_amount,security_deposit_funded_amount,booking_fee_paid_amount,accepted_terms_version,notes,created_by_user_id,committed_at) VALUES($1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now()) RETURNING id`,
+          `INSERT INTO onboarding_commitments(property_id,booking_lead_id,hold_id,resident_id,room_id,category,gender,status,term_months,billing_cycle,payment_plan_type,start_date,end_date,contract_rent_amount,dp_required_amount,dp_verified_amount,security_deposit_required_amount,security_deposit_funded_amount,booking_fee_paid_amount,accepted_terms_version,notes,created_by_user_id,committed_at,snapshot_pricing_tier,snapshot_reference_monthly_price,snapshot_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at) VALUES($1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now()) RETURNING id`,
           [
             dto.property_id,
             lead?.id ?? null,
@@ -846,10 +905,15 @@ export class OnboardingService {
             dto.accepted_terms_version,
             dto.notes ?? null,
             actor.id,
+            commercial.pricingTier,
+            commercial.referenceMonthlyPrice,
+            commercial.monthlyRate,
+            commercial.pricingSource,
+            commercial.pricingAgreementReason,
           ],
         );
         const lease = await client.query<{ id: string }>(
-          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,signed_at,created_by_user_id,updated_by_user_id) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,now(),$23,$23) RETURNING id`,
+          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,$23,$24,$25,$26,now(),now(),$26,$26) RETURNING id`,
           [
             dto.property_id,
             `ONB-${Date.now()}`,
@@ -873,6 +937,9 @@ export class OnboardingService {
             depositRequired,
             commercial.pricingTier,
             room.commercial_effective_date,
+            commercial.referenceMonthlyPrice,
+            commercial.pricingSource,
+            commercial.pricingAgreementReason,
             actor.id,
           ],
         );
@@ -920,7 +987,7 @@ export class OnboardingService {
           paymentPlanType: contractPaymentPlan,
           contractRentAmount: contractRent,
           billingCycle: dto.billing_cycle,
-          snapshotMonthlyPrice: monthlyPrice,
+          snapshotMonthlyPrice: commercial.monthlyRate,
           snapshotRoomNumber: room.room_number,
           snapshotBuildingCode: room.building_code,
           snapshotCategoryName: room.kost_type_name,
@@ -1056,6 +1123,11 @@ export class OnboardingService {
           billingCycle: dto.billing_cycle,
           paymentPlanType: contractPaymentPlan,
           contractRentAmount: contractRent,
+          pricingSource: commercial.pricingSource,
+          pricingTier: commercial.pricingTier,
+          referenceMonthlyPrice: commercial.referenceMonthlyPrice,
+          agreedMonthlyPrice: commercial.monthlyRate,
+          pricingAgreementReason: commercial.pricingAgreementReason,
           dpRequiredAmount: dpRequired,
           securityDepositRequiredAmount: depositRequired,
           initialPayment,

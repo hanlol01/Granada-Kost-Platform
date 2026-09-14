@@ -201,7 +201,7 @@ void test('M6 stores the rendered PDF and checksum while keeping resident access
   assert.match(myController, /@RequirePermissions\('billing\.self\.read'\)/);
   assert.doesNotMatch(myController, /property_owner/);
   assert.match(billingService, /document_content,content_sha256/);
-  assert.match(billingService, /stored\.rows\[0\]\.document_content/);
+  assert.match(billingService, /storedRow\.document_content/);
   assert.match(billingService, /const document = await this\.createReceiptDocument/);
   assert.match(billingService, /sourcePaymentId = paymentId/);
 });

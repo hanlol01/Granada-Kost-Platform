@@ -954,6 +954,14 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                             {item.room.code}
                           </h3>
                           <StatusPill value={item.billing.state} />
+                          {item.lease.pricingSource === "negotiated" ? (
+                            <Badge
+                              variant="outline"
+                              className="border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                            >
+                              Tarif kesepakatan
+                            </Badge>
+                          ) : null}
                           {item.billing.h7Count > 0 && item.billing.state !== "overdue" ? (
                             <Badge
                               variant="outline"
@@ -1794,6 +1802,14 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <StatusPill value={item.billing.state} />
+                    {item.lease.pricingSource === "negotiated" ? (
+                      <Badge
+                        variant="outline"
+                        className="border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                      >
+                        Tarif kesepakatan
+                      </Badge>
+                    ) : null}
                     {alert ? <Badge variant="destructive">Terlambat</Badge> : null}
                     {!alert && h7 ? (
                       <Badge className="border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">

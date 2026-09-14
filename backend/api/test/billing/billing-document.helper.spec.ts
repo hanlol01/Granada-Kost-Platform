@@ -56,6 +56,54 @@ void test('branded receipt renderer creates a one-page PDF with the canonical re
   assert.equal(loaded.getPageCount(), 1);
 });
 
+void test('receipt renderer presents the building unit before the room number', async () => {
+  const result = await createBillingReceiptPdf({
+    receiptCode: '033-09/DP-KOST/GSH1/2026',
+    paymentCode: 'TRX-20260808-000005-DP',
+    paymentMethod: 'bank_transfer',
+    paymentPurpose: 'down_payment',
+    residentName: 'jianaha',
+    roomNumber: 'RK-02-05',
+    buildingCode: 'RK-02',
+    amount: 5_400_000,
+    paidAt: new Date('2026-08-08T10:30:00+07:00'),
+    issuedAt: new Date('2026-08-08T10:31:00+07:00'),
+    allocations: [],
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /Rumah Kost · Unit 2, Kamar 5/);
+  assert.doesNotMatch(text, /Kamar No\.02, Unit 05/);
+});
+
+void test('receipt renderer supports revised Apart Kost room codes', async () => {
+  const result = await createBillingReceiptPdf({
+    receiptCode: '054-09/DP-KOST/GSH1/2026',
+    paymentCode: 'TRX-20260705-000006-BOOKING',
+    paymentMethod: 'bank_transfer',
+    paymentPurpose: 'booking_fee',
+    residentName: 'Fathan Abyan A',
+    roomNumber: 'AK-18/18-07',
+    buildingCode: 'AK-18',
+    amount: 10_800_000,
+    paidAt: new Date('2026-07-05T10:30:00+07:00'),
+    issuedAt: new Date('2026-07-05T10:31:00+07:00'),
+    allocations: [],
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /Apart Kost · Unit 18, Kamar 7/);
+  assert.doesNotMatch(text, /AK-18\/18-07/);
+});
+
 void test('rent installment receipt states its sequence, contract, period, balance, and deadline', async () => {
   const result = await createBillingReceiptPdf({
     receiptCode: '004-09/SEWA-KOST/GSH1/2026',
@@ -105,6 +153,10 @@ void test('contract-paid proof is a distinct one-page document for the full leas
     buildingCode: 'AK-18',
     leaseStart: '2026-08-01',
     leaseEnd: '2026-11-01',
+    leaseTermMonths: 3,
+    referenceMonthlyPrice: 1_900_000,
+    agreedMonthlyPrice: 1_800_000,
+    pricingSource: 'negotiated',
     contractRentAmount: 5_400_000,
     initialRentCredit: 1_800_000,
     additionalRentPayments: 3_600_000,
@@ -135,9 +187,12 @@ void test('contract-paid proof is a distinct one-page document for the full leas
   const content = await (await parsed.getPage(1)).getTextContent();
   const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
   assert.match(text, /BUKTI PELUNASAN KONTRAK SEWA/);
-  assert.match(text, /Apart Kost · Kamar No\.18, Unit 17/);
+  assert.match(text, /Apart Kost · Unit 18, Kamar 17/);
   assert.match(text, /seluruh kewajiban pembayaran sewa kontrak/);
   assert.match(text, /Total kewajiban lunas/);
+  assert.match(text, /Durasi kontrak\s+:\s+3 bulan/);
+  assert.match(text, /Tarif per bulan\s+:\s+Rp\. 1\.800\.000,-/);
+  assert.match(text, /Sumber tarif\s+:\s+Kesepakatan khusus/);
   assert.match(text, /TRX-20260801-000001-DP \( Rp\. 1\.800\.000,- \)/);
   assert.match(text, /TRX-20260903-000004-LUNAS \( Rp\. 3\.600\.000,- \)/);
   assert.doesNotMatch(text, /Pembayaran awal/);

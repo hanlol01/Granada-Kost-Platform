@@ -116,11 +116,13 @@ export type CheckoutCommand = {
   noticeRecordedDate: string;
   noticeReason: string;
   noticeExceptionReason: string | null;
+  internalNote: string | null;
   exitType: "resident_early_termination" | "normal_expiry" | null;
   requestSource: string | null;
   noticeDays: number | null;
   missingNoticeDays: number | null;
   paymentPeriodDays: number | null;
+  monthlyRateAmount: number | null;
   dailyRateAmount: number | null;
   recommendedShortNoticeCharge: number | null;
   approvedShortNoticeCharge: number | null;
@@ -135,6 +137,10 @@ export type CheckoutCommand = {
   finalRentRefundAmount: number | null;
   finalDepositRefundAmount: number | null;
   refundAdjustmentAmount: number | null;
+  documentedDamageAmount: number | null;
+  damageAmountDue: number | null;
+  grossRefundAmount: number | null;
+  grossAmountDue: number | null;
   amountDue: number | null;
   settlementDecisionStatus: "refund_pending" | "amount_due" | "closed" | null;
   exitRefundId: string | null;
@@ -161,9 +167,13 @@ export type CheckoutSettlementQuote = {
   rentRefundableAmount: number;
   rentAmountDueBeforeDepositOffset: number;
   depositLiabilityAmount: number;
+  documentedDamageAmount: number;
   depositDeductionAmount: number;
+  damageAmountDue: number;
   depositRentOffsetAmount: number;
   refundableDepositAmount: number;
+  grossRefundAmount: number;
+  grossAmountDue: number;
   recommendedRefundAmount: number;
   amountDue: number;
 };

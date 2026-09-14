@@ -23,9 +23,13 @@ export type LeaseExitFinancialQuote = {
   rentRefundableAmount: number;
   rentAmountDueBeforeDepositOffset: number;
   depositLiabilityAmount: number;
+  documentedDamageAmount: number;
   depositDeductionAmount: number;
+  damageAmountDue: number;
   depositRentOffsetAmount: number;
   refundableDepositAmount: number;
+  grossRefundAmount: number;
+  grossAmountDue: number;
   recommendedRefundAmount: number;
   amountDue: number;
 };
@@ -47,7 +51,7 @@ type LeaseExitFinancialQuoteInput = {
   verifiedRentPaymentAmount: number;
   existingInvoiceCreditAmount: number;
   depositLiabilityAmount: number;
-  depositDeductionAmount: number;
+  documentedDamageAmount: number;
   approvedShortNoticeCharge: number;
   depositRentOffsetAmount: number;
 };
@@ -119,7 +123,10 @@ export function buildLeaseExitFinancialQuote(
   if (!Number.isSafeInteger(recognizedCredit))
     throw new RangeError('Recognized rent credit must be a safe integer');
   const deposit = assertNonNegativeMoney(input.depositLiabilityAmount, 'deposit liability');
-  const deductions = assertNonNegativeMoney(input.depositDeductionAmount, 'deposit deduction');
+  const documentedDamage = assertNonNegativeMoney(
+    input.documentedDamageAmount,
+    'documented damage',
+  );
   const noticeCharge = assertNonNegativeMoney(
     input.approvedShortNoticeCharge,
     'short-notice charge',
@@ -130,18 +137,20 @@ export function buildLeaseExitFinancialQuote(
   );
   if (checkout.getTime() < leaseStart.getTime())
     throw new RangeError('Actual checkout date cannot precede lease start');
-  if (deductions > deposit) throw new RangeError('Deposit deductions exceed deposit liability');
-
   const earnedRent = Math.min(contractRent, calculateEarnedRent(leaseStart, checkout, monthlyRate));
   const earnedRentDue = Math.max(earnedRent - recognizedCredit, 0);
   const rentPosition = recognizedCredit - earnedRent - noticeCharge;
   const rentRefundable = Math.max(rentPosition, 0);
   const rentDue = Math.max(-rentPosition, 0);
-  const depositAfterDeductions = deposit - deductions;
-  const maximumDepositOffset = Math.min(rentDue, depositAfterDeductions);
+  const maximumDepositOffset = Math.min(rentDue, deposit);
   if (depositOffset > maximumDepositOffset)
     throw new RangeError('Deposit rent offset exceeds the permitted amount');
-  const refundableDeposit = depositAfterDeductions - depositOffset;
+  const depositAfterRent = deposit - depositOffset;
+  const depositDeduction = Math.min(documentedDamage, depositAfterRent);
+  const damageAmountDue = Math.max(documentedDamage - depositAfterRent, 0);
+  const refundableDeposit = depositAfterRent - depositDeduction;
+  const grossRefund = rentRefundable + refundableDeposit;
+  const grossAmountDue = rentDue - depositOffset + damageAmountDue;
 
   return {
     contractRentAmount: contractRent,
@@ -155,11 +164,15 @@ export function buildLeaseExitFinancialQuote(
     rentRefundableAmount: rentRefundable,
     rentAmountDueBeforeDepositOffset: rentDue,
     depositLiabilityAmount: deposit,
-    depositDeductionAmount: deductions,
+    documentedDamageAmount: documentedDamage,
+    depositDeductionAmount: depositDeduction,
+    damageAmountDue,
     depositRentOffsetAmount: depositOffset,
     refundableDepositAmount: refundableDeposit,
-    recommendedRefundAmount: rentRefundable + refundableDeposit,
-    amountDue: rentDue - depositOffset,
+    grossRefundAmount: grossRefund,
+    grossAmountDue,
+    recommendedRefundAmount: Math.max(grossRefund - grossAmountDue, 0),
+    amountDue: Math.max(grossAmountDue - grossRefund, 0),
   };
 }
 

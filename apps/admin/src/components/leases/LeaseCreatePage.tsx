@@ -1,6 +1,8 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R4 V4 */
+/* Hallmark · macrostructure: progressive-disclosure lease workspace · theme: existing KOSTATION system · contrast/mobile/responsive: pass */
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,6 +25,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState, LoadingState } from "@/components/state";
+import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +93,7 @@ type Gender = "male" | "female";
 type PaymentMethod = "cash" | "bank_transfer";
 type PaymentChoice = "dp" | "full";
 type PaymentEntryPurpose = "rent" | "booking_fee" | "security_deposit";
+type PricingSource = "standard" | "negotiated";
 
 type StagedPaymentEntry = {
   id: string;
@@ -214,22 +218,49 @@ async function compressResidentKtpImage(file: File): Promise<File> {
   }
 }
 
-function calculateLeaseAmounts(room: LeaseRoomOption | undefined, termMonths: number) {
-  if (!room || !Number.isInteger(termMonths) || termMonths < 3)
-    return { contractRent: 0, minimumDp: 0, securityDeposit: 0, monthlyRate: 0, tierLabel: "" };
-  const monthlyRate =
+function calculateLeaseAmounts(
+  room: LeaseRoomOption | undefined,
+  termMonths: number,
+  pricingSource: PricingSource = "standard",
+  agreedMonthlyPrice = 0,
+) {
+  if (
+    !room ||
+    !Number.isInteger(termMonths) ||
+    termMonths < 1 ||
+    termMonths > 120 ||
+    (pricingSource === "standard" && termMonths < 3)
+  )
+    return {
+      contractRent: 0,
+      minimumDp: 0,
+      securityDeposit: 0,
+      monthlyRate: 0,
+      referenceMonthlyRate: 0,
+      tierLabel: "",
+    };
+  const referenceMonthlyRate =
     termMonths <= 5
       ? room.kostType.shortStayMonthlyPrice
       : termMonths <= 11
         ? room.kostType.mediumStayMonthlyPrice
         : room.kostType.longStayMonthlyPrice;
+  const monthlyRate = pricingSource === "negotiated" ? agreedMonthlyPrice : referenceMonthlyRate;
   const contractRent = monthlyRate * termMonths;
   return {
     contractRent,
     minimumDp: Math.ceil(contractRent * 0.25),
     securityDeposit: 0,
     monthlyRate,
-    tierLabel: termMonths <= 5 ? "3–5 bulan" : termMonths <= 11 ? "6–11 bulan" : "12+ bulan",
+    referenceMonthlyRate,
+    tierLabel:
+      termMonths <= 2
+        ? "1–2 bulan (khusus)"
+        : termMonths <= 5
+          ? "3–5 bulan"
+          : termMonths <= 11
+            ? "6–11 bulan"
+            : "12+ bulan",
   };
 }
 
@@ -305,6 +336,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [resident, setResident] = useState<ResidentDraft>(EMPTY_RESIDENT);
   const [startDate, setStartDate] = useState("");
   const [termMonths, setTermMonths] = useState(3);
+  const [pricingSource, setPricingSource] = useState<PricingSource>("standard");
+  const [agreedMonthlyPrice, setAgreedMonthlyPrice] = useState(0);
+  const [pricingAgreementReason, setPricingAgreementReason] = useState("");
+  const [pricingVarianceAcknowledged, setPricingVarianceAcknowledged] = useState(false);
+  const [pricingResetOpen, setPricingResetOpen] = useState(false);
   const [category, setCategory] = useState<"rukost" | "apartkost" | "">("");
   const [roomSearch, setRoomSearch] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -392,6 +428,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setCategory(context.room.category);
     setStartDate(context.paymentCommitment.startDate);
     setTermMonths(context.paymentCommitment.termMonths);
+    setPricingSource(context.paymentCommitment.pricingSource);
+    setAgreedMonthlyPrice(context.paymentCommitment.agreedMonthlyPrice);
+    setPricingAgreementReason(context.paymentCommitment.pricingAgreementReason ?? "");
+    setPricingVarianceAcknowledged(true);
     setSecurityDeposit(context.paymentCommitment.securityDepositAmount);
     setPaymentMethod(context.paymentCommitment.paymentMethod);
     setPaymentNote(context.paymentCommitment.paymentNote ?? "");
@@ -424,6 +464,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setCategory("");
     setRoomSearch("");
     setRoomId("");
+    setPricingSource("standard");
+    setAgreedMonthlyPrice(0);
+    setPricingAgreementReason("");
+    setPricingVarianceAcknowledged(false);
     setPaidRent(0);
     setSecurityDeposit(0);
     setBookingFee(0);
@@ -448,13 +492,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   }, [bookingLeadId, currentPropertyId]);
 
   const bookingRoom = bookingLeadQuote.data?.room ?? bookingLeadContext.data?.room;
-  // The completion quote is calculated with the selected lease term. Use it as
-  // the held-room card's effective monthly rate while the booking-lead API
-  // still exposes the room's base monthly/yearly fields only.
+  const committedCommercial = bookingLeadContext.data?.paymentCommitment;
+  // A paid booking owns an immutable commercial snapshot. Prefer it over a live
+  // room quote so later category price changes cannot rewrite the agreement.
   const bookingQuotedMonthlyRate =
-    bookingLeadQuote.data && bookingLeadQuote.data.termMonths === termMonths
+    committedCommercial?.agreedMonthlyPrice ??
+    (bookingLeadQuote.data && bookingLeadQuote.data.termMonths === termMonths
       ? bookingLeadQuote.data.contractRentAmount / termMonths
-      : undefined;
+      : undefined);
   const heldRoom = bookingRoom
     ? ({
         id: bookingRoom.id,
@@ -480,22 +525,68 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const initialPaymentLocked = Boolean(
     bookingLeadId && leadPaymentType && leadPaymentType !== "booking_fee",
   );
+  const bookingCommercialLocked = Boolean(bookingLeadId && committedCommercial);
   const historicalPaymentDateRequired = historicalEntryMode && !initialPaymentLocked;
   const selectedRoom =
     rooms.data?.items.find((room) => room.id === roomId) ??
     (heldRoom?.id === roomId ? heldRoom : undefined);
   const commercialPricingPending = Boolean(startDate && rooms.isPlaceholderData);
-  const fallbackAmounts = calculateLeaseAmounts(selectedRoom, termMonths);
-  const amounts =
-    bookingLeadQuote.data && selectedRoom?.id === bookingLeadQuote.data.room.id
+  const fallbackAmounts = calculateLeaseAmounts(
+    selectedRoom,
+    termMonths,
+    pricingSource,
+    agreedMonthlyPrice,
+  );
+  const amounts = committedCommercial
+    ? {
+        contractRent: committedCommercial.agreedMonthlyPrice * committedCommercial.termMonths,
+        minimumDp: Math.ceil(
+          committedCommercial.agreedMonthlyPrice * committedCommercial.termMonths * 0.25,
+        ),
+        securityDeposit: 0,
+        monthlyRate: committedCommercial.agreedMonthlyPrice,
+        referenceMonthlyRate: committedCommercial.referenceMonthlyPrice,
+        tierLabel:
+          committedCommercial.pricingTier === "short_stay"
+            ? committedCommercial.termMonths <= 2
+              ? "1–2 bulan (khusus)"
+              : "3–5 bulan"
+            : committedCommercial.pricingTier === "medium_stay"
+              ? "6–11 bulan"
+              : "12+ bulan",
+      }
+    : bookingLeadQuote.data && selectedRoom?.id === bookingLeadQuote.data.room.id
       ? {
           contractRent: bookingLeadQuote.data.contractRentAmount,
           minimumDp: bookingLeadQuote.data.suggestedDpAmount,
           securityDeposit: 0,
           monthlyRate: bookingQuotedMonthlyRate ?? fallbackAmounts.monthlyRate,
+          referenceMonthlyRate: fallbackAmounts.referenceMonthlyRate,
           tierLabel: fallbackAmounts.tierLabel,
         }
       : fallbackAmounts;
+  const pricingVariancePercent =
+    amounts.referenceMonthlyRate > 0
+      ? ((amounts.monthlyRate - amounts.referenceMonthlyRate) / amounts.referenceMonthlyRate) * 100
+      : 0;
+  const materialPricingVariance = Math.abs(pricingVariancePercent) >= 15;
+  const agreedMonthlyPriceError =
+    pricingSource === "negotiated" &&
+    (!Number.isSafeInteger(agreedMonthlyPrice) || agreedMonthlyPrice <= 0)
+      ? "Tarif bulanan kesepakatan wajib lebih dari Rp0."
+      : "";
+  const pricingAgreementReasonError =
+    pricingSource === "negotiated" && pricingAgreementReason.trim().length < 3
+      ? "Catatan kesepakatan wajib diisi minimal 3 karakter."
+      : "";
+  const standardShortTermError =
+    pricingSource === "standard" && termMonths < 3
+      ? "Durasi 1–2 bulan hanya tersedia melalui kesepakatan khusus."
+      : "";
+  const pricingVarianceError =
+    pricingSource === "negotiated" && materialPricingVariance && !pricingVarianceAcknowledged
+      ? "Konfirmasi selisih tarif 15% atau lebih sebelum menyimpan."
+      : "";
   const stagedPaymentMode = !bookingLeadId;
   const stagedEntriesOutsideEdit = paymentEntries.filter((entry) => entry.id !== editingPaymentId);
   const stagedRentAmount = paymentEntries.reduce(
@@ -678,7 +769,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     notes: resident.notes,
   });
   const stageOneErrors = { ...localStageOneErrors, ...serverStageOneErrors };
-  const stageOneValid = Object.keys(stageOneErrors).length === 0;
+  const stageOneValid =
+    Object.keys(stageOneErrors).length === 0 &&
+    !agreedMonthlyPriceError &&
+    !pricingAgreementReasonError &&
+    !standardShortTermError;
   const onboardingNotice = onboarding.error ? onboardingErrorNotice(onboarding.error) : null;
   const stageTwoValid = stagedPaymentMode
     ? Boolean(selectedRoom) &&
@@ -687,6 +782,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       totalRentCredit <= amounts.contractRent &&
       stagedSecurityDepositAmount <= maximumSecurityDeposit &&
       !hasUnsavedPaymentDraft &&
+      !pricingVarianceError &&
       !commercialPricingPending &&
       !paymentEvidenceBusy &&
       confirmed
@@ -701,6 +797,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       !bookingFeeExceedsRent &&
       !rentCreditExceedsContract &&
       !securityDepositExceedsMaximum &&
+      !pricingVarianceError &&
       !commercialPricingPending &&
       Boolean(bookingLeadQuote.data) &&
       paymentChoiceSelected &&
@@ -846,6 +943,27 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaymentDraftAttempted(false);
   };
 
+  const applyPricingSource = (value: PricingSource) => {
+    const nextTerm = value === "standard" ? Math.max(3, termMonths) : termMonths;
+    const reference = calculateLeaseAmounts(selectedRoom, Math.max(3, nextTerm));
+    setPricingSource(value);
+    setTermMonths(nextTerm);
+    setAgreedMonthlyPrice(value === "negotiated" ? reference.referenceMonthlyRate : 0);
+    setPricingAgreementReason("");
+    setPricingVarianceAcknowledged(false);
+    setPaymentEntries([]);
+    clearPaymentDraft();
+    setConfirmed(false);
+  };
+
+  const requestPricingSourceChange = (value: PricingSource) => {
+    if (value === "standard" && pricingSource === "negotiated") {
+      setPricingResetOpen(true);
+      return;
+    }
+    applyPricingSource(value);
+  };
+
   const openOptionalSecurityDepositStage = () => {
     clearPaymentDraft();
     setPaymentPurpose("security_deposit");
@@ -869,7 +987,20 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     const replacingUnavailableRoom = stagedPaymentMode && paymentEntries.length > 0 && !roomId;
     setRoomId(room.id);
     setCategory(room.kostType.category);
-    const nextAmounts = calculateLeaseAmounts(room, termMonths);
+    const standardAmounts = calculateLeaseAmounts(room, Math.max(3, termMonths));
+    const nextAgreedMonthlyPrice =
+      pricingSource === "negotiated" && agreedMonthlyPrice <= 0
+        ? standardAmounts.referenceMonthlyRate
+        : agreedMonthlyPrice;
+    if (pricingSource === "negotiated" && agreedMonthlyPrice <= 0) {
+      setAgreedMonthlyPrice(nextAgreedMonthlyPrice);
+    }
+    const nextAmounts = calculateLeaseAmounts(
+      room,
+      termMonths,
+      pricingSource,
+      nextAgreedMonthlyPrice,
+    );
     if (replacingUnavailableRoom) {
       clearPaymentDraft();
     } else if (stagedPaymentMode) {
@@ -900,7 +1031,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   };
 
   const changeTerm = (value: number) => {
-    const safe = Number.isInteger(value) ? Math.max(3, Math.min(120, value)) : 3;
+    const minimumTerm = pricingSource === "negotiated" ? 1 : 3;
+    const safe = Number.isInteger(value)
+      ? Math.max(minimumTerm, Math.min(120, value))
+      : minimumTerm;
     setTermMonths(safe);
     if (!bookingLeadId) {
       setPaymentEntries([]);
@@ -912,7 +1046,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setPaymentPaidAt("");
       setPaymentNote("");
       setPaymentEvidence([]);
-      const nextAmounts = calculateLeaseAmounts(selectedRoom, safe);
+      const nextReference = calculateLeaseAmounts(selectedRoom, Math.max(3, safe));
+      const nextAgreed =
+        pricingSource === "negotiated" ? nextReference.referenceMonthlyRate : agreedMonthlyPrice;
+      if (pricingSource === "negotiated") setAgreedMonthlyPrice(nextAgreed);
+      setPricingVarianceAcknowledged(false);
+      const nextAmounts = calculateLeaseAmounts(selectedRoom, safe, pricingSource, nextAgreed);
       setSecurityDeposit(0);
       setPaidRent(
         Math.max(
@@ -1096,6 +1235,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ktp_file_id: resident.ktpFileId || undefined,
       start_date: startDate,
       term_months: termMonths,
+      pricing_source: pricingSource,
+      agreed_monthly_price: pricingSource === "negotiated" ? amounts.monthlyRate : undefined,
+      pricing_agreement_reason:
+        pricingSource === "negotiated" ? pricingAgreementReason.trim() : undefined,
+      pricing_variance_acknowledged:
+        pricingSource === "negotiated" && materialPricingVariance
+          ? pricingVarianceAcknowledged
+          : undefined,
       billing_cycle: billingCycle,
       payment_plan_type:
         totalRentCredit === amounts.contractRent ? "annual_full" : "monthly_installments",
@@ -1490,6 +1637,23 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             onStartDate={changeStartDate}
             termMonths={termMonths}
             onTermMonths={changeTerm}
+            pricingSource={pricingSource}
+            onPricingSource={requestPricingSourceChange}
+            agreedMonthlyPrice={agreedMonthlyPrice}
+            onAgreedMonthlyPrice={(value) => {
+              setAgreedMonthlyPrice(value);
+              setPricingVarianceAcknowledged(false);
+              setPaymentEntries([]);
+              clearPaymentDraft();
+              setConfirmed(false);
+            }}
+            pricingAgreementReason={pricingAgreementReason}
+            onPricingAgreementReason={setPricingAgreementReason}
+            pricingErrors={{
+              agreedMonthlyPrice: attemptedStepOne ? agreedMonthlyPriceError : "",
+              agreementReason: attemptedStepOne ? pricingAgreementReasonError : "",
+              term: attemptedStepOne ? standardShortTermError : "",
+            }}
             endDate={endDate}
             bookingPeriod={
               bookingLeadContext.data
@@ -1500,7 +1664,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                   }
                 : undefined
             }
-            leaseTermsLocked={false}
+            leaseTermsLocked={bookingCommercialLocked}
             errors={attemptedStepOne ? stageOneErrors : {}}
             ktpDocument={ktpDocument}
             ktpDocumentError={ktpDocumentError}
@@ -1535,6 +1699,13 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             gender={resident.gender}
             termMonths={termMonths}
             amounts={amounts}
+            pricingSource={pricingSource}
+            pricingAgreementReason={pricingAgreementReason}
+            pricingVariancePercent={pricingVariancePercent}
+            materialPricingVariance={materialPricingVariance}
+            pricingVarianceAcknowledged={pricingVarianceAcknowledged}
+            onPricingVarianceAcknowledged={setPricingVarianceAcknowledged}
+            pricingVarianceError={attemptedSubmit ? pricingVarianceError : ""}
             paymentChoice={paymentChoice}
             onPaymentChoiceChange={changePaymentChoice}
             bookingFeeLocked={bookingFeeLocked}
@@ -1659,7 +1830,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
               onClick={() => void submit()}
             >
               {onboarding.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
               ) : (
                 <CheckCircle2 className="mr-2 h-4 w-4" />
               )}
@@ -1668,6 +1839,17 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={pricingResetOpen}
+        onOpenChange={setPricingResetOpen}
+        title="Kembali ke tarif standar?"
+        description="Durasi, tarif, catatan kesepakatan, dan pembayaran sementara akan dikembalikan ke perhitungan standar."
+        confirmLabel="Gunakan tarif standar"
+        onConfirm={() => {
+          applyPricingSource("standard");
+          setPricingResetOpen(false);
+        }}
+      />
     </AppShell>
   );
 }
@@ -1714,6 +1896,13 @@ function ResidentAndLeaseStep({
   onStartDate,
   termMonths,
   onTermMonths,
+  pricingSource,
+  onPricingSource,
+  agreedMonthlyPrice,
+  onAgreedMonthlyPrice,
+  pricingAgreementReason,
+  onPricingAgreementReason,
+  pricingErrors,
   endDate,
   bookingPeriod,
   leaseTermsLocked,
@@ -1732,6 +1921,13 @@ function ResidentAndLeaseStep({
   onStartDate: (value: string) => void;
   termMonths: number;
   onTermMonths: (value: number) => void;
+  pricingSource: PricingSource;
+  onPricingSource: (value: PricingSource) => void;
+  agreedMonthlyPrice: number;
+  onAgreedMonthlyPrice: (value: number) => void;
+  pricingAgreementReason: string;
+  onPricingAgreementReason: (value: string) => void;
+  pricingErrors: { agreedMonthlyPrice: string; agreementReason: string; term: string };
   endDate: string;
   bookingPeriod?: { startDate: string; endDate: string; termMonths: number };
   leaseTermsLocked: boolean;
@@ -1783,7 +1979,6 @@ function ResidentAndLeaseStep({
             id={key}
             value={String(resident[key])}
             propertyId={propertyId}
-            disabled={leaseTermsLocked}
             maxLength={options.maxLength}
             aria-invalid={Boolean(fieldError)}
             onChange={(value) => setDraft(key, value as ResidentDraft[typeof key])}
@@ -1865,8 +2060,9 @@ function ResidentAndLeaseStep({
                 {formatIndonesianDate(bookingPeriod.endDate)}.
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Tanggal mulai dan durasi di bawah dapat disesuaikan bila kesepakatan calon penghuni
-                berubah. Kamar yang ditahan serta pembayaran awal tetap menjadi acuan Minat Booking.
+                {leaseTermsLocked
+                  ? "Periode dan tarif telah terkunci karena pembayaran awal sudah dicatat. Gunakan proses koreksi resmi jika kesepakatan berubah."
+                  : "Tanggal mulai dan durasi dapat disesuaikan sebelum pembayaran awal dicatat."}
               </p>
               {bookingPeriodChanged ? (
                 <p className="mt-3 border-t border-primary/20 pt-3 text-sm font-medium text-foreground">
@@ -1896,7 +2092,7 @@ function ResidentAndLeaseStep({
               <Input
                 id="term-months"
                 type="number"
-                min={3}
+                min={pricingSource === "negotiated" ? 1 : 3}
                 max={120}
                 value={termMonths}
                 onChange={(event) => onTermMonths(Number(event.target.value))}
@@ -1925,8 +2121,77 @@ function ResidentAndLeaseStep({
               {errors.termMonths ? (
                 <p className="text-xs text-destructive">{errors.termMonths}</p>
               ) : null}
+              {pricingErrors.term ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {pricingErrors.term}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant={pricingSource === "negotiated" ? "success" : "outline"}
+                className="min-h-11 w-full"
+                onClick={() =>
+                  onPricingSource(pricingSource === "negotiated" ? "standard" : "negotiated")
+                }
+                disabled={leaseTermsLocked}
+              >
+                {pricingSource === "negotiated"
+                  ? "Gunakan tarif standar"
+                  : "Gunakan durasi & tarif khusus"}
+              </Button>
             </div>
           </div>
+          {pricingSource === "negotiated" ? (
+            <div className="space-y-4 rounded-xl border border-success/30 bg-success/10 p-4">
+              <div>
+                <p className="font-semibold text-success">Kesepakatan khusus</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Durasi 1–2 bulan wajib memakai mode ini. Tarif final akan diverifikasi server
+                  terhadap harga kategori dan management fee yang berlaku.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="agreed-monthly-price">Tarif bulanan yang disepakati *</Label>
+                <Input
+                  id="agreed-monthly-price"
+                  inputMode="numeric"
+                  value={agreedMonthlyPrice > 0 ? formatIdrInput(agreedMonthlyPrice) : ""}
+                  placeholder="Contoh: 1.750.000"
+                  onChange={(event) =>
+                    onAgreedMonthlyPrice(Number(normalizeDigits(event.target.value)) || 0)
+                  }
+                  aria-invalid={Boolean(pricingErrors.agreedMonthlyPrice)}
+                  disabled={leaseTermsLocked}
+                />
+                {pricingErrors.agreedMonthlyPrice ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {pricingErrors.agreedMonthlyPrice}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pricing-agreement-reason">Catatan kesepakatan *</Label>
+                <Textarea
+                  id="pricing-agreement-reason"
+                  value={pricingAgreementReason}
+                  onChange={(event) => onPricingAgreementReason(event.target.value)}
+                  maxLength={500}
+                  placeholder="Jelaskan alasan durasi atau tarif khusus"
+                  aria-invalid={Boolean(pricingErrors.agreementReason)}
+                  disabled={leaseTermsLocked}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Catatan ini hanya dapat dilihat Admin dan tidak ditampilkan kepada Owner atau
+                  Penghuni.
+                </p>
+                {pricingErrors.agreementReason ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {pricingErrors.agreementReason}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
             <p className="font-medium">Tanggal Sewa Berakhir</p>
             <p className="mt-2 text-base font-semibold tabular-nums">
@@ -1936,7 +2201,7 @@ function ResidentAndLeaseStep({
               {endDate ? formatIndonesianDate(endDate) : "Pilih tanggal mulai dan durasi sewa."}
             </p>
             <p className="mt-3 text-xs text-muted-foreground">
-              Durasi sewa: {termMonths >= 3 ? `${termMonths} bulan` : "belum valid"}.
+              Durasi sewa: {termMonths >= 1 ? `${termMonths} bulan` : "belum valid"}.
             </p>
           </div>
           <div className="space-y-2">
@@ -2067,6 +2332,13 @@ function RoomAndPaymentStep({
   gender,
   termMonths,
   amounts,
+  pricingSource,
+  pricingAgreementReason,
+  pricingVariancePercent,
+  materialPricingVariance,
+  pricingVarianceAcknowledged,
+  onPricingVarianceAcknowledged,
+  pricingVarianceError,
   paymentChoice,
   onPaymentChoiceChange,
   bookingFeeLocked,
@@ -2117,6 +2389,13 @@ function RoomAndPaymentStep({
   gender: Gender | "";
   termMonths: number;
   amounts: ReturnType<typeof calculateLeaseAmounts>;
+  pricingSource: PricingSource;
+  pricingAgreementReason: string;
+  pricingVariancePercent: number;
+  materialPricingVariance: boolean;
+  pricingVarianceAcknowledged: boolean;
+  onPricingVarianceAcknowledged: (value: boolean) => void;
+  pricingVarianceError: string;
   paymentChoice: PaymentChoice;
   onPaymentChoiceChange: (value: PaymentChoice) => void;
   bookingFeeLocked: boolean;
@@ -2673,16 +2952,29 @@ function RoomAndPaymentStep({
                           onValueChange={setPaidRent}
                           invalid={Boolean(stagedDraftErrors?.amount || errors?.paidRent)}
                           readOnly={paymentChoice === "full" || initialPaymentLocked}
+                          onClear={
+                            paymentChoice === "dp" && !initialPaymentLocked
+                              ? () => {
+                                  setPaidRent(0);
+                                  setConfirmed(false);
+                                }
+                              : undefined
+                          }
+                          clearLabel="Hapus nominal rekomendasi uang muka"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          {paymentChoice === "full"
-                            ? stagedPayment
+                        {paymentChoice === "full" ? (
+                          <p className="text-xs text-muted-foreground">
+                            {stagedPayment
                               ? `Terhitung otomatis dari sisa sewa ${currency(maximumRentPayment)}.`
-                              : `Terhitung otomatis: total sewa dikurangi booking fee ${currency(bookingFee)}.`
-                            : stagedPayment
-                              ? `Target DP 25% adalah ${currency(amounts.minimumDp)}. Tombol di atas hanya mengisi kekurangan dari pembayaran yang sudah tersimpan.`
-                              : `Rekomendasi DP 25% adalah ${currency(amounts.minimumDp)}. Booking fee menjadi kredit sewa; total pembayaran awal boleh disesuaikan, tetapi wajib menutup minimal satu bulan sewa.`}
-                        </p>
+                              : `Terhitung otomatis: total sewa dikurangi booking fee ${currency(bookingFee)}.`}
+                          </p>
+                        ) : !stagedPayment ? (
+                          <p className="text-xs text-muted-foreground">
+                            Rekomendasi DP 25% adalah {currency(amounts.minimumDp)}. Booking fee
+                            menjadi kredit sewa; total pembayaran awal boleh disesuaikan, tetapi
+                            wajib menutup minimal satu bulan sewa.
+                          </p>
+                        ) : null}
                         {stagedDraftErrors?.amount || errors?.paidRent ? (
                           <p className="text-xs text-destructive" role="alert">
                             {stagedDraftErrors?.amount || errors?.paidRent}
@@ -2880,7 +3172,11 @@ function RoomAndPaymentStep({
                     <Summary label="Kamar" value={selectedRoom.number} />
                     <Summary label="Tipe kost" value={selectedRoom.kostType.name} />
                     <Summary
-                      label={`Tarif paket ${amounts.tierLabel}`}
+                      label={`Tarif acuan ${amounts.tierLabel}`}
+                      value={`${currency(amounts.referenceMonthlyRate)} / bulan`}
+                    />
+                    <Summary
+                      label={pricingSource === "negotiated" ? "Tarif kesepakatan" : "Tarif kontrak"}
                       value={`${currency(amounts.monthlyRate)} / bulan`}
                     />
                     <Summary label="Durasi sewa" value={`${termMonths} bulan`} />
@@ -2888,6 +3184,44 @@ function RoomAndPaymentStep({
                       label="Tarif efektif"
                       value={formatIndonesianDate(selectedRoom.kostType.commercialEffectiveDate)}
                     />
+                    {pricingSource === "negotiated" ? (
+                      <div className="space-y-2 rounded-lg border border-warning/35 bg-warning/10 p-3 sm:col-span-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-warning">Kesepakatan khusus</span>
+                          <span className="rounded-full bg-background/70 px-2.5 py-1 text-xs font-semibold text-foreground">
+                            Selisih {pricingVariancePercent > 0 ? "+" : ""}
+                            {pricingVariancePercent.toLocaleString("id-ID", {
+                              maximumFractionDigits: 1,
+                            })}
+                            %
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Catatan internal: {pricingAgreementReason.trim() || "Belum diisi"}
+                        </p>
+                        {materialPricingVariance ? (
+                          <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-background/75 p-2.5 text-xs">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4"
+                              checked={pricingVarianceAcknowledged}
+                              onChange={(event) =>
+                                onPricingVarianceAcknowledged(event.target.checked)
+                              }
+                            />
+                            <span>
+                              Saya telah meninjau dan menyetujui selisih tarif 15% atau lebih dari
+                              tarif acuan.
+                            </span>
+                          </label>
+                        ) : null}
+                        {pricingVarianceError ? (
+                          <p className="text-xs font-medium text-destructive" role="alert">
+                            {pricingVarianceError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="space-y-2 py-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -3111,13 +3445,30 @@ function RupiahInput({
   onValueChange,
   invalid = false,
   readOnly = false,
+  onClear,
+  clearLabel = "Hapus nominal",
 }: {
   id: string;
   value: number;
   onValueChange: (value: number) => void;
   invalid?: boolean;
   readOnly?: boolean;
+  onClear?: () => void;
+  clearLabel?: string;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const clearAndFocusInput = () => {
+    onClear?.();
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      const cursorPosition = input.value.length;
+      input.setSelectionRange(cursorPosition, cursorPosition);
+    });
+  };
+
   return (
     <div
       className={
@@ -3129,6 +3480,7 @@ function RupiahInput({
         Rp
       </span>
       <input
+        ref={inputRef}
         id={id}
         inputMode="numeric"
         autoComplete="off"
@@ -3141,6 +3493,17 @@ function RupiahInput({
         }
         onChange={(event) => onValueChange(normalizeDigits(event.target.value))}
       />
+      {onClear && !readOnly ? (
+        <button
+          type="button"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center border-l border-destructive/20 text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 focus-visible:ring-inset"
+          onClick={clearAndFocusInput}
+          aria-label={clearLabel}
+          title={clearLabel}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -26,7 +26,7 @@ tenancy, occupancy, payment, and reporting are separate authorities.
 | **Batch Ownership Period Closure** | Admin command that closes multiple selected assignments of one ownership kind at one effective end date. It is atomic, idempotent, audited, and never deletes asset or ownership history.                                                                      |
 | **Kostation-Owned**                | Display state for an asset without an effective owner assignment. No synthetic owner account is created.                                                                                                                                                       |
 | **Gross Earned Rent**              | Verified rent collected for service already delivered during an occupancy period. It is not the same as cash received in advance.                                                                                                                              |
-| **Owner Entitlement**              | The Property Owner share of Gross Earned Rent for an asset and ownership period. Current policy: Rp1.500.000 per occupied room per earned month at the standard tariff.                                                                                        |
+| **Owner Entitlement**              | The Property Owner share of Gross Earned Rent for an asset and ownership period. It is calculated from the contractual monthly tariff less the effective Kostation Management Fee for earned service.                                                         |
 | **Kostation Management Fee**       | Kostation's service share of Gross Earned Rent. Current policy: Rp300.000 per occupied room per earned month at the standard tariff. It is not an operating expense.                                                                                           |
 | **Duration Pricing Tier**          | One monthly room rate selected from the whole contractual duration: Short Stay (3–5 months), Medium Stay (6–11 months), or Long Stay (12+ months). The selected rate applies to every month of that contract.                                                  |
 | **Commercial Effective Date**      | The tenancy start date used to select the applicable effective-dated pricing authority. A later tariff change never rewrites an existing lease snapshot.                                                                                                       |
@@ -47,6 +47,61 @@ Payment != Earned Rent != Owner Entitlement != Owner Payout
 Management Fee != Expense
 Security Deposit != Rent Revenue
 ```
+
+## Commercial Agreement and Checkout Language
+
+**Tarif Acuan**:
+Harga bulanan resmi dari tier durasi yang berlaku pada kategori kamar sebelum
+kesepakatan khusus. Untuk kontrak khusus 1–2 bulan, tier 3–5 bulan menjadi
+pembanding saja dan tidak membuat durasi tersebut menjadi pilihan standar.
+_Avoid_: harga kamar manual, harga sementara.
+
+**Tarif Kesepakatan**:
+Harga bulanan yang disetujui Admin melalui jalur kesepakatan khusus untuk satu
+kontrak. Nilainya dapat sama atau berbeda dari Tarif Acuan; durasi 1–2 bulan tetap
+memakai jalur ini. _Avoid_: diskon bebas, harga custom tanpa persetujuan.
+
+**Nilai Kontrak**:
+Tarif Kesepakatan atau Tarif Acuan yang berlaku dikalikan seluruh durasi kontrak
+dan disimpan sebagai snapshot yang tidak berubah. _Avoid_: target bulanan.
+
+**Pembayaran Masuk**:
+Uang sewa yang sudah diverifikasi dan dialokasikan ke kewajiban kontrak.
+_Avoid_: pendapatan tercatat, security deposit.
+
+**Checkpoint Penyelesaian Sewa**:
+Target kumulatif pembayaran sewa dan tanggal jatuh tempo yang dihitung server
+dari snapshot kontrak. Checkpoint bukan transaksi pembayaran dan tidak mengubah
+Nilai Kontrak.
+
+**Pendapatan Tercatat**:
+Bagian sewa yang sudah menjadi hak berdasarkan layanan yang telah berjalan,
+bukan seluruh uang yang dibayar di muka. _Avoid_: total pembayaran.
+
+**Pemberitahuan Check-out**:
+Catatan resmi bahwa penghuni meminta mengakhiri hunian, sebelum serah-terima
+fisik dan penyelesaian akhir.
+
+**Check-out Fisik**:
+Serah-terima aktual yang mengakhiri okupansi dan memindahkan kamar ke tahap
+inspeksi. _Avoid_: sekadar menekan tombol keluar.
+
+**Penyelesaian Akhir**:
+Snapshot final yang memisahkan sewa yang telah menjadi hak, tagihan, kelebihan
+pembayaran, security deposit, potongan, kompensasi pemberitahuan, dan refund.
+
+**Kompensasi Kekurangan Pemberitahuan**:
+Kompensasi kontraktual akibat penghentian dini dengan pemberitahuan kurang dari
+14 hari. Nilai ini ditampilkan terpisah dari sewa dan management fee.
+
+**Status Operasional**:
+Keadaan proses fisik check-out dan kamar: pemberitahuan, terjadwal, inspeksi,
+atau selesai.
+
+**Status Keuangan Akhir**:
+Keadaan penyelesaian uang setelah check-out fisik: tertutup, masih harus bayar,
+refund menunggu transfer, atau refund selesai. Penghapusan saldo terutang berada
+di luar alur check-out sampai ada otoritas koreksi keuangan tersendiri.
 
 ## Current Economics
 

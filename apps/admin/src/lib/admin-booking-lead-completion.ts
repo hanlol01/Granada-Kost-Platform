@@ -23,6 +23,12 @@ export type LeadPaymentCommitment = {
   endDate: string;
   billingCycle: "monthly" | "yearly";
   paymentPlanType: "monthly_installments" | "two_month_installments" | "annual_full";
+  pricingTier: "short_stay" | "medium_stay" | "long_stay";
+  referenceMonthlyPrice: number;
+  agreedMonthlyPrice: number;
+  pricingSource: "standard" | "negotiated";
+  pricingAgreementReason: string | null;
+  pricingAgreedAt: string;
   materializedOnboardingCommitmentId: string | null;
 };
 export type BookingLeadRentalContext = {
@@ -55,6 +61,9 @@ export type BookingLeadCompletionQuote = {
   endDate: string;
   contractRentAmount: number;
   suggestedDpAmount: number;
+  pricingTier: "short_stay" | "medium_stay" | "long_stay";
+  referenceMonthlyPrice: number;
+  managementFeeAmount: number;
   lead: {
     id: string;
     category: "rukost" | "apartkost";
@@ -69,6 +78,10 @@ export type CompleteBookingLeadInput = {
   termMonths: number;
   billingCycle: "monthly" | "yearly";
   paymentPlanType: "monthly_installments" | "two_month_installments" | "annual_full";
+  pricingSource?: "standard" | "negotiated";
+  agreedMonthlyPrice?: number;
+  pricingAgreementReason?: string;
+  pricingVarianceAcknowledged?: boolean;
   paymentType: LeadInitialPaymentType;
   rentCreditAmount: number;
   securityDepositAmount: number;
@@ -204,6 +217,17 @@ function commitment(value: unknown): LeadPaymentCommitment {
       "two_month_installments",
       "annual_full",
     ] as const),
+    pricingTier: oneOf(row.snapshot_pricing_tier, [
+      "short_stay",
+      "medium_stay",
+      "long_stay",
+    ] as const),
+    referenceMonthlyPrice: money(row.snapshot_reference_monthly_price),
+    agreedMonthlyPrice: money(row.snapshot_monthly_price),
+    pricingSource: oneOf(row.pricing_source, ["standard", "negotiated"] as const),
+    pricingAgreementReason:
+      row.pricing_agreement_reason === null ? null : text(row.pricing_agreement_reason),
+    pricingAgreedAt: text(row.pricing_agreed_at),
     materializedOnboardingCommitmentId:
       row.materialized_onboarding_commitment_id === null
         ? null
@@ -310,6 +334,9 @@ export function parseBookingLeadCompletionQuote(
     endDate: date(data.end_date),
     contractRentAmount: money(data.contract_rent_amount),
     suggestedDpAmount: money(data.suggested_dp_amount),
+    pricingTier: oneOf(data.pricing_tier, ["short_stay", "medium_stay", "long_stay"] as const),
+    referenceMonthlyPrice: money(data.reference_monthly_price),
+    managementFeeAmount: money(data.management_fee_amount),
     lead: { id: leadId, category, gender },
     hold: { id: holdId, roomId, expiresAt: text(hold.expires_at) },
     room: {
@@ -336,6 +363,10 @@ export async function requestCompleteBookingLead(
       term_months: input.termMonths,
       billing_cycle: input.billingCycle,
       payment_plan_type: input.paymentPlanType,
+      pricing_source: input.pricingSource,
+      agreed_monthly_price: input.agreedMonthlyPrice,
+      pricing_agreement_reason: input.pricingAgreementReason?.trim() || undefined,
+      pricing_variance_acknowledged: input.pricingVarianceAcknowledged,
       payment_type: input.paymentType,
       rent_credit_amount: input.rentCreditAmount,
       security_deposit_amount: input.securityDepositAmount,

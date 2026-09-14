@@ -1773,6 +1773,12 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     typeof physical.public_visible !== "boolean" ||
     typeof physical.structural_edit_locked !== "boolean" ||
     commercial.source !== "current_category" ||
+    !isPositiveSafeInteger(commercial.monthly_price) ||
+    !isPositiveSafeInteger(commercial.short_stay_monthly_price) ||
+    !isPositiveSafeInteger(commercial.medium_stay_monthly_price) ||
+    !isPositiveSafeInteger(commercial.long_stay_monthly_price) ||
+    !isPositiveSafeInteger(commercial.annual_contract_value) ||
+    !isNonNegativeSafeInteger(commercial.management_fee_amount) ||
     commercial.monthly_price !== commercial.short_stay_monthly_price ||
     commercial.annual_contract_value !== commercial.long_stay_monthly_price * 12 ||
     commercial.short_stay_monthly_price < commercial.medium_stay_monthly_price ||

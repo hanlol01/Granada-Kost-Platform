@@ -82,6 +82,17 @@ export type OwnerAssetDetail = {
     transferState: string | null;
     renewalState: string | null;
     checkoutState: string | null;
+    checkoutEffectiveDate: string | null;
+    checkoutActualDate: string | null;
+    checkoutSettlement: {
+      status: string;
+      amountDue: Money;
+      refundAmount: Money;
+      earnedRentAmount: Money;
+      shortNoticeCompensation: Money;
+      managementFeeAmount: Money;
+      ownerEntitlementAmount: Money;
+    } | null;
   };
   ownership: {
     source: "building_assignment" | "room_assignment";
@@ -119,6 +130,8 @@ export type OwnerResource = {
   transferState: string | null;
   renewalState: string | null;
   checkoutState: string | null;
+  checkoutEffectiveDate: string | null;
+  checkoutActualDate: string | null;
   openComplaints: number;
   openMaintenance: number;
   updatedAt: string;
@@ -373,6 +386,7 @@ export type OwnerCollectionProgress = {
       endDate: string | null;
       termMonths: number;
       monthlyRate: Money;
+      pricingSource: "standard" | "negotiated";
       contractValue: Money;
     };
     billing: {
@@ -682,9 +696,32 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
   const billing = exact(root.billing, ["state"], "asset_detail.billing");
   const lifecycle = exact(
     root.lifecycle,
-    ["transfer_state", "renewal_state", "checkout_state"],
+    [
+      "transfer_state",
+      "renewal_state",
+      "checkout_state",
+      "checkout_effective_date",
+      "checkout_actual_date",
+      "checkout_settlement",
+    ],
     "asset_detail.lifecycle",
   );
+  const checkoutSettlement =
+    lifecycle.checkout_settlement === null
+      ? null
+      : exact(
+          lifecycle.checkout_settlement,
+          [
+            "status",
+            "amount_due",
+            "refund_amount",
+            "earned_rent_amount",
+            "short_notice_compensation",
+            "management_fee_amount",
+            "owner_entitlement_amount",
+          ],
+          "asset_detail.lifecycle.checkout_settlement",
+        );
   const lease =
     root.lease === null
       ? null
@@ -812,6 +849,50 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
         lifecycle.checkout_state,
         "asset_detail.lifecycle.checkout_state",
       ),
+      checkoutEffectiveDate:
+        lifecycle.checkout_effective_date === null
+          ? null
+          : date(
+              lifecycle.checkout_effective_date,
+              "asset_detail.lifecycle.checkout_effective_date",
+            ),
+      checkoutActualDate:
+        lifecycle.checkout_actual_date === null
+          ? null
+          : date(lifecycle.checkout_actual_date, "asset_detail.lifecycle.checkout_actual_date"),
+      checkoutSettlement:
+        checkoutSettlement === null
+          ? null
+          : {
+              status: string(
+                checkoutSettlement.status,
+                "asset_detail.lifecycle.checkout_settlement.status",
+              ),
+              amountDue: money(
+                checkoutSettlement.amount_due,
+                "asset_detail.lifecycle.checkout_settlement.amount_due",
+              ),
+              refundAmount: money(
+                checkoutSettlement.refund_amount,
+                "asset_detail.lifecycle.checkout_settlement.refund_amount",
+              ),
+              earnedRentAmount: money(
+                checkoutSettlement.earned_rent_amount,
+                "asset_detail.lifecycle.checkout_settlement.earned_rent_amount",
+              ),
+              shortNoticeCompensation: money(
+                checkoutSettlement.short_notice_compensation,
+                "asset_detail.lifecycle.checkout_settlement.short_notice_compensation",
+              ),
+              managementFeeAmount: money(
+                checkoutSettlement.management_fee_amount,
+                "asset_detail.lifecycle.checkout_settlement.management_fee_amount",
+              ),
+              ownerEntitlementAmount: money(
+                checkoutSettlement.owner_entitlement_amount,
+                "asset_detail.lifecycle.checkout_settlement.owner_entitlement_amount",
+              ),
+            },
     },
     ownership: {
       source: enumValue(
@@ -855,6 +936,8 @@ export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
         "transfer_state",
         "renewal_state",
         "checkout_state",
+        "checkout_effective_date",
+        "checkout_actual_date",
         "open_complaints",
         "open_maintenance",
         "updated_at",
@@ -955,6 +1038,14 @@ export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
       transferState: nullableString(row.transfer_state, "resource.transfer_state"),
       renewalState: nullableString(row.renewal_state, "resource.renewal_state"),
       checkoutState: nullableString(row.checkout_state, "resource.checkout_state"),
+      checkoutEffectiveDate:
+        row.checkout_effective_date === null
+          ? null
+          : date(row.checkout_effective_date, "resource.checkout_effective_date"),
+      checkoutActualDate:
+        row.checkout_actual_date === null
+          ? null
+          : date(row.checkout_actual_date, "resource.checkout_actual_date"),
       openComplaints: count(row.open_complaints, "resource.open_complaints"),
       openMaintenance: count(row.open_maintenance, "resource.open_maintenance"),
       updatedAt: timestamp(row.updated_at, "resource.updated_at"),
@@ -1853,7 +1944,15 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
       const lease = exact(
         item.lease,
-        ["status", "start_date", "end_date", "term_months", "monthly_rate", "contract_value"],
+        [
+          "status",
+          "start_date",
+          "end_date",
+          "term_months",
+          "monthly_rate",
+          "pricing_source",
+          "contract_value",
+        ],
         "collection_progress.item.lease",
       );
       const billing = exact(
@@ -1938,6 +2037,11 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date"),
           termMonths: count(lease.term_months, "collection_progress.item.lease.term_months"),
           monthlyRate: money(lease.monthly_rate, "collection_progress.item.lease.monthly_rate"),
+          pricingSource: enumValue(
+            lease.pricing_source,
+            ["standard", "negotiated"] as const,
+            "collection_progress.item.lease.pricing_source",
+          ),
           contractValue: money(
             lease.contract_value,
             "collection_progress.item.lease.contract_value",

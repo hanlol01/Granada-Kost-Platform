@@ -742,4 +742,49 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM role_permissions grants JOIN roles ON roles.id=grants.role_id JOIN permissions ON permissions.id=grants.permission_id WHERE roles.code='owner' AND permissions.code='report.export')",
     ],
   },
+  {
+    version: '080_property_owner_settlement_publication.sql',
+    checksumSha256: 'f204772273060942bcd09006094b2185dea5410d842a5ac9b3a6b73b63563b53',
+    sentinels: [
+      "to_regclass('public.property_owner_settlement_publications') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_settlements' AND column_name='source_checksum')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_payouts' AND column_name='transferred_at')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_property_owner_settlement_publication' AND tgrelid=to_regclass('public.property_owner_settlement_publications') AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_property_owner_payout_authority' AND tgrelid=to_regclass('public.property_owner_payouts') AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '081_custom_lease_commercial_authority.sql',
+    checksumSha256: '4082bbe6e0aa5ed02a02701483e5c35524a1f3c64ffa8f6af5c72f5d33438279',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='snapshot_reference_monthly_price')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='onboarding_commitments' AND column_name='pricing_source')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='booking_lead_payment_commitments' AND column_name='pricing_agreement_reason')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_policy_snapshots_version_check' AND conrelid=to_regclass('public.lease_settlement_policy_snapshots') AND pg_get_constraintdef(oid) ILIKE '%lease_settlement_v3%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='leases_custom_pricing_snapshot_check' AND conrelid=to_regclass('public.leases'))",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_contract_paid_documents_commercial_snapshot' AND tgrelid=to_regclass('public.lease_contract_paid_documents') AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '082_lease_checkout_stage3_authority.sql',
+    checksumSha256: '990b07ba551ee2f14df2635964e4a90d38d37798d41de793f907c4420b70cf46',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_checkout_commands' AND column_name='internal_note')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_exit_final_settlements' AND column_name='damage_amount_due')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_exit_final_settlements_net_direction_check' AND conrelid=to_regclass('public.lease_exit_final_settlements'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_exit_invoice_adjustments_checkout_invoice_unique' AND conrelid=to_regclass('public.lease_exit_invoice_adjustments'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_checkout_evidence_category_check' AND conrelid=to_regclass('public.lease_checkout_evidence') AND pg_get_constraintdef(oid) ILIKE '%short_notice_waiver%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='invoices_w06_other_charge_check' AND conrelid=to_regclass('public.invoices') AND pg_get_constraintdef(oid) ILIKE '%checkout_final_adjustment%')",
+      "to_regclass('public.lease_exit_final_invoice_links') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_earnings' AND column_name='earning_source')",
+      "to_regprocedure('public.recognize_property_owner_checkout_compensations(uuid,date)') IS NOT NULL",
+    ],
+  },
+  {
+    version: '083_enable_lease_checkout_for_operational_properties.sql',
+    checksumSha256: '775a5b9181db9c6e2e75c0643770f3a41daf6a7d976f01dfdef803da20e561cf',
+    sentinels: [
+      "col_description('public.property_feature_flags'::regclass, (SELECT ordinal_position FROM information_schema.columns WHERE table_schema='public' AND table_name='property_feature_flags' AND column_name='lease_checkout')) ILIKE '%enabled for operational Admin lease properties by migration 083%'",
+    ],
+  },
 ] as const;

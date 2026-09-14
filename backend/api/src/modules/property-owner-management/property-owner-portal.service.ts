@@ -133,6 +133,11 @@ export class PropertyOwnerPortalService {
           LEFT JOIN property_owner_settlement_lines lines ON lines.settlement_id = settlements.id
           LEFT JOIN current_authorized_earnings ON current_authorized_earnings.id = lines.earning_id
           WHERE settlements.owner_profile_id = $1 AND settlements.property_id = $2
+            AND EXISTS (
+              SELECT 1 FROM property_owner_settlement_publications publications
+              WHERE publications.settlement_id = settlements.id
+                AND publications.publication_status = 'published'
+            )
           GROUP BY settlements.id
         ), current_authorized_settlements AS (
           SELECT id FROM current_settlement_authority
@@ -354,6 +359,11 @@ export class PropertyOwnerPortalService {
               resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
               COALESCE(billing.billing_state, 'not_available') AS billing_state,
               transfer.transfer_state, renewal.renewal_state, checkout.checkout_state,
+              checkout.checkout_effective_date, checkout.checkout_actual_date,
+              checkout.checkout_settlement_status, checkout.checkout_amount_due,
+              checkout.checkout_refund_amount, checkout.checkout_earned_rent_amount,
+              checkout.checkout_short_notice_amount, checkout.checkout_management_fee_amount,
+              checkout.checkout_owner_entitlement_amount,
               authorized_asset.effective_from::text, authorized_asset.effective_until::text,
               authorized_asset.assignment_source,
               (SELECT COUNT(*)::int FROM complaints
@@ -427,9 +437,34 @@ export class PropertyOwnerPortalService {
           ORDER BY created_at DESC, id DESC LIMIT 1
         ) renewal ON true
         LEFT JOIN LATERAL (
-          SELECT state AS checkout_state FROM lease_checkout_commands
-          WHERE property_id = $2 AND room_id = rooms.id
-          ORDER BY created_at DESC, id DESC LIMIT 1
+          SELECT command.state AS checkout_state,
+                 command.effective_date::text AS checkout_effective_date,
+                 command.actual_checkout_date::text AS checkout_actual_date,
+                 settlement.decision_status AS checkout_settlement_status,
+                 settlement.amount_due::text AS checkout_amount_due,
+                 settlement.final_refund_amount::text AS checkout_refund_amount,
+                 settlement.earned_rent_amount::text AS checkout_earned_rent_amount,
+                 settlement.approved_short_notice_charge::text AS checkout_short_notice_amount,
+                 COALESCE(earnings.management_fee_amount,0)::bigint::text
+                   AS checkout_management_fee_amount,
+                 COALESCE(earnings.owner_entitlement_amount,0)::bigint::text
+                   AS checkout_owner_entitlement_amount
+          FROM lease_checkout_commands command
+          LEFT JOIN lease_exit_final_settlements settlement
+            ON settlement.checkout_command_id = command.id
+           AND settlement.property_id = command.property_id
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(SUM(owner_earned_amount),0)::bigint AS owner_entitlement_amount,
+                   COALESCE(SUM(operator_fee_amount),0)::bigint AS management_fee_amount
+            FROM property_owner_earnings
+            WHERE property_id=command.property_id
+              AND lease_id=command.lease_id
+              AND room_id=command.room_id
+              AND earning_status='recognized'
+              AND service_until<=COALESCE(command.actual_checkout_date,command.effective_date)+1
+          ) earnings ON true
+          WHERE command.property_id = $2 AND command.room_id = rooms.id
+          ORDER BY command.created_at DESC, command.id DESC LIMIT 1
         ) checkout ON true
         ORDER BY authorized_asset.effective_from DESC, rooms.id`,
       [owner.id, owner.property_id, roomCode],
@@ -509,6 +544,44 @@ export class PropertyOwnerPortalService {
         transfer_state: this.nullableText(row.transfer_state, 'asset.transfer_state'),
         renewal_state: this.nullableText(row.renewal_state, 'asset.renewal_state'),
         checkout_state: this.nullableText(row.checkout_state, 'asset.checkout_state'),
+        checkout_effective_date: this.nullableDate(
+          row.checkout_effective_date,
+          'asset.checkout_effective_date',
+        ),
+        checkout_actual_date: this.nullableDate(
+          row.checkout_actual_date,
+          'asset.checkout_actual_date',
+        ),
+        checkout_settlement:
+          row.checkout_settlement_status === null
+            ? null
+            : {
+                status: this.text(
+                  row.checkout_settlement_status,
+                  'asset.checkout_settlement_status',
+                ),
+                amount_due: this.money(row.checkout_amount_due ?? '0', 'asset.checkout_amount_due'),
+                refund_amount: this.money(
+                  row.checkout_refund_amount ?? '0',
+                  'asset.checkout_refund_amount',
+                ),
+                earned_rent_amount: this.money(
+                  row.checkout_earned_rent_amount ?? '0',
+                  'asset.checkout_earned_rent_amount',
+                ),
+                short_notice_compensation: this.money(
+                  row.checkout_short_notice_amount ?? '0',
+                  'asset.checkout_short_notice_amount',
+                ),
+                management_fee_amount: this.money(
+                  row.checkout_management_fee_amount ?? '0',
+                  'asset.checkout_management_fee_amount',
+                ),
+                owner_entitlement_amount: this.money(
+                  row.checkout_owner_entitlement_amount ?? '0',
+                  'asset.checkout_owner_entitlement_amount',
+                ),
+              },
       },
       ownership: {
         source: this.enumValue(
@@ -773,6 +846,7 @@ export class PropertyOwnerPortalService {
                 COALESCE(billing.billing_state, 'not_available') AS billing_state,
                 billing.invoice_count,
                 transfer.transfer_state, renewal.renewal_state, checkout.checkout_state,
+                checkout.checkout_effective_date, checkout.checkout_actual_date,
                 issues.open_complaints, issues.open_maintenance,
                 (lease.end_date IS NOT NULL AND lease.end_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
                   AND lease.end_date <= ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '30 days')) AS ending_soon,
@@ -817,7 +891,10 @@ export class PropertyOwnerPortalService {
            ORDER BY created_at DESC, id DESC LIMIT 1
          ) renewal ON true
          LEFT JOIN LATERAL (
-           SELECT state AS checkout_state FROM lease_checkout_commands
+           SELECT state AS checkout_state,
+                  effective_date::text AS checkout_effective_date,
+                  actual_checkout_date::text AS checkout_actual_date
+           FROM lease_checkout_commands
            WHERE property_id = $2 AND room_id = rooms.id
            ORDER BY created_at DESC, id DESC LIMIT 1
          ) checkout ON true
@@ -926,6 +1003,14 @@ export class PropertyOwnerPortalService {
       transfer_state: this.nullableText(row.transfer_state, 'owner_resource.transfer_state'),
       renewal_state: this.nullableText(row.renewal_state, 'owner_resource.renewal_state'),
       checkout_state: this.nullableText(row.checkout_state, 'owner_resource.checkout_state'),
+      checkout_effective_date: this.nullableDate(
+        row.checkout_effective_date,
+        'owner_resource.checkout_effective_date',
+      ),
+      checkout_actual_date: this.nullableDate(
+        row.checkout_actual_date,
+        'owner_resource.checkout_actual_date',
+      ),
       open_complaints: this.count(row.open_complaints, 'owner_resource.open_complaints'),
       open_maintenance: this.count(row.open_maintenance, 'owner_resource.open_maintenance'),
       updated_at: this.timestamp(row.updated_at, 'owner_resource.updated_at'),
@@ -991,7 +1076,8 @@ export class PropertyOwnerPortalService {
        ), active_leases AS (
          SELECT lease.id, lease.property_id, lease.room_id, lease.resident_id,
                 lease.start_date, lease.end_date, lease.security_deposit_required_amount,
-                lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount
+                 lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount,
+                 lease.pricing_source
          FROM leases lease
          JOIN scoped_rooms scope ON scope.room_id = lease.room_id
          WHERE lease.property_id = $2 AND lease.lease_status = 'active'
@@ -1008,7 +1094,8 @@ export class PropertyOwnerPortalService {
                     ELSE 0
                   END
                 )::int AS term_months,
-                COALESCE(lease.snapshot_monthly_price, 0)::bigint AS monthly_rate,
+                 COALESCE(lease.snapshot_monthly_price, 0)::bigint AS monthly_rate,
+                 COALESCE(lease.pricing_source, 'standard')::text AS pricing_source,
                 COALESCE(
                   lease.contract_rent_amount,
                   lease.snapshot_monthly_price * COALESCE(lease.term_months, 0),
@@ -1188,8 +1275,9 @@ export class PropertyOwnerPortalService {
        SELECT rooms.room_code, buildings.building_code, buildings.building_name,
               resident.full_name AS resident_display_name,
               lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
-              commercial_projection.term_months,
-              commercial_projection.monthly_rate::text,
+               commercial_projection.term_months,
+               commercial_projection.monthly_rate::text,
+               commercial_projection.pricing_source,
               commercial_projection.contract_value::text,
               commercial_projection.management_fee_monthly::text,
               commercial_projection.projected_management_fee::text,
@@ -1266,7 +1354,7 @@ export class PropertyOwnerPortalService {
           .toString(),
         package_counts: {
           short_stay: items.filter(
-            (item) => item.lease.term_months >= 3 && item.lease.term_months <= 5,
+            (item) => item.lease.term_months >= 1 && item.lease.term_months <= 5,
           ).length,
           medium_stay: items.filter(
             (item) => item.lease.term_months >= 6 && item.lease.term_months <= 11,
@@ -1494,6 +1582,11 @@ export class PropertyOwnerPortalService {
           WHERE settlements.owner_profile_id = $1 AND settlements.property_id = $2
             AND settlements.period_start = $3::date AND settlements.period_end = ($4::date - 1)
             AND settlements.settlement_status IN ('approved', 'paid')
+            AND EXISTS (
+              SELECT 1 FROM property_owner_settlement_publications publications
+              WHERE publications.settlement_id = settlements.id
+                AND publications.publication_status = 'published'
+            )
        ), authorized_earnings AS (
           SELECT DISTINCT earnings.id, earnings.room_id, earnings.earning_month, earnings.service_from, earnings.service_until,
                  earnings.gross_collected_amount, earnings.owner_earned_amount, earnings.operator_fee_amount, earnings.earning_status
@@ -1525,26 +1618,37 @@ export class PropertyOwnerPortalService {
        ), settlement_authority AS (
          SELECT settlements.id, settlements.period_start, settlements.period_end, settlements.settlement_status,
                 settlements.gross_amount, settlements.owner_amount, settlements.operator_fee_amount,
-                COUNT(lines.earning_id)::int AS total_line_count, COUNT(authorized_earnings.id)::int AS authorized_line_count
+                COUNT(DISTINCT lines.earning_id)::int AS total_line_count,
+                COUNT(DISTINCT authorized_earnings.id)::int AS authorized_line_count,
+                COUNT(DISTINCT adjustments.id) FILTER (WHERE adjustments.adjustment_status = 'approved')::int AS adjustment_count
          FROM property_owner_settlements settlements
          LEFT JOIN property_owner_settlement_lines lines ON lines.settlement_id = settlements.id
          LEFT JOIN authorized_earnings ON authorized_earnings.id = lines.earning_id
+         LEFT JOIN property_owner_earning_adjustments adjustments ON adjustments.settlement_id = settlements.id
          WHERE settlements.owner_profile_id = $1 AND settlements.property_id = $2
            AND settlements.period_start < $4::date AND settlements.period_end >= $3::date
+           AND EXISTS (
+             SELECT 1 FROM property_owner_settlement_publications publications
+             WHERE publications.settlement_id = settlements.id
+               AND publications.publication_status = 'published'
+           )
          GROUP BY settlements.id
        ), authorized_settlements AS (
          SELECT * FROM settlement_authority
          WHERE (total_line_count > 0 AND total_line_count = authorized_line_count)
-            OR (total_line_count = 0 AND gross_amount = 0 AND owner_amount = 0
+            OR (total_line_count = 0 AND (
+              adjustment_count > 0 OR (gross_amount = 0 AND owner_amount = 0
                 AND operator_fee_amount = 0 AND settlement_status IN ('approved', 'paid'))
+            ))
        ), authorized_adjustments AS (
           SELECT adjustments.id, adjustments.earning_id, adjustments.settlement_id, authorized_earnings.room_id, adjustments.effective_month,
                 adjustments.adjustment_kind, adjustments.gross_amount_delta, adjustments.owner_amount_delta,
                 adjustments.operator_fee_amount_delta
          FROM property_owner_earning_adjustments adjustments
-         JOIN authorized_earnings ON authorized_earnings.id = adjustments.earning_id
          JOIN authorized_settlements ON authorized_settlements.id = adjustments.settlement_id
+         LEFT JOIN authorized_earnings ON authorized_earnings.id = adjustments.earning_id
          WHERE adjustments.owner_profile_id = $1 AND adjustments.property_id = $2
+           AND adjustments.adjustment_status = 'approved'
            AND adjustments.effective_month >= $3::date AND adjustments.effective_month < $4::date
         ), authorized_payouts AS (
           SELECT payouts.id, payouts.settlement_id, payouts.recorded_at, payouts.payout_kind, payouts.payout_amount
@@ -1964,6 +2068,11 @@ export class PropertyOwnerPortalService {
         end_date: this.nullableDate(row.lease_end_date, 'owner_collection.lease_end_date'),
         term_months: this.count(row.term_months, 'owner_collection.term_months'),
         monthly_rate: this.money(row.monthly_rate, 'owner_collection.monthly_rate'),
+        pricing_source: this.enumValue(
+          row.pricing_source ?? 'standard',
+          ['standard', 'negotiated'] as const,
+          'owner_collection.pricing_source',
+        ),
         contract_value: contractValue,
       },
       billing: {

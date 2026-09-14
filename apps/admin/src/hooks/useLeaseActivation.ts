@@ -16,9 +16,15 @@ export function useLeaseActivation() {
   return useMutation<
     LeaseActivationResponse,
     unknown,
-    { leaseId: string; idempotencyKey: string; activatedAt?: string }
+    {
+      leaseId: string;
+      idempotencyKey: string;
+      activatedAt?: string;
+      confirmCheckIn?: boolean;
+      checkedInAt?: string;
+    }
   >({
-    mutationFn: ({ leaseId, idempotencyKey, activatedAt }) => {
+    mutationFn: ({ leaseId, idempotencyKey, activatedAt, confirmCheckIn, checkedInAt }) => {
       if (!currentPropertyId) throw new Error("PROPERTY_SCOPE_REQUIRED");
       return requestLeaseActivation(
         (path, body, options) => adminUxV2Requester.post<unknown>(path, body, options),
@@ -26,13 +32,19 @@ export function useLeaseActivation() {
         currentPropertyId,
         idempotencyKey,
         activatedAt,
+        confirmCheckIn,
+        checkedInAt,
       );
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       if (currentPropertyId) {
         await invalidateAdminUxMutation(queryClient, "lease-create", currentPropertyId);
       }
-      toastMutationSuccess("Penyewaan aktif; kamar menunggu konfirmasi check-in fisik");
+      toastMutationSuccess(
+        result.occupancyStatus === "active"
+          ? "Penyewaan aktif dan kamar resmi ditempati"
+          : "Penyewaan aktif; kamar menunggu konfirmasi check-in fisik",
+      );
     },
     onError: (error) => toastMutationError(error, "Lease belum dapat diaktifkan"),
   });

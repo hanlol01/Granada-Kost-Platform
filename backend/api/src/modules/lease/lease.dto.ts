@@ -193,6 +193,50 @@ export class UpdateLeaseDto {
   lease_status?: string;
 }
 
+export class PreviewLeaseDataCorrectionDto {
+  @IsOptional()
+  @IsDateString()
+  start_date?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  term_months?: number;
+
+  @IsOptional()
+  @IsDateString()
+  checked_in_date?: string;
+
+  @IsOptional()
+  @IsIn(['standard', 'negotiated'])
+  pricing_source?: 'standard' | 'negotiated';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  agreed_monthly_price?: number;
+
+  @IsOptional()
+  @Transform(trimOptionalString)
+  @IsString()
+  @Length(3, 500)
+  pricing_agreement_reason?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pricing_variance_acknowledged?: boolean;
+
+  @Transform(trimOptionalString)
+  @IsString()
+  @Length(3, 2000)
+  reason!: string;
+}
+
+export class CommitLeaseDataCorrectionDto extends PreviewLeaseDataCorrectionDto {}
+
 export class DepositPaymentDto {
   @IsIn(['cash', 'bank_transfer', 'qris', 'ewallet', 'other'])
   payment_method!: 'cash' | 'bank_transfer' | 'qris' | 'ewallet' | 'other';

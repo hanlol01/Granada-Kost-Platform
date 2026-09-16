@@ -21,6 +21,11 @@ export type OnboardingPayload = {
   ktp_file_id?: string;
   start_date: string;
   term_months: number;
+  commercial_mode?: "rent" | "owner_sponsored";
+  sponsoring_owner_profile_id?: string;
+  management_fee_payer?: "resident" | "owner" | "other";
+  management_fee_payer_name?: string;
+  owner_sponsorship_reason?: string;
   pricing_source?: "standard" | "negotiated";
   agreed_monthly_price?: number;
   pricing_agreement_reason?: string;
@@ -55,7 +60,8 @@ export type OnboardingResponse = {
   startDate: string;
   endDate: string;
   termMonths: number;
-  pricingSource: "standard" | "negotiated";
+  commercialMode: "rent" | "owner_sponsored";
+  pricingSource: "standard" | "negotiated" | "owner_sponsored";
   pricingTier: "short_stay" | "medium_stay" | "long_stay";
   referenceMonthlyPrice: number;
   agreedMonthlyPrice: number;
@@ -65,6 +71,15 @@ export type OnboardingResponse = {
   contractRentAmount: number;
   dpRequiredAmount: number;
   securityDepositRequiredAmount: number;
+  ownerSponsorship: {
+    ownerProfileId: string;
+    ownerName: string;
+    managementFeePayer: "resident" | "owner" | "other";
+    managementFeePayerName: string | null;
+    reason: string;
+    monthlyManagementFee: number;
+    projectedManagementFeeAmount: number;
+  } | null;
   initialPayment: {
     method: "cash" | "bank_transfer";
     status: "verified" | "pending_confirmation";
@@ -109,9 +124,11 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
         "commitmentId",
         "contractPaidDocument",
         "contractRentAmount",
+        "commercialMode",
         "dpRequiredAmount",
         "endDate",
         "initialPayment",
+        "ownerSponsorship",
         "leaseId",
         "leaseStatus",
         "paymentPlanType",
@@ -139,6 +156,7 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
   const billingCycle = d.billingCycle;
   const paymentPlanType = d.paymentPlanType;
   const pricingSource = d.pricingSource;
+  const commercialMode = d.commercialMode ?? "rent";
   const pricingTier = d.pricingTier;
   const referenceMonthlyPrice = d.referenceMonthlyPrice;
   const agreedMonthlyPrice = d.agreedMonthlyPrice;
@@ -149,6 +167,7 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
   const contractRentAmount = d.contractRentAmount;
   const dpRequiredAmount = d.dpRequiredAmount;
   const securityDepositRequiredAmount = d.securityDepositRequiredAmount;
+  const ownerSponsorship = d.ownerSponsorship ?? null;
   const initialPayment = d.initialPayment;
   const contractPaidDocument = d.contractPaidDocument ?? null;
   const temporaryPassword = d.temporaryPassword;
@@ -178,17 +197,20 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
     !["annual_full", "monthly_installments", "two_month_installments"].includes(
       paymentPlanType as string,
     ) ||
-    !["standard", "negotiated"].includes(pricingSource as string) ||
+    !["rent", "owner_sponsored"].includes(commercialMode as string) ||
+    !["standard", "negotiated", "owner_sponsored"].includes(pricingSource as string) ||
     !["short_stay", "medium_stay", "long_stay"].includes(pricingTier as string) ||
     !Number.isSafeInteger(referenceMonthlyPrice) ||
     (referenceMonthlyPrice as number) <= 0 ||
     !Number.isSafeInteger(agreedMonthlyPrice) ||
-    (agreedMonthlyPrice as number) <= 0 ||
+    (commercialMode === "rent" ? (agreedMonthlyPrice as number) <= 0 : agreedMonthlyPrice !== 0) ||
     (pricingAgreementReason !== null && typeof pricingAgreementReason !== "string") ||
     (pricingSource === "standard" &&
       (agreedMonthlyPrice !== referenceMonthlyPrice || pricingAgreementReason !== null)) ||
     (pricingSource === "negotiated" &&
       (typeof pricingAgreementReason !== "string" || pricingAgreementReason.trim().length < 3)) ||
+    (commercialMode === "owner_sponsored" && pricingSource !== "owner_sponsored") ||
+    (commercialMode === "rent" && pricingSource === "owner_sponsored") ||
     !Number.isSafeInteger(contractRentAmount) ||
     !Number.isSafeInteger(dpRequiredAmount) ||
     !Number.isSafeInteger(securityDepositRequiredAmount) ||
@@ -239,7 +261,8 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
         !UUID.test((contractPaidDocument as Record<string, unknown>).id as string) ||
         typeof (contractPaidDocument as Record<string, unknown>).documentCode !== "string" ||
         typeof (contractPaidDocument as Record<string, unknown>).issuedAt !== "string")) ||
-    (temporaryPassword !== null && typeof temporaryPassword !== "string")
+    (temporaryPassword !== null && typeof temporaryPassword !== "string") ||
+    !validOwnerSponsorship(ownerSponsorship, commercialMode)
   )
     throw new Error("Invalid onboarding response");
   return {
@@ -260,12 +283,33 @@ export function parseAdminOnboarding(value: unknown): OnboardingResponse {
     agreedMonthlyPrice: agreedMonthlyPrice as number,
     pricingAgreementReason: pricingAgreementReason as string | null,
     contractRentAmount: contractRentAmount as number,
+    commercialMode: commercialMode as OnboardingResponse["commercialMode"],
     dpRequiredAmount: dpRequiredAmount as number,
     securityDepositRequiredAmount: securityDepositRequiredAmount as number,
+    ownerSponsorship: ownerSponsorship as OnboardingResponse["ownerSponsorship"],
     initialPayment: initialPayment as OnboardingResponse["initialPayment"],
     contractPaidDocument: contractPaidDocument as OnboardingResponse["contractPaidDocument"],
     temporaryPassword: temporaryPassword as string | null,
   };
+}
+
+function validOwnerSponsorship(value: unknown, mode: unknown) {
+  if (mode === "rent") return value === null;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.ownerProfileId === "string" &&
+    UUID.test(item.ownerProfileId) &&
+    typeof item.ownerName === "string" &&
+    ["resident", "owner", "other"].includes(String(item.managementFeePayer)) &&
+    (item.managementFeePayerName === null || typeof item.managementFeePayerName === "string") &&
+    typeof item.reason === "string" &&
+    item.reason.trim().length >= 3 &&
+    Number.isSafeInteger(item.monthlyManagementFee) &&
+    Number(item.monthlyManagementFee) > 0 &&
+    Number.isSafeInteger(item.projectedManagementFeeAmount) &&
+    Number(item.projectedManagementFeeAmount) > 0
+  );
 }
 export async function requestAdminOnboarding(
   post: (

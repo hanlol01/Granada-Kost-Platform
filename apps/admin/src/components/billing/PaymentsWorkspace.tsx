@@ -1085,13 +1085,77 @@ function ResidentBillingPanel({
           Tutup detail
         </Button>
       </div>
+      {data.owner_sponsorship ? <OwnerSponsoredBillingCard data={data} /> : null}
       <SummaryGrid data={data} />
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <InvoiceHistory data={data} propertyId={propertyId} canManage={canManage} />
         <PaymentHistory data={data} propertyId={propertyId} canManage={canManage} />
       </div>
-      {canManage ? <RecordPaymentDialog data={data} propertyId={propertyId} /> : null}
+      {canManage ? (
+        <RecordPaymentDialog
+          data={data}
+          propertyId={propertyId}
+          triggerLabel={
+            data.owner_sponsorship
+              ? "Catat pembayaran biaya pengelolaan"
+              : "Catat pembayaran manual"
+          }
+        />
+      ) : null}
     </section>
+  );
+}
+
+function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
+  const sponsorship = data.owner_sponsorship;
+  if (!sponsorship) return null;
+  const statusLabel =
+    sponsorship.payment_status === "paid"
+      ? "Lunas"
+      : sponsorship.payment_status === "partially_paid"
+        ? "Dibayar sebagian"
+        : sponsorship.payment_status === "overpaid"
+          ? "Lebih bayar"
+          : "Belum dibayar";
+  const payerLabel =
+    sponsorship.management_fee_payer === "owner"
+      ? sponsorship.owner_name
+      : sponsorship.management_fee_payer === "resident"
+        ? data.lease.resident_name
+        : sponsorship.management_fee_payer_name || "Pihak lain";
+  return (
+    <Card className="border-emerald-300/70 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base text-emerald-800 dark:text-emerald-200">
+              Hunian Tanggungan Owner
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Sewa kamar tidak ditagihkan. Biaya pengelolaan tetap dicatat terpisah dan dapat
+              dibayar kapan saja selama masa hunian.
+            </p>
+          </div>
+          <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{statusLabel}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <DetailRow label="Owner penanggung" value={sponsorship.owner_name} />
+        <DetailRow label="Pembayar" value={payerLabel} />
+        <DetailRow
+          label="Biaya pengelolaan per bulan"
+          value={formatIDR(sponsorship.snapshot_monthly_management_fee)}
+        />
+        <DetailRow
+          label="Proyeksi masa hunian"
+          value={formatIDR(sponsorship.projected_management_fee)}
+        />
+        <DetailRow label="Sudah diterima" value={formatIDR(sponsorship.verified_paid)} />
+        <DetailRow label="Menunggu verifikasi" value={formatIDR(sponsorship.pending)} />
+        <DetailRow label="Sisa biaya pengelolaan" value={formatIDR(sponsorship.remaining)} />
+        <DetailRow label="Jadwal pembayaran" value="Fleksibel, tanpa jatuh tempo" />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1101,7 +1165,11 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Tarif bulanan kontrak", formatIDR(data.lease.monthly_rate)],
     [
       "Sumber tarif",
-      data.lease.pricing_source === "negotiated" ? "Kesepakatan khusus" : "Tarif standar",
+      data.lease.pricing_source === "owner_sponsored"
+        ? "Hunian Tanggungan Owner"
+        : data.lease.pricing_source === "negotiated"
+          ? "Kesepakatan khusus"
+          : "Tarif standar",
     ],
     ["Sewa ditagihkan", formatIDR(data.summary.rent_invoiced)],
     ["Sewa dibayar", formatIDR(data.summary.rent_paid)],
@@ -1429,6 +1497,9 @@ export function RecordPaymentDialog({
   const [paidAt, setPaidAt] = useState("");
   const [evidenceFiles, setEvidenceFiles] = useState<FileResponse[]>([]);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const ownerSponsorship = data.owner_sponsorship;
+  const isOwnerSponsored = ownerSponsorship !== null;
+  const isDirectLiabilityPayment = purpose === "security_deposit" || purpose === "management_fee";
   const mutation = useRecordManualPayment(propertyId);
   const verificationPolicy = useAdminPaymentVerificationPolicy(propertyId);
   const historicalMode = verificationPolicy.data?.automaticVerificationActive === true;
@@ -1454,10 +1525,9 @@ export function RecordPaymentDialog({
   const allocations = Object.entries(selected)
     .filter(([, amount]) => amount > 0)
     .map(([invoice_id, amount]) => ({ invoice_id, amount }));
-  const amount =
-    purpose === "security_deposit"
-      ? depositAmount
-      : allocations.reduce((sum, item) => sum + item.amount, 0);
+  const amount = isDirectLiabilityPayment
+    ? depositAmount
+    : allocations.reduce((sum, item) => sum + item.amount, 0);
   const remainingAfterContractPayment =
     isContractSettlement && contractSettlementInvoice
       ? Math.max(0, contractSettlementInvoice.outstanding_amount - amount)
@@ -1483,7 +1553,7 @@ export function RecordPaymentDialog({
   const key = useLogicalKey(fingerprint);
   const resetForm = useCallback(() => {
     setMethod("bank_transfer");
-    setPurpose("rent");
+    setPurpose(isOwnerSponsored ? "management_fee" : "rent");
     setSelected({});
     setDepositAmount(0);
     setReference("");
@@ -1493,7 +1563,7 @@ export function RecordPaymentDialog({
     setEvidenceBusy(false);
     setSettlementChoice("partial");
     resetPaymentMutation();
-  }, [resetPaymentMutation]);
+  }, [isOwnerSponsored, resetPaymentMutation]);
   useEffect(() => {
     if (!open) {
       resetForm();
@@ -1530,7 +1600,7 @@ export function RecordPaymentDialog({
           note: note || undefined,
           evidence_file_ids:
             evidenceFiles.length > 0 ? evidenceFiles.map((file) => file.id) : undefined,
-          allocations: purpose === "security_deposit" ? [] : allocations,
+          allocations: isDirectLiabilityPayment ? [] : allocations,
         },
         idempotencyKey: key.current.key,
       },
@@ -1635,22 +1705,73 @@ export function RecordPaymentDialog({
                   <option value="rent">Sewa</option>
                   <option value="dp">DP sewa</option>
                   <option value="security_deposit">Deposit keamanan</option>
+                  {ownerSponsorship ? (
+                    <option value="management_fee">Biaya pengelolaan hunian</option>
+                  ) : null}
                   <option value="other_charge">Tagihan lainnya</option>
                 </select>
               </Field>
             )}
-            {purpose === "security_deposit" ? (
-              <Field label="Nominal deposit keamanan">
-                <Input
-                  type="number"
-                  min={1}
-                  value={depositAmount || ""}
-                  onChange={(event) => setDepositAmount(Number(event.target.value))}
-                />
-                <p className="text-xs font-normal text-muted-foreground">
-                  Deposit masuk ke ledger kewajiban terpisah dan tidak dialokasikan ke invoice sewa.
-                </p>
-              </Field>
+            {isDirectLiabilityPayment ? (
+              <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/5 p-4">
+                {purpose === "management_fee" && ownerSponsorship ? (
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <DetailRow label="Owner penanggung" value={ownerSponsorship.owner_name} />
+                    <DetailRow
+                      label="Sisa biaya pengelolaan"
+                      value={formatIDR(ownerSponsorship.remaining)}
+                    />
+                    <DetailRow
+                      label="Sudah diterima"
+                      value={formatIDR(ownerSponsorship.verified_paid)}
+                    />
+                    <DetailRow label="Jadwal pembayaran" value="Fleksibel, tanpa jatuh tempo" />
+                  </div>
+                ) : null}
+                <Field
+                  label={
+                    purpose === "management_fee"
+                      ? "Nominal biaya pengelolaan"
+                      : "Nominal deposit keamanan"
+                  }
+                >
+                  <div className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                    <span className="inline-flex items-center border-r border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
+                      Rp
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
+                      value={
+                        depositAmount ? new Intl.NumberFormat("id-ID").format(depositAmount) : ""
+                      }
+                      onChange={(event) => {
+                        const numeric = event.target.value.replace(/\D/g, "");
+                        setDepositAmount(numeric ? Number(numeric) : 0);
+                      }}
+                      aria-label={
+                        purpose === "management_fee"
+                          ? "Nominal biaya pengelolaan"
+                          : "Nominal deposit keamanan"
+                      }
+                    />
+                  </div>
+                  <p className="text-xs font-normal text-muted-foreground">
+                    {purpose === "management_fee"
+                      ? "Pembayaran dapat dicatat sebagian atau sekaligus selama masa hunian. Tidak ada denda keterlambatan."
+                      : "Deposit masuk ke catatan kewajiban terpisah dan tidak dialokasikan ke tagihan sewa."}
+                  </p>
+                  {purpose === "management_fee" &&
+                  ownerSponsorship &&
+                  depositAmount > ownerSponsorship.remaining ? (
+                    <p className="text-sm font-medium text-destructive" role="alert">
+                      Nominal tidak boleh melebihi sisa biaya pengelolaan{" "}
+                      {formatIDR(ownerSponsorship.remaining)}.
+                    </p>
+                  ) : null}
+                </Field>
+              </div>
             ) : isContractSettlement && contractSettlementInvoice ? (
               <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
                 <div className="space-y-2">
@@ -1924,6 +2045,9 @@ export function RecordPaymentDialog({
                 (isContractSettlement &&
                   contractSettlementInvoice !== null &&
                   amount > contractSettlementInvoice.outstanding_amount) ||
+                (purpose === "management_fee" &&
+                  ownerSponsorship !== null &&
+                  amount > ownerSponsorship.remaining) ||
                 (transferEvidenceRequired && evidenceFiles.length === 0) ||
                 (historicalMode && !paidAt)
               }
@@ -3055,6 +3179,7 @@ function purposeLabel(value: string | null) {
         down_payment: "DP / uang muka sewa",
         full_settlement: "Pelunasan sewa penuh",
         security_deposit: "Deposit keamanan",
+        management_fee: "Biaya pengelolaan hunian",
         other_charge: "Tagihan lainnya",
       } as Record<string, string>
     )[value ?? ""] ?? "Legacy"

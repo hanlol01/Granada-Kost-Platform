@@ -2,13 +2,17 @@
 
 Status: **STAGES 0–3 IMPLEMENTED LOCALLY — STAGE 4 LOCAL GATES PASSED, PRODUCTION PREFLIGHT PENDING**
 
-This folder is the execution boundary for two related but separately testable
+This folder is the execution boundary for three related but separately testable
 features:
 
 1. [Custom lease agreements](01_CUSTOM_LEASE_AGREEMENT_HANDOFF.md), covering
    negotiated duration and monthly pricing.
 2. [Lease checkout](02_LEASE_CHECKOUT_HANDOFF.md), covering early departure,
    handover, inspection, and final settlement.
+3. [Lease data correction](03_LEASE_DATA_CORRECTION_HANDOFF.md), covering legacy
+   check-in dates and versioned corrections to lease dates, duration, and value.
+4. [Owner-sponsored occupancy](04_OWNER_SPONSORED_OCCUPANCY_HANDOFF.md), covering
+   rent-free family occupancy with separately payable management fees.
 
 The shared dependency and release gates are in
 [the roadmap](00_COMMERCIAL_AND_CHECKOUT_ROADMAP.md).
@@ -64,6 +68,12 @@ The shared dependency and release gates are in
   records remain untouched. Checkout command errors now scroll to and focus the
   accessible Admin alert, including a clear Indonesian message when a future
   property has not enabled the capability.
+- Koreksi Data Penyewaan telah diterapkan lokal sebagai amendment berversi:
+  tanggal check-in lama dibaca dari lifecycle, riwayat okupansi, lalu tanggal
+  mulai okupansi tanpa fallback tanggal hari ini; perubahan periode menghitung
+  ulang nilai kontrak dan mencatat tambahan kewajiban atau kredit tanpa
+  menghapus pembayaran maupun dokumen lama. Migration
+  `086_lease_data_correction_authority.sql` sudah lulus apply dan replay lokal.
 - No production migration, service restart, release switch, commit or deploy is
   authorized by this checkpoint.
 - Checkout UX correction work standardizes shared date and Rupiah inputs,
@@ -72,6 +82,13 @@ The shared dependency and release gates are in
   stages. Operational uploads are optional while financial evidence remains
   mandatory. Restart restores operational lease state without deleting the prior
   command or audit history; completed financial settlements remain immutable.
+- Owner-sponsored occupancy is implemented locally through migration
+  `087_owner_sponsored_occupancy_authority.sql`: it keeps rent, DP, deposit,
+  rent invoices, and Owner rent entitlement at Rp0 while recording an
+  effective-dated, separately payable management-fee progress for the normal
+  occupancy duration. Admin correction preserves the sponsored mode; renewal
+  and transfer are deliberately blocked until their own sponsor-aware stage is
+  implemented, rather than creating an incorrect rent successor.
 
 ## Agent entry contract
 

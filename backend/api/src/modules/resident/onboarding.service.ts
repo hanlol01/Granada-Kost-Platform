@@ -22,6 +22,7 @@ import {
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
 import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
+import { calculateOwnerSponsoredManagementFee } from '../billing/helpers/owner-sponsored-occupancy.helper';
 
 type RoomRow = {
   id: string;
@@ -32,6 +33,7 @@ type RoomRow = {
   gender_policy: string;
   room_status: string;
   building_code: string;
+  building_id: string;
   building_property_id: string;
   building_category: 'rukost' | 'apartkost';
   building_gender_policy: 'male' | 'female';
@@ -50,6 +52,12 @@ type RoomRow = {
   commercial_effective_date: string;
   security_deposit_amount: number | string;
   management_fee_amount: number | string | null;
+};
+type OwnerSponsorshipAssignmentRow = {
+  id: string;
+  owner_profile_id: string;
+  owner_name: string;
+  ownership_kind: 'building' | 'room';
 };
 type OnboardingHoldRow = {
   id: string;
@@ -151,6 +159,35 @@ export class OnboardingService {
         message: 'Required onboarding fields are missing',
       });
     const stagedPaymentEntries = dto.payment_entries ?? [];
+    const commercialMode = dto.commercial_mode ?? 'rent';
+    if (commercialMode === 'owner_sponsored') {
+      if (dto.booking_lead_id)
+        throw new BadRequestException({
+          code: 'OWNER_SPONSORED_BOOKING_LEAD_UNSUPPORTED',
+          message: 'Hunian tanggungan Owner harus dibuat melalui Tambah Penyewaan langsung',
+        });
+      if (
+        stagedPaymentEntries.length > 0 ||
+        dto.dp_verified_amount !== 0 ||
+        dto.security_deposit_funded_amount !== 0 ||
+        (dto.booking_fee_paid_amount ?? 0) !== 0
+      )
+        throw new BadRequestException({
+          code: 'OWNER_SPONSORED_INITIAL_PAYMENT_NOT_ALLOWED',
+          message: 'Hunian tanggungan Owner tidak memiliki pembayaran sewa awal atau deposit',
+        });
+      if (
+        !dto.sponsoring_owner_profile_id ||
+        !dto.management_fee_payer ||
+        !dto.owner_sponsorship_reason?.trim() ||
+        (dto.management_fee_payer === 'other' && !dto.management_fee_payer_name?.trim())
+      )
+        throw new BadRequestException({
+          code: 'OWNER_SPONSORED_AUTHORITY_REQUIRED',
+          message:
+            'Owner penanggung, penanggung biaya pengelolaan, dan alasan hunian wajib dilengkapi',
+        });
+    }
     if (dto.booking_lead_id && stagedPaymentEntries.length > 0)
       throw new BadRequestException({
         code: 'BOOKING_LEAD_STAGED_PAYMENTS_UNSUPPORTED',
@@ -358,7 +395,7 @@ export class OnboardingService {
         const roomResult = await client.query<RoomRow>(
           `SELECT r.id,r.property_id,r.number AS room_number,kt.category,
                 r.category AS room_category,r.gender_policy,r.room_status,
-                rb.building_code,rb.property_id AS building_property_id,
+                rb.id AS building_id,rb.building_code,rb.property_id AS building_property_id,
                 rb.category AS building_category,rb.gender_policy AS building_gender_policy,
                 r.floor_code,kt.id AS kost_type_id,kt.name AS kost_type_name,
                 kt.property_id AS kost_type_property_id,kt.category AS kost_type_category,
@@ -475,6 +512,55 @@ export class OnboardingService {
             code: 'ROOM_RESERVATION_UNVERIFIED',
             message: 'Reserved room requires an active compatible hold',
           });
+        const ownerSponsorshipAssignment =
+          commercialMode === 'owner_sponsored'
+            ? ((
+                await client.query<OwnerSponsorshipAssignmentRow>(
+                  room.category === 'rukost'
+                    ? `SELECT assignment.id,assignment.owner_profile_id,
+                              profile.full_name AS owner_name,'building'::text AS ownership_kind
+                         FROM building_owner_assignments assignment
+                         JOIN property_owner_profiles profile
+                           ON profile.id=assignment.owner_profile_id
+                        WHERE assignment.property_id=$1
+                          AND assignment.building_id=$2
+                          AND assignment.assignment_status IN ('active','scheduled')
+                          AND assignment.effective_from<=$3::date
+                          AND (assignment.effective_until IS NULL OR $3::date<assignment.effective_until)
+                        ORDER BY assignment.effective_from DESC,assignment.id DESC
+                        LIMIT 1
+                        FOR KEY SHARE OF assignment,profile`
+                    : `SELECT assignment.id,assignment.owner_profile_id,
+                              profile.full_name AS owner_name,'room'::text AS ownership_kind
+                         FROM room_owner_assignments assignment
+                         JOIN property_owner_profiles profile
+                           ON profile.id=assignment.owner_profile_id
+                        WHERE assignment.property_id=$1
+                          AND assignment.room_id=$2
+                          AND assignment.assignment_status IN ('active','scheduled')
+                          AND assignment.effective_from<=$3::date
+                          AND (assignment.effective_until IS NULL OR $3::date<assignment.effective_until)
+                        ORDER BY assignment.effective_from DESC,assignment.id DESC
+                        LIMIT 1
+                        FOR KEY SHARE OF assignment,profile`,
+                  [
+                    dto.property_id,
+                    room.category === 'rukost' ? room.building_id : room.id,
+                    dto.start_date,
+                  ],
+                )
+              ).rows[0] ?? null)
+            : null;
+        if (
+          commercialMode === 'owner_sponsored' &&
+          (!ownerSponsorshipAssignment ||
+            ownerSponsorshipAssignment.owner_profile_id !== dto.sponsoring_owner_profile_id)
+        )
+          throw new ConflictException({
+            code: 'OWNER_SPONSORED_ASSIGNMENT_INVALID',
+            message:
+              'Owner penanggung tidak sesuai dengan kepemilikan kamar pada tanggal mulai sewa',
+          });
         const identityPhone = dto.visitor_phone?.trim() || lead?.visitor_phone?.trim() || null;
         const identityEmail = dto.visitor_email?.trim() || lead?.visitor_email?.trim() || null;
         if (!dto.resident_id && !identityPhone)
@@ -560,11 +646,14 @@ export class OnboardingService {
           context,
         );
         const yearlyPrice = Number(room.yearly_price);
-        let commercial: ReturnType<typeof calculateOnboardingCommercialAgreement>;
+        let commercial: Omit<
+          ReturnType<typeof calculateOnboardingCommercialAgreement>,
+          'pricingSource'
+        > & { pricingSource: 'standard' | 'negotiated' | 'owner_sponsored' };
         try {
           const committedReason = leadPaymentCommitment?.pricing_agreement_reason?.trim() ?? null;
           const preservesLeadSnapshot = Boolean(leadPaymentCommitment);
-          commercial = preservesLeadSnapshot
+          const resolvedCommercial = preservesLeadSnapshot
             ? calculateOnboardingCommercialFromSnapshot({
                 termMonths: Number(leadPaymentCommitment!.term_months),
                 pricingTier: leadPaymentCommitment!.snapshot_pricing_tier,
@@ -596,6 +685,20 @@ export class OnboardingService {
                   varianceAcknowledged: dto.pricing_variance_acknowledged,
                 },
               );
+          commercial =
+            commercialMode === 'owner_sponsored'
+              ? {
+                  ...resolvedCommercial,
+                  contractRent: 0,
+                  dpRequired: 0,
+                  depositRequired: 0,
+                  monthlyRate: 0,
+                  pricingSource: 'owner_sponsored',
+                  pricingAgreementReason: null,
+                  varianceAmount: -resolvedCommercial.referenceMonthlyPrice,
+                  varianceBasisPoints: -10_000,
+                }
+              : resolvedCommercial;
         } catch (error) {
           throw new BadRequestException({
             code: 'ONBOARDING_COMMERCIAL_AGREEMENT_INVALID',
@@ -606,6 +709,24 @@ export class OnboardingService {
           });
         }
         const { contractRent, dpRequired, depositRequired } = commercial;
+        let ownerSponsoredFee: ReturnType<typeof calculateOwnerSponsoredManagementFee> | null =
+          null;
+        if (commercialMode === 'owner_sponsored') {
+          try {
+            ownerSponsoredFee = calculateOwnerSponsoredManagementFee(
+              Number(room.management_fee_amount ?? 0),
+              dto.term_months,
+            );
+          } catch (error) {
+            throw new BadRequestException({
+              code: 'OWNER_SPONSORED_MANAGEMENT_FEE_INVALID',
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Biaya pengelolaan properti belum dapat digunakan',
+            });
+          }
+        }
         const leadRentCredit = leadPaymentCommitment
           ? Number(leadPaymentCommitment.rent_credit_amount)
           : null;
@@ -860,7 +981,10 @@ export class OnboardingService {
         // additional rent payment recorded today. A prior booking fee is a rent
         // credit too, while security deposit remains a separate liability.
         const maximumSecurityDeposit = Math.floor(contractRent / dto.term_months);
-        if (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < commercial.monthlyRate)
+        if (
+          commercialMode === 'rent' &&
+          (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < commercial.monthlyRate)
+        )
           throw new ConflictException({
             code: 'ONBOARDING_FINANCIAL_OBLIGATION_UNMET',
             message: 'Pembayaran awal sewa harus mencukupi minimal satu bulan sewa',
@@ -882,7 +1006,21 @@ export class OnboardingService {
         const endDate = new Date(`${dto.start_date}T00:00:00.000Z`);
         endDate.setUTCMonth(endDate.getUTCMonth() + dto.term_months);
         const commitment = await client.query<{ id: string }>(
-          `INSERT INTO onboarding_commitments(property_id,booking_lead_id,hold_id,resident_id,room_id,category,gender,status,term_months,billing_cycle,payment_plan_type,start_date,end_date,contract_rent_amount,dp_required_amount,dp_verified_amount,security_deposit_required_amount,security_deposit_funded_amount,booking_fee_paid_amount,accepted_terms_version,notes,created_by_user_id,committed_at,snapshot_pricing_tier,snapshot_reference_monthly_price,snapshot_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at) VALUES($1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now()) RETURNING id`,
+          `INSERT INTO onboarding_commitments(
+             property_id,booking_lead_id,hold_id,resident_id,room_id,category,gender,status,
+             term_months,billing_cycle,payment_plan_type,start_date,end_date,
+             contract_rent_amount,dp_required_amount,dp_verified_amount,
+             security_deposit_required_amount,security_deposit_funded_amount,booking_fee_paid_amount,
+             accepted_terms_version,notes,created_by_user_id,committed_at,
+             snapshot_pricing_tier,snapshot_reference_monthly_price,snapshot_monthly_price,
+             pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,
+             commercial_mode,sponsoring_owner_profile_id,management_fee_payer,
+             management_fee_payer_name,owner_sponsorship_reason,
+             snapshot_monthly_management_fee,projected_management_fee_amount
+           ) VALUES(
+             $1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+             $19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now(),$27,$28,$29,$30,$31,$32,$33
+           ) RETURNING id`,
           [
             dto.property_id,
             lead?.id ?? null,
@@ -910,10 +1048,17 @@ export class OnboardingService {
             commercial.monthlyRate,
             commercial.pricingSource,
             commercial.pricingAgreementReason,
+            commercialMode,
+            dto.sponsoring_owner_profile_id ?? null,
+            dto.management_fee_payer ?? null,
+            dto.management_fee_payer_name?.trim() || null,
+            dto.owner_sponsorship_reason?.trim() || null,
+            ownerSponsoredFee?.monthlyManagementFee ?? null,
+            ownerSponsoredFee?.projectedManagementFeeAmount ?? null,
           ],
         );
         const lease = await client.query<{ id: string }>(
-          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,$23,$24,$25,$26,now(),now(),$26,$26) RETURNING id`,
+          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id,commercial_mode) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,$23,$24,$25,$26,now(),now(),$26,$26,$27) RETURNING id`,
           [
             dto.property_id,
             `ONB-${Date.now()}`,
@@ -924,7 +1069,7 @@ export class OnboardingService {
             endDate.toISOString().slice(0, 10),
             dto.billing_cycle,
             commercial.monthlyRate,
-            yearlyPrice,
+            commercialMode === 'owner_sponsored' ? 0 : yearlyPrice,
             depositRequired,
             room.room_number,
             room.kost_type_name,
@@ -941,6 +1086,7 @@ export class OnboardingService {
             commercial.pricingSource,
             commercial.pricingAgreementReason,
             actor.id,
+            commercialMode,
           ],
         );
         await client.query(
@@ -972,56 +1118,101 @@ export class OnboardingService {
             lease.rows[0].id,
             actor.id,
             dto.start_date,
-            JSON.stringify({ source: 'resident_onboarding', lease_status: 'awaiting_activation' }),
+            JSON.stringify({
+              source: 'resident_onboarding',
+              lease_status: 'awaiting_activation',
+              commercial_mode: commercialMode,
+            }),
           ],
         );
         // Canonical W05/W06 issuance authority: the snapshot-derived schedule,
         // its invoices/line items, and the awaiting-activation contract
         // settlement are all created by the shared service so onboarding keeps
         // no duplicate invoice/installment lifecycle SQL of its own.
-        const issued = await this.contractScheduleIssuance.issueScheduleInTransaction(client, {
-          propertyId: dto.property_id,
-          leaseId: lease.rows[0].id,
-          startDate: dto.start_date,
-          termMonths: dto.term_months,
-          paymentPlanType: contractPaymentPlan,
-          contractRentAmount: contractRent,
-          billingCycle: dto.billing_cycle,
-          snapshotMonthlyPrice: commercial.monthlyRate,
-          snapshotRoomNumber: room.room_number,
-          snapshotBuildingCode: room.building_code,
-          snapshotCategoryName: room.kost_type_name,
-          initialRentCredit,
-          actorUserId: actor.id,
-        });
-        const firstRentInvoiceId = issued.firstInvoiceId;
-        const initialPayment = await this.w06Billing.recordInitialOnboardingPaymentsInTransaction(
-          client,
-          {
-            propertyId: dto.property_id,
-            residentId,
-            leaseId: lease.rows[0].id,
-            firstRentInvoiceId,
-            rentPayments,
-            securityDepositPayment,
-            commandFingerprint: fingerprint,
-            actor,
-            context,
-          },
-        );
-        const contractPaidDocumentResult = await client.query<{
+        let initialPayment: OnboardingCommitmentResponse['initialPayment'];
+        let contractPaidDocumentRow: {
           id: string;
           document_code: string;
           issued_at: Date;
-        }>(
-          `SELECT id,document_code,issued_at
-             FROM lease_contract_paid_documents
-            WHERE property_id=$1 AND lease_id=$2 AND invalidated_at IS NULL
-            ORDER BY issued_at DESC,id DESC
-            LIMIT 1`,
-          [dto.property_id, lease.rows[0].id],
-        );
-        const contractPaidDocumentRow = contractPaidDocumentResult.rows[0] ?? null;
+        } | null = null;
+        if (commercialMode === 'owner_sponsored') {
+          await client.query(
+            `INSERT INTO owner_sponsored_lease_terms(
+               property_id,lease_id,onboarding_commitment_id,resident_id,room_id,
+               owner_profile_id,ownership_kind,ownership_assignment_id,
+               management_fee_payer,management_fee_payer_name,sponsorship_reason,
+               snapshot_monthly_management_fee,projected_management_fee_amount,created_by_user_id
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+            [
+              dto.property_id,
+              lease.rows[0].id,
+              commitment.rows[0].id,
+              residentId,
+              room.id,
+              ownerSponsorshipAssignment!.owner_profile_id,
+              ownerSponsorshipAssignment!.ownership_kind,
+              ownerSponsorshipAssignment!.id,
+              dto.management_fee_payer,
+              dto.management_fee_payer_name?.trim() || null,
+              dto.owner_sponsorship_reason!.trim(),
+              ownerSponsoredFee!.monthlyManagementFee,
+              ownerSponsoredFee!.projectedManagementFeeAmount,
+              actor.id,
+            ],
+          );
+          initialPayment = {
+            method: dto.payment_method,
+            status: 'verified',
+            dpRecordedAmount: 0,
+            securityDepositRecordedAmount: 0,
+            dpVerifiedAmount: 0,
+            securityDepositVerifiedAmount: 0,
+            receipts: [],
+          };
+        } else {
+          const issued = await this.contractScheduleIssuance.issueScheduleInTransaction(client, {
+            propertyId: dto.property_id,
+            leaseId: lease.rows[0].id,
+            startDate: dto.start_date,
+            termMonths: dto.term_months,
+            paymentPlanType: contractPaymentPlan,
+            contractRentAmount: contractRent,
+            billingCycle: dto.billing_cycle,
+            snapshotMonthlyPrice: commercial.monthlyRate,
+            snapshotRoomNumber: room.room_number,
+            snapshotBuildingCode: room.building_code,
+            snapshotCategoryName: room.kost_type_name,
+            initialRentCredit,
+            actorUserId: actor.id,
+          });
+          initialPayment = await this.w06Billing.recordInitialOnboardingPaymentsInTransaction(
+            client,
+            {
+              propertyId: dto.property_id,
+              residentId,
+              leaseId: lease.rows[0].id,
+              firstRentInvoiceId: issued.firstInvoiceId,
+              rentPayments,
+              securityDepositPayment,
+              commandFingerprint: fingerprint,
+              actor,
+              context,
+            },
+          );
+          const contractPaidDocumentResult = await client.query<{
+            id: string;
+            document_code: string;
+            issued_at: Date;
+          }>(
+            `SELECT id,document_code,issued_at
+               FROM lease_contract_paid_documents
+              WHERE property_id=$1 AND lease_id=$2 AND invalidated_at IS NULL
+              ORDER BY issued_at DESC,id DESC
+              LIMIT 1`,
+            [dto.property_id, lease.rows[0].id],
+          );
+          contractPaidDocumentRow = contractPaidDocumentResult.rows[0] ?? null;
+        }
         const verifiedNonBookingRentAmount = rentPayments.reduce(
           (total, payment) =>
             total +
@@ -1089,6 +1280,8 @@ export class OnboardingService {
               status: 'committed',
               lease_status: 'awaiting_activation',
               room_number: room.room_number,
+              commercial_mode: commercialMode,
+              sponsoring_owner_profile_id: ownerSponsorshipAssignment?.owner_profile_id ?? null,
             },
             resultStatus: 'success',
             ...context,
@@ -1107,6 +1300,7 @@ export class OnboardingService {
               commitment_id: commitment.rows[0].id,
               lease_id: lease.rows[0].id,
               room_number: room.room_number,
+              commercial_mode: commercialMode,
             }),
           ],
         );
@@ -1123,6 +1317,7 @@ export class OnboardingService {
           billingCycle: dto.billing_cycle,
           paymentPlanType: contractPaymentPlan,
           contractRentAmount: contractRent,
+          commercialMode,
           pricingSource: commercial.pricingSource,
           pricingTier: commercial.pricingTier,
           referenceMonthlyPrice: commercial.referenceMonthlyPrice,
@@ -1130,6 +1325,18 @@ export class OnboardingService {
           pricingAgreementReason: commercial.pricingAgreementReason,
           dpRequiredAmount: dpRequired,
           securityDepositRequiredAmount: depositRequired,
+          ownerSponsorship:
+            commercialMode === 'owner_sponsored'
+              ? {
+                  ownerProfileId: ownerSponsorshipAssignment!.owner_profile_id,
+                  ownerName: ownerSponsorshipAssignment!.owner_name,
+                  managementFeePayer: dto.management_fee_payer!,
+                  managementFeePayerName: dto.management_fee_payer_name?.trim() || null,
+                  reason: dto.owner_sponsorship_reason!.trim(),
+                  monthlyManagementFee: ownerSponsoredFee!.monthlyManagementFee,
+                  projectedManagementFeeAmount: ownerSponsoredFee!.projectedManagementFeeAmount,
+                }
+              : null,
           initialPayment,
           contractPaidDocument: contractPaidDocumentRow
             ? {

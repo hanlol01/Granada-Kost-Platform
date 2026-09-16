@@ -69,6 +69,9 @@ const label = (value: string): string => {
     not_available: "Belum tersedia",
     scheduled: "Terjadwal",
     inspection_required: "Menunggu inspeksi",
+    unpaid: "Belum dibayar",
+    paid: "Lunas",
+    overpaid: "Lebih bayar",
   };
   return values[value] ?? value;
 };
@@ -80,6 +83,8 @@ function StatusPill({ value }: { value: string }) {
     "maintenance",
     "requires_review",
     "awaiting_activation",
+    "unpaid",
+    "partially_paid",
   ].includes(value);
   return (
     <Badge
@@ -224,6 +229,43 @@ function DetailContent({
             Portal hanya menampilkan status operasional dan hasil keuangan. Alasan pribadi penghuni
             serta catatan internal tetap dilindungi.
           </p>
+        </section>
+      ) : null}
+      {asset.ownerSponsorship ? (
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                Hunian Tanggungan Owner
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-foreground">
+                Sewa kamar tidak ditagihkan
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Penghuni tetap mengikuti masa hunian dan proses operasional biasa. Biaya pengelolaan
+                dicatat terpisah dengan jadwal pembayaran fleksibel tanpa denda keterlambatan.
+              </p>
+            </div>
+            <StatusPill value={asset.ownerSponsorship.paymentStatus} />
+          </div>
+          <div className="mt-5 grid gap-4 border-t border-emerald-500/20 pt-5 sm:grid-cols-2 lg:grid-cols-4">
+            <DataItem
+              label="Biaya pengelolaan per bulan"
+              value={formatOwnerMoney(asset.ownerSponsorship.monthlyManagementFee)}
+            />
+            <DataItem
+              label="Proyeksi masa hunian"
+              value={formatOwnerMoney(asset.ownerSponsorship.projectedManagementFee)}
+            />
+            <DataItem
+              label="Sudah diterima"
+              value={formatOwnerMoney(asset.ownerSponsorship.verifiedPaid)}
+            />
+            <DataItem
+              label="Sisa biaya pengelolaan"
+              value={formatOwnerMoney(asset.ownerSponsorship.remaining)}
+            />
+          </div>
         </section>
       ) : null}
       <section className="grid items-stretch gap-4 xl:grid-cols-3">

@@ -162,6 +162,14 @@ export class AdminUxRoomV2Service {
          ORDER BY version.effective_date DESC, version.id DESC
          LIMIT 1
        ) commercial_version ON true
+       LEFT JOIN LATERAL (
+         SELECT fee.monthly_fee_amount
+           FROM property_management_fee_versions fee
+          WHERE fee.property_id=room.property_id
+            AND fee.effective_date<=COALESCE($10::date,CURRENT_DATE)
+          ORDER BY fee.effective_date DESC,fee.id DESC
+          LIMIT 1
+       ) management_fee ON true
        LEFT JOIN room_buildings building
          ON building.id = room.building_id
         AND building.property_id = room.property_id
@@ -310,7 +318,8 @@ export class AdminUxRoomV2Service {
          commercial_version.short_stay_monthly_price,
          commercial_version.medium_stay_monthly_price,
          commercial_version.long_stay_monthly_price,
-         commercial_version.effective_date::text AS commercial_effective_date,
+          commercial_version.effective_date::text AS commercial_effective_date,
+          management_fee.monthly_fee_amount,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
          building.building_code, building.building_name
@@ -727,6 +736,7 @@ export class AdminUxRoomV2Service {
         long_stay_monthly_price: Number(row.long_stay_monthly_price),
         commercial_effective_date: String(row.commercial_effective_date).slice(0, 10),
         deposit_amount: Number(row.deposit_amount),
+        management_fee_amount: Number(row.monthly_fee_amount ?? 0),
         facilities: facilitiesByType.get(String(row.kost_type_id)) ?? [],
       },
       active_lease: null,

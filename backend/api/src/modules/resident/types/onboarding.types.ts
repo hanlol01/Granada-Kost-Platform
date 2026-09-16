@@ -13,13 +13,23 @@ export type OnboardingCommitmentResponse = {
   billingCycle: 'monthly' | 'yearly';
   paymentPlanType: 'annual_full' | 'two_month_installments' | 'monthly_installments';
   contractRentAmount: number;
-  pricingSource: 'standard' | 'negotiated';
+  commercialMode: 'rent' | 'owner_sponsored';
+  pricingSource: 'standard' | 'negotiated' | 'owner_sponsored';
   pricingTier: 'short_stay' | 'medium_stay' | 'long_stay';
   referenceMonthlyPrice: number;
   agreedMonthlyPrice: number;
   pricingAgreementReason: string | null;
   dpRequiredAmount: number;
   securityDepositRequiredAmount: number;
+  ownerSponsorship: {
+    ownerProfileId: string;
+    ownerName: string;
+    managementFeePayer: 'resident' | 'owner' | 'other';
+    managementFeePayerName: string | null;
+    reason: string;
+    monthlyManagementFee: number;
+    projectedManagementFeeAmount: number;
+  } | null;
   initialPayment: {
     method: 'cash' | 'bank_transfer';
     status: 'verified' | 'pending_confirmation';

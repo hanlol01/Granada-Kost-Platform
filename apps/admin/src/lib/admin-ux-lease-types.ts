@@ -99,6 +99,51 @@ export type LeaseDetailResponse = {
   kostTypeFacilities: { id: string; name: string }[];
 };
 
+export type LeaseDataCorrectionSnapshot = {
+  startDate: string;
+  endDate: string;
+  termMonths: number;
+  checkedInDate: string | null;
+  pricingTier: "short_stay" | "medium_stay" | "long_stay";
+  referenceMonthlyPrice: number;
+  agreedMonthlyPrice: number;
+  contractRentAmount: number;
+  pricingSource: "standard" | "negotiated" | "owner_sponsored";
+  pricingAgreementReason: string | null;
+};
+
+export type LeaseDataCorrectionImpact = {
+  contractAmountDelta: number;
+  additionalChargeAmount: number;
+  contractCreditAmount: number;
+  verifiedRentPaymentAmount: number;
+  outstandingAmountAfter: number;
+  overpaymentAmountAfter: number;
+};
+
+export type LeaseDataCorrectionPreview = {
+  leaseId: string;
+  propertyId: string;
+  previous: LeaseDataCorrectionSnapshot;
+  corrected: LeaseDataCorrectionSnapshot;
+  impact: LeaseDataCorrectionImpact;
+  correctionKind:
+    | "check_in_date"
+    | "contract_start"
+    | "contract_term"
+    | "contract_period"
+    | "combined";
+  pricingChoiceRequired: boolean;
+};
+
+export type LeaseDataCorrectionRecord = LeaseDataCorrectionPreview & {
+  id: string;
+  sequenceNumber: number;
+  reason: string;
+  createdByUserId: string;
+  createdAt: string;
+};
+
 export type CheckoutState =
   | "notice_received"
   | "scheduled"
@@ -209,6 +254,7 @@ export type LeaseRoomOption = {
   genderPolicy: "male" | "female" | "mixed";
   roomStatus: "vacant";
   buildingName?: string | null;
+  buildingId?: string | null;
   buildingCode?: string | null;
   unitCode?: string | null;
   floorLabel?: string | null;
@@ -224,6 +270,7 @@ export type LeaseRoomOption = {
     longStayMonthlyPrice: number;
     commercialEffectiveDate: string;
     depositAmount: number;
+    managementFeeAmount?: number;
   };
 };
 

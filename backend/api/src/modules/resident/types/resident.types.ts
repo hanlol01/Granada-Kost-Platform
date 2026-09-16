@@ -128,6 +128,7 @@ export type ResidentTenancyRecord = {
   roomStatus: string;
   activatedAt: Date | null;
   checkedInAt: Date | null;
+  checkedInSource: 'lifecycle' | 'correction' | 'history' | 'occupancy' | null;
   roomNumber: string;
   kostTypeName: string;
   buildingCode: string;
@@ -135,7 +136,8 @@ export type ResidentTenancyRecord = {
   endDate: string;
   termMonths: number;
   paymentPlanType: 'annual_full' | 'monthly_installments' | 'two_month_installments';
+  commercialMode: 'rent' | 'owner_sponsored';
   agreedMonthlyPrice: number;
   contractRentAmount: number;
-  pricingSource: 'standard' | 'negotiated';
+  pricingSource: 'standard' | 'negotiated' | 'owner_sponsored';
 };

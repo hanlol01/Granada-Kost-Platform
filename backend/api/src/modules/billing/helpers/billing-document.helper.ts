@@ -26,7 +26,7 @@ export type BillingInvoiceDocumentData = {
   contractRentAmount?: number | null;
   cumulativeRentPaid?: number | null;
   contractRemainingAmount?: number | null;
-  pricingSource?: 'standard' | 'negotiated' | null;
+  pricingSource?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   issuedAt: Date | null;
   propertyName?: string;
   propertyAddress?: string | null;
@@ -63,7 +63,7 @@ export type BillingReceiptDocumentData = {
   periodLabel?: string;
   contractRentAmount?: number | null;
   agreedMonthlyPrice?: number | null;
-  pricingSource?: 'standard' | 'negotiated' | null;
+  pricingSource?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   rentPaymentSequence?: number | null;
   totalRentReceived?: number | null;
   remainingRentAmount?: number | null;
@@ -96,7 +96,7 @@ export type ContractPaidDocumentSnapshot = {
   leaseTermMonths?: number;
   referenceMonthlyPrice?: number;
   agreedMonthlyPrice?: number;
-  pricingSource?: 'standard' | 'negotiated';
+  pricingSource?: 'standard' | 'negotiated' | 'owner_sponsored';
   contractRentAmount: number;
   initialRentCredit: number;
   additionalRentPayments: number;
@@ -384,7 +384,11 @@ export async function createBillingInvoicePdf(
       ['Tarif bulanan kontrak', idr(data.agreedMonthlyPrice ?? 0)],
       [
         'Sumber tarif',
-        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+        data.pricingSource === 'owner_sponsored'
+          ? 'Hunian Tanggungan Owner'
+          : data.pricingSource === 'negotiated'
+            ? 'Kesepakatan khusus'
+            : 'Tarif standar',
       ],
       ['Nilai kontrak', idr(data.contractRentAmount)],
       ['Akumulasi pembayaran sewa', idr(data.cumulativeRentPaid ?? 0)],
@@ -462,8 +466,9 @@ const receiptPurpose: Record<string, string> = {
   dp: 'DP / uang muka sewa',
   down_payment: 'DP / uang muka sewa',
   full_settlement: 'Pelunasan sewa penuh',
-  security_deposit: 'Security deposit',
+  security_deposit: 'Deposit jaminan',
   other_charge: 'Tagihan lainnya',
+  management_fee: 'Biaya pengelolaan hunian',
   booking_fee: 'Booking fee / tahan kamar',
   booking_fee_refund: 'Refund booking fee',
   payment_commitment_refund: 'Refund pembayaran awal',
@@ -811,7 +816,11 @@ export async function createBillingReceiptPdf(
       ['Tarif bulanan kontrak', idr(data.agreedMonthlyPrice)],
       [
         'Sumber tarif',
-        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+        data.pricingSource === 'owner_sponsored'
+          ? 'Hunian Tanggungan Owner'
+          : data.pricingSource === 'negotiated'
+            ? 'Kesepakatan khusus'
+            : 'Tarif standar',
       ],
     );
   }
@@ -937,7 +946,11 @@ export function createContractPaidDocumentPdf(
     if (data.pricingSource) {
       commercialRows.push([
         'Sumber tarif',
-        data.pricingSource === 'negotiated' ? 'Kesepakatan khusus' : 'Tarif standar',
+        data.pricingSource === 'owner_sponsored'
+          ? 'Hunian Tanggungan Owner'
+          : data.pricingSource === 'negotiated'
+            ? 'Kesepakatan khusus'
+            : 'Tarif standar',
       ]);
     }
   }

@@ -36,6 +36,7 @@ type LeaseRow = {
   start_date: string;
   end_date: string | null;
   billing_cycle: BillingCycle;
+  commercial_mode: 'rent' | 'owner_sponsored';
   billing_anchor_day: number;
   next_billing_date: string;
   snapshot_monthly_price: string;
@@ -1467,6 +1468,7 @@ export class LeaseRenewalService {
     const result = await client.query<LeaseRow>(
       `SELECT id,property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,
               start_date::text,end_date::text,billing_cycle,billing_anchor_day,next_billing_date::text,
+              commercial_mode,
               snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,
               snapshot_kost_type_name,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,
               security_deposit_required_amount,renewed_from_lease_id
@@ -1535,6 +1537,12 @@ export class LeaseRenewalService {
   }
 
   private assertRenewablePredecessor(lease: LeaseRow, today: string): void {
+    if (lease.commercial_mode === 'owner_sponsored')
+      throw new ConflictException({
+        code: 'OWNER_SPONSORED_RENEWAL_NOT_AVAILABLE',
+        message:
+          'Perpanjangan Hunian Tanggungan Owner belum tersedia. Buat penyewaan tanggungan baru agar biaya pengelolaan tetap tercatat benar.',
+      });
     if (lease.lease_status !== 'active' || !lease.end_date || !lease.occupancy_id)
       throw new ConflictException({
         code: 'RENEWAL_PREDECESSOR_INVALID',

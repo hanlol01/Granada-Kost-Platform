@@ -22,7 +22,13 @@ import { PaginationQueryDto } from './pagination-query.dto';
 
 const MAX_MONEY = Number.MAX_SAFE_INTEGER;
 
-export const PAYMENT_PURPOSES = ['rent', 'dp', 'security_deposit', 'other_charge'] as const;
+export const PAYMENT_PURPOSES = [
+  'rent',
+  'dp',
+  'security_deposit',
+  'other_charge',
+  'management_fee',
+] as const;
 export type W06PaymentPurpose = (typeof PAYMENT_PURPOSES)[number];
 
 export class PaymentAllocationInputDto {

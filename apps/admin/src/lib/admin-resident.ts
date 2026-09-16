@@ -130,6 +130,7 @@ export type ResidentTenancy = {
   roomStatus: string;
   activatedAt: string | null;
   checkedInAt: string | null;
+  checkedInSource: "lifecycle" | "correction" | "history" | "occupancy" | null;
   roomNumber: string;
   kostTypeName: string;
   buildingCode: string;
@@ -137,9 +138,10 @@ export type ResidentTenancy = {
   endDate: string;
   termMonths: number;
   paymentPlanType: "annual_full" | "monthly_installments" | "two_month_installments";
+  commercialMode: "rent" | "owner_sponsored";
   agreedMonthlyPrice: number;
   contractRentAmount: number;
-  pricingSource: "standard" | "negotiated";
+  pricingSource: "standard" | "negotiated" | "owner_sponsored";
 };
 
 export type ResidentAccountReceipt = {
@@ -495,6 +497,7 @@ export function parseResidentTenancy(
     "room_status",
     "activated_at",
     "checked_in_at",
+    "checked_in_source",
     "room_number",
     "kost_type_name",
     "building_code",
@@ -502,6 +505,7 @@ export function parseResidentTenancy(
     "end_date",
     "term_months",
     "payment_plan_type",
+    "commercial_mode",
     "agreed_monthly_price",
     "contract_rent_amount",
     "pricing_source",
@@ -529,6 +533,15 @@ export function parseResidentTenancy(
     roomStatus: text(item.room_status) as string,
     activatedAt: item.activated_at === null ? null : timestamp(item.activated_at),
     checkedInAt: item.checked_in_at === null ? null : timestamp(item.checked_in_at),
+    checkedInSource:
+      item.checked_in_source === null
+        ? null
+        : enumValue(item.checked_in_source, [
+            "lifecycle",
+            "correction",
+            "history",
+            "occupancy",
+          ] as const),
     roomNumber: text(item.room_number) as string,
     kostTypeName: text(item.kost_type_name) as string,
     buildingCode: text(item.building_code) as string,
@@ -540,9 +553,14 @@ export function parseResidentTenancy(
       "monthly_installments",
       "two_month_installments",
     ] as const),
+    commercialMode: enumValue(item.commercial_mode, ["rent", "owner_sponsored"] as const),
     agreedMonthlyPrice: integer(item.agreed_monthly_price),
     contractRentAmount: integer(item.contract_rent_amount),
-    pricingSource: enumValue(item.pricing_source, ["standard", "negotiated"] as const),
+    pricingSource: enumValue(item.pricing_source, [
+      "standard",
+      "negotiated",
+      "owner_sponsored",
+    ] as const),
   };
 }
 

@@ -72,6 +72,23 @@ export class CommitOnboardingDto {
   @IsUUID('4') @IsOptional() profile_photo_file_id?: string;
   @IsDateString() start_date!: string;
   @IsInt() @Min(1) @Max(120) term_months!: number;
+  @IsOptional() @IsIn(['rent', 'owner_sponsored']) commercial_mode?: 'rent' | 'owner_sponsored';
+  @IsOptional() @IsUUID('4') sponsoring_owner_profile_id?: string;
+  @IsOptional() @IsIn(['resident', 'owner', 'other']) management_fee_payer?:
+    | 'resident'
+    | 'owner'
+    | 'other';
+  @IsOptional()
+  @Transform(optionalTrim)
+  @IsString()
+  @MaxLength(160)
+  management_fee_payer_name?: string;
+  @IsOptional()
+  @Transform(optionalTrim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  owner_sponsorship_reason?: string;
   @IsOptional() @IsIn(['standard', 'negotiated']) pricing_source?: 'standard' | 'negotiated';
   @IsOptional() @IsInt() @Min(1) agreed_monthly_price?: number;
   @IsOptional()

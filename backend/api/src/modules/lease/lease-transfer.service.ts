@@ -41,6 +41,7 @@ type LeaseRow = {
   start_date: string;
   end_date: string | null;
   billing_cycle: BillingCycle;
+  commercial_mode: 'rent' | 'owner_sponsored';
   billing_anchor_day: number;
   next_billing_date: string;
   snapshot_monthly_price: string;
@@ -1902,6 +1903,12 @@ export class LeaseTransferService {
   }
 
   private assertTransferableLease(lease: LeaseRow): void {
+    if (lease.commercial_mode === 'owner_sponsored')
+      throw new ConflictException({
+        code: 'OWNER_SPONSORED_TRANSFER_NOT_AVAILABLE',
+        message:
+          'Pindah kamar untuk Hunian Tanggungan Owner belum tersedia. Buat penyewaan tanggungan baru agar biaya pengelolaan tetap tercatat benar.',
+      });
     if (lease.lease_status !== 'active') {
       throw new ConflictException({
         code: 'LEASE_STATE_CONFLICT',
@@ -2345,6 +2352,7 @@ export class LeaseTransferService {
   private leaseColumns(): string {
     return `id, property_id, lease_code, resident_id, room_id, occupancy_id, kost_type_id,
             lease_status, start_date::text, end_date::text, billing_cycle, billing_anchor_day,
+            commercial_mode,
             next_billing_date::text, snapshot_monthly_price, snapshot_yearly_price, snapshot_deposit_amount,
             snapshot_room_number, snapshot_kost_type_name, notes,
             deposit_collected_amount, deposit_deduction_amount, deposit_refunded_amount`;

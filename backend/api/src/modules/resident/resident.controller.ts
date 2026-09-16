@@ -144,6 +144,7 @@ export class ResidentController {
             room_status: tenancy.roomStatus,
             activated_at: tenancy.activatedAt?.toISOString() ?? null,
             checked_in_at: tenancy.checkedInAt?.toISOString() ?? null,
+            checked_in_source: tenancy.checkedInSource,
             room_number: tenancy.roomNumber,
             kost_type_name: tenancy.kostTypeName,
             building_code: tenancy.buildingCode,

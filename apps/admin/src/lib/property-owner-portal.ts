@@ -75,9 +75,25 @@ export type OwnerAssetDetail = {
     managementFeeAmount: Money;
     managementFeeEffectiveDate: string | null;
   };
-  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  lease: {
+    status: LeaseStatus;
+    commercialMode: "rent" | "owner_sponsored";
+    startDate: string;
+    endDate: string | null;
+  } | null;
   resident: { displayName: string; occupancyStartDate: string } | null;
   billing: { state: "current" | "partially_paid" | "overdue" | "settled" | "not_available" };
+  ownerSponsorship: {
+    managementFeePayer: "resident" | "owner" | "other";
+    managementFeePayerName: string | null;
+    monthlyManagementFee: Money;
+    projectedManagementFee: Money;
+    verifiedPaid: Money;
+    pending: Money;
+    remaining: Money;
+    paymentStatus: "unpaid" | "partially_paid" | "paid" | "overpaid";
+    paymentTiming: "flexible";
+  } | null;
   lifecycle: {
     transferState: string | null;
     renewalState: string | null;
@@ -374,6 +390,8 @@ export type OwnerCollectionProgress = {
     rentReceivedTotal: Money;
     contractOutstandingTotal: Money;
     projectedManagementFeeTotal: Money;
+    managementFeeReceivedTotal: Money;
+    managementFeeOutstandingTotal: Money;
     estimatedOwnerEntitlementTotal: Money;
     packageCounts: { shortStay: number; mediumStay: number; longStay: number };
   };
@@ -382,11 +400,12 @@ export type OwnerCollectionProgress = {
     resident: { displayName: string };
     lease: {
       status: "active";
+      commercialMode: "rent" | "owner_sponsored";
       startDate: string;
       endDate: string | null;
       termMonths: number;
       monthlyRate: Money;
-      pricingSource: "standard" | "negotiated";
+      pricingSource: "standard" | "negotiated" | "owner_sponsored";
       contractValue: Money;
     };
     billing: {
@@ -409,6 +428,13 @@ export type OwnerCollectionProgress = {
       projectedManagementFee: Money;
       estimatedOwnerEntitlement: Money;
     };
+    ownerSponsorship: {
+      verifiedPaid: Money;
+      pending: Money;
+      remaining: Money;
+      paymentStatus: "unpaid" | "partially_paid" | "paid" | "overpaid";
+      paymentTiming: "flexible";
+    } | null;
     operations: {
       openComplaintCount: number;
       latestComplaintTitle: string | null;
@@ -661,6 +687,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
       "lease",
       "resident",
       "billing",
+      "owner_sponsorship",
       "lifecycle",
       "ownership",
       "issues",
@@ -728,7 +755,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
       : (() => {
           const parsed = exact(
             root.lease,
-            ["status", "start_date", "end_date"],
+            ["status", "commercial_mode", "start_date", "end_date"],
             "asset_detail.lease",
           );
           return {
@@ -745,11 +772,71 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
               ],
               "asset_detail.lease.status",
             ),
+            commercialMode: enumValue(
+              parsed.commercial_mode,
+              ["rent", "owner_sponsored"],
+              "asset_detail.lease.commercial_mode",
+            ),
             startDate: date(parsed.start_date, "asset_detail.lease.start_date"),
             endDate:
               parsed.end_date === null
                 ? null
                 : date(parsed.end_date, "asset_detail.lease.end_date"),
+          };
+        })();
+  const ownerSponsorship =
+    root.owner_sponsorship === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.owner_sponsorship,
+            [
+              "management_fee_payer",
+              "management_fee_payer_name",
+              "monthly_management_fee",
+              "projected_management_fee",
+              "verified_paid",
+              "pending",
+              "remaining",
+              "payment_status",
+              "payment_timing",
+            ],
+            "asset_detail.owner_sponsorship",
+          );
+          return {
+            managementFeePayer: enumValue(
+              parsed.management_fee_payer,
+              ["resident", "owner", "other"],
+              "asset_detail.owner_sponsorship.management_fee_payer",
+            ),
+            managementFeePayerName: nullableString(
+              parsed.management_fee_payer_name,
+              "asset_detail.owner_sponsorship.management_fee_payer_name",
+            ),
+            monthlyManagementFee: money(
+              parsed.monthly_management_fee,
+              "asset_detail.owner_sponsorship.monthly_management_fee",
+            ),
+            projectedManagementFee: money(
+              parsed.projected_management_fee,
+              "asset_detail.owner_sponsorship.projected_management_fee",
+            ),
+            verifiedPaid: money(
+              parsed.verified_paid,
+              "asset_detail.owner_sponsorship.verified_paid",
+            ),
+            pending: money(parsed.pending, "asset_detail.owner_sponsorship.pending"),
+            remaining: money(parsed.remaining, "asset_detail.owner_sponsorship.remaining"),
+            paymentStatus: enumValue(
+              parsed.payment_status,
+              ["unpaid", "partially_paid", "paid", "overpaid"],
+              "asset_detail.owner_sponsorship.payment_status",
+            ),
+            paymentTiming: enumValue(
+              parsed.payment_timing,
+              ["flexible"],
+              "asset_detail.owner_sponsorship.payment_timing",
+            ),
           };
         })();
   const resident =
@@ -839,6 +926,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
         "asset_detail.billing.state",
       ),
     },
+    ownerSponsorship,
     lifecycle: {
       transferState: nullableString(
         lifecycle.transfer_state,
@@ -1843,6 +1931,8 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       "rent_received_total",
       "contract_outstanding_total",
       "projected_management_fee_total",
+      "management_fee_received_total",
+      "management_fee_outstanding_total",
       "estimated_owner_entitlement_total",
       "package_counts",
     ],
@@ -1895,6 +1985,14 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         summary.projected_management_fee_total,
         "collection_progress.summary.projected_management_fee_total",
       ),
+      managementFeeReceivedTotal: money(
+        summary.management_fee_received_total,
+        "collection_progress.summary.management_fee_received_total",
+      ),
+      managementFeeOutstandingTotal: money(
+        summary.management_fee_outstanding_total,
+        "collection_progress.summary.management_fee_outstanding_total",
+      ),
       estimatedOwnerEntitlementTotal: money(
         summary.estimated_owner_entitlement_total,
         "collection_progress.summary.estimated_owner_entitlement_total",
@@ -1930,6 +2028,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           "lease",
           "billing",
           "commercial",
+          "owner_sponsorship",
           "operations",
           "security_deposit",
           "settlement",
@@ -1946,6 +2045,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         item.lease,
         [
           "status",
+          "commercial_mode",
           "start_date",
           "end_date",
           "term_months",
@@ -1979,6 +2079,14 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         ["management_fee_monthly", "projected_management_fee", "estimated_owner_entitlement"],
         "collection_progress.item.commercial",
       );
+      const ownerSponsorship =
+        item.owner_sponsorship === null
+          ? null
+          : exact(
+              item.owner_sponsorship,
+              ["verified_paid", "pending", "remaining", "payment_status", "payment_timing"],
+              "collection_progress.item.owner_sponsorship",
+            );
       const operations = exact(
         item.operations,
         [
@@ -2033,13 +2141,18 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
             ["active"] as const,
             "collection_progress.item.lease.status",
           ),
+          commercialMode: enumValue(
+            lease.commercial_mode,
+            ["rent", "owner_sponsored"] as const,
+            "collection_progress.item.lease.commercial_mode",
+          ),
           startDate: date(lease.start_date, "collection_progress.item.lease.start_date"),
           endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date"),
           termMonths: count(lease.term_months, "collection_progress.item.lease.term_months"),
           monthlyRate: money(lease.monthly_rate, "collection_progress.item.lease.monthly_rate"),
           pricingSource: enumValue(
             lease.pricing_source,
-            ["standard", "negotiated"] as const,
+            ["standard", "negotiated", "owner_sponsored"] as const,
             "collection_progress.item.lease.pricing_source",
           ),
           contractValue: money(
@@ -2113,6 +2226,32 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
             "collection_progress.item.commercial.estimated_owner_entitlement",
           ),
         },
+        ownerSponsorship: ownerSponsorship
+          ? {
+              verifiedPaid: money(
+                ownerSponsorship.verified_paid,
+                "collection_progress.item.owner_sponsorship.verified_paid",
+              ),
+              pending: money(
+                ownerSponsorship.pending,
+                "collection_progress.item.owner_sponsorship.pending",
+              ),
+              remaining: money(
+                ownerSponsorship.remaining,
+                "collection_progress.item.owner_sponsorship.remaining",
+              ),
+              paymentStatus: enumValue(
+                ownerSponsorship.payment_status,
+                ["unpaid", "partially_paid", "paid", "overpaid"] as const,
+                "collection_progress.item.owner_sponsorship.payment_status",
+              ),
+              paymentTiming: enumValue(
+                ownerSponsorship.payment_timing,
+                ["flexible"] as const,
+                "collection_progress.item.owner_sponsorship.payment_timing",
+              ),
+            }
+          : null,
         operations: {
           openComplaintCount: count(
             operations.open_complaint_count,

@@ -30,6 +30,7 @@ test("resident tenancy accepts the immutable commercial projection used by check
         room_status: "occupied",
         activated_at: "2026-08-01T00:00:00.000Z",
         checked_in_at: "2026-08-01T01:00:00.000Z",
+        checked_in_source: "lifecycle",
         room_number: "RK-01-11",
         kost_type_name: "Rumah Kost",
         building_code: "RK-01",

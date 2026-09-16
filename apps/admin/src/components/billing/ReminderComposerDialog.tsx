@@ -133,6 +133,7 @@ export function ReminderComposerDialog({
   async function record(
     outcome_status: "external_opened" | "manual_sent",
     channel: "whatsapp_manual" | "manual",
+    targetRecipient: RecipientKind = preview?.recipient.kind ?? recipientKind,
   ) {
     const invoiceIds = targetIds();
     if (!propertyId || !invoiceIds.length) return null;
@@ -147,18 +148,18 @@ export function ReminderComposerDialog({
         {
           property_id: propertyId,
           invoice_ids: invoiceIds,
-          recipient_kind: recipientKind,
+          recipient_kind: targetRecipient,
           channel,
           outcome_status,
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      setPreviews((current) => ({ ...current, [recipientKind]: result.preview }));
+      setPreviews((current) => ({ ...current, [targetRecipient]: result.preview }));
       setRecordedStatus(outcome_status);
       return result;
     } catch {
       setError(
-        recipientKind === "parent"
+        targetRecipient === "parent"
           ? "WhatsApp orang tua belum dapat dibuka. Pastikan nomor orang tua tersedia dan tagihan masih aktif."
           : "WhatsApp penghuni belum dapat dibuka. Pastikan nomor penghuni tersedia dan tagihan masih aktif.",
       );
@@ -168,12 +169,16 @@ export function ReminderComposerDialog({
     }
   }
   async function openWhatsApp() {
-    const result = await record("external_opened", "whatsapp_manual");
+    const result = await record(
+      "external_opened",
+      "whatsapp_manual",
+      preview?.recipient.kind ?? recipientKind,
+    );
     if (result?.action?.url) window.open(result.action.url, "_blank", "noopener,noreferrer");
   }
   async function recordManualSent() {
     if (!window.confirm("Catat bahwa pesan sudah dikirim manual?")) return;
-    await record("manual_sent", "manual");
+    await record("manual_sent", "manual", preview?.recipient.kind ?? recipientKind);
   }
 
   return (
@@ -288,6 +293,9 @@ export function ReminderComposerDialog({
                 </div>
                 <p className="text-sm font-semibold">
                   Total tersisa: {formatIDR(preview.total_outstanding_amount)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  WhatsApp tujuan: {preview.recipient.phone ?? "Nomor belum tersedia"}
                 </p>
                 <div className="rounded-lg border border-border bg-background p-3">
                   <p className="font-semibold">{preview.rendered.title}</p>

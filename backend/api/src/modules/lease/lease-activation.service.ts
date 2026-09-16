@@ -22,6 +22,7 @@ type ActivationLeaseRow = {
   room_id: string;
   occupancy_id: string | null;
   lease_status: string;
+  commercial_mode: 'rent' | 'owner_sponsored';
   start_date: string;
   end_date: string | null;
   renewed_from_lease_id: string | null;
@@ -389,7 +390,7 @@ export class LeaseActivationService {
 
     const row = await client.query<ActivationLeaseRow>(
       `SELECT
-         l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.start_date,l.end_date,
+         l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date,l.end_date,
          l.renewed_from_lease_id,l.onboarding_commitment_id,r.room_status,r.number AS room_number,
          l.security_deposit_required_amount,
          r.property_id AS room_property_id,r.category AS room_category,
@@ -484,6 +485,22 @@ export class LeaseActivationService {
         message: 'Lease activation authority requires reconciliation',
       });
 
+    const isOwnerSponsored = lease.commercial_mode === 'owner_sponsored';
+    if (isOwnerSponsored) {
+      const sponsorship = await client.query<{ id: string }>(
+        `SELECT id
+           FROM owner_sponsored_lease_terms
+          WHERE property_id=$1 AND lease_id=$2 AND term_status='active'
+          FOR KEY SHARE`,
+        [propertyId, lease.id],
+      );
+      if (sponsorship.rowCount !== 1)
+        throw new ConflictException({
+          code: 'OWNER_SPONSORED_TERM_MISSING',
+          message: 'Otoritas hunian tanggungan Owner belum lengkap',
+        });
+    }
+
     const settlementResult = await client.query<ContractSettlementActivationRow>(
       `SELECT settlement.id,settlement.state,settlement.policy_snapshot_id,
               policy.initial_month_minimum_amount,
@@ -503,6 +520,11 @@ export class LeaseActivationService {
         message: 'Contract-settlement authority requires reconciliation',
       });
     const contractSettlement = settlementResult.rows[0] ?? null;
+    if (!isOwnerSponsored && !contractSettlement)
+      throw new ConflictException({
+        code: 'LEASE_CONTRACT_SETTLEMENT_NOT_READY',
+        message: 'Penyelesaian kontrak belum siap untuk aktivasi',
+      });
     if (contractSettlement && contractSettlement.state !== 'awaiting_activation')
       throw new ConflictException({
         code: 'LEASE_CONTRACT_SETTLEMENT_NOT_READY',
@@ -547,15 +569,19 @@ export class LeaseActivationService {
     );
     const financial = financials.rows[0];
     if (
-      !financial?.first_due_date ||
-      !financial.first_invoice_status ||
-      !['issued', 'partially_paid', 'paid', 'overdue'].includes(financial.first_invoice_status)
+      !isOwnerSponsored &&
+      (!financial?.first_due_date ||
+        !financial.first_invoice_status ||
+        !['issued', 'partially_paid', 'paid', 'overdue'].includes(financial.first_invoice_status))
     )
       throw new ConflictException({
         code: 'LEASE_ACTIVATION_BILLING_AUTHORITY_MISSING',
         message: 'The first contract installment must have an issued invoice',
       });
-    if (contractSettlement?.policy_snapshot_id) {
+    if (isOwnerSponsored) {
+      // Hunian tanggungan Owner tidak mempunyai tagihan sewa atau tenggat biaya
+      // pengelolaan sebagai prasyarat aktivasi.
+    } else if (contractSettlement?.policy_snapshot_id) {
       if (
         !contractSettlement.initial_month_minimum_amount ||
         Number(financial.verified_rent_credit) <

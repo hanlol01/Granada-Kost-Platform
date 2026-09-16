@@ -97,6 +97,7 @@ function tenancy() {
     room_status: "reserved",
     activated_at: null,
     checked_in_at: null,
+    checked_in_source: null,
     room_number: "AK-18F-3A",
     kost_type_name: "Apart Kost",
     building_code: "AK-18F",

@@ -37,8 +37,10 @@ import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
 import { ResidentOperationalCards } from "@/components/residents/ResidentOperationalCards";
 import { TransferPanel } from "@/components/leases/TransferPanel";
 import { CheckoutPanel, type CheckoutEntryFocus } from "@/components/leases/CheckoutPanel";
+import { LeaseDataCorrectionDialog } from "@/components/leases/LeaseDataCorrectionDialog";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
@@ -575,6 +577,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const activation = useLeaseActivation();
   const checkIn = useLeaseCheckIn();
   const [editOpen, setEditOpen] = useState(false);
+  const [leaseCorrectionOpen, setLeaseCorrectionOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
   const [confirmCheckIn, setConfirmCheckIn] = useState(false);
@@ -772,6 +775,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           {canManage ? (
             <Button variant="info" className="min-h-11" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1 h-4 w-4" /> Edit
+            </Button>
+          ) : null}
+          {canManageTermination && currentTenancy && !checkoutCommand ? (
+            <Button
+              variant="warning"
+              className="min-h-11"
+              onClick={() => setLeaseCorrectionOpen(true)}
+            >
+              <CalendarClock className="mr-1 h-4 w-4" /> Koreksi data penyewaan
             </Button>
           ) : null}
           {canCancelAwaitingActivation && currentTenancy?.bookingLeadId ? (
@@ -1113,7 +1125,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                                 : "Belum tersedia",
                     ],
                     [
-                      "Tanggal check-in",
+                      currentTenancy.checkedInSource === "history" ||
+                      currentTenancy.checkedInSource === "occupancy"
+                        ? "Tanggal check-in historis"
+                        : currentTenancy.checkedInSource === "correction"
+                          ? "Tanggal check-in hasil koreksi"
+                          : "Tanggal check-in",
                       currentTenancy.checkedInAt
                         ? formatResidentDetailTimestamp(currentTenancy.checkedInAt)
                         : "Belum tercatat",
@@ -1142,9 +1159,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     ["Tarif bulanan kontrak", rupiah(billing.data.lease.monthly_rate)],
                     [
                       "Sumber tarif",
-                      billing.data.lease.pricing_source === "negotiated"
-                        ? "Kesepakatan khusus"
-                        : "Tarif standar",
+                      billing.data.lease.pricing_source === "owner_sponsored"
+                        ? "Hunian Tanggungan Owner"
+                        : billing.data.lease.pricing_source === "negotiated"
+                          ? "Kesepakatan khusus"
+                          : "Tarif standar",
                     ],
                   ]}
                 />
@@ -1172,6 +1191,55 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   summary={summary}
                   propertyId={currentPropertyId}
                 />
+              ) : summary && billing.data?.owner_sponsorship ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-emerald-300/70 bg-emerald-50/60 p-4 dark:border-emerald-800 dark:bg-emerald-950/20">
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-emerald-800 dark:text-emerald-200">
+                          Hunian Tanggungan Owner
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Sewa kamar Rp0. Biaya pengelolaan tetap berjalan tanpa jatuh tempo dan
+                          tanpa denda keterlambatan.
+                        </p>
+                      </div>
+                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                        {billing.data.owner_sponsorship.payment_status === "paid"
+                          ? "Lunas"
+                          : billing.data.owner_sponsorship.payment_status === "partially_paid"
+                            ? "Dibayar sebagian"
+                            : "Belum dibayar"}
+                      </Badge>
+                    </div>
+                    <DefinitionGrid
+                      rows={[
+                        ["Owner penanggung", billing.data.owner_sponsorship.owner_name],
+                        [
+                          "Biaya pengelolaan per bulan",
+                          rupiah(billing.data.owner_sponsorship.snapshot_monthly_management_fee),
+                        ],
+                        [
+                          "Proyeksi masa hunian",
+                          rupiah(billing.data.owner_sponsorship.projected_management_fee),
+                        ],
+                        ["Sudah diterima", rupiah(billing.data.owner_sponsorship.verified_paid)],
+                        ["Menunggu verifikasi", rupiah(billing.data.owner_sponsorship.pending)],
+                        [
+                          "Sisa biaya pengelolaan",
+                          rupiah(billing.data.owner_sponsorship.remaining),
+                        ],
+                      ]}
+                    />
+                  </div>
+                  {canManageBilling && currentPropertyId ? (
+                    <RecordPaymentDialog
+                      data={billing.data}
+                      propertyId={currentPropertyId}
+                      triggerLabel="Catat pembayaran biaya pengelolaan"
+                    />
+                  ) : null}
+                </div>
               ) : summary ? (
                 <DefinitionGrid
                   rows={[
@@ -1250,14 +1318,37 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     ["Angkatan", resident.cohort ?? "Belum diisi"],
                     ["Instagram", resident.instagram ?? "Belum diisi"],
                     ["Nama orang tua", resident.parentName ?? "Belum diisi"],
-                    ["Telepon orang tua", resident.parentPhone ?? "Belum diisi"],
+                    [
+                      "Telepon orang tua",
+                      <WhatsAppPhoneValue
+                        key="parent-phone"
+                        phone={resident.parentPhone}
+                        contactLabel="orang tua"
+                      />,
+                    ],
                     [
                       "Kontak darurat",
-                      resident.emergencyContacts
-                        .map((item) => `${item.contactName} · ${item.phone}`)
-                        .join("; ") ||
-                        resident.emergencyPhone ||
-                        "Belum diisi",
+                      resident.emergencyContacts.length > 0 ? (
+                        <div className="space-y-2">
+                          {resident.emergencyContacts.map((item) => (
+                            <div key={item.id} className="min-w-0">
+                              <p className="text-xs text-muted-foreground">
+                                {[item.contactName, item.relationship].filter(Boolean).join(" · ")}
+                              </p>
+                              <WhatsAppPhoneValue
+                                phone={item.phone}
+                                contactLabel={`kontak darurat ${item.contactName}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <WhatsAppPhoneValue
+                          key="emergency-phone"
+                          phone={resident.emergencyPhone}
+                          contactLabel="kontak darurat"
+                        />
+                      ),
                     ],
                   ]}
                 />
@@ -1482,6 +1573,21 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         initial={resident}
         onSaved={() => void detail.refetch()}
       />
+      {currentTenancy ? (
+        <LeaseDataCorrectionDialog
+          open={leaseCorrectionOpen}
+          onOpenChange={setLeaseCorrectionOpen}
+          tenancy={currentTenancy}
+          onCompleted={() =>
+            Promise.all([
+              detail.refetch(),
+              tenancy.refetch(),
+              billing.refetch(),
+              bookingProgress.refetch(),
+            ])
+          }
+        />
+      ) : null}
       <ResidentCredentialsDialog
         open={credentialsOpen}
         onOpenChange={setCredentialsOpen}
@@ -1885,7 +1991,13 @@ function DefinitionGrid({ rows }: { rows: Array<[string, ReactNode]> }) {
   );
 }
 
-function WhatsAppPhoneValue({ phone }: { phone: string | null }) {
+function WhatsAppPhoneValue({
+  phone,
+  contactLabel = "nomor ini",
+}: {
+  phone: string | null;
+  contactLabel?: string;
+}) {
   const normalizedPhone = phone ? normalizeWhatsAppPhone(phone) : null;
   const whatsAppUrl = normalizedPhone ? `https://wa.me/${normalizedPhone}` : null;
 
@@ -1900,8 +2012,8 @@ function WhatsAppPhoneValue({ phone }: { phone: string | null }) {
           href={whatsAppUrl}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`Buka chat WhatsApp untuk ${phone}`}
-          title="Buka WhatsApp"
+          aria-label={`Buka chat WhatsApp ${contactLabel}`}
+          title={`Buka WhatsApp ${contactLabel}`}
         >
           <WhatsAppIcon className="h-5 w-5" />
         </a>

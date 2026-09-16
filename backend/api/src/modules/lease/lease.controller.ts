@@ -33,6 +33,8 @@ import {
   ListLeaseResidentOptionsQueryDto,
   ListLeasesQueryDto,
   PrepareLeaseRenewalFinancialsDto,
+  PreviewLeaseDataCorrectionDto,
+  CommitLeaseDataCorrectionDto,
   ScheduleTransferLeaseDto,
   SettleRefundDto,
   TransferLeaseDto,
@@ -43,6 +45,7 @@ import {
 import { LeaseService } from './lease.service';
 import { LeaseRenewalService } from './lease-renewal.service';
 import { LeaseTransferService } from './lease-transfer.service';
+import { LeaseDataCorrectionService } from './lease-data-correction.service';
 
 function auditContext(request: RequestWithCorrelationId) {
   return {
@@ -60,6 +63,7 @@ export class LeaseController {
     private readonly leases: LeaseService,
     private readonly transfers: LeaseTransferService,
     private readonly renewals: LeaseRenewalService,
+    private readonly corrections: LeaseDataCorrectionService,
   ) {}
 
   @Get()
@@ -92,6 +96,41 @@ export class LeaseController {
   @RequirePermissions('lease.read')
   get(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
     return this.leases.get(user, leaseId);
+  }
+
+  @Post(':leaseId/data-correction/preview')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  previewDataCorrection(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: PreviewLeaseDataCorrectionDto,
+  ) {
+    return this.corrections.preview(user, leaseId, dto);
+  }
+
+  @Get(':leaseId/data-corrections')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  listDataCorrections(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
+    return this.corrections.list(user, leaseId);
+  }
+
+  @Post(':leaseId/data-correction')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async commitDataCorrection(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: CommitLeaseDataCorrectionDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.corrections.commit(user, leaseId, dto, idempotencyKey);
+    if (result.idempotent) response.setHeader('Idempotency-Replayed', 'true');
+    response.status(result.idempotent ? HttpStatus.OK : HttpStatus.CREATED);
+    return result.data;
   }
 
   @Get(':leaseId/billing-summary')

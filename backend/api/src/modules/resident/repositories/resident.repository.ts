@@ -76,6 +76,7 @@ type ResidentTenancyRow = {
   room_status: string;
   activated_at: Date | null;
   checked_in_at: Date | null;
+  checked_in_source: ResidentTenancyRecord['checkedInSource'];
   room_number: string;
   kost_type_name: string;
   building_code: string;
@@ -83,6 +84,7 @@ type ResidentTenancyRow = {
   end_date: string;
   term_months: number;
   payment_plan_type: ResidentTenancyRecord['paymentPlanType'];
+  commercial_mode: ResidentTenancyRecord['commercialMode'];
   snapshot_monthly_price: string | number;
   contract_rent_amount: string | number;
   pricing_source: ResidentTenancyRecord['pricingSource'];
@@ -366,17 +368,44 @@ export class ResidentRepository {
     const result = await this.database.client.query<ResidentTenancyRow>(
       `SELECT leases.resident_id,leases.property_id,leases.id AS lease_id,leases.booking_lead_id,leases.lease_status,
               lifecycle.state AS activation_state,leases.occupancy_id,rooms.room_status,
-              lifecycle.activated_at,lifecycle.checked_in_at,
+              lifecycle.activated_at,
+              COALESCE(
+                ((latest_check_in_correction.corrected_snapshot->>'checkedInDate')::date + TIME '00:00') AT TIME ZONE 'Asia/Jakarta',
+                lifecycle.checked_in_at,
+                (check_in_history.event_date + TIME '00:00') AT TIME ZONE 'Asia/Jakarta',
+                (occupancy.start_date + TIME '00:00') AT TIME ZONE 'Asia/Jakarta'
+              ) AS checked_in_at,
+              CASE
+                WHEN latest_check_in_correction.id IS NOT NULL THEN 'correction'
+                WHEN lifecycle.checked_in_at IS NOT NULL THEN 'lifecycle'
+                WHEN check_in_history.event_date IS NOT NULL THEN 'history'
+                WHEN occupancy.start_date IS NOT NULL THEN 'occupancy'
+                ELSE NULL
+              END AS checked_in_source,
               rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
               buildings.building_code,leases.start_date::text,leases.end_date::text,
               leases.term_months,leases.payment_plan_type,leases.snapshot_monthly_price,
-              leases.contract_rent_amount,leases.pricing_source
+              leases.contract_rent_amount,leases.pricing_source,leases.commercial_mode
        FROM leases
        JOIN rooms ON rooms.id=leases.room_id AND rooms.property_id=leases.property_id
        JOIN room_buildings AS buildings
          ON buildings.id=rooms.building_id AND buildings.property_id=leases.property_id
        LEFT JOIN lease_activation_lifecycles AS lifecycle
          ON lifecycle.lease_id=leases.id AND lifecycle.property_id=leases.property_id
+       LEFT JOIN occupancies AS occupancy ON occupancy.id=leases.occupancy_id
+       LEFT JOIN LATERAL (
+         SELECT correction.id,correction.corrected_snapshot
+         FROM lease_data_corrections correction
+         WHERE correction.lease_id=leases.id AND correction.property_id=leases.property_id
+           AND correction.corrected_snapshot ? 'checkedInDate'
+         ORDER BY correction.sequence_number DESC LIMIT 1
+       ) latest_check_in_correction ON true
+       LEFT JOIN LATERAL (
+         SELECT history.event_date
+         FROM occupancy_history history
+         WHERE history.occupancy_id=leases.occupancy_id AND history.event_type='check_in'
+         ORDER BY history.created_at ASC,history.id ASC LIMIT 1
+       ) check_in_history ON true
        WHERE leases.resident_id=$1
          AND leases.property_id=$2
          AND leases.lease_status IN ('awaiting_activation','active')
@@ -395,6 +424,7 @@ export class ResidentRepository {
       roomStatus: row.room_status,
       activatedAt: row.activated_at,
       checkedInAt: row.checked_in_at,
+      checkedInSource: row.checked_in_source,
       roomNumber: row.room_number,
       kostTypeName: row.kost_type_name,
       buildingCode: row.building_code,
@@ -402,6 +432,7 @@ export class ResidentRepository {
       endDate: row.end_date,
       termMonths: Number(row.term_months),
       paymentPlanType: row.payment_plan_type,
+      commercialMode: row.commercial_mode,
       agreedMonthlyPrice: Number(row.snapshot_monthly_price),
       contractRentAmount: Number(row.contract_rent_amount),
       pricingSource: row.pricing_source,

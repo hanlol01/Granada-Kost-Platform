@@ -1603,13 +1603,18 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
           .map(normalizeOwnerSearch)
           .some((value) => value.includes(normalizedQuery));
       const checkpointStatus = item.settlement.checkpoint.status;
+      const effectiveBillingState = item.ownerSponsorship
+        ? item.ownerSponsorship.paymentStatus === "paid"
+          ? "settled"
+          : item.ownerSponsorship.paymentStatus
+        : item.billing.state;
       const matchesBilling =
         billingFilter === "all" ||
         (billingFilter === "overdue"
-          ? item.billing.state === "overdue" || item.billing.overdueCount > 0
+          ? effectiveBillingState === "overdue" || item.billing.overdueCount > 0
           : billingFilter === "h7"
             ? item.billing.h7Count > 0
-            : item.billing.state === billingFilter);
+            : effectiveBillingState === billingFilter);
       const matchesCheckpoint =
         checkpointFilter === "all" ||
         (checkpointFilter === "attention"
@@ -1667,7 +1672,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
           {collection.summary.activeLeaseCount} sewa aktif
         </Badge>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric
           label="Target kontrak"
           value={formatOwnerMoney(collection.summary.contractValueTotal)}
@@ -1691,6 +1696,18 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
           value={formatOwnerMoney(collection.summary.estimatedOwnerEntitlementTotal)}
           description="Setelah management fee"
           icon={ShieldCheck}
+        />
+        <Metric
+          label="Biaya pengelolaan diterima"
+          value={formatOwnerMoney(collection.summary.managementFeeReceivedTotal)}
+          description="Khusus hunian tanggungan Owner"
+          icon={CircleDollarSign}
+        />
+        <Metric
+          label="Sisa biaya pengelolaan"
+          value={formatOwnerMoney(collection.summary.managementFeeOutstandingTotal)}
+          description="Fleksibel, tanpa jatuh tempo"
+          icon={ReceiptText}
         />
       </div>
       <Card className="border-border/80 shadow-sm">
@@ -1801,7 +1818,14 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <StatusPill value={item.billing.state} />
+                    <StatusPill
+                      value={item.ownerSponsorship?.paymentStatus ?? item.billing.state}
+                    />
+                    {item.ownerSponsorship ? (
+                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                        Hunian Tanggungan Owner
+                      </Badge>
+                    ) : null}
                     {item.lease.pricingSource === "negotiated" ? (
                       <Badge
                         variant="outline"
@@ -1823,20 +1847,30 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 </CardHeader>
                 <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
                   <FinanceRow
-                    label="Nilai kontrak"
+                    label={item.ownerSponsorship ? "Sewa kamar" : "Nilai kontrak"}
                     value={formatOwnerMoney(item.lease.contractValue)}
                   />
                   <FinanceRow
-                    label="Durasi dan tarif"
-                    value={`${item.lease.termMonths} bulan · ${formatOwnerMoney(item.lease.monthlyRate)}/bulan`}
+                    label={item.ownerSponsorship ? "Durasi hunian" : "Durasi dan tarif"}
+                    value={
+                      item.ownerSponsorship
+                        ? `${item.lease.termMonths} bulan`
+                        : `${item.lease.termMonths} bulan · ${formatOwnerMoney(item.lease.monthlyRate)}/bulan`
+                    }
                   />
                   <FinanceRow
-                    label="Uang masuk"
-                    value={formatOwnerMoney(item.billing.rentVerified)}
+                    label={item.ownerSponsorship ? "Biaya pengelolaan diterima" : "Uang masuk"}
+                    value={formatOwnerMoney(
+                      item.ownerSponsorship?.verifiedPaid ?? item.billing.rentVerified,
+                    )}
                   />
                   <FinanceRow
-                    label="Sisa pembayaran kontrak"
-                    value={formatOwnerMoney(item.billing.contractOutstanding)}
+                    label={
+                      item.ownerSponsorship ? "Sisa biaya pengelolaan" : "Sisa pembayaran kontrak"
+                    }
+                    value={formatOwnerMoney(
+                      item.ownerSponsorship?.remaining ?? item.billing.contractOutstanding,
+                    )}
                   />
                   <FinanceRow
                     label="Perkiraan management fee"
@@ -1850,7 +1884,11 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                   <FinanceRow label="Check-out" value={localDate(item.lease.endDate)} />
                   <FinanceRow
                     label="Target pelunasan"
-                    value={localDate(item.billing.nextDueDate ?? item.settlement.effectiveDueAt)}
+                    value={
+                      item.ownerSponsorship
+                        ? "Fleksibel, tanpa jatuh tempo"
+                        : localDate(item.billing.nextDueDate ?? item.settlement.effectiveDueAt)
+                    }
                   />
                   <FinanceRow
                     label="Komplain"

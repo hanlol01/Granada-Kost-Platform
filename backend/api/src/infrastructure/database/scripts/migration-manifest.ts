@@ -805,4 +805,25 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_refund_settlements_reason_check' AND conrelid=to_regclass('public.lease_refund_settlements'))",
     ],
   },
+  {
+    version: '086_lease_data_correction_authority.sql',
+    checksumSha256: '765645c06c4de91c55bad0cf565e27139b9608de480a95c6133cc88a99734f73',
+    sentinels: [
+      "to_regclass('public.lease_data_corrections') IS NOT NULL",
+      "to_regclass('public.lease_data_correction_invoice_credits') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_contract_paid_documents' AND column_name='invalidated_by_lease_correction_id')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_history_event_type_check' AND conrelid=to_regclass('public.lease_history') AND pg_get_constraintdef(oid) ILIKE '%lease_data_corrected%')",
+    ],
+  },
+  {
+    version: '087_owner_sponsored_occupancy_authority.sql',
+    checksumSha256: 'c77267f55e0ff1d3ba0ed62f72c891635d6753046d5d1c371f4a35ce3c20cc8b',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='commercial_mode')",
+      "to_regclass('public.owner_sponsored_lease_terms') IS NOT NULL",
+      "to_regclass('public.owner_sponsored_management_fee_progress') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='payments_w06_purpose_check' AND conrelid=to_regclass('public.payments') AND pg_get_constraintdef(oid) ILIKE '%management_fee%')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_owner_sponsored_lease_term' AND tgrelid=to_regclass('public.owner_sponsored_lease_terms') AND NOT tgisinternal)",
+    ],
+  },
 ] as const;

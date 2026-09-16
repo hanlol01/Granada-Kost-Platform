@@ -18,6 +18,7 @@ import { LeaseRenewalService } from './lease-renewal.service';
 import { LeaseTransferScheduler } from './lease-transfer.scheduler';
 import { LeaseTransferService } from './lease-transfer.service';
 import { MyLeaseExitDocumentController } from './my-lease-exit-document.controller';
+import { LeaseDataCorrectionService } from './lease-data-correction.service';
 
 @Module({
   imports: [RbacModule, BillingModule, PropertyModule],
@@ -34,6 +35,7 @@ import { MyLeaseExitDocumentController } from './my-lease-exit-document.controll
     LeaseCheckoutService,
     LeaseTransferService,
     LeaseRenewalService,
+    LeaseDataCorrectionService,
     LeaseActivationService,
     LeaseCheckInService,
     LeaseActivationScheduler,

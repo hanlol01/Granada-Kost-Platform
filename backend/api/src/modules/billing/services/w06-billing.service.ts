@@ -54,6 +54,7 @@ type LeaseTupleRow = {
   room_id: string;
   occupancy_id: string | null;
   lease_status: string;
+  commercial_mode: 'rent' | 'owner_sponsored';
   start_date: string;
   end_date: string;
   contract_rent_amount: string;
@@ -61,12 +62,26 @@ type LeaseTupleRow = {
   security_deposit_required_amount: string;
   payment_plan_type: 'annual_full' | 'monthly_installments' | 'two_month_installments';
   snapshot_monthly_price: string;
-  pricing_source: 'standard' | 'negotiated';
+  pricing_source: 'standard' | 'negotiated' | 'owner_sponsored';
   snapshot_room_number: string;
   snapshot_kost_type_name: string;
   building_code: string | null;
   resident_name: string;
   remaining_days: number;
+};
+
+type OwnerSponsoredManagementFeeProjectionRow = {
+  owner_profile_id: string;
+  owner_name: string;
+  management_fee_payer: 'resident' | 'owner' | 'other';
+  management_fee_payer_name: string | null;
+  sponsorship_reason: string;
+  snapshot_monthly_management_fee: string;
+  current_projected_management_fee_amount: string;
+  verified_paid_amount: string;
+  pending_amount: string;
+  remaining_amount: string;
+  payment_status: 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
 };
 
 type PaymentRow = {
@@ -312,7 +327,7 @@ type InvoiceDocumentRow = {
   contract_rent_amount: string | number | null;
   cumulative_rent_paid: string | number | null;
   contract_remaining_amount: string | number | null;
-  pricing_source: 'standard' | 'negotiated' | null;
+  pricing_source: 'standard' | 'negotiated' | 'owner_sponsored' | null;
 };
 type ReceiptDocumentRow = {
   receipt_code: string;
@@ -1804,11 +1819,14 @@ export class W06BillingService {
         dto.method === 'bank_transfer' && verificationDecision.status !== 'verified',
       );
       const amount = this.allocationTotal(dto.allocations);
-      if (dto.payment_purpose === 'security_deposit') {
+      const isDirectLiabilityPayment = ['security_deposit', 'management_fee'].includes(
+        dto.payment_purpose,
+      );
+      if (isDirectLiabilityPayment) {
         if (dto.allocations.length !== 0)
           throw new BadRequestException({
-            code: 'DEPOSIT_INVOICE_ALLOCATION_FORBIDDEN',
-            message: 'Security deposit cannot fund rent invoices',
+            code: 'DIRECT_PAYMENT_INVOICE_ALLOCATION_FORBIDDEN',
+            message: 'Pembayaran ini tidak boleh dialokasikan ke invoice sewa',
           });
       } else if (dto.allocations.length === 0) {
         throw new BadRequestException({
@@ -1816,9 +1834,8 @@ export class W06BillingService {
           message: 'Explicit invoice allocations are required',
         });
       }
-      const effectiveAmount =
-        dto.payment_purpose === 'security_deposit' ? this.moneyFromUnknown(dto.amount) : amount;
-      if (dto.payment_purpose !== 'security_deposit' && dto.amount !== effectiveAmount)
+      const effectiveAmount = isDirectLiabilityPayment ? this.moneyFromUnknown(dto.amount) : amount;
+      if (!isDirectLiabilityPayment && dto.amount !== effectiveAmount)
         throw new BadRequestException({
           code: 'PAYMENT_ALLOCATION_TOTAL_MISMATCH',
           message: 'Allocation sum must equal payment amount',
@@ -1828,6 +1845,8 @@ export class W06BillingService {
           code: 'PAYMENT_AMOUNT_INVALID',
           message: 'Payment amount must be positive',
         });
+      if (dto.payment_purpose === 'management_fee')
+        await this.assertOwnerSponsoredManagementFeePayment(client, lease, effectiveAmount);
       const invoiceRows = await this.lockAndValidateInvoices(
         client,
         lease,
@@ -3495,6 +3514,7 @@ export class W06BillingService {
       contractPaidDocumentResult,
       exitDocumentResult,
       financialTimelineResult,
+      ownerSponsorshipResult,
     ] = await Promise.all([
       client.query<InvoiceProjectionRow>(
         `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,i.due_date::text,COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.property_id=$1 AND i.lease_id=$2 ORDER BY i.due_date DESC,i.id DESC`,
@@ -3832,6 +3852,25 @@ export class W06BillingService {
           ORDER BY timeline.occurred_at DESC,timeline.id DESC`,
         [lease.property_id, lease.id],
       ),
+      client.query<OwnerSponsoredManagementFeeProjectionRow>(
+        `SELECT progress.owner_profile_id,
+                owner_profile.full_name AS owner_name,
+                progress.management_fee_payer,
+                progress.management_fee_payer_name,
+                progress.sponsorship_reason,
+                progress.snapshot_monthly_management_fee,
+                progress.current_projected_management_fee_amount,
+                progress.verified_paid_amount,
+                progress.pending_amount,
+                progress.remaining_amount,
+                progress.payment_status
+           FROM owner_sponsored_management_fee_progress progress
+           JOIN property_owner_profiles owner_profile
+             ON owner_profile.id=progress.owner_profile_id
+            AND owner_profile.property_id=progress.property_id
+          WHERE progress.property_id=$1 AND progress.lease_id=$2`,
+        [lease.property_id, lease.id],
+      ),
     ]);
     const invoices = invoiceResult.rows.map((row) => this.sanitizeInvoice(row));
     const payments = paymentResult.rows.map((row) => ({
@@ -3879,6 +3918,7 @@ export class W06BillingService {
         start_date: lease.start_date,
         end_date: lease.end_date,
         payment_plan: lease.payment_plan_type,
+        commercial_mode: lease.commercial_mode,
         contract_rent: this.money(lease.contract_rent_amount),
         monthly_rate: this.money(lease.snapshot_monthly_price),
         pricing_source: lease.pricing_source,
@@ -3901,6 +3941,26 @@ export class W06BillingService {
           (row) => row.invoice_status === 'overdue' && row.outstanding_amount > 0,
         ).length,
       },
+      owner_sponsorship: ownerSponsorshipResult.rows[0]
+        ? {
+            owner_profile_id: ownerSponsorshipResult.rows[0].owner_profile_id,
+            owner_name: ownerSponsorshipResult.rows[0].owner_name,
+            management_fee_payer: ownerSponsorshipResult.rows[0].management_fee_payer,
+            management_fee_payer_name: ownerSponsorshipResult.rows[0].management_fee_payer_name,
+            sponsorship_reason: ownerSponsorshipResult.rows[0].sponsorship_reason,
+            snapshot_monthly_management_fee: this.money(
+              ownerSponsorshipResult.rows[0].snapshot_monthly_management_fee,
+            ),
+            projected_management_fee: this.money(
+              ownerSponsorshipResult.rows[0].current_projected_management_fee_amount,
+            ),
+            verified_paid: this.money(ownerSponsorshipResult.rows[0].verified_paid_amount),
+            pending: this.money(ownerSponsorshipResult.rows[0].pending_amount),
+            remaining: this.money(ownerSponsorshipResult.rows[0].remaining_amount),
+            payment_status: ownerSponsorshipResult.rows[0].payment_status,
+            payment_timing: 'flexible' as const,
+          }
+        : null,
       contract_settlement: contractSettlement,
       invoices,
       payments,
@@ -4023,6 +4083,45 @@ export class W06BillingService {
    * ledger. It never changes the allocation rules; it decides whether a new
    * rent/DP allocation is allowed to be partial at this instant.
    */
+  private async assertOwnerSponsoredManagementFeePayment(
+    client: PoolClient,
+    lease: LeaseTupleRow,
+    amount: number,
+  ): Promise<void> {
+    if (lease.commercial_mode !== 'owner_sponsored')
+      throw new ConflictException({
+        code: 'MANAGEMENT_FEE_PAYMENT_LEASE_INVALID',
+        message: 'Biaya pengelolaan khusus hanya tersedia untuk hunian tanggungan Owner',
+      });
+    const lockedTerm = await client.query<{ id: string }>(
+      `SELECT id
+         FROM owner_sponsored_lease_terms
+        WHERE property_id=$1 AND lease_id=$2 AND term_status='active'
+        FOR UPDATE`,
+      [lease.property_id, lease.id],
+    );
+    if (lockedTerm.rowCount !== 1)
+      throw new ConflictException({
+        code: 'OWNER_SPONSORED_TERM_MISSING',
+        message: 'Otoritas hunian tanggungan Owner belum lengkap',
+      });
+    const progress = await client.query<{
+      remaining_amount: string;
+    }>(
+      `SELECT remaining_amount
+         FROM owner_sponsored_management_fee_progress
+        WHERE id=$1`,
+      [lockedTerm.rows[0].id],
+    );
+    const row = progress.rows[0];
+    const available = row ? Number(row.remaining_amount) : 0;
+    if (amount > available)
+      throw new ConflictException({
+        code: 'MANAGEMENT_FEE_PAYMENT_EXCEEDS_REMAINING',
+        message: `Pembayaran biaya pengelolaan melebihi sisa Rp${Math.max(available, 0).toLocaleString('id-ID')}`,
+      });
+  }
+
   private async assertContractSettlementPaymentEligibility(
     client: PoolClient,
     lease: LeaseTupleRow,
@@ -4675,7 +4774,7 @@ export class W06BillingService {
           JSON.stringify({ source: 'w06_manual_payment' }),
         ],
       );
-    } else {
+    } else if (payment.payment_purpose !== 'management_fee') {
       const intents = await this.lockIntents(client, payment.id);
       const byInvoice = new Map(intents.map((item) => [item.invoice_id, item.intended_amount]));
       for (const invoice of invoices) {
@@ -4693,7 +4792,8 @@ export class W06BillingService {
         await this.reconcileInvoiceLifecycleInTransaction(client, lease.property_id, invoice.id);
       }
     }
-    await this.syncOnboardingFinancialProjection(client, lease);
+    if (payment.payment_purpose !== 'management_fee')
+      await this.syncOnboardingFinancialProjection(client, lease);
     const receiptId = await this.insertReceipt(
       client,
       lease.property_id,
@@ -4954,7 +5054,7 @@ export class W06BillingService {
     return result.rows[0];
   }
   private leaseTupleSql() {
-    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
+    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
   }
   private async lockProperty(client: PoolClient, propertyId: string) {
     const result = await client.query(`SELECT id FROM properties WHERE id=$1 FOR UPDATE`, [
@@ -5248,7 +5348,7 @@ export class W06BillingService {
                 ? 'receipt_down_payment'
                 : authority.payment_purpose === 'security_deposit'
                   ? 'receipt_security_deposit'
-                  : authority.payment_purpose === 'other_charge'
+                  : ['other_charge', 'management_fee'].includes(authority.payment_purpose)
                     ? 'receipt_other_charge'
                     : authority.settles_rent_contract
                       ? 'receipt_final_settlement'
@@ -5419,6 +5519,7 @@ export class W06BillingService {
     settlesContract: boolean,
   ): FinancialTransactionPurpose {
     if (purpose === 'security_deposit') return 'DEPOSIT';
+    if (purpose === 'management_fee') return 'BIAYA-PENGELOLAAN';
     if (purpose === 'other_charge') return 'TAGIHAN-LAIN';
     if (purpose === 'dp') return 'DP';
     return settlesContract ? 'LUNAS' : 'SEWA';

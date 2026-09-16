@@ -1582,6 +1582,12 @@ export class LeaseCheckoutService {
           checkout.resident_id,
           user.id,
         );
+        await client.query(
+          `UPDATE owner_sponsored_lease_terms
+              SET term_status='completed',completed_at=now(),updated_at=now()
+            WHERE property_id=$1 AND lease_id=$2 AND term_status='active'`,
+          [checkout.property_id, lease.id],
+        );
         const completed = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands SET state='completed',completion_room_status=$2,completed_by_user_id=$3,completed_at=now(),updated_at=now() WHERE id=$1
            RETURNING id,property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date::text,notice_recorded_date::text,notice_reason,notice_exception_reason,internal_note,

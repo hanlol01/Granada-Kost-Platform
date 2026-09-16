@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useM6LeaseAvailableRooms } from "@/hooks/useAdminUxLeases";
+import { useOwnerAssetOptions } from "@/hooks/usePropertyOwners";
 import {
   useBookingLeadCompletionContext,
   useBookingLeadCompletionQuote,
@@ -95,6 +96,8 @@ type PaymentMethod = "cash" | "bank_transfer";
 type PaymentChoice = "dp" | "full";
 type PaymentEntryPurpose = "rent" | "booking_fee" | "security_deposit";
 type PricingSource = "standard" | "negotiated";
+type CommercialMode = "rent" | "owner_sponsored";
+type ManagementFeePayer = "resident" | "owner" | "other";
 
 type StagedPaymentEntry = {
   id: string;
@@ -342,6 +345,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [pricingAgreementReason, setPricingAgreementReason] = useState("");
   const [pricingVarianceAcknowledged, setPricingVarianceAcknowledged] = useState(false);
   const [pricingResetOpen, setPricingResetOpen] = useState(false);
+  const [commercialMode, setCommercialMode] = useState<CommercialMode>("rent");
+  const [managementFeePayer, setManagementFeePayer] = useState<ManagementFeePayer>("owner");
+  const [managementFeePayerName, setManagementFeePayerName] = useState("");
+  const [ownerSponsorshipReason, setOwnerSponsorshipReason] = useState("");
   const [category, setCategory] = useState<"rukost" | "apartkost" | "">("");
   const [roomSearch, setRoomSearch] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -385,6 +392,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   propertyScopeRef.current = currentPropertyId;
   const deferredRoomSearch = useDeferredValue(roomSearch);
   const rooms = useM6LeaseAvailableRooms(deferredRoomSearch, startDate || undefined);
+  const ownerAssets = useOwnerAssetOptions(startDate || undefined);
   const bookingLeadContext = useBookingLeadCompletionContext(bookingLeadId);
   const bookingLeadQuote = useBookingLeadCompletionQuote(bookingLeadId, startDate, termMonths);
   const onboarding = useResidentOnboarding(setTemporaryPassword);
@@ -469,6 +477,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setAgreedMonthlyPrice(0);
     setPricingAgreementReason("");
     setPricingVarianceAcknowledged(false);
+    setCommercialMode("rent");
+    setManagementFeePayer("owner");
+    setManagementFeePayerName("");
+    setOwnerSponsorshipReason("");
     setPaidRent(0);
     setSecurityDeposit(0);
     setBookingFee(0);
@@ -501,7 +513,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     (bookingLeadQuote.data && bookingLeadQuote.data.termMonths === termMonths
       ? bookingLeadQuote.data.contractRentAmount / termMonths
       : undefined);
-  const heldRoom = bookingRoom
+  const heldRoom: LeaseRoomOption | undefined = bookingRoom
     ? ({
         id: bookingRoom.id,
         number: bookingRoom.number,
@@ -518,6 +530,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           longStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.yearlyPrice / 12,
           commercialEffectiveDate: startDate,
           depositAmount: 0,
+          managementFeeAmount: 0,
         },
       } satisfies LeaseRoomOption)
     : undefined;
@@ -538,7 +551,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     pricingSource,
     agreedMonthlyPrice,
   );
-  const amounts = committedCommercial
+  const rentAmounts = committedCommercial
     ? {
         contractRent: committedCommercial.agreedMonthlyPrice * committedCommercial.termMonths,
         minimumDp: Math.ceil(
@@ -566,26 +579,52 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           tierLabel: fallbackAmounts.tierLabel,
         }
       : fallbackAmounts;
+  const amounts =
+    commercialMode === "owner_sponsored"
+      ? {
+          ...rentAmounts,
+          contractRent: 0,
+          minimumDp: 0,
+          securityDeposit: 0,
+          monthlyRate: 0,
+        }
+      : rentAmounts;
+  const ownerAsset = selectedRoom
+    ? selectedRoom.kostType.category === "rukost"
+      ? ownerAssets.data?.rumahKostBuildings.find((asset) => asset.id === selectedRoom.buildingId)
+      : ownerAssets.data?.apartKostRooms.find((asset) => asset.id === selectedRoom.id)
+    : undefined;
+  const sponsoringOwner = ownerAsset?.currentOwner ?? null;
+  const projectedManagementFee =
+    commercialMode === "owner_sponsored"
+      ? (selectedRoom?.kostType.managementFeeAmount ?? 0) * termMonths
+      : 0;
   const pricingVariancePercent =
     amounts.referenceMonthlyRate > 0
       ? ((amounts.monthlyRate - amounts.referenceMonthlyRate) / amounts.referenceMonthlyRate) * 100
       : 0;
   const materialPricingVariance = Math.abs(pricingVariancePercent) >= 15;
   const agreedMonthlyPriceError =
+    commercialMode === "rent" &&
     pricingSource === "negotiated" &&
     (!Number.isSafeInteger(agreedMonthlyPrice) || agreedMonthlyPrice <= 0)
       ? "Tarif bulanan kesepakatan wajib lebih dari Rp0."
       : "";
   const pricingAgreementReasonError =
-    pricingSource === "negotiated" && pricingAgreementReason.trim().length < 3
+    commercialMode === "rent" &&
+    pricingSource === "negotiated" &&
+    pricingAgreementReason.trim().length < 3
       ? "Catatan kesepakatan wajib diisi minimal 3 karakter."
       : "";
   const standardShortTermError =
-    pricingSource === "standard" && termMonths < 3
+    commercialMode === "rent" && pricingSource === "standard" && termMonths < 3
       ? "Durasi 1–2 bulan hanya tersedia melalui kesepakatan khusus."
       : "";
   const pricingVarianceError =
-    pricingSource === "negotiated" && materialPricingVariance && !pricingVarianceAcknowledged
+    commercialMode === "rent" &&
+    pricingSource === "negotiated" &&
+    materialPricingVariance &&
+    !pricingVarianceAcknowledged
       ? "Konfirmasi selisih tarif 15% atau lebih sebelum menyimpan."
       : "";
   const stagedPaymentMode = !bookingLeadId;
@@ -776,38 +815,48 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     !pricingAgreementReasonError &&
     !standardShortTermError;
   const onboardingNotice = onboarding.error ? onboardingErrorNotice(onboarding.error) : null;
-  const stageTwoValid = stagedPaymentMode
-    ? Boolean(selectedRoom) &&
-      paymentEntries.length > 0 &&
-      totalRentCredit >= requiredInitialRent &&
-      totalRentCredit <= amounts.contractRent &&
-      stagedSecurityDepositAmount <= maximumSecurityDeposit &&
-      !hasUnsavedPaymentDraft &&
-      !pricingVarianceError &&
-      !commercialPricingPending &&
-      !paymentEvidenceBusy &&
-      confirmed
-    : Boolean(selectedRoom) &&
-      Number.isSafeInteger(securityDeposit) &&
-      securityDeposit >= 0 &&
-      Number.isSafeInteger(paidRent) &&
-      paidRent >= 0 &&
-      Number.isSafeInteger(bookingFee) &&
-      bookingFee >= 0 &&
-      !bookingFeeBelowMinimum &&
-      !bookingFeeExceedsRent &&
-      !rentCreditExceedsContract &&
-      !securityDepositExceedsMaximum &&
-      !pricingVarianceError &&
-      !commercialPricingPending &&
-      Boolean(bookingLeadQuote.data) &&
-      paymentChoiceSelected &&
-      paymentMethodSelected &&
-      creditedRentAmount >= requiredInitialRent &&
-      (!transferEvidenceRequired || paymentEvidence.length > 0) &&
-      (!historicalPaymentDateRequired || Boolean(paymentPaidAt)) &&
-      !paymentEvidenceBusy &&
-      confirmed;
+  const ownerSponsoredValid =
+    commercialMode === "owner_sponsored" &&
+    Boolean(selectedRoom && sponsoringOwner) &&
+    (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0 &&
+    ownerSponsorshipReason.trim().length >= 3 &&
+    (managementFeePayer !== "other" || managementFeePayerName.trim().length >= 2) &&
+    confirmed;
+  const stageTwoValid =
+    commercialMode === "owner_sponsored"
+      ? ownerSponsoredValid
+      : stagedPaymentMode
+        ? Boolean(selectedRoom) &&
+          paymentEntries.length > 0 &&
+          totalRentCredit >= requiredInitialRent &&
+          totalRentCredit <= amounts.contractRent &&
+          stagedSecurityDepositAmount <= maximumSecurityDeposit &&
+          !hasUnsavedPaymentDraft &&
+          !pricingVarianceError &&
+          !commercialPricingPending &&
+          !paymentEvidenceBusy &&
+          confirmed
+        : Boolean(selectedRoom) &&
+          Number.isSafeInteger(securityDeposit) &&
+          securityDeposit >= 0 &&
+          Number.isSafeInteger(paidRent) &&
+          paidRent >= 0 &&
+          Number.isSafeInteger(bookingFee) &&
+          bookingFee >= 0 &&
+          !bookingFeeBelowMinimum &&
+          !bookingFeeExceedsRent &&
+          !rentCreditExceedsContract &&
+          !securityDepositExceedsMaximum &&
+          !pricingVarianceError &&
+          !commercialPricingPending &&
+          Boolean(bookingLeadQuote.data) &&
+          paymentChoiceSelected &&
+          paymentMethodSelected &&
+          creditedRentAmount >= requiredInitialRent &&
+          (!transferEvidenceRequired || paymentEvidence.length > 0) &&
+          (!historicalPaymentDateRequired || Boolean(paymentPaidAt)) &&
+          !paymentEvidenceBusy &&
+          confirmed;
 
   useEffect(() => {
     if (
@@ -833,67 +882,93 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
 
   const stageTwoErrors = {
     roomId: selectedRoom ? "" : "Pilih satu kamar kosong terlebih dahulu.",
-    paidRent: stagedPaymentMode
-      ? ""
-      : rentCreditExceedsContract
-        ? `Jumlah pembayaran sewa melebihi sisa kewajiban. Maksimal DP atau pelunasan yang dapat dicatat ${currency(maximumRentPayment)}.`
-        : bookingFeeExceedsRent
-          ? "Booking fee tidak boleh melebihi total sewa kontrak."
-          : creditedRentAmount >= requiredInitialRent
-            ? ""
-            : paymentChoice === "full"
-              ? `Pelunasan sewa masih kurang ${currency(
-                  Math.max(0, amounts.contractRent - creditedRentAmount),
-                )}.`
-              : `Pembayaran awal wajib menutup minimal satu bulan sewa. Masih kurang ${currency(
-                  Math.max(0, requiredInitialRent - creditedRentAmount),
-                )}.`,
-    bookingFee: stagedPaymentMode
-      ? ""
-      : bookingFeeBelowMinimum
-        ? `Booking fee bila diisi minimal ${currency(MINIMUM_BOOKING_FEE)} atau Rp0.`
-        : bookingFeeExceedsRent
-          ? "Booking fee tidak boleh melebihi total sewa kontrak."
-          : "",
-    securityDeposit: stagedPaymentMode
-      ? ""
-      : securityDepositExceedsMaximum
-        ? `Security deposit melebihi batas. Nominalnya opsional mulai Rp0 dan maksimal ${currency(maximumSecurityDeposit)}.`
-        : "",
-    paymentEvidence: stagedPaymentMode
-      ? ""
-      : paymentEvidenceBusy
-        ? "Tunggu sampai bukti transfer selesai diproses."
-        : !transferEvidenceRequired || paymentEvidence.length > 0
-          ? ""
-          : "Bukti transfer wajib diunggah.",
-    paymentPaidAt: stagedPaymentMode
-      ? ""
-      : !historicalPaymentDateRequired || paymentPaidAt
+    sponsoringOwner:
+      commercialMode !== "owner_sponsored" || sponsoringOwner
         ? ""
-        : "Tanggal pembayaran wajib diisi selama mode input data historis aktif.",
-    paymentChoice: stagedPaymentMode
-      ? ""
-      : paymentChoiceSelected
+        : "Owner yang berlaku untuk kamar ini belum tersedia.",
+    managementFee:
+      commercialMode !== "owner_sponsored" || (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0
         ? ""
-        : "Pilih rekomendasi DP 25% atau pelunasan sewa terlebih dahulu.",
-    paymentMethod: stagedPaymentMode
-      ? ""
-      : !paymentChoiceSelected || paymentMethodSelected
+        : "Biaya pengelolaan properti belum ditetapkan.",
+    managementFeePayerName:
+      commercialMode !== "owner_sponsored" ||
+      managementFeePayer !== "other" ||
+      managementFeePayerName.trim().length >= 2
         ? ""
-        : "Pilih metode pembayaran terlebih dahulu.",
-    confirmed: confirmed ? "" : "Konfirmasi data wajib dicentang sebelum disimpan.",
-    payments: !stagedPaymentMode
-      ? ""
-      : paymentEntries.length === 0
-        ? "Tambahkan minimal satu pembayaran sebelum commit onboarding."
-        : totalRentCredit < requiredInitialRent
-          ? `Total kredit sewa belum memenuhi minimal satu bulan. Masih kurang ${currency(
-              requiredInitialRent - totalRentCredit,
-            )}.`
-          : hasUnsavedPaymentDraft
-            ? "Simpan atau batalkan pembayaran yang sedang diisi sebelum commit onboarding."
+        : "Nama pihak penanggung wajib diisi minimal 2 karakter.",
+    ownerSponsorshipReason:
+      commercialMode !== "owner_sponsored" || ownerSponsorshipReason.trim().length >= 3
+        ? ""
+        : "Alasan hunian tanggungan Owner wajib diisi minimal 3 karakter.",
+    paidRent:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : rentCreditExceedsContract
+          ? `Jumlah pembayaran sewa melebihi sisa kewajiban. Maksimal DP atau pelunasan yang dapat dicatat ${currency(maximumRentPayment)}.`
+          : bookingFeeExceedsRent
+            ? "Booking fee tidak boleh melebihi total sewa kontrak."
+            : creditedRentAmount >= requiredInitialRent
+              ? ""
+              : paymentChoice === "full"
+                ? `Pelunasan sewa masih kurang ${currency(
+                    Math.max(0, amounts.contractRent - creditedRentAmount),
+                  )}.`
+                : `Pembayaran awal wajib menutup minimal satu bulan sewa. Masih kurang ${currency(
+                    Math.max(0, requiredInitialRent - creditedRentAmount),
+                  )}.`,
+    bookingFee:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : bookingFeeBelowMinimum
+          ? `Booking fee bila diisi minimal ${currency(MINIMUM_BOOKING_FEE)} atau Rp0.`
+          : bookingFeeExceedsRent
+            ? "Booking fee tidak boleh melebihi total sewa kontrak."
             : "",
+    securityDeposit:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : securityDepositExceedsMaximum
+          ? `Security deposit melebihi batas. Nominalnya opsional mulai Rp0 dan maksimal ${currency(maximumSecurityDeposit)}.`
+          : "",
+    paymentEvidence:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : paymentEvidenceBusy
+          ? "Tunggu sampai bukti transfer selesai diproses."
+          : !transferEvidenceRequired || paymentEvidence.length > 0
+            ? ""
+            : "Bukti transfer wajib diunggah.",
+    paymentPaidAt:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : !historicalPaymentDateRequired || paymentPaidAt
+          ? ""
+          : "Tanggal pembayaran wajib diisi selama mode input data historis aktif.",
+    paymentChoice:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : paymentChoiceSelected
+          ? ""
+          : "Pilih rekomendasi DP 25% atau pelunasan sewa terlebih dahulu.",
+    paymentMethod:
+      commercialMode === "owner_sponsored" || stagedPaymentMode
+        ? ""
+        : !paymentChoiceSelected || paymentMethodSelected
+          ? ""
+          : "Pilih metode pembayaran terlebih dahulu.",
+    confirmed: confirmed ? "" : "Konfirmasi data wajib dicentang sebelum disimpan.",
+    payments:
+      commercialMode === "owner_sponsored" || !stagedPaymentMode
+        ? ""
+        : paymentEntries.length === 0
+          ? "Tambahkan minimal satu pembayaran sebelum commit onboarding."
+          : totalRentCredit < requiredInitialRent
+            ? `Total kredit sewa belum memenuhi minimal satu bulan. Masih kurang ${currency(
+                requiredInitialRent - totalRentCredit,
+              )}.`
+            : hasUnsavedPaymentDraft
+              ? "Simpan atau batalkan pembayaran yang sedang diisi sebelum commit onboarding."
+              : "",
   };
 
   useEffect(() => {
@@ -1236,39 +1311,66 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ktp_file_id: resident.ktpFileId || undefined,
       start_date: startDate,
       term_months: termMonths,
-      pricing_source: pricingSource,
-      agreed_monthly_price: pricingSource === "negotiated" ? amounts.monthlyRate : undefined,
+      commercial_mode: commercialMode,
+      sponsoring_owner_profile_id: sponsoringOwner?.id,
+      management_fee_payer: commercialMode === "owner_sponsored" ? managementFeePayer : undefined,
+      management_fee_payer_name:
+        commercialMode === "owner_sponsored" && managementFeePayer === "other"
+          ? managementFeePayerName.trim()
+          : undefined,
+      owner_sponsorship_reason:
+        commercialMode === "owner_sponsored" ? ownerSponsorshipReason.trim() : undefined,
+      pricing_source: commercialMode === "rent" ? pricingSource : undefined,
+      agreed_monthly_price:
+        commercialMode === "rent" && pricingSource === "negotiated"
+          ? amounts.monthlyRate
+          : undefined,
       pricing_agreement_reason:
-        pricingSource === "negotiated" ? pricingAgreementReason.trim() : undefined,
+        commercialMode === "rent" && pricingSource === "negotiated"
+          ? pricingAgreementReason.trim()
+          : undefined,
       pricing_variance_acknowledged:
-        pricingSource === "negotiated" && materialPricingVariance
+        commercialMode === "rent" && pricingSource === "negotiated" && materialPricingVariance
           ? pricingVarianceAcknowledged
           : undefined,
       billing_cycle: billingCycle,
       payment_plan_type:
         totalRentCredit === amounts.contractRent ? "annual_full" : "monthly_installments",
-      accepted_terms_version: "KMO-W05-v1",
-      dp_verified_amount: stagedPaymentMode ? 0 : paidRent,
-      security_deposit_funded_amount: stagedPaymentMode ? 0 : securityDeposit,
-      booking_fee_paid_amount: stagedPaymentMode ? undefined : bookingFee || undefined,
-      payment_method: stagedPaymentMode ? "cash" : paymentMethod,
-      payment_paid_at: stagedPaymentMode ? undefined : paymentPaidAt || undefined,
+      accepted_terms_version:
+        commercialMode === "owner_sponsored" ? "OWNER-SPONSORED-v1" : "KMO-W05-v1",
+      dp_verified_amount: commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : paidRent,
+      security_deposit_funded_amount:
+        commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : securityDeposit,
+      booking_fee_paid_amount:
+        commercialMode === "owner_sponsored" || stagedPaymentMode
+          ? undefined
+          : bookingFee || undefined,
+      payment_method:
+        commercialMode === "owner_sponsored" || stagedPaymentMode ? "cash" : paymentMethod,
+      payment_paid_at:
+        commercialMode === "owner_sponsored" || stagedPaymentMode
+          ? undefined
+          : paymentPaidAt || undefined,
       payment_evidence_file_ids:
-        !stagedPaymentMode && paymentEvidence.length > 0
+        commercialMode === "rent" && !stagedPaymentMode && paymentEvidence.length > 0
           ? paymentEvidence.map((file) => file.id)
           : undefined,
-      payment_note: stagedPaymentMode ? undefined : paymentNote.trim() || undefined,
-      payment_entries: stagedPaymentMode
-        ? paymentEntries.map((entry) => ({
-            purpose: entry.purpose,
-            amount: entry.amount,
-            method: entry.method,
-            paid_at: entry.paidAt,
-            evidence_file_ids:
-              entry.evidence.length > 0 ? entry.evidence.map((file) => file.id) : undefined,
-            note: entry.note || undefined,
-          }))
-        : undefined,
+      payment_note:
+        commercialMode === "owner_sponsored" || stagedPaymentMode
+          ? undefined
+          : paymentNote.trim() || undefined,
+      payment_entries:
+        commercialMode === "rent" && stagedPaymentMode
+          ? paymentEntries.map((entry) => ({
+              purpose: entry.purpose,
+              amount: entry.amount,
+              method: entry.method,
+              paid_at: entry.paidAt,
+              evidence_file_ids:
+                entry.evidence.length > 0 ? entry.evidence.map((file) => file.id) : undefined,
+              note: entry.note || undefined,
+            }))
+          : undefined,
       notes: resident.notes.trim() || undefined,
     };
     try {
@@ -1700,6 +1802,32 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             gender={resident.gender}
             termMonths={termMonths}
             amounts={amounts}
+            commercialMode={commercialMode}
+            onCommercialMode={(value) => {
+              setCommercialMode(value);
+              setPaymentEntries([]);
+              clearPaymentDraft();
+              setConfirmed(false);
+            }}
+            sponsoringOwner={sponsoringOwner}
+            ownerAssetsLoading={ownerAssets.isLoading || ownerAssets.isPlaceholderData}
+            managementFeePayer={managementFeePayer}
+            setManagementFeePayer={(value) => {
+              setManagementFeePayer(value);
+              setConfirmed(false);
+            }}
+            managementFeePayerName={managementFeePayerName}
+            setManagementFeePayerName={(value) => {
+              setManagementFeePayerName(value);
+              setConfirmed(false);
+            }}
+            ownerSponsorshipReason={ownerSponsorshipReason}
+            setOwnerSponsorshipReason={(value) => {
+              setOwnerSponsorshipReason(value);
+              setConfirmed(false);
+            }}
+            projectedManagementFee={projectedManagementFee}
+            ownerSponsoredAvailable={!bookingLeadId}
             pricingSource={pricingSource}
             pricingAgreementReason={pricingAgreementReason}
             pricingVariancePercent={pricingVariancePercent}
@@ -2335,6 +2463,18 @@ function RoomAndPaymentStep({
   gender,
   termMonths,
   amounts,
+  commercialMode,
+  onCommercialMode,
+  sponsoringOwner,
+  ownerAssetsLoading,
+  managementFeePayer,
+  setManagementFeePayer,
+  managementFeePayerName,
+  setManagementFeePayerName,
+  ownerSponsorshipReason,
+  setOwnerSponsorshipReason,
+  projectedManagementFee,
+  ownerSponsoredAvailable,
   pricingSource,
   pricingAgreementReason,
   pricingVariancePercent,
@@ -2392,6 +2532,18 @@ function RoomAndPaymentStep({
   gender: Gender | "";
   termMonths: number;
   amounts: ReturnType<typeof calculateLeaseAmounts>;
+  commercialMode: CommercialMode;
+  onCommercialMode: (value: CommercialMode) => void;
+  sponsoringOwner: { id: string; fullName: string } | null;
+  ownerAssetsLoading: boolean;
+  managementFeePayer: ManagementFeePayer;
+  setManagementFeePayer: (value: ManagementFeePayer) => void;
+  managementFeePayerName: string;
+  setManagementFeePayerName: (value: string) => void;
+  ownerSponsorshipReason: string;
+  setOwnerSponsorshipReason: (value: string) => void;
+  projectedManagementFee: number;
+  ownerSponsoredAvailable: boolean;
   pricingSource: PricingSource;
   pricingAgreementReason: string;
   pricingVariancePercent: number;
@@ -2434,6 +2586,10 @@ function RoomAndPaymentStep({
   stagedPayment: StagedPaymentController | null;
   errors?: {
     roomId: string;
+    sponsoringOwner: string;
+    managementFee: string;
+    managementFeePayerName: string;
+    ownerSponsorshipReason: string;
     paidRent: string;
     securityDeposit: string;
     bookingFee: string;
@@ -2583,786 +2739,975 @@ function RoomAndPaymentStep({
         </CardContent>
       </Card>
       {selectedRoom ? (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-          <Card
-            ref={paymentSectionRef}
-            tabIndex={-1}
-            className="min-w-0 scroll-mt-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          >
+        <div className="space-y-6">
+          <Card className="border-primary/30 bg-primary/[0.03]">
             <CardHeader>
-              <CardTitle>Pemenuhan pembayaran sebelum aktivasi</CardTitle>
+              <CardTitle>Jenis pengelolaan hunian</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
-              {bookingFeeLocked ? (
-                <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
-                  Booking Fee dari Minat Booking telah dikunci sebagai kredit sewa. Lengkapi DP atau
-                  pelunasan di bawah ini.
-                </p>
-              ) : null}
-              {initialPaymentLocked ? (
-                <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
-                  Komitmen pembayaran awal dari Minat Booking telah tercatat dan tidak dapat diubah
-                  pada formulir ini. Periode final tetap dapat disesuaikan sebelum commitment
-                  onboarding disimpan.
-                </p>
-              ) : null}
-              {stagedPayment ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">Daftar pembayaran sementara</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Pembayaran menjadi resmi sekaligus setelah Commit Onboarding berhasil.
+            <CardContent className="space-y-3">
+              <div
+                className="grid gap-3 sm:grid-cols-2"
+                role="group"
+                aria-label="Jenis pengelolaan hunian"
+              >
+                <Button
+                  type="button"
+                  variant={commercialMode === "rent" ? "default" : "info"}
+                  className="h-auto min-h-16 justify-start whitespace-normal border-2 border-primary px-4 py-3 text-left"
+                  aria-pressed={commercialMode === "rent"}
+                  onClick={() => onCommercialMode("rent")}
+                >
+                  <span>
+                    <span className="block font-semibold">Penyewaan berbayar</span>
+                    <span className="mt-1 block text-xs opacity-80">
+                      Sewa kamar dan pembayaran mengikuti kontrak.
+                    </span>
+                  </span>
+                </Button>
+                {ownerSponsoredAvailable ? (
+                  <Button
+                    type="button"
+                    variant={commercialMode === "owner_sponsored" ? "success" : "info"}
+                    className="h-auto min-h-16 justify-start whitespace-normal border-2 border-success px-4 py-3 text-left"
+                    aria-pressed={commercialMode === "owner_sponsored"}
+                    onClick={() => onCommercialMode("owner_sponsored")}
+                  >
+                    <span>
+                      <span className="block font-semibold">Hunian tanggungan Owner</span>
+                      <span className="mt-1 block text-xs opacity-80">
+                        Sewa kamar Rp0; biaya pengelolaan tetap dicatat.
+                      </span>
+                    </span>
+                  </Button>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+            {commercialMode === "owner_sponsored" ? (
+              <Card className="min-w-0 border-success/40 bg-success/[0.04]">
+                <CardHeader>
+                  <CardTitle>Otoritas hunian tanggungan Owner</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  {ownerAssetsLoading ? (
+                    <p className="text-sm text-muted-foreground">Memuat kepemilikan kamar...</p>
+                  ) : sponsoringOwner ? (
+                    <div className="rounded-xl border border-success/35 bg-success/10 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-success">
+                        Owner penanggung
+                      </p>
+                      <p className="mt-1 font-semibold">{sponsoringOwner.fullName}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Kepemilikan berlaku pada tanggal mulai sewa.
                       </p>
                     </div>
-                    <span className="rounded-full border border-success/40 bg-success/12 px-3 py-1 text-xs font-semibold text-success">
-                      {stagedPayment.entries.length} tahap tersimpan
-                    </span>
-                  </div>
-                  {stagedPayment.entries.length > 0 ? (
-                    <div className="overflow-hidden rounded-xl border border-border">
-                      {stagedPayment.entries.map((entry, index) => {
-                        const expanded = stagedPayment.expandedPaymentId === entry.id;
-                        const recentlyAdded = stagedPayment.recentlyAddedPaymentId === entry.id;
-                        const isLastEntry = index === stagedPayment.entries.length - 1;
-                        const entriesThroughStage = stagedPayment.entries.slice(0, index + 1);
-                        const rentSequence = entriesThroughStage.filter(
-                          (item) => item.purpose === "rent",
-                        ).length;
-                        const hasPriorRentCredit = entriesThroughStage
-                          .slice(0, -1)
-                          .some(
-                            (item) => item.purpose === "rent" || item.purpose === "booking_fee",
-                          );
-                        const rentCreditThroughStage = entriesThroughStage.reduce(
-                          (total, item) =>
-                            total +
-                            (item.purpose === "rent" || item.purpose === "booking_fee"
-                              ? item.amount
-                              : 0),
-                          0,
-                        );
-                        const entryLabel =
-                          entry.purpose !== "rent"
-                            ? paymentPurposeLabel(entry.purpose)
-                            : rentCreditThroughStage === amounts.contractRent
-                              ? "Pelunasan Sewa"
-                              : !hasPriorRentCredit
-                                ? "Uang Muka"
-                                : rentSequence === 1
-                                  ? "Angsuran Sewa"
-                                  : `Angsuran Sewa ke-${rentSequence}`;
-                        return (
-                          <div
-                            key={entry.id}
-                            className="relative border-b border-border last:border-b-0"
-                          >
-                            {recentlyAdded ? (
-                              <div
-                                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-card px-4 text-success motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-200 motion-reduce:animate-none"
-                                role="status"
-                                aria-live="polite"
-                              >
-                                <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-4 py-2 text-sm font-semibold">
-                                  <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-                                  Pembayaran tahap {index + 1} berhasil ditambahkan
-                                </span>
-                              </div>
-                            ) : null}
-                            <div className="flex flex-wrap items-center gap-3 bg-muted/15 px-4 py-3">
-                              <button
-                                type="button"
-                                className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => stagedPayment.onToggle(entry.id)}
-                                aria-expanded={expanded}
-                              >
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">
-                                  {index + 1}
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block font-medium">{entryLabel}</span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    {formatIndonesianDate(entry.paidAt)} ·{" "}
-                                    {paymentMethodLabel(entry.method)}
-                                  </span>
-                                </span>
-                                <span className="shrink-0 font-semibold">
-                                  {currency(entry.amount)}
-                                </span>
-                                {expanded ? (
-                                  <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                ) : (
-                                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                )}
-                              </button>
-                              <div className="flex gap-2">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="default"
-                                  onClick={() => stagedPayment.onEdit(entry)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" /> Edit
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeleteCandidate(entry)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" /> Hapus
-                                </Button>
-                              </div>
-                            </div>
-                            {expanded ? (
-                              <div className="grid gap-2 bg-background px-4 py-3 text-xs text-muted-foreground sm:grid-cols-2">
-                                <span>
-                                  Status: {entry.verified ? "Terverifikasi" : "Menunggu konfirmasi"}
-                                </span>
-                                <span>
-                                  {entry.evidence.length > 0
-                                    ? `${entry.evidence.length} bukti pembayaran`
-                                    : "Bukti belum dilampirkan"}
-                                </span>
-                                {entry.note ? (
-                                  <span className="sm:col-span-2">Catatan: {entry.note}</span>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {isLastEntry && stagedPayment.securityDepositPromptVisible ? (
-                              <div className="flex flex-col gap-3 border-t border-success/25 bg-success/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                                <p className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
-                                  <CheckCircle2
-                                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
-                                    aria-hidden="true"
-                                  />
-                                  <span>
-                                    Sewa kontrak sudah lunas. Tambahkan security deposit hanya jika
-                                    pembayaran jaminan juga perlu dicatat.
-                                  </span>
-                                </p>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="min-h-11 w-full shrink-0 whitespace-nowrap border-primary/50 text-primary hover:border-primary hover:bg-primary/10 hover:text-primary sm:w-auto"
-                                  onClick={stagedPayment.onOpenSecurityDeposit}
-                                  aria-label="Tambahkan pembayaran security deposit"
-                                >
-                                  <Plus className="h-4 w-4" aria-hidden="true" />
-                                  Tambah Security Deposit
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-                      Belum ada pembayaran tersimpan. Isi formulir tahap pertama di bawah ini.
-                    </div>
+                    <NoticeAlert
+                      tone="destructive"
+                      title="Owner kamar belum ditetapkan"
+                      description="Tetapkan Owner yang berlaku untuk bangunan atau kamar ini sebelum membuat hunian tanggungan Owner."
+                    />
                   )}
-                  {errors?.payments ? (
+                  {errors?.sponsoringOwner ? (
                     <p
-                      className="text-xs text-destructive"
-                      data-validation-target={hasStagedDraftError ? undefined : "true"}
-                      role="alert"
-                      tabIndex={hasStagedDraftError ? undefined : -1}
-                    >
-                      {errors.payments}
-                    </p>
-                  ) : null}
-                  {!stagedPayment.hideDraft ? (
-                    <>
-                      <div
-                        ref={editorRef}
-                        tabIndex={-1}
-                        className="scroll-mt-6 border-t border-border pt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                      >
-                        <p className="font-semibold">
-                          {stagedPayment.editingPaymentId
-                            ? `Edit pembayaran tahap ${
-                                stagedPayment.entries.findIndex(
-                                  (entry) => entry.id === stagedPayment.editingPaymentId,
-                                ) + 1
-                              }`
-                            : `Pembayaran tahap ${stagedPayment.entries.length + 1}`}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Satu tahap hanya memuat satu tujuan pembayaran agar riwayat dan
-                          kuitansinya jelas.
-                        </p>
-                      </div>
-                      {stagedPayment.optionalSecurityDepositDraftOpen ? (
-                        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-success/30 bg-success/5 px-4 text-sm font-semibold text-foreground">
-                          <CheckCircle2
-                            className="h-4 w-4 shrink-0 text-success"
-                            aria-hidden="true"
-                          />
-                          Tujuan tahap ini: Security Deposit
-                        </div>
-                      ) : (
-                        <div
-                          className="grid gap-2 sm:grid-cols-3"
-                          role="group"
-                          aria-label="Tujuan pembayaran"
-                        >
-                          {(["rent", "booking_fee", "security_deposit"] as const).map((purpose) => (
-                            <Button
-                              key={purpose}
-                              type="button"
-                              variant={stagedPayment.purpose === purpose ? "default" : "outline"}
-                              className="min-h-11"
-                              disabled={
-                                (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
-                                (purpose === "booking_fee" &&
-                                  (hasOtherBookingFee || hasRecordedRent)) ||
-                                (purpose === "security_deposit" && hasOtherSecurityDeposit)
-                              }
-                              onClick={() => stagedPayment.onPurposeChange(purpose)}
-                            >
-                              {paymentPurposeLabel(purpose)}
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-                      {stagedDraftErrors?.purpose ? (
-                        <p
-                          className="text-xs text-destructive"
-                          data-validation-target="true"
-                          role="alert"
-                          tabIndex={-1}
-                        >
-                          {stagedDraftErrors.purpose}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              {!stagedPayment?.hideDraft && (!stagedPayment || stagedPayment.purpose === "rent") ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant={
-                      paymentChoiceSelected && paymentChoice === "dp" ? "default" : "outline"
-                    }
-                    className="min-h-11"
-                    onClick={() => onPaymentChoiceChange("dp")}
-                    disabled={initialPaymentLocked || Boolean(stagedPayment?.rentPurposeDisabled)}
-                  >
-                    {stagedPayment ? stagedRentChoice : "Rekomendasi DP 25%"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={
-                      paymentChoiceSelected && paymentChoice === "full" ? "default" : "outline"
-                    }
-                    className="min-h-11"
-                    onClick={() => onPaymentChoiceChange("full")}
-                    disabled={initialPaymentLocked || Boolean(stagedPayment?.rentPurposeDisabled)}
-                  >
-                    {stagedPayment ? "Lunasi Sewa" : "Lunas sewa"}
-                  </Button>
-                </div>
-              ) : null}
-              {!stagedPayment?.hideDraft && errors?.paymentChoice ? (
-                <p
-                  className="text-xs text-destructive"
-                  data-validation-target="true"
-                  role="alert"
-                  tabIndex={-1}
-                >
-                  {errors.paymentChoice}
-                </p>
-              ) : null}
-              {!stagedPayment?.hideDraft && paymentChoiceSelected ? (
-                <div className="space-y-2">
-                  <Label>Metode pembayaran *</Label>
-                  <div
-                    className="grid grid-cols-2 gap-2"
-                    role="group"
-                    aria-label="Metode pembayaran"
-                  >
-                    <Button
-                      type="button"
-                      variant={
-                        paymentMethodSelected && paymentMethod === "bank_transfer"
-                          ? "default"
-                          : "outline"
-                      }
-                      className="min-h-11"
-                      aria-pressed={paymentMethodSelected && paymentMethod === "bank_transfer"}
-                      onClick={() => setPaymentMethod("bank_transfer")}
-                      disabled={initialPaymentLocked}
-                    >
-                      Transfer Bank
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={
-                        paymentMethodSelected && paymentMethod === "cash" ? "default" : "outline"
-                      }
-                      className="min-h-11"
-                      aria-pressed={paymentMethodSelected && paymentMethod === "cash"}
-                      onClick={() => setPaymentMethod("cash")}
-                      disabled={initialPaymentLocked}
-                    >
-                      Tunai
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {historicalEntryMode && !initialPaymentLocked
-                      ? "Pembayaran yang dicatat Admin langsung terverifikasi. Transfer bank tetap wajib menyertakan bukti."
-                      : "Tunai tercatat terverifikasi. Transfer bank wajib menyertakan bukti dan berstatus menunggu konfirmasi; keduanya tanpa payment gateway."}
-                  </p>
-                  {stagedDraftErrors?.method || errors?.paymentMethod ? (
-                    <p
-                      className="text-xs text-destructive"
+                      className="text-sm font-medium text-destructive"
                       data-validation-target="true"
                       role="alert"
                       tabIndex={-1}
                     >
-                      {stagedDraftErrors?.method || errors?.paymentMethod}
+                      {errors.sponsoringOwner}
                     </p>
                   ) : null}
-                </div>
-              ) : !stagedPayment?.hideDraft ? (
-                <p className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                  Pilih jenis pembayaran awal untuk melanjutkan ke metode pembayaran.
-                </p>
-              ) : null}
-              {!stagedPayment?.hideDraft && paymentChoiceSelected && paymentMethodSelected ? (
-                <>
+                  {errors?.managementFee ? (
+                    <p
+                      className="text-sm font-medium text-destructive"
+                      data-validation-target="true"
+                      role="alert"
+                      tabIndex={-1}
+                    >
+                      {errors.managementFee}
+                    </p>
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2">
-                    {!stagedPayment || stagedPayment.purpose === "rent" ? (
-                      <div className="space-y-2">
-                        <Label htmlFor="paid-rent">
-                          {paymentChoice === "full"
-                            ? "Jumlah pelunasan sewa"
-                            : stagedPayment && stagedRentChoice === "Angsuran"
-                              ? activeRentSequence > 1
-                                ? `Pembayaran Angsuran Sewa ke-${activeRentSequence}`
-                                : "Pembayaran Angsuran Sewa"
-                              : stagedPayment
-                                ? "Uang Muka Sewa"
-                                : "DP / uang muka sewa"}
-                          <span className="text-destructive"> *</span>
-                        </Label>
-                        <RupiahInput
-                          id="paid-rent"
-                          value={paidRent}
-                          onValueChange={setPaidRent}
-                          invalid={Boolean(stagedDraftErrors?.amount || errors?.paidRent)}
-                          readOnly={paymentChoice === "full" || initialPaymentLocked}
-                          onClear={
-                            paymentChoice === "dp" && !initialPaymentLocked
-                              ? () => {
-                                  setPaidRent(0);
-                                  setConfirmed(false);
-                                }
-                              : undefined
-                          }
-                          clearLabel="Hapus nominal rekomendasi uang muka"
-                        />
-                        {paymentChoice === "full" ? (
-                          <p className="text-xs text-muted-foreground">
-                            {stagedPayment
-                              ? `Terhitung otomatis dari sisa sewa ${currency(maximumRentPayment)}.`
-                              : `Terhitung otomatis: total sewa dikurangi booking fee ${currency(bookingFee)}.`}
-                          </p>
-                        ) : !stagedPayment ? (
-                          <p className="text-xs text-muted-foreground">
-                            Rekomendasi DP 25% adalah {currency(amounts.minimumDp)}. Booking fee
-                            menjadi kredit sewa; total pembayaran awal boleh disesuaikan, tetapi
-                            wajib menutup minimal satu bulan sewa.
-                          </p>
-                        ) : null}
-                        {stagedDraftErrors?.amount || errors?.paidRent ? (
-                          <p className="text-xs text-destructive" role="alert">
-                            {stagedDraftErrors?.amount || errors?.paidRent}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {!stagedPayment || stagedPayment.purpose === "booking_fee" ? (
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="booking-fee">Booking fee (opsional)</Label>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="min-w-0 flex-1">
-                            <RupiahInput
-                              id="booking-fee"
-                              value={bookingFee}
-                              onValueChange={setBookingFee}
-                              invalid={Boolean(
-                                stagedDraftErrors?.amount ||
-                                bookingFeeBelowMinimum ||
-                                bookingFeeExceedsRent,
-                              )}
-                              readOnly={bookingFeeLocked}
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant={bookingFee === 1_000_000 ? "default" : "outline"}
-                            className="min-h-11"
-                            onClick={() => setBookingFee(bookingFee === 1_000_000 ? 0 : 1_000_000)}
-                            disabled={bookingFeeLocked}
-                          >
-                            Rp1.000.000
-                          </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Isi bila calon penghuni telah membayar biaya penahanan kamar. Booking fee
-                          menjadi kredit sewa: mengurangi DP atau pelunasan yang masih perlu
-                          dibayar, bukan security deposit. Nilai yang diizinkan adalah Rp0 atau
-                          minimal {currency(MINIMUM_BOOKING_FEE)}.
-                        </p>
-                        {stagedDraftErrors?.amount || errors?.bookingFee ? (
-                          <p className="text-xs text-destructive">
-                            {stagedDraftErrors?.amount || errors?.bookingFee}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {!stagedPayment || stagedPayment.purpose === "security_deposit" ? (
-                      <div className="space-y-2">
-                        <Label htmlFor="deposit">Security deposit</Label>
-                        <RupiahInput
-                          id="deposit"
-                          value={securityDeposit}
-                          onValueChange={setSecurityDeposit}
-                          invalid={Boolean(stagedDraftErrors?.amount || errors?.securityDeposit)}
-                          readOnly={initialPaymentLocked}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Opsional. Minimal Rp0 dan maksimal {currency(maximumSecurityDeposit)}
-                          (setara satu bulan berdasarkan nilai kontrak). Nominal ini terpisah dari
-                          DP.
-                        </p>
-                        {stagedDraftErrors?.amount || errors?.securityDeposit ? (
-                          <p className="text-xs text-destructive" role="alert">
-                            {stagedDraftErrors?.amount || errors?.securityDeposit}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  {historicalEntryMode && !initialPaymentLocked ? (
-                    <NoticeAlert
-                      tone="warning"
-                      density="compact"
-                      title="Mode input data historis aktif"
-                      description="Pembayaran tunai maupun transfer yang dicatat Admin langsung terverifikasi. Isi tanggal pembayaran sesuai bukti asli; fitur verifikasi manual tetap tersedia setelah mode ini dinonaktifkan."
-                    />
-                  ) : null}
-                  {stagedPayment || historicalPaymentDateRequired ? (
-                    <HeroUiDatePicker
-                      id="payment-paid-at"
-                      label="Tanggal pembayaran"
-                      value={paymentPaidAt}
-                      onChange={(value) => setPaymentPaidAt(value ?? "")}
-                      required
-                      validationTarget={Boolean(stagedDraftErrors?.paidAt || errors?.paymentPaidAt)}
-                      error={stagedDraftErrors?.paidAt || errors?.paymentPaidAt}
-                      description="Gunakan tanggal dana diterima atau tanggal pada bukti pembayaran."
-                    />
-                  ) : null}
-                  <div className="space-y-2">
-                    <Label htmlFor="payment-note">Catatan pembayaran (opsional)</Label>
-                    <Textarea
-                      id="payment-note"
-                      value={paymentNote}
-                      onChange={(event) => setPaymentNote(event.target.value)}
-                      maxLength={500}
-                      placeholder="Contoh: transfer dari rekening orang tua"
-                      disabled={initialPaymentLocked}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Catatan ini disimpan pada catatan pembayaran, bukan catatan onboarding atau
-                      lease.
-                    </p>
-                  </div>
-                  {paymentMethod === "bank_transfer" && !initialPaymentLocked ? (
                     <div className="space-y-2">
-                      <EvidenceFileUploadField
-                        propertyId={propertyId}
-                        label="Bukti transfer"
-                        description={
-                          transferEvidenceRequired
-                            ? "Wajib untuk Transfer Bank. Unggah JPG, PNG, WebP, atau PDF; foto besar dikompresi otomatis. Gunakan Lihat untuk memastikan bukti sudah benar."
-                            : "Opsional selama mode input data historis aktif. Anda tetap dapat melampirkan maksimal 5 file JPG, PNG, WebP, atau PDF."
+                      <Label>
+                        Penanggung biaya pengelolaan <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={managementFeePayer}
+                        onValueChange={(value) =>
+                          setManagementFeePayer(value as ManagementFeePayer)
                         }
-                        required={transferEvidenceRequired}
-                        invalid={Boolean(stagedDraftErrors?.evidence || errors?.paymentEvidence)}
-                        errorId="payment-evidence-error"
-                        values={paymentEvidence}
-                        onChange={onPaymentEvidenceChange}
-                        onBusyChange={onPaymentEvidenceBusyChange}
-                        disabled={!propertyId}
-                        deleteOnRemove={!stagedPayment}
-                        className="rounded-xl border border-border bg-muted/20 p-4"
-                      />
-                      {stagedDraftErrors?.evidence || errors?.paymentEvidence ? (
-                        <p
-                          className="text-xs text-destructive"
-                          data-validation-target="true"
-                          id="payment-evidence-error"
-                          role="alert"
-                          tabIndex={-1}
-                        >
-                          {stagedDraftErrors?.evidence || errors?.paymentEvidence}
-                        </p>
-                      ) : null}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="owner">Owner</SelectItem>
+                          <SelectItem value="resident">Penghuni</SelectItem>
+                          <SelectItem value="other">Pihak lain</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : null}
-                  {!stagedPayment && (errors?.paidRent || errors?.securityDeposit) ? (
-                    <NoticeAlert
-                      tone="destructive"
-                      density="compact"
-                      title="Nominal pembayaran belum valid"
-                      description={errors.securityDeposit || errors.paidRent}
+                    {managementFeePayer === "other" ? (
+                      <div className="space-y-2">
+                        <Label>
+                          Nama penanggung <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          value={managementFeePayerName}
+                          onChange={(event) => setManagementFeePayerName(event.target.value)}
+                          placeholder="Nama pihak penanggung"
+                        />
+                        {errors?.managementFeePayerName ? (
+                          <p
+                            className="text-xs font-medium text-destructive"
+                            data-validation-target="true"
+                            role="alert"
+                            tabIndex={-1}
+                          >
+                            {errors.managementFeePayerName}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      Alasan hunian tanggungan Owner <span className="text-destructive">*</span>
+                    </Label>
+                    <Textarea
+                      value={ownerSponsorshipReason}
+                      onChange={(event) => setOwnerSponsorshipReason(event.target.value)}
+                      placeholder="Contoh: Anak pemilik properti menempati kamar selama masa studi."
+                      rows={3}
                     />
-                  ) : null}
-                  {stagedPayment && !stagedPayment.hideDraft ? (
-                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-                      {stagedPayment.editingPaymentId ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={stagedPayment.onCancelEdit}
+                    {errors?.ownerSponsorshipReason ? (
+                      <p
+                        className="text-xs font-medium text-destructive"
+                        data-validation-target="true"
+                        role="alert"
+                        tabIndex={-1}
+                      >
+                        {errors.ownerSponsorshipReason}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">
+                    <Summary label="Sewa kamar" value="Rp0" />
+                    <Summary
+                      label="Biaya pengelolaan per bulan"
+                      value={currency(selectedRoom.kostType.managementFeeAmount ?? 0)}
+                    />
+                    <Summary
+                      label={`Proyeksi ${termMonths} bulan`}
+                      value={currency(projectedManagementFee)}
+                    />
+                    <Summary label="Jatuh tempo" value="Fleksibel · tanpa denda keterlambatan" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pembayaran biaya pengelolaan dicatat setelah penyewaan dibuat dan tidak menjadi
+                    pendapatan sewa Owner.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+            <Card
+              ref={paymentSectionRef}
+              tabIndex={-1}
+              className={`${commercialMode === "owner_sponsored" ? "hidden" : ""} min-w-0 scroll-mt-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+            >
+              <CardHeader>
+                <CardTitle>Pemenuhan pembayaran sebelum aktivasi</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {bookingFeeLocked ? (
+                  <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
+                    Booking Fee dari Minat Booking telah dikunci sebagai kredit sewa. Lengkapi DP
+                    atau pelunasan di bawah ini.
+                  </p>
+                ) : null}
+                {initialPaymentLocked ? (
+                  <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
+                    Komitmen pembayaran awal dari Minat Booking telah tercatat dan tidak dapat
+                    diubah pada formulir ini. Periode final tetap dapat disesuaikan sebelum
+                    commitment onboarding disimpan.
+                  </p>
+                ) : null}
+                {stagedPayment ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">Daftar pembayaran sementara</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Pembayaran menjadi resmi sekaligus setelah Commit Onboarding berhasil.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-success/40 bg-success/12 px-3 py-1 text-xs font-semibold text-success">
+                        {stagedPayment.entries.length} tahap tersimpan
+                      </span>
+                    </div>
+                    {stagedPayment.entries.length > 0 ? (
+                      <div className="overflow-hidden rounded-xl border border-border">
+                        {stagedPayment.entries.map((entry, index) => {
+                          const expanded = stagedPayment.expandedPaymentId === entry.id;
+                          const recentlyAdded = stagedPayment.recentlyAddedPaymentId === entry.id;
+                          const isLastEntry = index === stagedPayment.entries.length - 1;
+                          const entriesThroughStage = stagedPayment.entries.slice(0, index + 1);
+                          const rentSequence = entriesThroughStage.filter(
+                            (item) => item.purpose === "rent",
+                          ).length;
+                          const hasPriorRentCredit = entriesThroughStage
+                            .slice(0, -1)
+                            .some(
+                              (item) => item.purpose === "rent" || item.purpose === "booking_fee",
+                            );
+                          const rentCreditThroughStage = entriesThroughStage.reduce(
+                            (total, item) =>
+                              total +
+                              (item.purpose === "rent" || item.purpose === "booking_fee"
+                                ? item.amount
+                                : 0),
+                            0,
+                          );
+                          const entryLabel =
+                            entry.purpose !== "rent"
+                              ? paymentPurposeLabel(entry.purpose)
+                              : rentCreditThroughStage === amounts.contractRent
+                                ? "Pelunasan Sewa"
+                                : !hasPriorRentCredit
+                                  ? "Uang Muka"
+                                  : rentSequence === 1
+                                    ? "Angsuran Sewa"
+                                    : `Angsuran Sewa ke-${rentSequence}`;
+                          return (
+                            <div
+                              key={entry.id}
+                              className="relative border-b border-border last:border-b-0"
+                            >
+                              {recentlyAdded ? (
+                                <div
+                                  className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-card px-4 text-success motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-200 motion-reduce:animate-none"
+                                  role="status"
+                                  aria-live="polite"
+                                >
+                                  <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-4 py-2 text-sm font-semibold">
+                                    <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+                                    Pembayaran tahap {index + 1} berhasil ditambahkan
+                                  </span>
+                                </div>
+                              ) : null}
+                              <div className="flex flex-wrap items-center gap-3 bg-muted/15 px-4 py-3">
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  onClick={() => stagedPayment.onToggle(entry.id)}
+                                  aria-expanded={expanded}
+                                >
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">
+                                    {index + 1}
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block font-medium">{entryLabel}</span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      {formatIndonesianDate(entry.paidAt)} ·{" "}
+                                      {paymentMethodLabel(entry.method)}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 font-semibold">
+                                    {currency(entry.amount)}
+                                  </span>
+                                  {expanded ? (
+                                    <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  )}
+                                </button>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => stagedPayment.onEdit(entry)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" /> Edit
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => setDeleteCandidate(entry)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" /> Hapus
+                                  </Button>
+                                </div>
+                              </div>
+                              {expanded ? (
+                                <div className="grid gap-2 bg-background px-4 py-3 text-xs text-muted-foreground sm:grid-cols-2">
+                                  <span>
+                                    Status:{" "}
+                                    {entry.verified ? "Terverifikasi" : "Menunggu konfirmasi"}
+                                  </span>
+                                  <span>
+                                    {entry.evidence.length > 0
+                                      ? `${entry.evidence.length} bukti pembayaran`
+                                      : "Bukti belum dilampirkan"}
+                                  </span>
+                                  {entry.note ? (
+                                    <span className="sm:col-span-2">Catatan: {entry.note}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {isLastEntry && stagedPayment.securityDepositPromptVisible ? (
+                                <div className="flex flex-col gap-3 border-t border-success/25 bg-success/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
+                                    <CheckCircle2
+                                      className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                                      aria-hidden="true"
+                                    />
+                                    <span>
+                                      Sewa kontrak sudah lunas. Tambahkan security deposit hanya
+                                      jika pembayaran jaminan juga perlu dicatat.
+                                    </span>
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="min-h-11 w-full shrink-0 whitespace-nowrap border-primary/50 text-primary hover:border-primary hover:bg-primary/10 hover:text-primary sm:w-auto"
+                                    onClick={stagedPayment.onOpenSecurityDeposit}
+                                    aria-label="Tambahkan pembayaran security deposit"
+                                  >
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                    Tambah Security Deposit
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+                        Belum ada pembayaran tersimpan. Isi formulir tahap pertama di bawah ini.
+                      </div>
+                    )}
+                    {errors?.payments ? (
+                      <p
+                        className="text-xs text-destructive"
+                        data-validation-target={hasStagedDraftError ? undefined : "true"}
+                        role="alert"
+                        tabIndex={hasStagedDraftError ? undefined : -1}
+                      >
+                        {errors.payments}
+                      </p>
+                    ) : null}
+                    {!stagedPayment.hideDraft ? (
+                      <>
+                        <div
+                          ref={editorRef}
+                          tabIndex={-1}
+                          className="scroll-mt-6 border-t border-border pt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                         >
-                          <X className="h-4 w-4" /> Batalkan edit
-                        </Button>
-                      ) : stagedPayment.optionalSecurityDepositDraftOpen ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={stagedPayment.onCancelSecurityDeposit}
-                        >
-                          <X className="h-4 w-4" /> Batal tambah deposit
-                        </Button>
-                      ) : null}
+                          <p className="font-semibold">
+                            {stagedPayment.editingPaymentId
+                              ? `Edit pembayaran tahap ${
+                                  stagedPayment.entries.findIndex(
+                                    (entry) => entry.id === stagedPayment.editingPaymentId,
+                                  ) + 1
+                                }`
+                              : `Pembayaran tahap ${stagedPayment.entries.length + 1}`}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Satu tahap hanya memuat satu tujuan pembayaran agar riwayat dan
+                            kuitansinya jelas.
+                          </p>
+                        </div>
+                        {stagedPayment.optionalSecurityDepositDraftOpen ? (
+                          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-success/30 bg-success/5 px-4 text-sm font-semibold text-foreground">
+                            <CheckCircle2
+                              className="h-4 w-4 shrink-0 text-success"
+                              aria-hidden="true"
+                            />
+                            Tujuan tahap ini: Security Deposit
+                          </div>
+                        ) : (
+                          <div
+                            className="grid gap-2 sm:grid-cols-3"
+                            role="group"
+                            aria-label="Tujuan pembayaran"
+                          >
+                            {(["rent", "booking_fee", "security_deposit"] as const).map(
+                              (purpose) => (
+                                <Button
+                                  key={purpose}
+                                  type="button"
+                                  variant={
+                                    stagedPayment.purpose === purpose ? "default" : "outline"
+                                  }
+                                  className="min-h-11"
+                                  disabled={
+                                    (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
+                                    (purpose === "booking_fee" &&
+                                      (hasOtherBookingFee || hasRecordedRent)) ||
+                                    (purpose === "security_deposit" && hasOtherSecurityDeposit)
+                                  }
+                                  onClick={() => stagedPayment.onPurposeChange(purpose)}
+                                >
+                                  {paymentPurposeLabel(purpose)}
+                                </Button>
+                              ),
+                            )}
+                          </div>
+                        )}
+                        {stagedDraftErrors?.purpose ? (
+                          <p
+                            className="text-xs text-destructive"
+                            data-validation-target="true"
+                            role="alert"
+                            tabIndex={-1}
+                          >
+                            {stagedDraftErrors.purpose}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                {!stagedPayment?.hideDraft &&
+                (!stagedPayment || stagedPayment.purpose === "rent") ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={
+                        paymentChoiceSelected && paymentChoice === "dp" ? "default" : "outline"
+                      }
+                      className="min-h-11"
+                      onClick={() => onPaymentChoiceChange("dp")}
+                      disabled={initialPaymentLocked || Boolean(stagedPayment?.rentPurposeDisabled)}
+                    >
+                      {stagedPayment ? stagedRentChoice : "Rekomendasi DP 25%"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={
+                        paymentChoiceSelected && paymentChoice === "full" ? "default" : "outline"
+                      }
+                      className="min-h-11"
+                      onClick={() => onPaymentChoiceChange("full")}
+                      disabled={initialPaymentLocked || Boolean(stagedPayment?.rentPurposeDisabled)}
+                    >
+                      {stagedPayment ? "Lunasi Sewa" : "Lunas sewa"}
+                    </Button>
+                  </div>
+                ) : null}
+                {!stagedPayment?.hideDraft && errors?.paymentChoice ? (
+                  <p
+                    className="text-xs text-destructive"
+                    data-validation-target="true"
+                    role="alert"
+                    tabIndex={-1}
+                  >
+                    {errors.paymentChoice}
+                  </p>
+                ) : null}
+                {!stagedPayment?.hideDraft && paymentChoiceSelected ? (
+                  <div className="space-y-2">
+                    <Label>Metode pembayaran *</Label>
+                    <div
+                      className="grid grid-cols-2 gap-2"
+                      role="group"
+                      aria-label="Metode pembayaran"
+                    >
                       <Button
                         type="button"
+                        variant={
+                          paymentMethodSelected && paymentMethod === "bank_transfer"
+                            ? "default"
+                            : "outline"
+                        }
                         className="min-h-11"
-                        disabled={paymentEvidenceBusy}
-                        onClick={stagedPayment.onSave}
+                        aria-pressed={paymentMethodSelected && paymentMethod === "bank_transfer"}
+                        onClick={() => setPaymentMethod("bank_transfer")}
+                        disabled={initialPaymentLocked}
                       >
-                        {stagedPayment.editingPaymentId ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Plus className="h-4 w-4" />
-                        )}
-                        {stagedPayment.editingPaymentId
-                          ? "Simpan perubahan"
-                          : `Tambahkan Pembayaran Tahap ${stagedPayment.entries.length + 1}`}
+                        Transfer Bank
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={
+                          paymentMethodSelected && paymentMethod === "cash" ? "default" : "outline"
+                        }
+                        className="min-h-11"
+                        aria-pressed={paymentMethodSelected && paymentMethod === "cash"}
+                        onClick={() => setPaymentMethod("cash")}
+                        disabled={initialPaymentLocked}
+                      >
+                        Tunai
                       </Button>
                     </div>
-                  ) : null}
-                </>
-              ) : null}
-            </CardContent>
-          </Card>
-          <Card className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:self-start">
-            <CardHeader>
-              <CardTitle>Ringkasan Pembayaran</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm">
-              {selectedRoom ? (
-                <div className="divide-y rounded-xl border bg-muted/10 px-4">
-                  <div className="grid gap-2 py-4 sm:grid-cols-2">
-                    <Summary label="Kamar" value={selectedRoom.number} />
-                    <Summary label="Tipe kost" value={selectedRoom.kostType.name} />
-                    <Summary
-                      label={`Tarif acuan ${amounts.tierLabel}`}
-                      value={`${currency(amounts.referenceMonthlyRate)} / bulan`}
-                    />
-                    <Summary
-                      label={pricingSource === "negotiated" ? "Tarif kesepakatan" : "Tarif kontrak"}
-                      value={`${currency(amounts.monthlyRate)} / bulan`}
-                    />
-                    <Summary label="Durasi sewa" value={`${termMonths} bulan`} />
-                    <Summary
-                      label="Tarif efektif"
-                      value={formatIndonesianDate(selectedRoom.kostType.commercialEffectiveDate)}
-                    />
-                    {pricingSource === "negotiated" ? (
-                      <div className="space-y-2 rounded-lg border border-warning/35 bg-warning/10 p-3 sm:col-span-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold text-warning">Kesepakatan khusus</span>
-                          <span className="rounded-full bg-background/70 px-2.5 py-1 text-xs font-semibold text-foreground">
-                            Selisih {pricingVariancePercent > 0 ? "+" : ""}
-                            {pricingVariancePercent.toLocaleString("id-ID", {
-                              maximumFractionDigits: 1,
-                            })}
-                            %
-                          </span>
+                    <p className="text-xs text-muted-foreground">
+                      {historicalEntryMode && !initialPaymentLocked
+                        ? "Pembayaran yang dicatat Admin langsung terverifikasi. Transfer bank tetap wajib menyertakan bukti."
+                        : "Tunai tercatat terverifikasi. Transfer bank wajib menyertakan bukti dan berstatus menunggu konfirmasi; keduanya tanpa payment gateway."}
+                    </p>
+                    {stagedDraftErrors?.method || errors?.paymentMethod ? (
+                      <p
+                        className="text-xs text-destructive"
+                        data-validation-target="true"
+                        role="alert"
+                        tabIndex={-1}
+                      >
+                        {stagedDraftErrors?.method || errors?.paymentMethod}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : !stagedPayment?.hideDraft ? (
+                  <p className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                    Pilih jenis pembayaran awal untuk melanjutkan ke metode pembayaran.
+                  </p>
+                ) : null}
+                {!stagedPayment?.hideDraft && paymentChoiceSelected && paymentMethodSelected ? (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {!stagedPayment || stagedPayment.purpose === "rent" ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="paid-rent">
+                            {paymentChoice === "full"
+                              ? "Jumlah pelunasan sewa"
+                              : stagedPayment && stagedRentChoice === "Angsuran"
+                                ? activeRentSequence > 1
+                                  ? `Pembayaran Angsuran Sewa ke-${activeRentSequence}`
+                                  : "Pembayaran Angsuran Sewa"
+                                : stagedPayment
+                                  ? "Uang Muka Sewa"
+                                  : "DP / uang muka sewa"}
+                            <span className="text-destructive"> *</span>
+                          </Label>
+                          <RupiahInput
+                            id="paid-rent"
+                            value={paidRent}
+                            onValueChange={setPaidRent}
+                            invalid={Boolean(stagedDraftErrors?.amount || errors?.paidRent)}
+                            readOnly={paymentChoice === "full" || initialPaymentLocked}
+                            onClear={
+                              paymentChoice === "dp" && !initialPaymentLocked
+                                ? () => {
+                                    setPaidRent(0);
+                                    setConfirmed(false);
+                                  }
+                                : undefined
+                            }
+                            clearLabel="Hapus nominal rekomendasi uang muka"
+                          />
+                          {paymentChoice === "full" ? (
+                            <p className="text-xs text-muted-foreground">
+                              {stagedPayment
+                                ? `Terhitung otomatis dari sisa sewa ${currency(maximumRentPayment)}.`
+                                : `Terhitung otomatis: total sewa dikurangi booking fee ${currency(bookingFee)}.`}
+                            </p>
+                          ) : !stagedPayment ? (
+                            <p className="text-xs text-muted-foreground">
+                              Rekomendasi DP 25% adalah {currency(amounts.minimumDp)}. Booking fee
+                              menjadi kredit sewa; total pembayaran awal boleh disesuaikan, tetapi
+                              wajib menutup minimal satu bulan sewa.
+                            </p>
+                          ) : null}
+                          {stagedDraftErrors?.amount || errors?.paidRent ? (
+                            <p className="text-xs text-destructive" role="alert">
+                              {stagedDraftErrors?.amount || errors?.paidRent}
+                            </p>
+                          ) : null}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Catatan internal: {pricingAgreementReason.trim() || "Belum diisi"}
-                        </p>
-                        {materialPricingVariance ? (
-                          <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-background/75 p-2.5 text-xs">
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 h-4 w-4"
-                              checked={pricingVarianceAcknowledged}
-                              onChange={(event) =>
-                                onPricingVarianceAcknowledged(event.target.checked)
+                      ) : null}
+                      {!stagedPayment || stagedPayment.purpose === "booking_fee" ? (
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="booking-fee">Booking fee (opsional)</Label>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <RupiahInput
+                                id="booking-fee"
+                                value={bookingFee}
+                                onValueChange={setBookingFee}
+                                invalid={Boolean(
+                                  stagedDraftErrors?.amount ||
+                                  bookingFeeBelowMinimum ||
+                                  bookingFeeExceedsRent,
+                                )}
+                                readOnly={bookingFeeLocked}
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant={bookingFee === 1_000_000 ? "default" : "outline"}
+                              className="min-h-11"
+                              onClick={() =>
+                                setBookingFee(bookingFee === 1_000_000 ? 0 : 1_000_000)
                               }
-                            />
-                            <span>
-                              Saya telah meninjau dan menyetujui selisih tarif 15% atau lebih dari
-                              tarif acuan.
-                            </span>
-                          </label>
-                        ) : null}
-                        {pricingVarianceError ? (
-                          <p className="text-xs font-medium text-destructive" role="alert">
-                            {pricingVarianceError}
+                              disabled={bookingFeeLocked}
+                            >
+                              Rp1.000.000
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Isi bila calon penghuni telah membayar biaya penahanan kamar. Booking
+                            fee menjadi kredit sewa: mengurangi DP atau pelunasan yang masih perlu
+                            dibayar, bukan security deposit. Nilai yang diizinkan adalah Rp0 atau
+                            minimal {currency(MINIMUM_BOOKING_FEE)}.
+                          </p>
+                          {stagedDraftErrors?.amount || errors?.bookingFee ? (
+                            <p className="text-xs text-destructive">
+                              {stagedDraftErrors?.amount || errors?.bookingFee}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {!stagedPayment || stagedPayment.purpose === "security_deposit" ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="deposit">Security deposit</Label>
+                          <RupiahInput
+                            id="deposit"
+                            value={securityDeposit}
+                            onValueChange={setSecurityDeposit}
+                            invalid={Boolean(stagedDraftErrors?.amount || errors?.securityDeposit)}
+                            readOnly={initialPaymentLocked}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Opsional. Minimal Rp0 dan maksimal {currency(maximumSecurityDeposit)}
+                            (setara satu bulan berdasarkan nilai kontrak). Nominal ini terpisah dari
+                            DP.
+                          </p>
+                          {stagedDraftErrors?.amount || errors?.securityDeposit ? (
+                            <p className="text-xs text-destructive" role="alert">
+                              {stagedDraftErrors?.amount || errors?.securityDeposit}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    {historicalEntryMode && !initialPaymentLocked ? (
+                      <NoticeAlert
+                        tone="warning"
+                        density="compact"
+                        title="Mode input data historis aktif"
+                        description="Pembayaran tunai maupun transfer yang dicatat Admin langsung terverifikasi. Isi tanggal pembayaran sesuai bukti asli; fitur verifikasi manual tetap tersedia setelah mode ini dinonaktifkan."
+                      />
+                    ) : null}
+                    {stagedPayment || historicalPaymentDateRequired ? (
+                      <HeroUiDatePicker
+                        id="payment-paid-at"
+                        label="Tanggal pembayaran"
+                        value={paymentPaidAt}
+                        onChange={(value) => setPaymentPaidAt(value ?? "")}
+                        required
+                        validationTarget={Boolean(
+                          stagedDraftErrors?.paidAt || errors?.paymentPaidAt,
+                        )}
+                        error={stagedDraftErrors?.paidAt || errors?.paymentPaidAt}
+                        description="Gunakan tanggal dana diterima atau tanggal pada bukti pembayaran."
+                      />
+                    ) : null}
+                    <div className="space-y-2">
+                      <Label htmlFor="payment-note">Catatan pembayaran (opsional)</Label>
+                      <Textarea
+                        id="payment-note"
+                        value={paymentNote}
+                        onChange={(event) => setPaymentNote(event.target.value)}
+                        maxLength={500}
+                        placeholder="Contoh: transfer dari rekening orang tua"
+                        disabled={initialPaymentLocked}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Catatan ini disimpan pada catatan pembayaran, bukan catatan onboarding atau
+                        lease.
+                      </p>
+                    </div>
+                    {paymentMethod === "bank_transfer" && !initialPaymentLocked ? (
+                      <div className="space-y-2">
+                        <EvidenceFileUploadField
+                          propertyId={propertyId}
+                          label="Bukti transfer"
+                          description={
+                            transferEvidenceRequired
+                              ? "Wajib untuk Transfer Bank. Unggah JPG, PNG, WebP, atau PDF; foto besar dikompresi otomatis. Gunakan Lihat untuk memastikan bukti sudah benar."
+                              : "Opsional selama mode input data historis aktif. Anda tetap dapat melampirkan maksimal 5 file JPG, PNG, WebP, atau PDF."
+                          }
+                          required={transferEvidenceRequired}
+                          invalid={Boolean(stagedDraftErrors?.evidence || errors?.paymentEvidence)}
+                          errorId="payment-evidence-error"
+                          values={paymentEvidence}
+                          onChange={onPaymentEvidenceChange}
+                          onBusyChange={onPaymentEvidenceBusyChange}
+                          disabled={!propertyId}
+                          deleteOnRemove={!stagedPayment}
+                          className="rounded-xl border border-border bg-muted/20 p-4"
+                        />
+                        {stagedDraftErrors?.evidence || errors?.paymentEvidence ? (
+                          <p
+                            className="text-xs text-destructive"
+                            data-validation-target="true"
+                            id="payment-evidence-error"
+                            role="alert"
+                            tabIndex={-1}
+                          >
+                            {stagedDraftErrors?.evidence || errors?.paymentEvidence}
                           </p>
                         ) : null}
                       </div>
                     ) : null}
-                  </div>
-                  <div className="space-y-2 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Perhitungan sewa
-                    </p>
-                    <Summary label="Total sewa kontrak" value={currency(amounts.contractRent)} />
-                    {paymentChoice === "dp" ? (
-                      <Summary label="Rekomendasi DP 25%" value={currency(amounts.minimumDp)} />
+                    {!stagedPayment && (errors?.paidRent || errors?.securityDeposit) ? (
+                      <NoticeAlert
+                        tone="destructive"
+                        density="compact"
+                        title="Nominal pembayaran belum valid"
+                        description={errors.securityDeposit || errors.paidRent}
+                      />
                     ) : null}
-                    <Summary
-                      label="Booking fee (kredit sewa)"
-                      value={`− ${currency(stagedPayment?.bookingFeeAmount ?? bookingFee)}`}
-                    />
-                    <Summary
-                      label={
-                        stagedPayment
-                          ? "Total pembayaran sewa tersimpan"
-                          : paymentChoice === "full"
-                            ? "Pelunasan sewa hari ini"
-                            : "DP / uang muka sewa hari ini"
-                      }
-                      value={`− ${currency(stagedPayment?.rentAmount ?? paidRent)}`}
-                    />
-                    <Summary
-                      label={
-                        stagedPayment ? "Total kredit sewa tersimpan" : "Total pembayaran awal sewa"
-                      }
-                      value={currency(
-                        stagedPayment
-                          ? stagedPayment.bookingFeeAmount + stagedPayment.rentAmount
-                          : bookingFee + paidRent,
-                      )}
-                      emphasis
-                    />
-                    <Summary
-                      label="Sisa pembayaran sewa"
-                      value={currency(Math.max(0, amounts.contractRent - creditedRentAmount))}
-                      emphasis
-                    />
-                    {stagedPayment?.contractFullyPaid ? (
-                      <div className="flex justify-center py-3">
-                        <div className="-rotate-2 rounded-lg border-2 border-success bg-success/10 px-7 py-2 text-center text-lg font-black tracking-[0.18em] text-success shadow-[0_4px_14px_rgba(16,185,129,0.16)]">
-                          LUNAS
-                        </div>
+                    {stagedPayment && !stagedPayment.hideDraft ? (
+                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+                        {stagedPayment.editingPaymentId ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={stagedPayment.onCancelEdit}
+                          >
+                            <X className="h-4 w-4" /> Batalkan edit
+                          </Button>
+                        ) : stagedPayment.optionalSecurityDepositDraftOpen ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={stagedPayment.onCancelSecurityDeposit}
+                          >
+                            <X className="h-4 w-4" /> Batal tambah deposit
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          className="min-h-11"
+                          disabled={paymentEvidenceBusy}
+                          onClick={stagedPayment.onSave}
+                        >
+                          {stagedPayment.editingPaymentId ? (
+                            <Check className="h-4 w-4" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                          {stagedPayment.editingPaymentId
+                            ? "Simpan perubahan"
+                            : `Tambahkan Pembayaran Tahap ${stagedPayment.entries.length + 1}`}
+                        </Button>
                       </div>
-                    ) : stagedPayment?.recordedRentFullyPaid ? (
-                      <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-center text-xs font-medium text-warning">
-                        Tercatat penuh · menunggu verifikasi pembayaran
-                      </p>
                     ) : null}
-                    {rentCreditExceedsContract ? (
-                      <p className="rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        Total booking fee dan DP/pelunasan melebihi nilai kontrak. Maksimal
-                        pembayaran sewa yang masih dapat dicatat {currency(maximumRentPayment)}.
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+            <Card className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:self-start">
+              <CardHeader>
+                <CardTitle>Ringkasan Pembayaran</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm">
+                {selectedRoom ? (
+                  <div className="divide-y rounded-xl border bg-muted/10 px-4">
+                    <div className="grid gap-2 py-4 sm:grid-cols-2">
+                      <Summary label="Kamar" value={selectedRoom.number} />
+                      <Summary label="Tipe kost" value={selectedRoom.kostType.name} />
+                      <Summary
+                        label={`Tarif acuan ${amounts.tierLabel}`}
+                        value={`${currency(amounts.referenceMonthlyRate)} / bulan`}
+                      />
+                      <Summary
+                        label={
+                          pricingSource === "negotiated" ? "Tarif kesepakatan" : "Tarif kontrak"
+                        }
+                        value={`${currency(amounts.monthlyRate)} / bulan`}
+                      />
+                      <Summary label="Durasi sewa" value={`${termMonths} bulan`} />
+                      <Summary
+                        label="Tarif efektif"
+                        value={formatIndonesianDate(selectedRoom.kostType.commercialEffectiveDate)}
+                      />
+                      {pricingSource === "negotiated" ? (
+                        <div className="space-y-2 rounded-lg border border-warning/35 bg-warning/10 p-3 sm:col-span-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-warning">Kesepakatan khusus</span>
+                            <span className="rounded-full bg-background/70 px-2.5 py-1 text-xs font-semibold text-foreground">
+                              Selisih {pricingVariancePercent > 0 ? "+" : ""}
+                              {pricingVariancePercent.toLocaleString("id-ID", {
+                                maximumFractionDigits: 1,
+                              })}
+                              %
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Catatan internal: {pricingAgreementReason.trim() || "Belum diisi"}
+                          </p>
+                          {materialPricingVariance ? (
+                            <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-background/75 p-2.5 text-xs">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 h-4 w-4"
+                                checked={pricingVarianceAcknowledged}
+                                onChange={(event) =>
+                                  onPricingVarianceAcknowledged(event.target.checked)
+                                }
+                              />
+                              <span>
+                                Saya telah meninjau dan menyetujui selisih tarif 15% atau lebih dari
+                                tarif acuan.
+                              </span>
+                            </label>
+                          ) : null}
+                          {pricingVarianceError ? (
+                            <p className="text-xs font-medium text-destructive" role="alert">
+                              {pricingVarianceError}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Perhitungan sewa
                       </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-2 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Jaminan kamar
-                    </p>
-                    <Summary
-                      label="Security deposit tercatat"
-                      value={currency(stagedPayment?.securityDepositAmount ?? securityDeposit)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Security deposit bukan pengurang sewa. Nilai ini dicatat sebagai jaminan dan
-                      menjadi pengingat pengembalian saat checkout sesuai pemeriksaan kamar.
-                    </p>
-                  </div>
-                  <div className="space-y-2 py-4">
-                    <Summary
-                      label="Metode pembayaran"
-                      value={
-                        stagedPayment
-                          ? stagedPayment.entries.length > 1
-                            ? "Sesuai tiap tahap"
-                            : stagedPayment.entries[0]
-                              ? paymentMethodLabel(stagedPayment.entries[0].method)
-                              : "Belum dicatat"
-                          : paymentMethodLabel(paymentMethod)
-                      }
-                    />
-                    <Summary
-                      label="Status pembayaran awal"
-                      value={
-                        stagedPayment
-                          ? stagedPayment.entries.length === 0
-                            ? "Belum dicatat"
-                            : stagedPayment.entries.every((entry) => entry.verified)
+                      <Summary label="Total sewa kontrak" value={currency(amounts.contractRent)} />
+                      {paymentChoice === "dp" ? (
+                        <Summary label="Rekomendasi DP 25%" value={currency(amounts.minimumDp)} />
+                      ) : null}
+                      <Summary
+                        label="Booking fee (kredit sewa)"
+                        value={`− ${currency(stagedPayment?.bookingFeeAmount ?? bookingFee)}`}
+                      />
+                      <Summary
+                        label={
+                          stagedPayment
+                            ? "Total pembayaran sewa tersimpan"
+                            : paymentChoice === "full"
+                              ? "Pelunasan sewa hari ini"
+                              : "DP / uang muka sewa hari ini"
+                        }
+                        value={`− ${currency(stagedPayment?.rentAmount ?? paidRent)}`}
+                      />
+                      <Summary
+                        label={
+                          stagedPayment
+                            ? "Total kredit sewa tersimpan"
+                            : "Total pembayaran awal sewa"
+                        }
+                        value={currency(
+                          stagedPayment
+                            ? stagedPayment.bookingFeeAmount + stagedPayment.rentAmount
+                            : bookingFee + paidRent,
+                        )}
+                        emphasis
+                      />
+                      <Summary
+                        label="Sisa pembayaran sewa"
+                        value={currency(Math.max(0, amounts.contractRent - creditedRentAmount))}
+                        emphasis
+                      />
+                      {stagedPayment?.contractFullyPaid ? (
+                        <div className="flex justify-center py-3">
+                          <div className="-rotate-2 rounded-lg border-2 border-success bg-success/10 px-7 py-2 text-center text-lg font-black tracking-[0.18em] text-success shadow-[0_4px_14px_rgba(16,185,129,0.16)]">
+                            LUNAS
+                          </div>
+                        </div>
+                      ) : stagedPayment?.recordedRentFullyPaid ? (
+                        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-center text-xs font-medium text-warning">
+                          Tercatat penuh · menunggu verifikasi pembayaran
+                        </p>
+                      ) : null}
+                      {rentCreditExceedsContract ? (
+                        <p className="rounded-md border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                          Total booking fee dan DP/pelunasan melebihi nilai kontrak. Maksimal
+                          pembayaran sewa yang masih dapat dicatat {currency(maximumRentPayment)}.
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Jaminan kamar
+                      </p>
+                      <Summary
+                        label="Security deposit tercatat"
+                        value={currency(stagedPayment?.securityDepositAmount ?? securityDeposit)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Security deposit bukan pengurang sewa. Nilai ini dicatat sebagai jaminan dan
+                        menjadi pengingat pengembalian saat checkout sesuai pemeriksaan kamar.
+                      </p>
+                    </div>
+                    <div className="space-y-2 py-4">
+                      <Summary
+                        label="Metode pembayaran"
+                        value={
+                          stagedPayment
+                            ? stagedPayment.entries.length > 1
+                              ? "Sesuai tiap tahap"
+                              : stagedPayment.entries[0]
+                                ? paymentMethodLabel(stagedPayment.entries[0].method)
+                                : "Belum dicatat"
+                            : paymentMethodLabel(paymentMethod)
+                        }
+                      />
+                      <Summary
+                        label="Status pembayaran awal"
+                        value={
+                          stagedPayment
+                            ? stagedPayment.entries.length === 0
+                              ? "Belum dicatat"
+                              : stagedPayment.entries.every((entry) => entry.verified)
+                                ? "Terverifikasi"
+                                : "Menunggu konfirmasi"
+                            : paymentVerified
                               ? "Terverifikasi"
                               : "Menunggu konfirmasi"
-                          : paymentVerified
-                            ? "Terverifikasi"
-                            : "Menunggu konfirmasi"
-                      }
-                    />
-                    <Summary
-                      label="Total pembayaran awal tercatat"
-                      value={currency(
-                        stagedPayment
-                          ? stagedPayment.bookingFeeAmount +
-                              stagedPayment.rentAmount +
-                              stagedPayment.securityDepositAmount
-                          : bookingFee + paidRent + securityDeposit,
-                      )}
-                      emphasis
-                    />
-                    {!stagedPayment && paymentNote.trim() ? (
-                      <Summary label="Catatan pembayaran" value={paymentNote.trim()} />
-                    ) : null}
+                        }
+                      />
+                      <Summary
+                        label="Total pembayaran awal tercatat"
+                        value={currency(
+                          stagedPayment
+                            ? stagedPayment.bookingFeeAmount +
+                                stagedPayment.rentAmount +
+                                stagedPayment.securityDepositAmount
+                            : bookingFee + paidRent + securityDeposit,
+                        )}
+                        emphasis
+                      />
+                      {!stagedPayment && paymentNote.trim() ? (
+                        <Summary label="Catatan pembayaran" value={paymentNote.trim()} />
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  Pilih satu kamar untuk melihat ringkasan authority komersial.
-                </p>
-              )}
-              <label className="mt-4 flex cursor-pointer gap-3 rounded-lg border p-3">
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(event) => setConfirmed(event.target.checked)}
-                  aria-invalid={Boolean(errors?.confirmed)}
-                  className="mt-1 h-4 w-4"
-                />
-                <span>
-                  Saya meyakini data penghuni, kamar, seluruh pembayaran, dan security deposit telah
-                  sesuai.
-                </span>
-              </label>
-              {errors?.confirmed ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {errors.confirmed}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Pilih satu kamar untuk melihat ringkasan authority komersial.
+                  </p>
+                )}
+                <label className="mt-4 flex cursor-pointer gap-3 rounded-lg border p-3">
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
+                    aria-invalid={Boolean(errors?.confirmed)}
+                    className="mt-1 h-4 w-4"
+                  />
+                  <span>
+                    {commercialMode === "owner_sponsored"
+                      ? "Saya meyakini data penghuni, kamar, Owner penanggung, dan biaya pengelolaan telah sesuai."
+                      : "Saya meyakini data penghuni, kamar, seluruh pembayaran, dan security deposit telah sesuai."}
+                  </span>
+                </label>
+                {errors?.confirmed ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {errors.confirmed}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       ) : null}
       <Dialog

@@ -30,11 +30,11 @@ const methodologies: Record<ReportType, string> = {
   leases:
     'Nilai kontrak memakai snapshot komersial saat penyewaan dibuat. Status check-out dan penyelesaian akhir berasal dari satu perintah check-out terbaru yang tercatat.',
   payments:
-    'Penerimaan hanya dihitung sebagai kas ketika pembayaran berstatus terverifikasi dan tidak dibalik.',
+    'Penerimaan hanya dihitung sebagai kas ketika pembayaran berstatus terverifikasi dan tidak dibalik. Biaya pengelolaan Hunian Tanggungan Owner dipisahkan dari sewa kamar.',
   expenses:
     'Kas keluar hanya dihitung dari pengeluaran berstatus dibayar; pembatalan dan pembalikan tidak menambah beban.',
   finance:
-    'Arus kas operasional memisahkan penerimaan sewa, deposit sebagai kewajiban, pengeluaran, dan hak Owner yang tercatat.',
+    'Arus kas operasional memisahkan penerimaan sewa, biaya pengelolaan Hunian Tanggungan Owner, deposit sebagai kewajiban, pengeluaran, dan hak Owner yang tercatat.',
   'property-owners':
     'Laporan hanya memuat periode Owner yang telah disetujui dan diterbitkan. Deposit keamanan tidak dihitung sebagai pendapatan.',
 };
@@ -202,7 +202,8 @@ export class ReportService {
       WHERE l.property_id = $1 AND ${parts.where.join(' AND ')}`;
     const page = await this.database.client.query(
       `SELECT l.id, l.lease_code, resident.full_name AS resident_name, resident.gender,
-              rm.room_code, building.building_name, rm.category, l.lease_status,
+               rm.room_code, building.building_name, rm.category, l.lease_status,
+               COALESCE(l.commercial_mode,'rent') AS commercial_mode,
               l.start_date::text, l.end_date::text, COALESCE(l.term_months, 0)::int AS term_months,
               COALESCE(l.payment_plan_type, '-') AS payment_plan,
                COALESCE(l.snapshot_pricing_tier, '-') AS pricing_tier,
@@ -297,7 +298,8 @@ export class ReportService {
       `SELECT count(*)::int AS total_payments,
               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'verified' AND COALESCE(p.payment_purpose, 'rent') IN ('rent','dp')), 0)::bigint AS verified_rent,
               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'verified' AND p.payment_purpose = 'security_deposit'), 0)::bigint AS deposit_collected,
-              COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'verified' AND p.payment_purpose = 'other_charge'), 0)::bigint AS other_income,
+               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'verified' AND p.payment_purpose = 'other_charge'), 0)::bigint AS other_income,
+               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'verified' AND p.payment_purpose = 'management_fee'), 0)::bigint AS management_fee_collected,
               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'pending_confirmation'), 0)::bigint AS pending_amount,
               COALESCE(sum(p.amount) FILTER (WHERE p.payment_status = 'reversed'), 0)::bigint AS reversed_amount
        ${from}`,
@@ -362,9 +364,10 @@ export class ReportService {
     const ledger = `WITH ledger AS (
       SELECT p.id, (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date AS event_date,
              p.payment_code AS reference,
-             CASE COALESCE(p.payment_purpose, 'rent')
-               WHEN 'security_deposit' THEN 'Deposit diterima'
-               WHEN 'other_charge' THEN 'Penerimaan lainnya'
+              CASE COALESCE(p.payment_purpose, 'rent')
+                WHEN 'security_deposit' THEN 'Deposit diterima'
+                WHEN 'management_fee' THEN 'Biaya pengelolaan Hunian Tanggungan Owner'
+                WHEN 'other_charge' THEN 'Penerimaan lainnya'
                ELSE 'Pembayaran sewa' END AS description,
              CASE WHEN p.payment_purpose = 'security_deposit' THEN 'deposit' ELSE 'cash_in' END AS movement,
              p.amount::bigint AS amount, rm.room_code, building.building_name, building.id AS building_id,
@@ -415,8 +418,10 @@ export class ReportService {
       `SELECT
         COALESCE((SELECT sum(amount) FROM payments p WHERE p.property_id=$1 AND p.payment_status='verified'
           AND COALESCE(p.payment_purpose,'rent') IN ('rent','dp') AND (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $2::date AND $3::date),0)::bigint AS rent_cash_in,
-        COALESCE((SELECT sum(amount) FROM payments p WHERE p.property_id=$1 AND p.payment_status='verified'
-          AND p.payment_purpose='other_charge' AND (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $2::date AND $3::date),0)::bigint AS other_cash_in,
+         COALESCE((SELECT sum(amount) FROM payments p WHERE p.property_id=$1 AND p.payment_status='verified'
+           AND p.payment_purpose='other_charge' AND (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $2::date AND $3::date),0)::bigint AS other_cash_in,
+         COALESCE((SELECT sum(amount) FROM payments p WHERE p.property_id=$1 AND p.payment_status='verified'
+           AND p.payment_purpose='management_fee' AND (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $2::date AND $3::date),0)::bigint AS management_fee_cash_in,
         COALESCE((SELECT sum(amount) FROM payments p WHERE p.property_id=$1 AND p.payment_status='verified'
           AND p.payment_purpose='security_deposit' AND (${this.paymentDate('p')} AT TIME ZONE 'Asia/Jakarta')::date BETWEEN $2::date AND $3::date),0)::bigint AS deposit_collected,
         COALESCE((SELECT sum(amount) FROM lease_deposit_transactions d WHERE d.property_id=$1 AND d.transaction_type='refund'

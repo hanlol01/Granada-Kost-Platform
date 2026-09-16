@@ -308,6 +308,7 @@ test("normal resident activation requests atomic activation and check-in with th
     activated_at: effectiveAt,
     confirm_check_in: true,
     checked_in_at: effectiveAt,
+    checked_in_source: "lifecycle",
   });
 });
 

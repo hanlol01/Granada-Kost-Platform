@@ -20,6 +20,7 @@ export const W06_PAYMENT_PURPOSES = [
   "down_payment",
   "full_settlement",
   "security_deposit",
+  "management_fee",
   "other_charge",
 ] as const;
 export const W06_PAYMENT_METHODS = ["bank_transfer", "cash"] as const;
@@ -179,12 +180,27 @@ export type ResidentBilling = {
     start_date: string;
     end_date: string;
     payment_plan: "annual_full" | "monthly_installments" | "two_month_installments";
+    commercial_mode: "rent" | "owner_sponsored";
     contract_rent: number;
     monthly_rate: number;
-    pricing_source: "standard" | "negotiated";
+    pricing_source: "standard" | "negotiated" | "owner_sponsored";
     remaining_days: number;
     note: string;
   };
+  owner_sponsorship: {
+    owner_profile_id: string;
+    owner_name: string;
+    management_fee_payer: "resident" | "owner" | "other";
+    management_fee_payer_name: string | null;
+    sponsorship_reason: string;
+    snapshot_monthly_management_fee: number;
+    projected_management_fee: number;
+    verified_paid: number;
+    pending: number;
+    remaining: number;
+    payment_status: "unpaid" | "partially_paid" | "paid" | "overpaid";
+    payment_timing: "flexible";
+  } | null;
   summary: {
     rent_invoiced: number;
     rent_paid: number;
@@ -788,6 +804,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     [
       "lease",
       "summary",
+      "owner_sponsorship",
       "contract_settlement",
       "invoices",
       "payments",
@@ -808,6 +825,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       "start_date",
       "end_date",
       "payment_plan",
+      "commercial_mode",
       "contract_rent",
       "monthly_rate",
       "pricing_source",
@@ -1017,6 +1035,56 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       termination_case: terminationCase,
     };
   });
+  const ownerSponsorship = nullable(data.owner_sponsorship ?? null, (item) => {
+    const record = object(
+      item,
+      [
+        "owner_profile_id",
+        "owner_name",
+        "management_fee_payer",
+        "management_fee_payer_name",
+        "sponsorship_reason",
+        "snapshot_monthly_management_fee",
+        "projected_management_fee",
+        "verified_paid",
+        "pending",
+        "remaining",
+        "payment_status",
+        "payment_timing",
+      ],
+      "hunian tanggungan Owner",
+    );
+    return {
+      owner_profile_id: uuid(record.owner_profile_id, "ID Owner penanggung"),
+      owner_name: text(record.owner_name, "Nama Owner penanggung"),
+      management_fee_payer: oneOf(
+        record.management_fee_payer,
+        ["resident", "owner", "other"] as const,
+        "Pembayar biaya pengelolaan",
+      ),
+      management_fee_payer_name: nullable(record.management_fee_payer_name, (value) =>
+        text(value, "Nama pembayar biaya pengelolaan"),
+      ),
+      sponsorship_reason: text(record.sponsorship_reason, "Catatan hunian tanggungan Owner"),
+      snapshot_monthly_management_fee: integer(
+        record.snapshot_monthly_management_fee,
+        "Biaya pengelolaan awal",
+      ),
+      projected_management_fee: integer(
+        record.projected_management_fee,
+        "Proyeksi biaya pengelolaan",
+      ),
+      verified_paid: integer(record.verified_paid, "Biaya pengelolaan diterima"),
+      pending: integer(record.pending, "Biaya pengelolaan menunggu verifikasi"),
+      remaining: integer(record.remaining, "Sisa biaya pengelolaan"),
+      payment_status: oneOf(
+        record.payment_status,
+        ["unpaid", "partially_paid", "paid", "overpaid"] as const,
+        "Status biaya pengelolaan",
+      ),
+      payment_timing: oneOf(record.payment_timing, ["flexible"] as const, "Waktu pembayaran"),
+    };
+  });
   return {
     lease: {
       id: uuid(lease.id, "ID sewa"),
@@ -1042,16 +1110,22 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         ["annual_full", "monthly_installments", "two_month_installments"] as const,
         "Paket pembayaran",
       ),
+      commercial_mode: oneOf(
+        lease.commercial_mode ?? "rent",
+        ["rent", "owner_sponsored"] as const,
+        "Jenis pengelolaan hunian",
+      ),
       contract_rent: integer(lease.contract_rent, "Nilai kontrak"),
       monthly_rate: integer(lease.monthly_rate, "Tarif bulanan"),
       pricing_source: oneOf(
         lease.pricing_source,
-        ["standard", "negotiated"] as const,
+        ["standard", "negotiated", "owner_sponsored"] as const,
         "Sumber tarif",
       ),
       remaining_days: integer(lease.remaining_days, "Sisa hari"),
       note: text(lease.note, "Catatan sewa"),
     },
+    owner_sponsorship: ownerSponsorship,
     summary: {
       rent_invoiced: integer(summary.rent_invoiced, "Sewa ditagihkan"),
       rent_paid: integer(summary.rent_paid, "Sewa dibayar"),

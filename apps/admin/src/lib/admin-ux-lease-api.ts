@@ -25,6 +25,8 @@ import type {
   RenewalEligibility,
   CheckoutCommand,
   CheckoutSettlementQuote,
+  LeaseDataCorrectionPreview,
+  LeaseDataCorrectionRecord,
 } from "./admin-ux-lease-types";
 
 export type LeasePageInput = { propertyId: string; limit?: number; offset?: number };
@@ -123,6 +125,30 @@ export type CheckoutRefundSettlementInput = {
   evidenceFileIds: string[];
   notes?: string;
 };
+
+export type LeaseDataCorrectionInput = {
+  startDate?: string;
+  termMonths?: number;
+  checkedInDate?: string;
+  pricingSource?: "standard" | "negotiated";
+  agreedMonthlyPrice?: number;
+  pricingAgreementReason?: string;
+  pricingVarianceAcknowledged?: boolean;
+  reason?: string;
+};
+
+function toLeaseDataCorrectionBody(input: LeaseDataCorrectionInput): Record<string, unknown> {
+  return {
+    start_date: input.startDate,
+    term_months: input.termMonths,
+    checked_in_date: input.checkedInDate,
+    pricing_source: input.pricingSource,
+    agreed_monthly_price: input.agreedMonthlyPrice,
+    pricing_agreement_reason: text(input.pricingAgreementReason),
+    pricing_variance_acknowledged: input.pricingVarianceAcknowledged,
+    reason: text(input.reason),
+  };
+}
 
 export async function downloadLeaseExitDocument(
   leaseId: string,
@@ -518,6 +544,31 @@ export const adminUxLeaseApi = {
             encodeURIComponent(refundId) +
             "/waive",
           { reason: reason.trim() },
+          { idempotencyKey },
+        ),
+      ),
+    previewDataCorrection: (leaseId: string, input: LeaseDataCorrectionInput) =>
+      data<LeaseDataCorrectionPreview>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/data-correction/preview",
+          toLeaseDataCorrectionBody(input),
+        ),
+      ),
+    listDataCorrections: (leaseId: string) =>
+      data<{ corrections: LeaseDataCorrectionRecord[] }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/data-corrections",
+        ),
+      ),
+    commitDataCorrection: (
+      leaseId: string,
+      input: LeaseDataCorrectionInput & { reason: string },
+      idempotencyKey: string,
+    ) =>
+      data<{ correction: LeaseDataCorrectionRecord }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/data-correction",
+          toLeaseDataCorrectionBody(input),
           { idempotencyKey },
         ),
       ),
@@ -992,6 +1043,9 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
           type.longStayMonthlyPrice,
           type.depositAmount,
         ].every((value) => Number.isSafeInteger(value) && Number(value) >= 0) ||
+        (type.managementFeeAmount !== undefined &&
+          (!Number.isSafeInteger(type.managementFeeAmount) ||
+            Number(type.managementFeeAmount) < 0)) ||
         typeof type.commercialEffectiveDate !== "string"
       )
         throw new Error("Invalid vacant-room commercial authority");
@@ -1001,6 +1055,7 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
         genderPolicy: item.genderPolicy as LeaseRoomOption["genderPolicy"],
         roomStatus: "vacant",
         buildingName: typeof item.buildingName === "string" ? item.buildingName : null,
+        buildingId: typeof item.buildingId === "string" ? item.buildingId : null,
         buildingCode: typeof item.buildingCode === "string" ? item.buildingCode : null,
         unitCode: typeof item.unitCode === "string" ? item.unitCode : null,
         floorLabel: typeof item.floorLabel === "string" ? item.floorLabel : null,
@@ -1016,6 +1071,7 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
           longStayMonthlyPrice: Number(type.longStayMonthlyPrice),
           commercialEffectiveDate: type.commercialEffectiveDate,
           depositAmount: Number(type.depositAmount),
+          managementFeeAmount: Number(type.managementFeeAmount ?? 0),
         },
       };
     }),

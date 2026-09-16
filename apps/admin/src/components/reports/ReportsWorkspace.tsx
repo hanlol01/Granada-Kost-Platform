@@ -77,6 +77,7 @@ const summaryLabels: Record<string, string> = {
   checkout_damage: "Kerusakan tercatat",
   total_payments: "Total pembayaran",
   verified_rent: "Sewa terverifikasi",
+  management_fee_collected: "Biaya pengelolaan diterima",
   deposit_collected: "Deposit diterima",
   other_income: "Penerimaan lainnya",
   pending_amount: "Menunggu verifikasi",
@@ -87,6 +88,7 @@ const summaryLabels: Record<string, string> = {
   approved_amount: "Sudah disetujui",
   cancelled_or_reversed: "Dibatalkan / dibalik",
   rent_cash_in: "Kas masuk sewa",
+  management_fee_cash_in: "Kas masuk biaya pengelolaan",
   other_cash_in: "Kas masuk lainnya",
   deposit_refunded: "Deposit dikembalikan",
   expenses_paid: "Kas keluar operasional",
@@ -112,6 +114,7 @@ const moneyKeys = new Set([
   "monthly_price_variance",
   "amount",
   "verified_rent",
+  "management_fee_collected",
   "deposit_collected",
   "other_income",
   "pending_amount",
@@ -121,6 +124,7 @@ const moneyKeys = new Set([
   "approved_amount",
   "cancelled_or_reversed",
   "rent_cash_in",
+  "management_fee_cash_in",
   "other_cash_in",
   "deposit_refunded",
   "expenses_paid",
@@ -220,6 +224,7 @@ const valueLabels: Record<string, string> = {
   transferred: "Pindah kamar",
   standard: "Tarif standar",
   negotiated: "Kesepakatan khusus",
+  owner_sponsored: "Hunian Tanggungan Owner",
   verified: "Terverifikasi",
   pending_confirmation: "Menunggu konfirmasi",
   rejected: "Ditolak",
@@ -230,6 +235,7 @@ const valueLabels: Record<string, string> = {
   rent: "Sewa",
   dp: "Uang muka",
   security_deposit: "Deposit keamanan",
+  management_fee: "Biaya pengelolaan hunian",
   other_charge: "Pembayaran lainnya",
   cash: "Tunai",
   bank_transfer: "Transfer bank",
@@ -671,6 +677,7 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                     <option value="rent">Sewa</option>
                     <option value="dp">Uang muka</option>
                     <option value="security_deposit">Deposit</option>
+                    <option value="management_fee">Biaya pengelolaan hunian</option>
                     <option value="other_charge">Lainnya</option>
                   </select>
                 </label>

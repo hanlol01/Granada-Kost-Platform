@@ -10,6 +10,7 @@ export type FinancialTransactionPurpose =
   | 'DEPOSIT'
   | 'TAMBAH-DEPOSIT'
   | 'TAGIHAN-LAIN'
+  | 'BIAYA-PENGELOLAAN'
   | 'CHECKOUT'
   | 'KELEBIHAN-BAYAR'
   | 'CANCEL';

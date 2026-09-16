@@ -355,8 +355,17 @@ export class PropertyOwnerPortalService {
               commercial.annual_contract_value::text AS annual_contract_value,
               management_fee.monthly_fee_amount::text AS management_fee_amount,
               management_fee.effective_date::text AS management_fee_effective_date,
-              lease.lease_status, lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
-              resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
+               lease.lease_status, lease.commercial_mode,
+               lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+               resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
+               sponsorship.management_fee_payer,
+               sponsorship.management_fee_payer_name,
+               sponsorship.snapshot_monthly_management_fee::text AS sponsored_monthly_management_fee,
+               sponsorship.current_projected_management_fee_amount::text AS sponsored_projected_management_fee,
+               sponsorship.verified_paid_amount::text AS sponsored_verified_paid,
+               sponsorship.pending_amount::text AS sponsored_pending,
+               sponsorship.remaining_amount::text AS sponsored_remaining,
+               sponsorship.payment_status AS sponsored_payment_status,
               COALESCE(billing.billing_state, 'not_available') AS billing_state,
               transfer.transfer_state, renewal.renewal_state, checkout.checkout_state,
               checkout.checkout_effective_date, checkout.checkout_actual_date,
@@ -402,7 +411,7 @@ export class PropertyOwnerPortalService {
          LIMIT 1
        ) management_fee ON true
        LEFT JOIN LATERAL (
-         SELECT id, lease_status, start_date, end_date, resident_id, occupancy_id
+          SELECT id, lease_status, commercial_mode, start_date, end_date, resident_id, occupancy_id
          FROM leases
          WHERE property_id = $2 AND room_id = rooms.id AND lease_status = 'active'
          ORDER BY start_date, id
@@ -426,6 +435,8 @@ export class PropertyOwnerPortalService {
             ELSE 'current' END AS billing_state
           FROM invoices WHERE property_id = $2 AND lease_id = lease.id AND invoice_status <> 'void'
         ) billing ON true
+        LEFT JOIN owner_sponsored_management_fee_progress sponsorship
+          ON sponsorship.property_id=$2 AND sponsorship.lease_id=lease.id
         LEFT JOIN LATERAL (
           SELECT state AS transfer_state FROM lease_transfer_commands
           WHERE property_id = $2 AND (from_room_id = rooms.id OR to_room_id = rooms.id)
@@ -526,6 +537,11 @@ export class PropertyOwnerPortalService {
           ? null
           : {
               status: leaseStatus,
+              commercial_mode: this.enumValue(
+                row.commercial_mode,
+                ['rent', 'owner_sponsored'],
+                'asset.lease.commercial_mode',
+              ),
               start_date: this.date(row.lease_start_date, 'asset.lease_start_date'),
               end_date: this.nullableDate(row.lease_end_date, 'asset.lease_end_date'),
             },
@@ -540,6 +556,40 @@ export class PropertyOwnerPortalService {
           'asset.billing_state',
         ),
       },
+      owner_sponsorship:
+        row.commercial_mode === 'owner_sponsored'
+          ? {
+              management_fee_payer: this.enumValue(
+                row.management_fee_payer,
+                ['resident', 'owner', 'other'],
+                'asset.owner_sponsorship.management_fee_payer',
+              ),
+              management_fee_payer_name: this.nullableText(
+                row.management_fee_payer_name,
+                'asset.owner_sponsorship.management_fee_payer_name',
+              ),
+              monthly_management_fee: this.money(
+                row.sponsored_monthly_management_fee,
+                'asset.owner_sponsorship.monthly_management_fee',
+              ),
+              projected_management_fee: this.money(
+                row.sponsored_projected_management_fee,
+                'asset.owner_sponsorship.projected_management_fee',
+              ),
+              verified_paid: this.money(
+                row.sponsored_verified_paid,
+                'asset.owner_sponsorship.verified_paid',
+              ),
+              pending: this.money(row.sponsored_pending, 'asset.owner_sponsorship.pending'),
+              remaining: this.money(row.sponsored_remaining, 'asset.owner_sponsorship.remaining'),
+              payment_status: this.enumValue(
+                row.sponsored_payment_status,
+                ['unpaid', 'partially_paid', 'paid', 'overpaid'],
+                'asset.owner_sponsorship.payment_status',
+              ),
+              payment_timing: 'flexible',
+            }
+          : null,
       lifecycle: {
         transfer_state: this.nullableText(row.transfer_state, 'asset.transfer_state'),
         renewal_state: this.nullableText(row.renewal_state, 'asset.renewal_state'),
@@ -1075,7 +1125,8 @@ export class PropertyOwnerPortalService {
          SELECT DISTINCT room_id FROM raw_scope
        ), active_leases AS (
          SELECT lease.id, lease.property_id, lease.room_id, lease.resident_id,
-                lease.start_date, lease.end_date, lease.security_deposit_required_amount,
+                 lease.start_date, lease.end_date, lease.security_deposit_required_amount,
+                  lease.commercial_mode,
                  lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount,
                  lease.pricing_source
          FROM leases lease
@@ -1101,8 +1152,17 @@ export class PropertyOwnerPortalService {
                   lease.snapshot_monthly_price * COALESCE(lease.term_months, 0),
                   0
                 )::bigint AS contract_value,
-                COALESCE(fee.monthly_fee_amount, policy.operator_room_month_fee, 0)::bigint
-                  AS management_fee_monthly
+                 CASE WHEN lease.commercial_mode='owner_sponsored'
+                   THEN COALESCE(sponsorship.snapshot_monthly_management_fee,0)
+                   ELSE COALESCE(fee.monthly_fee_amount, policy.operator_room_month_fee, 0)
+                 END::bigint AS management_fee_monthly,
+                 COALESCE(sponsorship.current_projected_management_fee_amount,0)::bigint
+                   AS sponsored_projected_management_fee,
+                 sponsorship.verified_paid_amount AS sponsored_verified_paid,
+                 sponsorship.pending_amount AS sponsored_pending,
+                 sponsorship.remaining_amount AS sponsored_remaining,
+                 sponsorship.payment_status AS sponsored_payment_status,
+                 lease.commercial_mode
          FROM active_leases lease
          LEFT JOIN LATERAL (
            SELECT versions.monthly_fee_amount
@@ -1121,11 +1181,15 @@ export class PropertyOwnerPortalService {
              AND (policies.effective_until IS NULL OR lease.start_date < policies.effective_until)
            ORDER BY policies.effective_from DESC, policies.id DESC
            LIMIT 1
-         ) policy ON true
+          ) policy ON true
+          LEFT JOIN owner_sponsored_management_fee_progress sponsorship
+            ON sponsorship.property_id=lease.property_id AND sponsorship.lease_id=lease.id
        ), commercial_projection AS (
          SELECT base.*,
-                GREATEST(
-                  0,
+                 CASE WHEN base.commercial_mode='owner_sponsored'
+                   THEN base.sponsored_projected_management_fee
+                   ELSE GREATEST(
+                   0,
                   LEAST(
                     base.contract_value,
                     CASE WHEN base.monthly_rate > 0
@@ -1136,7 +1200,7 @@ export class PropertyOwnerPortalService {
                       ELSE 0
                     END
                   )
-                )::bigint AS projected_management_fee
+                 ) END::bigint AS projected_management_fee
          FROM commercial_base base
        ), invoice_summary AS (
          SELECT lease.id AS lease_id,
@@ -1280,7 +1344,12 @@ export class PropertyOwnerPortalService {
                commercial_projection.pricing_source,
               commercial_projection.contract_value::text,
               commercial_projection.management_fee_monthly::text,
-              commercial_projection.projected_management_fee::text,
+               commercial_projection.projected_management_fee::text,
+               commercial_projection.commercial_mode,
+               commercial_projection.sponsored_verified_paid::text,
+               commercial_projection.sponsored_pending::text,
+               commercial_projection.sponsored_remaining::text,
+               commercial_projection.sponsored_payment_status,
               GREATEST(
                 commercial_projection.contract_value
                   - commercial_projection.projected_management_fee,
@@ -1318,9 +1387,19 @@ export class PropertyOwnerPortalService {
     return {
       summary: {
         active_lease_count: items.length,
-        settled_lease_count: items.filter((item) => item.billing.state === 'settled').length,
-        partial_lease_count: items.filter((item) => item.billing.state === 'partially_paid').length,
-        unpaid_lease_count: items.filter((item) => item.billing.state === 'unpaid').length,
+        settled_lease_count: items.filter(
+          (item) =>
+            item.owner_sponsorship?.payment_status === 'paid' || item.billing.state === 'settled',
+        ).length,
+        partial_lease_count: items.filter(
+          (item) =>
+            item.owner_sponsorship?.payment_status === 'partially_paid' ||
+            item.billing.state === 'partially_paid',
+        ).length,
+        unpaid_lease_count: items.filter(
+          (item) =>
+            item.owner_sponsorship?.payment_status === 'unpaid' || item.billing.state === 'unpaid',
+        ).length,
         overdue_lease_count: items.filter((item) => item.billing.overdue_count > 0).length,
         h7_lease_count: items.filter(
           (item) => item.billing.h7_count > 0 || item.settlement.reminder_stage === 'H-7',
@@ -1343,6 +1422,18 @@ export class PropertyOwnerPortalService {
         projected_management_fee_total: items
           .reduce<bigint>(
             (total, item) => total + BigInt(item.commercial.projected_management_fee),
+            0n,
+          )
+          .toString(),
+        management_fee_received_total: items
+          .reduce<bigint>(
+            (total, item) => total + BigInt(item.owner_sponsorship?.verified_paid ?? '0'),
+            0n,
+          )
+          .toString(),
+        management_fee_outstanding_total: items
+          .reduce<bigint>(
+            (total, item) => total + BigInt(item.owner_sponsorship?.remaining ?? '0'),
             0n,
           )
           .toString(),
@@ -2064,13 +2155,18 @@ export class PropertyOwnerPortalService {
       },
       lease: {
         status: 'active' as const,
+        commercial_mode: this.enumValue(
+          row.commercial_mode ?? 'rent',
+          ['rent', 'owner_sponsored'] as const,
+          'owner_collection.commercial_mode',
+        ),
         start_date: this.date(row.lease_start_date, 'owner_collection.lease_start_date'),
         end_date: this.nullableDate(row.lease_end_date, 'owner_collection.lease_end_date'),
         term_months: this.count(row.term_months, 'owner_collection.term_months'),
         monthly_rate: this.money(row.monthly_rate, 'owner_collection.monthly_rate'),
         pricing_source: this.enumValue(
           row.pricing_source ?? 'standard',
-          ['standard', 'negotiated'] as const,
+          ['standard', 'negotiated', 'owner_sponsored'] as const,
           'owner_collection.pricing_source',
         ),
         contract_value: contractValue,
@@ -2107,6 +2203,29 @@ export class PropertyOwnerPortalService {
           'owner_collection.estimated_owner_entitlement',
         ),
       },
+      owner_sponsorship:
+        row.commercial_mode === 'owner_sponsored'
+          ? {
+              verified_paid: this.money(
+                row.sponsored_verified_paid,
+                'owner_collection.owner_sponsorship.verified_paid',
+              ),
+              pending: this.money(
+                row.sponsored_pending,
+                'owner_collection.owner_sponsorship.pending',
+              ),
+              remaining: this.money(
+                row.sponsored_remaining,
+                'owner_collection.owner_sponsorship.remaining',
+              ),
+              payment_status: this.enumValue(
+                row.sponsored_payment_status,
+                ['unpaid', 'partially_paid', 'paid', 'overpaid'] as const,
+                'owner_collection.owner_sponsorship.payment_status',
+              ),
+              payment_timing: 'flexible' as const,
+            }
+          : null,
       operations: {
         open_complaint_count: this.count(
           row.open_complaint_count,

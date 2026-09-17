@@ -24,6 +24,7 @@ type Invoice = {
   coverage_start: string;
   coverage_end: string;
   due_date: string;
+  settlement_due_date?: string;
   outstanding_amount: number;
   invoice_status: string;
 };
@@ -240,8 +241,8 @@ export function ReminderComposerDialog({
                     </Badge>
                   </span>
                   <span className="mt-1 block text-sm text-muted-foreground">
-                    {invoice.coverage_start} s.d. {invoice.coverage_end} · jatuh tempo{" "}
-                    {invoice.due_date}
+                    {invoice.coverage_start} s.d. {invoice.coverage_end} · jatuh tempo tagihan{" "}
+                    {invoice.settlement_due_date ?? invoice.due_date}
                   </span>
                 </span>
               </label>

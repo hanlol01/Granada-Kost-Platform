@@ -79,6 +79,11 @@ export type BillingWorklistItem = {
   coverage_start: string;
   coverage_end: string;
   due_date: string;
+  contract_start: string;
+  contract_end: string;
+  term_months: number | null;
+  settlement_due_date: string;
+  final_settlement_due_date: string;
   invoice_status: Exclude<W06InvoiceStatus, "draft" | "paid" | "void">;
   total_amount: number;
   outstanding_amount: number;
@@ -234,6 +239,7 @@ export type ResidentBilling = {
     extension_due_at: string | null;
     extension_reason: string | null;
     effective_due_at: string | null;
+    final_settlement_due_at: string | null;
     contract_rent_amount: number;
     initial_rent_credit: number;
     payment_allocated: number;
@@ -711,6 +717,11 @@ export function parseBillingWorklist(value: unknown): BillingWorklist {
           "coverage_start",
           "coverage_end",
           "due_date",
+          "contract_start",
+          "contract_end",
+          "term_months",
+          "settlement_due_date",
+          "final_settlement_due_date",
           "invoice_status",
           "total_amount",
           "outstanding_amount",
@@ -727,6 +738,11 @@ export function parseBillingWorklist(value: unknown): BillingWorklist {
         coverage_start: date(row.coverage_start, "Awal cakupan"),
         coverage_end: date(row.coverage_end, "Akhir cakupan"),
         due_date: date(row.due_date, "Jatuh tempo"),
+        contract_start: date(row.contract_start, "Tanggal mulai kontrak"),
+        contract_end: date(row.contract_end, "Tanggal akhir kontrak"),
+        term_months: nullable(row.term_months, (item) => serializedInteger(item, "Durasi kontrak")),
+        settlement_due_date: date(row.settlement_due_date, "Jatuh tempo tagihan"),
+        final_settlement_due_date: date(row.final_settlement_due_date, "Batas pelunasan kontrak"),
         invoice_status: oneOf(
           row.invoice_status,
           ["issued", "partially_paid", "overdue"] as const,
@@ -873,6 +889,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         "extension_due_at",
         "extension_reason",
         "effective_due_at",
+        "final_settlement_due_at",
         "contract_rent_amount",
         "initial_rent_credit",
         "payment_allocated",
@@ -989,6 +1006,9 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       ),
       effective_due_at: nullable(record.effective_due_at, (value) =>
         timestamp(value, "Tenggat efektif"),
+      ),
+      final_settlement_due_at: nullable(record.final_settlement_due_at, (value) =>
+        timestamp(value, "Batas pelunasan kontrak"),
       ),
       contract_rent_amount: integer(record.contract_rent_amount, "Total sewa kontrak"),
       initial_rent_credit: integer(record.initial_rent_credit, "Kredit sewa awal"),

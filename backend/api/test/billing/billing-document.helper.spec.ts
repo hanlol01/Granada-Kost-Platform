@@ -21,6 +21,7 @@ void test('invoice renderer uses the same branded PDF authority as payment recei
     totalAmount: 5_400_000,
     outstandingAmount: 3_600_000,
     issuedAt: new Date('2026-08-21T11:00:00+07:00'),
+    printedAt: new Date('2026-09-17T11:00:00+07:00'),
   });
 
   assert.equal(result.filename, 'INV-TEST-20260831.pdf');
@@ -28,6 +29,13 @@ void test('invoice renderer uses the same branded PDF authority as payment recei
   assert.ok(result.content.length > 10_000);
   const loaded = await PDFDocument.load(result.content);
   assert.equal(loaded.getPageCount(), 1);
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+  assert.match(text, /Diterbitkan\s*:\s*Kamis, 17 September 2026/);
+  assert.doesNotMatch(text, /Dicetak pada/);
 });
 
 void test('invoice renderer emphasizes the current outstanding balance in the invoice and terbilang', async () => {
@@ -57,6 +65,75 @@ void test('invoice renderer emphasizes the current outstanding balance in the in
   assert.match(text, /Sisa tagihan\s*:\s*Rp\. 15\.800\.000,-/);
   assert.match(text, /Lima Belas Juta Delapan Ratus Ribu Rupiah/);
   assert.doesNotMatch(text, /Dua Puluh Satu Juta Enam Ratus Ribu Rupiah/);
+});
+
+void test('rent invoice preserves the contractual period after an early checkout and uses settlement deadlines', async () => {
+  const result = await createBillingInvoicePdf({
+    invoiceCode: 'INV-CONTRACT-PERIOD-20260917',
+    invoiceStatus: 'partially_paid',
+    invoicePurpose: 'rent',
+    residentName: 'Deyaa',
+    roomNumber: 'RK-01-06',
+    buildingCode: 'RK-01',
+    coverageStart: '2026-08-01',
+    coverageEnd: '2027-07-31',
+    dueDate: '2026-08-01',
+    contractStart: '2026-08-01',
+    // The effective lease end may be shortened by check-out; the service must
+    // provide the planned contract end before calling this renderer.
+    contractEnd: '2027-07-31',
+    leaseTermMonths: 12,
+    currentSettlementDueAt: '2026-11-01T16:59:59.999Z',
+    finalSettlementDueAt: '2026-11-01T16:59:59.999Z',
+    totalAmount: 21_600_000,
+    outstandingAmount: 2_300_000,
+    issuedAt: new Date('2026-08-01T01:00:00.000Z'),
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /Periode\s*:\s*1 Tahun \/ 1 Agustus 2026 s\.d\. 31 Juli 2027/);
+  assert.doesNotMatch(text, /Cakupan tagihan/);
+  assert.match(text, /Jatuh Tempo Tagihan\s*:\s*Minggu, 1 November 2026/);
+  assert.match(text, /Batas Pelunasan Kontrak\s*:\s*Minggu, 1 November 2026/);
+  assert.doesNotMatch(text, /Sabtu, 1 Agustus 2026/);
+});
+
+void test('invoice renderer moves the balance summary to a continuation page when rows exceed the page', async () => {
+  const result = await createBillingInvoicePdf({
+    invoiceCode: 'INV-CONTINUATION-20260917',
+    invoiceStatus: 'partially_paid',
+    invoicePurpose: 'rent',
+    residentName: 'Nama Penghuni Dengan Nama Panjang Untuk Memastikan Ruang Dokumen Tetap Aman',
+    roomNumber: 'RK-01-06',
+    buildingCode: 'RK-01',
+    coverageStart: '2026-08-01',
+    coverageEnd: '2027-07-31',
+    dueDate: '2026-08-01',
+    contractStart: '2026-08-01',
+    contractEnd: '2027-07-31',
+    leaseTermMonths: 12,
+    currentSettlementDueAt: '2026-11-01T16:59:59.999Z',
+    finalSettlementDueAt: '2026-11-01T16:59:59.999Z',
+    agreedMonthlyPrice: 1_800_000,
+    contractRentAmount: 21_600_000,
+    cumulativeRentPaid: 5_800_000,
+    contractRemainingAmount: 15_800_000,
+    pricingSource: 'negotiated',
+    totalAmount: 21_600_000,
+    outstandingAmount: 15_800_000,
+    issuedAt: new Date('2026-08-01T01:00:00.000Z'),
+    propertyName: 'Granada Student House Jatinangor Dengan Nama Pengelola Properti Yang Panjang',
+    propertyAddress:
+      'Jalan Kiara Beres, Desa Cipacing, Kecamatan Jatinangor, Kabupaten Sumedang, Jawa Barat 45363',
+    issuedByName: 'Admin Pengelola Dengan Nama Panjang Untuk Pengujian Tata Letak Dokumen',
+  });
+
+  const parsed = await PDFDocument.load(result.content);
+  assert.equal(parsed.getPageCount(), 2);
 });
 
 void test('branded receipt renderer creates a one-page PDF with the canonical receipt data', async () => {

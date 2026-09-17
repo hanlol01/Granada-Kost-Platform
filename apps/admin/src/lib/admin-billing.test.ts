@@ -90,6 +90,11 @@ function worklist() {
         coverage_start: "2026-08-01",
         coverage_end: "2027-07-31",
         due_date: "2026-08-01",
+        contract_start: "2026-08-01",
+        contract_end: "2027-07-31",
+        term_months: 12,
+        settlement_due_date: "2026-11-01",
+        final_settlement_due_date: "2026-11-01",
         invoice_status: "issued",
         total_amount: 21_600_000,
         outstanding_amount: 21_600_000,
@@ -103,6 +108,8 @@ test("W06 Admin parsers accept the exact public billing contract", () => {
   const result = parseBillingWorklist(worklist());
   assert.equal(result.data[0].invoice_code, "INV-W06-001");
   assert.equal(result.data[0].outstanding_amount, 21_600_000);
+  assert.equal(result.data[0].settlement_due_date, "2026-11-01");
+  assert.equal(result.data[0].term_months, 12);
   assert.equal(result.meta.month, "2026-08-01");
   const pending = parseBillingPayments({
     data: [workspacePayment()],
@@ -498,6 +505,12 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /security_deposit/);
   assert.match(workspace, /documented_damage/);
   assert.match(workspace, /downloadAdminInvoiceDocument/);
+  assert.match(workspace, /Periode kontrak/);
+  assert.match(workspace, /Jatuh Tempo Tagihan/);
+  assert.match(workspace, /Tenggat pembayaran sewa kontrak/);
+  assert.match(workspace, /Tenggat tahap saat ini/);
+  assert.match(workspace, /Batas pelunasan seluruh kontrak/);
+  assert.match(workspace, /Kelola perpanjangan tenggat/);
   assert.match(workspace, /downloadAdminReceiptDocument/);
   assert.match(workspace, /settles_rent_contract/);
   assert.match(workspace, /Sewa kontrak lunas/);
@@ -552,7 +565,7 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /className="space-y-5" aria-label="Tagihan dan pembayaran"/);
   assert.match(residentDetail, /Total pembayaran sewa yang sudah diterima/);
   assert.match(residentDetail, /Sisa yang wajib dilunasi/);
-  assert.match(residentDetail, /Tenggat jatuh tempo pelunasan/);
+  assert.match(residentDetail, /Jatuh Tempo Tagihan/);
   assert.match(residentDetail, /triggerLabel="Catat Pembayaran"/);
   assert.match(residentDetail, /triggerLabel="Lunasi Sisa"/);
   assert.match(residentDetail, /Status verifikasi/);

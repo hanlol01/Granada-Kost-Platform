@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import type { FileResponse } from "@granada-kost/domain";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/state/EmptyState";
@@ -205,9 +205,9 @@ export function PaymentsWorkspace() {
         }`
       : "",
     invoiceSort !== "due_date_asc"
-      ? `urutan: ${invoiceSort === "due_date_desc" ? "jatuh tempo terjauh" : "nama penghuni A-Z"}`
+      ? `urutan: ${invoiceSort === "due_date_desc" ? "jatuh tempo tagihan terjauh" : "nama penghuni A-Z"}`
       : "",
-    dueWithinDaysInput ? `tenggat jatuh tempo dalam ${dueWithinDaysInput} hari` : "",
+    dueWithinDaysInput ? `jatuh tempo tagihan dalam ${dueWithinDaysInput} hari` : "",
     dateRangeFilterLabel(dateFrom, dateTo),
   ].filter(Boolean);
   const paymentFilterCriteria = [
@@ -373,8 +373,8 @@ export function PaymentsWorkspace() {
                 }}
                 aria-label="Urutkan tagihan"
               >
-                <option value="due_date_asc">Jatuh tempo terdekat</option>
-                <option value="due_date_desc">Jatuh tempo terjauh</option>
+                <option value="due_date_asc">Jatuh tempo tagihan terdekat</option>
+                <option value="due_date_desc">Jatuh tempo tagihan terjauh</option>
                 <option value="resident_asc">Nama penghuni A–Z</option>
               </select>
               <DeadlineWindowFilter
@@ -406,7 +406,7 @@ export function PaymentsWorkspace() {
                 <RotateCcw className="mr-2 h-4 w-4" /> Reset Filter
               </Button>
               <p className="text-xs text-muted-foreground xl:col-start-4 xl:row-start-3">
-                Jatuh tempo dalam rentang hari dari hari ini.
+                Jatuh tempo tagihan dalam rentang hari dari hari ini.
               </p>
               <DateRangeFilter
                 className="xl:col-start-2 xl:row-start-3"
@@ -928,7 +928,7 @@ function WorklistPanel({
       <EmptyState
         icon={<ReceiptText className="h-5 w-5" />}
         title="Tidak ada tagihan aktif"
-        description="Tidak ada invoice jatuh tempo bulan ini atau tunggakan sebelumnya."
+        description="Tidak ada tagihan dengan jatuh tempo pada periode ini atau tunggakan sebelumnya."
       />
     );
   return (
@@ -944,8 +944,8 @@ function WorklistPanel({
             <TableHeader>
               <TableRow>
                 <TableHead>Penghuni / Kamar</TableHead>
-                <TableHead>Cakupan</TableHead>
-                <TableHead>Jatuh tempo</TableHead>
+                <TableHead>Periode kontrak</TableHead>
+                <TableHead>Jatuh Tempo Tagihan</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Sisa</TableHead>
@@ -962,9 +962,9 @@ function WorklistPanel({
                     </p>
                   </TableCell>
                   <TableCell>
-                    {dateOnly(item.coverage_start)}–{dateOnly(item.coverage_end)}
+                    {formatContractPeriod(item.term_months, item.contract_start, item.contract_end)}
                   </TableCell>
-                  <TableCell>{dateOnly(item.due_date)}</TableCell>
+                  <TableCell>{dateOnly(item.settlement_due_date)}</TableCell>
                   <TableCell>
                     <StatusBadge status={item.invoice_status} />
                   </TableCell>
@@ -1160,6 +1160,8 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
 }
 
 function SummaryGrid({ data }: { data: ResidentBilling }) {
+  const settlementDueAt =
+    data.contract_settlement?.effective_due_at ?? data.contract_settlement?.final_settlement_due_at;
   const items = [
     ["Nilai kontrak", formatIDR(data.lease.contract_rent)],
     ["Tarif bulanan kontrak", formatIDR(data.lease.monthly_rate)],
@@ -1184,8 +1186,12 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Paket", data.lease.payment_plan === "annual_full" ? "Tahunan penuh" : "Angsuran dua bulanan"],
     ["Progress", `${data.summary.installment_paid}/${data.summary.installment_total} angsuran`],
     [
-      "Jatuh tempo berikut",
-      data.summary.next_due_date ? dateOnly(data.summary.next_due_date) : "Tidak ada",
+      "Jatuh Tempo Tagihan",
+      settlementDueAt
+        ? formatBillingDate(settlementDueAt)
+        : data.summary.next_due_date
+          ? dateOnly(data.summary.next_due_date)
+          : "Tidak ada",
     ],
     ["Terlambat", `${data.summary.overdue_count} invoice`],
   ];
@@ -1212,6 +1218,8 @@ function InvoiceHistory({
 }) {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const contractSettlementDueAt =
+    data.contract_settlement?.effective_due_at ?? data.contract_settlement?.final_settlement_due_at;
   return (
     <Card>
       <CardHeader>
@@ -1230,14 +1238,67 @@ function InvoiceHistory({
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        {data.contract_settlement ? (
+          <div className="rounded-xl border border-amber-300/70 bg-amber-50/60 p-3 text-sm dark:border-amber-700/70 dark:bg-amber-950/20">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-foreground">Tenggat pembayaran sewa kontrak</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Jatuh tempo pada setiap invoice berbeda dari tenggat tahap pembayaran dan batas
+                  pelunasan seluruh kontrak.
+                </p>
+              </div>
+              {canManage && data.contract_settlement.extension_available ? (
+                <Button asChild variant="warning" size="sm" className="min-h-10">
+                  <Link
+                    to="/tenants/$residentId"
+                    params={{ residentId: data.lease.resident_id }}
+                    hash="riwayat-pembayaran"
+                  >
+                    Kelola perpanjangan tenggat
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+            <dl className="mt-3 grid gap-2 border-t border-amber-300/50 pt-3 text-xs sm:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground">Tenggat tahap saat ini</dt>
+                <dd className="mt-1 font-semibold text-foreground">
+                  {contractSettlementDueAt
+                    ? formatBillingDate(contractSettlementDueAt)
+                    : "Menunggu aktivasi kamar"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Batas pelunasan seluruh kontrak</dt>
+                <dd className="mt-1 font-semibold text-foreground">
+                  {data.contract_settlement.final_settlement_due_at
+                    ? formatBillingDate(data.contract_settlement.final_settlement_due_at)
+                    : "Menunggu aktivasi kamar"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
         {data.invoices.map((invoice) => (
           <div key={invoice.id} className="rounded-lg border border-border p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-medium">{invoice.invoice_code}</p>
                 <p className="text-xs text-muted-foreground">
-                  {dateOnly(invoice.coverage_start)}–{dateOnly(invoice.coverage_end)} ·{" "}
-                  {dateOnly(invoice.due_date)}
+                  {invoice.invoice_purpose === "rent"
+                    ? `Periode kontrak ${formatContractPeriod(
+                        leaseDurationMonths(data.lease.start_date, data.lease.end_date),
+                        data.lease.start_date,
+                        data.lease.end_date,
+                      )} · jatuh tempo tagihan ${
+                        contractSettlementDueAt
+                          ? formatBillingDate(contractSettlementDueAt)
+                          : dateOnly(invoice.due_date)
+                      }`
+                    : `Periode tagihan ${dateOnly(invoice.coverage_start)}–${dateOnly(
+                        invoice.coverage_end,
+                      )} · jatuh tempo ${dateOnly(invoice.due_date)}`}
                 </p>
               </div>
               <StatusBadge status={invoice.invoice_status} />
@@ -3158,6 +3219,19 @@ function leaseDurationMonths(startDate: string, endDate: string) {
   const [startYear, startMonth] = startDate.split("-").map(Number);
   const [endYear, endMonth] = endDate.split("-").map(Number);
   return Math.max(1, (endYear - startYear) * 12 + endMonth - startMonth);
+}
+
+function formatContractPeriod(termMonths: number | null, startDate: string, endDate: string) {
+  const resolvedTermMonths = termMonths ?? leaseDurationMonths(startDate, endDate);
+  const years = Math.floor(resolvedTermMonths / 12);
+  const remainingMonths = resolvedTermMonths % 12;
+  const duration = [
+    years ? `${years} Tahun` : "",
+    remainingMonths ? `${remainingMonths} Bulan` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `${duration || `${resolvedTermMonths} Bulan`} / ${dateOnly(startDate)}–${dateOnly(endDate)}`;
 }
 function formatBillingDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", {

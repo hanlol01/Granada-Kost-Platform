@@ -316,6 +316,10 @@ type InvoiceDocumentRow = {
   coverage_start: string;
   coverage_end: string;
   due_date: string;
+  contract_start: string | null;
+  contract_end: string | null;
+  current_settlement_due_at: Date | null;
+  final_settlement_due_at: Date | null;
   total_amount: string;
   outstanding_amount: string;
   issued_at: Date | null;
@@ -531,10 +535,23 @@ export class W06BillingService {
     const month = this.normalizeMonth(query.month);
     const order =
       query.sort === 'due_date_desc'
-        ? 'i.due_date DESC,i.id DESC'
+        ? 'settlement_due_date DESC,i.id DESC'
         : query.sort === 'resident_asc'
-          ? 'i.snapshot_resident_name ASC,i.due_date ASC,i.id ASC'
-          : 'i.due_date ASC,i.id ASC';
+          ? 'i.snapshot_resident_name ASC,settlement_due_date ASC,i.id ASC'
+          : 'settlement_due_date ASC,i.id ASC';
+    const settlementDueDate = `COALESCE(
+      (current_checkpoint.current_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      final_checkpoint.final_due_date,
+      (settlement.extension_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      (settlement.original_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      i.due_date
+    )`;
+    const finalSettlementDueDate = `COALESCE(
+      final_checkpoint.final_due_date,
+      (settlement.extension_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      (settlement.original_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      i.due_date
+    )`;
     const values = [
       query.property_id,
       month,
@@ -548,6 +565,64 @@ export class W06BillingService {
     ];
     const common = `
       FROM invoices i
+      JOIN leases lease ON lease.id=i.lease_id AND lease.property_id=i.property_id
+      LEFT JOIN lease_contract_settlements settlement
+        ON settlement.property_id=i.property_id AND settlement.lease_id=i.lease_id
+      LEFT JOIN LATERAL (
+        SELECT (COALESCE(extension.extension_due_at,checkpoint.due_at) AT TIME ZONE 'Asia/Jakarta')::date
+          AS final_due_date
+          FROM lease_settlement_checkpoints checkpoint
+          LEFT JOIN lease_settlement_extensions extension
+            ON extension.property_id=checkpoint.property_id AND extension.checkpoint_id=checkpoint.id
+         WHERE checkpoint.property_id=i.property_id
+           AND checkpoint.lease_id=i.lease_id
+           AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+           AND checkpoint.checkpoint_code='final_settlement'
+         ORDER BY checkpoint.checkpoint_sequence DESC
+         LIMIT 1
+      ) final_checkpoint ON true
+      LEFT JOIN LATERAL (
+        SELECT command.planned_lease_end_date
+          FROM lease_checkout_commands command
+         WHERE command.property_id=i.property_id
+           AND command.lease_id=i.lease_id
+           AND command.state<>'cancelled'
+         ORDER BY command.created_at DESC,command.id DESC
+          LIMIT 1
+      ) checkout_period ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(sum(contract_invoice.credit_amount + COALESCE(contract_allocation.net,0)),0) AS net
+          FROM invoices contract_invoice
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(sum(contract_payment_allocation.allocated_amount),0)
+                   - COALESCE(sum(contract_reversal_allocation.reversed_amount),0) AS net
+              FROM payment_allocations contract_payment_allocation
+              LEFT JOIN payment_reversal_allocations contract_reversal_allocation
+                ON contract_reversal_allocation.original_allocation_id=contract_payment_allocation.id
+             WHERE contract_payment_allocation.invoice_id=contract_invoice.id
+          ) contract_allocation ON true
+         WHERE contract_invoice.property_id=i.property_id
+           AND contract_invoice.lease_id=i.lease_id
+           AND contract_invoice.invoice_purpose='rent'
+           AND contract_invoice.invoice_status<>'void'
+      ) contract_payment ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS current_due_at
+          FROM lease_settlement_checkpoints checkpoint
+          LEFT JOIN lease_settlement_extensions extension
+            ON extension.property_id=checkpoint.property_id
+           AND extension.checkpoint_id=checkpoint.id
+         WHERE checkpoint.property_id=i.property_id
+           AND checkpoint.lease_id=i.lease_id
+           AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+           AND COALESCE(contract_payment.net,0)<COALESCE(lease.contract_rent_amount,0)
+           AND (
+             checkpoint.settlement_mode='exact_remaining_balance'
+             OR COALESCE(checkpoint.minimum_required_amount,0)>COALESCE(contract_payment.net,0)
+           )
+         ORDER BY checkpoint.checkpoint_sequence
+         LIMIT 1
+      ) current_checkpoint ON true
       LEFT JOIN LATERAL (
         SELECT COALESCE(sum(pa.allocated_amount),0)
                - COALESCE(sum(pra.reversed_amount),0) AS net_allocated
@@ -561,8 +636,8 @@ export class W06BillingService {
         AND i.invoice_status IN ('issued','partially_paid','overdue')
         AND ($4::text IS NULL OR i.invoice_status=$4)
         AND (
-          date_trunc('month',i.due_date)::date=$2::date
-          OR (i.due_date<$2::date AND GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0)
+          date_trunc('month',${settlementDueDate})::date=$2::date
+          OR (${settlementDueDate}<$2::date AND GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0)
         )
         AND ($3::text IS NULL
           OR i.snapshot_resident_name ILIKE '%'||$3||'%'
@@ -570,11 +645,11 @@ export class W06BillingService {
           OR i.snapshot_building_code ILIKE '%'||$3||'%'
           OR i.invoice_code ILIKE '%'||$3||'%')
         AND ($5::int IS NULL OR (
-          i.due_date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
-          AND i.due_date <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $5::int)
-        ))
-        AND ($6::date IS NULL OR i.due_date >= $6::date)
-        AND ($7::date IS NULL OR i.due_date <= $7::date)`;
+           ${settlementDueDate} >= (now() AT TIME ZONE 'Asia/Jakarta')::date
+           AND ${settlementDueDate} <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $5::int)
+         ))
+        AND ($6::date IS NULL OR ${settlementDueDate} >= $6::date)
+        AND ($7::date IS NULL OR ${settlementDueDate} <= $7::date)`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
@@ -590,15 +665,26 @@ export class W06BillingService {
         coverage_start: string;
         coverage_end: string;
         due_date: string;
+        contract_start: string;
+        contract_end: string;
+        term_months: string | number | null;
+        settlement_due_date: string;
+        final_settlement_due_date: string;
         invoice_status: string;
         total_amount: string;
         outstanding_amount: string;
       }>(
         `SELECT i.id,i.invoice_code,i.resident_id,i.lease_id,
                 i.snapshot_resident_name AS resident_name,i.snapshot_room_number AS room_number,
-                COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
-                COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
-                i.due_date::text,i.invoice_status,i.total_amount,
+                 COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
+                 COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
+                 i.due_date::text,
+                 COALESCE(lease.start_date,i.snapshot_period_start_date)::text AS contract_start,
+                 COALESCE(checkout_period.planned_lease_end_date,lease.end_date,i.snapshot_period_end_date)::text AS contract_end,
+                 lease.term_months,
+                 ${settlementDueDate}::text AS settlement_due_date,
+                  ${finalSettlementDueDate}::text AS final_settlement_due_date,
+                 i.invoice_status,i.total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
          ${common} ORDER BY ${order} LIMIT $8 OFFSET $9`,
         values,
@@ -615,6 +701,11 @@ export class W06BillingService {
         coverage_start: row.coverage_start,
         coverage_end: row.coverage_end,
         due_date: row.due_date,
+        contract_start: row.contract_start,
+        contract_end: row.contract_end,
+        term_months: row.term_months == null ? null : Number(row.term_months),
+        settlement_due_date: row.settlement_due_date,
+        final_settlement_due_date: row.final_settlement_due_date,
         invoice_status: this.publicInvoiceStatus(row.invoice_status),
         total_amount: this.money(row.total_amount),
         outstanding_amount: this.money(row.outstanding_amount),
@@ -4009,16 +4100,37 @@ export class W06BillingService {
                     property.name AS property_name,property.address AS property_address,
                     issuer.display_name AS issued_by_name,
                     GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount,
-                    lease.term_months AS lease_term_months,
-                    lease.snapshot_monthly_price AS agreed_monthly_price,
+                     lease.term_months AS lease_term_months,
+                      COALESCE(lease.start_date,invoice.snapshot_period_start_date)::text AS contract_start,
+                      COALESCE(checkout_period.planned_lease_end_date,lease.end_date,invoice.snapshot_period_end_date)::text AS contract_end,
+                     lease.snapshot_monthly_price AS agreed_monthly_price,
                     lease.contract_rent_amount,
                     COALESCE(contract_payment.net,0) AS cumulative_rent_paid,
                     GREATEST(COALESCE(lease.contract_rent_amount,0)-COALESCE(contract_payment.net,0),0)
                       AS contract_remaining_amount,
-                    COALESCE(lease.pricing_source,'standard') AS pricing_source
-               FROM invoices invoice
+                     COALESCE(lease.pricing_source,'standard') AS pricing_source,
+                     COALESCE(
+                       current_checkpoint.current_due_at,
+                       settlement.extension_due_at,
+                       settlement.original_due_at
+                     ) AS current_settlement_due_at,
+                     COALESCE(
+                       final_checkpoint.final_due_at,
+                       settlement.extension_due_at,
+                       settlement.original_due_at
+                     ) AS final_settlement_due_at
+                FROM invoices invoice
                JOIN properties property ON property.id=invoice.property_id
-               LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
+                LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
+               LEFT JOIN LATERAL (
+                 SELECT command.planned_lease_end_date
+                   FROM lease_checkout_commands command
+                  WHERE command.property_id=invoice.property_id
+                    AND command.lease_id=invoice.lease_id
+                    AND command.state<>'cancelled'
+                  ORDER BY command.created_at DESC,command.id DESC
+                  LIMIT 1
+               ) checkout_period ON true
               LEFT JOIN users issuer ON issuer.id=invoice.created_by_user_id
               LEFT JOIN LATERAL (
                 SELECT COALESCE(sum(payment_allocation.allocated_amount),0)
@@ -4045,7 +4157,40 @@ export class W06BillingService {
                     AND contract_invoice.lease_id=invoice.lease_id
                     AND contract_invoice.invoice_purpose='rent'
                     AND contract_invoice.invoice_status<>'void'
-               ) contract_payment ON true`;
+                ) contract_payment ON true
+                LEFT JOIN lease_contract_settlements settlement
+                  ON settlement.property_id=invoice.property_id
+                 AND settlement.lease_id=invoice.lease_id
+                LEFT JOIN LATERAL (
+                  SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS current_due_at
+                    FROM lease_settlement_checkpoints checkpoint
+                    LEFT JOIN lease_settlement_extensions extension
+                      ON extension.property_id=checkpoint.property_id
+                     AND extension.checkpoint_id=checkpoint.id
+                   WHERE checkpoint.property_id=invoice.property_id
+                     AND checkpoint.lease_id=invoice.lease_id
+                     AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+                     AND COALESCE(contract_payment.net,0)<COALESCE(lease.contract_rent_amount,0)
+                     AND (
+                       checkpoint.settlement_mode='exact_remaining_balance'
+                       OR COALESCE(checkpoint.minimum_required_amount,0)>COALESCE(contract_payment.net,0)
+                     )
+                   ORDER BY checkpoint.checkpoint_sequence
+                   LIMIT 1
+                ) current_checkpoint ON true
+                LEFT JOIN LATERAL (
+                  SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS final_due_at
+                    FROM lease_settlement_checkpoints checkpoint
+                    LEFT JOIN lease_settlement_extensions extension
+                      ON extension.property_id=checkpoint.property_id
+                     AND extension.checkpoint_id=checkpoint.id
+                   WHERE checkpoint.property_id=invoice.property_id
+                     AND checkpoint.lease_id=invoice.lease_id
+                     AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+                     AND checkpoint.checkpoint_code='final_settlement'
+                   ORDER BY checkpoint.checkpoint_sequence DESC
+                   LIMIT 1
+                ) final_checkpoint ON true`;
   }
 
   private renderInvoiceDocument(row: InvoiceDocumentRow): Promise<BillingInvoiceDocument> {
@@ -4059,6 +4204,10 @@ export class W06BillingService {
       coverageStart: row.coverage_start,
       coverageEnd: row.coverage_end,
       dueDate: row.due_date,
+      contractStart: row.contract_start,
+      contractEnd: row.contract_end,
+      currentSettlementDueAt: row.current_settlement_due_at,
+      finalSettlementDueAt: row.final_settlement_due_at,
       totalAmount: this.money(row.total_amount),
       outstandingAmount: this.money(row.outstanding_amount),
       leaseTermMonths: row.lease_term_months,
@@ -4072,6 +4221,7 @@ export class W06BillingService {
         row.contract_remaining_amount == null ? null : this.money(row.contract_remaining_amount),
       pricingSource: row.pricing_source,
       issuedAt: row.issued_at,
+      printedAt: new Date(),
       propertyName: row.property_name,
       propertyAddress: row.property_address,
       issuedByName: row.issued_by_name,
@@ -4302,6 +4452,7 @@ export class W06BillingService {
         extension_due_at: null,
         extension_reason: null,
         effective_due_at: null,
+        final_settlement_due_at: null,
         contract_rent_amount: total,
         initial_rent_credit: paymentBreakdown.initialRentCredit,
         payment_allocated: paymentBreakdown.additionalRentPayments,
@@ -4431,6 +4582,7 @@ export class W06BillingService {
       extension_due_at: row.extension_due_at?.toISOString() ?? null,
       extension_reason: row.extension_reason,
       effective_due_at: dueAt?.toISOString() ?? null,
+      final_settlement_due_at: dueAt?.toISOString() ?? null,
       contract_rent_amount: total,
       initial_rent_credit: paymentBreakdown.initialRentCredit,
       payment_allocated: paymentBreakdown.additionalRentPayments,
@@ -4573,6 +4725,10 @@ export class W06BillingService {
       extension_due_at: projection.currentCheckpoint.extensionDueAt?.toISOString() ?? null,
       extension_reason: currentCheckpointInput?.extension_reason ?? null,
       effective_due_at: dueAt.toISOString(),
+      final_settlement_due_at:
+        projection.checkpoints
+          .find((checkpoint) => checkpoint.code === 'final_settlement')
+          ?.effectiveDueAt.toISOString() ?? null,
       contract_rent_amount: total,
       initial_rent_credit: initialRentCredit,
       payment_allocated: paymentBreakdown.additionalRentPayments,

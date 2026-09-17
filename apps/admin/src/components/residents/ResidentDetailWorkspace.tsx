@@ -413,8 +413,9 @@ function residentGuidanceItems(
   }
 
   if (settlement) {
-    const dueLabel = settlement.effective_due_at
-      ? formatResidentDetailTimestamp(settlement.effective_due_at)
+    const dueLabel = settlement.effective_due_at ?? settlement.final_settlement_due_at;
+    const dueLabelText = dueLabel
+      ? formatResidentDetailTimestamp(dueLabel)
       : "setelah kamar diaktivasi";
 
     if (settlement.status === "paid") {
@@ -451,10 +452,10 @@ function residentGuidanceItems(
         id: "settlement-extended",
         tone: "primary",
         title: "Tenggat pelunasan diperpanjang",
-        description: `Sisa ${rupiah(settlement.outstanding_amount)} harus diselesaikan paling lambat ${dueLabel} WIB. Perpanjangan berikutnya tidak tersedia.`,
+        description: `Sisa ${rupiah(settlement.outstanding_amount)} harus diselesaikan paling lambat ${dueLabelText} WIB. Perpanjangan berikutnya tidak tersedia.`,
       });
     } else if (settlement.status === "open") {
-      const guidance = openSettlementGuidance(settlement, dueLabel);
+      const guidance = openSettlementGuidance(settlement, dueLabelText);
 
       items.push({
         id: "settlement-open",
@@ -2221,8 +2222,9 @@ function ContractSettlementSummary({
   summary: ResidentBilling["summary"];
   propertyId: string | null;
 }) {
-  const dueLabel = settlement.effective_due_at
-    ? formatResidentDetailTimestamp(settlement.effective_due_at)
+  const settlementDueAt = settlement.effective_due_at ?? settlement.final_settlement_due_at;
+  const dueLabel = settlementDueAt
+    ? formatResidentDetailTimestamp(settlementDueAt)
     : "Dihitung setelah aktivasi";
   const paidCredit = settlement.initial_rent_credit + settlement.payment_allocated;
   const directGuidance =
@@ -2265,7 +2267,7 @@ function ContractSettlementSummary({
           value={rupiah(settlement.outstanding_amount)}
           highlight
         />
-        <SummaryMetric label="Tenggat jatuh tempo pelunasan" value={dueLabel} />
+        <SummaryMetric label="Jatuh Tempo Tagihan" value={dueLabel} />
       </div>
       <FirstPaymentCheckpointCard settlement={settlement} />
       {directGuidance ? (
@@ -2404,6 +2406,7 @@ function ContractInvoicePanel({
   if (!settlement) return null;
   const invoice = data.invoices.find((item) => item.id === settlement.invoice_id) ?? null;
   const termination = settlement.termination_case;
+  const invoiceSettlementDueAt = settlement.effective_due_at ?? settlement.final_settlement_due_at;
 
   return (
     <div className="space-y-4">
@@ -2436,10 +2439,10 @@ function ContractInvoicePanel({
             highlight
           />
           <SummaryMetric
-            label="Tenggat jatuh tempo pelunasan"
+            label="Jatuh Tempo Tagihan"
             value={
-              settlement.effective_due_at
-                ? formatResidentDetailTimestamp(settlement.effective_due_at)
+              invoiceSettlementDueAt
+                ? formatResidentDetailTimestamp(invoiceSettlementDueAt)
                 : "Menunggu aktivasi"
             }
           />

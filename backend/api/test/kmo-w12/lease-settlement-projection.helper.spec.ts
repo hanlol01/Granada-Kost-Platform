@@ -74,6 +74,25 @@ void test('met checkpoint advances without losing the cumulative credit authorit
   assert.equal(projection.currentCheckpoint.shortfallAmount, 1_800_000);
 });
 
+void test('current deadline skips every checkpoint already covered by verified credit', () => {
+  const projection = projectLeaseSettlementV2({
+    activated: true,
+    terminationPending: false,
+    contractRentAmount: 10_800_000,
+    cumulativeVerifiedRentCredit: 5_400_000,
+    authoritativeNow: new Date('2026-10-01T00:00:00.000Z'),
+    gracePeriodDays: 3,
+    checkpoints: sixMonthCheckpoints,
+  });
+
+  assert.equal(projection.currentCheckpoint.code, 'final_settlement');
+  assert.equal(
+    projection.currentCheckpoint.effectiveDueAt.toISOString(),
+    '2026-11-28T16:59:59.999Z',
+  );
+  assert.equal(projection.currentCheckpoint.shortfallAmount, 5_400_000);
+});
+
 void test('final checkpoint rejects instalment semantics immediately after its due time', () => {
   const projection = projectLeaseSettlementV2({
     activated: true,

@@ -80,7 +80,9 @@ export function projectLeaseSettlementV2(input: LeaseSettlementProjectionInput) 
     checkpoints.find(
       (checkpoint) => checkpoint.shortfallAmount > 0 && nowTime > checkpoint.dueAt.getTime(),
     ) ??
-    checkpoints.find((checkpoint) => nowTime <= checkpoint.dueAt.getTime()) ??
+    checkpoints.find(
+      (checkpoint) => checkpoint.shortfallAmount > 0 && nowTime <= checkpoint.dueAt.getTime(),
+    ) ??
     checkpoints.at(-1)!;
   const finalCheckpoint = checkpoints.find((checkpoint) => checkpoint.code === 'final_settlement')!;
   const exactFinalPaymentRequired =

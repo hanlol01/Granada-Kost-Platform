@@ -19,6 +19,10 @@ export type BillingInvoiceDocumentData = {
   coverageStart: string;
   coverageEnd: string;
   dueDate: string;
+  contractStart?: string | null;
+  contractEnd?: string | null;
+  currentSettlementDueAt?: Date | string | null;
+  finalSettlementDueAt?: Date | string | null;
   totalAmount: number;
   outstandingAmount: number;
   leaseTermMonths?: number | null;
@@ -28,6 +32,7 @@ export type BillingInvoiceDocumentData = {
   contractRemainingAmount?: number | null;
   pricingSource?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   issuedAt: Date | null;
+  printedAt?: Date;
   propertyName?: string;
   propertyAddress?: string | null;
   issuedByName?: string | null;
@@ -295,7 +300,7 @@ export async function createBillingInvoicePdf(
   const outstandingAmount = Math.max(0, data.outstandingAmount);
   const paidAmount = Math.max(0, data.totalAmount - outstandingAmount);
   const document = await PDFDocument.create();
-  const page = document.addPage([595.28, 841.89]);
+  let page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const italic = await document.embedFont(StandardFonts.HelveticaBoldOblique);
@@ -355,6 +360,33 @@ export async function createBillingInvoicePdf(
     color: navy,
   });
 
+  const startContinuationPage = () => {
+    page = document.addPage([595.28, 841.89]);
+    page.drawLine({
+      start: { x: 52, y: 720 },
+      end: { x: 543, y: 720 },
+      thickness: 1.5,
+      color: navy,
+    });
+    const continuationTitle = `${title} - LANJUTAN`;
+    const continuationTitleWidth = bold.widthOfTextAtSize(continuationTitle, 13);
+    page.drawText(continuationTitle, {
+      x: (pageWidth - continuationTitleWidth) / 2,
+      y: 692,
+      size: 13,
+      font: bold,
+      color: navy,
+    });
+    page.drawText(invoiceCode, {
+      x: (pageWidth - invoiceCodeWidth) / 2,
+      y: 676,
+      size: 9,
+      font: bold,
+      color: navy,
+    });
+    return 642;
+  };
+
   const statusLabels: Record<string, string> = {
     draft: 'Draf',
     issued: 'Diterbitkan',
@@ -363,24 +395,34 @@ export async function createBillingInvoicePdf(
     overdue: 'Tunggakan',
     void: 'Dibatalkan',
   };
+  const isRentInvoice = data.invoicePurpose === 'rent';
+  const contractPeriod = isRentInvoice
+    ? invoiceContractPeriod(data.contractStart, data.contractEnd, data.leaseTermMonths)
+    : null;
+  const coveragePeriod = `${receiptDate(data.coverageStart)} s.d. ${receiptDate(data.coverageEnd)}`;
   const rows: Array<[string, string]> = [
     ['Ditagihkan kepada', data.residentName],
     ['Tagihan yang perlu dibayar', idr(outstandingAmount)],
-    ['Untuk pembayaran', data.invoicePurpose === 'rent' ? 'Sewa kamar' : 'Tagihan lainnya'],
-    ['Periode', `${receiptDate(data.coverageStart)} s.d. ${receiptDate(data.coverageEnd)}`],
+    ['Untuk pembayaran', isRentInvoice ? 'Sewa kamar' : 'Tagihan lainnya'],
+    ['Periode', contractPeriod ?? coveragePeriod],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
-    ['Jatuh tempo', receiptDate(data.dueDate, true)],
+    [
+      'Jatuh Tempo Tagihan',
+      receiptDate(data.currentSettlementDueAt ?? data.finalSettlementDueAt ?? data.dueDate, true),
+    ],
     ['Status invoice', statusLabels[data.invoiceStatus] ?? label(data.invoiceStatus)],
     ['Nilai tagihan awal', idr(data.totalAmount)],
     ['Sudah dibayarkan', idr(Math.max(0, paidAmount))],
     ['Sisa tagihan', idr(outstandingAmount)],
-    ['Diterbitkan', receiptDate(data.issuedAt, true)],
+    // The invoice is generated on demand. Keep the visible publication date
+    // aligned with the latest download while retaining issuedAt for audit
+    // and document identity in the service layer.
+    ['Diterbitkan', receiptDate(data.printedAt ?? data.issuedAt ?? new Date(), true)],
   ];
-  if (data.invoicePurpose === 'rent' && data.contractRentAmount != null) {
+  if (isRentInvoice && data.contractRentAmount != null) {
     rows.splice(
       3,
       0,
-      ['Durasi kontrak', `${data.leaseTermMonths ?? 0} bulan`],
       ['Tarif bulanan kontrak', idr(data.agreedMonthlyPrice ?? 0)],
       [
         'Sumber tarif',
@@ -395,11 +437,25 @@ export async function createBillingInvoicePdf(
       ['Sisa kewajiban kontrak', idr(data.contractRemainingAmount ?? data.contractRentAmount)],
     );
   }
+  if (isRentInvoice && data.finalSettlementDueAt) {
+    rows.splice(
+      rows.findIndex(([labelText]) => labelText === 'Status invoice'),
+      0,
+      ['Batas Pelunasan Kontrak', receiptDate(data.finalSettlementDueAt, true)],
+    );
+  }
+  const terbilangLines = wrapText(italic, terbilang(outstandingAmount), 10, 422);
+  const terbilangHeight = 34 + terbilangLines.length * 13;
+  // The signed footer occupies the lower page area. Keep that area reserved
+  // before drawing each row instead of letting the balance summary overlap it.
+  const summaryAndFooterReservation = terbilangHeight + 210;
   let y = 642;
   for (const [labelText, value] of rows) {
-    const isCurrentAmountDue = labelText === 'Tagihan yang perlu dibayar';
+    const isHighlightedAmount =
+      labelText === 'Tagihan yang perlu dibayar' || labelText === 'Sisa tagihan';
     const valueLines = wrapText(regular, value, 10, 258);
     const rowHeight = Math.max(22, valueLines.length * 13 + 6);
+    if (y - rowHeight < summaryAndFooterReservation) y = startContinuationPage();
     page.drawCircle({ x: 69, y: y - 7, size: 2.5, color: softNavy });
     page.drawText(labelText, { x: 83, y: y - 10, size: 10, font: bold, color: navy });
     page.drawText(':', { x: 223, y: y - 10, size: 10, font: regular, color: muted });
@@ -409,14 +465,12 @@ export async function createBillingInvoicePdf(
         y: y - 10 - index * 13,
         size: 10,
         font: regular,
-        color: isCurrentAmountDue ? terbilangRed : navy,
+        color: isHighlightedAmount ? terbilangRed : navy,
       });
     });
     y -= rowHeight;
   }
 
-  const terbilangLines = wrapText(italic, terbilang(outstandingAmount), 10, 422);
-  const terbilangHeight = 34 + terbilangLines.length * 13;
   y -= 8;
   page.drawRectangle({
     x: 82,
@@ -438,7 +492,7 @@ export async function createBillingInvoicePdf(
     });
   });
 
-  const footerY = Math.max(120, y - terbilangHeight - 90);
+  const footerY = y - terbilangHeight - 90;
   const issuer = data.issuedByName?.trim() || `Pengelola ${data.propertyName ?? 'Kostation'}`;
   page.drawText('Jatinangor Sumedang,', {
     x: 52,
@@ -544,6 +598,22 @@ function receiptPeriod(
   const duration = leaseDuration(termMonths ?? inferLeaseTermMonths(start, end));
   const dates = `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
   return duration ? `${duration} / ${dates}` : dates;
+}
+
+function invoiceContractPeriod(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  termMonths?: number | null,
+): string | null {
+  if (!start) return null;
+  const duration = leaseDuration(termMonths ?? inferLeaseTermMonths(start, end));
+  const dates = `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
+  if (!duration) return dates;
+  const titleCaseDuration = duration.replace(
+    /\b(tahun|bulan)\b/g,
+    (word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`,
+  );
+  return `${titleCaseDuration} / ${dates}`;
 }
 
 function inferLeaseTermMonths(

@@ -67,6 +67,7 @@ function snapshot(
       approved_short_notice_charge: 174_195,
       waiver_reason: null,
     },
+    late_checkout: null,
     handover: {
       keys_access_confirmed: true,
       inventory_confirmed: true,
@@ -120,6 +121,9 @@ function snapshot(
       contract_outstanding_amount: 0,
       rent_refundable_amount: 0,
       rent_amount_due_before_deposit_offset: 174_195,
+      short_notice_charge_due_amount: 174_195,
+      late_checkout_penalty_amount: 0,
+      late_checkout_penalty_due_amount: 0,
       deposit_liability_amount: 1_800_000,
       documented_damage_amount: 150_000,
       deposit_deduction_amount: 150_000,
@@ -208,6 +212,40 @@ void test('M6 refund receipt is issued only as a paid outgoing document variant'
   assert.equal(parsed.getPageCount(), 1);
   assert.match(result.filename, /^RFD-/);
   assert.ok(result.content.length > 10_000);
+});
+
+void test('M6 official handover document explains late-checkout grace and penalty without notice wording', async () => {
+  const lateCheckoutSnapshot: LeaseExitOfficialDocumentSnapshot = {
+    ...snapshot('checkout_handover'),
+    late_checkout: {
+      grace_days: 3,
+      contract_last_occupancy_date: '2026-09-30',
+      penalty_free_until_date: '2026-10-03',
+      daily_penalty_amount: 60_000,
+      overdue_days: 2,
+      charged_days: 2,
+      penalty_amount: 120_000,
+    },
+    settlement: {
+      ...snapshot('checkout_handover').settlement,
+      short_notice_charge_due_amount: 0,
+      late_checkout_penalty_amount: 120_000,
+      late_checkout_penalty_due_amount: 120_000,
+    },
+  };
+  const result = await createLeaseExitOfficialDocumentPdf('checkout_handover', lateCheckoutSnapshot);
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const rendered = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const textParts: string[] = [];
+  for (let pageNumber = 1; pageNumber <= rendered.numPages; pageNumber += 1) {
+    const page = await rendered.getPage(pageNumber);
+    const content = await page.getTextContent();
+    textParts.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+  }
+  const text = textParts.join(' ');
+  assert.match(text, /Masa toleransi dan denda keterlambatan/);
+  assert.match(text, /Denda keterlambatan check-out/);
+  assert.doesNotMatch(text, /Biaya pemberitahuan singkat/);
 });
 
 void test('M6 stores the rendered PDF and checksum while keeping resident access owner-denied', () => {

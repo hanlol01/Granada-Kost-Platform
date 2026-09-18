@@ -105,6 +105,7 @@ function tenancy() {
     end_date: "2026-10-31",
     term_months: 3,
     payment_plan_type: "annual_full",
+    commercial_mode: "rent",
     agreed_monthly_price: 1_900_000,
     contract_rent_amount: 5_700_000,
     pricing_source: "standard",

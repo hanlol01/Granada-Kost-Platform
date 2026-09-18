@@ -505,6 +505,43 @@ export class CreateLeaseCheckoutNoticeDto {
 /** Edits are intentionally separate from creating a checkout command. */
 export class EditLeaseCheckoutNoticeDto extends CreateLeaseCheckoutNoticeDto {}
 
+/**
+ * The operational checkout policy deliberately does not ask Admin to model a
+ * notice period. The planned date is a coordination detail; the financial
+ * penalty is determined only when the room and keys are actually returned.
+ */
+export class CreateLateCheckoutPlanDto {
+  @IsIn(['resident_early_termination', 'normal_expiry'])
+  exit_type!: 'resident_early_termination' | 'normal_expiry';
+
+  @IsDateString()
+  effective_date!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  reason!: string;
+
+  @IsIn(['resident', 'parent', 'admin', 'other'])
+  request_source!: 'resident' | 'parent' | 'admin' | 'other';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  internal_note?: string;
+}
+
+export class EditLateCheckoutPlanDto extends CreateLateCheckoutPlanDto {}
+
+/** Admin confirms the operational schedule and snapshots its daily late-checkout tariff. */
+export class ConfirmLateCheckoutPlanDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  late_checkout_daily_penalty_amount?: number;
+}
+
 export class ApproveLeaseCheckoutDto {
   @Type(() => Number)
   @IsInt()

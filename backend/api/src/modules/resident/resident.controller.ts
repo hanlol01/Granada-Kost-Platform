@@ -152,6 +152,7 @@ export class ResidentController {
             end_date: tenancy.endDate,
             term_months: tenancy.termMonths,
             payment_plan_type: tenancy.paymentPlanType,
+            commercial_mode: tenancy.commercialMode,
             agreed_monthly_price: tenancy.agreedMonthlyPrice,
             contract_rent_amount: tenancy.contractRentAmount,
             pricing_source: tenancy.pricingSource,

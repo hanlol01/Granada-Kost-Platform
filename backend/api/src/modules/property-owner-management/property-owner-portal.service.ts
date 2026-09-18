@@ -371,7 +371,8 @@ export class PropertyOwnerPortalService {
               checkout.checkout_effective_date, checkout.checkout_actual_date,
               checkout.checkout_settlement_status, checkout.checkout_amount_due,
               checkout.checkout_refund_amount, checkout.checkout_earned_rent_amount,
-              checkout.checkout_short_notice_amount, checkout.checkout_management_fee_amount,
+              checkout.checkout_charge_policy, checkout.checkout_short_notice_amount,
+              checkout.checkout_late_penalty_amount, checkout.checkout_management_fee_amount,
               checkout.checkout_owner_entitlement_amount,
               authorized_asset.effective_from::text, authorized_asset.effective_until::text,
               authorized_asset.assignment_source,
@@ -455,7 +456,9 @@ export class PropertyOwnerPortalService {
                  settlement.amount_due::text AS checkout_amount_due,
                  settlement.final_refund_amount::text AS checkout_refund_amount,
                  settlement.earned_rent_amount::text AS checkout_earned_rent_amount,
+                 command.charge_policy AS checkout_charge_policy,
                  settlement.approved_short_notice_charge::text AS checkout_short_notice_amount,
+                 settlement.late_checkout_penalty_amount::text AS checkout_late_penalty_amount,
                  COALESCE(earnings.management_fee_amount,0)::bigint::text
                    AS checkout_management_fee_amount,
                  COALESCE(earnings.owner_entitlement_amount,0)::bigint::text
@@ -622,6 +625,14 @@ export class PropertyOwnerPortalService {
                 short_notice_compensation: this.money(
                   row.checkout_short_notice_amount ?? '0',
                   'asset.checkout_short_notice_amount',
+                ),
+                late_checkout_penalty: this.money(
+                  row.checkout_late_penalty_amount ?? '0',
+                  'asset.checkout_late_penalty_amount',
+                ),
+                charge_policy: this.nullableText(
+                  row.checkout_charge_policy,
+                  'asset.checkout_charge_policy',
                 ),
                 management_fee_amount: this.money(
                   row.checkout_management_fee_amount ?? '0',

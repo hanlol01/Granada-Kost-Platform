@@ -2,6 +2,31 @@ export const LEASE_EXIT_TYPES = ['resident_early_termination', 'normal_expiry'] 
 
 export type LeaseExitType = (typeof LEASE_EXIT_TYPES)[number];
 
+/**
+ * Checkout records created before the late-checkout policy retain their
+ * short-notice economics forever. New records use the simpler, operational
+ * late-checkout policy. The policy is a snapshot, never an inferred label.
+ */
+export const CHECKOUT_CHARGE_POLICIES = [
+  'legacy_short_notice_v1',
+  'late_checkout_penalty_v1',
+] as const;
+
+export type CheckoutChargePolicy = (typeof CHECKOUT_CHARGE_POLICIES)[number];
+
+export const LATE_CHECKOUT_GRACE_DAYS = 3;
+export const LATE_CHECKOUT_PENALTY_DAY_CAP = 30;
+
+export type LateCheckoutPenaltyQuote = {
+  contractLastOccupancyDate: string;
+  penaltyFreeUntilDate: string;
+  graceDays: number;
+  dailyPenaltyAmount: number;
+  overdueDays: number;
+  chargedDays: number;
+  lateCheckoutPenaltyAmount: number;
+};
+
 export type LeaseExitNoticeQuote = {
   exitType: LeaseExitType;
   noticeDays: number;
@@ -20,6 +45,11 @@ export type LeaseExitFinancialQuote = {
   earnedRentAmountDueBeforeDepositOffset: number;
   contractOutstandingAmount: number;
   approvedShortNoticeCharge: number;
+  lateCheckoutPenaltyAmount: number;
+  checkoutChargeAmount: number;
+  baseRentAmountDueBeforeCheckoutCharge: number;
+  shortNoticeChargeDue: number;
+  lateCheckoutPenaltyDue: number;
   rentRefundableAmount: number;
   rentAmountDueBeforeDepositOffset: number;
   depositLiabilityAmount: number;
@@ -53,6 +83,7 @@ type LeaseExitFinancialQuoteInput = {
   depositLiabilityAmount: number;
   documentedDamageAmount: number;
   approvedShortNoticeCharge: number;
+  lateCheckoutPenaltyAmount?: number;
   depositRentOffsetAmount: number;
 };
 
@@ -131,6 +162,10 @@ export function buildLeaseExitFinancialQuote(
     input.approvedShortNoticeCharge,
     'short-notice charge',
   );
+  const lateCheckoutPenalty = assertNonNegativeMoney(
+    input.lateCheckoutPenaltyAmount ?? 0,
+    'late checkout penalty',
+  );
   const depositOffset = assertNonNegativeMoney(
     input.depositRentOffsetAmount,
     'deposit rent offset',
@@ -139,9 +174,26 @@ export function buildLeaseExitFinancialQuote(
     throw new RangeError('Actual checkout date cannot precede lease start');
   const earnedRent = Math.min(contractRent, calculateEarnedRent(leaseStart, checkout, monthlyRate));
   const earnedRentDue = Math.max(earnedRent - recognizedCredit, 0);
-  const rentPosition = recognizedCredit - earnedRent - noticeCharge;
-  const rentRefundable = Math.max(rentPosition, 0);
-  const rentDue = Math.max(-rentPosition, 0);
+  const creditAfterEarnedRent = Math.max(recognizedCredit - earnedRent, 0);
+  const checkoutCharge = noticeCharge + lateCheckoutPenalty;
+  if (!Number.isSafeInteger(checkoutCharge))
+    throw new RangeError('Checkout charges must be a safe integer');
+
+  // Charges first consume an eligible rent credit/refund. Any remainder is a
+  // separately visible final obligation. A security deposit is never silently
+  // used for either type of checkout charge.
+  const shortNoticeChargeCovered = Math.min(noticeCharge, creditAfterEarnedRent);
+  const lateCheckoutPenaltyCovered = Math.min(
+    lateCheckoutPenalty,
+    Math.max(creditAfterEarnedRent - shortNoticeChargeCovered, 0),
+  );
+  const shortNoticeChargeDue = noticeCharge - shortNoticeChargeCovered;
+  const lateCheckoutPenaltyDue = lateCheckoutPenalty - lateCheckoutPenaltyCovered;
+  const rentRefundable = Math.max(
+    creditAfterEarnedRent - shortNoticeChargeCovered - lateCheckoutPenaltyCovered,
+    0,
+  );
+  const rentDue = earnedRentDue + shortNoticeChargeDue + lateCheckoutPenaltyDue;
   const maximumDepositOffset = Math.min(rentDue, deposit);
   if (depositOffset > maximumDepositOffset)
     throw new RangeError('Deposit rent offset exceeds the permitted amount');
@@ -161,6 +213,11 @@ export function buildLeaseExitFinancialQuote(
     earnedRentAmountDueBeforeDepositOffset: earnedRentDue,
     contractOutstandingAmount: Math.max(contractRent - recognizedCredit - depositOffset, 0),
     approvedShortNoticeCharge: noticeCharge,
+    lateCheckoutPenaltyAmount: lateCheckoutPenalty,
+    checkoutChargeAmount: checkoutCharge,
+    baseRentAmountDueBeforeCheckoutCharge: earnedRentDue,
+    shortNoticeChargeDue,
+    lateCheckoutPenaltyDue,
     rentRefundableAmount: rentRefundable,
     rentAmountDueBeforeDepositOffset: rentDue,
     depositLiabilityAmount: deposit,
@@ -173,6 +230,56 @@ export function buildLeaseExitFinancialQuote(
     grossAmountDue,
     recommendedRefundAmount: Math.max(grossRefund - grossAmountDue, 0),
     amountDue: Math.max(grossAmountDue - grossRefund, 0),
+  };
+}
+
+/**
+ * Calculates the post-contract checkout penalty from immutable lease pricing.
+ * `plannedLeaseEndDate` is the exclusive end of the contract interval, so the
+ * final contractual occupancy date is one calendar day before it.
+ */
+export function buildLateCheckoutPenaltyQuote(input: {
+  plannedLeaseEndDate: string;
+  actualPossessionReturnedDate: string;
+  monthlyRateAmount: number;
+  graceDays?: number;
+  penaltyDayCap?: number;
+  /** Stored by the checkout command to make later tariff edits irrelevant. */
+  dailyPenaltyAmount?: number;
+}): LateCheckoutPenaltyQuote {
+  const plannedEndExclusive = parseBusinessDate(input.plannedLeaseEndDate);
+  const actualReturn = parseBusinessDate(input.actualPossessionReturnedDate);
+  const monthlyRate =
+    input.dailyPenaltyAmount === undefined
+      ? assertPositiveMoney(input.monthlyRateAmount)
+      : assertNonNegativeMoney(input.monthlyRateAmount, 'Monthly rate');
+  const graceDays = input.graceDays ?? LATE_CHECKOUT_GRACE_DAYS;
+  const penaltyDayCap = input.penaltyDayCap ?? LATE_CHECKOUT_PENALTY_DAY_CAP;
+  if (!Number.isSafeInteger(graceDays) || graceDays < 0 || graceDays > 31)
+    throw new RangeError('Late checkout grace days must be between 0 and 31');
+  if (!Number.isSafeInteger(penaltyDayCap) || penaltyDayCap < 1 || penaltyDayCap > 366)
+    throw new RangeError('Late checkout penalty day cap must be between 1 and 366');
+
+  const contractLastOccupancy = new Date(plannedEndExclusive.getTime() - DAY_MS);
+  const penaltyFreeUntil = new Date(contractLastOccupancy.getTime() + graceDays * DAY_MS);
+  const overdueDays = Math.max(0, differenceInCalendarDays(penaltyFreeUntil, actualReturn));
+  const chargedDays = Math.min(overdueDays, penaltyDayCap);
+  const dailyPenaltyAmount =
+    input.dailyPenaltyAmount !== undefined
+      ? assertNonNegativeMoney(input.dailyPenaltyAmount, 'Daily late checkout penalty')
+      : Math.round(monthlyRate / 30);
+  const lateCheckoutPenaltyAmount = dailyPenaltyAmount * chargedDays;
+  if (!Number.isSafeInteger(lateCheckoutPenaltyAmount))
+    throw new RangeError('Late checkout penalty must be a safe integer');
+
+  return {
+    contractLastOccupancyDate: formatBusinessDate(contractLastOccupancy),
+    penaltyFreeUntilDate: formatBusinessDate(penaltyFreeUntil),
+    graceDays,
+    dailyPenaltyAmount,
+    overdueDays,
+    chargedDays,
+    lateCheckoutPenaltyAmount,
   };
 }
 
@@ -229,6 +336,10 @@ function parseBusinessDate(value: string): Date {
   const parsed = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   if (parsed.toISOString().slice(0, 10) !== value) throw new RangeError('Business date is invalid');
   return parsed;
+}
+
+function formatBusinessDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 function assertPositiveMoney(value: number): number {

@@ -156,6 +156,7 @@ export type CheckoutCommand = {
   id: string;
   propertyId: string;
   leaseId: string;
+  residentFullName: string | null;
   state: CheckoutState;
   effectiveDate: string;
   noticeRecordedDate: string;
@@ -173,8 +174,20 @@ export type CheckoutCommand = {
   approvedShortNoticeCharge: number | null;
   shortNoticeWaiverReason: string | null;
   approvedAt: string | null;
+  chargePolicy: "legacy_short_notice_v1" | "late_checkout_penalty_v1" | null;
+  lateCheckoutGraceDays: number | null;
+  lateCheckoutPenaltyDayCap: number | null;
+  contractLastOccupancyDate: string | null;
+  penaltyFreeUntilDate: string | null;
+  lateCheckoutDailyPenaltyAmount: number | null;
+  lateCheckoutOverdueDays: number | null;
+  lateCheckoutPenaltyDays: number | null;
+  lateCheckoutPenaltyAmount: number | null;
   physicalCheckoutConfirmedAt: string | null;
   actualCheckoutDate: string | null;
+  leaseStartDate: string | null;
+  leaseTermMonths: number | null;
+  plannedLeaseEndDate: string | null;
   inspectionRoomStatus: "inspection_required" | "maintenance" | null;
   finalSettlementId: string | null;
   recommendedRefundAmount: number | null;
@@ -187,6 +200,8 @@ export type CheckoutCommand = {
   grossRefundAmount: number | null;
   grossAmountDue: number | null;
   amountDue: number | null;
+  settlementLateCheckoutPenaltyAmount: number | null;
+  settlementLateCheckoutPenaltyDueAmount: number | null;
   settlementDecisionStatus: "refund_pending" | "amount_due" | "closed" | null;
   exitRefundId: string | null;
   exitRefundAmount: number | null;
@@ -221,6 +236,9 @@ export type CheckoutSettlementQuote = {
   earnedRentAmountDueBeforeDepositOffset: number;
   contractOutstandingAmount: number;
   approvedShortNoticeCharge: number;
+  shortNoticeChargeDueAmount: number;
+  lateCheckoutPenaltyAmount: number;
+  lateCheckoutPenaltyDueAmount: number;
   rentRefundableAmount: number;
   rentAmountDueBeforeDepositOffset: number;
   depositLiabilityAmount: number;

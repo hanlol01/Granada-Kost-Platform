@@ -93,9 +93,12 @@ inspeksi. _Avoid_: sekadar menekan tombol keluar.
 Snapshot final yang memisahkan sewa yang telah menjadi hak, tagihan, kelebihan
 pembayaran, security deposit, potongan, kompensasi pemberitahuan, dan refund.
 
-**Kompensasi Kekurangan Pemberitahuan**:
-Kompensasi kontraktual akibat penghentian dini dengan pemberitahuan kurang dari
-14 hari. Nilai ini ditampilkan terpisah dari sewa dan management fee.
+**Denda Keterlambatan Check-out**:
+Denda operasional setelah masa sewa berakhir bila penghuni belum menyerahkan
+kamar dan akses hingga melewati masa toleransi tiga hari kalender. Denda dihitung
+per hari dari snapshot tarif harian, dicatat terpisah dari sewa, deposit,
+kerusakan, dan management fee. Catatan check-out lama dapat tetap membawa
+kompensasi kekurangan pemberitahuan sebagai fakta historisnya.
 
 **Status Operasional**:
 Keadaan proses fisik check-out dan kamar: pemberitahuan, terjadwal, inspeksi,

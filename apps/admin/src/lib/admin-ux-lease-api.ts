@@ -67,6 +67,16 @@ export type CheckoutNoticeInput = {
   noticeExceptionEvidenceFileIds?: string[];
   internalNote?: string;
 };
+export type LateCheckoutPlanInput = {
+  exitType: "resident_early_termination" | "normal_expiry";
+  effectiveDate: string;
+  reason: string;
+  requestSource: "resident" | "parent" | "admin" | "other";
+  internalNote?: string;
+};
+export type ConfirmLateCheckoutPlanInput = {
+  dailyPenaltyAmount: number;
+};
 export type CheckoutApprovalInput = {
   approvedShortNoticeCharge: number;
   shortNoticeWaiverReason?: string;
@@ -593,6 +603,67 @@ export const adminUxLeaseApi = {
             notice_exception_evidence_file_ids: input.noticeExceptionEvidenceFileIds,
             internal_note: text(input.internalNote),
           },
+          { idempotencyKey },
+        ),
+      ),
+
+    createLateCheckoutPlan: (
+      leaseId: string,
+      input: LateCheckoutPlanInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" + encodeURIComponent(leaseId) + "/checkout/late-checkout-plan",
+          {
+            exit_type: input.exitType,
+            effective_date: input.effectiveDate,
+            reason: input.reason.trim(),
+            request_source: input.requestSource,
+            internal_note: text(input.internalNote),
+          },
+          { idempotencyKey },
+        ),
+      ),
+
+    editLateCheckoutPlan: (
+      leaseId: string,
+      commandId: string,
+      input: LateCheckoutPlanInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/edit-late-checkout-plan",
+          {
+            exit_type: input.exitType,
+            effective_date: input.effectiveDate,
+            reason: input.reason.trim(),
+            request_source: input.requestSource,
+            internal_note: text(input.internalNote),
+          },
+          { idempotencyKey },
+        ),
+      ),
+
+    confirmLateCheckoutPlan: (
+      leaseId: string,
+      commandId: string,
+      input: ConfirmLateCheckoutPlanInput,
+      idempotencyKey: string,
+    ) =>
+      data<{ checkout: CheckoutCommand }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          "/leases/" +
+            encodeURIComponent(leaseId) +
+            "/checkout/" +
+            encodeURIComponent(commandId) +
+            "/confirm-late-checkout-plan",
+          { late_checkout_daily_penalty_amount: input.dailyPenaltyAmount },
           { idempotencyKey },
         ),
       ),

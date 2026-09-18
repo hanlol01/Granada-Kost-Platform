@@ -826,4 +826,24 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_owner_sponsored_lease_term' AND tgrelid=to_regclass('public.owner_sponsored_lease_terms') AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '088_late_checkout_penalty_policy.sql',
+    checksumSha256: '393a0adc4e35e3028af9b208bcd380f92ebb2f6595b0b0bbb9ceba90a2cc7190',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_checkout_commands' AND column_name='charge_policy')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_checkout_commands' AND column_name='late_checkout_penalty_amount')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_exit_final_settlements' AND column_name='late_checkout_penalty_amount')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_checkout_commands_late_penalty_snapshot_check' AND conrelid=to_regclass('public.lease_checkout_commands'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_earnings_source_check' AND conrelid=to_regclass('public.property_owner_earnings') AND pg_get_constraintdef(oid) ILIKE '%checkout_late_penalty%')",
+      "to_regprocedure('recognize_property_owner_checkout_late_penalties(uuid,date)') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_validate_property_owner_late_penalty_earning' AND tgrelid=to_regclass('public.property_owner_earnings') AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '089_checkout_final_settlement_invoice_credit_authority.sql',
+    checksumSha256: 'ccb460c481071b6d3aaaa52da92ed89beeeabc6fcaa2bbd385dcaa9377b38ec1',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='protect_w06_invoice_authority' AND pg_get_functiondef(pg_proc.oid) ILIKE '%lease_exit_invoice_adjustments%')",
+    ],
+  },
 ] as const;

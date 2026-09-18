@@ -189,9 +189,15 @@ function DetailContent({
                   value={formatOwnerMoney(asset.lifecycle.checkoutSettlement.earnedRentAmount)}
                 />
                 <DataItem
-                  label="Kompensasi pemberitahuan disetujui"
+                  label={
+                    asset.lifecycle.checkoutSettlement.chargePolicy === "late_checkout_penalty_v1"
+                      ? "Denda keterlambatan check-out"
+                      : "Kompensasi pemberitahuan disetujui"
+                  }
                   value={formatOwnerMoney(
-                    asset.lifecycle.checkoutSettlement.shortNoticeCompensation,
+                    asset.lifecycle.checkoutSettlement.chargePolicy === "late_checkout_penalty_v1"
+                      ? asset.lifecycle.checkoutSettlement.lateCheckoutPenalty
+                      : asset.lifecycle.checkoutSettlement.shortNoticeCompensation,
                   )}
                 />
                 <DataItem

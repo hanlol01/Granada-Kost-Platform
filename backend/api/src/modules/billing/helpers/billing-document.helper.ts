@@ -163,6 +163,15 @@ export type LeaseExitOfficialDocumentSnapshot = {
     approved_short_notice_charge: number;
     waiver_reason: string | null;
   };
+  late_checkout: {
+    grace_days: number;
+    contract_last_occupancy_date: string;
+    penalty_free_until_date: string;
+    daily_penalty_amount: number;
+    overdue_days: number;
+    charged_days: number;
+    penalty_amount: number;
+  } | null;
   handover: {
     keys_access_confirmed: boolean;
     inventory_confirmed: boolean;
@@ -214,6 +223,9 @@ export type LeaseExitOfficialDocumentSnapshot = {
     contract_outstanding_amount: number;
     rent_refundable_amount: number;
     rent_amount_due_before_deposit_offset: number;
+    short_notice_charge_due_amount: number;
+    late_checkout_penalty_amount: number;
+    late_checkout_penalty_due_amount: number;
     deposit_liability_amount: number;
     documented_damage_amount: number;
     deposit_deduction_amount: number;
@@ -1331,16 +1343,27 @@ export async function createLeaseExitOfficialDocumentPdf(
     if (snapshot.payments.length === 0) row('Pembayaran', 'Belum ada pembayaran terverifikasi.');
     snapshot.payments.forEach(paymentHistoryRow);
 
-    section('E. Pemberitahuan penghentian');
-    row('Tanggal pemberitahuan', receiptDate(snapshot.notice.recorded_date));
-    row('Tanggal efektif', receiptDate(snapshot.notice.effective_date));
-    row(
-      'Pemberitahuan',
-      `${snapshot.notice.actual_days} hari dari ketentuan ${snapshot.notice.required_days} hari`,
-    );
-    row('Alasan', snapshot.notice.reason);
-    moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
-    if (snapshot.notice.waiver_reason) row('Alasan keringanan', snapshot.notice.waiver_reason);
+    if (snapshot.late_checkout) {
+      section('E. Masa toleransi dan denda keterlambatan');
+      row('Hari terakhir masa sewa', receiptDate(snapshot.late_checkout.contract_last_occupancy_date));
+      row('Masa toleransi', `${snapshot.late_checkout.grace_days} hari kalender`);
+      row('Batas check-out tanpa denda', receiptDate(snapshot.late_checkout.penalty_free_until_date));
+      moneyRow('Denda per hari', snapshot.late_checkout.daily_penalty_amount);
+      row('Hari keterlambatan', `${snapshot.late_checkout.overdue_days} hari`);
+      row('Hari yang dikenai denda', `${snapshot.late_checkout.charged_days} hari`);
+      moneyRow('Denda keterlambatan check-out', snapshot.late_checkout.penalty_amount);
+    } else {
+      section('E. Pemberitahuan penghentian');
+      row('Tanggal pemberitahuan', receiptDate(snapshot.notice.recorded_date));
+      row('Tanggal efektif', receiptDate(snapshot.notice.effective_date));
+      row(
+        'Pemberitahuan',
+        `${snapshot.notice.actual_days} hari dari ketentuan ${snapshot.notice.required_days} hari`,
+      );
+      row('Alasan', snapshot.notice.reason);
+      moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
+      if (snapshot.notice.waiver_reason) row('Alasan keringanan', snapshot.notice.waiver_reason);
+    }
   }
 
   section(kind === 'checkout_handover' ? 'F. Ringkasan penyelesaian akhir' : 'B. Perhitungan sewa');
@@ -1350,7 +1373,11 @@ export async function createLeaseExitOfficialDocumentPdf(
   moneyRow('Sewa yang telah menjadi hak', snapshot.settlement.earned_rent_amount);
   moneyRow('Kredit sewa belum terpakai', snapshot.settlement.rent_refundable_amount);
   moneyRow('Kredit sewa belum jatuh tempo', snapshot.settlement.unearned_invoice_credit_amount);
-  moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
+  if (snapshot.late_checkout) {
+    moneyRow('Denda keterlambatan check-out', snapshot.settlement.late_checkout_penalty_amount);
+  } else {
+    moneyRow('Biaya pemberitahuan singkat', snapshot.notice.approved_short_notice_charge);
+  }
   moneyRow(
     'Sisa kewajiban sebelum penggunaan jaminan',
     snapshot.settlement.rent_amount_due_before_deposit_offset,

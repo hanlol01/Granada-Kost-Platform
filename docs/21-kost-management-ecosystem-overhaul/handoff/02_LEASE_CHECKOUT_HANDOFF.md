@@ -104,38 +104,37 @@ are derived read states, not additional freely editable database statuses.
 
 ## Request data and date rules
 
-Admin records:
+Untuk command baru, Admin mencatat:
 
 - type: `normal_expiry` or `resident_early_termination`;
-- notice date, effective date, reason, source of request, and optional note;
+- tanggal rencana keluar, alasan, sumber permintaan, dan catatan opsional;
 - planned lease end snapshot;
-- same-day exception explanation when applicable.
+- snapshot hari terakhir kontrak, masa toleransi, dan tarif denda per hari.
 
-“Check-out mendadak” is an Admin-friendly label for early termination with the
-effective date today and zero notice days; it is not a third database exit type.
-Business dates use Asia/Jakarta. Effective date cannot precede notice date.
-Normal expiry cannot be before the planned lease end. Early termination must be
-before the planned end. Actual checkout date is the physical handover date and
-cannot precede lease start.
+Business dates use Asia/Jakarta. Normal expiry cannot be before the planned
+lease end. Early termination must be before the planned end. Actual checkout
+date is the physical handover date and cannot precede lease start.
 
-For early termination, missing notice days are `max(0, 14 − notice days)`. Use
-the anchored rental period and the lease snapshot monthly tariff to calculate a
-daily rate and recommended short-notice compensation. Admin may reduce or waive
-the recommendation only with a reason. Supporting evidence is optional, but when
-supplied it remains attached to the audit trail. Approved short-notice
-compensation belongs to the Property Owner as contractual compensation and does
-not create an additional monthly management fee.
+Every new check-out command uses the late-checkout policy. The final contractual
+occupancy date is `planned lease end − 1 day`; the resident then has three
+calendar days to return the room and access without a penalty. At physical
+handover, `overdue days = max(0, actual checkout date − penalty-free date)` and
+`charged days = min(overdue days, 30)`. The daily penalty is the saved
+`round(monthly contract tariff ÷ 30)`, so later tariff changes cannot alter an
+open command. Denda = `charged days × saved daily penalty`. Early departure
+does not create this denda. Legacy commands preserve their original short-notice
+facts and documents.
 
 ## Financial settlement
 
-The server recalculates a quote whenever payment, evidence, handover, inspection,
-or approval data changes. Pending/unverified payments must be resolved before
-final approval.
+Sistem menghitung ulang rincian setiap kali pembayaran, bukti, serah-terima,
+inspeksi, atau data persetujuan berubah. Pembayaran yang masih menunggu verifikasi
+harus diselesaikan sebelum persetujuan akhir.
 
 ```text
 earned rent = service delivered through actual checkout,
                capped at contract value and calculated from the lease snapshot
-rent position = verified rent credits − earned rent − approved notice compensation
+rent position = verified rent credits − earned rent − checkout charge
 rent refund   = max(rent position, 0)
 rent due      = max(−rent position, 0)
 
@@ -158,6 +157,8 @@ record. The settlement preserves every component even when the payable direction
 is netted: positive net refund becomes `refund_pending`, positive net due becomes
 `amount_due`, and zero becomes `closed`. Short-notice compensation is shown separately from
 regular rent and management fee; it does not silently add another monthly fee.
+For a new command, checkout charge means denda keterlambatan check-out; for a
+legacy command it means the saved short-notice compensation.
 
 The existing final-settlement authority does not currently represent damage
 above deposit as its own amount. Stage 3 must add that explicit component rather
@@ -195,7 +196,7 @@ work orders, and expenses remain linked and are not silently closed.
   may remain limited until financial status is closed.
 - Vehicles, parking, access, and occupancy are reconciled at physical handover.
 - Owner views preserve the original contract and show actual checkout date,
-  earned rent, short-notice compensation, fee through checkout, final Owner
+  earned rent, denda keterlambatan atau kompensasi historis bila ada, fee through checkout, final Owner
   entitlement, refund/amount due status, and room result. Private reasons stay
   hidden from Owner.
 - Admin reports filter by exit type, operational status, financial status, date,

@@ -128,6 +128,7 @@ type CheckoutFinalChargeInput = {
   componentBreakdown: {
     rentBalanceAmount: number;
     shortNoticeAmount: number;
+    lateCheckoutPenaltyAmount: number;
     damageAmount: number;
   };
   actorUserId: string;

@@ -96,8 +96,9 @@ Before writing code, the agent must read, in order:
 
 1. `CONTEXT-MAP.md` at the repository root.
 2. `docs/21-kost-management-ecosystem-overhaul/CONTEXT.md`.
-3. `docs/adr/0001-custom-lease-agreement-authority.md` and
-   `docs/adr/0002-checkout-and-final-settlement-lifecycle.md`.
+3. `docs/adr/0001-custom-lease-agreement-authority.md`,
+   `docs/adr/0002-checkout-and-final-settlement-lifecycle.md`, and
+   `docs/adr/0004-late-checkout-penalty-policy.md`.
 4. The assigned handoff and the linked source documents it names.
 5. The current migration ledger and the current working-tree diff.
 

@@ -38,6 +38,7 @@ test("resident tenancy accepts the immutable commercial projection used by check
         end_date: "2026-11-01",
         term_months: 3,
         payment_plan_type: "annual_full",
+        commercial_mode: "rent",
         agreed_monthly_price: 1_800_000,
         contract_rent_amount: 5_400_000,
         pricing_source: "standard",

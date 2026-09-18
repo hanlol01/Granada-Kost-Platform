@@ -35,6 +35,7 @@ type Options = {
   physicalConfirmed?: boolean;
   actualCheckoutDate?: string;
   leaseStatus?: string;
+  lateCheckoutPolicy?: boolean;
   invoiceTotal?: number;
   invoicePaid?: number;
   depositBalance?: number;
@@ -69,6 +70,17 @@ function harness(options: Options = {}) {
     short_notice_waiver_reason: null,
     approved_at:
       options.m5Exit && state !== 'notice_received' ? new Date('2026-09-01T00:00:00.000Z') : null,
+    charge_policy: options.lateCheckoutPolicy
+      ? 'late_checkout_penalty_v1'
+      : 'legacy_short_notice_v1',
+    late_checkout_grace_days: options.lateCheckoutPolicy ? 3 : null,
+    late_checkout_penalty_day_cap: options.lateCheckoutPolicy ? 30 : null,
+    contract_last_occupancy_date: options.lateCheckoutPolicy ? '2026-09-30' : null,
+    penalty_free_until_date: options.lateCheckoutPolicy ? '2026-10-03' : null,
+    late_checkout_daily_penalty_amount: options.lateCheckoutPolicy ? '60000' : null,
+    late_checkout_overdue_days: options.lateCheckoutPolicy ? 0 : null,
+    late_checkout_penalty_days: options.lateCheckoutPolicy ? 0 : null,
+    late_checkout_penalty_amount: options.lateCheckoutPolicy ? '0' : null,
     physical_checkout_confirmed_at: options.physicalConfirmed
       ? new Date('2026-09-27T00:00:00.000Z')
       : null,
@@ -557,6 +569,72 @@ void test('W07D handover rejects an unconfirmed physical handover before recordi
   );
   assert.deepEqual(h.events, ['begin', 'rollback']);
   assert.ok(!h.queries.some((q) => /INSERT INTO lease_checkout_evidence/.test(q)));
+});
+
+void test('late-checkout handover cannot be recorded before its planned date', async () => {
+  const h = harness({
+    state: 'scheduled',
+    m5Exit: true,
+    lateCheckoutPolicy: true,
+    today: '2026-09-18',
+  });
+  await assert.rejects(
+    () =>
+      h.service.handover(
+        admin as never,
+        LEASE_ID,
+        COMMAND_ID,
+        {
+          key_access_confirmed: true,
+          inventory_confirmed: true,
+          parking_confirmed: true,
+          key_access_items: [
+            {
+              name: 'Kunci kamar',
+              expected_quantity: 1,
+              returned_quantity: 1,
+              status: 'returned',
+            },
+          ],
+          inventory_items: [
+            {
+              name: 'Lemari',
+              expected_quantity: 1,
+              returned_quantity: 1,
+              condition: 'complete',
+            },
+          ],
+          utility_readings: [],
+        },
+        '1234567890123456',
+        context,
+      ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_EFFECTIVE_DATE_NOT_REACHED',
+  );
+  assert.ok(!h.queries.some((query) => /INSERT INTO lease_checkout_evidence/.test(query)));
+  assert.ok(
+    !h.queries.some((query) => /UPDATE occupancies SET occupancy_status='ended'/.test(query)),
+  );
+});
+
+void test('late-checkout plan snapshots the manually entered daily penalty before scheduling', async () => {
+  const h = harness({ state: 'notice_received', m5Exit: true, lateCheckoutPolicy: true });
+  const result = await h.service.confirmLateCheckoutPlan(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    { late_checkout_daily_penalty_amount: 75_000 },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 200);
+  assert.ok(
+    h.queries.some((query) =>
+      /UPDATE lease_checkout_commands SET state='scheduled'.*late_checkout_daily_penalty_amount=\$3/.test(
+        query,
+      ),
+    ),
+  );
 });
 
 void test('M5 physical handover ends occupancy and lease while keeping the room under inspection', async () => {

@@ -23,12 +23,15 @@ import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import {
   ApproveLeaseCheckoutDto,
+  ConfirmLateCheckoutPlanDto,
   EditLeaseCheckoutApprovalDto,
   CancelLeaseCheckoutDto,
   CompleteLeaseCheckoutDto,
+  CreateLateCheckoutPlanDto,
   CreateLeaseCheckoutNoticeDto,
   CreateLeaseCheckoutRevisionDto,
   EditLeaseCheckoutNoticeDto,
+  EditLateCheckoutPlanDto,
   RecordLeaseCheckoutHandoverDto,
   RecordLeaseCheckoutInspectionDto,
   SettleRefundDto,
@@ -85,6 +88,68 @@ export class LeaseCheckoutController {
     return this.respond(
       response,
       await this.checkout.notice(user, leaseId, dto, key, auditContext(request)),
+    );
+  }
+
+  @Post('late-checkout-plan')
+  async createLateCheckoutPlan(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Body() dto: CreateLateCheckoutPlanDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.createLateCheckoutPlan(user, leaseId, dto, key, auditContext(request)),
+    );
+  }
+
+  @Post(':commandId/edit-late-checkout-plan')
+  async editLateCheckoutPlan(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: EditLateCheckoutPlanDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.editLateCheckoutPlan(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        key,
+        auditContext(request),
+      ),
+    );
+  }
+
+  @Post(':commandId/confirm-late-checkout-plan')
+  @HttpCode(HttpStatus.OK)
+  async confirmLateCheckoutPlan(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId') leaseId: string,
+    @Param('commandId') commandId: string,
+    @Body() dto: ConfirmLateCheckoutPlanDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(
+      response,
+      await this.checkout.confirmLateCheckoutPlan(
+        user,
+        leaseId,
+        commandId,
+        dto,
+        key,
+        auditContext(request),
+      ),
     );
   }
 

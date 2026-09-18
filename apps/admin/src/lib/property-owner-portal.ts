@@ -106,6 +106,8 @@ export type OwnerAssetDetail = {
       refundAmount: Money;
       earnedRentAmount: Money;
       shortNoticeCompensation: Money;
+      lateCheckoutPenalty: Money;
+      chargePolicy: "legacy_short_notice_v1" | "late_checkout_penalty_v1" | null;
       managementFeeAmount: Money;
       ownerEntitlementAmount: Money;
     } | null;
@@ -744,6 +746,8 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
             "refund_amount",
             "earned_rent_amount",
             "short_notice_compensation",
+            "late_checkout_penalty",
+            "charge_policy",
             "management_fee_amount",
             "owner_entitlement_amount",
           ],
@@ -972,6 +976,18 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
                 checkoutSettlement.short_notice_compensation,
                 "asset_detail.lifecycle.checkout_settlement.short_notice_compensation",
               ),
+              lateCheckoutPenalty: money(
+                checkoutSettlement.late_checkout_penalty,
+                "asset_detail.lifecycle.checkout_settlement.late_checkout_penalty",
+              ),
+              chargePolicy:
+                checkoutSettlement.charge_policy === null
+                  ? null
+                  : enumValue<"legacy_short_notice_v1" | "late_checkout_penalty_v1">(
+                      checkoutSettlement.charge_policy,
+                      ["legacy_short_notice_v1", "late_checkout_penalty_v1"],
+                      "asset_detail.lifecycle.checkout_settlement.charge_policy",
+                    ),
               managementFeeAmount: money(
                 checkoutSettlement.management_fee_amount,
                 "asset_detail.lifecycle.checkout_settlement.management_fee_amount",

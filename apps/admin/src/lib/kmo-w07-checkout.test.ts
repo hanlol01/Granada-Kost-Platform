@@ -50,13 +50,40 @@ test("M5 Admin client separates exit request from charge approval", async () => 
   assert.match(panel, /w-full max-w-md gap-2 text-sm font-medium text-foreground/);
   assert.match(panel, /Rumus kompensasi[\s\S]*?Kompensasi kekurangan masa pemberitahuan/);
   assert.match(panel, /setApprovedShortNoticeCharge\(Number\(open\?\.recommendedShortNoticeCharge/);
-  assert.match(
-    panel,
-    /setApprovedShortNoticeCharge\(Number\(result\.checkout\.recommendedShortNoticeCharge/,
-  );
+  assert.match(panel, /const refreshOpenCheckout = async/);
   assert.match(panel, /const approvedCharge = Number\(approvedShortNoticeCharge\)/);
   assert.match(types, /monthlyRateAmount: number \| null/);
   assert.match(types, /physicalCheckoutConfirmedAt: string \| null/);
+});
+
+test("new checkouts use a three-day late-checkout penalty policy while legacy commands remain readable", async () => {
+  const api = await source("./admin-ux-lease-api.ts");
+  const types = await source("./admin-ux-lease-types.ts");
+  const panel = await source("../components/leases/CheckoutPanel.tsx");
+  assert.match(api, /createLateCheckoutPlan/);
+  assert.match(api, /confirmLateCheckoutPlan/);
+  assert.match(api, /late-checkout-plan/);
+  assert.match(types, /late_checkout_penalty_v1/);
+  assert.match(types, /lateCheckoutGraceDays/);
+  assert.match(panel, /Masa toleransi dan denda check-out/);
+  assert.match(panel, /Batas check-out tanpa denda/);
+  assert.match(api, /late_checkout_daily_penalty_amount/);
+  assert.match(api, /dailyPenaltyAmount/);
+  assert.match(panel, /Tarif denda per hari/);
+  assert.match(panel, /CurrencyInput/);
+  assert.match(panel, /lateCheckoutDailyPenaltyAmount/);
+  assert.match(panel, /Perkiraan denda bila serah-terima sesuai rencana/);
+  assert.match(panel, /Nilai final mengikuti tanggal serah-terima yang benar-benar dicatat/);
+  assert.match(panel, /Ringkasan kontrak/);
+  assert.match(panel, /residentFullName/);
+  assert.match(panel, /Durasi kontrak/);
+  assert.match(panel, /derivedContractMonths/);
+  assert.match(panel, /tahun \$\{remainingMonths\} bulan/);
+  assert.match(panel, /Tanggal rencana serah-terima/);
+  assert.match(panel, /handoverScheduleNotReached/);
+  assert.match(panel, /Serah-terima belum dapat dicatat sebelum/);
+  assert.match(panel, /Denda keterlambatan check-out/);
+  assert.match(panel, /!isLateCheckoutPolicy/);
 });
 
 test("W07D panel reloads an open checkout and cannot bypass handover confirmations", async () => {

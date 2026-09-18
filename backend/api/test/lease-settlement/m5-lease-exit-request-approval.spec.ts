@@ -7,6 +7,7 @@ import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/mi
 import {
   buildLeaseExitFinancialQuote,
   buildLeaseExitNoticeQuote,
+  buildLateCheckoutPenaltyQuote,
 } from '../../src/modules/lease/helpers/lease-exit-policy.helper';
 
 const root = resolve(__dirname, '../..');
@@ -17,6 +18,14 @@ const migrationPath = resolve(
 const finalSettlementMigrationPath = resolve(
   root,
   'src/infrastructure/database/migrations/053_lease_exit_final_settlement_m5.sql',
+);
+const lateCheckoutMigrationPath = resolve(
+  root,
+  'src/infrastructure/database/migrations/088_late_checkout_penalty_policy.sql',
+);
+const finalSettlementInvoiceCreditMigrationPath = resolve(
+  root,
+  'src/infrastructure/database/migrations/089_checkout_final_settlement_invoice_credit_authority.sql',
 );
 
 void test('M5 migration is manifest-bound, additive, and preserves legacy checkout rows', () => {
@@ -106,6 +115,110 @@ void test('same-day checkout shows the full fourteen-day recommendation for its 
   assert.equal(quote.paymentPeriodDays, 30);
   assert.equal(quote.dailyRateAmount, 60_000);
   assert.equal(quote.recommendedShortNoticeCharge, 840_000);
+});
+
+void test('late checkout migration is manifest-bound, additive, and keeps legacy checkout facts', () => {
+  const migration = readFileSync(lateCheckoutMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (candidate) => candidate.version === '088_late_checkout_penalty_policy.sql',
+  );
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS charge_policy TEXT/);
+  assert.match(migration, /late_checkout_grace_days INTEGER/);
+  assert.match(migration, /late_checkout_penalty_amount BIGINT/);
+  assert.match(migration, /recognize_property_owner_checkout_late_penalties/);
+  assert.match(migration, /checkout_late_penalty/);
+  assert.doesNotMatch(migration, /DELETE\s+FROM\s+(leases|occupancies|rooms|payments|invoices)\b/i);
+});
+
+void test('final-settlement invoice credits are accepted only through the immutable adjustment ledger', () => {
+  const migration = readFileSync(finalSettlementInvoiceCreditMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (candidate) =>
+      candidate.version === '089_checkout_final_settlement_invoice_credit_authority.sql',
+  );
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /lease_exit_invoice_adjustments/);
+  assert.match(migration, /W06_ISSUED_INVOICE_IMMUTABLE/);
+  assert.doesNotMatch(migration, /UPDATE\s+(leases|occupancies|rooms|payments|invoices)\b/i);
+  assert.doesNotMatch(migration, /DELETE\s+FROM/i);
+});
+
+void test('late checkout allows three calendar days after the contract and then charges a saved daily tariff', () => {
+  const withinGrace = buildLateCheckoutPenaltyQuote({
+    plannedLeaseEndDate: '2027-08-01',
+    actualPossessionReturnedDate: '2027-08-03',
+    monthlyRateAmount: 1_800_000,
+  });
+  assert.deepEqual(withinGrace, {
+    contractLastOccupancyDate: '2027-07-31',
+    penaltyFreeUntilDate: '2027-08-03',
+    graceDays: 3,
+    dailyPenaltyAmount: 60_000,
+    overdueDays: 0,
+    chargedDays: 0,
+    lateCheckoutPenaltyAmount: 0,
+  });
+
+  const overdue = buildLateCheckoutPenaltyQuote({
+    plannedLeaseEndDate: '2027-08-01',
+    actualPossessionReturnedDate: '2027-08-06',
+    monthlyRateAmount: 2_000_000,
+    dailyPenaltyAmount: 60_000,
+    penaltyDayCap: 30,
+  });
+  assert.equal(overdue.overdueDays, 3);
+  assert.equal(overdue.chargedDays, 3);
+  assert.equal(overdue.dailyPenaltyAmount, 60_000);
+  assert.equal(overdue.lateCheckoutPenaltyAmount, 180_000);
+});
+
+void test('a planned 7 November handover after a 3 November grace date estimates four penalty days', () => {
+  const estimate = buildLateCheckoutPenaltyQuote({
+    plannedLeaseEndDate: '2026-11-01',
+    actualPossessionReturnedDate: '2026-11-07',
+    monthlyRateAmount: 1_800_000,
+  });
+  assert.equal(estimate.contractLastOccupancyDate, '2026-10-31');
+  assert.equal(estimate.penaltyFreeUntilDate, '2026-11-03');
+  assert.equal(estimate.overdueDays, 4);
+  assert.equal(estimate.chargedDays, 4);
+  assert.equal(estimate.dailyPenaltyAmount, 60_000);
+  assert.equal(estimate.lateCheckoutPenaltyAmount, 240_000);
+});
+
+void test('a checkout can snapshot a manual daily penalty, including for a zero-rent sponsored stay', () => {
+  const estimate = buildLateCheckoutPenaltyQuote({
+    plannedLeaseEndDate: '2026-11-01',
+    actualPossessionReturnedDate: '2026-11-07',
+    monthlyRateAmount: 0,
+    dailyPenaltyAmount: 75_000,
+  });
+  assert.equal(estimate.dailyPenaltyAmount, 75_000);
+  assert.equal(estimate.chargedDays, 4);
+  assert.equal(estimate.lateCheckoutPenaltyAmount, 300_000);
+});
+
+void test('late checkout penalty consumes unused rent credit before becoming an amount due', () => {
+  const quote = buildLeaseExitFinancialQuote({
+    leaseStartDate: '2026-08-01',
+    actualCheckoutDate: '2026-08-31',
+    contractRentAmount: 21_600_000,
+    monthlyRateAmount: 1_800_000,
+    verifiedRentPaymentAmount: 1_900_000,
+    existingInvoiceCreditAmount: 0,
+    depositLiabilityAmount: 0,
+    documentedDamageAmount: 0,
+    approvedShortNoticeCharge: 0,
+    lateCheckoutPenaltyAmount: 180_000,
+    depositRentOffsetAmount: 0,
+  });
+  assert.equal(quote.earnedRentAmount, 1_800_000);
+  assert.equal(quote.lateCheckoutPenaltyDue, 80_000);
+  assert.equal(quote.rentRefundableAmount, 0);
+  assert.equal(quote.amountDue, 80_000);
 });
 
 void test('normal expiry never creates short-notice charges and cannot precede the planned end', () => {

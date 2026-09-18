@@ -116,6 +116,9 @@ function messageFrom(error: unknown) {
   ) {
     return "Pengurangan kompensasi memerlukan alasan persetujuan.";
   }
+  if (ApiError.isApiError(error) && error.code === "CHECKOUT_EFFECTIVE_DATE_NOT_REACHED") {
+    return "Serah-terima fisik belum dapat dicatat karena tanggal rencana check-out belum tiba.";
+  }
   return error instanceof Error ? error.message : "Checkout tidak dapat diproses. Coba lagi.";
 }
 
@@ -137,6 +140,57 @@ function formatIndonesianFullDate(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+07:00` : value);
   return Number.isNaN(date.getTime()) ? "-" : fullIndonesianDate.format(date);
+}
+
+function businessDateMilliseconds(value: string | null | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const milliseconds = Date.parse(`${value}T00:00:00+07:00`);
+  return Number.isNaN(milliseconds) ? null : milliseconds;
+}
+
+function lateCheckoutPlanEstimate(command: CheckoutCommand, dailyPenaltyOverride?: number) {
+  const penaltyFreeUntil = businessDateMilliseconds(command.penaltyFreeUntilDate);
+  const plannedCheckout = businessDateMilliseconds(command.effectiveDate);
+  const dailyPenalty = Number(dailyPenaltyOverride ?? command.lateCheckoutDailyPenaltyAmount ?? 0);
+  if (
+    penaltyFreeUntil === null ||
+    plannedCheckout === null ||
+    !Number.isSafeInteger(dailyPenalty) ||
+    dailyPenalty < 0
+  )
+    return null;
+
+  const overdueDays = Math.max(0, Math.round((plannedCheckout - penaltyFreeUntil) / 86_400_000));
+  const chargedDays = Math.min(overdueDays, command.lateCheckoutPenaltyDayCap ?? 30);
+  return {
+    overdueDays,
+    chargedDays,
+    amount: chargedDays * dailyPenalty,
+  };
+}
+
+function derivedContractMonths(startDate: string | null, endDate: string | null) {
+  if (!startDate || !endDate) return null;
+  const start = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(startDate);
+  const end = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(endDate);
+  if (!start || !end) return null;
+
+  const months = (Number(end[1]) - Number(start[1])) * 12 + Number(end[2]) - Number(start[2]);
+  return Number.isSafeInteger(months) && months > 0 ? months : null;
+}
+
+function leaseTermLabel(months: number | null, startDate: string | null, endDate: string | null) {
+  const resolvedMonths =
+    months && Number.isSafeInteger(months) && months > 0
+      ? months
+      : derivedContractMonths(startDate, endDate);
+  if (!resolvedMonths) return "Durasi tidak tersedia";
+
+  const years = Math.floor(resolvedMonths / 12);
+  const remainingMonths = resolvedMonths % 12;
+  if (years && remainingMonths) return `${years} tahun ${remainingMonths} bulan`;
+  if (years) return `${years} tahun`;
+  return `${resolvedMonths} bulan`;
 }
 
 function refundStatusLabel(status: CheckoutCommand["exitRefundStatus"]) {
@@ -167,7 +221,7 @@ const checkoutStateLabel: Record<string, string> = {
 
 const checkoutStages = [
   { id: 1, label: "Rencana check-out" },
-  { id: 2, label: "Persetujuan" },
+  { id: 2, label: "Konfirmasi rencana" },
   { id: 3, label: "Serah-terima" },
   { id: 4, label: "Inspeksi" },
   { id: 5, label: "Penyelesaian" },
@@ -204,10 +258,10 @@ const confirmationCopy: Record<
     confirmLabel: "Ya, simpan rencana",
   },
   approval: {
-    title: "Setujui dan jadwalkan check-out?",
+    title: "Lanjutkan ke serah-terima?",
     description:
-      "Pastikan jadwal dan kompensasi kekurangan masa pemberitahuan sudah sesuai. Tahap berikutnya akan memulai serah-terima fisik.",
-    confirmLabel: "Ya, setujui & jadwalkan",
+      "Pastikan rencana check-out sudah sesuai. Tahap berikutnya adalah serah-terima fisik kamar dan kunci.",
+    confirmLabel: "Ya, lanjutkan",
   },
   handover: {
     title: "Catat serah-terima fisik?",
@@ -224,7 +278,7 @@ const confirmationCopy: Record<
   settlement: {
     title: "Tetapkan penyelesaian akhir?",
     description:
-      "Periksa seluruh sewa, kompensasi, deposit, potongan, tagihan, dan pengembalian dana. Setelah diterbitkan, koreksi harus melalui prosedur keuangan resmi.",
+      "Periksa seluruh sewa, denda keterlambatan bila ada, deposit, potongan, tagihan, dan pengembalian dana. Setelah diterbitkan, koreksi harus melalui prosedur keuangan resmi.",
     confirmLabel: "Ya, tetapkan penyelesaian",
   },
   refund_settlement: {
@@ -345,8 +399,14 @@ function CheckoutStageHistory({
       detail: `Rencana keluar ${command.effectiveDate}. Alasan dan sumber permintaan tersimpan di riwayat proses.`,
     },
     2: {
-      title: "Persetujuan jadwal telah dicatat",
-      detail: `Kompensasi pemberitahuan singkat yang disetujui: ${rupiah.format(command.approvedShortNoticeCharge ?? 0)}.`,
+      title:
+        command.chargePolicy === "late_checkout_penalty_v1"
+          ? "Rencana serah-terima telah dikonfirmasi"
+          : "Persetujuan jadwal telah dicatat",
+      detail:
+        command.chargePolicy === "late_checkout_penalty_v1"
+          ? `Batas check-out tanpa denda: ${formatIndonesianFullDate(command.penaltyFreeUntilDate)}. Denda dihitung dari serah-terima fisik.`
+          : `Kompensasi pemberitahuan singkat yang disetujui: ${rupiah.format(command.approvedShortNoticeCharge ?? 0)}.`,
     },
     3: {
       title: "Serah-terima telah dicatat",
@@ -412,6 +472,7 @@ export function CheckoutPanel({
   const [noticeExceptionEvidenceBusy, setNoticeExceptionEvidenceBusy] = useState(false);
   const [internalNote, setInternalNote] = useState("");
   const [approvedShortNoticeCharge, setApprovedShortNoticeCharge] = useState(0);
+  const [lateCheckoutDailyPenaltyAmount, setLateCheckoutDailyPenaltyAmount] = useState(0);
   const [waiverReason, setWaiverReason] = useState("");
   const [waiverEvidence, setWaiverEvidence] = useState<FileResponse[]>([]);
   const [waiverEvidenceBusy, setWaiverEvidenceBusy] = useState(false);
@@ -470,7 +531,8 @@ export function CheckoutPanel({
   const [checkoutPanelHighlighted, setCheckoutPanelHighlighted] = useState(false);
   const intentKey = useRef<string | null>(null);
   const key = () => (intentKey.current ??= newIdempotencyKey());
-  const exitType = exitMode === "normal_expiry" ? "normal_expiry" : "resident_early_termination";
+  const exitType: "resident_early_termination" | "normal_expiry" =
+    exitMode === "normal_expiry" ? "normal_expiry" : "resident_early_termination";
   const commandId = command?.id;
   const commandState = command?.state;
   const hasPendingExitRefund =
@@ -518,6 +580,7 @@ export function CheckoutPanel({
           setCommand(open);
           setVisibleStage(stageForCommand(open));
           setApprovedShortNoticeCharge(Number(open?.recommendedShortNoticeCharge ?? 0));
+          setLateCheckoutDailyPenaltyAmount(Number(open?.lateCheckoutDailyPenaltyAmount ?? 0));
           if (open?.inspectionRoomStatus) setRoomResult(open.inspectionRoomStatus);
         }
       })
@@ -562,25 +625,37 @@ export function CheckoutPanel({
     }
   };
 
+  // Mutation responses intentionally contain only the fields needed by the
+  // command itself. Reload the authoritative checkout projection so the
+  // contract summary (resident, duration, and dates) never becomes blank
+  // after an admin advances a stage.
+  const refreshOpenCheckout = async () => {
+    const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
+    const open = openCheckout(refreshed.commands);
+    setCommand(open);
+    setApprovedShortNoticeCharge(Number(open?.recommendedShortNoticeCharge ?? 0));
+    setLateCheckoutDailyPenaltyAmount(Number(open?.lateCheckoutDailyPenaltyAmount ?? 0));
+    if (open?.inspectionRoomStatus) setRoomResult(open.inspectionRoomStatus);
+    return open;
+  };
+
   const submitNotice = () =>
     perform(async () => {
-      const result = await adminUxLeaseApi.checkout.notice(
+      const result = await adminUxLeaseApi.checkout.createLateCheckoutPlan(
         leaseId,
         {
           exitType,
           effectiveDate,
           reason,
           requestSource,
-          noticeExceptionReason: noticeExceptionReason.trim() || undefined,
-          noticeExceptionEvidenceFileIds: noticeExceptionEvidence.map((file) => file.id),
           internalNote: internalNote.trim() || undefined,
         },
         key(),
       );
+      const open = await refreshOpenCheckout();
       focusCheckoutPanelAfterCommandChange.current = true;
-      setCommand(result.checkout);
-      setVisibleStage(stageForCommand(result.checkout));
-      setApprovedShortNoticeCharge(Number(result.checkout.recommendedShortNoticeCharge ?? 0));
+      await onChanged?.(open);
+      setVisibleStage(stageForCommand(open));
     });
 
   const beginNoticeEdit = () => {
@@ -600,23 +675,26 @@ export function CheckoutPanel({
   const saveNoticeEdit = () => {
     if (!command || editingStage !== 1) return;
     return perform(async () => {
-      await adminUxLeaseApi.checkout.editNotice(
-        leaseId,
-        command.id,
-        {
-          exitType,
-          effectiveDate,
-          reason,
-          requestSource,
-          noticeExceptionReason: noticeExceptionReason.trim() || undefined,
-          internalNote: internalNote.trim() || undefined,
-        },
-        key(),
-      );
-      const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
-      const open = openCheckout(refreshed.commands);
-      setCommand(open);
-      setApprovedShortNoticeCharge(Number(open?.recommendedShortNoticeCharge ?? 0));
+      const input = {
+        exitType,
+        effectiveDate,
+        reason,
+        requestSource,
+        internalNote: internalNote.trim() || undefined,
+      };
+      if (command.chargePolicy === "late_checkout_penalty_v1")
+        await adminUxLeaseApi.checkout.editLateCheckoutPlan(leaseId, command.id, input, key());
+      else
+        await adminUxLeaseApi.checkout.editNotice(
+          leaseId,
+          command.id,
+          {
+            ...input,
+            noticeExceptionReason: noticeExceptionReason.trim() || undefined,
+          },
+          key(),
+        );
+      const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
     });
@@ -644,9 +722,7 @@ export function CheckoutPanel({
         },
         key(),
       );
-      const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
-      const open = openCheckout(refreshed.commands);
-      setCommand(open);
+      const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
     });
@@ -693,10 +769,8 @@ export function CheckoutPanel({
     if (!command) return;
     return perform(async () => {
       await adminUxLeaseApi.checkout.complete(leaseId, command.id, settlementInput(true), key());
-      const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
-      const open = openCheckout(refreshed.commands);
+      const open = await refreshOpenCheckout();
       focusCheckoutPanelAfterCommandChange.current = true;
-      setCommand(open);
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
       setCompletionDialogOpen(true);
@@ -730,9 +804,7 @@ export function CheckoutPanel({
         },
         key(),
       );
-      const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
-      const open = openCheckout(refreshed.commands);
-      setCommand(open);
+      const open = await refreshOpenCheckout();
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
     });
@@ -748,9 +820,7 @@ export function CheckoutPanel({
         refundWaiverReason,
         key(),
       );
-      const refreshed = await adminUxLeaseApi.checkout.list(leaseId);
-      const open = openCheckout(refreshed.commands);
-      setCommand(open);
+      const open = await refreshOpenCheckout();
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
     });
@@ -771,23 +841,38 @@ export function CheckoutPanel({
 
   const advance = () => {
     if (!command) return;
+    if (command.state === "scheduled" && command.effectiveDate > jakartaToday()) {
+      setError(
+        `Serah-terima fisik belum dapat dicatat. Jadwal check-out adalah ${formatIndonesianFullDate(command.effectiveDate)}.`,
+      );
+      return false;
+    }
     return perform(async () => {
       if (command.state === "notice_received") {
-        const result = await adminUxLeaseApi.checkout.schedule(
-          leaseId,
-          command.id,
-          {
-            approvedShortNoticeCharge: Number(approvedShortNoticeCharge),
-            shortNoticeWaiverReason: waiverReason || undefined,
-            shortNoticeWaiverEvidenceFileIds: waiverEvidence.map((file) => file.id),
-          },
-          key(),
-        );
+        if (command.chargePolicy === "late_checkout_penalty_v1")
+          await adminUxLeaseApi.checkout.confirmLateCheckoutPlan(
+            leaseId,
+            command.id,
+            { dailyPenaltyAmount: lateCheckoutDailyPenaltyAmount },
+            key(),
+          );
+        else
+          await adminUxLeaseApi.checkout.schedule(
+            leaseId,
+            command.id,
+            {
+              approvedShortNoticeCharge: Number(approvedShortNoticeCharge),
+              shortNoticeWaiverReason: waiverReason || undefined,
+              shortNoticeWaiverEvidenceFileIds: waiverEvidence.map((file) => file.id),
+            },
+            key(),
+          );
+        const open = await refreshOpenCheckout();
         focusCheckoutPanelAfterCommandChange.current = true;
-        setCommand(result.checkout);
-        setVisibleStage(stageForCommand(result.checkout));
+        await onChanged?.(open);
+        setVisibleStage(stageForCommand(open));
       } else if (command.state === "scheduled") {
-        const result = await adminUxLeaseApi.checkout.handover(
+        await adminUxLeaseApi.checkout.handover(
           leaseId,
           command.id,
           {
@@ -822,11 +907,12 @@ export function CheckoutPanel({
           },
           key(),
         );
+        const open = await refreshOpenCheckout();
         focusCheckoutPanelAfterCommandChange.current = true;
-        setCommand(result.checkout);
-        setVisibleStage(stageForCommand(result.checkout));
+        await onChanged?.(open);
+        setVisibleStage(stageForCommand(open));
       } else if (command.state === "inspection_required") {
-        const result = await adminUxLeaseApi.checkout.inspection(
+        await adminUxLeaseApi.checkout.inspection(
           leaseId,
           command.id,
           {
@@ -836,9 +922,10 @@ export function CheckoutPanel({
           },
           key(),
         );
+        const open = await refreshOpenCheckout();
         focusCheckoutPanelAfterCommandChange.current = true;
-        setCommand(result.checkout);
-        setVisibleStage(stageForCommand(result.checkout));
+        await onChanged?.(open);
+        setVisibleStage(stageForCommand(open));
       }
     });
   };
@@ -951,6 +1038,9 @@ export function CheckoutPanel({
       (reading) =>
         !reading.utilityType.trim() || !reading.checkoutReading.trim() || !reading.unit.trim(),
     );
+  const isLateCheckoutPolicy = command?.chargePolicy === "late_checkout_penalty_v1";
+  const handoverScheduleNotReached =
+    command?.state === "scheduled" && command.effectiveDate > jakartaToday();
   const canRecordHandover =
     handover.keyAccess &&
     handover.inventory &&
@@ -958,7 +1048,8 @@ export function CheckoutPanel({
     !handoverDetailInvalid &&
     !keyAccessEvidenceBusy &&
     !inventoryEvidenceBusy &&
-    !parkingEvidenceBusy;
+    !parkingEvidenceBusy &&
+    !handoverScheduleNotReached;
   const inspectionInvalid = inspectionEvidenceBusy;
   const recommendedCharge = Number(command?.recommendedShortNoticeCharge ?? 0);
   const isEarlyTermination = command?.exitType === "resident_early_termination";
@@ -1012,11 +1103,19 @@ export function CheckoutPanel({
     : -1;
   const noticeExceptionRequired =
     exitType === "resident_early_termination" && noticeDays >= 0 && noticeDays < 14;
+  const lateCheckoutEstimate =
+    command && isLateCheckoutPolicy
+      ? lateCheckoutPlanEstimate(command, lateCheckoutDailyPenaltyAmount)
+      : null;
   const next =
     command?.state === "notice_received"
-      ? "Setujui & jadwalkan check-out"
+      ? isLateCheckoutPolicy
+        ? "Lanjutkan ke serah-terima"
+        : "Setujui & jadwalkan check-out"
       : command?.state === "scheduled"
-        ? "Catat serah-terima"
+        ? handoverScheduleNotReached
+          ? "Menunggu tanggal serah-terima"
+          : "Catat serah-terima"
         : command?.state === "inspection_required"
           ? "Catat inspeksi"
           : null;
@@ -1040,8 +1139,9 @@ export function CheckoutPanel({
           Proses check-out
         </CardTitle>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          Selesaikan pemberitahuan, serah-terima, inspeksi, dan keputusan keuangan secara bertahap.
-          Kamar baru berubah status setelah serah-terima dikonfirmasi.
+          Catat rencana, serah-terima, inspeksi, dan penyelesaian keuangan secara bertahap. Masa
+          toleransi dan denda hanya dihitung dari tanggal kamar serta kunci benar-benar
+          dikembalikan.
         </p>
         <CheckoutStageNavigator
           activeStage={visibleStage}
@@ -1081,7 +1181,6 @@ export function CheckoutPanel({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="resident_early_termination">Berhenti lebih awal</SelectItem>
-                  <SelectItem value="same_day">Check-out mendadak (hari ini)</SelectItem>
                   <SelectItem value="normal_expiry">Masa sewa berakhir</SelectItem>
                 </SelectContent>
               </Select>
@@ -1092,13 +1191,12 @@ export function CheckoutPanel({
               value={effectiveDate}
               onChange={(value) => setEffectiveDate(value ?? "")}
               required
-              disabled={exitMode === "same_day"}
               className="min-w-0 gap-2"
             />
             <p className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
               {exitMode === "normal_expiry"
-                ? "Tanggal keluar mengikuti akhir masa sewa. Tidak ada kompensasi kekurangan masa pemberitahuan."
-                : "Pengakhiran dini memerlukan pemberitahuan 14 hari. Sistem menghitung kompensasi untuk hari yang kurang; Admin memutuskan pada tahap persetujuan."}
+                ? "Penghuni mendapat masa toleransi tiga hari setelah akhir masa sewa untuk mengosongkan kamar dan mengembalikan kunci."
+                : "Keluar lebih awal tidak dikenai denda. Denda hanya berlaku apabila kamar atau kunci dikembalikan setelah masa toleransi akhir sewa."}
             </p>
             <label className="grid gap-2 text-sm font-medium text-foreground">
               <span>
@@ -1125,29 +1223,6 @@ export function CheckoutPanel({
               </span>
               <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
             </label>
-            {noticeExceptionRequired ? (
-              <div className="space-y-4 rounded-lg border border-warning/35 bg-warning/5 p-4 md:col-span-2">
-                <label className="grid gap-2 text-sm font-medium text-foreground">
-                  <span>
-                    Penjelasan pemberitahuan kurang dari 14 hari
-                    <span className="text-destructive"> *</span>
-                  </span>
-                  <Textarea
-                    value={noticeExceptionReason}
-                    onChange={(event) => setNoticeExceptionReason(event.target.value)}
-                    placeholder="Jelaskan alasan keberangkatan mendadak atau kekurangan waktu pemberitahuan."
-                  />
-                </label>
-                <EvidenceFileUploadField
-                  propertyId={propertyId}
-                  label="Bukti pendukung pemberitahuan singkat"
-                  description="Unggah foto atau dokumen pendukung bila tersedia."
-                  values={noticeExceptionEvidence}
-                  onChange={setNoticeExceptionEvidence}
-                  onBusyChange={setNoticeExceptionEvidenceBusy}
-                />
-              </div>
-            ) : null}
             <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
               Catatan internal
               <Textarea
@@ -1158,14 +1233,7 @@ export function CheckoutPanel({
             </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-2">
               <Button
-                disabled={
-                  !reason.trim() ||
-                  !effectiveDate ||
-                  noticeDays < 0 ||
-                  (noticeExceptionRequired &&
-                    (!noticeExceptionReason.trim() || noticeExceptionEvidenceBusy)) ||
-                  pending
-                }
+                disabled={!reason.trim() || !effectiveDate || pending}
                 onClick={() => setConfirmationIntent("notice")}
               >
                 {pending ? (
@@ -1198,6 +1266,56 @@ export function CheckoutPanel({
                   ? "Check-out normal saat masa sewa berakhir"
                   : "Permintaan penghentian dini penghuni"}
               </p>
+              <div className="mt-4 rounded-lg border border-border/70 bg-background/70 p-4">
+                <p className="text-sm font-semibold text-foreground">Ringkasan kontrak</p>
+                <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <dt className="text-muted-foreground">Penghuni</dt>
+                    <dd className="mt-1 font-semibold text-foreground">
+                      {command.residentFullName || "Tidak tersedia"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Durasi kontrak</dt>
+                    <dd className="mt-1 font-semibold text-foreground">
+                      {leaseTermLabel(
+                        command.leaseTermMonths,
+                        command.leaseStartDate,
+                        command.plannedLeaseEndDate,
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Masa kontrak</dt>
+                    <dd className="mt-1 font-semibold text-foreground">
+                      {formatIndonesianFullDate(command.leaseStartDate)} s.d.{" "}
+                      {formatIndonesianFullDate(command.plannedLeaseEndDate)}
+                    </dd>
+                  </div>
+                  {isLateCheckoutPolicy ? (
+                    <>
+                      <div>
+                        <dt className="text-muted-foreground">Hari terakhir masa sewa</dt>
+                        <dd className="mt-1 font-semibold text-foreground">
+                          {formatIndonesianFullDate(command.contractLastOccupancyDate)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Batas keluar tanpa denda</dt>
+                        <dd className="mt-1 font-semibold text-foreground">
+                          {formatIndonesianFullDate(command.penaltyFreeUntilDate)}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
+                  <div>
+                    <dt className="text-muted-foreground">Tanggal rencana serah-terima</dt>
+                    <dd className="mt-1 font-semibold text-foreground">
+                      {formatIndonesianFullDate(command.effectiveDate)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
               {command.state !== "completed" ? (
                 <div className="mt-4 space-y-3">
                   <div className="flex flex-wrap gap-2">
@@ -1209,7 +1327,7 @@ export function CheckoutPanel({
                     >
                       Edit rencana check-out
                     </Button>
-                    {command.state === "scheduled" ? (
+                    {command.state === "scheduled" && !isLateCheckoutPolicy ? (
                       <Button
                         type="button"
                         variant="success"
@@ -1249,9 +1367,11 @@ export function CheckoutPanel({
                   Edit rencana check-out
                 </legend>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  {command.state === "scheduled"
-                    ? "Persetujuan jadwal sebelumnya akan dibatalkan dan perlu disetujui ulang setelah perubahan."
-                    : "Perubahan ini tersedia sebelum persetujuan jadwal. Sistem akan menghitung ulang hari pemberitahuan dan kompensasi."}
+                  {isLateCheckoutPolicy
+                    ? "Perubahan rencana akan mengatur ulang konfirmasi serah-terima. Masa toleransi dan tarif denda harian tetap mengikuti kebijakan yang tersimpan."
+                    : command.state === "scheduled"
+                      ? "Persetujuan jadwal sebelumnya akan dibatalkan dan perlu disetujui ulang setelah perubahan."
+                      : "Perubahan ini tersedia sebelum persetujuan jadwal. Sistem akan menghitung ulang hari pemberitahuan dan kompensasi."}
                 </p>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-foreground">
@@ -1269,7 +1389,9 @@ export function CheckoutPanel({
                         <SelectItem value="resident_early_termination">
                           Berhenti lebih awal
                         </SelectItem>
-                        <SelectItem value="same_day">Check-out mendadak (hari ini)</SelectItem>
+                        {!isLateCheckoutPolicy ? (
+                          <SelectItem value="same_day">Check-out mendadak (hari ini)</SelectItem>
+                        ) : null}
                         <SelectItem value="normal_expiry">Masa sewa berakhir</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1280,7 +1402,7 @@ export function CheckoutPanel({
                     value={effectiveDate}
                     onChange={(value) => setEffectiveDate(value ?? "")}
                     required
-                    disabled={exitMode === "same_day"}
+                    disabled={!isLateCheckoutPolicy && exitMode === "same_day"}
                     className="min-w-0 gap-2"
                   />
                   <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
@@ -1316,7 +1438,7 @@ export function CheckoutPanel({
                       onChange={(event) => setInternalNote(event.target.value)}
                     />
                   </label>
-                  {noticeExceptionRequired ? (
+                  {!isLateCheckoutPolicy && noticeExceptionRequired ? (
                     <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
                       <span>
                         Penjelasan pemberitahuan kurang dari 14 hari
@@ -1350,8 +1472,10 @@ export function CheckoutPanel({
                       pending ||
                       !reason.trim() ||
                       !effectiveDate ||
-                      noticeDays < 0 ||
-                      (noticeExceptionRequired && !noticeExceptionReason.trim())
+                      (!isLateCheckoutPolicy && noticeDays < 0) ||
+                      (!isLateCheckoutPolicy &&
+                        noticeExceptionRequired &&
+                        !noticeExceptionReason.trim())
                     }
                     onClick={saveNoticeEdit}
                   >
@@ -1442,14 +1566,101 @@ export function CheckoutPanel({
                 onEdit={
                   visibleStage === 1 && ["notice_received", "scheduled"].includes(command.state)
                     ? beginNoticeEdit
-                    : visibleStage === 2 && command.state === "scheduled"
+                    : visibleStage === 2 && command.state === "scheduled" && !isLateCheckoutPolicy
                       ? beginApprovalEdit
                       : undefined
                 }
               />
             ) : (
               <>
-                {command.state === "notice_received" ? (
+                {command.state === "notice_received" && isLateCheckoutPolicy ? (
+                  <fieldset className="space-y-4 rounded-lg border border-border p-4">
+                    <legend className="px-1 text-sm font-semibold text-foreground">
+                      Masa toleransi dan denda check-out
+                    </legend>
+                    <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                      Penghuni dapat mengosongkan kamar serta mengembalikan kunci sampai batas tanpa
+                      denda. Tarif denda ditetapkan untuk rencana check-out ini dan jumlah akhirnya
+                      mengikuti tanggal serah-terima fisik.
+                    </p>
+                    <div className="rounded-lg border border-primary/25 bg-primary/5 p-4">
+                      <p className="text-sm font-semibold text-foreground">
+                        Perkiraan denda bila serah-terima sesuai rencana
+                      </p>
+                      {lateCheckoutEstimate ? (
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                          {lateCheckoutEstimate.chargedDays > 0 ? (
+                            <>
+                              {lateCheckoutEstimate.chargedDays} hari setelah batas tanpa denda ×{" "}
+                              {rupiah.format(lateCheckoutDailyPenaltyAmount)} ={" "}
+                              <strong className="text-destructive">
+                                {rupiah.format(lateCheckoutEstimate.amount)}
+                              </strong>
+                              .
+                            </>
+                          ) : (
+                            <>
+                              Rp0 karena tanggal rencana masih berada dalam masa toleransi tiga
+                              hari.
+                            </>
+                          )}{" "}
+                          Nilai final mengikuti tanggal serah-terima yang benar-benar dicatat.
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                          Estimasi denda belum tersedia dari data kontrak.
+                        </p>
+                      )}
+                    </div>
+                    <dl className="grid gap-x-6 gap-y-4 border-y border-border/70 py-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <dt className="text-muted-foreground">Hari terakhir masa sewa</dt>
+                        <dd className="mt-1 font-semibold text-foreground">
+                          {formatIndonesianFullDate(command.contractLastOccupancyDate)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Masa toleransi</dt>
+                        <dd className="mt-1 font-semibold text-foreground">
+                          {command.lateCheckoutGraceDays ?? 3} hari kalender
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Batas check-out tanpa denda</dt>
+                        <dd className="mt-1 font-semibold text-foreground">
+                          {formatIndonesianFullDate(command.penaltyFreeUntilDate)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt>Tarif denda per hari</dt>
+                        <dd className="mt-2 max-w-xs">
+                          <CurrencyInput
+                            value={lateCheckoutDailyPenaltyAmount}
+                            onValueChange={setLateCheckoutDailyPenaltyAmount}
+                            formatOnChange
+                            onClear={() => setLateCheckoutDailyPenaltyAmount(0)}
+                            aria-label="Tarif denda per hari"
+                          />
+                        </dd>
+                        <p className="mt-2 text-xs font-normal leading-5 text-muted-foreground">
+                          Terisi otomatis dari tarif bulanan ÷ 30 hari. Sesuaikan bila kebijakan
+                          kamar berbeda; tarif ini hanya berlaku untuk proses check-out ini.
+                        </p>
+                      </div>
+                    </dl>
+                    <div className="flex gap-2.5 rounded-md border border-primary/25 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
+                      <Calculator
+                        className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                        aria-hidden="true"
+                      />
+                      <p>
+                        Denda = tarif harian × hari setelah batas check-out tanpa denda. Denda
+                        paling banyak dihitung untuk {command.lateCheckoutPenaltyDayCap ?? 30} hari
+                        dan akan muncul di penyelesaian keuangan akhir bila ada.
+                      </p>
+                    </div>
+                  </fieldset>
+                ) : command.state === "notice_received" ? (
                   <fieldset className="space-y-4 rounded-lg border border-border p-4">
                     <legend className="px-1 text-sm font-semibold text-foreground">
                       Persetujuan jadwal keluar dan kompensasi
@@ -1654,6 +1865,20 @@ export function CheckoutPanel({
                     <p className="text-sm text-muted-foreground">
                       Seluruh konfirmasi wajib sebelum bukti serah-terima disimpan.
                     </p>
+                    {handoverScheduleNotReached ? (
+                      <div
+                        role="status"
+                        className="flex gap-2.5 rounded-lg border border-warning/35 bg-warning/10 p-3 text-sm leading-6 text-warning-foreground dark:text-white"
+                      >
+                        <CalendarCheck2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <p>
+                          Serah-terima belum dapat dicatat sebelum{" "}
+                          <strong>{formatIndonesianFullDate(command.effectiveDate)}</strong>. Isi
+                          tahap ini setelah kamar dan kunci benar-benar diserahkan. Denda final akan
+                          dihitung dari tanggal serah-terima aktual, bukan dari tanggal rencana.
+                        </p>
+                      </div>
+                    ) : null}
                     {(
                       [
                         ["keyAccess", "Kunci dan akses telah dikembalikan atau didokumentasikan."],
@@ -2171,9 +2396,12 @@ export function CheckoutPanel({
                     <div>
                       <p className="font-semibold text-foreground">Penyelesaian keuangan akhir</p>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                        Sistem menghitung sewa terpakai, pembayaran terverifikasi, kompensasi
-                        pemberitahuan, deposit, dan kerusakan secara terpisah. Hitung ulang setiap
-                        kali rincian diubah.
+                        Sistem menghitung sewa terpakai, pembayaran terverifikasi,
+                        {isLateCheckoutPolicy
+                          ? " denda keterlambatan,"
+                          : " kompensasi pemberitahuan,"}{" "}
+                        deposit, dan kerusakan secara terpisah. Hitung ulang setiap kali rincian
+                        diubah.
                       </p>
                     </div>
 
@@ -2384,9 +2612,15 @@ export function CheckoutPanel({
                             </strong>
                           </p>
                           <p>
-                            Kompensasi pemberitahuan singkat
+                            {isLateCheckoutPolicy
+                              ? "Denda keterlambatan check-out"
+                              : "Kompensasi pemberitahuan singkat"}
                             <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.approvedShortNoticeCharge)}
+                              {rupiah.format(
+                                isLateCheckoutPolicy
+                                  ? settlementQuote.lateCheckoutPenaltyAmount
+                                  : settlementQuote.approvedShortNoticeCharge,
+                              )}
                             </strong>
                           </p>
                           <p>
@@ -2811,7 +3045,9 @@ export function CheckoutPanel({
                   <Button
                     disabled={
                       pending ||
-                      (command.state === "notice_received" && approvalInvalid) ||
+                      (command.state === "notice_received" &&
+                        !isLateCheckoutPolicy &&
+                        approvalInvalid) ||
                       (command.state === "scheduled" && !canRecordHandover) ||
                       (command.state === "inspection_required" && inspectionInvalid)
                     }

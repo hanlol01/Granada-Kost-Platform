@@ -99,6 +99,42 @@ test('live controller freezes Admin roles, resident.manage, V2 envelope and serv
   assert.equal(calls[0][3], KEY);
 });
 
+test('tenancy endpoint returns the commercial mode required by the Admin detail parser', async () => {
+  const controller = new ResidentController(
+    {
+      tenancy: async () => ({
+        residentId: RESIDENT_ID,
+        propertyId: PROPERTY_ID,
+        leaseId: '55555555-5555-4555-8555-555555555555',
+        bookingLeadId: null,
+        leaseStatus: 'awaiting_activation',
+        activationState: 'scheduled',
+        occupancyId: null,
+        roomStatus: 'reserved',
+        activatedAt: null,
+        checkedInAt: null,
+        checkedInSource: null,
+        roomNumber: 'RK-01-01',
+        kostTypeName: 'Rumah Kost',
+        buildingCode: 'RK-01',
+        startDate: '2026-08-01',
+        endDate: '2026-11-01',
+        termMonths: 3,
+        paymentPlanType: 'annual_full',
+        commercialMode: 'rent',
+        agreedMonthlyPrice: 1_800_000,
+        contractRentAmount: 5_400_000,
+        pricingSource: 'standard',
+      }),
+    } as never,
+    {} as never,
+    {} as never,
+  );
+
+  const response = await controller.tenancy(actor(), RESIDENT_ID, PROPERTY_ID);
+  assert.equal(response.data?.commercial_mode, 'rent');
+});
+
 test('provision DTO requires property scope and rejects all client-controlled identity links', async () => {
   assert.deepEqual(
     await validate(plainToInstance(ProvisionResidentAccountDto, { property_id: PROPERTY_ID }), {

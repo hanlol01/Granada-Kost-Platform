@@ -772,7 +772,7 @@ export async function createBillingReceiptPdf(
   data: BillingReceiptDocumentData,
 ): Promise<BillingReceiptDocument> {
   const document = await PDFDocument.create();
-  const page = document.addPage([595.28, 841.89]);
+  let page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const italic = await document.embedFont(StandardFonts.HelveticaBoldOblique);
@@ -844,6 +844,34 @@ export async function createBillingReceiptPdf(
     });
   }
 
+  const addContinuationPage = () => {
+    page = document.addPage([595.28, 841.89]);
+    const continuationTitle = `${title} (LANJUTAN)`;
+    const continuationWidth = bold.widthOfTextAtSize(continuationTitle, 12);
+    page.drawText(continuationTitle, {
+      x: (pageWidth - continuationWidth) / 2,
+      y: 798,
+      size: 12,
+      font: bold,
+      color: navy,
+    });
+    const continuationCodeWidth = bold.widthOfTextAtSize(receiptCode, 9);
+    page.drawText(receiptCode, {
+      x: (pageWidth - continuationCodeWidth) / 2,
+      y: 780,
+      size: 9,
+      font: bold,
+      color: navy,
+    });
+    page.drawLine({
+      start: { x: 52, y: 762 },
+      end: { x: 543, y: 762 },
+      thickness: 1,
+      color: border,
+    });
+    return 738;
+  };
+
   const allocationText = data.allocations.length
     ? data.allocations
         .map((allocation) => `${allocation.invoiceCode} (${idr(allocation.amount)})`)
@@ -910,6 +938,7 @@ export async function createBillingReceiptPdf(
   for (const [labelText, value] of rows) {
     const valueLines = wrapText(regular, value, 10, 258);
     const rowHeight = Math.max(22, valueLines.length * 13 + 6);
+    if (y - rowHeight < 230) y = addContinuationPage();
     page.drawCircle({ x: 69, y: y - 7, size: 2.5, color: softNavy });
     page.drawText(labelText, { x: 83, y: y - 10, size: 10, font: bold, color: navy });
     page.drawText(':', { x: 223, y: y - 10, size: 10, font: regular, color: muted });
@@ -921,6 +950,27 @@ export async function createBillingReceiptPdf(
 
   const terbilangLines = wrapText(italic, terbilang(data.amount), 10, 422);
   const terbilangHeight = 34 + terbilangLines.length * 13;
+  const showSettlementSummary =
+    data.showSettlementSummary &&
+    data.contractRentAmount != null &&
+    data.totalRentReceived != null &&
+    data.remainingRentAmount != null;
+  const summaryRows: Array<[string, string]> = showSettlementSummary
+    ? [
+        ['Total kontrak', idr(data.contractRentAmount!)],
+        ['Total telah diterima', idr(data.totalRentReceived!)],
+        ['Sisa pelunasan', idr(data.remainingRentAmount!)],
+        [
+          'Batas akhir pelunasan',
+          data.remainingRentAmount! <= 0 ? 'Lunas' : receiptDate(data.finalSettlementDueAt ?? null),
+        ],
+      ]
+    : [];
+  const summaryHeight = summaryRows.length ? 18 + summaryRows.length * 15 : 0;
+  const summarySpacing = summaryRows.length ? 10 : 0;
+  if (y - 8 - terbilangHeight - summarySpacing - summaryHeight < 220) {
+    y = addContinuationPage();
+  }
   y -= 8;
   page.drawRectangle({
     x: 82,
@@ -943,22 +993,7 @@ export async function createBillingReceiptPdf(
   });
 
   y -= terbilangHeight;
-  if (
-    data.showSettlementSummary &&
-    data.contractRentAmount != null &&
-    data.totalRentReceived != null &&
-    data.remainingRentAmount != null
-  ) {
-    const summaryRows: Array<[string, string]> = [
-      ['Total kontrak', idr(data.contractRentAmount)],
-      ['Total telah diterima', idr(data.totalRentReceived)],
-      ['Sisa pelunasan', idr(data.remainingRentAmount)],
-      [
-        'Batas akhir pelunasan',
-        data.remainingRentAmount <= 0 ? 'Lunas' : receiptDate(data.finalSettlementDueAt ?? null),
-      ],
-    ];
-    const summaryHeight = 18 + summaryRows.length * 15;
+  if (summaryRows.length) {
     y -= 10;
     page.drawRectangle({
       x: 82,
@@ -984,7 +1019,7 @@ export async function createBillingReceiptPdf(
     y -= summaryHeight;
   }
 
-  const footerY = Math.max(120, y - 92);
+  const footerY = y - 92;
   const issuer = data.issuedByName?.trim() || `Pengelola ${data.propertyName ?? 'Kostation'}`;
   page.drawText('Jatinangor Sumedang,', {
     x: 52,
@@ -1345,9 +1380,15 @@ export async function createLeaseExitOfficialDocumentPdf(
 
     if (snapshot.late_checkout) {
       section('E. Masa toleransi dan denda keterlambatan');
-      row('Hari terakhir masa sewa', receiptDate(snapshot.late_checkout.contract_last_occupancy_date));
+      row(
+        'Hari terakhir masa sewa',
+        receiptDate(snapshot.late_checkout.contract_last_occupancy_date),
+      );
       row('Masa toleransi', `${snapshot.late_checkout.grace_days} hari kalender`);
-      row('Batas check-out tanpa denda', receiptDate(snapshot.late_checkout.penalty_free_until_date));
+      row(
+        'Batas check-out tanpa denda',
+        receiptDate(snapshot.late_checkout.penalty_free_until_date),
+      );
       moneyRow('Denda per hari', snapshot.late_checkout.daily_penalty_amount);
       row('Hari keterlambatan', `${snapshot.late_checkout.overdue_days} hari`);
       row('Hari yang dikenai denda', `${snapshot.late_checkout.charged_days} hari`);

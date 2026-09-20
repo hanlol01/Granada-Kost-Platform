@@ -226,7 +226,13 @@ export class ReminderComposerService {
     invoiceIds: string[],
     recipientKind: ReminderRecipientKind = 'resident',
   ) {
-    const preview = await this.residentPreview(user, propertyId, residentId, invoiceIds, recipientKind);
+    const preview = await this.residentPreview(
+      user,
+      propertyId,
+      residentId,
+      invoiceIds,
+      recipientKind,
+    );
     const phone = preview.recipient.phone?.replace(/\D/g, '');
     if (!phone)
       throw new BadRequestException({
@@ -370,13 +376,23 @@ export class ReminderComposerService {
       `SELECT i.id,i.resident_id,i.lease_id,i.invoice_status,i.invoice_code,i.snapshot_resident_name AS resident_name,i.snapshot_room_number AS room_number,
               room.category AS room_category,room.unit_code AS room_unit_code,building.building_name,
               p.name AS property_name,r.phone AS resident_phone,r.parent_name,r.parent_phone,i.snapshot_period_start_date::text AS period_start,i.snapshot_period_end_date::text AS period_end,
-              i.due_date::text,l.start_date::text AS lease_start,l.end_date::text AS lease_end,
+              CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                        AND COALESCE(i.cycle_start_date,i.snapshot_period_start_date) IS NOT NULL
+                   THEN GREATEST(
+                          uniform_adoption.transition_due_date,
+                          uniform_rent_due_date_15(COALESCE(i.cycle_start_date,i.snapshot_period_start_date))
+                        )::text
+                   ELSE i.due_date::text
+              END AS due_date,
+              l.start_date::text AS lease_start,l.end_date::text AS lease_end,
               GREATEST(i.total_amount-COALESCE(i.credit_amount,0)-COALESCE(a.allocated_amount,0),0)::text AS outstanding_amount,
               (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS now_date,
               EXTRACT(HOUR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int AS now_hour
        FROM invoices i JOIN properties p ON p.id=i.property_id JOIN residents r ON r.id=i.resident_id JOIN leases l ON l.id=i.lease_id
        LEFT JOIN rooms room ON room.id=i.room_id AND room.property_id=i.property_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
+       LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+         ON uniform_adoption.property_id=i.property_id AND uniform_adoption.lease_id=i.lease_id
        LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS allocated_amount FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id AND pa.allocation_status='active') a ON TRUE
        WHERE i.property_id=$1 AND i.id=ANY($2::uuid[])`,
       [propertyId, invoiceIds],
@@ -450,8 +466,7 @@ export class ReminderComposerService {
     const variables: string[] = value.match(/{{[^}]+}}/g) ?? [];
     if (
       variables.some(
-        (variable) =>
-          !ALLOWED_VARIABLES.includes(variable as (typeof ALLOWED_VARIABLES)[number]),
+        (variable) => !ALLOWED_VARIABLES.includes(variable as (typeof ALLOWED_VARIABLES)[number]),
       )
     )
       throw new BadRequestException({

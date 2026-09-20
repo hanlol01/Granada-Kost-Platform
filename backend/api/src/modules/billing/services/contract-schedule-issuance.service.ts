@@ -5,7 +5,7 @@ import {
   buildContractSchedule,
   type ContractPaymentPlan,
 } from '../helpers/contract-schedule.helper';
-import { buildLeaseSettlementPolicyScheduleV3 } from '../helpers/lease-settlement-policy.helper';
+import { buildLeaseSettlementPolicyScheduleV4 } from '../helpers/lease-settlement-policy.helper';
 
 /**
  * Canonical, transactional W05/W06 contract-schedule issuance authority.
@@ -157,7 +157,7 @@ export class ContractScheduleIssuanceService {
         code: 'CONTRACT_SCHEDULE_FIRST_INVOICE_MISSING',
         message: 'Initial rent invoice could not be issued',
       });
-    const settlementPolicy = buildLeaseSettlementPolicyScheduleV3({
+    const settlementPolicy = buildLeaseSettlementPolicyScheduleV4({
       leaseStartDate: input.startDate,
       termMonths: input.termMonths,
       monthlyRentAmount: input.snapshotMonthlyPrice,
@@ -224,10 +224,9 @@ export class ContractScheduleIssuanceService {
         ],
       );
     }
-    // The due date is deliberately assigned only at activation. A committed or
-    // approved schedule is not an occupancy. The v3 checkpoints retain their
-    // commercial date anchor, while their actionable status is projected only
-    // after the lease becomes active.
+    // A committed or approved schedule is not yet an occupancy. Checkpoint
+    // dates remain durable commercial facts; their actionable status is only
+    // projected after the lease becomes active.
     await client.query(
       `INSERT INTO lease_contract_settlements(
          property_id,lease_id,invoice_id,state,policy_snapshot_id

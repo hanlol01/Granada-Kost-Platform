@@ -19,7 +19,14 @@ const MAX_MONEY = Number.MAX_SAFE_INTEGER;
 
 export class ExtendContractSettlementDto {
   @IsUUID('4') property_id!: string;
-  @IsInt() @Min(1) @Max(14) extension_days!: number;
+  @ValidateIf((dto: ExtendContractSettlementDto) => !dto.extension_due_date)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  extension_days?: number;
+  @ValidateIf((dto: ExtendContractSettlementDto) => !dto.extension_days)
+  @IsDateString()
+  extension_due_date?: string;
   @IsString() @MinLength(3) @MaxLength(1000) reason!: string;
 }
 

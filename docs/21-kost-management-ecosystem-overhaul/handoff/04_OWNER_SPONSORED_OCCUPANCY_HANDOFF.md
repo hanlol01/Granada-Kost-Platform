@@ -16,11 +16,12 @@ owner entitlement, and management fees unambiguous.
   and room availability follow the normal lease lifecycle.
 - Rent, booking fee, DP, security deposit, rent invoice, and owner rent
   entitlement are all zero.
-- The management fee is still payable. It is a separate `management_fee`
-  payment, never a rent payment and never an `other_charge` workaround.
+- Admin records whether the management fee is `charged` or `waived` from the
+  Owner's instruction. A charged fee remains a separate `management_fee`
+  payment; a waived fee is Rp0 and cannot receive a payment.
 - There is no due date, overdue status, or late-payment reminder for this fee.
-- The fee payer is one of `resident`, `owner`, or `other`; an `other` payer
-  requires a name.
+- For a charged fee, the payer is `resident`, `owner`, or `other`; an `other`
+  payer requires a name. A waived fee has no payer.
 - A sponsored term must reference the owner assigned to the room’s building
   for Rumah Kost, or to the exact room for Apart Kost.
 - An active sponsored term protects the selected ownership assignment from
@@ -30,7 +31,9 @@ owner entitlement, and management fees unambiguous.
 
 ## Authoritative data
 
-Migration `087_owner_sponsored_occupancy_authority.sql` adds:
+Migration `087_owner_sponsored_occupancy_authority.sql` adds the base authority.
+Migration `092_owner_sponsored_optional_management_fee.sql` adds the explicit
+`charged`/`waived` decision and zero-fee constraints:
 
 - `leases.commercial_mode` (`rent` or `owner_sponsored`);
 - sponsorship input snapshots on `onboarding_commitments`;
@@ -47,16 +50,19 @@ silently replace the effective-dated projection.
 ## Onboarding flow
 
 1. Admin selects **Hunian Tanggungan Owner** on the new lease form.
-2. Admin selects the assigned property owner, fee payer, and a reason.
+2. Admin selects the assigned property owner, whether management fee is charged
+   or waived, the payer when charged, and a reason.
 3. Admin selects normal start date and duration.
-4. The form shows Rp0 room rent and the projected management fee separately.
+4. The form shows Rp0 room rent and either the projected management fee or an
+   explicit **Dibebaskan oleh Owner** state.
 5. Commit creates the resident/lease/term but creates no rent settlement,
    booking, DP, deposit, invoice, or payment allocation.
 6. Activation and check-in may proceed without rent settlement.
 
 ## Payments, reports, and owner portal
 
-- Admin records a direct payment with purpose **Biaya pengelolaan hunian**.
+- For `charged`, Admin records a direct payment with purpose **Biaya pengelolaan
+  hunian**. For `waived`, the payment action is not available.
 - The maximum payment is the remaining sponsored-fee balance; a receipt uses
   the dedicated payment purpose.
 - Billing shows the sponsor, payer, fee progress, and explicit flexible
@@ -84,6 +90,7 @@ silently replace the effective-dated projection.
 - Run migration 087 only on a disposable PostgreSQL target first: first apply,
   replay, rollback, sentinels, and verification of no historical lease or
   payment changes.
-- Verify both owner-assignment modes, all three fee payers, zero rent outputs,
-  fee progress, checkout with unpaid fee, and correction of a sponsored term.
+- Verify both owner-assignment modes, charged/waived modes, all three charged-fee
+  payers, zero rent outputs, fee progress, checkout with unpaid fee, and
+  correction of a sponsored term.
 - Production migration/deployment requires separate authorization.

@@ -83,12 +83,11 @@ function contractSettlementHarness(options: HarnessOptions = {}) {
         )
       )
         return { rows: [{ passed: options.deadlinePassed ?? true }], rowCount: 1 };
-      if (
-        /SELECT \$1::timestamptz \+ \(\$2::int \* INTERVAL '1 day'\) > now\(\) AS valid/.test(
-          normalized,
-        )
-      )
-        return { rows: [{ valid: true }], rowCount: 1 };
+      if (/SELECT requested\.due_at, requested\.due_at > GREATEST/.test(normalized))
+        return {
+          rows: [{ due_at: new Date('2026-03-15T00:00:00.000Z'), valid: true }],
+          rowCount: 1,
+        };
       if (/UPDATE lease_contract_settlements SET extension_due_at/.test(normalized))
         return { rows: [{ extension_due_at: new Date('2026-03-15T00:00:00.000Z') }], rowCount: 1 };
       if (/INSERT INTO lease_termination_cases/.test(normalized))
@@ -222,11 +221,9 @@ void test('the admin role can record a contract-rent payment from the resident d
 });
 
 void test('resident billing applies the installment filter before casting its next due date', () => {
-  assert.equal(
-    residentBillingProjection.includes(
-      "(min(due_date) FILTER(WHERE installment_status IN('scheduled','issued','partially_paid')))::text AS next_due",
-    ),
-    true,
+  assert.match(
+    residentBillingProjection,
+    /min\([\s\S]*CASE WHEN uniform_adoption\.lease_id IS NOT NULL[\s\S]*ELSE installment\.due_date[\s\S]*END[\s\S]*\) FILTER\(WHERE installment\.installment_status IN\('scheduled','issued','partially_paid'\)\)[\s\S]*\)::text AS next_due/,
   );
   assert.equal(
     residentBillingProjection.includes(
@@ -236,7 +233,7 @@ void test('resident billing applies the installment filter before casting its ne
   );
 });
 
-void test('one 14-day extension is transaction-scoped, audited, and only possible after the original due date', async () => {
+void test('one negotiated extension is transaction-scoped, audited, and may be recorded before the original due date', async () => {
   const harness = contractSettlementHarness();
   const result = await harness.service.extend(
     adminActor as never,
@@ -248,7 +245,7 @@ void test('one 14-day extension is transaction-scoped, audited, and only possibl
   assert.equal(result.data.extension_days, 14);
   assert.deepEqual(harness.events, ['authorized', 'begin', 'audit', 'commit', 'release']);
   assert.equal(
-    harness.queries.some((query) => /\+ \(\$3::int \* INTERVAL '1 day'\)/.test(query)),
+    harness.queries.some((query) => /SELECT requested\.due_at/.test(query)),
     true,
   );
 
@@ -267,17 +264,15 @@ void test('one 14-day extension is transaction-scoped, audited, and only possibl
   );
   assert.equal(alreadyExtended.events.includes('audit'), false);
 
-  const notDue = contractSettlementHarness({ deadlinePassed: false });
-  await assert.rejects(
-    notDue.service.extend(
-      adminActor as never,
-      LEASE_ID,
-      { property_id: PROPERTY_ID, extension_days: 7, reason: 'Belum jatuh tempo' },
-      idempotencyKey,
-      auditContext,
-    ),
-    (error) => errorCode(error) === 'CONTRACT_SETTLEMENT_EXTENSION_NOT_DUE',
+  const beforeDue = contractSettlementHarness({ deadlinePassed: false });
+  const beforeDueResult = await beforeDue.service.extend(
+    adminActor as never,
+    LEASE_ID,
+    { property_id: PROPERTY_ID, extension_days: 7, reason: 'Negosiasi sebelum jatuh tempo' },
+    idempotencyKey,
+    auditContext,
   );
+  assert.equal(beforeDueResult.data.extension_days, 7);
 });
 
 void test('the partial-payment window closing starts a termination case without evicting the resident or changing the room', async () => {
@@ -353,7 +348,10 @@ void test('resident billing settlement projection derives checkpoint, deadline, 
   assert.equal(beforeDeadline.status, 'open');
   assert.equal(beforeDeadline.reminder_stage, 'H-14');
   assert.equal(beforeDeadline.admin_action_required, false);
-  assert.equal(beforeDeadline.first_payment_checkpoint.status, 'overdue');
+  assert.equal(
+    (beforeDeadline.first_payment_checkpoint as { status: string }).status,
+    'overdue',
+  );
   assert.equal(afterPartialWindow.status, 'admin_action_required');
   assert.equal(afterPartialWindow.reminder_stage, 'D+7');
   assert.equal(afterPartialWindow.admin_action_required, true);
@@ -422,7 +420,7 @@ void test('the canonical W06 reconciliation derives invoice and installment stat
   const service = new W06BillingService({} as never, {} as never, {} as never);
   await service.reconcileInvoiceLifecycleInTransaction(client as never, PROPERTY_ID, INVOICE_ID);
 
-  assert.equal(queries.length, 3);
+  assert.equal(queries.length, 4);
   assert.match(queries[0], /total_amount-i\.credit_amount-COALESCE\(a\.net,0\)/);
   assert.match(queries[0], /invoice_status=CASE/);
   assert.match(
@@ -431,6 +429,7 @@ void test('the canonical W06 reconciliation derives invoice and installment stat
   );
   assert.match(queries[1], /UPDATE lease_installments/);
   assert.match(queries[2], /lease_contract_settlements/);
+  assert.match(queries[3], /lease_exit_final_settlements/);
   assert.equal(
     queries.some((query) => /INSERT INTO payment_allocations|INSERT INTO payments/.test(query)),
     false,

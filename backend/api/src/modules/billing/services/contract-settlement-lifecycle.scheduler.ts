@@ -108,7 +108,7 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
         failures: 0,
       };
       for (const propertyId of propertyIds) {
-        const candidates = await this.loadCandidates(dedicatedClient, propertyId);
+        const candidates = await this.loadCandidates(dedicatedClient, propertyId, businessDate);
         result.checkpoints_considered += candidates.length;
         for (const candidate of candidates) {
           try {
@@ -152,6 +152,7 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
         client,
         candidate.property_id,
         candidate.checkpoint_id,
+        businessDate,
       );
       if (!current) return { notifications: 0, transitions: 0 };
       const kinds = this.notificationKinds(current, businessDate);
@@ -424,12 +425,21 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
     return copy[kind];
   }
 
-  private async loadCandidates(client: PoolClient, propertyId: string) {
-    const result = await client.query<Candidate>(this.candidateSql(), [propertyId, null]);
+  private async loadCandidates(client: PoolClient, propertyId: string, businessDate: string) {
+    const result = await client.query<Candidate>(this.candidateSql(), [
+      propertyId,
+      null,
+      businessDate,
+    ]);
     return result.rows;
   }
 
-  private async reloadCandidate(client: PoolClient, propertyId: string, checkpointId: string) {
+  private async reloadCandidate(
+    client: PoolClient,
+    propertyId: string,
+    checkpointId: string,
+    businessDate: string,
+  ) {
     await client.query(
       `SELECT settlement.id
          FROM lease_contract_settlements settlement
@@ -438,7 +448,11 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
         FOR UPDATE OF settlement`,
       [propertyId, checkpointId],
     );
-    const result = await client.query<Candidate>(this.candidateSql(), [propertyId, checkpointId]);
+    const result = await client.query<Candidate>(this.candidateSql(), [
+      propertyId,
+      checkpointId,
+      businessDate,
+    ]);
     return result.rows[0] ?? null;
   }
 
@@ -466,7 +480,7 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
     ), candidate AS (
       SELECT settlement.property_id,settlement.lease_id,settlement.id AS settlement_id,
              checkpoint.id AS checkpoint_id,checkpoint.checkpoint_code,
-             (checkpoint.due_at AT TIME ZONE 'Asia/Jakarta')::date::text AS due_date,
+              (COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AT TIME ZONE 'Asia/Jakarta')::date::text AS due_date,
              (extension.extension_due_at AT TIME ZONE 'Asia/Jakarta')::date::text AS extension_due_date,
              CASE WHEN resident_account.user_status='active' THEN resident.user_id END AS resident_user_id,
              resident.full_name AS resident_name,
@@ -488,13 +502,17 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
          AND checkpoint.property_id=settlement.property_id
          AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
         LEFT JOIN ledger ON ledger.lease_id=settlement.lease_id
-        LEFT JOIN lease_settlement_extensions extension
-          ON extension.checkpoint_id=checkpoint.id AND extension.property_id=checkpoint.property_id
+         LEFT JOIN lease_settlement_extensions extension
+           ON extension.checkpoint_id=checkpoint.id AND extension.property_id=checkpoint.property_id
+         LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+           ON due_override.checkpoint_id=checkpoint.id AND due_override.property_id=checkpoint.property_id
        WHERE settlement.property_id=$1
          AND settlement.policy_snapshot_id IS NOT NULL
-         AND settlement.state='open'
-         AND lease.lease_status='active'
-         AND ($2::uuid IS NULL OR checkpoint.id=$2)
+          AND settlement.state='open'
+          AND lease.lease_status='active'
+          AND ($2::uuid IS NULL OR checkpoint.id=$2)
+          AND COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at)
+              <= (($3::date + 8 + TIME '00:00' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')
          AND NOT EXISTS(
            SELECT 1 FROM lease_termination_cases termination
             WHERE termination.settlement_id=settlement.id AND termination.status='pending'

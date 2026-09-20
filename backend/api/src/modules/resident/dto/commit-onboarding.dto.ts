@@ -74,6 +74,7 @@ export class CommitOnboardingDto {
   @IsInt() @Min(1) @Max(120) term_months!: number;
   @IsOptional() @IsIn(['rent', 'owner_sponsored']) commercial_mode?: 'rent' | 'owner_sponsored';
   @IsOptional() @IsUUID('4') sponsoring_owner_profile_id?: string;
+  @IsOptional() @IsIn(['charged', 'waived']) management_fee_mode?: 'charged' | 'waived';
   @IsOptional() @IsIn(['resident', 'owner', 'other']) management_fee_payer?:
     | 'resident'
     | 'owner'

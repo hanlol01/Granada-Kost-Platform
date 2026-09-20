@@ -846,4 +846,55 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE pg_namespace.nspname='public' AND pg_proc.proname='protect_w06_invoice_authority' AND pg_get_functiondef(pg_proc.oid) ILIKE '%lease_exit_invoice_adjustments%')",
     ],
   },
+  {
+    version: '090_uniform_rent_due_day_15.sql',
+    checksumSha256: 'f9651c51f48818a4fd7a28a7796e1ba5a3d91a4379c5d91539d7c99dc4f235d2',
+    sentinels: [
+      "to_regclass('public.lease_uniform_rent_due_day_adoptions') IS NOT NULL",
+      "to_regprocedure('public.uniform_rent_due_date_15(date)') IS NOT NULL",
+      "to_regclass('public.lease_settlement_checkpoint_due_date_overrides') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_policy_snapshots_version_check' AND conrelid=to_regclass('public.lease_settlement_policy_snapshots') AND pg_get_constraintdef(oid) ILIKE '%lease_settlement_v4%')",
+    ],
+  },
+  {
+    version: '091_contract_final_deadline_policy.sql',
+    checksumSha256: 'c65cf008f61d15f964ec5cf5950dda40542baa14413b583045f1ab32b82ba3d9',
+    sentinels: [
+      "to_regclass('public.lease_settlement_deadline_policy_revisions') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_policy_snapshots_deadline_check' AND conrelid=to_regclass('public.lease_settlement_policy_snapshots') AND pg_get_constraintdef(oid) ILIKE '%lease_settlement_v4%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_checkpoint_due_date_overrides_reason_check' AND conrelid=to_regclass('public.lease_settlement_checkpoint_due_date_overrides') AND pg_get_constraintdef(oid) ILIKE '%contract_final_deadline_policy_correction%')",
+    ],
+  },
+  {
+    version: '092_owner_sponsored_optional_management_fee.sql',
+    checksumSha256: '8d947cc118cc998d147e9c0538b3699f5d4b94a436c6174dfd1a7d9d70de6aec',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='onboarding_commitments' AND column_name='management_fee_mode')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='owner_sponsored_lease_terms' AND column_name='management_fee_mode')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='owner_sponsored_terms_money_check' AND conrelid=to_regclass('public.owner_sponsored_lease_terms') AND pg_get_constraintdef(oid) ILIKE '%waived%')",
+      "EXISTS (SELECT 1 FROM information_schema.views WHERE table_schema='public' AND table_name='owner_sponsored_management_fee_progress' AND view_definition ILIKE '%waived%')",
+    ],
+  },
+  {
+    version: '093_editable_contract_settlement_deadline.sql',
+    checksumSha256: '229d13360c9756058091dd2c537f2e5e6b9dadac217b2a104fc64e24c759f6c1',
+    sentinels: [
+      "to_regclass('public.lease_settlement_deadline_alignment_history') IS NOT NULL",
+      "to_regclass('public.lease_settlement_extension_edit_history') IS NOT NULL",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_extensions_deadline_check' AND conrelid=to_regclass('public.lease_settlement_extensions'))",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_lease_settlement_extension_edit_history' AND tgrelid=to_regclass('public.lease_settlement_extensions') AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_policy_snapshots_deadline_check' AND conrelid=to_regclass('public.lease_settlement_policy_snapshots') AND pg_get_constraintdef(oid) ILIKE '%term_months BETWEEN 3 AND 120%')",
+    ],
+  },
+  {
+    version: '094_settlement_command_and_correction_repair.sql',
+    checksumSha256: 'b8704770bc59431a15a4669e26574463d4e7d2e0d87544986ccda1f6a736a171',
+    sentinels: [
+      "pg_get_functiondef('validate_lease_settlement_overdue_scope()'::regprocedure) ILIKE '%to_jsonb(NEW)->>''recipient_user_id''%'",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_policy_snapshots_lease_unique' AND conrelid=to_regclass('public.lease_settlement_policy_snapshots'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_checkpoints_policy_code_unique' AND conrelid=to_regclass('public.lease_settlement_checkpoints'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='lease_settlement_checkpoints_policy_sequence_unique' AND conrelid=to_regclass('public.lease_settlement_checkpoints'))",
+      "to_regclass('public.idx_lease_settlement_policy_versions') IS NOT NULL",
+    ],
+  },
 ] as const;

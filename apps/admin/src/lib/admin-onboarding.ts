@@ -23,6 +23,7 @@ export type OnboardingPayload = {
   term_months: number;
   commercial_mode?: "rent" | "owner_sponsored";
   sponsoring_owner_profile_id?: string;
+  management_fee_mode?: "charged" | "waived";
   management_fee_payer?: "resident" | "owner" | "other";
   management_fee_payer_name?: string;
   owner_sponsorship_reason?: string;
@@ -74,7 +75,8 @@ export type OnboardingResponse = {
   ownerSponsorship: {
     ownerProfileId: string;
     ownerName: string;
-    managementFeePayer: "resident" | "owner" | "other";
+    managementFeeMode: "charged" | "waived";
+    managementFeePayer: "resident" | "owner" | "other" | null;
     managementFeePayerName: string | null;
     reason: string;
     monthlyManagementFee: number;
@@ -297,18 +299,23 @@ function validOwnerSponsorship(value: unknown, mode: unknown) {
   if (mode === "rent") return value === null;
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
+  const managementFeeMode = item.managementFeeMode;
   return (
     typeof item.ownerProfileId === "string" &&
     UUID.test(item.ownerProfileId) &&
     typeof item.ownerName === "string" &&
-    ["resident", "owner", "other"].includes(String(item.managementFeePayer)) &&
+    ["charged", "waived"].includes(String(managementFeeMode)) &&
+    (managementFeeMode === "charged"
+      ? ["resident", "owner", "other"].includes(String(item.managementFeePayer))
+      : item.managementFeePayer === null) &&
     (item.managementFeePayerName === null || typeof item.managementFeePayerName === "string") &&
     typeof item.reason === "string" &&
     item.reason.trim().length >= 3 &&
     Number.isSafeInteger(item.monthlyManagementFee) &&
-    Number(item.monthlyManagementFee) > 0 &&
     Number.isSafeInteger(item.projectedManagementFeeAmount) &&
-    Number(item.projectedManagementFeeAmount) > 0
+    (managementFeeMode === "charged"
+      ? Number(item.monthlyManagementFee) > 0 && Number(item.projectedManagementFeeAmount) > 0
+      : item.monthlyManagementFee === 0 && item.projectedManagementFeeAmount === 0)
   );
 }
 export async function requestAdminOnboarding(

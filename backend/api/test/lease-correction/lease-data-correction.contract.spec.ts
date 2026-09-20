@@ -42,6 +42,34 @@ test('a check-in-only correction preserves the commercial snapshot', async () =>
   assert.match(service, /pricing_agreed_at=CASE WHEN \$13 THEN now\(\) ELSE pricing_agreed_at END/);
 });
 
+test('a check-in correction only writes lifecycle fields that exist in the activation schema', async () => {
+  const [service, activationMigration] = await Promise.all([
+    readFile(servicePath, 'utf8'),
+    readFile(
+      new URL(
+        '../../src/infrastructure/database/migrations/050_automatic_activation_physical_check_in.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ]);
+  assert.match(activationMigration, /checked_in_at TIMESTAMPTZ/);
+  assert.doesNotMatch(activationMigration, /checked_in_by_user_id/);
+  assert.match(service, /SET checked_in_at=\(\(\$3::date\+TIME '00:00'\) AT TIME ZONE 'Asia\/Jakarta'\),\s*updated_at=now\(\)/);
+  assert.doesNotMatch(service, /checked_in_by_user_id/);
+});
+
+test('additional correction charges use only the added or adjusted coverage window', async () => {
+  const service = await readFile(servicePath, 'utf8');
+  assert.match(service, /const coverageStart =/);
+  assert.match(service, /preview\.previous\.endDate/);
+  assert.match(service, /const coverageEndExclusive =/);
+  assert.doesNotMatch(
+    service,
+    /installmentSequence,\s*preview\.corrected\.startDate,\s*preview\.corrected\.endDate/,
+  );
+});
+
 test('legacy check-in display falls back to history then occupancy, never the current date', async () => {
   const repository = await readFile(residentRepositoryPath, 'utf8');
   assert.match(

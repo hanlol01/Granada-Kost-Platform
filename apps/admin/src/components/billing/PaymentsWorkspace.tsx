@@ -31,7 +31,6 @@ import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
-import { MonthYearPicker } from "@/components/ui/month-year-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import { NoticeAlert } from "@/components/ui/notice-alert";
@@ -74,6 +73,7 @@ import {
   canVerifyW06Payment,
   downloadAdminInvoiceDocument,
   downloadAdminContractPaidDocument,
+  downloadAdminOriginalReceiptDocument,
   downloadAdminReceiptDocument,
   type BillingProof,
   type BillingWorkspacePayment,
@@ -103,7 +103,6 @@ export function PaymentsWorkspace() {
     if (typeof window !== "undefined" && window.location.hash === "#pending") return "pending";
     return "unpaid";
   });
-  const [month, setMonth] = useState(jakartaMonth());
   const [search, setSearch] = useState("");
   const normalizedSearch = search.trim();
   const [invoiceStatus, setInvoiceStatus] = useState<"" | "issued" | "partially_paid" | "overdue">(
@@ -137,7 +136,7 @@ export function PaymentsWorkspace() {
   const canManage = canManageW06Billing({ roles: user?.roles, permissions: user?.permissions });
   const canVerify = canVerifyW06Payment({ roles: user?.roles, permissions: user?.permissions });
   const worklist = useBillingWorklist(currentPropertyId, {
-    month,
+    month: jakartaMonth(),
     offset,
     search: normalizedSearch,
     status: invoiceStatus || undefined,
@@ -170,7 +169,6 @@ export function PaymentsWorkspace() {
   const detail = useResidentBilling(currentPropertyId, selectedResidentId);
   const activeFilterCount =
     Number(Boolean(normalizedSearch)) +
-    Number(month !== jakartaMonth()) +
     Number(Boolean(invoiceStatus)) +
     Number(invoiceSort !== "due_date_asc") +
     Number(Boolean(dueWithinDaysInput)) +
@@ -189,12 +187,11 @@ export function PaymentsWorkspace() {
     Number(Boolean(paidKind)) +
     Number(Boolean(dateFrom)) +
     Number(Boolean(dateTo));
-  const filterSignature = `${month}:${normalizedSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
+  const filterSignature = `${normalizedSearch}:${invoiceStatus}:${invoiceSort}:${dueWithinDaysInput}:${dateFrom}:${dateTo}`;
   const paymentFilterSignature = `${tab}:${normalizedPaymentSearch}:${paymentMethod}:${paymentPurpose}:${paymentDueWithinDaysInput}:${dateFrom}:${dateTo}`;
   const paidFilterSignature = `paid:${normalizedPaymentSearch}:${paymentMethod}:${paidKind}:${dateFrom}:${dateTo}`;
   const invoiceFilterCriteria = [
     normalizedSearch ? `pencarian "${normalizedSearch}"` : "",
-    month !== jakartaMonth() ? `periode: ${monthLabel(month)}` : "",
     invoiceStatus
       ? `status tagihan: ${
           {
@@ -329,15 +326,11 @@ export function PaymentsWorkspace() {
 
           <TabsContent value="unpaid" className="space-y-4">
             <div className="grid min-w-0 gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-4">
-              <MonthYearPicker
-                value={month}
-                onChange={(value) => {
-                  setMonth(value);
-                  setOffset(0);
-                }}
-                label="Pilih periode tagihan"
-              />
-              <div className="relative min-w-0 xl:col-span-2">
+              <p className="text-xs text-muted-foreground md:col-span-2 xl:col-span-4">
+                Daftar ini menampilkan seluruh tagihan yang masih memiliki sisa kewajiban. Gunakan
+                filter tanggal jika perlu mempersempit tenggat tertentu.
+              </p>
+              <div className="relative min-w-0 xl:col-span-3">
                 <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="min-h-11 pl-9"
@@ -393,7 +386,6 @@ export function PaymentsWorkspace() {
                 className="min-h-11 w-full xl:col-start-4 xl:row-start-2"
                 disabled={activeFilterCount === 0}
                 onClick={() => {
-                  setMonth(jakartaMonth());
                   setSearch("");
                   setInvoiceStatus("");
                   setInvoiceSort("due_date_asc");
@@ -945,7 +937,7 @@ function WorklistPanel({
               <TableRow>
                 <TableHead>Penghuni / Kamar</TableHead>
                 <TableHead>Periode kontrak</TableHead>
-                <TableHead>Jatuh Tempo Tagihan</TableHead>
+                <TableHead>Tenggat pembayaran</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Sisa</TableHead>
@@ -964,7 +956,14 @@ function WorklistPanel({
                   <TableCell>
                     {formatContractPeriod(item.term_months, item.contract_start, item.contract_end)}
                   </TableCell>
-                  <TableCell>{dateOnly(item.settlement_due_date)}</TableCell>
+                  <TableCell>
+                    <p>{dateOnly(item.settlement_due_date)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.settlement_due_date === item.final_settlement_due_date
+                        ? "Pelunasan akhir"
+                        : "Checkpoint berjalan"}
+                    </p>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={item.invoice_status} />
                   </TableCell>
@@ -1091,7 +1090,8 @@ function ResidentBillingPanel({
         <InvoiceHistory data={data} propertyId={propertyId} canManage={canManage} />
         <PaymentHistory data={data} propertyId={propertyId} canManage={canManage} />
       </div>
-      {canManage ? (
+      {canManage &&
+      (!data.owner_sponsorship || data.owner_sponsorship.management_fee_mode === "charged") ? (
         <RecordPaymentDialog
           data={data}
           propertyId={propertyId}
@@ -1110,19 +1110,23 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
   const sponsorship = data.owner_sponsorship;
   if (!sponsorship) return null;
   const statusLabel =
-    sponsorship.payment_status === "paid"
-      ? "Lunas"
-      : sponsorship.payment_status === "partially_paid"
-        ? "Dibayar sebagian"
-        : sponsorship.payment_status === "overpaid"
-          ? "Lebih bayar"
-          : "Belum dibayar";
+    sponsorship.payment_status === "waived"
+      ? "Dibebaskan"
+      : sponsorship.payment_status === "paid"
+        ? "Lunas"
+        : sponsorship.payment_status === "partially_paid"
+          ? "Dibayar sebagian"
+          : sponsorship.payment_status === "overpaid"
+            ? "Lebih bayar"
+            : "Belum dibayar";
   const payerLabel =
-    sponsorship.management_fee_payer === "owner"
-      ? sponsorship.owner_name
-      : sponsorship.management_fee_payer === "resident"
-        ? data.lease.resident_name
-        : sponsorship.management_fee_payer_name || "Pihak lain";
+    sponsorship.management_fee_mode === "waived"
+      ? "Tidak ada penanggung pembayaran"
+      : sponsorship.management_fee_payer === "owner"
+        ? sponsorship.owner_name
+        : sponsorship.management_fee_payer === "resident"
+          ? data.lease.resident_name
+          : sponsorship.management_fee_payer_name || "Pihak lain";
   return (
     <Card className="border-emerald-300/70 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20">
       <CardHeader className="pb-3">
@@ -1132,8 +1136,9 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
               Hunian Tanggungan Owner
             </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sewa kamar tidak ditagihkan. Biaya pengelolaan tetap dicatat terpisah dan dapat
-              dibayar kapan saja selama masa hunian.
+              {sponsorship.management_fee_mode === "waived"
+                ? "Sewa kamar dan biaya pengelolaan dibebaskan. Durasi serta aktivitas hunian tetap tercatat seperti biasa."
+                : "Sewa kamar tidak ditagihkan. Biaya pengelolaan tetap dicatat terpisah dan dapat dibayar kapan saja selama masa hunian."}
             </p>
           </div>
           <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{statusLabel}</Badge>
@@ -1141,7 +1146,7 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
       </CardHeader>
       <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <DetailRow label="Owner penanggung" value={sponsorship.owner_name} />
-        <DetailRow label="Pembayar" value={payerLabel} />
+        <DetailRow label="Ketentuan biaya" value={payerLabel} />
         <DetailRow
           label="Biaya pengelolaan per bulan"
           value={formatIDR(sponsorship.snapshot_monthly_management_fee)}
@@ -1153,15 +1158,22 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
         <DetailRow label="Sudah diterima" value={formatIDR(sponsorship.verified_paid)} />
         <DetailRow label="Menunggu verifikasi" value={formatIDR(sponsorship.pending)} />
         <DetailRow label="Sisa biaya pengelolaan" value={formatIDR(sponsorship.remaining)} />
-        <DetailRow label="Jadwal pembayaran" value="Fleksibel, tanpa jatuh tempo" />
+        <DetailRow
+          label="Jadwal pembayaran"
+          value={
+            sponsorship.management_fee_mode === "waived"
+              ? "Tidak ada pembayaran"
+              : "Fleksibel, tanpa jatuh tempo"
+          }
+        />
       </CardContent>
     </Card>
   );
 }
 
 function SummaryGrid({ data }: { data: ResidentBilling }) {
-  const settlementDueAt =
-    data.contract_settlement?.effective_due_at ?? data.contract_settlement?.final_settlement_due_at;
+  const settlement = data.contract_settlement;
+  const settlementDueAt = settlement?.effective_due_at ?? settlement?.final_settlement_due_at;
   const items = [
     ["Nilai kontrak", formatIDR(data.lease.contract_rent)],
     ["Tarif bulanan kontrak", formatIDR(data.lease.monthly_rate)],
@@ -1185,14 +1197,18 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Sisa kontrak", `${data.lease.remaining_days} hari`],
     ["Paket", data.lease.payment_plan === "annual_full" ? "Tahunan penuh" : "Angsuran dua bulanan"],
     ["Progress", `${data.summary.installment_paid}/${data.summary.installment_total} angsuran`],
-    [
-      "Jatuh Tempo Tagihan",
-      settlementDueAt
-        ? formatBillingDate(settlementDueAt)
-        : data.summary.next_due_date
-          ? dateOnly(data.summary.next_due_date)
-          : "Tidak ada",
-    ],
+    settlement?.status === "paid"
+      ? ["Jadwal check-out kontrak", dateOnly(data.lease.end_date)]
+      : [
+          "Tenggat pembayaran berikutnya",
+          settlement?.status === "awaiting_activation"
+            ? "Menunggu aktivasi kamar"
+            : settlementDueAt
+              ? formatBillingDate(settlementDueAt)
+              : data.summary.next_due_date
+                ? dateOnly(data.summary.next_due_date)
+                : "Tidak ada",
+        ],
     ["Terlambat", `${data.summary.overdue_count} invoice`],
   ];
   return (
@@ -1460,7 +1476,7 @@ function AdminReceiptDialog({
         <DialogHeader>
           <DialogTitle>Kuitansi pembayaran</DialogTitle>
           <DialogDescription>
-            Snapshot kuitansi bersifat tetap setelah diterbitkan.
+            Unduhan utama memakai kondisi kontrak terbaru. Dokumen asli tetap tersedia untuk audit.
           </DialogDescription>
         </DialogHeader>
         {query.isPending ? (
@@ -1488,28 +1504,52 @@ function AdminReceiptDialog({
         ) : null}
         <DialogFooter>
           {query.data && propertyId ? (
-            <Button
-              className="min-h-11"
-              variant="info"
-              disabled={isDownloading}
-              onClick={() => {
-                setIsDownloading(true);
-                setDownloadError(false);
-                void downloadAdminReceiptDocument(
-                  propertyId,
-                  query.data.id,
-                  query.data.receipt_code,
-                )
-                  .then(() => setIsDownloading(false))
-                  .catch(() => {
-                    setIsDownloading(false);
-                    setDownloadError(true);
-                  });
-              }}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {isDownloading ? "Menyiapkan PDF..." : "Unduh kuitansi"}
-            </Button>
+            <>
+              <Button
+                className="min-h-11"
+                variant="info"
+                disabled={isDownloading}
+                onClick={() => {
+                  setIsDownloading(true);
+                  setDownloadError(false);
+                  void downloadAdminReceiptDocument(
+                    propertyId,
+                    query.data.id,
+                    query.data.receipt_code,
+                  )
+                    .then(() => setIsDownloading(false))
+                    .catch(() => {
+                      setIsDownloading(false);
+                      setDownloadError(true);
+                    });
+                }}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                {isDownloading ? "Menyiapkan PDF..." : "Unduh kuitansi terbaru"}
+              </Button>
+              <Button
+                className="min-h-11"
+                variant="outline"
+                disabled={isDownloading}
+                onClick={() => {
+                  setIsDownloading(true);
+                  setDownloadError(false);
+                  void downloadAdminOriginalReceiptDocument(
+                    propertyId,
+                    query.data.id,
+                    query.data.receipt_code,
+                  )
+                    .then(() => setIsDownloading(false))
+                    .catch(() => {
+                      setIsDownloading(false);
+                      setDownloadError(true);
+                    });
+                }}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Unduh dokumen asli
+              </Button>
+            </>
           ) : null}
           <Button className="min-h-11 gap-2" variant="secondary" onClick={onClose}>
             <X className="size-4" aria-hidden="true" />
@@ -3186,15 +3226,6 @@ function jakartaMonth() {
     month: "2-digit",
   }).formatToParts(new Date());
   return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
-}
-function monthLabel(value: string) {
-  const [year, month] = value.split("-").map(Number);
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return value;
-  return new Intl.DateTimeFormat("id-ID", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 function dateRangeFilterLabel(from: string, to: string) {
   if (from && to) return `tanggal ${dateOnly(from)} sampai ${dateOnly(to)}`;

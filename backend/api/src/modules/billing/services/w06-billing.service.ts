@@ -73,7 +73,8 @@ type LeaseTupleRow = {
 type OwnerSponsoredManagementFeeProjectionRow = {
   owner_profile_id: string;
   owner_name: string;
-  management_fee_payer: 'resident' | 'owner' | 'other';
+  management_fee_mode: 'charged' | 'waived';
+  management_fee_payer: 'resident' | 'owner' | 'other' | null;
   management_fee_payer_name: string | null;
   sponsorship_reason: string;
   snapshot_monthly_management_fee: string;
@@ -81,7 +82,7 @@ type OwnerSponsoredManagementFeeProjectionRow = {
   verified_paid_amount: string;
   pending_amount: string;
   remaining_amount: string;
-  payment_status: 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
+  payment_status: 'waived' | 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
 };
 
 type PaymentRow = {
@@ -241,7 +242,12 @@ type ContractSettlementProjectionRow = {
   termination_status: 'pending' | 'cancelled' | 'checked_out' | null;
   planned_checkout_date: string | null;
   policy_snapshot_id?: string | null;
-  policy_version?: 'legacy_v1' | 'lease_settlement_v2' | null;
+  policy_version?:
+    | 'legacy_v1'
+    | 'lease_settlement_v2'
+    | 'lease_settlement_v3'
+    | 'lease_settlement_v4'
+    | null;
   final_checkpoint_due_at?: Date | null;
   grace_period_days?: string | number | null;
   settlement_checkpoints?: Array<{
@@ -351,7 +357,7 @@ type ReceiptDocumentRow = {
   lease_term_months: number | null;
   contract_rent_amount: string | number | null;
   agreed_monthly_price: string | number | null;
-  pricing_source: 'standard' | 'negotiated' | null;
+  pricing_source: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   rent_payment_sequence: string | number | null;
   total_rent_received: string | number | null;
   remaining_rent_amount: string | number | null;
@@ -506,6 +512,50 @@ function normalizedRoomSearchSql(column: string, parameter: string): string {
   return `NULLIF(regexp_replace(COALESCE(${column}, ''), '[^[:alnum:]]', '', 'g'), '') ILIKE '%' || NULLIF(regexp_replace(COALESCE(${parameter}::text, ''), '[^[:alnum:]]', '', 'g'), '') || '%'`;
 }
 
+type FirstPaymentCheckpointCandidate = {
+  code: 'checkpoint_1' | 'checkpoint_2' | 'final_settlement';
+  dueAt: Date;
+  requiredAmount: number;
+  shortfallAmount: number;
+  status:
+    | 'pending'
+    | 'met_early'
+    | 'met'
+    | 'overdue_grace'
+    | 'extended'
+    | 'admin_action_required'
+    | 'termination_eligible';
+};
+
+export function summarizeFirstPaymentCheckpoint(
+  checkpoints: FirstPaymentCheckpointCandidate[],
+  initialRentCredit: number,
+  additionalRentPayments: number,
+) {
+  const checkpoint = checkpoints.find((candidate) => candidate.code === 'checkpoint_1');
+  if (!checkpoint) {
+    return {
+      dueAt: null,
+      requiredAdditionalAmount: 0,
+      additionalPaymentReceived: additionalRentPayments,
+      remainingAmount: 0,
+      status: 'not_required' as const,
+    };
+  }
+  return {
+    dueAt: checkpoint.dueAt,
+    requiredAdditionalAmount: Math.max(0, checkpoint.requiredAmount - initialRentCredit),
+    additionalPaymentReceived: additionalRentPayments,
+    remainingAmount: checkpoint.shortfallAmount,
+    status:
+      checkpoint.status === 'met' || checkpoint.status === 'met_early'
+        ? checkpoint.status
+        : checkpoint.status === 'pending'
+          ? ('pending' as const)
+          : ('overdue' as const),
+  };
+}
+
 @Injectable()
 export class W06BillingService {
   constructor(
@@ -545,17 +595,22 @@ export class W06BillingService {
       final_checkpoint.final_due_date,
       (settlement.extension_due_at AT TIME ZONE 'Asia/Jakarta')::date,
       (settlement.original_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      CASE WHEN i.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
+           THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(i.cycle_start_date))
+      END,
       i.due_date
     )`;
     const finalSettlementDueDate = `COALESCE(
       final_checkpoint.final_due_date,
       (settlement.extension_due_at AT TIME ZONE 'Asia/Jakarta')::date,
       (settlement.original_due_at AT TIME ZONE 'Asia/Jakarta')::date,
+      CASE WHEN i.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
+           THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(i.cycle_start_date))
+      END,
       i.due_date
     )`;
     const values = [
       query.property_id,
-      month,
       query.search?.trim() || null,
       query.status ?? null,
       query.due_within_days ?? null,
@@ -569,12 +624,16 @@ export class W06BillingService {
       JOIN leases lease ON lease.id=i.lease_id AND lease.property_id=i.property_id
       LEFT JOIN lease_contract_settlements settlement
         ON settlement.property_id=i.property_id AND settlement.lease_id=i.lease_id
+      LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+        ON uniform_adoption.property_id=i.property_id AND uniform_adoption.lease_id=i.lease_id
       LEFT JOIN LATERAL (
-        SELECT (COALESCE(extension.extension_due_at,checkpoint.due_at) AT TIME ZONE 'Asia/Jakarta')::date
+        SELECT (COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AT TIME ZONE 'Asia/Jakarta')::date
           AS final_due_date
           FROM lease_settlement_checkpoints checkpoint
           LEFT JOIN lease_settlement_extensions extension
             ON extension.property_id=checkpoint.property_id AND extension.checkpoint_id=checkpoint.id
+          LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+            ON due_override.property_id=checkpoint.property_id AND due_override.checkpoint_id=checkpoint.id
          WHERE checkpoint.property_id=i.property_id
            AND checkpoint.lease_id=i.lease_id
            AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
@@ -608,11 +667,14 @@ export class W06BillingService {
            AND contract_invoice.invoice_status<>'void'
       ) contract_payment ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS current_due_at
+        SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AS current_due_at
           FROM lease_settlement_checkpoints checkpoint
           LEFT JOIN lease_settlement_extensions extension
             ON extension.property_id=checkpoint.property_id
            AND extension.checkpoint_id=checkpoint.id
+          LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+            ON due_override.property_id=checkpoint.property_id
+           AND due_override.checkpoint_id=checkpoint.id
          WHERE checkpoint.property_id=i.property_id
            AND checkpoint.lease_id=i.lease_id
            AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
@@ -635,26 +697,30 @@ export class W06BillingService {
         AND i.lease_id IS NOT NULL
         AND i.authority_source='contract_schedule'
         AND i.invoice_status IN ('issued','partially_paid','overdue')
-        AND ($4::text IS NULL OR i.invoice_status=$4)
-        AND (
-          date_trunc('month',${settlementDueDate})::date=$2::date
-          OR (${settlementDueDate}<$2::date AND GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0)
-        )
-        AND ($3::text IS NULL
-          OR i.snapshot_resident_name ILIKE '%'||$3||'%'
-          OR ${normalizedRoomSearchSql('i.snapshot_room_number', '$3')}
-          OR i.snapshot_building_code ILIKE '%'||$3||'%'
-          OR i.invoice_code ILIKE '%'||$3||'%')
-        AND ($5::int IS NULL OR (
+        AND ($3::text IS NULL OR i.invoice_status=$3)
+        -- The unpaid worklist is an operational queue, not a historical month
+        -- report.  A legacy invoice can move to the next uniform due date
+        -- (the 15th) while it is still outstanding.  Filtering by the selected
+        -- month here would hide that debt until the new month starts, making
+        -- the "Tagihan Belum Dibayar" tab appear empty.  Keep every invoice
+        -- with a positive balance visible; date_from/date_to and due_within_days
+        -- remain available when an operator needs a narrower deadline view.
+        AND GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0
+        AND ($2::text IS NULL
+          OR i.snapshot_resident_name ILIKE '%'||$2||'%'
+          OR ${normalizedRoomSearchSql('i.snapshot_room_number', '$2')}
+          OR i.snapshot_building_code ILIKE '%'||$2||'%'
+          OR i.invoice_code ILIKE '%'||$2||'%')
+        AND ($4::int IS NULL OR (
            ${settlementDueDate} >= (now() AT TIME ZONE 'Asia/Jakarta')::date
-           AND ${settlementDueDate} <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $5::int)
+           AND ${settlementDueDate} <= ((now() AT TIME ZONE 'Asia/Jakarta')::date + $4::int)
          ))
-        AND ($6::date IS NULL OR ${settlementDueDate} >= $6::date)
-        AND ($7::date IS NULL OR ${settlementDueDate} <= $7::date)`;
+        AND ($5::date IS NULL OR ${settlementDueDate} >= $5::date)
+        AND ($6::date IS NULL OR ${settlementDueDate} <= $6::date)`;
     const [count, page] = await Promise.all([
       this.database.client.query<{ total: string }>(
         `SELECT count(*) AS total ${common}`,
-        values.slice(0, 7),
+        values.slice(0, 6),
       ),
       this.database.client.query<{
         id: string;
@@ -687,7 +753,7 @@ export class W06BillingService {
                   ${finalSettlementDueDate}::text AS final_settlement_due_date,
                  i.invoice_status,i.total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
-         ${common} ORDER BY ${order} LIMIT $8 OFFSET $9`,
+         ${common} ORDER BY ${order} LIMIT $7 OFFSET $8`,
         values,
       ),
     ]);
@@ -3201,6 +3267,32 @@ export class W06BillingService {
     return this.renderReceiptDocument(propertyId, receiptId);
   }
 
+  async originalReceiptDocument(
+    user: UserAccessContext,
+    propertyId: string,
+    receiptId: string,
+  ): Promise<BillingReceiptDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const stored = await this.loadStoredReceipt(propertyId, receiptId);
+    if (stored.document_content) {
+      return {
+        filename: this.receiptFilename(stored.receipt_code, '-asli'),
+        content: stored.document_content,
+      };
+    }
+    const snapshotDocument = stored.safe_snapshot?.document;
+    const snapshotRow = snapshotDocument
+      ? this.receiptRowFromSnapshot(snapshotDocument, stored.safe_snapshot)
+      : null;
+    if (!snapshotRow)
+      throw new ConflictException({
+        code: 'ORIGINAL_RECEIPT_DOCUMENT_UNAVAILABLE',
+        message: 'Dokumen asli kuitansi lama ini tidak tersedia',
+      });
+    const document = await this.createReceiptDocument(snapshotRow);
+    return { ...document, filename: this.receiptFilename(stored.receipt_code, '-asli') };
+  }
+
   async contractPaidDocument(
     user: UserAccessContext,
     propertyId: string,
@@ -3270,40 +3362,17 @@ export class W06BillingService {
     propertyId: string,
     receiptId: string,
   ): Promise<BillingReceiptDocument> {
-    const stored = await this.database.client.query<{
-      receipt_code: string;
-      document_content: Buffer | null;
-      safe_snapshot: StoredReceiptSnapshot;
-    }>(
-      `SELECT receipt_code,document_content,safe_snapshot
-       FROM payment_receipts
-       WHERE id=$1 AND property_id=$2`,
-      [receiptId, propertyId],
-    );
-    if (!stored.rows[0])
-      throw new NotFoundException({
-        code: 'RECEIPT_DOCUMENT_NOT_FOUND',
-        message: 'Receipt document not found',
-      });
-    const storedRow = stored.rows[0];
+    const storedRow = await this.loadStoredReceipt(propertyId, receiptId);
     const snapshotDocument = storedRow.safe_snapshot?.document;
-    if (
-      storedRow.document_content &&
-      snapshotDocument?.renderer_version === BILLING_DOCUMENT_RENDERER_VERSION
-    ) {
-      const safeCode =
-        storedRow.receipt_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
-      return { filename: `${safeCode}.pdf`, content: storedRow.document_content };
-    }
-
-    // Re-render older persisted receipts from their immutable issuance snapshot.
-    // The original bytes and checksum remain untouched for audit purposes.
-    if (storedRow.document_content && snapshotDocument) {
+    if (snapshotDocument) {
       const snapshotRow = this.receiptRowFromSnapshot(snapshotDocument, storedRow.safe_snapshot);
-      if (snapshotRow) return this.createReceiptDocument(snapshotRow);
-      const safeCode =
-        storedRow.receipt_code.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
-      return { filename: `${safeCode}.pdf`, content: storedRow.document_content };
+      if (snapshotRow) {
+        const currentAuthority = await this.currentReceiptSettlementAuthority(
+          propertyId,
+          receiptId,
+        );
+        return this.createReceiptDocument({ ...snapshotRow, ...(currentAuthority ?? {}) });
+      }
     }
 
     // Compatibility path for receipts issued before M6. New receipts always
@@ -3388,6 +3457,106 @@ export class W06BillingService {
     return this.createReceiptDocument(row);
   }
 
+  private async loadStoredReceipt(propertyId: string, receiptId: string) {
+    const stored = await this.database.client.query<{
+      receipt_code: string;
+      document_content: Buffer | null;
+      safe_snapshot: StoredReceiptSnapshot;
+    }>(
+      `SELECT receipt_code,document_content,safe_snapshot
+       FROM payment_receipts
+       WHERE id=$1 AND property_id=$2`,
+      [receiptId, propertyId],
+    );
+    if (!stored.rows[0])
+      throw new NotFoundException({
+        code: 'RECEIPT_DOCUMENT_NOT_FOUND',
+        message: 'Receipt document not found',
+      });
+    return stored.rows[0];
+  }
+
+  private receiptFilename(receiptCode: string, suffix = '') {
+    const safeCode = receiptCode.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
+    return `${safeCode}${suffix}.pdf`;
+  }
+
+  private async currentReceiptSettlementAuthority(propertyId: string, receiptId: string) {
+    const result = await this.database.client.query<
+      Pick<
+        ReceiptDocumentRow,
+        | 'lease_start'
+        | 'lease_end'
+        | 'lease_term_months'
+        | 'contract_rent_amount'
+        | 'agreed_monthly_price'
+        | 'pricing_source'
+        | 'total_rent_received'
+        | 'remaining_rent_amount'
+        | 'final_settlement_due_at'
+      >
+    >(
+      `SELECT lease.start_date::text AS lease_start,
+              lease.end_date::text AS lease_end,
+              lease.term_months AS lease_term_months,
+              lease.contract_rent_amount,
+              lease.snapshot_monthly_price AS agreed_monthly_price,
+              COALESCE(lease.pricing_source,'standard') AS pricing_source,
+              rent_ledger.total_rent_received,
+              GREATEST(COALESCE(lease.contract_rent_amount,0)-rent_ledger.total_rent_received,0)
+                AS remaining_rent_amount,
+              COALESCE(
+                current_checkpoint.current_due_at,
+                settlement.extension_due_at,
+                settlement.original_due_at
+              ) AS final_settlement_due_at
+         FROM payment_receipts receipt
+         LEFT JOIN payments direct_payment
+           ON direct_payment.id=receipt.payment_id AND direct_payment.property_id=receipt.property_id
+         LEFT JOIN payment_reversals reversal ON reversal.receipt_id=receipt.id
+         JOIN payments payment
+           ON payment.id=COALESCE(direct_payment.id,reversal.payment_id)
+          AND payment.property_id=receipt.property_id
+         JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
+         LEFT JOIN lease_contract_settlements settlement
+           ON settlement.lease_id=lease.id AND settlement.property_id=lease.property_id
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at)
+                    AS current_due_at
+             FROM lease_settlement_checkpoints checkpoint
+             LEFT JOIN lease_settlement_extensions extension
+               ON extension.checkpoint_id=checkpoint.id
+              AND extension.property_id=checkpoint.property_id
+             LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+               ON due_override.checkpoint_id=checkpoint.id
+              AND due_override.property_id=checkpoint.property_id
+            WHERE checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+              AND checkpoint.checkpoint_code='final_settlement'
+            LIMIT 1
+         ) current_checkpoint ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(rent_invoice.credit_amount+COALESCE(invoice_payment.net,0)),0)
+                    AS total_rent_received
+             FROM invoices rent_invoice
+             LEFT JOIN LATERAL (
+               SELECT COALESCE(sum(rent_allocation.allocated_amount),0)
+                      -COALESCE(sum(reversal_allocation.reversed_amount),0) AS net
+                 FROM payment_allocations rent_allocation
+                 LEFT JOIN payment_reversal_allocations reversal_allocation
+                   ON reversal_allocation.original_allocation_id=rent_allocation.id
+                WHERE rent_allocation.invoice_id=rent_invoice.id
+             ) invoice_payment ON true
+            WHERE rent_invoice.property_id=lease.property_id
+              AND rent_invoice.lease_id=lease.id
+              AND rent_invoice.invoice_purpose='rent'
+              AND rent_invoice.invoice_status<>'void'
+         ) rent_ledger ON true
+        WHERE receipt.id=$1 AND receipt.property_id=$2`,
+      [receiptId, propertyId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   private receiptRowFromSnapshot(
     document: NonNullable<StoredReceiptSnapshot['document']>,
     snapshot: StoredReceiptSnapshot,
@@ -3436,7 +3605,12 @@ export class W06BillingService {
         document.lease_term_months == null ? null : Number(document.lease_term_months),
       contract_rent_amount: document.contract_rent_amount ?? null,
       agreed_monthly_price: document.agreed_monthly_price ?? null,
-      pricing_source: document.pricing_source === 'negotiated' ? 'negotiated' : 'standard',
+      pricing_source:
+        document.pricing_source === 'owner_sponsored'
+          ? 'owner_sponsored'
+          : document.pricing_source === 'negotiated'
+            ? 'negotiated'
+            : 'standard',
       rent_payment_sequence: document.rent_payment_sequence ?? null,
       total_rent_received: document.total_rent_received ?? null,
       remaining_rent_amount: document.remaining_rent_amount ?? null,
@@ -3609,7 +3783,31 @@ export class W06BillingService {
       ownerSponsorshipResult,
     ] = await Promise.all([
       client.query<InvoiceProjectionRow>(
-        `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,i.due_date::text,COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.property_id=$1 AND i.lease_id=$2 ORDER BY i.due_date DESC,i.id DESC`,
+        `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,
+                CASE WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)>0
+                          AND uniform_adoption.lease_id IS NOT NULL
+                          AND COALESCE(i.cycle_start_date,i.snapshot_period_start_date) IS NOT NULL
+                     THEN GREATEST(
+                            uniform_adoption.transition_due_date,
+                            uniform_rent_due_date_15(COALESCE(i.cycle_start_date,i.snapshot_period_start_date))
+                          )::text
+                     ELSE i.due_date::text
+                END AS due_date,
+                COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
+                COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
+                GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount
+           FROM invoices i
+           LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+             ON uniform_adoption.property_id=i.property_id
+            AND uniform_adoption.lease_id=i.lease_id
+           LEFT JOIN LATERAL(
+             SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
+               FROM payment_allocations pa
+               LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
+              WHERE pa.invoice_id=i.id
+           ) a ON true
+          WHERE i.property_id=$1 AND i.lease_id=$2
+          ORDER BY due_date DESC,i.id DESC`,
         [lease.property_id, lease.id],
       ),
       client.query<PaymentProjectionRow>(
@@ -3621,7 +3819,24 @@ export class W06BillingService {
         [lease.property_id, lease.id, lease.resident_id],
       ),
       client.query<{ total: string; paid: string; next_due: string | null }>(
-        `SELECT count(*) AS total,count(*) FILTER(WHERE installment_status='paid') AS paid,(min(due_date) FILTER(WHERE installment_status IN('scheduled','issued','partially_paid')))::text AS next_due FROM lease_installments WHERE property_id=$1 AND lease_id=$2`,
+        `SELECT count(*) AS total,
+                count(*) FILTER(WHERE installment.installment_status='paid') AS paid,
+                (
+                  min(
+                    CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                         THEN GREATEST(
+                                uniform_adoption.transition_due_date,
+                                uniform_rent_due_date_15(installment.due_date)
+                              )
+                         ELSE installment.due_date
+                    END
+                  ) FILTER(WHERE installment.installment_status IN('scheduled','issued','partially_paid'))
+                )::text AS next_due
+           FROM lease_installments installment
+           LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+             ON uniform_adoption.property_id=installment.property_id
+            AND uniform_adoption.lease_id=installment.lease_id
+          WHERE installment.property_id=$1 AND installment.lease_id=$2`,
         [lease.property_id, lease.id],
       ),
       client.query<ContractSettlementProjectionRow>(
@@ -3735,7 +3950,8 @@ export class W06BillingService {
                        'checkpoint_code',checkpoint.checkpoint_code,
                        'checkpoint_sequence',checkpoint.checkpoint_sequence,
                        'settlement_mode',checkpoint.settlement_mode,
-                       'due_at',checkpoint.due_at,
+                       'due_at',COALESCE(due_override.effective_due_at,checkpoint.due_at),
+                       'original_due_at',checkpoint.due_at,
                        'minimum_required_amount',checkpoint.minimum_required_amount,
                         'extension_due_at',extension.extension_due_at,
                         'extension_reason',extension.reason
@@ -3744,6 +3960,9 @@ export class W06BillingService {
                 LEFT JOIN lease_settlement_extensions extension
                   ON extension.checkpoint_id=checkpoint.id
                  AND extension.property_id=checkpoint.property_id
+                LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+                  ON due_override.checkpoint_id=checkpoint.id
+                 AND due_override.property_id=checkpoint.property_id
                WHERE checkpoint.property_id=settlement.property_id
                  AND checkpoint.lease_id=settlement.lease_id
                  AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
@@ -3947,6 +4166,7 @@ export class W06BillingService {
       client.query<OwnerSponsoredManagementFeeProjectionRow>(
         `SELECT progress.owner_profile_id,
                 owner_profile.full_name AS owner_name,
+                progress.management_fee_mode,
                 progress.management_fee_payer,
                 progress.management_fee_payer_name,
                 progress.sponsorship_reason,
@@ -4037,6 +4257,7 @@ export class W06BillingService {
         ? {
             owner_profile_id: ownerSponsorshipResult.rows[0].owner_profile_id,
             owner_name: ownerSponsorshipResult.rows[0].owner_name,
+            management_fee_mode: ownerSponsorshipResult.rows[0].management_fee_mode,
             management_fee_payer: ownerSponsorshipResult.rows[0].management_fee_payer,
             management_fee_payer_name: ownerSponsorshipResult.rows[0].management_fee_payer_name,
             sponsorship_reason: ownerSponsorshipResult.rows[0].sponsorship_reason,
@@ -4097,7 +4318,26 @@ export class W06BillingService {
                    invoice.snapshot_building_code,
                    COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
                    COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,
-                    invoice.due_date::text,invoice.total_amount,invoice.issued_at,
+                    COALESCE(
+                      (
+                        COALESCE(
+                          current_checkpoint.current_due_at,
+                          final_checkpoint.final_due_at,
+                          settlement.extension_due_at,
+                          settlement.original_due_at,
+                          CASE WHEN invoice.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
+                               THEN (
+                                 (GREATEST(
+                                    uniform_adoption.transition_due_date,
+                                    uniform_rent_due_date_15(invoice.cycle_start_date)
+                                  ) + 1 + TIME '00:00' - INTERVAL '1 microsecond')
+                                 AT TIME ZONE 'Asia/Jakarta'
+                               )
+                          END
+                        ) AT TIME ZONE 'Asia/Jakarta'
+                      )::date,
+                      invoice.due_date
+                    )::text AS due_date,invoice.total_amount,invoice.issued_at,
                     property.name AS property_name,property.address AS property_address,
                     issuer.display_name AS issued_by_name,
                     GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount,
@@ -4110,16 +4350,22 @@ export class W06BillingService {
                     GREATEST(COALESCE(lease.contract_rent_amount,0)-COALESCE(contract_payment.net,0),0)
                       AS contract_remaining_amount,
                      COALESCE(lease.pricing_source,'standard') AS pricing_source,
+                      COALESCE(
+                        current_checkpoint.current_due_at,
+                        settlement.extension_due_at,
+                        settlement.original_due_at,
+                        CASE WHEN invoice.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
+                             THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(invoice.cycle_start_date))
+                        END
+                      ) AS current_settlement_due_at,
                      COALESCE(
-                       current_checkpoint.current_due_at,
-                       settlement.extension_due_at,
-                       settlement.original_due_at
-                     ) AS current_settlement_due_at,
-                     COALESCE(
-                       final_checkpoint.final_due_at,
-                       settlement.extension_due_at,
-                       settlement.original_due_at
-                     ) AS final_settlement_due_at
+                        final_checkpoint.final_due_at,
+                        settlement.extension_due_at,
+                        settlement.original_due_at,
+                        CASE WHEN invoice.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
+                             THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(invoice.cycle_start_date))
+                        END
+                      ) AS final_settlement_due_at
                 FROM invoices invoice
                JOIN properties property ON property.id=invoice.property_id
                 LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
@@ -4159,15 +4405,21 @@ export class W06BillingService {
                     AND contract_invoice.invoice_purpose='rent'
                     AND contract_invoice.invoice_status<>'void'
                 ) contract_payment ON true
-                LEFT JOIN lease_contract_settlements settlement
-                  ON settlement.property_id=invoice.property_id
-                 AND settlement.lease_id=invoice.lease_id
+                 LEFT JOIN lease_contract_settlements settlement
+                   ON settlement.property_id=invoice.property_id
+                  AND settlement.lease_id=invoice.lease_id
+                 LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+                   ON uniform_adoption.property_id=invoice.property_id
+                  AND uniform_adoption.lease_id=invoice.lease_id
                 LEFT JOIN LATERAL (
-                  SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS current_due_at
+                  SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AS current_due_at
                     FROM lease_settlement_checkpoints checkpoint
                     LEFT JOIN lease_settlement_extensions extension
                       ON extension.property_id=checkpoint.property_id
                      AND extension.checkpoint_id=checkpoint.id
+                    LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+                      ON due_override.property_id=checkpoint.property_id
+                     AND due_override.checkpoint_id=checkpoint.id
                    WHERE checkpoint.property_id=invoice.property_id
                      AND checkpoint.lease_id=invoice.lease_id
                      AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
@@ -4180,11 +4432,14 @@ export class W06BillingService {
                    LIMIT 1
                 ) current_checkpoint ON true
                 LEFT JOIN LATERAL (
-                  SELECT COALESCE(extension.extension_due_at,checkpoint.due_at) AS final_due_at
+                  SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AS final_due_at
                     FROM lease_settlement_checkpoints checkpoint
                     LEFT JOIN lease_settlement_extensions extension
                       ON extension.property_id=checkpoint.property_id
                      AND extension.checkpoint_id=checkpoint.id
+                    LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+                      ON due_override.property_id=checkpoint.property_id
+                     AND due_override.checkpoint_id=checkpoint.id
                    WHERE checkpoint.property_id=invoice.property_id
                      AND checkpoint.lease_id=invoice.lease_id
                      AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
@@ -4244,8 +4499,11 @@ export class W06BillingService {
         code: 'MANAGEMENT_FEE_PAYMENT_LEASE_INVALID',
         message: 'Biaya pengelolaan khusus hanya tersedia untuk hunian tanggungan Owner',
       });
-    const lockedTerm = await client.query<{ id: string }>(
-      `SELECT id
+    const lockedTerm = await client.query<{
+      id: string;
+      management_fee_mode: 'charged' | 'waived';
+    }>(
+      `SELECT id,management_fee_mode
          FROM owner_sponsored_lease_terms
         WHERE property_id=$1 AND lease_id=$2 AND term_status='active'
         FOR UPDATE`,
@@ -4255,6 +4513,11 @@ export class W06BillingService {
       throw new ConflictException({
         code: 'OWNER_SPONSORED_TERM_MISSING',
         message: 'Otoritas hunian tanggungan Owner belum lengkap',
+      });
+    if (lockedTerm.rows[0].management_fee_mode === 'waived')
+      throw new ConflictException({
+        code: 'MANAGEMENT_FEE_PAYMENT_WAIVED',
+        message: 'Biaya pengelolaan untuk hunian ini telah dibebaskan oleh Owner',
       });
     const progress = await client.query<{
       remaining_amount: string;
@@ -4285,7 +4548,7 @@ export class W06BillingService {
       `SELECT settlement.id,settlement.state,settlement.invoice_id,
               settlement.activated_at,settlement.original_due_at,
               settlement.extension_due_at,settlement.extension_reason,
-              settlement.policy_snapshot_id,final_checkpoint.due_at AS final_checkpoint_due_at,
+               settlement.policy_snapshot_id,COALESCE(final_due_override.effective_due_at,final_checkpoint.due_at) AS final_checkpoint_due_at,
               CASE WHEN settlement.policy_snapshot_id IS NULL
                    THEN authority_invoice.total_amount ELSE contract_lease.contract_rent_amount END AS total_amount,
               CASE WHEN settlement.policy_snapshot_id IS NULL
@@ -4303,11 +4566,14 @@ export class W06BillingService {
          JOIN leases contract_lease
            ON contract_lease.id=settlement.lease_id
           AND contract_lease.property_id=settlement.property_id
-         LEFT JOIN lease_settlement_checkpoints final_checkpoint
+          LEFT JOIN lease_settlement_checkpoints final_checkpoint
            ON final_checkpoint.property_id=settlement.property_id
           AND final_checkpoint.lease_id=settlement.lease_id
           AND final_checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
-          AND final_checkpoint.checkpoint_code='final_settlement'
+           AND final_checkpoint.checkpoint_code='final_settlement'
+          LEFT JOIN lease_settlement_checkpoint_due_date_overrides final_due_override
+            ON final_due_override.property_id=final_checkpoint.property_id
+           AND final_due_override.checkpoint_id=final_checkpoint.id
          LEFT JOIN LATERAL (
            SELECT COALESCE(sum(payment_allocation.allocated_amount
                     - COALESCE(reversal.reversed_amount,0)),0) AS net
@@ -4606,7 +4872,10 @@ export class W06BillingService {
       full_payment_required:
         !isPaid && (row.termination_status === 'pending' || finalDeadlinePassed),
       extension_available:
-        !isPaid && !row.extension_due_at && overdue && row.termination_status !== 'pending',
+        !isPaid &&
+        Boolean(row.activated_at) &&
+        !row.extension_due_at &&
+        row.termination_status !== 'pending',
       payment_promise: null,
       termination_case: row.termination_case_id
         ? {
@@ -4659,24 +4928,15 @@ export class W06BillingService {
       gracePeriodDays: Number(row.grace_period_days ?? 3),
       checkpoints,
     });
-    const firstCheckpoint = projection.checkpoints.find(
-      (checkpoint) => checkpoint.code === 'checkpoint_1',
-    );
-    if (!firstCheckpoint) throw new RangeError('V2 settlement checkpoint one is missing');
     const currentCheckpointInput = (row.settlement_checkpoints ?? []).find(
       (checkpoint) => checkpoint.id === projection.currentCheckpoint.id,
     );
     const initialRentCredit = paymentBreakdown.initialRentCredit;
-    const requiredAdditionalAmount = Math.max(
-      0,
-      firstCheckpoint.requiredAmount - initialRentCredit,
+    const firstPaymentCheckpoint = summarizeFirstPaymentCheckpoint(
+      projection.checkpoints,
+      initialRentCredit,
+      paymentBreakdown.additionalRentPayments,
     );
-    const firstCheckpointStatus =
-      firstCheckpoint.status === 'met' || firstCheckpoint.status === 'met_early'
-        ? firstCheckpoint.status
-        : firstCheckpoint.status === 'pending'
-          ? 'pending'
-          : 'overdue';
     const isPaid = projection.outstandingAmount === 0;
     const dueAt = projection.currentCheckpoint.effectiveDueAt;
     const daysUntilDue = Math.ceil(
@@ -4734,11 +4994,11 @@ export class W06BillingService {
       initial_rent_credit: initialRentCredit,
       payment_allocated: paymentBreakdown.additionalRentPayments,
       first_payment_checkpoint: {
-        due_at: firstCheckpoint.dueAt.toISOString(),
-        required_additional_amount: requiredAdditionalAmount,
-        additional_payment_received: paymentBreakdown.additionalRentPayments,
-        remaining_amount: firstCheckpoint.shortfallAmount,
-        status: firstCheckpointStatus,
+        due_at: firstPaymentCheckpoint.dueAt?.toISOString() ?? null,
+        required_additional_amount: firstPaymentCheckpoint.requiredAdditionalAmount,
+        additional_payment_received: firstPaymentCheckpoint.additionalPaymentReceived,
+        remaining_amount: firstPaymentCheckpoint.remainingAmount,
+        status: firstPaymentCheckpoint.status,
       },
       deposit_offset_amount: this.money(row.deposit_offset_amount),
       outstanding_amount: projection.outstandingAmount,
@@ -4748,28 +5008,19 @@ export class W06BillingService {
       termination_eligible: projection.terminationEligible,
       partial_payment_allowed: projection.partialPaymentAllowed,
       full_payment_required: projection.exactFinalPaymentRequired,
-      extension_available:
-        !isPaid &&
-        !checkpoints.some((checkpoint) => checkpoint.extensionDueAt) &&
-        authoritativeNow.getTime() <
-          projection.currentCheckpoint.dueAt.getTime() + 14 * 24 * 60 * 60 * 1000 &&
-        ['overdue_grace', 'admin_action_required', 'termination_eligible'].includes(
-          projection.stage,
-        ) &&
-        row.termination_status !== 'pending',
-      payment_promise:
-        row.payment_promise?.checkpoint_id === projection.currentCheckpoint.id
-          ? {
-              id: row.payment_promise.id,
-              promised_amount: this.money(row.payment_promise.promised_amount),
-              promised_payment_date: row.payment_promise.promised_payment_date,
-              note: row.payment_promise.note,
-              recorded_at:
-                row.payment_promise.recorded_at instanceof Date
-                  ? row.payment_promise.recorded_at.toISOString()
-                  : new Date(row.payment_promise.recorded_at).toISOString(),
-            }
-          : null,
+      extension_available: !isPaid && row.termination_status !== 'pending',
+      payment_promise: row.payment_promise
+        ? {
+            id: row.payment_promise.id,
+            promised_amount: this.money(row.payment_promise.promised_amount),
+            promised_payment_date: row.payment_promise.promised_payment_date,
+            note: row.payment_promise.note,
+            recorded_at:
+              row.payment_promise.recorded_at instanceof Date
+                ? row.payment_promise.recorded_at.toISOString()
+                : new Date(row.payment_promise.recorded_at).toISOString(),
+          }
+        : null,
       termination_case: row.termination_case_id
         ? {
             id: row.termination_case_id,
@@ -5376,6 +5627,9 @@ export class W06BillingService {
          ON resident.id=payment.resident_id AND resident.property_id=payment.property_id
        JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
        JOIN rooms room ON room.id=lease.room_id AND room.property_id=payment.property_id
+       LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+         ON uniform_adoption.property_id=payment.property_id
+        AND uniform_adoption.lease_id=payment.lease_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
        LEFT JOIN users issuer ON issuer.id=$3
        LEFT JOIN booking_lead_payment_commitments booking_commitment
@@ -5458,11 +5712,14 @@ export class W06BillingService {
        LEFT JOIN LATERAL (
          SELECT COALESCE(
            (
-             SELECT COALESCE(extension.extension_due_at,checkpoint.due_at)
-             FROM lease_settlement_checkpoints checkpoint
-             LEFT JOIN lease_settlement_extensions extension
-               ON extension.checkpoint_id=checkpoint.id
-              AND extension.property_id=checkpoint.property_id
+              SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at)
+              FROM lease_settlement_checkpoints checkpoint
+              LEFT JOIN lease_settlement_extensions extension
+                ON extension.checkpoint_id=checkpoint.id
+               AND extension.property_id=checkpoint.property_id
+              LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+                ON due_override.checkpoint_id=checkpoint.id
+               AND due_override.property_id=checkpoint.property_id
              WHERE checkpoint.property_id=payment.property_id
                AND checkpoint.lease_id=payment.lease_id
                AND checkpoint.checkpoint_code='final_settlement'
@@ -5474,14 +5731,29 @@ export class W06BillingService {
              WHERE settlement.property_id=payment.property_id
                AND settlement.lease_id=payment.lease_id
              LIMIT 1
-           )
+           ),
+           CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                      AND lease.start_date IS NOT NULL
+                      AND lease.term_months IS NOT NULL
+                      AND lease.term_months > 0
+                THEN (
+                  (GREATEST(
+                     uniform_adoption.transition_due_date,
+                     uniform_rent_due_date_15(
+                       (lease.start_date + ((lease.term_months - 1) * INTERVAL '1 month'))::date
+                     )
+                   ) + 1 + TIME '00:00' - INTERVAL '1 microsecond')
+                  AT TIME ZONE 'Asia/Jakarta'
+                )
+           END
          ) AS final_settlement_due_at
        ) settlement_deadline ON true
        WHERE payment.id=$1 AND payment.property_id=$2
        GROUP BY payment.id,property.id,resident.id,lease.id,room.id,building.id,issuer.id,
-                booking_commitment.id,
+                 booking_commitment.id,
                  rent_contract.fully_paid,latest_rent_payment.id,
                  rent_payment_order.rent_payment_sequence,rent_ledger.total_rent_received,
+                 uniform_adoption.lease_id,uniform_adoption.transition_due_date,
                  settlement_deadline.final_settlement_due_at`,
       [sourcePaymentId, propertyId, actorId],
     );

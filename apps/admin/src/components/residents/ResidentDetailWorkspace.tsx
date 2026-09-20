@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ApiError } from "@granada-kost/api-client";
 import type { FileResponse } from "@granada-kost/domain";
 import {
   ArrowLeft,
@@ -42,6 +43,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import {
   Dialog,
@@ -68,6 +70,7 @@ import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/use
 import { useResidentBilling } from "@/hooks/useAdminBilling";
 import {
   downloadAdminContractPaidDocument,
+  downloadAdminOriginalReceiptDocument,
   downloadAdminReceiptDocument,
   type BillingEvidence,
   type ResidentBilling,
@@ -131,6 +134,21 @@ function jakartaDateInput(value = new Date()): string {
   const part = (type: "year" | "month" | "day") =>
     parts.find((item) => item.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function settlementActionError(error: unknown, action: "extension" | "promise"): string {
+  const code = ApiError.isApiError(error) ? error.code : null;
+  if (code === "CONTRACT_SETTLEMENT_ALREADY_PAID")
+    return "Kontrak ini sudah lunas sehingga tidak memerlukan perpanjangan.";
+  if (code === "LEASE_PAYMENT_PROMISE_AMOUNT_EXCEEDS_OUTSTANDING")
+    return "Nominal janji bayar tidak boleh melebihi sisa tagihan kontrak.";
+  if (code === "CONTRACT_SETTLEMENT_EXTENSION_NOT_DUE")
+    return action === "promise"
+      ? "Janji bayar hanya dapat dicatat setelah salah satu tenggat pembayaran terlewati."
+      : "Belum ada sisa tagihan yang dapat diperpanjang.";
+  return action === "promise"
+    ? "Janji bayar belum dapat dicatat. Periksa kembali tanggal, nominal, dan catatan."
+    : "Perpanjangan belum dapat dicatat. Periksa kembali tanggal dan alasan.";
 }
 
 const jakartaStartTimestamp = (date: string): string => `${date}T00:00:00+07:00`;
@@ -780,7 +798,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           ) : null}
           {canManageTermination && currentTenancy && !checkoutCommand ? (
             <Button
-              variant="warning"
+              variant="info"
               className="min-h-11"
               onClick={() => setLeaseCorrectionOpen(true)}
             >
@@ -1094,8 +1112,16 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         <section aria-labelledby="tenancy-summary" className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
           <Card>
             <CardHeader>
-              <CardTitle id="tenancy-summary" className="flex items-center gap-2 text-base">
+              <CardTitle
+                id="tenancy-summary"
+                className="flex flex-wrap items-center gap-2 text-base"
+              >
                 <Building2 className="h-4 w-4 text-primary" /> Penyewaan dan kamar
+                {currentTenancy?.commercialMode === "owner_sponsored" ? (
+                  <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                    Hunian Tanggungan Owner
+                  </Badge>
+                ) : null}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1140,6 +1166,36 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     ["Tanggal berakhir", formatResidentDetailDate(currentTenancy.endDate)],
                     ["Durasi sewa", `${currentTenancy.termMonths} bulan`],
                     ["Skema pelunasan", paymentPlan[currentTenancy.paymentPlanType]],
+                    [
+                      "Sumber tarif",
+                      currentTenancy.pricingSource === "owner_sponsored"
+                        ? "Hunian Tanggungan Owner"
+                        : currentTenancy.pricingSource === "negotiated"
+                          ? "Kesepakatan khusus"
+                          : "Tarif standar",
+                    ],
+                    ...(currentTenancy.commercialMode === "owner_sponsored"
+                      ? [
+                          [
+                            "Ketentuan biaya pengelolaan",
+                            billing.isLoading
+                              ? "Memuat ketentuan..."
+                              : billing.data?.owner_sponsorship?.management_fee_mode === "waived"
+                                ? "Dibebaskan — tanpa tagihan biaya pengelolaan"
+                                : "Wajib dibayar — tanpa jatuh tempo dan denda",
+                          ] as [string, string],
+                          [
+                            "Penanggung biaya pengelolaan",
+                            billing.isLoading
+                              ? "Memuat penanggung..."
+                              : billing.data?.owner_sponsorship?.management_fee_mode === "waived"
+                                ? "Tidak berlaku"
+                                : billing.data?.owner_sponsorship?.management_fee_payer_name ||
+                                  billing.data?.owner_sponsorship?.owner_name ||
+                                  "Belum ditentukan",
+                          ] as [string, string],
+                        ]
+                      : []),
                   ]}
                 />
               ) : billing.data ? (
@@ -1191,6 +1247,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   settlement={settlement}
                   summary={summary}
                   propertyId={currentPropertyId}
+                  leaseEnd={billing.data?.lease.end_date ?? currentTenancy?.endDate ?? null}
                 />
               ) : summary && billing.data?.owner_sponsorship ? (
                 <div className="space-y-4">
@@ -1201,21 +1258,30 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                           Hunian Tanggungan Owner
                         </p>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Sewa kamar Rp0. Biaya pengelolaan tetap berjalan tanpa jatuh tempo dan
-                          tanpa denda keterlambatan.
+                          {billing.data.owner_sponsorship.management_fee_mode === "waived"
+                            ? "Sewa kamar Rp0 dan biaya pengelolaan dibebaskan sesuai ketentuan owner."
+                            : "Sewa kamar Rp0. Biaya pengelolaan tetap berjalan tanpa jatuh tempo dan denda keterlambatan."}
                         </p>
                       </div>
                       <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
-                        {billing.data.owner_sponsorship.payment_status === "paid"
-                          ? "Lunas"
-                          : billing.data.owner_sponsorship.payment_status === "partially_paid"
-                            ? "Dibayar sebagian"
-                            : "Belum dibayar"}
+                        {billing.data.owner_sponsorship.payment_status === "waived"
+                          ? "Biaya dibebaskan"
+                          : billing.data.owner_sponsorship.payment_status === "paid"
+                            ? "Lunas"
+                            : billing.data.owner_sponsorship.payment_status === "partially_paid"
+                              ? "Dibayar sebagian"
+                              : "Belum dibayar"}
                       </Badge>
                     </div>
                     <DefinitionGrid
                       rows={[
                         ["Owner penanggung", billing.data.owner_sponsorship.owner_name],
+                        [
+                          "Ketentuan biaya pengelolaan",
+                          billing.data.owner_sponsorship.management_fee_mode === "waived"
+                            ? "Dibebaskan"
+                            : "Wajib dibayar tanpa jatuh tempo",
+                        ],
                         [
                           "Biaya pengelolaan per bulan",
                           rupiah(billing.data.owner_sponsorship.snapshot_monthly_management_fee),
@@ -1233,7 +1299,9 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                       ]}
                     />
                   </div>
-                  {canManageBilling && currentPropertyId ? (
+                  {canManageBilling &&
+                  currentPropertyId &&
+                  billing.data.owner_sponsorship.management_fee_mode === "charged" ? (
                     <RecordPaymentDialog
                       data={billing.data}
                       propertyId={currentPropertyId}
@@ -2217,15 +2285,21 @@ function ContractSettlementSummary({
   settlement,
   summary,
   propertyId,
+  leaseEnd,
 }: {
   settlement: NonNullable<ResidentBilling["contract_settlement"]>;
   summary: ResidentBilling["summary"];
   propertyId: string | null;
+  leaseEnd: string | null;
 }) {
-  const settlementDueAt = settlement.effective_due_at ?? settlement.final_settlement_due_at;
-  const dueLabel = settlementDueAt
-    ? formatResidentDetailTimestamp(settlementDueAt)
-    : "Dihitung setelah aktivasi";
+  const currentDueAt = settlement.effective_due_at;
+  const finalDueAt = settlement.final_settlement_due_at;
+  const dueLabel =
+    settlement.status === "awaiting_activation"
+      ? "Menunggu aktivasi kamar"
+      : currentDueAt
+        ? formatResidentDetailTimestamp(currentDueAt)
+        : "Belum tersedia";
   const paidCredit = settlement.initial_rent_credit + settlement.payment_allocated;
   const directGuidance =
     settlement.status === "open" ? openSettlementGuidance(settlement, dueLabel) : null;
@@ -2240,8 +2314,10 @@ function ContractSettlementSummary({
           </p>
           <p className="mt-1 text-xs font-medium text-primary">
             {settlement.policy_version === "legacy_v1"
-              ? "Kebijakan kontrak lama (Legacy V1)"
-              : "Kebijakan checkpoint kontrak (V2)"}
+              ? "Kebijakan kontrak lama"
+              : settlement.policy_version === "lease_settlement_v4"
+                ? "Kebijakan jatuh tempo kontrak tanggal 15"
+                : "Kebijakan checkpoint kontrak"}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -2267,7 +2343,22 @@ function ContractSettlementSummary({
           value={rupiah(settlement.outstanding_amount)}
           highlight
         />
-        <SummaryMetric label="Jatuh Tempo Tagihan" value={dueLabel} />
+        {settlement.status === "paid" ? (
+          <SummaryMetric
+            label="Jadwal check-out kontrak"
+            value={leaseEnd ? formatResidentDetailDate(leaseEnd) : "Belum tersedia"}
+          />
+        ) : (
+          <>
+            <SummaryMetric label="Tenggat pembayaran berikutnya" value={dueLabel} />
+            <SummaryMetric
+              label="Batas pelunasan kontrak"
+              value={
+                finalDueAt ? formatResidentDetailTimestamp(finalDueAt) : "Menunggu aktivasi kamar"
+              }
+            />
+          </>
+        )}
       </div>
       <FirstPaymentCheckpointCard settlement={settlement} />
       {directGuidance ? (
@@ -2438,14 +2529,23 @@ function ContractInvoicePanel({
             value={rupiah(settlement.outstanding_amount)}
             highlight
           />
-          <SummaryMetric
-            label="Jatuh Tempo Tagihan"
-            value={
-              invoiceSettlementDueAt
-                ? formatResidentDetailTimestamp(invoiceSettlementDueAt)
-                : "Menunggu aktivasi"
-            }
-          />
+          {settlement.status === "paid" ? (
+            <SummaryMetric
+              label="Jadwal check-out kontrak"
+              value={formatResidentDetailDate(data.lease.end_date)}
+            />
+          ) : (
+            <SummaryMetric
+              label="Tenggat pembayaran berikutnya"
+              value={
+                settlement.status === "awaiting_activation"
+                  ? "Menunggu aktivasi kamar"
+                  : invoiceSettlementDueAt
+                    ? formatResidentDetailTimestamp(invoiceSettlementDueAt)
+                    : "Belum tersedia"
+              }
+            />
+          )}
         </div>
         <div className="mt-3">
           <FirstPaymentCheckpointCard settlement={settlement} />
@@ -2480,20 +2580,23 @@ function ContractInvoicePanel({
             onRecorded={onPaymentRecorded}
           />
         ) : null}
-        {canManageTermination && settlement.extension_available ? (
+        {canManageTermination && settlement.outstanding_amount > 0 && !termination ? (
           <ExtendSettlementDialog
             leaseId={data.lease.id}
             propertyId={propertyId}
+            finalDueAt={settlement.extension_due_at ?? settlement.final_settlement_due_at}
+            currentReason={settlement.extension_reason}
             onChanged={onChanged}
           />
         ) : null}
-        {canManageTermination &&
-        !termination &&
-        ["overdue", "extended", "admin_action_required"].includes(settlement.status) ? (
+        {canManageTermination && !termination && settlement.outstanding_amount > 0 ? (
           <RecordPaymentPromiseDialog
             leaseId={data.lease.id}
             propertyId={propertyId}
-            suggestedAmount={settlement.checkpoint_shortfall_amount}
+            suggestedAmount={
+              settlement.checkpoint_shortfall_amount || settlement.outstanding_amount
+            }
+            existingPromise={settlement.payment_promise}
             onChanged={onChanged}
           />
         ) : null}
@@ -2552,21 +2655,35 @@ function ContractInvoicePanel({
 function ExtendSettlementDialog({
   leaseId,
   propertyId,
+  finalDueAt,
+  currentReason,
   onChanged,
 }: {
   leaseId: string;
   propertyId: string | null;
+  finalDueAt: string | null;
+  currentReason: string | null;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [days, setDays] = useState(14);
-  const [reason, setReason] = useState("");
+  const [extensionDate, setExtensionDate] = useState(() =>
+    finalDueAt ? jakartaDateInput(new Date(finalDueAt)) : jakartaDateInput(),
+  );
+  const [reason, setReason] = useState(currentReason ?? "");
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const mutation = useExtendContractSettlement(propertyId);
   const submit = () => {
-    if (!propertyId || reason.trim().length < 3) return;
+    if (!propertyId || !extensionDate || reason.trim().length < 3) return;
     mutation.mutate(
-      { leaseId, input: { property_id: propertyId, extension_days: days, reason }, idempotencyKey },
+      {
+        leaseId,
+        input: {
+          property_id: propertyId,
+          extension_due_date: extensionDate,
+          reason: reason.trim(),
+        },
+        idempotencyKey,
+      },
       {
         onSuccess: () => {
           setOpen(false);
@@ -2578,29 +2695,39 @@ function ExtendSettlementDialog({
     );
   };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <Button className="min-h-11" variant="warning" onClick={() => setOpen(true)}>
-        <Clock3 className="mr-2 h-4 w-4" /> Beri perpanjangan
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setExtensionDate(
+            finalDueAt ? jakartaDateInput(new Date(finalDueAt)) : jakartaDateInput(),
+          );
+          setReason(currentReason ?? "");
+        }
+      }}
+    >
+      <Button className="min-h-11" variant="info" onClick={() => setOpen(true)}>
+        <Clock3 className="mr-2 h-4 w-4" />
+        {currentReason ? "Ubah batas pelunasan" : "Beri perpanjangan"}
       </Button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Perpanjang tenggat pelunasan</DialogTitle>
           <DialogDescription>
-            Satu kali perpanjangan saja, paling lama 14 hari. Alasan akan tercatat dalam riwayat.
+            Tetapkan tanggal hasil kesepakatan Admin dan penghuni. Batas awal tetap tersimpan dan
+            setiap perubahan tetap tercatat sehingga kesepakatan dapat diperbarui kembali.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <label className="block text-sm font-medium">
-            Lama perpanjangan
-            <Input
-              className="mt-2 min-h-11"
-              type="number"
-              min={1}
-              max={14}
-              value={days}
-              onChange={(event) => setDays(Number(event.target.value))}
-            />
-          </label>
+          <HeroUiDatePicker
+            id={`contract-settlement-extension-${leaseId}`}
+            label="Batas pelunasan baru"
+            value={extensionDate}
+            required
+            disabled={mutation.isPending}
+            onChange={(value) => setExtensionDate(value ?? "")}
+          />
           <label className="block text-sm font-medium">
             Alasan perpanjangan
             <textarea
@@ -2612,8 +2739,7 @@ function ExtendSettlementDialog({
           </label>
           {mutation.isError ? (
             <p role="alert" className="text-sm text-destructive">
-              Perpanjangan belum dapat dicatat. Pastikan tagihan telah jatuh tempo dan alasan telah
-              diisi.
+              {settlementActionError(mutation.error, "extension")}
             </p>
           ) : null}
         </div>
@@ -2623,7 +2749,7 @@ function ExtendSettlementDialog({
           </Button>
           <Button
             className="min-h-11"
-            disabled={mutation.isPending || reason.trim().length < 3 || days < 1 || days > 14}
+            disabled={mutation.isPending || reason.trim().length < 3 || !extensionDate}
             onClick={submit}
           >
             {mutation.isPending ? "Menyimpan..." : "Simpan perpanjangan"}
@@ -2638,24 +2764,25 @@ function RecordPaymentPromiseDialog({
   leaseId,
   propertyId,
   suggestedAmount,
+  existingPromise,
   onChanged,
 }: {
   leaseId: string;
   propertyId: string | null;
   suggestedAmount: number;
+  existingPromise: NonNullable<ResidentBilling["contract_settlement"]>["payment_promise"];
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(String(suggestedAmount));
-  const [promisedDate, setPromisedDate] = useState("");
-  const [note, setNote] = useState("");
+  const [amount, setAmount] = useState(existingPromise?.promised_amount ?? suggestedAmount);
+  const [promisedDate, setPromisedDate] = useState(existingPromise?.promised_payment_date ?? "");
+  const [note, setNote] = useState(existingPromise?.note ?? "");
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   const mutation = useRecordLeasePaymentPromise(propertyId);
-  const numericAmount = Number(amount);
   const valid =
     Boolean(propertyId) &&
-    Number.isSafeInteger(numericAmount) &&
-    numericAmount > 0 &&
+    Number.isSafeInteger(amount) &&
+    amount > 0 &&
     Boolean(promisedDate) &&
     note.trim().length >= 3;
   const submit = () => {
@@ -2665,7 +2792,7 @@ function RecordPaymentPromiseDialog({
         leaseId,
         input: {
           property_id: propertyId,
-          promised_amount: numericAmount,
+          promised_amount: amount,
           promised_payment_date: promisedDate,
           note: note.trim(),
         },
@@ -2687,15 +2814,22 @@ function RecordPaymentPromiseDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setAmount(String(suggestedAmount));
+        if (next) {
+          setAmount(existingPromise?.promised_amount ?? suggestedAmount);
+          setPromisedDate(existingPromise?.promised_payment_date ?? "");
+          setNote(existingPromise?.note ?? "");
+        }
       }}
     >
-      <Button className="min-h-11" variant="outline" onClick={() => setOpen(true)}>
-        <MessageSquare className="mr-2 h-4 w-4" /> Catat janji bayar
+      <Button className="min-h-11" variant="info" onClick={() => setOpen(true)}>
+        <MessageSquare className="mr-2 h-4 w-4" />
+        {existingPromise ? "Ubah janji bayar" : "Catat janji bayar"}
       </Button>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Catat janji bayar penghuni</DialogTitle>
+          <DialogTitle>
+            {existingPromise ? "Ubah janji bayar penghuni" : "Catat janji bayar penghuni"}
+          </DialogTitle>
           <DialogDescription>
             Catatan operasional ini tidak mengubah status overdue, saldo, tenggat, atau kelayakan
             tindakan Admin. Gunakan perpanjangan resmi bila tenggat memang diubah.
@@ -2704,29 +2838,29 @@ function RecordPaymentPromiseDialog({
         <div className="space-y-4">
           <label className="block text-sm font-medium">
             Nominal yang dijanjikan
-            <Input
+            <CurrencyInput
               className="mt-2 min-h-11"
-              inputMode="numeric"
-              type="number"
+              value={amount}
+              onValueChange={setAmount}
               min={1}
               max={Number.MAX_SAFE_INTEGER}
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              formatOnChange
             />
           </label>
-          <label className="block text-sm font-medium">
-            Tanggal rencana pembayaran
-            <Input
-              className="mt-2 min-h-11"
-              type="date"
-              value={promisedDate}
-              onChange={(event) => setPromisedDate(event.target.value)}
-            />
-          </label>
+          <HeroUiDatePicker
+            id={`payment-promise-date-${leaseId}`}
+            label="Tanggal rencana pembayaran"
+            value={promisedDate}
+            required
+            disabled={mutation.isPending}
+            forceBottom
+            onChange={(value) => setPromisedDate(value ?? "")}
+          />
           <label className="block text-sm font-medium">
             Catatan komunikasi
             <textarea
-              className="mt-2 min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
+              className="mt-2 min-h-16 w-full rounded-md border border-input bg-background p-3 text-sm"
+              rows={2}
               value={note}
               onChange={(event) => setNote(event.target.value)}
               maxLength={2000}
@@ -2734,8 +2868,7 @@ function RecordPaymentPromiseDialog({
           </label>
           {mutation.isError ? (
             <p role="alert" className="text-sm text-destructive">
-              Janji bayar belum dapat dicatat. Pastikan checkpoint telah terlambat dan nominal tidak
-              melebihi sisa kontrak.
+              {settlementActionError(mutation.error, "promise")}
             </p>
           ) : null}
         </div>
@@ -3345,7 +3478,7 @@ function ContractPaidDocumentDownloadButton({
   propertyId: string;
   document: NonNullable<NonNullable<ResidentBilling["contract_settlement"]>["paid_document"]>;
 }) {
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"latest" | "original" | null>(null);
   const [error, setError] = useState(false);
 
   const download = () => {
@@ -3396,17 +3529,15 @@ function ReceiptDownloadButton({
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(false);
 
-  const download = () => {
+  const download = (version: "latest" | "original") => {
     if (!propertyId || downloading) return;
-    setDownloading(true);
+    setDownloading(version);
     setError(false);
-    void downloadAdminReceiptDocument(
-      propertyId,
-      receiptId,
-      `KWT-${paymentCode}${isContractSettled ? "-LUNAS" : ""}`,
-    )
+    const request =
+      version === "original" ? downloadAdminOriginalReceiptDocument : downloadAdminReceiptDocument;
+    void request(propertyId, receiptId, `KWT-${paymentCode}${isContractSettled ? "-LUNAS" : ""}`)
       .catch(() => setError(true))
-      .finally(() => setDownloading(false));
+      .finally(() => setDownloading(null));
   };
 
   return (
@@ -3414,17 +3545,26 @@ function ReceiptDownloadButton({
       <Button
         className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
         variant="success"
-        disabled={!propertyId || downloading}
-        onClick={download}
+        disabled={!propertyId || Boolean(downloading)}
+        onClick={() => download("latest")}
       >
         <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
-        {downloading
+        {downloading === "latest"
           ? "Menyiapkan..."
           : documentKind === "refund"
             ? "Unduh kuitansi refund"
             : documentKind === "settlement"
               ? "Unduh kuitansi pelunasan"
-              : "Unduh kuitansi pembayaran"}
+              : "Unduh kuitansi terbaru"}
+      </Button>
+      <Button
+        className="min-h-10 w-full min-w-0 px-3 text-xs sm:text-sm"
+        variant="outline"
+        disabled={!propertyId || Boolean(downloading)}
+        onClick={() => download("original")}
+      >
+        <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        {downloading === "original" ? "Menyiapkan dokumen asli..." : "Unduh dokumen asli"}
       </Button>
       {error ? (
         <span role="alert" className="text-xs text-destructive">

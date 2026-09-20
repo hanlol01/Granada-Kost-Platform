@@ -26,6 +26,7 @@ export type HeroUiDatePickerProps = {
   className?: string;
   triggerClassName?: string;
   validationTarget?: boolean;
+  forceBottom?: boolean;
 };
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -98,6 +99,7 @@ export function HeroUiDatePicker({
   className,
   triggerClassName,
   validationTarget = false,
+  forceBottom = false,
 }: HeroUiDatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const [inputValue, setInputValue] = React.useState(() => {
@@ -228,7 +230,15 @@ export function HeroUiDatePicker({
               <CalendarDays className="size-4" aria-hidden="true" />
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" sideOffset={8} className="w-auto p-0">
+          <PopoverContent
+            align="start"
+            side="bottom"
+            avoidCollisions={!forceBottom}
+            sideOffset={8}
+            collisionPadding={16}
+            sticky="always"
+            className="max-h-[calc(100vh-2rem)] w-auto overflow-y-auto p-0"
+          >
             <Calendar
               mode="single"
               selected={selected}

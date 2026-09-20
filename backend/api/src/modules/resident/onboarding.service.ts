@@ -160,6 +160,7 @@ export class OnboardingService {
       });
     const stagedPaymentEntries = dto.payment_entries ?? [];
     const commercialMode = dto.commercial_mode ?? 'rent';
+    const managementFeeMode = dto.management_fee_mode ?? 'charged';
     if (commercialMode === 'owner_sponsored') {
       if (dto.booking_lead_id)
         throw new BadRequestException({
@@ -176,16 +177,27 @@ export class OnboardingService {
           code: 'OWNER_SPONSORED_INITIAL_PAYMENT_NOT_ALLOWED',
           message: 'Hunian tanggungan Owner tidak memiliki pembayaran sewa awal atau deposit',
         });
-      if (
-        !dto.sponsoring_owner_profile_id ||
-        !dto.management_fee_payer ||
-        !dto.owner_sponsorship_reason?.trim() ||
-        (dto.management_fee_payer === 'other' && !dto.management_fee_payer_name?.trim())
-      )
+      if (!dto.sponsoring_owner_profile_id || !dto.owner_sponsorship_reason?.trim())
         throw new BadRequestException({
           code: 'OWNER_SPONSORED_AUTHORITY_REQUIRED',
-          message:
-            'Owner penanggung, penanggung biaya pengelolaan, dan alasan hunian wajib dilengkapi',
+          message: 'Owner penanggung dan alasan hunian wajib dilengkapi',
+        });
+      if (
+        managementFeeMode === 'charged' &&
+        (!dto.management_fee_payer ||
+          (dto.management_fee_payer === 'other' && !dto.management_fee_payer_name?.trim()))
+      )
+        throw new BadRequestException({
+          code: 'OWNER_SPONSORED_MANAGEMENT_FEE_PAYER_REQUIRED',
+          message: 'Penanggung biaya pengelolaan wajib dilengkapi',
+        });
+      if (
+        managementFeeMode === 'waived' &&
+        (dto.management_fee_payer || dto.management_fee_payer_name?.trim())
+      )
+        throw new BadRequestException({
+          code: 'OWNER_SPONSORED_MANAGEMENT_FEE_WAIVER_INVALID',
+          message: 'Hunian tanpa biaya pengelolaan tidak memerlukan pihak penanggung pembayaran',
         });
     }
     if (dto.booking_lead_id && stagedPaymentEntries.length > 0)
@@ -716,6 +728,7 @@ export class OnboardingService {
             ownerSponsoredFee = calculateOwnerSponsoredManagementFee(
               Number(room.management_fee_amount ?? 0),
               dto.term_months,
+              managementFeeMode,
             );
           } catch (error) {
             throw new BadRequestException({
@@ -1014,12 +1027,12 @@ export class OnboardingService {
              accepted_terms_version,notes,created_by_user_id,committed_at,
              snapshot_pricing_tier,snapshot_reference_monthly_price,snapshot_monthly_price,
              pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,
-             commercial_mode,sponsoring_owner_profile_id,management_fee_payer,
-             management_fee_payer_name,owner_sponsorship_reason,
-             snapshot_monthly_management_fee,projected_management_fee_amount
+              commercial_mode,management_fee_mode,sponsoring_owner_profile_id,management_fee_payer,
+              management_fee_payer_name,owner_sponsorship_reason,
+              snapshot_monthly_management_fee,projected_management_fee_amount
            ) VALUES(
              $1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-             $19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now(),$27,$28,$29,$30,$31,$32,$33
+              $19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now(),$27,$28,$29,$30,$31,$32,$33,$34
            ) RETURNING id`,
           [
             dto.property_id,
@@ -1049,16 +1062,17 @@ export class OnboardingService {
             commercial.pricingSource,
             commercial.pricingAgreementReason,
             commercialMode,
+            commercialMode === 'owner_sponsored' ? managementFeeMode : null,
             dto.sponsoring_owner_profile_id ?? null,
-            dto.management_fee_payer ?? null,
-            dto.management_fee_payer_name?.trim() || null,
+            managementFeeMode === 'charged' ? (dto.management_fee_payer ?? null) : null,
+            managementFeeMode === 'charged' ? dto.management_fee_payer_name?.trim() || null : null,
             dto.owner_sponsorship_reason?.trim() || null,
             ownerSponsoredFee?.monthlyManagementFee ?? null,
             ownerSponsoredFee?.projectedManagementFeeAmount ?? null,
           ],
         );
         const lease = await client.query<{ id: string }>(
-          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id,commercial_mode) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,25,$6::date,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,$23,$24,$25,$26,now(),now(),$26,$26,$27) RETURNING id`,
+          `INSERT INTO leases(property_id,lease_code,resident_id,room_id,occupancy_id,kost_type_id,lease_status,start_date,end_date,billing_cycle,billing_anchor_day,next_billing_date,snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number,snapshot_kost_type_name,booking_lead_id,onboarding_commitment_id,term_months,payment_plan_type,contract_rent_amount,dp_required_amount,security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id,commercial_mode) VALUES($1,$2,$3,$4,NULL,$5,'awaiting_activation',$6,$7,$8,15,CASE WHEN EXTRACT(DAY FROM $6::date) <= 15 THEN date_trunc('month',$6::date)::date + 14 ELSE (date_trunc('month',$6::date) + INTERVAL '1 month')::date + 14 END,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::date,$23,$24,$25,$26,now(),now(),$26,$26,$27) RETURNING id`,
           [
             dto.property_id,
             `ONB-${Date.now()}`,
@@ -1140,9 +1154,9 @@ export class OnboardingService {
             `INSERT INTO owner_sponsored_lease_terms(
                property_id,lease_id,onboarding_commitment_id,resident_id,room_id,
                owner_profile_id,ownership_kind,ownership_assignment_id,
-               management_fee_payer,management_fee_payer_name,sponsorship_reason,
+               management_fee_mode,management_fee_payer,management_fee_payer_name,sponsorship_reason,
                snapshot_monthly_management_fee,projected_management_fee_amount,created_by_user_id
-             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
             [
               dto.property_id,
               lease.rows[0].id,
@@ -1152,8 +1166,11 @@ export class OnboardingService {
               ownerSponsorshipAssignment!.owner_profile_id,
               ownerSponsorshipAssignment!.ownership_kind,
               ownerSponsorshipAssignment!.id,
-              dto.management_fee_payer,
-              dto.management_fee_payer_name?.trim() || null,
+              managementFeeMode,
+              managementFeeMode === 'charged' ? dto.management_fee_payer : null,
+              managementFeeMode === 'charged'
+                ? dto.management_fee_payer_name?.trim() || null
+                : null,
               dto.owner_sponsorship_reason!.trim(),
               ownerSponsoredFee!.monthlyManagementFee,
               ownerSponsoredFee!.projectedManagementFeeAmount,
@@ -1330,8 +1347,13 @@ export class OnboardingService {
               ? {
                   ownerProfileId: ownerSponsorshipAssignment!.owner_profile_id,
                   ownerName: ownerSponsorshipAssignment!.owner_name,
-                  managementFeePayer: dto.management_fee_payer!,
-                  managementFeePayerName: dto.management_fee_payer_name?.trim() || null,
+                  managementFeeMode,
+                  managementFeePayer:
+                    managementFeeMode === 'charged' ? (dto.management_fee_payer ?? null) : null,
+                  managementFeePayerName:
+                    managementFeeMode === 'charged'
+                      ? dto.management_fee_payer_name?.trim() || null
+                      : null,
                   reason: dto.owner_sponsorship_reason!.trim(),
                   monthlyManagementFee: ownerSponsoredFee!.monthlyManagementFee,
                   projectedManagementFeeAmount: ownerSponsoredFee!.projectedManagementFeeAmount,

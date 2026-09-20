@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { projectLeaseSettlementV2 } from '../../src/modules/billing/helpers/lease-settlement-projection.helper';
+import { summarizeFirstPaymentCheckpoint } from '../../src/modules/billing/services/w06-billing.service';
 
 const checkpoint = (
   code: 'checkpoint_1' | 'checkpoint_2' | 'final_settlement',
@@ -24,6 +25,28 @@ const sixMonthCheckpoints = [
   checkpoint('checkpoint_2', 2, '2026-10-28T16:59:59.999Z', 5_400_000),
   checkpoint('final_settlement', 3, '2026-11-28T16:59:59.999Z', null),
 ];
+
+void test('one- and two-month schedules do not require checkpoint one', () => {
+  const projection = projectLeaseSettlementV2({
+    activated: true,
+    terminationPending: false,
+    contractRentAmount: 3_500_000,
+    cumulativeVerifiedRentCredit: 1_750_000,
+    authoritativeNow: new Date('2026-08-20T00:00:00.000Z'),
+    gracePeriodDays: 3,
+    checkpoints: [checkpoint('final_settlement', 1, '2026-09-15T16:59:59.999Z', null)],
+  });
+  const summary = summarizeFirstPaymentCheckpoint(projection.checkpoints, 1_750_000, 0);
+
+  assert.equal(projection.currentCheckpoint.code, 'final_settlement');
+  assert.deepEqual(summary, {
+    dueAt: null,
+    requiredAdditionalAmount: 0,
+    additionalPaymentReceived: 0,
+    remainingAmount: 0,
+    status: 'not_required',
+  });
+});
 
 void test('awaiting-activation lease can receive additional historical rent payments', () => {
   const projection = projectLeaseSettlementV2({

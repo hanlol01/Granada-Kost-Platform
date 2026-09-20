@@ -849,15 +849,24 @@ function TenantsPage() {
                       <td className="px-4 py-3">
                         <div className="space-y-1.5">
                           <SettlementStagePill stage={resident.contractSettlementStage} />
-                          {resident.contractSettlementDueDate ? (
+                          {resident.contractSettlementStage === "paid_in_full" &&
+                          resident.leaseEnd ? (
                             <p className="text-xs text-muted-foreground">
-                              Tenggat checkpoint:{" "}
+                              Jadwal check-out: {formatResidentDate(resident.leaseEnd)}
+                            </p>
+                          ) : resident.contractSettlementStage === "awaiting_activation" ? (
+                            <p className="text-xs text-muted-foreground">
+                              Aktivasi kamar diperlukan
+                            </p>
+                          ) : resident.contractSettlementDueDate ? (
+                            <p className="text-xs text-muted-foreground">
+                              Tenggat pembayaran:{" "}
                               {formatResidentDate(resident.contractSettlementDueDate)}
                             </p>
                           ) : null}
                           {resident.leaseExpiredAdminActionRequired ? (
                             <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
-                              Masa sewa berakhir â€” tindakan admin
+                              Masa sewa berakhir — proses check-out diperlukan
                             </span>
                           ) : null}
                         </div>
@@ -919,7 +928,7 @@ function TenantsPage() {
                       ? resident.contractSettlementDueDate
                       : resident.leaseEnd) ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {deadlineTarget === "settlement" ? "Tenggat checkpoint" : "Akhir sewa"}:{" "}
+                        {deadlineTarget === "settlement" ? "Tenggat pembayaran" : "Akhir sewa"}:{" "}
                         {formatResidentDate(
                           deadlineTarget === "settlement"
                             ? resident.contractSettlementDueDate!
@@ -932,7 +941,7 @@ function TenantsPage() {
                       <SettlementStagePill stage={resident.contractSettlementStage} />
                       {resident.leaseExpiredAdminActionRequired ? (
                         <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
-                          Masa sewa berakhir â€” tindakan admin
+                          Masa sewa berakhir — proses check-out diperlukan
                         </span>
                       ) : null}
                       <ResidentStatusPill status={resident.residentStatus} />

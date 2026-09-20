@@ -140,6 +140,21 @@ export class AdminBillingController {
     });
   }
 
+  @Get('billing/receipts/:receiptId/original-document')
+  @Header('Cache-Control', 'private, no-store')
+  async originalReceiptDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('receiptId') receiptId: string,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    const document = await this.w06.originalReceiptDocument(user, query.property_id, receiptId);
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Get('billing/contract-paid-documents/:documentId/document')
   @Header('Cache-Control', 'private, no-store')
   async contractPaidDocument(

@@ -99,6 +99,7 @@ const statusLabel: Record<string, string> = {
   current: "Berjalan",
   unpaid: "Belum dibayar",
   partially_paid: "Sebagian dibayar",
+  waived: "Dibebaskan",
   overdue: "Terlambat",
   settled: "Lunas",
   not_available: "Belum tersedia",
@@ -1604,7 +1605,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
           .some((value) => value.includes(normalizedQuery));
       const checkpointStatus = item.settlement.checkpoint.status;
       const effectiveBillingState = item.ownerSponsorship
-        ? item.ownerSponsorship.paymentStatus === "paid"
+        ? ["paid", "waived"].includes(item.ownerSponsorship.paymentStatus)
           ? "settled"
           : item.ownerSponsorship.paymentStatus
         : item.billing.state;

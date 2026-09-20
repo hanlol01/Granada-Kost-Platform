@@ -14,6 +14,15 @@ test('owner-sponsored occupancy keeps rent at zero and projects management fee b
   });
 });
 
+test('owner-sponsored occupancy can waive management fee without removing the lease term', () => {
+  assert.deepEqual(calculateOwnerSponsoredManagementFee(0, 12, 'waived'), {
+    contractRentAmount: 0,
+    agreedMonthlyRentAmount: 0,
+    monthlyManagementFee: 0,
+    projectedManagementFeeAmount: 0,
+  });
+});
+
 test('management-fee progress stays independent from rent and has no due-date state', () => {
   assert.deepEqual(resolveOwnerSponsoredPaymentProgress(3_600_000, 900_000), {
     projectedAmount: 3_600_000,

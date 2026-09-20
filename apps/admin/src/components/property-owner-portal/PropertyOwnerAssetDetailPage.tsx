@@ -64,6 +64,7 @@ const label = (value: string): string => {
     room_assignment: "Penugasan kamar Apart Kost",
     current: "Berjalan",
     partially_paid: "Sebagian dibayar",
+    waived: "Dibebaskan",
     overdue: "Terlambat",
     settled: "Lunas",
     not_available: "Belum tersedia",
@@ -248,8 +249,9 @@ function DetailContent({
                 Sewa kamar tidak ditagihkan
               </h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Penghuni tetap mengikuti masa hunian dan proses operasional biasa. Biaya pengelolaan
-                dicatat terpisah dengan jadwal pembayaran fleksibel tanpa denda keterlambatan.
+                {asset.ownerSponsorship.managementFeeMode === "waived"
+                  ? "Penghuni tetap mengikuti masa hunian dan proses operasional biasa, tanpa tagihan sewa maupun biaya pengelolaan."
+                  : "Penghuni tetap mengikuti masa hunian dan proses operasional biasa. Biaya pengelolaan dicatat terpisah dengan jadwal pembayaran fleksibel tanpa denda keterlambatan."}
               </p>
             </div>
             <StatusPill value={asset.ownerSponsorship.paymentStatus} />

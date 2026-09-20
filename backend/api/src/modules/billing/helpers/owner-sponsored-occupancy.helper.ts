@@ -3,8 +3,10 @@ export type OwnerSponsoredManagementFeeProgress = {
   verifiedPaidAmount: number;
   remainingAmount: number;
   overpaidAmount: number;
-  status: 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
+  status: 'waived' | 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
 };
+
+export type OwnerSponsoredManagementFeeMode = 'charged' | 'waived';
 
 function assertMoney(value: number, allowZero: boolean): void {
   if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) {
@@ -12,11 +14,22 @@ function assertMoney(value: number, allowZero: boolean): void {
   }
 }
 
-export function calculateOwnerSponsoredManagementFee(monthlyFee: number, termMonths: number) {
-  assertMoney(monthlyFee, false);
+export function calculateOwnerSponsoredManagementFee(
+  monthlyFee: number,
+  termMonths: number,
+  mode: OwnerSponsoredManagementFeeMode = 'charged',
+) {
   if (!Number.isSafeInteger(termMonths) || termMonths < 1 || termMonths > 120) {
     throw new RangeError('OWNER_SPONSORED_TERM_INVALID');
   }
+  if (mode === 'waived')
+    return {
+      contractRentAmount: 0,
+      agreedMonthlyRentAmount: 0,
+      monthlyManagementFee: 0,
+      projectedManagementFeeAmount: 0,
+    };
+  assertMoney(monthlyFee, false);
   const projectedManagementFeeAmount = monthlyFee * termMonths;
   assertMoney(projectedManagementFeeAmount, false);
   return {

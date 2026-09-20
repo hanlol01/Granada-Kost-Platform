@@ -24,7 +24,8 @@ export type OnboardingCommitmentResponse = {
   ownerSponsorship: {
     ownerProfileId: string;
     ownerName: string;
-    managementFeePayer: 'resident' | 'owner' | 'other';
+    managementFeeMode: 'charged' | 'waived';
+    managementFeePayer: 'resident' | 'owner' | 'other' | null;
     managementFeePayerName: string | null;
     reason: string;
     monthlyManagementFee: number;

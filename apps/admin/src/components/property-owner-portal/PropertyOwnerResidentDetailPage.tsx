@@ -26,6 +26,7 @@ const labels: Record<string, string> = {
   active: "Aktif",
   current: "Berjalan",
   partially_paid: "Sebagian dibayar",
+  waived: "Dibebaskan",
   overdue: "Terlambat",
   settled: "Lunas",
   not_available: "Belum tersedia",

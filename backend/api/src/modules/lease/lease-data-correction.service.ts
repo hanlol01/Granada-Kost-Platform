@@ -8,7 +8,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { resolveLeaseCommercialAgreement } from '../billing/helpers/duration-pricing.helper';
-import { buildLeaseSettlementPolicyScheduleV3 } from '../billing/helpers/lease-settlement-policy.helper';
+import { buildLeaseSettlementPolicyScheduleV4 } from '../billing/helpers/lease-settlement-policy.helper';
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import type { UserAccessContext } from '../iam/types/iam.types';
 import type { CommitLeaseDataCorrectionDto, PreviewLeaseDataCorrectionDto } from './lease.dto';
@@ -576,7 +576,11 @@ export class LeaseDataCorrectionService {
               pricing_agreement_reason=CASE WHEN $13 THEN $10 ELSE pricing_agreement_reason END,
               pricing_agreed_by_user_id=CASE WHEN $13 THEN $11 ELSE pricing_agreed_by_user_id END,
               pricing_agreed_at=CASE WHEN $13 THEN now() ELSE pricing_agreed_at END,
-              next_billing_date=CASE WHEN lease_status='awaiting_activation' THEN $2::date ELSE next_billing_date END,
+              billing_anchor_day=15,
+              next_billing_date=CASE WHEN lease_status='awaiting_activation' THEN
+                CASE WHEN EXTRACT(DAY FROM $2::date) <= 15 THEN date_trunc('month',$2::date)::date + 14
+                     ELSE (date_trunc('month',$2::date) + INTERVAL '1 month')::date + 14 END
+                ELSE next_billing_date END,
               updated_by_user_id=$11,updated_at=now()
         WHERE id=$1 AND property_id=$12`,
       [
@@ -608,9 +612,9 @@ export class LeaseDataCorrectionService {
       await client.query(
         `UPDATE lease_activation_lifecycles
             SET checked_in_at=(($3::date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta'),
-                checked_in_by_user_id=$4,updated_at=now()
+                updated_at=now()
           WHERE lease_id=$1 AND property_id=$2 AND checked_in_at IS NOT NULL`,
-        [leaseId, preview.propertyId, preview.corrected.checkedInDate, actorId],
+        [leaseId, preview.propertyId, preview.corrected.checkedInDate],
       );
       await client.query(
         `UPDATE occupancies SET start_date=$3::date,updated_at=now()
@@ -699,6 +703,16 @@ export class LeaseDataCorrectionService {
     const installmentSequence = Number(sequence.rows[0]?.next ?? 1);
     const dueDate =
       preview.corrected.startDate > this.today() ? preview.corrected.startDate : this.today();
+    const coverageStart =
+      preview.corrected.startDate < preview.previous.startDate
+        ? preview.corrected.startDate
+        : preview.corrected.endDate > preview.previous.endDate
+          ? preview.previous.endDate
+          : this.shiftIsoDate(preview.corrected.endDate, -1);
+    const coverageEndExclusive =
+      preview.corrected.startDate < preview.previous.startDate
+        ? preview.previous.startDate
+        : preview.corrected.endDate;
     await client.query(
       `INSERT INTO lease_installments(
          id,property_id,lease_id,sequence_number,coverage_start_date,coverage_end_date,
@@ -709,8 +723,8 @@ export class LeaseDataCorrectionService {
         preview.propertyId,
         preview.leaseId,
         installmentSequence,
-        preview.corrected.startDate,
-        preview.corrected.endDate,
+        coverageStart,
+        coverageEndExclusive,
         dueDate,
         preview.impact.additionalCharge,
       ],
@@ -742,8 +756,8 @@ export class LeaseDataCorrectionService {
         preview.impact.additionalCharge,
         dueDate,
         `LEASE-CORRECTION-${correctionId}`,
-        preview.corrected.startDate,
-        preview.corrected.endDate,
+        coverageStart,
+        coverageEndExclusive,
         preview.corrected.agreedMonthlyPrice,
         preview.corrected.contractRentAmount,
         `lease-correction:${correctionId}`,
@@ -777,7 +791,7 @@ export class LeaseDataCorrectionService {
       [preview.leaseId, preview.propertyId],
     );
     if (!settlement.rows[0]) return;
-    const schedule = buildLeaseSettlementPolicyScheduleV3({
+    const schedule = buildLeaseSettlementPolicyScheduleV4({
       leaseStartDate: preview.corrected.startDate,
       termMonths: preview.corrected.termMonths,
       monthlyRentAmount: preview.corrected.agreedMonthlyPrice,
@@ -932,6 +946,12 @@ export class LeaseDataCorrectionService {
       month: '2-digit',
       day: '2-digit',
     }).format(new Date());
+  }
+
+  private shiftIsoDate(value: string, days: number) {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
   }
 
   private hash(value: string) {

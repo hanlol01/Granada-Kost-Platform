@@ -504,12 +504,15 @@ export class LeaseActivationService {
     const settlementResult = await client.query<ContractSettlementActivationRow>(
       `SELECT settlement.id,settlement.state,settlement.policy_snapshot_id,
               policy.initial_month_minimum_amount,
-              checkpoint.due_at AS final_checkpoint_due_at
+               COALESCE(due_override.effective_due_at,checkpoint.due_at) AS final_checkpoint_due_at
          FROM lease_contract_settlements settlement
          LEFT JOIN lease_settlement_policy_snapshots policy ON policy.id=settlement.policy_snapshot_id
          LEFT JOIN lease_settlement_checkpoints checkpoint
            ON checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
           AND checkpoint.checkpoint_code='final_settlement'
+         LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+           ON due_override.property_id=checkpoint.property_id
+          AND due_override.checkpoint_id=checkpoint.id
         WHERE settlement.property_id=$1 AND settlement.lease_id=$2
         FOR UPDATE OF settlement`,
       [propertyId, lease.id],
@@ -543,7 +546,17 @@ export class LeaseActivationService {
              FROM lease_deposit_transactions ledger
             WHERE ledger.property_id=$1 AND ledger.lease_id=$2
          ),0) AS deposit_balance,
-         (SELECT installment.due_date::text FROM lease_installments installment
+         (SELECT CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                            THEN GREATEST(
+                                   uniform_adoption.transition_due_date,
+                                   uniform_rent_due_date_15(installment.due_date)
+                                 )::text
+                      ELSE installment.due_date::text
+                 END
+            FROM lease_installments installment
+           LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+             ON uniform_adoption.property_id=installment.property_id
+            AND uniform_adoption.lease_id=installment.lease_id
            WHERE installment.property_id=$1 AND installment.lease_id=$2
            ORDER BY installment.sequence_number LIMIT 1) AS first_due_date,
          (SELECT invoice.invoice_status FROM lease_installments installment

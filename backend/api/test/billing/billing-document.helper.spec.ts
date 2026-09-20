@@ -304,3 +304,38 @@ void test('contract-paid proof is a distinct one-page document for the full leas
   assert.doesNotMatch(text, /Pembayaran awal/);
   assert.doesNotMatch(text, /Pembayaran berikutnya/);
 });
+
+void test('contract-paid proof moves long transaction references to a continuation page', async () => {
+  const result = await createContractPaidDocumentPdf({
+    documentCode: '099-09/KONTRAK-LUNAS/GSH1/2026',
+    residentName: 'Penghuni Dengan Nama Lengkap Untuk Pengujian Dokumen',
+    roomNumber: 'RK-05-05',
+    buildingCode: 'RK-05',
+    leaseStart: '2026-08-01',
+    leaseEnd: '2027-07-01',
+    leaseTermMonths: 11,
+    agreedMonthlyPrice: 1_700_000,
+    pricingSource: 'negotiated',
+    contractRentAmount: 18_700_000,
+    initialRentCredit: 4_675_000,
+    additionalRentPayments: 14_025_000,
+    contractAdjustmentAmount: 0,
+    totalRentReceived: 18_700_000,
+    totalSettledAmount: 18_700_000,
+    outstandingAmount: 0,
+    settledAt: '2026-08-03T03:00:00.000Z',
+    issuedAt: '2026-08-03T03:00:00.000Z',
+    transactionCodes: [],
+    transactionReferences: Array.from({ length: 16 }, (_, index) => ({
+      code: `TRX-20260803-${String(index + 1).padStart(6, '0')}-PELUNASAN-SEWA`,
+      amount: 1_168_750,
+    })),
+    propertyName: 'Granada Student House by Kostation',
+    propertyAddress:
+      'Jalan Kiara Beres, Desa Cipacing, Kecamatan Jatinangor, Kabupaten Sumedang, Jawa Barat 45363',
+    issuedByName: 'Diki Karya Permana',
+  });
+
+  const parsed = await PDFDocument.load(result.content);
+  assert.ok(parsed.getPageCount() >= 2);
+});

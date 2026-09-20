@@ -3,7 +3,88 @@ import test from 'node:test';
 import {
   buildLeaseSettlementPolicySchedule,
   buildLeaseSettlementPolicyScheduleV3,
+  buildLeaseSettlementPolicyScheduleV4,
 } from '../../src/modules/billing/helpers/lease-settlement-policy.helper';
+
+void test('v4 uses the first monthly 15th on or after every coverage start', () => {
+  const policy = buildLeaseSettlementPolicyScheduleV4({
+    leaseStartDate: '2026-08-20',
+    termMonths: 3,
+    monthlyRentAmount: 1_800_000,
+  });
+
+  assert.equal(policy.policyVersion, 'lease_settlement_v4');
+  assert.equal(policy.checkpointAnchorDay, 15);
+  assert.equal(policy.finalSettlementOffsetMonths, 3);
+  assert.deepEqual(
+    policy.checkpoints.map(({ code, dueDate }) => ({ code, dueDate })),
+    [
+      { code: 'checkpoint_1', dueDate: '2026-10-15' },
+      { code: 'final_settlement', dueDate: '2026-12-15' },
+    ],
+  );
+});
+
+void test('v4 gives a July three-month contract its final deadline on 15 October', () => {
+  const policy = buildLeaseSettlementPolicyScheduleV4({
+    leaseStartDate: '2026-07-01',
+    termMonths: 3,
+    monthlyRentAmount: 1_800_000,
+  });
+
+  assert.equal(policy.finalSettlementOffsetMonths, 3);
+  assert.deepEqual(
+    policy.checkpoints.map(({ code, dueDate }) => ({ code, dueDate })),
+    [
+      { code: 'checkpoint_1', dueDate: '2026-08-15' },
+      { code: 'final_settlement', dueDate: '2026-10-15' },
+    ],
+  );
+});
+
+void test('v4 keeps a coverage that starts on or before the 15th in its month', () => {
+  const policy = buildLeaseSettlementPolicyScheduleV4({
+    leaseStartDate: '2026-08-01',
+    termMonths: 1,
+    monthlyRentAmount: 1_800_000,
+  });
+  assert.deepEqual(
+    policy.checkpoints.map(({ dueDate }) => dueDate),
+    ['2026-08-15'],
+  );
+});
+
+void test('v4 moves a coverage that starts after the 15th to the following month', () => {
+  const policy = buildLeaseSettlementPolicyScheduleV4({
+    leaseStartDate: '2026-08-16',
+    termMonths: 1,
+    monthlyRentAmount: 1_800_000,
+  });
+  assert.deepEqual(
+    policy.checkpoints.map(({ dueDate }) => dueDate),
+    ['2026-09-15'],
+  );
+});
+
+void test('v4 caps final settlement at month three for terms longer than three months', () => {
+  for (const termMonths of [4, 6, 11, 12, 120]) {
+    const policy = buildLeaseSettlementPolicyScheduleV4({
+      leaseStartDate: '2026-07-01',
+      termMonths,
+      monthlyRentAmount: 1_800_000,
+    });
+
+    assert.equal(policy.finalSettlementOffsetMonths, 3);
+    assert.deepEqual(
+      policy.checkpoints.map(({ code, dueDate }) => ({ code, dueDate })),
+      [
+        { code: 'checkpoint_1', dueDate: '2026-08-15' },
+        { code: 'checkpoint_2', dueDate: '2026-09-15' },
+        { code: 'final_settlement', dueDate: '2026-10-15' },
+      ],
+    );
+  }
+});
 
 void test('one-month v3 lease settles at activation without a duplicate checkpoint', () => {
   const policy = buildLeaseSettlementPolicyScheduleV3({

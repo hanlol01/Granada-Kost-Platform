@@ -10,6 +10,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { type ContractPaymentPlan } from '../billing/helpers/contract-schedule.helper';
+import { UNIFORM_RENT_DUE_DAY } from '../billing/helpers/rent-due-date.helper';
 import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
 import { UserAccessContext } from '../iam/types/iam.types';
 import {
@@ -323,8 +324,12 @@ export class LeaseRenewalService {
              snapshot_room_number,snapshot_kost_type_name,renewed_from_lease_id,
              term_months,payment_plan_type,contract_rent_amount,dp_required_amount,
              security_deposit_required_amount,signed_at,created_by_user_id,updated_by_user_id
-           ) VALUES(
-             $1,$2,$3,$4,NULL,$5,'awaiting_activation',$6::date,$7::date,$8,$9,$6::date,
+             ) VALUES(
+              $1,$2,$3,$4,NULL,$5,'awaiting_activation',$6::date,$7::date,$8,$9,
+              CASE WHEN EXTRACT(DAY FROM $6::date) <= 15
+                   THEN date_trunc('month',$6::date)::date + 14
+                   ELSE (date_trunc('month',$6::date) + INTERVAL '1 month')::date + 14
+              END,
              $10,$11,$12,$13,$14::date,$15,$16,$17,$18,$19::timestamptz,
              $20,$21,$22,$23,$24,$25,$26,0,now(),$18,$18
            ) RETURNING id,lease_code`,
@@ -337,7 +342,7 @@ export class LeaseRenewalService {
             expectedEffectiveDate,
             successorEndDate,
             snapshot.billing_cycle,
-            predecessor.billing_anchor_day,
+            UNIFORM_RENT_DUE_DAY,
             snapshot.snapshot_monthly_price,
             snapshot.snapshot_yearly_price,
             snapshot.snapshot_deposit_amount,
@@ -1115,13 +1120,16 @@ export class LeaseRenewalService {
     }>(
       `SELECT settlement.id,
               settlement.policy_snapshot_id,
-              final_checkpoint.due_at AS final_checkpoint_due_at
+               COALESCE(final_due_override.effective_due_at,final_checkpoint.due_at) AS final_checkpoint_due_at
          FROM lease_contract_settlements settlement
          LEFT JOIN lease_settlement_checkpoints final_checkpoint
            ON final_checkpoint.property_id=settlement.property_id
           AND final_checkpoint.lease_id=settlement.lease_id
-          AND final_checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
-          AND final_checkpoint.checkpoint_code='final_settlement'
+           AND final_checkpoint.policy_snapshot_id=settlement.policy_snapshot_id
+           AND final_checkpoint.checkpoint_code='final_settlement'
+          LEFT JOIN lease_settlement_checkpoint_due_date_overrides final_due_override
+            ON final_due_override.property_id=final_checkpoint.property_id
+           AND final_due_override.checkpoint_id=final_checkpoint.id
         WHERE settlement.property_id=$1
           AND settlement.lease_id=$2
           AND settlement.invoice_id=$3

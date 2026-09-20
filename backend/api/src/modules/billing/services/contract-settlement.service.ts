@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../../infrastructure/audit/audit.repository';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
@@ -92,21 +92,11 @@ export class ContractSettlementService {
             code: 'CONTRACT_SETTLEMENT_EXTENSION_NOT_AVAILABLE',
             message: 'A settlement extension is available only for an active contract balance',
           });
-        if (settlement.extension_due_at)
-          throw new ConflictException({
-            code: 'CONTRACT_SETTLEMENT_EXTENSION_ALREADY_USED',
-            message: 'Only one settlement extension can be granted',
-          });
-        if (!(await this.deadlineHasPassed(client, settlement.original_due_at)))
-          throw new ConflictException({
-            code: 'CONTRACT_SETTLEMENT_EXTENSION_NOT_DUE',
-            message: 'The original settlement deadline has not been reached',
-          });
-        if (!(await this.deadlineIsFuture(client, settlement.original_due_at, dto.extension_days)))
-          throw new ConflictException({
-            code: 'CONTRACT_SETTLEMENT_EXTENSION_DEADLINE_NOT_FUTURE',
-            message: 'The selected extension deadline must still be in the future',
-          });
+        const extensionDueAt = await this.resolveExtensionDueAt(
+          client,
+          settlement.original_due_at,
+          dto,
+        );
         const outstanding = this.outstanding(settlement);
         if (outstanding === 0)
           throw new ConflictException({
@@ -115,14 +105,14 @@ export class ContractSettlementService {
           });
         const updated = await client.query<{ extension_due_at: Date }>(
           `UPDATE lease_contract_settlements
-              SET extension_due_at=original_due_at + ($3::int * INTERVAL '1 day'),
+              SET extension_due_at=$3,
                   extension_reason=$4,
                   extension_granted_at=now(),
                   extension_granted_by_user_id=$5,
                   updated_at=now()
-            WHERE id=$1 AND property_id=$2 AND extension_due_at IS NULL
+            WHERE id=$1 AND property_id=$2
             RETURNING extension_due_at`,
-          [settlement.id, dto.property_id, dto.extension_days, dto.reason.trim(), actor.id],
+          [settlement.id, dto.property_id, extensionDueAt, dto.reason.trim(), actor.id],
         );
         if (!updated.rows[0])
           throw new ConflictException({
@@ -132,7 +122,8 @@ export class ContractSettlementService {
         const data = {
           settlement_id: settlement.id,
           extension_due_at: updated.rows[0].extension_due_at.toISOString(),
-          extension_days: dto.extension_days,
+          extension_due_date: this.jakartaDate(extensionDueAt),
+          ...(dto.extension_days !== undefined ? { extension_days: dto.extension_days } : {}),
         };
         await this.auditAndEvent(
           client,
@@ -165,25 +156,12 @@ export class ContractSettlementService {
       dto,
       context,
       async (client, settlement) => {
-        if (
-          !settlement.policy_snapshot_id ||
-          settlement.state !== 'open' ||
-          !settlement.activated_at
-        )
+        if (!settlement.policy_snapshot_id || settlement.state === 'terminated')
           throw new ConflictException({
             code: 'LEASE_PAYMENT_PROMISE_NOT_AVAILABLE',
             message: 'A payment promise is available only for an active v2 settlement',
           });
-        const checkpoint = await this.lockV2MissedCheckpoint(client, settlement);
-        const date = await client.query<{ valid: boolean }>(
-          `SELECT $1::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AS valid`,
-          [dto.promised_payment_date],
-        );
-        if (date.rows[0]?.valid !== true)
-          throw new ConflictException({
-            code: 'LEASE_PAYMENT_PROMISE_DATE_INVALID',
-            message: 'The promised payment date cannot be in the past',
-          });
+        const checkpoint = await this.lockV2CurrentCheckpoint(client, settlement);
         if (dto.promised_amount > this.money(checkpoint.outstanding_amount))
           throw new UnprocessableEntityException({
             code: 'LEASE_PAYMENT_PROMISE_AMOUNT_EXCEEDS_OUTSTANDING',
@@ -253,37 +231,47 @@ export class ContractSettlementService {
     dto: ExtendContractSettlementDto,
     context: RequestAuditContext,
   ) {
-    if (settlement.state !== 'open' || !settlement.activated_at)
+    if (settlement.state === 'terminated')
       throw new ConflictException({
         code: 'CONTRACT_SETTLEMENT_EXTENSION_NOT_AVAILABLE',
         message: 'A settlement extension is available only for an active contract balance',
       });
-    const checkpoint = await this.lockV2MissedCheckpoint(client, settlement);
-    if (checkpoint.extension_id)
-      throw new ConflictException({
-        code: 'CONTRACT_SETTLEMENT_EXTENSION_ALREADY_USED',
-        message: 'Only one settlement extension can be granted',
-      });
-    if (!(await this.deadlineIsFuture(client, checkpoint.original_due_at, dto.extension_days)))
-      throw new ConflictException({
-        code: 'CONTRACT_SETTLEMENT_EXTENSION_DEADLINE_NOT_FUTURE',
-        message: 'The selected extension deadline must still be in the future',
-      });
+    const checkpoint = await this.lockV2FinalCheckpoint(client, settlement);
+    const extensionDueAt = await this.resolveExtensionDueAt(
+      client,
+      checkpoint.original_due_at,
+      dto,
+    );
 
     const inserted = await client.query<{ id: string; extension_due_at: Date; granted_at: Date }>(
       `INSERT INTO lease_settlement_extensions(
          property_id,lease_id,policy_snapshot_id,checkpoint_id,original_due_at,
          extension_due_at,reason,granted_by_user_id
-       ) VALUES($1,$2,$3,$4,$5,$5 + ($6::int * INTERVAL '1 day'),$7,$8)
-       ON CONFLICT(lease_id) DO NOTHING
+       ) VALUES(
+         $1,$2,$3,$4,
+         (SELECT COALESCE(due_override.effective_due_at,checkpoint.due_at)
+            FROM lease_settlement_checkpoints checkpoint
+            LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+              ON due_override.checkpoint_id=checkpoint.id
+             AND due_override.property_id=checkpoint.property_id
+           WHERE checkpoint.id=$4),
+         $5,$6,$7
+       )
+       ON CONFLICT(lease_id) DO UPDATE SET
+         policy_snapshot_id=EXCLUDED.policy_snapshot_id,
+         checkpoint_id=EXCLUDED.checkpoint_id,
+         original_due_at=EXCLUDED.original_due_at,
+         extension_due_at=EXCLUDED.extension_due_at,
+         reason=EXCLUDED.reason,
+         granted_by_user_id=EXCLUDED.granted_by_user_id,
+         granted_at=now()
        RETURNING id,extension_due_at,granted_at`,
       [
         dto.property_id,
         settlement.lease_id,
         checkpoint.policy_snapshot_id,
         checkpoint.checkpoint_id,
-        checkpoint.original_due_at,
-        dto.extension_days,
+        extensionDueAt,
         dto.reason.trim(),
         actor.id,
       ],
@@ -300,20 +288,22 @@ export class ContractSettlementService {
       extension_id: extension.id,
       original_due_at: checkpoint.original_due_at.toISOString(),
       extension_due_at: extension.extension_due_at.toISOString(),
-      extension_days: dto.extension_days,
+      extension_due_date: this.jakartaDate(extension.extension_due_at),
+      ...(dto.extension_days !== undefined ? { extension_days: dto.extension_days } : {}),
       reason: dto.reason.trim(),
       granted_at: extension.granted_at.toISOString(),
       original_overdue_preserved: true,
     };
-    await client.query(
+    const extensionEvent = await client.query<{ id: string }>(
       `INSERT INTO lease_settlement_checkpoint_events(
          property_id,lease_id,checkpoint_id,event_type,event_key,actor_user_id,metadata
-       ) VALUES($1,$2,$3,'extension_granted',$4,$5,$6::jsonb)`,
+       ) VALUES($1,$2,$3,'extension_granted',$4,$5,$6::jsonb)
+       RETURNING id`,
       [
         dto.property_id,
         settlement.lease_id,
         checkpoint.checkpoint_id,
-        `extension_granted:${extension.id}`,
+        `extension_granted:${extension.id}:${randomUUID()}`,
         actor.id,
         JSON.stringify(data),
       ],
@@ -337,13 +327,29 @@ export class ContractSettlementService {
       settlement.id,
       data,
       context,
+      `lease.contract_settlement_extended:${settlement.id}:${extensionEvent.rows[0].id}`,
     );
     return data;
+  }
+
+  private async lockV2CurrentCheckpoint(
+    client: PoolClient,
+    settlement: SettlementLock,
+  ): Promise<V2MissedCheckpointLock> {
+    return this.lockV2Checkpoint(client, settlement, false);
   }
 
   private async lockV2MissedCheckpoint(
     client: PoolClient,
     settlement: SettlementLock,
+  ): Promise<V2MissedCheckpointLock> {
+    return this.lockV2Checkpoint(client, settlement, true);
+  }
+
+  private async lockV2Checkpoint(
+    client: PoolClient,
+    settlement: SettlementLock,
+    onlyMissed: boolean,
   ): Promise<V2MissedCheckpointLock> {
     const result = await client.query<V2MissedCheckpointLock>(
       `WITH ledger AS (
@@ -367,7 +373,7 @@ export class ContractSettlementService {
             AND contract_invoice.invoice_status<>'void'
        ), authority AS (
          SELECT checkpoint.id AS checkpoint_id,checkpoint.policy_snapshot_id,
-                checkpoint.checkpoint_code,checkpoint.due_at AS original_due_at,
+                 checkpoint.checkpoint_code,COALESCE(due_override.effective_due_at,checkpoint.due_at) AS original_due_at,
                 extension.id AS extension_id,extension.extension_due_at,
                 lease.contract_rent_amount,
                 ledger.verified_rent_credit,
@@ -380,11 +386,14 @@ export class ContractSettlementService {
            FROM lease_settlement_checkpoints checkpoint
            JOIN leases lease ON lease.id=checkpoint.lease_id AND lease.property_id=checkpoint.property_id
            CROSS JOIN ledger
-           LEFT JOIN lease_settlement_extensions extension
-             ON extension.lease_id=checkpoint.lease_id AND extension.property_id=checkpoint.property_id
+            LEFT JOIN lease_settlement_extensions extension
+              ON extension.lease_id=checkpoint.lease_id AND extension.property_id=checkpoint.property_id
+           LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+             ON due_override.checkpoint_id=checkpoint.id AND due_override.property_id=checkpoint.property_id
           WHERE checkpoint.property_id=$1 AND checkpoint.lease_id=$2
             AND checkpoint.policy_snapshot_id=$3
-            AND checkpoint.due_at < now()
+            AND ($4::boolean=false OR
+              COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) < now())
        )
        SELECT checkpoint_id,policy_snapshot_id,checkpoint_code,original_due_at,
               extension_id,extension_due_at,contract_rent_amount,verified_rent_credit,
@@ -393,14 +402,81 @@ export class ContractSettlementService {
         WHERE shortfall_amount>0
         ORDER BY checkpoint_sequence
         LIMIT 1`,
-      [settlement.property_id, settlement.lease_id, settlement.policy_snapshot_id],
+      [settlement.property_id, settlement.lease_id, settlement.policy_snapshot_id, onlyMissed],
     );
     if (!result.rows[0])
       throw new ConflictException({
-        code: 'CONTRACT_SETTLEMENT_EXTENSION_NOT_DUE',
-        message: 'No missed checkpoint with an outstanding balance is available',
+        code: 'CONTRACT_SETTLEMENT_BALANCE_NOT_AVAILABLE',
+        message: 'No checkpoint with an outstanding balance is available',
       });
     return result.rows[0];
+  }
+
+  private async lockV2FinalCheckpoint(
+    client: PoolClient,
+    settlement: SettlementLock,
+  ): Promise<V2MissedCheckpointLock> {
+    const result = await client.query<V2MissedCheckpointLock>(
+      `WITH ledger AS (
+         SELECT COALESCE(sum(contract_invoice.credit_amount + COALESCE(allocation.net,0)),0)
+                  AS verified_rent_credit
+           FROM invoices contract_invoice
+           LEFT JOIN LATERAL (
+             SELECT COALESCE(sum(payment_allocation.allocated_amount
+                      - COALESCE(reversal.reversed_amount,0)),0) AS net
+               FROM payment_allocations payment_allocation
+               LEFT JOIN LATERAL (
+                 SELECT COALESCE(sum(reversal_allocation.reversed_amount),0) AS reversed_amount
+                   FROM payment_reversal_allocations reversal_allocation
+                  WHERE reversal_allocation.original_allocation_id=payment_allocation.id
+               ) reversal ON true
+              WHERE payment_allocation.invoice_id=contract_invoice.id
+           ) allocation ON true
+          WHERE contract_invoice.property_id=$1
+            AND contract_invoice.lease_id=$2
+            AND contract_invoice.invoice_purpose='rent'
+            AND contract_invoice.authority_source='contract_schedule'
+            AND contract_invoice.invoice_status<>'void'
+       )
+       SELECT checkpoint.id AS checkpoint_id,checkpoint.policy_snapshot_id,
+              checkpoint.checkpoint_code,
+              COALESCE(due_override.effective_due_at,checkpoint.due_at) AS original_due_at,
+              extension.id AS extension_id,extension.extension_due_at,
+              lease.contract_rent_amount,
+              ledger.verified_rent_credit,
+              GREATEST(lease.contract_rent_amount-ledger.verified_rent_credit,0)
+                AS outstanding_amount,
+              GREATEST(lease.contract_rent_amount-ledger.verified_rent_credit,0)
+                AS shortfall_amount
+         FROM lease_settlement_checkpoints checkpoint
+         JOIN leases lease
+           ON lease.id=checkpoint.lease_id AND lease.property_id=checkpoint.property_id
+         CROSS JOIN ledger
+         LEFT JOIN lease_settlement_checkpoint_due_date_overrides due_override
+           ON due_override.checkpoint_id=checkpoint.id
+          AND due_override.property_id=checkpoint.property_id
+         LEFT JOIN lease_settlement_extensions extension
+           ON extension.checkpoint_id=checkpoint.id
+          AND extension.property_id=checkpoint.property_id
+        WHERE checkpoint.property_id=$1
+          AND checkpoint.lease_id=$2
+          AND checkpoint.policy_snapshot_id=$3
+          AND checkpoint.checkpoint_code='final_settlement'
+        FOR UPDATE OF checkpoint`,
+      [settlement.property_id, settlement.lease_id, settlement.policy_snapshot_id],
+    );
+    const checkpoint = result.rows[0];
+    if (!checkpoint)
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_FINAL_CHECKPOINT_NOT_FOUND',
+        message: 'The final settlement deadline is unavailable',
+      });
+    if (this.money(checkpoint.outstanding_amount) === 0)
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_ALREADY_PAID',
+        message: 'A fully paid contract balance cannot be extended',
+      });
+    return checkpoint;
   }
 
   private async notifySettlementActors(
@@ -1046,25 +1122,54 @@ export class ContractSettlementService {
     return unique;
   }
 
-  /**
-   * Deadline decisions are made by PostgreSQL, not the Node process clock.
-   * The deadline itself is stored from the Asia/Jakarta business-date policy;
-   * comparing it to `now()` here keeps commands deterministic across clients.
-   */
-  private async deadlineHasPassed(client: PoolClient, deadline: Date) {
-    const result = await client.query<{ passed: boolean }>(
-      `SELECT now() > $1::timestamptz AS passed`,
-      [deadline],
-    );
-    return result.rows[0]?.passed === true;
+  private async resolveExtensionDueAt(
+    client: PoolClient,
+    currentDeadline: Date,
+    dto: ExtendContractSettlementDto,
+  ) {
+    const hasDays = dto.extension_days !== undefined;
+    const hasDate = Boolean(dto.extension_due_date);
+    if (hasDays === hasDate)
+      throw new BadRequestException({
+        code: 'CONTRACT_SETTLEMENT_EXTENSION_INPUT_INVALID',
+        message: 'Choose exactly one extension deadline',
+      });
+
+    const result = hasDate
+      ? await client.query<{ due_at: Date; valid: boolean }>(
+          `SELECT requested.due_at, true AS valid
+             FROM (
+               SELECT (($1::date + 1)::timestamp AT TIME ZONE 'Asia/Jakarta')
+                      - INTERVAL '1 millisecond' AS due_at
+             ) requested`,
+          [dto.extension_due_date],
+        )
+      : await client.query<{ due_at: Date; valid: boolean }>(
+          `SELECT requested.due_at,
+                  requested.due_at > GREATEST($1::timestamptz, now()) AS valid
+             FROM (
+               SELECT $1::timestamptz + ($2::int * INTERVAL '1 day') AS due_at
+             ) requested`,
+          [currentDeadline, dto.extension_days],
+        );
+    if (!result.rows[0]?.due_at || result.rows[0].valid !== true)
+      throw new ConflictException({
+        code: 'CONTRACT_SETTLEMENT_EXTENSION_DATE_INVALID',
+        message: 'The settlement deadline is invalid',
+      });
+    return result.rows[0].due_at;
   }
 
-  private async deadlineIsFuture(client: PoolClient, deadline: Date, extensionDays: number) {
-    const result = await client.query<{ valid: boolean }>(
-      `SELECT $1::timestamptz + ($2::int * INTERVAL '1 day') > now() AS valid`,
-      [deadline, extensionDays],
-    );
-    return result.rows[0]?.valid === true;
+  private jakartaDate(value: Date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((candidate) => candidate.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
   }
 
   private async v2TerminationIsEligible(client: PoolClient, checkpoint: V2MissedCheckpointLock) {
@@ -1124,6 +1229,7 @@ export class ContractSettlementService {
     resourceId: string,
     data: Record<string, unknown>,
     context: RequestAuditContext,
+    eventKey?: string,
   ) {
     await this.audit.write(
       {
@@ -1143,7 +1249,7 @@ export class ContractSettlementService {
        VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
       [
         propertyId,
-        `${action}:${resourceId}`,
+        eventKey ?? `${action}:${resourceId}`,
         action,
         resourceType,
         resourceId,

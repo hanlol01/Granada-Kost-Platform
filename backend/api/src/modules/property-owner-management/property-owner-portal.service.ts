@@ -358,6 +358,7 @@ export class PropertyOwnerPortalService {
                lease.lease_status, lease.commercial_mode,
                lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
                resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
+               sponsorship.management_fee_mode,
                sponsorship.management_fee_payer,
                sponsorship.management_fee_payer_name,
                sponsorship.snapshot_monthly_management_fee::text AS sponsored_monthly_management_fee,
@@ -562,11 +563,19 @@ export class PropertyOwnerPortalService {
       owner_sponsorship:
         row.commercial_mode === 'owner_sponsored'
           ? {
-              management_fee_payer: this.enumValue(
-                row.management_fee_payer,
-                ['resident', 'owner', 'other'],
-                'asset.owner_sponsorship.management_fee_payer',
+              management_fee_mode: this.enumValue(
+                row.management_fee_mode,
+                ['charged', 'waived'],
+                'asset.owner_sponsorship.management_fee_mode',
               ),
+              management_fee_payer:
+                row.management_fee_mode === 'waived'
+                  ? null
+                  : this.enumValue(
+                      row.management_fee_payer,
+                      ['resident', 'owner', 'other'],
+                      'asset.owner_sponsorship.management_fee_payer',
+                    ),
               management_fee_payer_name: this.nullableText(
                 row.management_fee_payer_name,
                 'asset.owner_sponsorship.management_fee_payer_name',
@@ -587,7 +596,7 @@ export class PropertyOwnerPortalService {
               remaining: this.money(row.sponsored_remaining, 'asset.owner_sponsorship.remaining'),
               payment_status: this.enumValue(
                 row.sponsored_payment_status,
-                ['unpaid', 'partially_paid', 'paid', 'overpaid'],
+                ['waived', 'unpaid', 'partially_paid', 'paid', 'overpaid'],
                 'asset.owner_sponsorship.payment_status',
               ),
               payment_timing: 'flexible',
@@ -689,9 +698,19 @@ export class PropertyOwnerPortalService {
                SELECT invoice.id, invoice.invoice_status, invoice.invoice_purpose,
                       invoice.total_amount,
                       GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) AS outstanding_amount,
-                      invoice.due_date
+                      CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                                AND COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date) IS NOT NULL
+                           THEN GREATEST(
+                                  uniform_adoption.transition_due_date,
+                                  uniform_rent_due_date_15(COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date))
+                                )
+                           ELSE invoice.due_date
+                      END AS due_date
                FROM invoices invoice
                JOIN scoped_lease ON scoped_lease.id = invoice.lease_id
+               LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+                 ON uniform_adoption.property_id=invoice.property_id
+                AND uniform_adoption.lease_id=invoice.lease_id
                LEFT JOIN LATERAL (
                  SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
                  FROM payment_allocations pa
@@ -711,9 +730,20 @@ export class PropertyOwnerPortalService {
              ), installment_summary AS (
                SELECT COUNT(*)::int AS installment_total,
                       COUNT(*) FILTER (WHERE installment_status = 'paid')::int AS installment_paid,
-                      (MIN(due_date) FILTER (WHERE installment_status IN ('scheduled', 'issued', 'partially_paid')))::text AS installment_next_due_date
+                      (MIN(
+                        CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                             THEN GREATEST(
+                                    uniform_adoption.transition_due_date,
+                                    uniform_rent_due_date_15(installments.due_date)
+                                  )
+                             ELSE installments.due_date
+                        END
+                      ) FILTER (WHERE installment_status IN ('scheduled', 'issued', 'partially_paid')))::text AS installment_next_due_date
                FROM lease_installments installments
                JOIN scoped_lease ON scoped_lease.id = installments.lease_id
+               LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+                 ON uniform_adoption.property_id=installments.property_id
+                AND uniform_adoption.lease_id=installments.lease_id
                WHERE installments.property_id = $1
              ), deposit_summary AS (
                SELECT scoped_lease.security_deposit_required_amount::text AS deposit_required,
@@ -1216,29 +1246,58 @@ export class PropertyOwnerPortalService {
        ), invoice_summary AS (
          SELECT lease.id AS lease_id,
                 COALESCE(sum(invoice.total_amount) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_invoiced,
-                COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
-                COALESCE(sum(GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
+                COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
+                COALESCE(sum(GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
                 COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent')::int AS invoice_count,
-                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0)::int AS overdue_count,
-                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0 AND invoice.due_date BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7)::int AS h7_count,
-                MIN(invoice.due_date) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - COALESCE(allocation.net, 0), 0) > 0)::text AS next_due_date
+                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::int AS overdue_count,
+                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0 AND invoice.effective_due_date BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7)::int AS h7_count,
+                MIN(invoice.effective_due_date) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::text AS next_due_date
          FROM active_leases lease
-         LEFT JOIN invoices invoice ON invoice.property_id = lease.property_id
-           AND invoice.lease_id = lease.id AND invoice.invoice_status <> 'void'
          LEFT JOIN LATERAL (
-           SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
-           FROM payment_allocations pa
-           LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
-           WHERE pa.invoice_id = invoice.id
-         ) allocation ON true
+           SELECT invoice.id,invoice.invoice_status,invoice.invoice_purpose,
+                  invoice.total_amount,invoice.credit_amount,
+                  CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                            AND COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date) IS NOT NULL
+                       THEN GREATEST(
+                              uniform_adoption.transition_due_date,
+                              uniform_rent_due_date_15(COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date))
+                            )
+                       ELSE invoice.due_date
+                  END AS effective_due_date,
+                  COALESCE(allocation.net,0) AS allocated_amount
+             FROM invoices invoice
+             LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+               ON uniform_adoption.property_id=invoice.property_id
+              AND uniform_adoption.lease_id=invoice.lease_id
+             LEFT JOIN LATERAL (
+               SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
+               FROM payment_allocations pa
+               LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id = pa.id
+               WHERE pa.invoice_id = invoice.id
+             ) allocation ON true
+            WHERE invoice.property_id = lease.property_id
+              AND invoice.lease_id = lease.id
+              AND invoice.invoice_status <> 'void'
+         ) invoice ON true
          GROUP BY lease.id
        ), installment_summary AS (
          SELECT lease.id AS lease_id,
                 COUNT(installment.id)::int AS installment_total,
                 COUNT(installment.id) FILTER (WHERE installment.installment_status = 'paid')::int AS installment_paid,
-                MIN(installment.due_date) FILTER (WHERE installment.installment_status IN ('scheduled', 'issued', 'partially_paid'))::text AS installment_next_due_date
+                MIN(
+                  CASE WHEN uniform_adoption.lease_id IS NOT NULL
+                       THEN GREATEST(
+                              uniform_adoption.transition_due_date,
+                              uniform_rent_due_date_15(installment.due_date)
+                            )
+                       ELSE installment.due_date
+                  END
+                ) FILTER (WHERE installment.installment_status IN ('scheduled', 'issued', 'partially_paid'))::text AS installment_next_due_date
          FROM active_leases lease
          LEFT JOIN lease_installments installment ON installment.property_id = lease.property_id AND installment.lease_id = lease.id
+         LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
+           ON uniform_adoption.property_id=lease.property_id
+          AND uniform_adoption.lease_id=lease.id
          GROUP BY lease.id
        ), deposit_summary AS (
          SELECT lease.id AS lease_id,
@@ -1289,8 +1348,8 @@ export class PropertyOwnerPortalService {
                  settlement.state AS settlement_state,
                  COALESCE(v2.original_due_at, settlement.original_due_at)::text AS original_due_at,
                  COALESCE(v2.effective_due_at, settlement.extension_due_at, settlement.original_due_at)::text AS effective_due_at,
-                 CASE WHEN v2.settlement_id IS NOT NULL THEN v2.effective_due_at::text
-                      ELSE (((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date + INTERVAL '1 month' + INTERVAL '1 day' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')::text
+                  CASE WHEN v2.settlement_id IS NOT NULL THEN v2.effective_due_at::text
+                       ELSE (uniform_rent_due_date_15((settlement.activated_at AT TIME ZONE 'Asia/Jakarta')::date))::text
                   END AS checkpoint_due_at,
                  COALESCE(v2.outstanding_amount, GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(allocation.net, 0), 0))::text AS settlement_outstanding,
                  COALESCE(v2.checkpoint_required_amount, LEAST(COALESCE(lease.snapshot_monthly_price, 0), GREATEST(COALESCE(invoice.total_amount, 0) - COALESCE(invoice.credit_amount, 0) - COALESCE(initial_credit.net, 0), 0)))::text AS checkpoint_required,
@@ -1400,7 +1459,8 @@ export class PropertyOwnerPortalService {
         active_lease_count: items.length,
         settled_lease_count: items.filter(
           (item) =>
-            item.owner_sponsorship?.payment_status === 'paid' || item.billing.state === 'settled',
+            ['paid', 'waived'].includes(item.owner_sponsorship?.payment_status ?? '') ||
+            item.billing.state === 'settled',
         ).length,
         partial_lease_count: items.filter(
           (item) =>
@@ -2231,7 +2291,7 @@ export class PropertyOwnerPortalService {
               ),
               payment_status: this.enumValue(
                 row.sponsored_payment_status,
-                ['unpaid', 'partially_paid', 'paid', 'overpaid'] as const,
+                ['waived', 'unpaid', 'partially_paid', 'paid', 'overpaid'] as const,
                 'owner_collection.owner_sponsorship.payment_status',
               ),
               payment_timing: 'flexible' as const,

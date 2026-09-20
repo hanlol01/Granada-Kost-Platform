@@ -97,6 +97,7 @@ type PaymentChoice = "dp" | "full";
 type PaymentEntryPurpose = "rent" | "booking_fee" | "security_deposit";
 type PricingSource = "standard" | "negotiated";
 type CommercialMode = "rent" | "owner_sponsored";
+type ManagementFeeMode = "charged" | "waived";
 type ManagementFeePayer = "resident" | "owner" | "other";
 
 type StagedPaymentEntry = {
@@ -346,6 +347,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [pricingVarianceAcknowledged, setPricingVarianceAcknowledged] = useState(false);
   const [pricingResetOpen, setPricingResetOpen] = useState(false);
   const [commercialMode, setCommercialMode] = useState<CommercialMode>("rent");
+  const [managementFeeMode, setManagementFeeMode] = useState<ManagementFeeMode>("charged");
   const [managementFeePayer, setManagementFeePayer] = useState<ManagementFeePayer>("owner");
   const [managementFeePayerName, setManagementFeePayerName] = useState("");
   const [ownerSponsorshipReason, setOwnerSponsorshipReason] = useState("");
@@ -596,7 +598,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     : undefined;
   const sponsoringOwner = ownerAsset?.currentOwner ?? null;
   const projectedManagementFee =
-    commercialMode === "owner_sponsored"
+    commercialMode === "owner_sponsored" && managementFeeMode === "charged"
       ? (selectedRoom?.kostType.managementFeeAmount ?? 0) * termMonths
       : 0;
   const pricingVariancePercent =
@@ -818,9 +820,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const ownerSponsoredValid =
     commercialMode === "owner_sponsored" &&
     Boolean(selectedRoom && sponsoringOwner) &&
-    (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0 &&
+    (managementFeeMode === "waived" || (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0) &&
     ownerSponsorshipReason.trim().length >= 3 &&
-    (managementFeePayer !== "other" || managementFeePayerName.trim().length >= 2) &&
+    (managementFeeMode === "waived" ||
+      managementFeePayer !== "other" ||
+      managementFeePayerName.trim().length >= 2) &&
     confirmed;
   const stageTwoValid =
     commercialMode === "owner_sponsored"
@@ -887,11 +891,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         ? ""
         : "Owner yang berlaku untuk kamar ini belum tersedia.",
     managementFee:
-      commercialMode !== "owner_sponsored" || (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0
+      commercialMode !== "owner_sponsored" ||
+      managementFeeMode === "waived" ||
+      (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0
         ? ""
         : "Biaya pengelolaan properti belum ditetapkan.",
     managementFeePayerName:
       commercialMode !== "owner_sponsored" ||
+      managementFeeMode === "waived" ||
       managementFeePayer !== "other" ||
       managementFeePayerName.trim().length >= 2
         ? ""
@@ -1313,9 +1320,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       term_months: termMonths,
       commercial_mode: commercialMode,
       sponsoring_owner_profile_id: sponsoringOwner?.id,
-      management_fee_payer: commercialMode === "owner_sponsored" ? managementFeePayer : undefined,
+      management_fee_mode: commercialMode === "owner_sponsored" ? managementFeeMode : undefined,
+      management_fee_payer:
+        commercialMode === "owner_sponsored" && managementFeeMode === "charged"
+          ? managementFeePayer
+          : undefined,
       management_fee_payer_name:
-        commercialMode === "owner_sponsored" && managementFeePayer === "other"
+        commercialMode === "owner_sponsored" &&
+        managementFeeMode === "charged" &&
+        managementFeePayer === "other"
           ? managementFeePayerName.trim()
           : undefined,
       owner_sponsorship_reason:
@@ -1337,7 +1350,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       payment_plan_type:
         totalRentCredit === amounts.contractRent ? "annual_full" : "monthly_installments",
       accepted_terms_version:
-        commercialMode === "owner_sponsored" ? "OWNER-SPONSORED-v1" : "KMO-W05-v1",
+        commercialMode === "owner_sponsored" ? "OWNER-SPONSORED-v2" : "KMO-W05-v1",
       dp_verified_amount: commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : paidRent,
       security_deposit_funded_amount:
         commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : securityDeposit,
@@ -1811,6 +1824,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             }}
             sponsoringOwner={sponsoringOwner}
             ownerAssetsLoading={ownerAssets.isLoading || ownerAssets.isPlaceholderData}
+            managementFeeMode={managementFeeMode}
+            setManagementFeeMode={(value) => {
+              setManagementFeeMode(value);
+              setConfirmed(false);
+            }}
             managementFeePayer={managementFeePayer}
             setManagementFeePayer={(value) => {
               setManagementFeePayer(value);
@@ -2467,6 +2485,8 @@ function RoomAndPaymentStep({
   onCommercialMode,
   sponsoringOwner,
   ownerAssetsLoading,
+  managementFeeMode,
+  setManagementFeeMode,
   managementFeePayer,
   setManagementFeePayer,
   managementFeePayerName,
@@ -2536,6 +2556,8 @@ function RoomAndPaymentStep({
   onCommercialMode: (value: CommercialMode) => void;
   sponsoringOwner: { id: string; fullName: string } | null;
   ownerAssetsLoading: boolean;
+  managementFeeMode: ManagementFeeMode;
+  setManagementFeeMode: (value: ManagementFeeMode) => void;
   managementFeePayer: ManagementFeePayer;
   setManagementFeePayer: (value: ManagementFeePayer) => void;
   managementFeePayerName: string;
@@ -2775,7 +2797,7 @@ function RoomAndPaymentStep({
                     <span>
                       <span className="block font-semibold">Hunian tanggungan Owner</span>
                       <span className="mt-1 block text-xs opacity-80">
-                        Sewa kamar Rp0; biaya pengelolaan tetap dicatat.
+                        Sewa kamar Rp0; biaya pengelolaan mengikuti pilihan Owner.
                       </span>
                     </span>
                   </Button>
@@ -2819,6 +2841,41 @@ function RoomAndPaymentStep({
                       {errors.sponsoringOwner}
                     </p>
                   ) : null}
+                  <div className="space-y-2">
+                    <Label>
+                      Ketentuan biaya pengelolaan <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Button
+                        type="button"
+                        variant={managementFeeMode === "charged" ? "info" : "outline"}
+                        className="h-auto min-h-16 justify-start whitespace-normal border-2 border-primary px-4 py-3 text-left"
+                        aria-pressed={managementFeeMode === "charged"}
+                        onClick={() => setManagementFeeMode("charged")}
+                      >
+                        <span>
+                          <span className="block font-semibold">Dengan biaya pengelolaan</span>
+                          <span className="mt-1 block text-xs opacity-80">
+                            Biaya dicatat terpisah dan dapat dibayar fleksibel.
+                          </span>
+                        </span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={managementFeeMode === "waived" ? "success" : "outline"}
+                        className="h-auto min-h-16 justify-start whitespace-normal border-2 border-success px-4 py-3 text-left"
+                        aria-pressed={managementFeeMode === "waived"}
+                        onClick={() => setManagementFeeMode("waived")}
+                      >
+                        <span>
+                          <span className="block font-semibold">Tanpa biaya pengelolaan</span>
+                          <span className="mt-1 block text-xs opacity-80">
+                            Tidak ada sewa kamar, deposit, atau biaya pengelolaan.
+                          </span>
+                        </span>
+                      </Button>
+                    </div>
+                  </div>
                   {errors?.managementFee ? (
                     <p
                       className="text-sm font-medium text-destructive"
@@ -2829,50 +2886,58 @@ function RoomAndPaymentStep({
                       {errors.managementFee}
                     </p>
                   ) : null}
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>
-                        Penanggung biaya pengelolaan <span className="text-destructive">*</span>
-                      </Label>
-                      <Select
-                        value={managementFeePayer}
-                        onValueChange={(value) =>
-                          setManagementFeePayer(value as ManagementFeePayer)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="owner">Owner</SelectItem>
-                          <SelectItem value="resident">Penghuni</SelectItem>
-                          <SelectItem value="other">Pihak lain</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {managementFeePayer === "other" ? (
+                  {managementFeeMode === "charged" ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>
-                          Nama penanggung <span className="text-destructive">*</span>
+                          Penanggung biaya pengelolaan <span className="text-destructive">*</span>
                         </Label>
-                        <Input
-                          value={managementFeePayerName}
-                          onChange={(event) => setManagementFeePayerName(event.target.value)}
-                          placeholder="Nama pihak penanggung"
-                        />
-                        {errors?.managementFeePayerName ? (
-                          <p
-                            className="text-xs font-medium text-destructive"
-                            data-validation-target="true"
-                            role="alert"
-                            tabIndex={-1}
-                          >
-                            {errors.managementFeePayerName}
-                          </p>
-                        ) : null}
+                        <Select
+                          value={managementFeePayer}
+                          onValueChange={(value) =>
+                            setManagementFeePayer(value as ManagementFeePayer)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="owner">Owner</SelectItem>
+                            <SelectItem value="resident">Penghuni</SelectItem>
+                            <SelectItem value="other">Pihak lain</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                    ) : null}
-                  </div>
+                      {managementFeePayer === "other" ? (
+                        <div className="space-y-2">
+                          <Label>
+                            Nama penanggung <span className="text-destructive">*</span>
+                          </Label>
+                          <Input
+                            value={managementFeePayerName}
+                            onChange={(event) => setManagementFeePayerName(event.target.value)}
+                            placeholder="Nama pihak penanggung"
+                          />
+                          {errors?.managementFeePayerName ? (
+                            <p
+                              className="text-xs font-medium text-destructive"
+                              data-validation-target="true"
+                              role="alert"
+                              tabIndex={-1}
+                            >
+                              {errors.managementFeePayerName}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <NoticeAlert
+                      tone="success"
+                      title="Seluruh biaya hunian dibebaskan"
+                      description="Kontrak dan durasi hunian tetap tercatat, tetapi tidak ada tagihan sewa maupun biaya pengelolaan."
+                    />
+                  )}
                   <div className="space-y-2">
                     <Label>
                       Alasan hunian tanggungan Owner <span className="text-destructive">*</span>
@@ -2898,17 +2963,29 @@ function RoomAndPaymentStep({
                     <Summary label="Sewa kamar" value="Rp0" />
                     <Summary
                       label="Biaya pengelolaan per bulan"
-                      value={currency(selectedRoom.kostType.managementFeeAmount ?? 0)}
+                      value={
+                        managementFeeMode === "charged"
+                          ? currency(selectedRoom.kostType.managementFeeAmount ?? 0)
+                          : "Tidak ditagihkan"
+                      }
                     />
                     <Summary
                       label={`Proyeksi ${termMonths} bulan`}
                       value={currency(projectedManagementFee)}
                     />
-                    <Summary label="Jatuh tempo" value="Fleksibel · tanpa denda keterlambatan" />
+                    <Summary
+                      label="Status biaya pengelolaan"
+                      value={
+                        managementFeeMode === "charged"
+                          ? "Fleksibel · tanpa denda keterlambatan"
+                          : "Dibebaskan oleh Owner"
+                      }
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Pembayaran biaya pengelolaan dicatat setelah penyewaan dibuat dan tidak menjadi
-                    pendapatan sewa Owner.
+                    {managementFeeMode === "charged"
+                      ? "Pembayaran biaya pengelolaan dicatat setelah penyewaan dibuat dan tidak menjadi pendapatan sewa Owner."
+                      : "Tidak ada pembayaran yang perlu dicatat untuk hunian ini. Perubahan kebijakan berikutnya tidak mengubah kontrak yang sudah disimpan."}
                   </p>
                 </CardContent>
               </Card>

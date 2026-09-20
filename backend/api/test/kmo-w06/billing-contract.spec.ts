@@ -290,6 +290,20 @@ test('worklist and payment workspace constrain the due-day window with Jakarta b
     ),
     true,
   );
+  const worklistQueries = queries.filter((query) => query.statement.includes('count(*) AS total'));
+  assert.equal(worklistQueries.length >= 1, true);
+  assert.equal(
+    worklistQueries.every((query) =>
+      query.statement.includes(
+        'GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0)>0',
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    worklistQueries.every((query) => !query.statement.includes("date_trunc('month'")),
+    true,
+  );
 });
 
 type HarnessOptions = {
@@ -649,7 +663,7 @@ test('W06 annual and two-month schedules reconcile exact coverage and money', ()
       sequenceNumber: 1,
       coverageStartDate: '2026-08-31',
       coverageEndDate: '2027-08-30',
-      dueDate: '2026-08-31',
+      dueDate: '2026-09-15',
       scheduledAmount: 21_600_000,
     },
   ]);
@@ -668,12 +682,12 @@ test('W06 annual and two-month schedules reconcile exact coverage and money', ()
   assert.deepEqual(
     installments.map((item) => [item.coverageStartDate, item.coverageEndDate, item.dueDate]),
     [
-      ['2026-01-31', '2026-03-30', '2026-01-31'],
-      ['2026-03-31', '2026-05-30', '2026-03-24'],
-      ['2026-05-31', '2026-07-30', '2026-05-24'],
-      ['2026-07-31', '2026-09-29', '2026-07-24'],
-      ['2026-09-30', '2026-11-29', '2026-09-23'],
-      ['2026-11-30', '2027-01-30', '2026-11-23'],
+      ['2026-01-31', '2026-03-30', '2026-02-15'],
+      ['2026-03-31', '2026-05-30', '2026-04-15'],
+      ['2026-05-31', '2026-07-30', '2026-06-15'],
+      ['2026-07-31', '2026-09-29', '2026-08-15'],
+      ['2026-09-30', '2026-11-29', '2026-10-15'],
+      ['2026-11-30', '2027-01-30', '2026-12-15'],
     ],
   );
   assert.throws(

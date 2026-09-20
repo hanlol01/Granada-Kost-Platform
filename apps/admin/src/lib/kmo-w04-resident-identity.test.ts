@@ -352,6 +352,9 @@ test("Admin workspace freezes operational columns, scoped pagination, and the re
   assert.doesNotMatch(route, /Pantau tenggat/);
   assert.doesNotMatch(route, /Pilih sasaran dan jangka waktu pemantauan/);
   assert.match(route, /Tenggat checkpoint pembayaran/);
+  assert.match(route, /Jadwal check-out/);
+  assert.match(route, /Aktivasi kamar diperlukan/);
+  assert.match(route, /Masa sewa berakhir — proses check-out diperlukan/);
   assert.match(route, /Akhir masa sewa/);
   assert.match(route, /DEADLINE_DAY_OPTIONS/);
   assert.match(route, /Tenggat maksimal \(hari\)/);

@@ -84,14 +84,15 @@ export type OwnerAssetDetail = {
   resident: { displayName: string; occupancyStartDate: string } | null;
   billing: { state: "current" | "partially_paid" | "overdue" | "settled" | "not_available" };
   ownerSponsorship: {
-    managementFeePayer: "resident" | "owner" | "other";
+    managementFeeMode: "charged" | "waived";
+    managementFeePayer: "resident" | "owner" | "other" | null;
     managementFeePayerName: string | null;
     monthlyManagementFee: Money;
     projectedManagementFee: Money;
     verifiedPaid: Money;
     pending: Money;
     remaining: Money;
-    paymentStatus: "unpaid" | "partially_paid" | "paid" | "overpaid";
+    paymentStatus: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
     paymentTiming: "flexible";
   } | null;
   lifecycle: {
@@ -434,7 +435,7 @@ export type OwnerCollectionProgress = {
       verifiedPaid: Money;
       pending: Money;
       remaining: Money;
-      paymentStatus: "unpaid" | "partially_paid" | "paid" | "overpaid";
+      paymentStatus: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
       paymentTiming: "flexible";
     } | null;
     operations: {
@@ -796,6 +797,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
             root.owner_sponsorship,
             [
               "management_fee_payer",
+              "management_fee_mode",
               "management_fee_payer_name",
               "monthly_management_fee",
               "projected_management_fee",
@@ -808,11 +810,19 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
             "asset_detail.owner_sponsorship",
           );
           return {
-            managementFeePayer: enumValue(
-              parsed.management_fee_payer,
-              ["resident", "owner", "other"],
-              "asset_detail.owner_sponsorship.management_fee_payer",
+            managementFeeMode: enumValue(
+              parsed.management_fee_mode,
+              ["charged", "waived"],
+              "asset_detail.owner_sponsorship.management_fee_mode",
             ),
+            managementFeePayer:
+              parsed.management_fee_payer === null
+                ? null
+                : enumValue(
+                    parsed.management_fee_payer,
+                    ["resident", "owner", "other"],
+                    "asset_detail.owner_sponsorship.management_fee_payer",
+                  ),
             managementFeePayerName: nullableString(
               parsed.management_fee_payer_name,
               "asset_detail.owner_sponsorship.management_fee_payer_name",
@@ -833,7 +843,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
             remaining: money(parsed.remaining, "asset_detail.owner_sponsorship.remaining"),
             paymentStatus: enumValue(
               parsed.payment_status,
-              ["unpaid", "partially_paid", "paid", "overpaid"],
+              ["waived", "unpaid", "partially_paid", "paid", "overpaid"],
               "asset_detail.owner_sponsorship.payment_status",
             ),
             paymentTiming: enumValue(
@@ -2258,7 +2268,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
               ),
               paymentStatus: enumValue(
                 ownerSponsorship.payment_status,
-                ["unpaid", "partially_paid", "paid", "overpaid"] as const,
+                ["waived", "unpaid", "partially_paid", "paid", "overpaid"] as const,
                 "collection_progress.item.owner_sponsorship.payment_status",
               ),
               paymentTiming: enumValue(

@@ -3,7 +3,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../infrastructure/database/database.service';
-import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
+import { rentDueDateOnOrAfter } from '../billing/helpers/rent-due-date.helper';
+import { nextBillingStart, previousDate } from './lease-date.helper';
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type { BillingCycle } from './lease.types';
@@ -198,7 +199,7 @@ export class LeaseBillingScheduler implements OnModuleInit, OnModuleDestroy {
     let selectedLeaseId: string | null = null;
     try {
       return await this.leases.transaction(async (client) => {
-        const property = await this.lockProperty(client, propertyId);
+        await this.lockProperty(client, propertyId);
         if (!(await this.features.isSchedulerEnabled(propertyId, client))) return { state: 'none' };
         const candidate = await this.selectDueLease(client, propertyId, businessDate, [
           ...attemptedLeaseIds,
@@ -235,7 +236,6 @@ export class LeaseBillingScheduler implements OnModuleInit, OnModuleDestroy {
             nextBillingDate,
             cycleEnd,
             rentAmount,
-            property.default_due_day ?? 25,
             businessDate,
           );
           if (invoice.inserted) {
@@ -417,11 +417,13 @@ export class LeaseBillingScheduler implements OnModuleInit, OnModuleDestroy {
     cycleStart: string,
     cycleEnd: string,
     rentAmount: number,
-    dueDay: number,
     issueDate: string,
   ): Promise<{ id: string; inserted: boolean }> {
-    const dueCandidate = dueDateWithinCycle(cycleStart, cycleEnd, dueDay);
-    const dueDate = dueCandidate < issueDate ? issueDate : dueCandidate;
+    const scheduledDueDate = rentDueDateOnOrAfter(cycleStart);
+    // A catch-up run must never manufacture a backdated deadline. The first
+    // available uniform due day is used instead of the scheduler's run date.
+    const dueDate =
+      scheduledDueDate < issueDate ? rentDueDateOnOrAfter(issueDate) : scheduledDueDate;
     const invoiceCode = `INV-${lease.lease_code}-${cycleStart.replaceAll('-', '')}`;
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO invoices (

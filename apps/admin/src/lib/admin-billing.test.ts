@@ -506,7 +506,9 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(workspace, /documented_damage/);
   assert.match(workspace, /downloadAdminInvoiceDocument/);
   assert.match(workspace, /Periode kontrak/);
-  assert.match(workspace, /Jatuh Tempo Tagihan/);
+  assert.match(workspace, /Tenggat pembayaran/);
+  assert.match(workspace, /Pelunasan akhir/);
+  assert.match(workspace, /Checkpoint berjalan/);
   assert.match(workspace, /Tenggat pembayaran sewa kontrak/);
   assert.match(workspace, /Tenggat tahap saat ini/);
   assert.match(workspace, /Batas pelunasan seluruh kontrak/);
@@ -544,6 +546,7 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   const apiSource = readFileSync(new URL("./admin-billing.ts", import.meta.url), "utf8");
   assert.match(apiSource, /billing\/invoices\/.*\/document/);
   assert.match(apiSource, /billing\/receipts\/.*\/document/);
+  assert.match(apiSource, /billing\/receipts\/.*\/original-document/);
   assert.match(apiSource, /resident_name/);
   assert.match(apiSource, /room_number/);
 });
@@ -565,7 +568,9 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /className="space-y-5" aria-label="Tagihan dan pembayaran"/);
   assert.match(residentDetail, /Total pembayaran sewa yang sudah diterima/);
   assert.match(residentDetail, /Sisa yang wajib dilunasi/);
-  assert.match(residentDetail, /Jatuh Tempo Tagihan/);
+  assert.match(residentDetail, /Tenggat pembayaran berikutnya/);
+  assert.match(residentDetail, /Batas pelunasan kontrak/);
+  assert.match(residentDetail, /Jadwal check-out kontrak/);
   assert.match(residentDetail, /triggerLabel="Catat Pembayaran"/);
   assert.match(residentDetail, /triggerLabel="Lunasi Sisa"/);
   assert.match(residentDetail, /Status verifikasi/);

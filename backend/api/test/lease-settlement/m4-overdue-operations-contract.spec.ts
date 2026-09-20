@@ -26,6 +26,19 @@ void test('M4 migration is manifest-bound and adds append-only operational autho
   assert.doesNotMatch(sql, /UPDATE\s+rooms\s+SET\s+room_status\s*=\s*'vacant'/i);
 });
 
+void test('an edited settlement extension emits a distinct business event', () => {
+  const service = source('src/modules/billing/services/contract-settlement.service.ts');
+  assert.match(
+    service,
+    /SELECT COALESCE\(due_override\.effective_due_at,checkpoint\.due_at\)[\s\S]*WHERE checkpoint\.id=\$4/,
+  );
+  assert.match(
+    service,
+    /RETURNING id[\s\S]*lease\.contract_settlement_extended:\$\{settlement\.id\}:\$\{extensionEvent\.rows\[0\]\.id\}/,
+  );
+  assert.match(service, /eventKey \?\? `\$\{action\}:\$\{resourceId\}`/);
+});
+
 void test('overdue projection preserves grace and makes an expired extension termination-eligible', () => {
   const checkpoint = {
     id: 'checkpoint-1',
@@ -68,12 +81,13 @@ void test('overdue projection preserves grace and makes an expired extension ter
   assert.equal(expired.terminationEligible, true);
 });
 
-void test('M4 commands keep extension and promise-to-pay server authoritative', () => {
+void test('M4 commands keep editable deadlines and promise-to-pay server authoritative', () => {
   const service = source('src/modules/billing/services/contract-settlement.service.ts');
   const controller = source('src/modules/billing/controllers/admin-billing.controller.ts');
-  assert.match(service, /lockV2MissedCheckpoint/);
-  assert.match(service, /CONTRACT_SETTLEMENT_EXTENSION_DEADLINE_NOT_FUTURE/);
-  assert.match(service, /Only one settlement extension can be granted/);
+  assert.match(service, /lockV2CurrentCheckpoint/);
+  assert.match(service, /ON CONFLICT\(lease_id\) DO UPDATE/);
+  assert.doesNotMatch(service, /CONTRACT_SETTLEMENT_EXTENSION_DEADLINE_NOT_FUTURE/);
+  assert.doesNotMatch(service, /Only one settlement extension can be granted/);
   assert.match(service, /overdue_status_unchanged:\s*true/);
   assert.match(service, /LEASE_PAYMENT_PROMISE_AMOUNT_EXCEEDS_OUTSTANDING/);
   assert.match(service, /v2TerminationIsEligible/);

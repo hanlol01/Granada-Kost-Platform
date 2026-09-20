@@ -9,6 +9,10 @@ const migrationPath = resolve(
   process.cwd(),
   'backend/api/src/infrastructure/database/migrations/087_owner_sponsored_occupancy_authority.sql',
 );
+const optionalFeeMigrationPath = resolve(
+  process.cwd(),
+  'backend/api/src/infrastructure/database/migrations/092_owner_sponsored_optional_management_fee.sql',
+);
 
 void test('owner-sponsored occupancy migration is explicit, additive, and manifest-bound', () => {
   const migration = readFileSync(migrationPath, 'utf8');
@@ -24,5 +28,22 @@ void test('owner-sponsored occupancy migration is explicit, additive, and manife
   assert.match(migration, /management_fee_payer IN \('resident','owner','other'\)/i);
   assert.match(migration, /payment_purpose.*management_fee/is);
   assert.match(migration, /owner_sponsored.*contract_rent_amount = 0/is);
+  assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM leases|DROP TABLE/i);
+});
+
+void test('optional management-fee migration keeps charged and waived authority explicit', () => {
+  const migration = readFileSync(optionalFeeMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '092_owner_sponsored_optional_management_fee.sql',
+  );
+
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /management_fee_mode IN \('charged','waived'\)/i);
+  assert.match(
+    migration,
+    /management_fee_mode='waived'[\s\S]*snapshot_monthly_management_fee = 0/i,
+  );
+  assert.match(migration, /WHEN term\.management_fee_mode='waived' THEN 'waived'/i);
   assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM leases|DROP TABLE/i);
 });

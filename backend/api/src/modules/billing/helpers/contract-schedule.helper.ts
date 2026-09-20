@@ -1,3 +1,5 @@
+import { rentDueDateOnOrAfter } from './rent-due-date.helper';
+
 export type ContractPaymentPlan = 'annual_full' | 'two_month_installments' | 'monthly_installments';
 
 export type ContractScheduleItem = {
@@ -73,7 +75,7 @@ export function buildContractSchedule(input: ContractScheduleInput): ContractSch
       sequenceNumber: index + 1,
       coverageStartDate: formatBusinessDate(coverageStart),
       coverageEndDate: formatBusinessDate(coverageEnd),
-      dueDate: formatBusinessDate(index === 0 ? coverageStart : addDays(coverageStart, -7)),
+      dueDate: rentDueDateOnOrAfter(formatBusinessDate(coverageStart)),
       scheduledAmount: exactMoney(Number(scheduledAmount), 'installment amount'),
     });
     coverageStart = nextCoverageStart;

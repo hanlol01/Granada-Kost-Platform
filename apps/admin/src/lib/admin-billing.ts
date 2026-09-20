@@ -195,7 +195,8 @@ export type ResidentBilling = {
   owner_sponsorship: {
     owner_profile_id: string;
     owner_name: string;
-    management_fee_payer: "resident" | "owner" | "other";
+    management_fee_mode: "charged" | "waived";
+    management_fee_payer: "resident" | "owner" | "other" | null;
     management_fee_payer_name: string | null;
     sponsorship_reason: string;
     snapshot_monthly_management_fee: number;
@@ -203,7 +204,7 @@ export type ResidentBilling = {
     verified_paid: number;
     pending: number;
     remaining: number;
-    payment_status: "unpaid" | "partially_paid" | "paid" | "overpaid";
+    payment_status: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
     payment_timing: "flexible";
   } | null;
   summary: {
@@ -223,7 +224,11 @@ export type ResidentBilling = {
   contract_settlement: {
     id: string;
     invoice_id: string;
-    policy_version: "legacy_v1" | "lease_settlement_v2";
+    policy_version:
+      | "legacy_v1"
+      | "lease_settlement_v2"
+      | "lease_settlement_v3"
+      | "lease_settlement_v4";
     status:
       | "awaiting_activation"
       | "open"
@@ -382,7 +387,7 @@ export type AdminPaymentVerificationPolicy = {
 
 export type ContractSettlementExtensionInput = {
   property_id: string;
-  extension_days: number;
+  extension_due_date: string;
   reason: string;
 };
 
@@ -976,7 +981,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       invoice_id: uuid(record.invoice_id, "ID invoice pelunasan kontrak"),
       policy_version: oneOf(
         record.policy_version,
-        ["legacy_v1", "lease_settlement_v2"] as const,
+        ["legacy_v1", "lease_settlement_v2", "lease_settlement_v3", "lease_settlement_v4"] as const,
         "Versi kebijakan pelunasan",
       ),
       status: oneOf(
@@ -1061,6 +1066,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       [
         "owner_profile_id",
         "owner_name",
+        "management_fee_mode",
         "management_fee_payer",
         "management_fee_payer_name",
         "sponsorship_reason",
@@ -1077,10 +1083,13 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
     return {
       owner_profile_id: uuid(record.owner_profile_id, "ID Owner penanggung"),
       owner_name: text(record.owner_name, "Nama Owner penanggung"),
-      management_fee_payer: oneOf(
-        record.management_fee_payer,
-        ["resident", "owner", "other"] as const,
-        "Pembayar biaya pengelolaan",
+      management_fee_mode: oneOf(
+        record.management_fee_mode,
+        ["charged", "waived"] as const,
+        "Ketentuan biaya pengelolaan",
+      ),
+      management_fee_payer: nullable(record.management_fee_payer, (value) =>
+        oneOf(value, ["resident", "owner", "other"] as const, "Pembayar biaya pengelolaan"),
       ),
       management_fee_payer_name: nullable(record.management_fee_payer_name, (value) =>
         text(value, "Nama pembayar biaya pengelolaan"),
@@ -1099,7 +1108,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       remaining: integer(record.remaining, "Sisa biaya pengelolaan"),
       payment_status: oneOf(
         record.payment_status,
-        ["unpaid", "partially_paid", "paid", "overpaid"] as const,
+        ["waived", "unpaid", "partially_paid", "paid", "overpaid"] as const,
         "Status biaya pengelolaan",
       ),
       payment_timing: oneOf(record.payment_timing, ["flexible"] as const, "Waktu pembayaran"),
@@ -1934,6 +1943,28 @@ export async function downloadAdminReceiptDocument(
     );
     if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
       throw new Error(`Dokumen kuitansi gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, filename);
+}
+
+export async function downloadAdminOriginalReceiptDocument(
+  propertyId: string,
+  receiptId: string,
+  receiptCode: string,
+) {
+  const query = new URLSearchParams({ property_id: propertyId });
+  const filename = `${receiptCode.replace(/[^a-z0-9_-]+/gi, "-") || "kuitansi"}-asli.pdf`;
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/admin/billing/receipts/${encodeURIComponent(receiptId)}/original-document?${query}`,
+      {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Dokumen asli kuitansi gagal diunduh (HTTP ${response.status}).`);
     return response;
   }, filename);
 }

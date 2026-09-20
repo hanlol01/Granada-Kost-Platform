@@ -19,7 +19,11 @@ import {
   TransferLeasePreviewDto,
   TransferReasonCode,
 } from './lease.dto';
-import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
+import { nextBillingStart, previousDate } from './lease-date.helper';
+import {
+  rentDueDateOnOrAfter,
+  UNIFORM_RENT_DUE_DAY,
+} from '../billing/helpers/rent-due-date.helper';
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type { BillingCycle, IdempotentResult, LeaseAuditContext, LeaseStatus } from './lease.types';
@@ -198,7 +202,7 @@ export class LeaseTransferService {
 
     return this.leases.transaction(async (client) => {
       const today = await this.jakartaToday(client);
-      const property = await this.lockProperty(client, scope.property_id);
+      await this.lockProperty(client, scope.property_id);
       await this.features.assertTransferEnabled(scope.property_id, client);
       const source = await this.lockLease(client, leaseId, 'FOR SHARE');
       this.assertTransferableLease(source);
@@ -274,13 +278,13 @@ export class LeaseTransferService {
           },
           billing: {
             billing_cycle: source.billing_cycle,
-            billing_anchor_day: source.billing_anchor_day,
+            billing_anchor_day: UNIFORM_RENT_DUE_DAY,
             source_next_billing_date: sourceNextBillingDate,
             target_invoice_will_be_issued: targetInvoiceWillBeIssued,
             target_next_billing_date: targetInvoiceWillBeIssued
-              ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
+              ? nextBillingStart(today, source.billing_cycle, UNIFORM_RENT_DUE_DAY)
               : sourceNextBillingDate,
-            due_day: property.default_due_day ?? 25,
+            due_day: UNIFORM_RENT_DUE_DAY,
             // The successor lease inherits the source contractual end date.
             contractual_end_date: source.end_date,
           },
@@ -450,7 +454,7 @@ export class LeaseTransferService {
 
         const commercialSnapshot = {
           billing_cycle: source.billing_cycle,
-          billing_anchor_day: source.billing_anchor_day,
+          billing_anchor_day: UNIFORM_RENT_DUE_DAY,
           next_billing_date: this.currentOrNextBillingBoundary(source, today),
           snapshot_monthly_price: source.snapshot_monthly_price,
           snapshot_yearly_price: source.snapshot_yearly_price,
@@ -935,7 +939,7 @@ export class LeaseTransferService {
         // date while the contractual term survives on the successor.
         source.end_date,
         source.billing_cycle,
-        source.billing_anchor_day,
+        UNIFORM_RENT_DUE_DAY,
         targetNextBillingDate,
         targetKostType.monthly_price,
         targetKostType.yearly_price,
@@ -1754,7 +1758,7 @@ export class LeaseTransferService {
         lease.id,
         invoiceCode,
         rentAmount,
-        dueDateWithinCycle(cycleStart, cycleEnd, property.default_due_day ?? 25),
+        rentDueDateOnOrAfter(cycleStart),
         `lease:${lease.lease_code}:${cycleStart}`,
         cycleStart,
         cycleEnd,

@@ -9,6 +9,10 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
+import {
+  rentDueDateOnOrAfter,
+  UNIFORM_RENT_DUE_DAY,
+} from '../billing/helpers/rent-due-date.helper';
 import { UserAccessContext } from '../iam/types/iam.types';
 import {
   CloseLeaseDto,
@@ -21,7 +25,7 @@ import {
   WaiveRefundDto,
   ListLeaseResidentOptionsQueryDto,
 } from './lease.dto';
-import { dueDateWithinCycle, nextBillingStart, previousDate } from './lease-date.helper';
+import { previousDate } from './lease-date.helper';
 import { LeaseFeatureService } from './lease-feature.service';
 import { LeaseRepository } from './lease.repository';
 import type {
@@ -463,7 +467,7 @@ export class LeaseService {
           });
         }
 
-        const property = await this.lockProperty(client, dto.property_id);
+        await this.lockProperty(client, dto.property_id);
         const room = await this.lockRoom(client, dto.room_id);
         if (room.property_id !== dto.property_id) {
           throw new UnprocessableEntityException({
@@ -523,8 +527,8 @@ export class LeaseService {
           [dto.property_id, room.id, resident.id, today, user.id],
         );
         const occupancyId = occupancyResult.rows[0].id;
-        const anchorDay = dto.billing_anchor_day ?? Number(today.slice(-2));
-        const nextBillingDate = nextBillingStart(today, dto.billing_cycle, anchorDay);
+        const anchorDay = UNIFORM_RENT_DUE_DAY;
+        const nextBillingDate = rentDueDateOnOrAfter(today);
         const cycleEndDate = previousDate(nextBillingDate);
         const rentAmount =
           dto.billing_cycle === 'monthly'
@@ -610,7 +614,7 @@ export class LeaseService {
             lease.id,
             invoiceCode,
             rentAmount,
-            dueDateWithinCycle(today, cycleEndDate, property.default_due_day ?? 25),
+            rentDueDateOnOrAfter(today),
             `lease:${leaseCode}:${today}`,
             today,
             cycleEndDate,

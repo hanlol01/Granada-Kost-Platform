@@ -1,3 +1,5 @@
+import { rentDueDateOnOrAfter, UNIFORM_RENT_DUE_DAY } from './rent-due-date.helper';
+
 export const SUPPORTED_LEASE_SETTLEMENT_TERMS = [3, 6, 12] as const;
 
 export type SupportedLeaseSettlementTerm = (typeof SUPPORTED_LEASE_SETTLEMENT_TERMS)[number];
@@ -23,6 +25,14 @@ export type LeaseSettlementPolicyScheduleV3 = {
   checkpointAnchorDay: number;
   initialMonthMinimumAmount: number;
   finalSettlementOffsetMonths: 0 | 1 | 2 | 3;
+  checkpoints: LeaseSettlementCheckpointSchedule[];
+};
+
+export type LeaseSettlementPolicyScheduleV4 = {
+  policyVersion: 'lease_settlement_v4';
+  checkpointAnchorDay: typeof UNIFORM_RENT_DUE_DAY;
+  initialMonthMinimumAmount: number;
+  finalSettlementOffsetMonths: number;
   checkpoints: LeaseSettlementCheckpointSchedule[];
 };
 
@@ -174,6 +184,78 @@ export function buildLeaseSettlementPolicyScheduleV3(
       buildMonthlyCoverageCheckpoint('checkpoint_1', 1, dueDate(1), checkpointOneMinimum),
       buildMonthlyCoverageCheckpoint('checkpoint_2', 2, dueDate(2), checkpointTwoMinimum),
       buildFinalSettlementCheckpoint(3, dueDate(3)),
+    ],
+  };
+}
+
+/**
+ * Uniform rent policy. Every payment target is due on the first 15th on or
+ * after the coverage it settles. The final contract balance is due in the
+ * contract month for one- and two-month terms, and no later than month three
+ * for every term of three months or longer.
+ */
+export function buildLeaseSettlementPolicyScheduleV4(
+  input: LeaseSettlementPolicyInput,
+): LeaseSettlementPolicyScheduleV4 {
+  const leaseStartDate = parseBusinessDate(input.leaseStartDate);
+  const termMonths = assertTermWithinRange(input.termMonths);
+  const monthlyRentAmount = assertPositiveMoney(input.monthlyRentAmount, 'monthly rent');
+  const coverageDueDate = (monthsFromActivation: number) =>
+    rentDueDateOnOrAfter(
+      formatBusinessDate(addCalendarMonthsPreservingAnchor(leaseStartDate, monthsFromActivation)),
+    );
+  const finalSettlementOffsetMonths = Math.min(termMonths, 3);
+
+  if (termMonths === 1) {
+    return {
+      policyVersion: 'lease_settlement_v4',
+      checkpointAnchorDay: UNIFORM_RENT_DUE_DAY,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths,
+      checkpoints: [buildFinalSettlementCheckpoint(1, coverageDueDate(finalSettlementOffsetMonths))],
+    };
+  }
+
+  if (termMonths === 2) {
+    return {
+      policyVersion: 'lease_settlement_v4',
+      checkpointAnchorDay: UNIFORM_RENT_DUE_DAY,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths,
+      checkpoints: [buildFinalSettlementCheckpoint(1, coverageDueDate(finalSettlementOffsetMonths))],
+    };
+  }
+
+  const checkpointOneMinimum = assertPositiveMoney(
+    monthlyRentAmount * 2,
+    'checkpoint one cumulative minimum',
+  );
+  if (termMonths === 3) {
+    return {
+      policyVersion: 'lease_settlement_v4',
+      checkpointAnchorDay: UNIFORM_RENT_DUE_DAY,
+      initialMonthMinimumAmount: monthlyRentAmount,
+      finalSettlementOffsetMonths,
+      checkpoints: [
+        buildMonthlyCoverageCheckpoint('checkpoint_1', 1, coverageDueDate(1), checkpointOneMinimum),
+        buildFinalSettlementCheckpoint(2, coverageDueDate(finalSettlementOffsetMonths)),
+      ],
+    };
+  }
+
+  const checkpointTwoMinimum = assertPositiveMoney(
+    monthlyRentAmount * 3,
+    'checkpoint two cumulative minimum',
+  );
+  return {
+    policyVersion: 'lease_settlement_v4',
+    checkpointAnchorDay: UNIFORM_RENT_DUE_DAY,
+    initialMonthMinimumAmount: monthlyRentAmount,
+    finalSettlementOffsetMonths,
+    checkpoints: [
+      buildMonthlyCoverageCheckpoint('checkpoint_1', 1, coverageDueDate(1), checkpointOneMinimum),
+      buildMonthlyCoverageCheckpoint('checkpoint_2', 2, coverageDueDate(2), checkpointTwoMinimum),
+      buildFinalSettlementCheckpoint(3, coverageDueDate(finalSettlementOffsetMonths)),
     ],
   };
 }

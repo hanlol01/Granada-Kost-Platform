@@ -170,12 +170,12 @@ test("room list and availability parsers accept only exact V2 envelopes", () => 
       data: [
         {
           property_id: "property-a",
-          status: "vacant",
+          status: "inspection_required",
           total: 80,
         },
       ],
     }),
-    [{ propertyId: "property-a", status: "vacant", total: 80 }],
+    [{ propertyId: "property-a", status: "inspection_required", total: 80 }],
   );
 
   for (const invalid of [
@@ -197,6 +197,58 @@ test("room list and availability parsers accept only exact V2 envelopes", () => 
   ]) {
     assert.throws(() => parseRoomAvailabilityEnvelope(invalid));
   }
+});
+
+test("room inventory parser accepts the management-fee snapshot returned by the API", () => {
+  const page = parseRoomInventoryListEnvelope(
+    {
+      data: [
+        {
+          id: "room-1",
+          property_id: "property-a",
+          number: "RK-01-01",
+          room_code: "RK-01-01",
+          building_id: "building-1",
+          building_code: "RK-01",
+          building_name: "Rumah Kost 01",
+          unit_code: null,
+          gender_policy: "male",
+          floor: "1",
+          floor_code: "B",
+          floor_label: "Lantai Bawah / LT.1",
+          size_label: null,
+          status: "inspection_required",
+          primary_photo_file_id: null,
+          public_visible: true,
+          created_at: "2026-09-20T00:00:00.000Z",
+          updated_at: "2026-09-20T00:00:00.000Z",
+          kost_type: {
+            id: "kost-type-1",
+            name: "Rumah Kost",
+            slug: "rumah-kost",
+            category: "rukost",
+            monthly_price: 1800000,
+            yearly_price: 21600000,
+            short_stay_monthly_price: 1900000,
+            medium_stay_monthly_price: 1850000,
+            long_stay_monthly_price: 1800000,
+            commercial_effective_date: "2026-06-01",
+            deposit_amount: 1800000,
+            management_fee_amount: 300000,
+            facilities: [],
+          },
+          active_lease: null,
+          active_occupancy: null,
+          lease_reconciliation_required: false,
+        },
+      ],
+      meta: { total: 1, limit: 20, offset: 0 },
+    },
+    true,
+  );
+
+  assert.equal(page.items[0]?.kostType.managementFeeAmount, 300000);
+  assert.equal(page.items[0]?.status, "inspection_required");
 });
 
 test("room search defaults to all categories and bounds pagination", () => {
@@ -241,6 +293,7 @@ test("authoritative summary ignores page rows and includes active plus inactive 
       maintenance: 0,
       inactive: 0,
       requires_review: 0,
+      inspection_required: 0,
     },
     totalInventory: 163,
     categoryCounts: { rukost: 80, apartkost: 83 },

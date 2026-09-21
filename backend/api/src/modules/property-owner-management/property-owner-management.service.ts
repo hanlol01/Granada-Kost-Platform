@@ -93,27 +93,12 @@ export class PropertyOwnerManagementService {
               users.user_status,
               COUNT(*) OVER()::text AS total_count,
               COUNT(DISTINCT building_assignments.id) FILTER (
-                WHERE (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date >= building_assignments.effective_from
-                  AND (building_assignments.effective_until IS NULL
-                    OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < building_assignments.effective_until)
+                WHERE building_assignments.assignment_status = 'active'
               )::text AS building_count,
               COUNT(DISTINCT room_assignments.id) FILTER (
-                WHERE (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date >= room_assignments.effective_from
-                  AND (room_assignments.effective_until IS NULL
-                    OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < room_assignments.effective_until)
+                WHERE room_assignments.assignment_status = 'active'
               )::text AS room_count,
-              (
-                COUNT(DISTINCT building_assignments.id) FILTER (
-                  WHERE building_assignments.effective_from > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-                    AND (building_assignments.effective_until IS NULL
-                      OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < building_assignments.effective_until)
-                )
-                + COUNT(DISTINCT room_assignments.id) FILTER (
-                  WHERE room_assignments.effective_from > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-                    AND (room_assignments.effective_until IS NULL
-                      OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < room_assignments.effective_until)
-                )
-              )::text AS scheduled_count
+              0::text AS scheduled_count
        FROM property_owner_profiles profiles
        JOIN users ON users.id = profiles.user_id
        LEFT JOIN building_owner_assignments building_assignments
@@ -151,8 +136,7 @@ export class PropertyOwnerManagementService {
          JOIN room_buildings buildings ON buildings.id = assignments.building_id
          LEFT JOIN rooms ON rooms.building_id = buildings.id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND (assignments.effective_until IS NULL
-             OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          GROUP BY assignments.id, buildings.id
          ORDER BY assignments.effective_from, assignments.id`,
         [ownerId, propertyId],
@@ -166,8 +150,7 @@ export class PropertyOwnerManagementService {
          JOIN rooms ON rooms.id = assignments.room_id
          LEFT JOIN room_buildings buildings ON buildings.id = rooms.building_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND (assignments.effective_until IS NULL
-             OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          ORDER BY assignments.effective_from, rooms.room_code, assignments.id`,
         [ownerId, propertyId],
       ),
@@ -221,7 +204,7 @@ export class PropertyOwnerManagementService {
     const ownershipHistoryCount = counts.building_assignment_count + counts.room_assignment_count;
     return {
       ...this.mapOwner(owner),
-      active_and_scheduled_assets: {
+      active_assets: {
         rumah_kost_buildings: buildings.rows,
         apart_kost_rooms: rooms.rows,
       },
@@ -256,9 +239,8 @@ export class PropertyOwnerManagementService {
     };
   }
 
-  async assetOptions(actor: UserAccessContext, propertyId: string, effectiveDate?: string) {
+  async assetOptions(actor: UserAccessContext, propertyId: string) {
     this.assertPropertyScope(actor, propertyId);
-    const date = effectiveDate ?? (await this.jakartaBusinessDate());
     const [buildings, rooms] = await Promise.all([
       this.database.client.query(
         `SELECT buildings.id, buildings.building_code, buildings.building_name,
@@ -271,20 +253,21 @@ export class PropertyOwnerManagementService {
          LEFT JOIN rooms
            ON rooms.building_id = buildings.id AND rooms.property_id = buildings.property_id
          LEFT JOIN LATERAL (
-           SELECT assignments.id, assignments.owner_profile_id, profiles.full_name AS owner_name
+           SELECT assignments.id, assignments.owner_profile_id, profiles.full_name AS owner_name,
+                  assignments.updated_at AS updated_at
            FROM building_owner_assignments assignments
            JOIN property_owner_profiles profiles ON profiles.id = assignments.owner_profile_id
            WHERE assignments.property_id = buildings.property_id
              AND assignments.building_id = buildings.id
-             AND $2::date >= assignments.effective_from
-             AND (assignments.effective_until IS NULL OR $2::date < assignments.effective_until)
-           ORDER BY assignments.effective_from DESC, assignments.id DESC
+             AND assignments.assignment_status = 'active'
+           ORDER BY assignments.updated_at DESC, assignments.id DESC
            LIMIT 1
          ) assignment ON true
          WHERE buildings.property_id = $1 AND buildings.category = 'rukost'
-         GROUP BY buildings.id, assignment.id, assignment.owner_profile_id, assignment.owner_name
+         GROUP BY buildings.id, assignment.id, assignment.owner_profile_id, assignment.owner_name,
+                  assignment.updated_at
          ORDER BY buildings.building_code, buildings.id`,
-        [propertyId, date],
+        [propertyId],
       ),
       this.database.client.query(
         `SELECT rooms.id, rooms.room_code, rooms.room_status, rooms.gender_policy,
@@ -301,18 +284,16 @@ export class PropertyOwnerManagementService {
            JOIN property_owner_profiles profiles ON profiles.id = assignments.owner_profile_id
            WHERE assignments.property_id = rooms.property_id
              AND assignments.room_id = rooms.id
-             AND $2::date >= assignments.effective_from
-             AND (assignments.effective_until IS NULL OR $2::date < assignments.effective_until)
-           ORDER BY assignments.effective_from DESC, assignments.id DESC
+             AND assignments.assignment_status = 'active'
+           ORDER BY assignments.updated_at DESC, assignments.id DESC
            LIMIT 1
          ) assignment ON true
          WHERE rooms.property_id = $1 AND rooms.category = 'apartkost'
          ORDER BY buildings.building_code, rooms.room_code, rooms.id`,
-        [propertyId, date],
+        [propertyId],
       ),
     ]);
     return {
-      effective_date: date,
       rumah_kost_buildings: buildings.rows,
       apart_kost_rooms: rooms.rows,
     };
@@ -646,8 +627,7 @@ export class PropertyOwnerManagementService {
       const buildingAssignments = await client.query(
         `SELECT id FROM building_owner_assignments
          WHERE owner_profile_id = $1 AND property_id = $2
-           AND (effective_until IS NULL
-             OR effective_until > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date)
+           AND assignment_status = 'active'
          ORDER BY id
          FOR UPDATE`,
         [ownerId, propertyId],
@@ -655,8 +635,7 @@ export class PropertyOwnerManagementService {
       const roomAssignments = await client.query(
         `SELECT id FROM room_owner_assignments
          WHERE owner_profile_id = $1 AND property_id = $2
-           AND (effective_until IS NULL
-             OR effective_until > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date)
+           AND assignment_status = 'active'
          ORDER BY id
          FOR UPDATE`,
         [ownerId, propertyId],
@@ -1394,9 +1373,7 @@ export class PropertyOwnerManagementService {
          JOIN room_buildings buildings ON buildings.id = assignments.building_id
          LEFT JOIN rooms ON rooms.building_id = buildings.id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date >= assignments.effective_from
-           AND (assignments.effective_until IS NULL
-             OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          GROUP BY buildings.id
          ORDER BY buildings.building_code`,
         [owner.id, owner.property_id],
@@ -1408,9 +1385,7 @@ export class PropertyOwnerManagementService {
          JOIN rooms ON rooms.id = assignments.room_id
          LEFT JOIN room_buildings buildings ON buildings.id = rooms.building_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date >= assignments.effective_from
-           AND (assignments.effective_until IS NULL
-             OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          ORDER BY rooms.room_code`,
         [owner.id, owner.property_id],
       ),

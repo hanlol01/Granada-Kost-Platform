@@ -536,10 +536,8 @@ export class OnboardingService {
                            ON profile.id=assignment.owner_profile_id
                         WHERE assignment.property_id=$1
                           AND assignment.building_id=$2
-                          AND assignment.assignment_status IN ('active','scheduled')
-                          AND assignment.effective_from<=$3::date
-                          AND (assignment.effective_until IS NULL OR $3::date<assignment.effective_until)
-                        ORDER BY assignment.effective_from DESC,assignment.id DESC
+                          AND assignment.assignment_status='active'
+                        ORDER BY assignment.updated_at DESC,assignment.id DESC
                         LIMIT 1
                         FOR KEY SHARE OF assignment,profile`
                     : `SELECT assignment.id,assignment.owner_profile_id,
@@ -549,17 +547,11 @@ export class OnboardingService {
                            ON profile.id=assignment.owner_profile_id
                         WHERE assignment.property_id=$1
                           AND assignment.room_id=$2
-                          AND assignment.assignment_status IN ('active','scheduled')
-                          AND assignment.effective_from<=$3::date
-                          AND (assignment.effective_until IS NULL OR $3::date<assignment.effective_until)
-                        ORDER BY assignment.effective_from DESC,assignment.id DESC
+                          AND assignment.assignment_status='active'
+                        ORDER BY assignment.updated_at DESC,assignment.id DESC
                         LIMIT 1
                         FOR KEY SHARE OF assignment,profile`,
-                  [
-                    dto.property_id,
-                    room.category === 'rukost' ? room.building_id : room.id,
-                    dto.start_date,
-                  ],
+                  [dto.property_id, room.category === 'rukost' ? room.building_id : room.id],
                 )
               ).rows[0] ?? null)
             : null;
@@ -570,8 +562,7 @@ export class OnboardingService {
         )
           throw new ConflictException({
             code: 'OWNER_SPONSORED_ASSIGNMENT_INVALID',
-            message:
-              'Owner penanggung tidak sesuai dengan kepemilikan kamar pada tanggal mulai sewa',
+            message: 'Owner penanggung tidak sesuai dengan owner aset yang terdaftar.',
           });
         const identityPhone = dto.visitor_phone?.trim() || lead?.visitor_phone?.trim() || null;
         const identityEmail = dto.visitor_email?.trim() || lead?.visitor_email?.trim() || null;
@@ -804,6 +795,7 @@ export class OnboardingService {
             normalVerificationDecision);
         const currentPaymentStatus = verificationDecision.status;
         if (
+          commercialMode !== 'owner_sponsored' &&
           !stagedDirectOnboarding &&
           verificationDecision.policy.requiresActualPaymentDate &&
           recordsNewPayment &&

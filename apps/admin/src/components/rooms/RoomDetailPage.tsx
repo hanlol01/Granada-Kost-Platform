@@ -48,16 +48,15 @@ function ownershipSourceLabel(
   return "Belum ada assignment Owner Property";
 }
 
-function ownershipPeriodLabel(effectiveFrom: string | null, effectiveUntil: string | null) {
-  if (!effectiveFrom) return "Tidak ada periode assignment";
-  return `${formatDate(effectiveFrom)} — ${effectiveUntil ? formatDate(effectiveUntil) : "Tanpa batas akhir"}`;
-}
-
 function roomStatusBadgeClass(status: string): string {
   const base = "border text-foreground shadow-sm";
   if (status === "occupied") return `${base} border-success/45 bg-success/10`;
   if (status === "reserved") return `${base} border-warning/50 bg-warning/15`;
-  if (status === "maintenance" || status === "requires_review") {
+  if (
+    status === "maintenance" ||
+    status === "requires_review" ||
+    status === "inspection_required"
+  ) {
     return `${base} border-warning/55 bg-warning/20`;
   }
   if (status === "inactive") return `${base} border-destructive/45 bg-destructive/10`;
@@ -348,13 +347,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
               items={[
                 ["Otoritas saat ini", detail.ownership.displayName],
                 ["Sumber", ownershipSourceLabel(detail.ownership.source)],
-                [
-                  "Periode efektif",
-                  ownershipPeriodLabel(
-                    detail.ownership.effectiveFrom,
-                    detail.ownership.effectiveUntil,
-                  ),
-                ],
                 [
                   "Status",
                   detail.ownership.assignmentStatus === "active" ? "Aktif" : "Milik Kostation",

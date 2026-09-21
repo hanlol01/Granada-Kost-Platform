@@ -67,7 +67,7 @@ export class PropertyOwnerManagementController {
     @CurrentUser() actor: UserAccessContext,
     @Query() query: PropertyOwnerAssetOptionsQueryDto,
   ) {
-    return this.owners.assetOptions(actor, query.property_id, query.effective_date);
+    return this.owners.assetOptions(actor, query.property_id);
   }
 
   @Post()

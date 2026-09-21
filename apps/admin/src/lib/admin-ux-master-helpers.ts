@@ -70,6 +70,7 @@ export function roomStructuralEditLocked(
       room.status === "occupied" ||
       room.status === "maintenance" ||
       room.status === "requires_review" ||
+      room.status === "inspection_required" ||
       room.activeLease ||
       room.activeOccupancy),
   );
@@ -99,6 +100,7 @@ export const ROOM_STATUS_LABEL: Record<RoomStatus, string> = {
   maintenance: "Maintenance",
   inactive: "Tidak Aktif",
   requires_review: "Perlu Review",
+  inspection_required: "Perlu inspeksi",
 };
 
 export const KOST_TYPE_LABEL: Record<KostTypeCategory, string> = {
@@ -136,6 +138,7 @@ export function summarizeRoomInventory(
     maintenance: 0,
     inactive: 0,
     requires_review: 0,
+    inspection_required: 0,
   };
   for (const item of availability) {
     if (item.propertyId === propertyId) {
@@ -213,7 +216,8 @@ export function normalizeRoomSearch(raw: Record<string, unknown>): RoomRouteSear
     raw.status === "occupied" ||
     raw.status === "maintenance" ||
     raw.status === "inactive" ||
-    raw.status === "requires_review"
+    raw.status === "requires_review" ||
+    raw.status === "inspection_required"
       ? raw.status
       : undefined;
   return {

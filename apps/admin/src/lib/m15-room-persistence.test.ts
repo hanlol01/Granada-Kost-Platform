@@ -429,6 +429,7 @@ test("scope, authoritative references, lifecycle, and safe recovery are behavior
   assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "occupied" })), true);
   assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "maintenance" })), true);
   assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "requires_review" })), true);
+  assert.equal(roomStructuralEditLocked(lifecycleRoom({ status: "inspection_required" })), true);
   assert.equal(
     roomStructuralEditLocked(
       lifecycleRoom({ activeLease: { leaseCode: undefined, residentName: undefined } }),

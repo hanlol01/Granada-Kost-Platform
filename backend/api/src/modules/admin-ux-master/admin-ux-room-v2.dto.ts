@@ -69,6 +69,7 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
     'maintenance',
     'inactive',
     'requires_review',
+    'inspection_required',
   ])
   status?: string;
 

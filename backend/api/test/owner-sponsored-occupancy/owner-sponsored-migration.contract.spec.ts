@@ -13,6 +13,10 @@ const optionalFeeMigrationPath = resolve(
   process.cwd(),
   'backend/api/src/infrastructure/database/migrations/092_owner_sponsored_optional_management_fee.sql',
 );
+const permanentAssignmentMigrationPath = resolve(
+  process.cwd(),
+  'backend/api/src/infrastructure/database/migrations/095_owner_sponsored_permanent_assignment_trigger.sql',
+);
 
 void test('owner-sponsored occupancy migration is explicit, additive, and manifest-bound', () => {
   const migration = readFileSync(migrationPath, 'utf8');
@@ -46,4 +50,17 @@ void test('optional management-fee migration keeps charged and waived authority 
   );
   assert.match(migration, /WHEN term\.management_fee_mode='waived' THEN 'waived'/i);
   assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM leases|DROP TABLE/i);
+});
+
+void test('permanent owner registration migration removes lease-date gates from sponsorship trigger', () => {
+  const migration = readFileSync(permanentAssignmentMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '095_owner_sponsored_permanent_assignment_trigger.sql',
+  );
+
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION validate_owner_sponsored_lease_term\(\)/i);
+  assert.match(migration, /assignment\.assignment_status='active'/i);
+  assert.doesNotMatch(migration, /effective_from|effective_until|scheduled/i);
 });

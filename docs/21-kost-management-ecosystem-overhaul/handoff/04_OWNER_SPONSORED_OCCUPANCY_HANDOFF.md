@@ -22,8 +22,8 @@ owner entitlement, and management fees unambiguous.
 - There is no due date, overdue status, or late-payment reminder for this fee.
 - For a charged fee, the payer is `resident`, `owner`, or `other`; an `other`
   payer requires a name. A waived fee has no payer.
-- A sponsored term must reference the owner assigned to the room’s building
-  for Rumah Kost, or to the exact room for Apart Kost.
+- A sponsored term must reference the Owner with an active permanent assignment
+  to the room’s building for Rumah Kost, or to the exact room for Apart Kost.
 - An active sponsored term protects the selected ownership assignment from
   being released or shortened in a way that would invalidate history.
 - Check-out can finish when a management-fee balance remains. It closes room

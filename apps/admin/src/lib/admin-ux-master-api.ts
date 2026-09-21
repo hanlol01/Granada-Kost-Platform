@@ -21,7 +21,8 @@ export type RoomStatus =
   | "occupied"
   | "maintenance"
   | "inactive"
-  | "requires_review";
+  | "requires_review"
+  | "inspection_required";
 export type RoomGenderPolicy = "male" | "female" | "mixed";
 export type RuleCategory = "general" | "guest" | "resident" | "other" | "special_notes";
 
@@ -141,6 +142,7 @@ export type RoomInventory = {
     mediumStayMonthlyPrice?: number;
     longStayMonthlyPrice?: number;
     commercialEffectiveDate?: string;
+    managementFeeAmount?: number;
     facilities?: Array<
       Pick<RoomFacility, "id" | "name" | "icon" | "description" | "categoryId" | "sortOrder">
     >;
@@ -536,7 +538,8 @@ function isRoomStatus(value: unknown): value is RoomStatus {
     value === "occupied" ||
     value === "maintenance" ||
     value === "inactive" ||
-    value === "requires_review"
+    value === "requires_review" ||
+    value === "inspection_required"
   );
 }
 
@@ -1388,6 +1391,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       "long_stay_monthly_price",
       "commercial_effective_date",
       "deposit_amount",
+      "management_fee_amount",
       "facilities",
     ]) ||
     !isNonEmptyString(kostType.id) ||
@@ -1401,6 +1405,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     typeof kostType.long_stay_monthly_price !== "number" ||
     !isCanonicalDate(kostType.commercial_effective_date) ||
     typeof kostType.deposit_amount !== "number" ||
+    typeof kostType.management_fee_amount !== "number" ||
     !Array.isArray(kostType.facilities)
   ) {
     throw new Error("Invalid room kost type record.");
@@ -1485,6 +1490,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       longStayMonthlyPrice: kostType.long_stay_monthly_price,
       commercialEffectiveDate: kostType.commercial_effective_date,
       depositAmount: kostType.deposit_amount,
+      managementFeeAmount: kostType.management_fee_amount,
       facilities: kostType.facilities.map(parseRoomFacility),
     },
     activeLease:
@@ -2196,6 +2202,7 @@ export function roomDetailToInventory(detail: RoomDetail): RoomInventory {
       monthlyPrice: detail.commercial.monthlyPrice,
       yearlyPrice: detail.commercial.annualContractValue,
       depositAmount: detail.commercial.securityDepositRequired,
+      managementFeeAmount: detail.commercial.managementFeeAmount,
       facilities: detail.commercial.facilities.map((facility, sortOrder) => ({
         id: facility.id,
         name: facility.name,

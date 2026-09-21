@@ -361,10 +361,6 @@ function DetailContent({
               }
             />
             <DataItem label="Sumber" value={label(asset.ownership.source)} />
-            <DataItem
-              label="Periode efektif"
-              value={`${date(asset.ownership.effectiveFrom)} — ${date(asset.ownership.effectiveUntil)}`}
-            />
             <DataItem label="Status" value="Aktif" />
           </CardContent>
         </Card>

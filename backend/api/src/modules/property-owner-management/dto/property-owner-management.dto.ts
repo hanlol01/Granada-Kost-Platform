@@ -20,7 +20,6 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const trimOptional = ({ value }: TransformFnParams): unknown => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
@@ -59,12 +58,7 @@ export class PropertyOwnerPropertyQueryDto {
   property_id!: string;
 }
 
-export class PropertyOwnerAssetOptionsQueryDto extends PropertyOwnerPropertyQueryDto {
-  @IsOptional()
-  @IsDateString({ strict: true })
-  @Matches(DATE_ONLY_PATTERN)
-  effective_date?: string;
-}
+export class PropertyOwnerAssetOptionsQueryDto extends PropertyOwnerPropertyQueryDto {}
 
 export class CreatePropertyOwnerDto {
   @IsUUID()

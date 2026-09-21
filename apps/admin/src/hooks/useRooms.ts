@@ -15,7 +15,8 @@ export type RoomStatus =
   | "occupied"
   | "maintenance"
   | "inactive"
-  | "requires_review";
+  | "requires_review"
+  | "inspection_required";
 export type RoomCategory = "rukost" | "apartkost";
 export type RoomFloorCode = "A" | "B";
 

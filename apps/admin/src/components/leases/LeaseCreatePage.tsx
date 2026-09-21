@@ -394,7 +394,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   propertyScopeRef.current = currentPropertyId;
   const deferredRoomSearch = useDeferredValue(roomSearch);
   const rooms = useM6LeaseAvailableRooms(deferredRoomSearch, startDate || undefined);
-  const ownerAssets = useOwnerAssetOptions(startDate || undefined);
+  const ownerAssets = useOwnerAssetOptions();
   const bookingLeadContext = useBookingLeadCompletionContext(bookingLeadId);
   const bookingLeadQuote = useBookingLeadCompletionQuote(bookingLeadId, startDate, termMonths);
   const onboarding = useResidentOnboarding(setTemporaryPassword);
@@ -542,7 +542,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     bookingLeadId && leadPaymentType && leadPaymentType !== "booking_fee",
   );
   const bookingCommercialLocked = Boolean(bookingLeadId && committedCommercial);
-  const historicalPaymentDateRequired = historicalEntryMode && !initialPaymentLocked;
+  const historicalPaymentDateRequired =
+    commercialMode !== "owner_sponsored" && historicalEntryMode && !initialPaymentLocked;
   const selectedRoom =
     rooms.data?.items.find((room) => room.id === roomId) ??
     (heldRoom?.id === roomId ? heldRoom : undefined);
@@ -2821,14 +2822,14 @@ function RoomAndPaymentStep({
                       </p>
                       <p className="mt-1 font-semibold">{sponsoringOwner.fullName}</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Kepemilikan berlaku pada tanggal mulai sewa.
+                        Kepemilikan aset telah terdaftar permanen.
                       </p>
                     </div>
                   ) : (
                     <NoticeAlert
                       tone="destructive"
                       title="Owner kamar belum ditetapkan"
-                      description="Tetapkan Owner yang berlaku untuk bangunan atau kamar ini sebelum membuat hunian tanggungan Owner."
+                      description="Tetapkan owner untuk bangunan atau kamar ini sebelum membuat hunian tanggungan owner."
                     />
                   )}
                   {errors?.sponsoringOwner ? (

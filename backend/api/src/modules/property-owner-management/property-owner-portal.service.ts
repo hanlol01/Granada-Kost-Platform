@@ -96,26 +96,16 @@ export class PropertyOwnerPortalService {
          FROM building_owner_assignments assignments
          JOIN rooms ON rooms.building_id = assignments.building_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          UNION ALL
          SELECT rooms.id, rooms.building_id, assignments.effective_from, assignments.effective_until
          FROM room_owner_assignments assignments
          JOIN rooms ON rooms.id = assignments.room_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
        ), assignment_state AS (
-         SELECT
-           COUNT(*) FILTER (WHERE effective_from > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date)::int AS scheduled_count,
-           MIN(effective_from) FILTER (WHERE effective_from > (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date)::text AS next_scheduled_date,
-           COUNT(*) FILTER (WHERE effective_until IS NOT NULL AND effective_until <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date)::int AS expired_count,
-           to_char(MAX(effective_until - INTERVAL '1 day') FILTER (WHERE effective_until IS NOT NULL AND effective_until <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date), 'YYYY-MM') AS latest_historical_period
-         FROM (
-           SELECT effective_from, effective_until FROM building_owner_assignments WHERE owner_profile_id = $1 AND property_id = $2
-           UNION ALL
-           SELECT effective_from, effective_until FROM room_owner_assignments WHERE owner_profile_id = $1 AND property_id = $2
-         ) assignments
+         SELECT 0::int AS scheduled_count, NULL::text AS next_scheduled_date,
+                0::int AS expired_count, NULL::text AS latest_historical_period
         ), current_authorized_earnings AS (
           SELECT DISTINCT earnings.id, earnings.room_id
           FROM property_owner_earnings earnings
@@ -205,19 +195,14 @@ export class PropertyOwnerPortalService {
          (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status IN ('maintenance', 'requires_review', 'inspection_required')) AS maintenance_count,
          (SELECT COUNT(DISTINCT scope.room_id)::int FROM current_scope scope JOIN rooms ON rooms.id = scope.room_id WHERE rooms.room_status = 'vacant') AS vacant_count,
          (SELECT COUNT(DISTINCT complaints.id)::int FROM complaints JOIN current_scope authorized_scope ON authorized_scope.room_id = complaints.room_id
-           WHERE complaints.property_id = $2 AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
-             AND complaints.created_at >= authorized_scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-             AND (authorized_scope.scope_until IS NULL OR complaints.created_at < authorized_scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_complaints,
+           WHERE complaints.property_id = $2 AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')) AS open_complaints,
          (SELECT COUNT(DISTINCT work_orders.id)::int FROM maintenance_work_orders work_orders JOIN current_scope authorized_scope ON authorized_scope.room_id = work_orders.room_id
-           WHERE work_orders.property_id = $2 AND work_orders.work_order_status NOT IN ('verified', 'cancelled')
-             AND work_orders.created_at >= authorized_scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-             AND (authorized_scope.scope_until IS NULL OR work_orders.created_at < authorized_scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_maintenance,
+           WHERE work_orders.property_id = $2 AND work_orders.work_order_status NOT IN ('verified', 'cancelled')) AS open_maintenance,
          (SELECT COUNT(DISTINCT notifications.id)::int FROM notifications
            JOIN notification_resources resources ON resources.notification_id = notifications.id
            JOIN current_scope authorized_scope ON authorized_scope.room_id = resources.room_id
            WHERE notifications.property_id = $2 AND notifications.recipient_user_id = $3 AND notifications.notification_status = 'unread'
-             AND notifications.created_at >= authorized_scope.scope_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-             AND (authorized_scope.scope_until IS NULL OR notifications.created_at < authorized_scope.scope_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS unread_notifications,
+             ) AS unread_notifications,
          assignment_state.*
        FROM assignment_state
        GROUP BY assignment_state.scheduled_count,
@@ -233,13 +218,11 @@ export class PropertyOwnerPortalService {
          FROM building_owner_assignments assignments
          JOIN rooms ON rooms.building_id = assignments.building_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          UNION ALL
          SELECT room_id, effective_from, effective_until FROM room_owner_assignments assignments
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
        )
        SELECT rooms.room_code,
               CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
@@ -254,8 +237,6 @@ export class PropertyOwnerPortalService {
           AND kost_types.category = rooms.category
           AND kost_types.deleted_at IS NULL
        LEFT JOIN leases ON leases.room_id = rooms.id AND leases.lease_status = 'active'
-         AND leases.start_date < COALESCE(scope.scope_until, 'infinity'::date)
-         AND COALESCE(leases.end_date + 1, 'infinity'::date) > scope.scope_from
        ORDER BY buildings.building_code, rooms.room_code`,
       [owner.id, owner.property_id],
     );
@@ -330,8 +311,7 @@ export class PropertyOwnerPortalService {
            AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
            AND rooms.room_code = $3
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          UNION ALL
          SELECT rooms.id, assignments.effective_from, assignments.effective_until,
                 'room_assignment'::text
@@ -340,8 +320,7 @@ export class PropertyOwnerPortalService {
            AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
            AND rooms.room_code = $3
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
        )
        SELECT rooms.room_code,
               CASE WHEN rooms.room_status = 'inspection_required' THEN 'requires_review' ELSE rooms.room_status END AS room_status,
@@ -379,14 +358,10 @@ export class PropertyOwnerPortalService {
               authorized_asset.assignment_source,
               (SELECT COUNT(*)::int FROM complaints
                  WHERE complaints.property_id = $2 AND complaints.room_id = rooms.id
-                   AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')
-                   AND complaints.created_at >= authorized_asset.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-                   AND (authorized_asset.effective_until IS NULL OR complaints.created_at < authorized_asset.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_complaints,
+                   AND complaints.complaint_status NOT IN ('resolved', 'closed', 'cancelled')) AS open_complaints,
               (SELECT COUNT(*)::int FROM maintenance_work_orders
                  WHERE maintenance_work_orders.property_id = $2 AND maintenance_work_orders.room_id = rooms.id
-                   AND maintenance_work_orders.work_order_status NOT IN ('verified', 'cancelled')
-                   AND maintenance_work_orders.created_at >= authorized_asset.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-                   AND (authorized_asset.effective_until IS NULL OR maintenance_work_orders.created_at < authorized_asset.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_maintenance,
+                   AND maintenance_work_orders.work_order_status NOT IN ('verified', 'cancelled')) AS open_maintenance,
               rooms.updated_at::text AS updated_at
        FROM authorized_asset
        JOIN rooms ON rooms.id = authorized_asset.room_id AND rooms.property_id = $2
@@ -673,7 +648,7 @@ export class PropertyOwnerPortalService {
   /**
    * A deliberately small resident projection for the property-owner portal.
    * The room code is the only lookup key: getAssetDetail() has already proved
-   * the current effective ownership scope before this response is built.
+   * the current active ownership scope before this response is built.
    *
    * Keep this separate from the Admin resident detail authority. In particular,
    * do not add resident identifiers, contact data, identity documents, payment
@@ -910,15 +885,13 @@ export class PropertyOwnerPortalService {
          FROM building_owner_assignments assignments
          JOIN rooms ON rooms.building_id = assignments.building_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          UNION ALL
          SELECT rooms.id, assignments.effective_from, assignments.effective_until, 'room_assignment'::text
          FROM room_owner_assignments assignments
          JOIN rooms ON rooms.id = assignments.room_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
        ), scoped AS (
          SELECT DISTINCT ON (room_id) room_id, effective_from, effective_until, assignment_source
          FROM raw_scope
@@ -993,14 +966,10 @@ export class PropertyOwnerPortalService {
            SELECT
              (SELECT COUNT(*)::int FROM complaints
               WHERE property_id = $2 AND room_id = rooms.id
-                AND complaint_status NOT IN ('resolved', 'closed', 'cancelled')
-                AND created_at >= scoped.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-                AND (scoped.effective_until IS NULL OR created_at < scoped.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_complaints,
+                AND complaint_status NOT IN ('resolved', 'closed', 'cancelled')) AS open_complaints,
              (SELECT COUNT(*)::int FROM maintenance_work_orders
               WHERE property_id = $2 AND room_id = rooms.id
-                AND work_order_status NOT IN ('verified', 'cancelled')
-                AND created_at >= scoped.effective_from::timestamp AT TIME ZONE 'Asia/Jakarta'
-                AND (scoped.effective_until IS NULL OR created_at < scoped.effective_until::timestamp AT TIME ZONE 'Asia/Jakarta')) AS open_maintenance
+                AND work_order_status NOT IN ('verified', 'cancelled')) AS open_maintenance
          ) issues ON true
        )
        SELECT resources.*, COUNT(*) OVER()::int AS total_count FROM resources
@@ -1136,7 +1105,7 @@ export class PropertyOwnerPortalService {
    * W10-R collection-progress read model.
    *
    * This intentionally follows the current active lease for a room that is
-   * currently in the Owner's effective scope.  It is not an Owner earning,
+   * currently in the Owner's active ownership scope.  It is not an Owner earning,
    * entitlement, settlement, or payout projection: those authorities remain
    * period-bound in finance().  The response contains no payment rows, proof,
    * bank, contact, credential, or internal-note data.
@@ -1153,15 +1122,13 @@ export class PropertyOwnerPortalService {
          JOIN rooms ON rooms.building_id = assignments.building_id
            AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
          UNION
          SELECT rooms.id
          FROM room_owner_assignments assignments
          JOIN rooms ON rooms.id = assignments.room_id AND rooms.property_id = assignments.property_id
          WHERE assignments.owner_profile_id = $1 AND assignments.property_id = $2
-           AND assignments.effective_from <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
-           AND (assignments.effective_until IS NULL OR (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date < assignments.effective_until)
+           AND assignments.assignment_status = 'active'
        ), scoped_rooms AS (
          SELECT DISTINCT room_id FROM raw_scope
        ), active_leases AS (

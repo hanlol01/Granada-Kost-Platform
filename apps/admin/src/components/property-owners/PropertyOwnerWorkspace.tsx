@@ -43,7 +43,6 @@ import {
 } from "@/hooks/usePropertyOwners";
 import type { AssignmentStatus, OwnerAssetOption, PropertyOwner } from "@/lib/admin-property-owner";
 import { validateOwnerAssignment } from "@/lib/property-owner-assignment-validation";
-import { displayOwnerDate } from "@/lib/property-owner-date";
 import { cn } from "@/lib/utils";
 
 const accountLabel = (status: string) =>
@@ -417,7 +416,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <h2 className="font-semibold">Ownership terpisah dari operasional</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Rumah Kost ditetapkan per bangunan dan mencakup seluruh kamarnya. Apart Kost ditetapkan
-            per kamar. Kepemilikan berlaku permanen sampai aset dilepaskan.
+            per kamar. Kepemilikan aset tercatat permanen; koreksi penetapan disimpan sebagai
+            riwayat, bukan masa berlaku.
           </p>
         </div>
       </section>
@@ -483,7 +483,6 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                   <th className="px-4 py-3">Akun</th>
                   <th className="px-4 py-3">Rumah Kost</th>
                   <th className="px-4 py-3">Apart Kost</th>
-                  <th className="px-4 py-3">Terjadwal</th>
                   <th className="px-5 py-3 text-right">Aksi</th>
                 </tr>
               </thead>
@@ -511,15 +510,6 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                       {owner.activeRumahKostBuildings} bangunan
                     </td>
                     <td className="px-4 py-4 font-semibold">{owner.activeApartKostRooms} kamar</td>
-                    <td className="px-4 py-4">
-                      {owner.scheduledAssignments ? (
-                        <StatusBadge tone="blue">
-                          {owner.scheduledAssignments} assignment
-                        </StatusBadge>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -552,7 +542,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                     {ownerStatusLabel(owner.profileStatus)}
                   </StatusBadge>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
                   <div className="rounded-lg bg-muted/60 p-2">
                     <strong className="block text-base">{owner.activeRumahKostBuildings}</strong>
                     Rumah Kost
@@ -560,10 +550,6 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                   <div className="rounded-lg bg-muted/60 p-2">
                     <strong className="block text-base">{owner.activeApartKostRooms}</strong>Apart
                     Kost
-                  </div>
-                  <div className="rounded-lg bg-muted/60 p-2">
-                    <strong className="block text-base">{owner.scheduledAssignments}</strong>
-                    Terjadwal
                   </div>
                 </div>
                 <Button
@@ -784,8 +770,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <DialogHeader>
             <DialogTitle>Kelola kepemilikan aset</DialogTitle>
             <DialogDescription>
-              Kepemilikan berlaku langsung dan permanen sampai aset dilepaskan atau dialihkan.
-              Riwayat perubahan tetap tersimpan.
+              Aset yang dipilih langsung tercatat sebagai hak owner permanen. Koreksi atau
+              pengalihan tidak menghapus riwayat penetapan.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 rounded-xl bg-muted p-1">
@@ -1046,8 +1032,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <DialogHeader>
             <DialogTitle>Lepaskan kepemilikan aset</DialogTitle>
             <DialogDescription>
-              {releaseTarget?.label}. Kepemilikan berhenti hari ini, riwayat tetap tersimpan, dan
-              aset dapat langsung dialihkan kepada owner lain.
+              {releaseTarget?.label}. Aset akan dilepas dari owner ini; riwayat penetapan tetap
+              tersimpan dan aset dapat dialihkan kepada owner lain.
             </DialogDescription>
           </DialogHeader>
           <Field label="Catatan Pelepasan">
@@ -1076,8 +1062,8 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           <DialogHeader>
             <DialogTitle>Lepaskan kepemilikan aset terpilih</DialogTitle>
             <DialogDescription>
-              {batchReleaseTarget?.items.length ?? 0} aset akan dilepaskan hari ini. Riwayat tetap
-              tersimpan dan seluruh aset dapat langsung dialihkan kepada owner lain.
+              {batchReleaseTarget?.items.length ?? 0} aset akan dilepas dari owner ini. Riwayat
+              penetapan tetap tersimpan dan seluruh aset dapat dialihkan kepada owner lain.
             </DialogDescription>
           </DialogHeader>
           <section className="rounded-xl border border-slate-300 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-muted/20">
@@ -1470,7 +1456,6 @@ function OwnerDetailPageContent({
                   id: asset.id,
                   title: asset.buildingCode,
                   description: `${asset.buildingName ?? "Bangunan"} · mencakup ${asset.coveredRoomCount} kamar`,
-                  ownershipSince: `Dimiliki sejak ${displayOwnerDate(asset.effectiveFrom)}`,
                   status: asset.assignmentStatus,
                   kind: "building" as const,
                 }))}
@@ -1494,7 +1479,6 @@ function OwnerDetailPageContent({
                   ]
                     .filter(Boolean)
                     .join(" · "),
-                  ownershipSince: `Dimiliki sejak ${displayOwnerDate(asset.effectiveFrom)}`,
                   status: asset.assignmentStatus,
                   kind: "room" as const,
                 }))}
@@ -1508,7 +1492,7 @@ function OwnerDetailPageContent({
             <section>
               <h3 className="mb-3 flex items-center gap-2 font-semibold">
                 <CalendarClock className="size-4 text-primary" />
-                Riwayat ownership
+                Riwayat perubahan kepemilikan
               </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-300 bg-card shadow-sm dark:border-slate-700">
                 <table className="w-full min-w-[620px] text-sm">
@@ -1516,7 +1500,6 @@ function OwnerDetailPageContent({
                     <tr>
                       <th className="p-3">Aset</th>
                       <th className="p-3">Jenis</th>
-                      <th className="p-3">Masa kepemilikan</th>
                       <th className="p-3">Status</th>
                       <th className="p-3">Catatan</th>
                     </tr>
@@ -1530,11 +1513,6 @@ function OwnerDetailPageContent({
                         <td className="p-3 font-semibold">{entry.assetCode}</td>
                         <td className="p-3">
                           {entry.ownershipKind === "building" ? "Rumah Kost" : "Apart Kost"}
-                        </td>
-                        <td className="p-3">
-                          {entry.effectiveUntil
-                            ? `${displayOwnerDate(entry.effectiveFrom)} — ${displayOwnerDate(entry.effectiveUntil)}`
-                            : `Sejak ${displayOwnerDate(entry.effectiveFrom)}`}
                         </td>
                         <td className="p-3">
                           <StatusBadge
@@ -1600,7 +1578,6 @@ function AssetBlock({
     id: string;
     title: string;
     description: string;
-    ownershipSince: string;
     status: AssignmentStatus;
     kind: "building" | "room";
   }[];
@@ -1612,7 +1589,7 @@ function AssetBlock({
 }) {
   const [assetQuery, setAssetQuery] = useState("");
   const [unitFilter, setUnitFilter] = useState<string | null>(null);
-  const selectableItems = items.filter((item) => ["active", "scheduled"].includes(item.status));
+  const selectableItems = items.filter((item) => item.status === "active");
   const isSelecting = selection?.kind === kind;
   const selectedItems = isSelecting
     ? selectableItems.filter((item) => selection.ids.includes(item.id))
@@ -1734,7 +1711,7 @@ function AssetBlock({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {filteredItems.map((item) => {
-            const canSelect = isSelecting && ["active", "scheduled"].includes(item.status);
+            const canSelect = isSelecting && item.status === "active";
             const Card = canSelect ? "label" : "article";
             return (
               <Card
@@ -1774,8 +1751,7 @@ function AssetBlock({
                     {assignmentStatusLabel(item.status)}
                   </StatusBadge>
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">{item.ownershipSince}</p>
-                {!isSelecting && ["active", "scheduled"].includes(item.status) && (
+                {!isSelecting && item.status === "active" && (
                   <Button
                     className="mt-4"
                     size="sm"

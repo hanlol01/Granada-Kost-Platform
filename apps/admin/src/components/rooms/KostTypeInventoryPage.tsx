@@ -126,6 +126,7 @@ const STATUS_TONE: Record<RoomInventory["status"], string> = {
   maintenance: "border-warning/30 bg-warning/10 text-warning",
   inactive: "border-border bg-muted text-muted-foreground",
   requires_review: "border-destructive/30 bg-destructive/10 text-destructive",
+  inspection_required: "border-warning/40 bg-warning/15 text-warning",
 };
 
 function roomLabel(room: RoomInventory): string {

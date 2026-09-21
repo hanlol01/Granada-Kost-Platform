@@ -146,6 +146,7 @@ export function createAdminUxV2Requester(config: RequesterConfig): AdminUxV2Requ
         headers,
         body: bodyFor(options.body, headers),
         credentials: "include",
+        cache: "no-store",
         signal: options.signal,
       });
     } catch {
@@ -271,7 +272,8 @@ export type RoomInventory = {
     | "occupied"
     | "maintenance"
     | "inactive"
-    | "requires_review";
+    | "requires_review"
+    | "inspection_required";
   publicVisible: boolean;
   kostType?: Pick<
     KostType,

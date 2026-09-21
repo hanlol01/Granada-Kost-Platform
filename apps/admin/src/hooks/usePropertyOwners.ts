@@ -30,15 +30,12 @@ export function usePropertyOwnerDetail(ownerId: string | null) {
     queryFn: () => propertyOwnerApi.detail(currentPropertyId!, ownerId!),
   });
 }
-export function useOwnerAssetOptions(effectiveDate?: string) {
+export function useOwnerAssetOptions() {
   const { currentPropertyId } = useProperty();
   return useQuery({
-    queryKey: adminUxQueryKeys.propertyOwners.assetOptions(
-      currentPropertyId ?? "none",
-      effectiveDate,
-    ),
+    queryKey: adminUxQueryKeys.propertyOwners.assetOptions(currentPropertyId ?? "none"),
     enabled: Boolean(currentPropertyId),
-    queryFn: () => propertyOwnerApi.assetOptions(currentPropertyId!, effectiveDate),
+    queryFn: () => propertyOwnerApi.assetOptions(currentPropertyId!),
   });
 }
 export function usePropertyOwnerMutations() {

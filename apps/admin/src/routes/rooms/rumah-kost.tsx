@@ -14,7 +14,8 @@ export type RoomCategoryRouteSearch = {
     | "occupied"
     | "maintenance"
     | "inactive"
-    | "requires_review";
+    | "requires_review"
+    | "inspection_required";
   gender_policy?: "male" | "female";
   active_occupancy?: boolean;
   reconciliation_state?: "normal" | "requires_review";

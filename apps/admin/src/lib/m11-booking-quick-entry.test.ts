@@ -320,7 +320,14 @@ test("quick-entry access is fail-closed by role, permission, scope, and vacancy"
       propertyId: PROPERTY_ID,
       room: { ...room, propertyId: "other-property" },
     },
-    ...["reserved", "occupied", "maintenance", "inactive", "requires_review"].map((status) => ({
+    ...[
+      "reserved",
+      "occupied",
+      "maintenance",
+      "inactive",
+      "requires_review",
+      "inspection_required",
+    ].map((status) => ({
       roles: ["admin"],
       permissions: ["room.manage"],
       propertyId: PROPERTY_ID,

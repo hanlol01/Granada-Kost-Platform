@@ -120,8 +120,9 @@ test("W10 owner assignment is immediate and permanent without admin-supplied dat
   const assignmentEnd = workspace.indexOf('<Dialog open={modal === "reset"}', assignmentStart);
   const assignmentDialog = workspace.slice(assignmentStart, assignmentEnd);
 
-  assert.match(assignmentDialog, /berlaku langsung dan permanen/);
+  assert.match(assignmentDialog, /hak owner permanen/);
   assert.doesNotMatch(assignmentDialog, /HeroUiDatePicker|Mulai berlaku|Berakhir pada/);
+  assert.doesNotMatch(workspace, /Dimiliki sejak|Masa kepemilikan|Periode efektif/);
 });
 
 test("W10 owner release is immediate and keeps its audit history", () => {
@@ -134,7 +135,7 @@ test("W10 owner release is immediate and keeps its audit history", () => {
   const releaseDialog = workspace.slice(releaseStart, releaseEnd);
 
   assert.match(releaseDialog, /Lepaskan kepemilikan aset/);
-  assert.match(releaseDialog, /Kepemilikan berhenti hari ini/);
+  assert.match(releaseDialog, /Aset akan dilepas dari owner ini/);
   assert.doesNotMatch(releaseDialog, /HeroUiDatePicker|Tanggal berakhir/);
 });
 

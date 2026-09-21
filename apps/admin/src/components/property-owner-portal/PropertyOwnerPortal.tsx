@@ -2802,7 +2802,7 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="text-base">Cakupan kepemilikan</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Status dan jumlah berikut berasal dari penugasan efektif di server.
+              Status dan jumlah berikut berasal dari penetapan aset aktif di server.
             </p>
           </CardHeader>
           <CardContent className="grid gap-3 p-5 sm:grid-cols-2">

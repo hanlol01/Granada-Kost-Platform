@@ -372,7 +372,6 @@ export class AdminUxRoomDetailService {
 
   private currentOwnershipAssignment(client: PoolClient, room: Row) {
     const propertyId = text(room.property_id);
-    const today = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date`;
     if (text(room.category) === 'apartkost') {
       return client.query<Row>(
         `SELECT profile.id AS owner_profile_id, profile.full_name,
@@ -385,10 +384,8 @@ export class AdminUxRoomDetailService {
             AND profile.profile_status = 'active'
           WHERE assignment.property_id = $1
             AND assignment.room_id = $2
-            AND assignment.assignment_status IN ('active', 'scheduled')
-            AND assignment.effective_from <= ${today}
-            AND (assignment.effective_until IS NULL OR ${today} < assignment.effective_until)
-          ORDER BY assignment.effective_from DESC, assignment.id DESC`,
+            AND assignment.assignment_status = 'active'
+          ORDER BY assignment.updated_at DESC, assignment.id DESC`,
         [propertyId, text(room.id)],
       );
     }
@@ -404,10 +401,8 @@ export class AdminUxRoomDetailService {
           AND profile.profile_status = 'active'
         WHERE assignment.property_id = $1
           AND assignment.building_id = $2
-          AND assignment.assignment_status IN ('active', 'scheduled')
-          AND assignment.effective_from <= ${today}
-          AND (assignment.effective_until IS NULL OR ${today} < assignment.effective_until)
-        ORDER BY assignment.effective_from DESC, assignment.id DESC`,
+          AND assignment.assignment_status = 'active'
+        ORDER BY assignment.updated_at DESC, assignment.id DESC`,
       [propertyId, text(room.building_id)],
     );
   }

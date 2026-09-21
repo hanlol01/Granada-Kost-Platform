@@ -897,4 +897,14 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_lease_settlement_policy_versions') IS NOT NULL",
     ],
   },
+  {
+    version: '095_owner_sponsored_permanent_assignment_trigger.sql',
+    checksumSha256: 'dae2ac7188e91d20f194c32ded94fafb1fc89e2098c70a3030dc1c976b34ed57',
+    sentinels: [
+      "to_regprocedure('validate_owner_sponsored_lease_term()') IS NOT NULL",
+      "pg_get_functiondef('validate_owner_sponsored_lease_term()'::regprocedure) ILIKE '%assignment.assignment_status=''active''%'",
+      "pg_get_functiondef('validate_owner_sponsored_lease_term()'::regprocedure) NOT ILIKE '%effective_from%'",
+      "pg_get_functiondef('validate_owner_sponsored_lease_term()'::regprocedure) NOT ILIKE '%effective_until%'",
+    ],
+  },
 ] as const;

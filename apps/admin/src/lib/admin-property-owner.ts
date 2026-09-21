@@ -84,7 +84,6 @@ export type OwnerAssetOption = {
 };
 
 export type PropertyOwnerAssetOptions = {
-  effectiveDate: string;
   rumahKostBuildings: OwnerAssetOption[];
   apartKostRooms: OwnerAssetOption[];
 };
@@ -214,13 +213,13 @@ export function parsePropertyOwnerDetail(value: unknown): PropertyOwnerDetail {
   const owner = parseOwner(value);
   if (
     !isObject(value) ||
-    !isObject(value.active_and_scheduled_assets) ||
+    !isObject(value.active_assets) ||
     !Array.isArray(value.ownership_history) ||
     !isObject(value.credentials) ||
     !isObject(value.lifecycle)
   )
     throw new Error("Detail Owner Property tidak valid.");
-  const assets = value.active_and_scheduled_assets;
+  const assets = value.active_assets;
   if (!Array.isArray(assets.rumah_kost_buildings) || !Array.isArray(assets.apart_kost_rooms))
     throw new Error("Aset Owner Property tidak valid.");
   return {
@@ -296,6 +295,14 @@ export function parseOwnerAssetOptions(value: unknown): PropertyOwnerAssetOption
   const parse = (item: unknown, kind: "building" | "room"): OwnerAssetOption => {
     if (!isObject(item)) throw new Error("Pilihan aset tidak valid.");
     const current = item.current_owner;
+    const parseOwner = (owner: unknown, field: string) => {
+      if (owner === null || owner === undefined) return null;
+      if (!isObject(owner)) throw new Error(`${field} tidak valid.`);
+      return {
+        id: string(owner.id, `${field}.id`),
+        fullName: string(owner.full_name, `${field}.full_name`),
+      };
+    };
     return {
       id: string(item.id, "asset.id"),
       code: string(kind === "building" ? item.building_code : item.room_code, "asset.code"),
@@ -307,20 +314,10 @@ export function parseOwnerAssetOptions(value: unknown): PropertyOwnerAssetOption
       roomCount: kind === "building" ? number(item.room_count, "room_count") : undefined,
       roomStatus: kind === "room" ? nullableString(item.room_status, "room_status") : undefined,
       availability: enumValue(item.availability, ["available", "assigned"], "availability"),
-      currentOwner:
-        current === null
-          ? null
-          : (() => {
-              if (!isObject(current)) throw new Error("current_owner tidak valid.");
-              return {
-                id: string(current.id, "current_owner.id"),
-                fullName: string(current.full_name, "current_owner.full_name"),
-              };
-            })(),
+      currentOwner: parseOwner(current, "current_owner"),
     };
   };
   return {
-    effectiveDate: string(value.effective_date, "effective_date"),
     rumahKostBuildings: value.rumah_kost_buildings.map((item) => parse(item, "building")),
     apartKostRooms: value.apart_kost_rooms.map((item) => parse(item, "room")),
   };
@@ -380,12 +377,9 @@ export const propertyOwnerApi = {
     adminUxV2Requester
       .get(`/admin/property-owners/${encodeURIComponent(ownerId)}`, withScope(propertyId))
       .then(parsePropertyOwnerDetail),
-  assetOptions: (propertyId: string, effectiveDate?: string) =>
+  assetOptions: (propertyId: string) =>
     adminUxV2Requester
-      .get(
-        "/admin/property-owners/asset-options",
-        withScope(propertyId, { effective_date: effectiveDate }),
-      )
+      .get("/admin/property-owners/asset-options", withScope(propertyId))
       .then(parseOwnerAssetOptions),
   create: (body: Record<string, unknown>, idempotencyKey: string) =>
     adminUxV2Requester.post("/admin/property-owners", body, { idempotencyKey }).then((value) => {

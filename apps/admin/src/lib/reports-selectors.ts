@@ -41,6 +41,7 @@ export function selectOccupancySummary(rooms: readonly RoomRecord[]): OccupancyS
     maintenance: 0,
     inactive: 0,
     requires_review: 0,
+    inspection_required: 0,
   };
   for (const room of rooms) counts[room.roomStatus] = (counts[room.roomStatus] ?? 0) + 1;
   const total = rooms.length;
@@ -53,7 +54,7 @@ export function selectOccupancySummary(rooms: readonly RoomRecord[]): OccupancyS
     occupied: counts.occupied,
     vacant: counts.vacant,
     reserved: counts.reserved,
-    maintenance: counts.maintenance + counts.requires_review,
+    maintenance: counts.maintenance + counts.requires_review + counts.inspection_required,
     inactive: counts.inactive,
     occupancyPercent: percent,
   };

@@ -40,6 +40,7 @@ test("M3 mapper changes snake_case and drops identity/file locations", () => {
 
 test("M3 requester sends V2 Accept only through its isolated requester", async () => {
   let accept = "";
+  let cacheMode: RequestCache | undefined;
   const requester = createAdminUxV2Requester({
     baseUrl: "https://api.example.test/api/v1",
     getAccessToken: () => "token",
@@ -47,6 +48,7 @@ test("M3 requester sends V2 Accept only through its isolated requester", async (
     onAuthFailure: () => undefined,
     fetchImpl: async (_input, init) => {
       accept = new Headers(init?.headers).get("Accept") ?? "";
+      cacheMode = init?.cache;
       return new Response(JSON.stringify({ data: { room_code: "A-01" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -56,6 +58,7 @@ test("M3 requester sends V2 Accept only through its isolated requester", async (
 
   const result = await requester.get<{ data: { room_code: string } }>("/rooms");
   assert.equal(accept, ADMIN_UX_V2_ACCEPT);
+  assert.equal(cacheMode, "no-store");
   assert.equal(result.data.room_code, "A-01");
 });
 

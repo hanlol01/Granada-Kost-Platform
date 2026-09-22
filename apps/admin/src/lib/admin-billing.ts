@@ -2017,3 +2017,26 @@ export async function downloadOwnerSponsoredManagementFeeDocument(
     return response;
   }, `invoice-biaya-pengelolaan-${safeName}.pdf`);
 }
+
+export async function downloadOwnerSponsoredResidenceStatement(
+  propertyId: string,
+  residentId: string,
+  residentName: string,
+) {
+  const query = new URLSearchParams({ property_id: propertyId });
+  const safeName = residentName.replace(/[^a-z0-9_-]+/gi, "-") || "penghuni";
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/admin/billing/residents/${encodeURIComponent(residentId)}/owner-sponsored-residence-statement?${query}`,
+      {
+        credentials: "include",
+        cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Surat keterangan hunian Owner gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, `surat-hunian-owner-${safeName}.pdf`);
+}

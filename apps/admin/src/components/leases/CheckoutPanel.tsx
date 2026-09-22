@@ -34,6 +34,7 @@ import { adminUxLeaseApi, downloadLeaseExitDocument } from "@/lib/admin-ux-lease
 import type { CheckoutCommand, CheckoutSettlementQuote } from "@/lib/admin-ux-lease-types";
 import { jakartaToday } from "@/lib/admin-ux-lease-helpers";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import { toastMutationSuccess } from "@/lib/mutation-feedback";
 
 export type CheckoutEntryFocus = "overview" | "refund";
 
@@ -610,12 +611,13 @@ export function CheckoutPanel({
     return () => window.cancelAnimationFrame(frame);
   }, [hasPendingExitRefund, initialFocus]);
 
-  const perform = async (action: () => Promise<void>) => {
+  const perform = async (action: () => Promise<void>, successMessage?: string) => {
     setPending(true);
     setError(null);
     try {
       await action();
       intentKey.current = null;
+      if (successMessage) toastMutationSuccess(successMessage);
       return true;
     } catch (actionError) {
       setError(messageFrom(actionError));
@@ -656,7 +658,7 @@ export function CheckoutPanel({
       focusCheckoutPanelAfterCommandChange.current = true;
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
-    });
+    }, "Rencana check-out berhasil disimpan.");
 
   const beginNoticeEdit = () => {
     if (!command || !["notice_received", "scheduled"].includes(command.state)) return;
@@ -697,7 +699,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
-    });
+    }, "Rencana check-out berhasil diperbarui.");
   };
 
   const beginApprovalEdit = () => {
@@ -725,7 +727,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
-    });
+    }, "Konfirmasi rencana check-out berhasil disimpan.");
   };
 
   const damageInput = () =>
@@ -774,7 +776,7 @@ export function CheckoutPanel({
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
       setCompletionDialogOpen(true);
-    });
+    }, "Penyelesaian keuangan akhir berhasil ditetapkan.");
   };
 
   const finishCheckoutView = async () => {
@@ -807,7 +809,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
-    });
+    }, "Pengembalian dana berhasil dicatat.");
   };
 
   const waiveExitRefund = () => {
@@ -823,7 +825,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
-    });
+    }, "Pelepasan hak pengembalian dana berhasil dicatat.");
   };
 
   const downloadDocument = async (document: NonNullable<CheckoutCommand["documents"]>[number]) => {
@@ -847,6 +849,12 @@ export function CheckoutPanel({
       );
       return false;
     }
+    const successMessage =
+      command.state === "notice_received"
+        ? "Konfirmasi rencana check-out berhasil disimpan."
+        : command.state === "scheduled"
+          ? "Serah-terima check-out berhasil dicatat."
+          : "Inspeksi kamar berhasil dicatat.";
     return perform(async () => {
       if (command.state === "notice_received") {
         if (command.chargePolicy === "late_checkout_penalty_v1")
@@ -927,7 +935,7 @@ export function CheckoutPanel({
         await onChanged?.(open);
         setVisibleStage(stageForCommand(open));
       }
-    });
+    }, successMessage);
   };
 
   const resetCheckoutDraft = () => {
@@ -995,7 +1003,7 @@ export function CheckoutPanel({
         // Cancellation has already been stored; do not present a refresh issue
         // as though the cancellation itself failed.
       }
-    });
+    }, "Proses check-out berhasil dibatalkan.");
   };
 
   const executeConfirmedAction = async () => {

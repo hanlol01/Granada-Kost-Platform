@@ -73,6 +73,7 @@ import {
   downloadAdminOriginalReceiptDocument,
   downloadAdminReceiptDocument,
   downloadOwnerSponsoredManagementFeeDocument,
+  downloadOwnerSponsoredResidenceStatement,
   type BillingEvidence,
   type ResidentBilling,
 } from "@/lib/admin-billing";
@@ -108,7 +109,8 @@ function managementFeePayerLabel(
   sponsorship: NonNullable<ResidentBilling["owner_sponsorship"]>,
   residentName: string,
 ): string {
-  if (sponsorship.management_fee_mode === "waived") return "Tidak berlaku (biaya dibebaskan)";
+  if (sponsorship.management_fee_mode === "waived")
+    return `${sponsorship.owner_name} (Owner) — biaya dibebaskan`;
   if (sponsorship.management_fee_payer === "owner") return `${sponsorship.owner_name} (Owner)`;
   if (sponsorship.management_fee_payer === "resident") return `${residentName} (Penghuni)`;
   if (sponsorship.management_fee_payer === "other") {
@@ -1199,6 +1201,14 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                                 : "Wajib dibayar — tanpa jatuh tempo dan denda",
                           ] as [string, string],
                           [
+                            "Owner pemilik kamar",
+                            billing.isLoading
+                              ? "Memuat Owner..."
+                              : billing.data?.owner_sponsorship
+                                ? `${billing.data.owner_sponsorship.owner_name} (Owner)`
+                                : "Belum ditentukan",
+                          ] as [string, string],
+                          [
                             "Penanggung biaya pengelolaan",
                             billing.isLoading
                               ? "Memuat penanggung..."
@@ -1278,18 +1288,30 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                             : "Sewa kamar Rp0. Biaya pengelolaan tetap berjalan tanpa jatuh tempo dan denda keterlambatan."}
                         </p>
                       </div>
-                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                      <Badge
+                        className={cn(
+                          billing.data.owner_sponsorship.payment_status === "unpaid"
+                            ? "bg-destructive/15 text-destructive hover:bg-destructive/15"
+                            : billing.data.owner_sponsorship.payment_status === "partially_paid"
+                              ? "bg-warning/15 text-warning hover:bg-warning/15"
+                              : "bg-emerald-600 text-white hover:bg-emerald-600",
+                        )}
+                      >
                         {billing.data.owner_sponsorship.payment_status === "waived"
                           ? "Biaya dibebaskan"
                           : billing.data.owner_sponsorship.payment_status === "paid"
                             ? "Lunas"
                             : billing.data.owner_sponsorship.payment_status === "partially_paid"
-                              ? "Dibayar sebagian"
+                              ? "Outstanding"
                               : "Belum dibayar"}
                       </Badge>
                     </div>
                     <DefinitionGrid
                       rows={[
+                        [
+                          "Owner pemilik kamar",
+                          `${billing.data.owner_sponsorship.owner_name} (Owner)`,
+                        ],
                         [
                           "Penanggung biaya pengelolaan",
                           managementFeePayerLabel(
@@ -1322,7 +1344,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   </div>
                   {canManageBilling &&
                   currentPropertyId &&
-                  billing.data.owner_sponsorship.management_fee_mode === "charged" ? (
+                  billing.data.owner_sponsorship.management_fee_mode === "charged" &&
+                  !["paid", "overpaid"].includes(billing.data.owner_sponsorship.payment_status) ? (
                     <RecordPaymentDialog
                       data={billing.data}
                       propertyId={currentPropertyId}
@@ -1330,11 +1353,20 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     />
                   ) : null}
                   {currentPropertyId ? (
-                    <OwnerSponsoredManagementFeeDocumentDownloadButton
-                      propertyId={currentPropertyId}
-                      residentId={residentId}
-                      residentName={billing.data.lease.resident_name}
-                    />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <OwnerSponsoredResidenceStatementDownloadButton
+                        propertyId={currentPropertyId}
+                        residentId={residentId}
+                        residentName={billing.data.lease.resident_name}
+                      />
+                      {billing.data.owner_sponsorship.management_fee_mode === "charged" ? (
+                        <OwnerSponsoredManagementFeeDocumentDownloadButton
+                          propertyId={currentPropertyId}
+                          residentId={residentId}
+                          residentName={billing.data.lease.resident_name}
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : summary ? (
@@ -3575,6 +3607,46 @@ function OwnerSponsoredManagementFeeDocumentDownloadButton({
       {error ? (
         <span role="alert" className="text-xs text-destructive">
           Invoice biaya pengelolaan belum dapat diunduh.
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function OwnerSponsoredResidenceStatementDownloadButton({
+  propertyId,
+  residentId,
+  residentName,
+}: {
+  propertyId: string;
+  residentId: string;
+  residentName: string;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+  return (
+    <span className="inline-flex w-full min-w-0 flex-col items-stretch gap-1">
+      <Button
+        className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
+        variant="default"
+        disabled={downloading}
+        onClick={() => {
+          setDownloading(true);
+          setError(false);
+          void downloadOwnerSponsoredResidenceStatement(propertyId, residentId, residentName)
+            .catch(() => setError(true))
+            .finally(() => setDownloading(false));
+        }}
+      >
+        <FileText className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        {downloading ? "Menyiapkan..." : "Unduh surat hunian Owner"}
+      </Button>
+      <span className="text-center text-[11px] text-muted-foreground">
+        Keterangan hunian Owner terbaru saat diunduh.
+      </span>
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          Surat keterangan hunian Owner belum dapat diunduh.
         </span>
       ) : null}
     </span>

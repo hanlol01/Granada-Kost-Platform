@@ -6,6 +6,8 @@ import {
   createBillingReceiptPdf,
   createContractPaidDocumentPdf,
   createOwnerSponsoredManagementFeeDocumentPdf,
+  createOwnerSponsoredManagementFeeReceiptPdf,
+  createOwnerSponsoredResidenceStatementPdf,
 } from '../../src/modules/billing/helpers/billing-document.helper';
 
 void test('invoice renderer uses the same branded PDF authority as payment receipts', async () => {
@@ -163,7 +165,7 @@ void test('branded receipt renderer creates a one-page PDF with the canonical re
   assert.equal(loaded.getPageCount(), 1);
 });
 
-void test('owner-sponsored management-fee invoice has its own clear template and wraps long labels', async () => {
+void test('owner-sponsored management-fee invoice has its own clear template and marks a paid fee as lunas', async () => {
   const result = await createOwnerSponsoredManagementFeeDocumentPdf({
     documentCode: 'INFO-BIAYA-PENGELOLAAN-12345678',
     residentName: 'Nona Penghuni',
@@ -181,9 +183,9 @@ void test('owner-sponsored management-fee invoice has its own clear template and
     managementFeePayerName: null,
     monthlyManagementFee: 1_250_000,
     projectedManagementFee: 15_000_000,
-    verifiedPaid: 4_000_000,
-    pending: 2_000_000,
-    remaining: 9_000_000,
+    verifiedPaid: 15_000_000,
+    pending: 0,
+    remaining: 0,
     printedAt: new Date('2026-09-22T10:00:00+07:00'),
   });
 
@@ -196,13 +198,106 @@ void test('owner-sponsored management-fee invoice has its own clear template and
   const content = await (await parsed.getPage(1)).getTextContent();
   const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
 
-  assert.match(text, /INVOICE BIAYA PENGELOLAAN HUNIAN/);
+  assert.match(text, /INVOICE BIAYA PENGELOLAAN/);
   assert.match(text, /Hunian Tanggungan Owner/);
+  assert.match(text, /Owner pemilik kamar\s*:\s*Hans Aby \(Owner\)/);
   assert.match(text, /Hans Aby \(Owner\)/);
   assert.match(text, /Biaya pengelolaan per bulan\s*:\s*Rp\. 1\.250\.000,-/);
   assert.match(text, /Total biaya pengelolaan masa hunian\s*:\s*Rp\. 15\.000\.000,-/);
-  assert.match(text, /Sisa biaya pengelolaan\s*:\s*Rp\. 9\.000\.000,-/);
+  assert.match(text, /Total biaya sudah diterima\s*:\s*Rp\. 15\.000\.000,-/);
+  assert.match(text, /LUNAS/);
   assert.doesNotMatch(text, /TAGIHAN-LAIN/);
+});
+
+void test('owner-sponsored management-fee receipt uses payment-specific wording, localized values, and a cumulative total', async () => {
+  const result = await createOwnerSponsoredManagementFeeReceiptPdf({
+    receiptCode: '002-09/BIAYA-PENGELOLAAN/GSH1/2026',
+    paymentCode: 'TRX-20260902-000002-BIAYA-PENGELOLAAN',
+    paymentMethod: 'bank_transfer',
+    residentName: 'nanonao',
+    roomNumber: 'RK-05-07',
+    buildingCode: 'RK-05',
+    amount: 600_000,
+    paidAt: new Date('2026-09-02T10:00:00+07:00'),
+    issuedAt: new Date('2026-09-02T10:01:00+07:00'),
+    leaseStart: '2026-08-01',
+    leaseEnd: '2027-08-01',
+    leaseTermMonths: 12,
+    ownerName: 'hans aby',
+    managementFeeMode: 'charged',
+    managementFeePayer: 'owner',
+    managementFeePayerName: null,
+    monthlyManagementFee: 600_000,
+    projectedManagementFee: 3_600_000,
+    verifiedPaid: 3_600_000,
+    pending: 0,
+    remaining: 0,
+    propertyName: 'Granada Student House Jatinangor',
+    propertyAddress: 'Jatinangor, Sumedang',
+    issuedByName: 'Admin Pengelola',
+  });
+
+  const loaded = await PDFDocument.load(result.content);
+  assert.ok(loaded.getPageCount() >= 1);
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const pages = await Promise.all(
+    Array.from({ length: parsed.numPages }, async (_, index) =>
+      (await (await parsed.getPage(index + 1)).getTextContent()).items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' '),
+    ),
+  );
+  const text = pages.join(' ');
+
+  assert.match(text, /KUITANSI PEMBAYARAN BIAYA PENGELOLAAN/);
+  assert.match(text, /Nama penghuni\s*:\s*nanonao/);
+  assert.match(text, /Pembayar\s*:\s*hans aby \(Owner\)/);
+  assert.match(text, /1 tahun \/ 1 Agustus 2026 s\.d\. 1 Agustus 2027/);
+  assert.match(text, /Rumah Kost · Unit 5, Kamar 7/);
+  assert.match(text, /Total biaya sudah diterima\s*:\s*Rp\. 3\.600\.000,-/);
+  assert.match(text, /Pembayaran via\s*:\s*Transfer bank/);
+  assert.match(text, /Jumlah transfer pada kuitansi ini terbilang/);
+  assert.match(text, /Total biaya pengelolaan yang sudah diterima terbilang/);
+  assert.match(text, /LUNAS/);
+  assert.doesNotMatch(text, /Diterima dari/);
+  assert.doesNotMatch(text, /bank_transfer/);
+});
+
+void test('owner-sponsored residence statement distinguishes waived fees from a paid invoice', async () => {
+  const result = await createOwnerSponsoredResidenceStatementPdf({
+    documentCode: 'KET-HUNIAN-OWNER-12345678',
+    residentName: 'misamo',
+    roomNumber: 'RK-05-07',
+    buildingCode: 'RK-05',
+    leaseStart: '2026-08-01',
+    leaseEnd: '2027-08-01',
+    leaseTermMonths: 12,
+    ownerName: 'hans aby',
+    managementFeeMode: 'waived',
+    managementFeePayer: null,
+    managementFeePayerName: null,
+    monthlyManagementFee: 0,
+    projectedManagementFee: 0,
+    verifiedPaid: 0,
+    pending: 0,
+    remaining: 0,
+    propertyName: 'Granada Student House Jatinangor',
+    propertyAddress: 'Jatinangor, Sumedang',
+    issuedByName: 'Admin Pengelola',
+  });
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /SURAT KETERANGAN HUNIAN TANGGUNGAN OWNER/);
+  assert.match(text, /misamo/);
+  assert.match(text, /hans aby \(Owner\)/);
+  assert.match(text, /BIAYA DIBEBASKAN/);
+  assert.match(text, /biaya dibebaskan/i);
+  assert.doesNotMatch(text, /INVOICE BIAYA PENGELOLAAN/);
 });
 
 void test('receipt renderer presents the building unit before the room number', async () => {
@@ -294,7 +389,7 @@ void test('rent installment receipt states its sequence, contract, period, balan
   assert.match(text, /Kab\. Sumedang 45363/);
 });
 
-void test('contract-paid proof is a distinct one-page document for the full lease obligation', async () => {
+void test('contract-paid proof moves its settlement block to a continuation page when the full document does not fit', async () => {
   const result = await createContractPaidDocumentPdf({
     documentCode: '001-09/KONTRAK-LUNAS/GSH1/2026',
     residentName: 'Rehan',
@@ -329,7 +424,7 @@ void test('contract-paid proof is a distinct one-page document for the full leas
   assert.equal(result.content.subarray(0, 4).toString('latin1'), '%PDF');
   assert.ok(result.content.length > 10_000);
   const loaded = await PDFDocument.load(result.content);
-  assert.equal(loaded.getPageCount(), 1);
+  assert.ok(loaded.getPageCount() >= 2);
 
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;

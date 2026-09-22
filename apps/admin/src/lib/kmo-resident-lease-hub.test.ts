@@ -382,16 +382,26 @@ test("resident admin views expose owner-sponsored filters, labels, and current m
     new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url),
     "utf8",
   );
+  const payments = await readFile(
+    new URL("../components/billing/PaymentsWorkspace.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.match(tenants, /Kesepakatan khusus/);
   assert.match(tenants, /Hunian Tanggungan Owner/);
   assert.match(tenants, /Dengan biaya pengelolaan/);
   assert.match(tenants, /Tanpa biaya pengelolaan/);
+  assert.match(tenants, /Biaya dibebaskan/);
+  assert.match(tenants, /Outstanding/);
   assert.match(tenants, /Sisa fee:/);
   assert.match(detail, /managementFeePayerLabel/);
+  assert.match(detail, /Owner pemilik kamar/);
   assert.match(detail, /\(Owner\)/);
   assert.match(detail, /\(Penghuni\)/);
+  assert.match(detail, /Unduh surat hunian Owner/);
   assert.match(detail, /Unduh invoice biaya pengelolaan/);
+  assert.match(detail, /\["paid", "overpaid"\]\.includes/);
+  assert.match(payments, /\["paid", "overpaid"\]\.includes/);
 });
 
 test("tenancy projection exposes an awaiting activation lease without claiming occupancy", () => {

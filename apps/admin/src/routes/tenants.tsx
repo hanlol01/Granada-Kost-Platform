@@ -208,7 +208,7 @@ function ManagementFeeModePill({ mode }: { mode: ResidentListRecord["managementF
 
   if (mode === "waived") {
     return (
-      <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+      <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
         Tanpa biaya pengelolaan
       </span>
     );
@@ -223,8 +223,8 @@ function ManagementFeeModePill({ mode }: { mode: ResidentListRecord["managementF
 function ManagementFeeSettlementSummary({ resident }: { resident: ResidentListRecord }) {
   if (resident.managementFeeMode === "waived") {
     return (
-      <div className="space-y-1.5">
-        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
           Biaya dibebaskan
         </span>
         <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
@@ -243,13 +243,13 @@ function ManagementFeeSettlementSummary({ resident }: { resident: ResidentListRe
   }
   const presentation = {
     unpaid: { label: "Belum dibayar", className: "bg-warning/15 text-warning" },
-    partially_paid: { label: "Dibayar sebagian", className: "bg-warning/15 text-warning" },
+    partially_paid: { label: "Outstanding", className: "bg-warning/15 text-warning" },
     paid: { label: "Lunas", className: "bg-success/15 text-success" },
     overpaid: { label: "Lunas", className: "bg-success/15 text-success" },
   } as const;
   const current = status !== "waived" ? presentation[status] : presentation.unpaid;
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col items-start gap-1.5">
       <span
         className={cn(
           "inline-flex max-w-full whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium",
@@ -1004,7 +1004,7 @@ function TenantsPage() {
                         {resident.commercialMode === "owner_sponsored" ? (
                           <ManagementFeeSettlementSummary resident={resident} />
                         ) : (
-                          <div className="space-y-1.5">
+                          <div className="flex flex-col items-start gap-1.5">
                             <SettlementStagePill stage={resident.contractSettlementStage} />
                             {resident.contractSettlementStage === "paid_in_full" &&
                             resident.leaseEnd ? (

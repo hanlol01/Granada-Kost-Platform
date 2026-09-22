@@ -1091,7 +1091,9 @@ function ResidentBillingPanel({
         <PaymentHistory data={data} propertyId={propertyId} canManage={canManage} />
       </div>
       {canManage &&
-      (!data.owner_sponsorship || data.owner_sponsorship.management_fee_mode === "charged") ? (
+      (!data.owner_sponsorship ||
+        (data.owner_sponsorship.management_fee_mode === "charged" &&
+          !["paid", "overpaid"].includes(data.owner_sponsorship.payment_status))) ? (
         <RecordPaymentDialog
           data={data}
           propertyId={propertyId}
@@ -1115,18 +1117,18 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
       : sponsorship.payment_status === "paid"
         ? "Lunas"
         : sponsorship.payment_status === "partially_paid"
-          ? "Dibayar sebagian"
+          ? "Outstanding"
           : sponsorship.payment_status === "overpaid"
             ? "Lebih bayar"
             : "Belum dibayar";
   const payerLabel =
     sponsorship.management_fee_mode === "waived"
-      ? "Tidak ada penanggung pembayaran"
+      ? `${sponsorship.owner_name} (Owner) — biaya dibebaskan`
       : sponsorship.management_fee_payer === "owner"
-        ? sponsorship.owner_name
+        ? `${sponsorship.owner_name} (Owner)`
         : sponsorship.management_fee_payer === "resident"
-          ? data.lease.resident_name
-          : sponsorship.management_fee_payer_name || "Pihak lain";
+          ? `${data.lease.resident_name} (Penghuni)`
+          : `${sponsorship.management_fee_payer_name || "Pihak lain"} (Pihak lain)`;
   return (
     <Card className="border-emerald-300/70 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20">
       <CardHeader className="pb-3">
@@ -1141,11 +1143,21 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
                 : "Sewa kamar tidak ditagihkan. Biaya pengelolaan tetap dicatat terpisah dan dapat dibayar kapan saja selama masa hunian."}
             </p>
           </div>
-          <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{statusLabel}</Badge>
+          <Badge
+            className={cn(
+              sponsorship.payment_status === "unpaid"
+                ? "bg-destructive/15 text-destructive hover:bg-destructive/15"
+                : sponsorship.payment_status === "partially_paid"
+                  ? "bg-warning/15 text-warning hover:bg-warning/15"
+                  : "bg-emerald-600 text-white hover:bg-emerald-600",
+            )}
+          >
+            {statusLabel}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <DetailRow label="Owner penanggung" value={sponsorship.owner_name} />
+        <DetailRow label="Owner pemilik kamar" value={`${sponsorship.owner_name} (Owner)`} />
         <DetailRow label="Ketentuan biaya" value={payerLabel} />
         <DetailRow
           label="Biaya pengelolaan per bulan"

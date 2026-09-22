@@ -33,7 +33,9 @@ import {
   createBillingInvoicePdf,
   createBillingReceiptPdf,
   createContractPaidDocumentPdf,
+  createOwnerSponsoredManagementFeeReceiptPdf,
   createOwnerSponsoredManagementFeeDocumentPdf,
+  createOwnerSponsoredResidenceStatementPdf,
   type BillingInvoiceDocument,
   type BillingReceiptDocument,
   type ContractPaidDocumentSnapshot,
@@ -3313,8 +3315,7 @@ export class W06BillingService {
   ): Promise<BillingReceiptDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
     const stored = await this.loadStoredReceipt(propertyId, receiptId);
-    const originalReceiptCode =
-      stored.safe_snapshot?.original_receipt_code ?? stored.receipt_code;
+    const originalReceiptCode = stored.safe_snapshot?.original_receipt_code ?? stored.receipt_code;
     if (stored.document_content) {
       return {
         filename: this.receiptFilename(originalReceiptCode, '-asli'),
@@ -3739,6 +3740,38 @@ export class W06BillingService {
               : paymentClassification === 'management_fee'
                 ? 'KUITANSI PEMBAYARAN BIAYA PENGELOLAAN'
                 : undefined;
+    if (
+      !reversal &&
+      paymentClassification === 'management_fee' &&
+      row.management_fee_mode != null
+    ) {
+      return createOwnerSponsoredManagementFeeReceiptPdf({
+        receiptCode: row.receipt_code,
+        paymentCode: row.payment_code,
+        paymentMethod: row.payment_method,
+        residentName: row.resident_name,
+        roomNumber: row.room_number,
+        buildingCode: row.building_code,
+        amount: this.money(row.amount),
+        paidAt: row.paid_at,
+        issuedAt: row.issued_at,
+        leaseStart: row.lease_start,
+        leaseEnd: row.lease_end,
+        leaseTermMonths: row.lease_term_months,
+        ownerName: row.owner_name,
+        managementFeeMode: row.management_fee_mode,
+        managementFeePayer: row.management_fee_payer,
+        managementFeePayerName: row.management_fee_payer_name,
+        monthlyManagementFee: this.money(row.snapshot_monthly_management_fee ?? 0),
+        projectedManagementFee: this.money(row.projected_management_fee_amount ?? 0),
+        verifiedPaid: this.money(row.management_fee_verified_paid_amount ?? 0),
+        pending: this.money(row.management_fee_pending_amount ?? 0),
+        remaining: this.money(row.management_fee_remaining_amount ?? 0),
+        propertyName: row.property_name,
+        propertyAddress: row.property_address,
+        issuedByName: row.issued_by_name,
+      });
+    }
     const managementFeePayer =
       row.management_fee_payer === 'owner'
         ? `${row.owner_name ?? 'Owner'} (Owner)`
@@ -3866,6 +3899,72 @@ export class W06BillingService {
     residentId: string,
   ): Promise<BillingReceiptDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
+    const row = await this.ownerSponsoredManagementFeeDocumentRow(propertyId, residentId, user.id);
+    if (row.management_fee_mode !== 'charged')
+      throw new ConflictException({
+        code: 'OWNER_SPONSORED_MANAGEMENT_FEE_NOT_CHARGED',
+        message: 'Invoice biaya pengelolaan hanya tersedia untuk skema dengan biaya.',
+      });
+    return createOwnerSponsoredManagementFeeDocumentPdf({
+      documentCode: `INV-BIAYA-PENGELOLAAN-${row.lease_id.slice(0, 8).toUpperCase()}`,
+      residentName: row.resident_name,
+      roomNumber: row.room_number,
+      buildingCode: row.building_code,
+      leaseStart: row.lease_start,
+      leaseEnd: row.lease_end,
+      leaseTermMonths: row.lease_term_months,
+      ownerName: row.owner_name,
+      managementFeeMode: row.management_fee_mode,
+      managementFeePayer: row.management_fee_payer,
+      managementFeePayerName: row.management_fee_payer_name,
+      monthlyManagementFee: this.money(row.snapshot_monthly_management_fee),
+      projectedManagementFee: this.money(row.current_projected_management_fee_amount),
+      verifiedPaid: this.money(row.verified_paid_amount),
+      pending: this.money(row.pending_amount),
+      remaining: this.money(row.remaining_amount),
+      propertyName: row.property_name,
+      propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
+      printedAt: new Date(),
+    });
+  }
+
+  async ownerSponsoredResidenceStatement(
+    user: UserAccessContext,
+    propertyId: string,
+    residentId: string,
+  ): Promise<BillingReceiptDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const row = await this.ownerSponsoredManagementFeeDocumentRow(propertyId, residentId, user.id);
+    return createOwnerSponsoredResidenceStatementPdf({
+      documentCode: `KET-HUNIAN-OWNER-${row.lease_id.slice(0, 8).toUpperCase()}`,
+      residentName: row.resident_name,
+      roomNumber: row.room_number,
+      buildingCode: row.building_code,
+      leaseStart: row.lease_start,
+      leaseEnd: row.lease_end,
+      leaseTermMonths: row.lease_term_months,
+      ownerName: row.owner_name,
+      managementFeeMode: row.management_fee_mode,
+      managementFeePayer: row.management_fee_payer,
+      managementFeePayerName: row.management_fee_payer_name,
+      monthlyManagementFee: this.money(row.snapshot_monthly_management_fee),
+      projectedManagementFee: this.money(row.current_projected_management_fee_amount),
+      verifiedPaid: this.money(row.verified_paid_amount),
+      pending: this.money(row.pending_amount),
+      remaining: this.money(row.remaining_amount),
+      propertyName: row.property_name,
+      propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
+      printedAt: new Date(),
+    });
+  }
+
+  private async ownerSponsoredManagementFeeDocumentRow(
+    propertyId: string,
+    residentId: string,
+    issuerId: string,
+  ): Promise<OwnerSponsoredManagementFeeDocumentRow> {
     const result = await this.database.client.query<OwnerSponsoredManagementFeeDocumentRow>(
       `SELECT lease.id AS lease_id,
               resident.full_name AS resident_name,
@@ -3904,37 +4003,15 @@ export class W06BillingService {
         ORDER BY CASE lease.lease_status WHEN 'active' THEN 0 WHEN 'awaiting_activation' THEN 1 ELSE 2 END,
                  lease.updated_at DESC,lease.id DESC
         LIMIT 1`,
-      [propertyId, residentId, user.id],
+      [propertyId, residentId, issuerId],
     );
     const row = result.rows[0];
-    if (!row) {
+    if (!row)
       throw new NotFoundException({
         code: 'OWNER_SPONSORED_MANAGEMENT_FEE_DOCUMENT_NOT_FOUND',
         message: 'Owner-sponsored management-fee document is unavailable',
       });
-    }
-    return createOwnerSponsoredManagementFeeDocumentPdf({
-      documentCode: `INFO-BIAYA-PENGELOLAAN-${row.lease_id.slice(0, 8).toUpperCase()}`,
-      residentName: row.resident_name,
-      roomNumber: row.room_number,
-      buildingCode: row.building_code,
-      leaseStart: row.lease_start,
-      leaseEnd: row.lease_end,
-      leaseTermMonths: row.lease_term_months,
-      ownerName: row.owner_name,
-      managementFeeMode: row.management_fee_mode,
-      managementFeePayer: row.management_fee_payer,
-      managementFeePayerName: row.management_fee_payer_name,
-      monthlyManagementFee: this.money(row.snapshot_monthly_management_fee),
-      projectedManagementFee: this.money(row.current_projected_management_fee_amount),
-      verifiedPaid: this.money(row.verified_paid_amount),
-      pending: this.money(row.pending_amount),
-      remaining: this.money(row.remaining_amount),
-      propertyName: row.property_name,
-      propertyAddress: row.property_address,
-      issuedByName: row.issued_by_name,
-      printedAt: new Date(),
-    });
+    return row;
   }
 
   async myInvoiceDocument(

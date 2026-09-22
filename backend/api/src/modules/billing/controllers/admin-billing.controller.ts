@@ -204,6 +204,25 @@ export class AdminBillingController {
     });
   }
 
+  @Get('billing/residents/:residentId/owner-sponsored-residence-statement')
+  @Header('Cache-Control', 'private, no-store')
+  async ownerSponsoredResidenceStatement(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId') residentId: string,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    const document = await this.w06.ownerSponsoredResidenceStatement(
+      user,
+      query.property_id,
+      residentId,
+    );
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Post('billing/payments/manual')
   @RequirePermissions('billing.manage')
   recordManual(

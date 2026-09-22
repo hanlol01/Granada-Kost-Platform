@@ -111,6 +111,16 @@ test("checkout command errors move focus and scroll to the alert", async () => {
   assert.match(panel, /tabIndex=\{-1\}/);
 });
 
+test("checkout mutations confirm each saved operational stage", async () => {
+  const panel = await source("../components/leases/CheckoutPanel.tsx");
+  assert.match(panel, /toastMutationSuccess/);
+  assert.match(panel, /Rencana check-out berhasil disimpan/);
+  assert.match(panel, /Serah-terima check-out berhasil dicatat/);
+  assert.match(panel, /Inspeksi kamar berhasil dicatat/);
+  assert.match(panel, /Penyelesaian keuangan akhir berhasil ditetapkan/);
+  assert.match(panel, /Pengembalian dana berhasil dicatat/);
+});
+
 test("checkout command transitions return focus to the checkout panel", async () => {
   const panel = await source("../components/leases/CheckoutPanel.tsx");
   assert.match(panel, /const checkoutPanelRef = useRef<HTMLDivElement>/);

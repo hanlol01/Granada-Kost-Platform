@@ -82,6 +82,10 @@ export type BillingReceiptDocumentData = {
   detailRows?: Array<[string, string]>;
   /** Displays a prominent state immediately below the document number. */
   documentStatusNote?: string;
+  /** A visual seal reserved for an actual financial or policy state. */
+  documentStatusStamp?: { label: string; tone: 'success' | 'info' };
+  /** Domain-specific amount spelling blocks. Defaults to the transaction amount. */
+  terbilangBlocks?: Array<{ label: string; amount: number }>;
 };
 
 export type BillingReceiptDocument = {
@@ -111,6 +115,8 @@ export type OwnerSponsoredManagementFeeDocumentData = {
   issuedByName: string | null;
   printedAt?: Date;
 };
+
+export type OwnerSponsoredResidenceStatementData = OwnerSponsoredManagementFeeDocumentData;
 
 export const BILLING_DOCUMENT_RENDERER_VERSION = 'room-label-v2';
 
@@ -872,6 +878,32 @@ export async function createBillingReceiptPdf(
     });
   }
 
+  if (data.documentStatusStamp) {
+    const stampColor =
+      data.documentStatusStamp.tone === 'success' ? rgb(0.05, 0.45, 0.24) : rgb(0.04, 0.32, 0.68);
+    const stampWidth = Math.max(
+      92,
+      bold.widthOfTextAtSize(data.documentStatusStamp.label, 10) + 28,
+    );
+    const stampX = (pageWidth - stampWidth) / 2;
+    page.drawRectangle({
+      x: stampX,
+      y: 628,
+      width: stampWidth,
+      height: 20,
+      borderColor: stampColor,
+      borderWidth: 1.4,
+      color: rgb(1, 1, 1),
+    });
+    page.drawText(data.documentStatusStamp.label, {
+      x: stampX + (stampWidth - bold.widthOfTextAtSize(data.documentStatusStamp.label, 10)) / 2,
+      y: 634,
+      size: 10,
+      font: bold,
+      color: stampColor,
+    });
+  }
+
   const addContinuationPage = () => {
     page = document.addPage([595.28, 841.89]);
     const continuationTitle = `${title} (LANJUTAN)`;
@@ -962,7 +994,7 @@ export async function createBillingReceiptPdf(
       ],
     );
   }
-  let y = data.documentStatusNote ? 626 : 642;
+  let y = data.documentStatusStamp ? 594 : data.documentStatusNote ? 626 : 642;
   for (const [labelText, value] of rows) {
     // Keep both label and value within their own columns. This is especially
     // important for contract-paid and management-fee receipts with long labels.
@@ -981,8 +1013,24 @@ export async function createBillingReceiptPdf(
     y -= rowHeight;
   }
 
-  const terbilangLines = wrapText(italic, terbilang(data.amount), 10, 422);
-  const terbilangHeight = 34 + terbilangLines.length * 13;
+  const terbilangBlocks = data.terbilangBlocks ?? [{ label: 'Terbilang:', amount: data.amount }];
+  const renderedTerbilangBlocks = terbilangBlocks.map((block) => {
+    const labelLines = wrapText(bold, block.label, 10, 400);
+    const amountLines = wrapText(italic, terbilang(block.amount), 10, 422);
+    return {
+      labelLines,
+      amountLines,
+      // Keep the single-block layout as compact as the long-standing receipt
+      // format. It preserves a one-page receipt whenever its content truly
+      // fits, while the continuation check below still protects every page
+      // from text or signature overlap.
+      height: 14 + labelLines.length * 13 + amountLines.length * 13 + 7,
+    };
+  });
+  const terbilangHeight = renderedTerbilangBlocks.reduce(
+    (total, block, index) => total + block.height + (index ? 8 : 0),
+    0,
+  );
   const showSettlementSummary =
     data.showSettlementSummary &&
     data.contractRentAmount != null &&
@@ -1005,27 +1053,32 @@ export async function createBillingReceiptPdf(
     y = addContinuationPage();
   }
   y -= 8;
-  page.drawRectangle({
-    x: 82,
-    y: y - terbilangHeight,
-    width: 432,
-    height: terbilangHeight,
-    borderColor: border,
-    borderWidth: 1,
-    color: rgb(0.98, 0.985, 0.99),
-  });
-  page.drawText('Terbilang:', { x: 96, y: y - 18, size: 10, font: bold, color: navy });
-  terbilangLines.forEach((line, index) => {
-    page.drawText(line, {
-      x: 96,
-      y: y - 34 - index * 13,
-      size: 10,
-      font: italic,
-      color: terbilangRed,
+  renderedTerbilangBlocks.forEach((block, index) => {
+    if (index) y -= 8;
+    page.drawRectangle({
+      x: 82,
+      y: y - block.height,
+      width: 432,
+      height: block.height,
+      borderColor: border,
+      borderWidth: 1,
+      color: rgb(0.98, 0.985, 0.99),
     });
+    block.labelLines.forEach((line, lineIndex) => {
+      page.drawText(line, { x: 96, y: y - 18 - lineIndex * 13, size: 10, font: bold, color: navy });
+    });
+    const amountStart = y - 18 - block.labelLines.length * 13 - 2;
+    block.amountLines.forEach((line, lineIndex) => {
+      page.drawText(line, {
+        x: 96,
+        y: amountStart - lineIndex * 13,
+        size: 10,
+        font: italic,
+        color: terbilangRed,
+      });
+    });
+    y -= block.height;
   });
-
-  y -= terbilangHeight;
   if (summaryRows.length) {
     y -= 10;
     page.drawRectangle({
@@ -1075,38 +1128,122 @@ export async function createBillingReceiptPdf(
   return { filename: `${safeCode}.pdf`, content: Buffer.from(await document.save()) };
 }
 
+export type OwnerSponsoredManagementFeeReceiptData = {
+  receiptCode: string;
+  paymentCode: string;
+  paymentMethod: string;
+  residentName: string;
+  roomNumber: string;
+  buildingCode: string | null;
+  amount: number;
+  paidAt: Date | string | null;
+  issuedAt: Date;
+  leaseStart: string;
+  leaseEnd: string | null;
+  leaseTermMonths: number | null;
+  ownerName: string | null;
+  managementFeeMode: 'charged' | 'waived' | null;
+  managementFeePayer: 'resident' | 'owner' | 'other' | null;
+  managementFeePayerName: string | null;
+  monthlyManagementFee: number;
+  projectedManagementFee: number;
+  verifiedPaid: number;
+  pending: number;
+  remaining: number;
+  propertyName: string;
+  propertyAddress: string | null;
+  issuedByName: string | null;
+};
+
+export async function createOwnerSponsoredManagementFeeReceiptPdf(
+  data: OwnerSponsoredManagementFeeReceiptData,
+): Promise<BillingReceiptDocument> {
+  const ownerName = data.ownerName?.trim() || 'Owner belum ditentukan';
+  const payer =
+    data.managementFeePayer === 'owner'
+      ? `${ownerName} (Owner)`
+      : data.managementFeePayer === 'resident'
+        ? `${data.residentName} (Penghuni)`
+        : data.managementFeePayer === 'other'
+          ? `${data.managementFeePayerName ?? 'Belum ditentukan'} (Pihak lain)`
+          : `${ownerName} (Owner)`;
+  const fullyPaid = data.remaining <= 0 && data.pending <= 0;
+  return createBillingReceiptPdf({
+    receiptCode: data.receiptCode,
+    paymentCode: data.paymentCode,
+    paymentMethod: data.paymentMethod,
+    paymentPurpose: 'management_fee',
+    residentName: data.residentName,
+    roomNumber: data.roomNumber,
+    amount: data.amount,
+    paidAt: data.paidAt,
+    issuedAt: data.issuedAt,
+    allocations: [],
+    documentTitle: 'KUITANSI PEMBAYARAN BIAYA PENGELOLAAN',
+    documentNumberLabel: 'Nomor Kuitansi',
+    documentStatusNote: 'Hunian Tanggungan Owner — sewa kamar Rp0',
+    documentStatusStamp: fullyPaid ? { label: 'LUNAS', tone: 'success' } : undefined,
+    detailRows: [
+      ['Nama penghuni', data.residentName],
+      ['Owner pemilik kamar', `${ownerName} (Owner)`],
+      ['Pembayar', payer],
+      ['Kode transaksi', data.paymentCode],
+      ['Jumlah transfer pada kuitansi ini', idr(data.amount)],
+      ['Untuk pembayaran', 'Biaya pengelolaan hunian tanggungan Owner'],
+      ['Tanggal pembayaran', receiptDate(data.paidAt, true)],
+      ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+      ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
+      [
+        'Ketentuan biaya pengelolaan',
+        data.managementFeeMode === 'waived'
+          ? 'Biaya dibebaskan oleh Owner'
+          : 'Dibayar fleksibel tanpa jatuh tempo dan denda',
+      ],
+      ['Biaya pengelolaan per bulan', idr(data.monthlyManagementFee)],
+      ['Total biaya pengelolaan masa hunian', idr(data.projectedManagementFee)],
+      ['Total biaya sudah diterima', idr(data.verifiedPaid)],
+      ['Menunggu verifikasi', idr(data.pending)],
+      ['Sisa biaya pengelolaan', idr(data.remaining)],
+      ['Pembayaran via', paymentMethodLabel[data.paymentMethod] ?? label(data.paymentMethod)],
+    ],
+    terbilangBlocks: [
+      { label: 'Jumlah transfer pada kuitansi ini terbilang:', amount: data.amount },
+      {
+        label: 'Total biaya pengelolaan yang sudah diterima terbilang:',
+        amount: data.verifiedPaid,
+      },
+    ],
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    buildingCode: data.buildingCode,
+    issuedByName: data.issuedByName,
+  });
+}
+
 export async function createOwnerSponsoredManagementFeeDocumentPdf(
   data: OwnerSponsoredManagementFeeDocumentData,
 ): Promise<BillingReceiptDocument> {
   const payer =
-    data.managementFeeMode === 'waived'
-      ? 'Tidak berlaku (biaya dibebaskan)'
-      : data.managementFeePayer === 'owner'
-        ? `${data.ownerName} (Owner)`
-        : data.managementFeePayer === 'resident'
-          ? `${data.residentName} (Penghuni)`
-          : data.managementFeePayer === 'other'
-            ? `${data.managementFeePayerName ?? 'Belum ditentukan'} (Pihak lain)`
-            : 'Belum ditentukan';
-  const waived = data.managementFeeMode === 'waived';
+    data.managementFeePayer === 'owner'
+      ? `${data.ownerName} (Owner)`
+      : data.managementFeePayer === 'resident'
+        ? `${data.residentName} (Penghuni)`
+        : data.managementFeePayer === 'other'
+          ? `${data.managementFeePayerName ?? 'Belum ditentukan'} (Pihak lain)`
+          : 'Belum ditentukan';
+  const paid = data.remaining <= 0 && data.pending <= 0;
   const rows: Array<[string, string]> = [
     ['Penghuni', data.residentName],
-    ['Status hunian', 'Hunian Tanggungan Owner — sewa kamar Rp0'],
-    ['Owner penanggung', data.ownerName],
+    ['Owner pemilik kamar', `${data.ownerName} (Owner)`],
     ['Penanggung biaya pengelolaan', payer],
     ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
-    [
-      'Ketentuan biaya pengelolaan',
-      waived
-        ? 'Dibebaskan — tidak ada tagihan biaya pengelolaan'
-        : 'Dibayar fleksibel tanpa jatuh tempo dan denda',
-    ],
-    ['Biaya pengelolaan per bulan', idr(waived ? 0 : data.monthlyManagementFee)],
-    ['Total biaya pengelolaan masa hunian', idr(waived ? 0 : data.projectedManagementFee)],
-    ['Sudah diterima', idr(waived ? 0 : data.verifiedPaid)],
-    ['Menunggu verifikasi', idr(waived ? 0 : data.pending)],
-    ['Sisa biaya pengelolaan', idr(waived ? 0 : data.remaining)],
+    ['Ketentuan biaya pengelolaan', 'Dibayar fleksibel tanpa jatuh tempo dan denda'],
+    ['Biaya pengelolaan per bulan', idr(data.monthlyManagementFee)],
+    ['Total biaya pengelolaan masa hunian', idr(data.projectedManagementFee)],
+    ['Total biaya sudah diterima', idr(data.verifiedPaid)],
+    ['Menunggu verifikasi', idr(data.pending)],
+    ['Sisa biaya pengelolaan', idr(data.remaining)],
     ['Diterbitkan', receiptDate(data.printedAt ?? new Date(), true)],
   ];
   return createBillingReceiptPdf({
@@ -1116,19 +1253,68 @@ export async function createOwnerSponsoredManagementFeeDocumentPdf(
     paymentPurpose: 'management_fee',
     residentName: data.residentName,
     roomNumber: data.roomNumber,
-    amount: waived ? 0 : data.remaining,
+    amount: data.remaining,
     paidAt: null,
     issuedAt: data.printedAt ?? new Date(),
     allocations: [],
-    documentTitle: 'INVOICE BIAYA PENGELOLAAN HUNIAN',
+    documentTitle: 'INVOICE BIAYA PENGELOLAAN',
     documentNumberLabel: 'Nomor dokumen',
-    documentStatusNote: waived
-      ? 'Hunian Tanggungan Owner — biaya pengelolaan dibebaskan'
-      : 'Hunian Tanggungan Owner — sewa kamar Rp0',
+    documentStatusNote: 'Hunian Tanggungan Owner — sewa kamar Rp0',
+    documentStatusStamp: paid ? { label: 'LUNAS', tone: 'success' } : undefined,
+    detailRows: rows,
+    terbilangBlocks: paid ? [] : undefined,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    issuedByName: data.issuedByName,
+  });
+}
+
+export async function createOwnerSponsoredResidenceStatementPdf(
+  data: OwnerSponsoredResidenceStatementData,
+): Promise<BillingReceiptDocument> {
+  const waived = data.managementFeeMode === 'waived';
+  const payer = waived
+    ? `${data.ownerName} (Owner) — biaya dibebaskan`
+    : data.managementFeePayer === 'owner'
+      ? `${data.ownerName} (Owner)`
+      : data.managementFeePayer === 'resident'
+        ? `${data.residentName} (Penghuni)`
+        : `${data.managementFeePayerName ?? 'Belum ditentukan'} (Pihak lain)`;
+  const rows: Array<[string, string]> = [
+    ['Nama penghuni', data.residentName],
+    ['Owner pemilik kamar', `${data.ownerName} (Owner)`],
+    ['Status hunian', 'Hunian Tanggungan Owner — sewa kamar Rp0'],
+    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+    ['Kamar', formatRoomDescription(data.roomNumber, data.buildingCode)],
+    [
+      'Ketentuan biaya pengelolaan',
+      waived
+        ? 'Biaya pengelolaan dibebaskan oleh Owner'
+        : 'Biaya pengelolaan diberlakukan tanpa jatuh tempo dan denda',
+    ],
+    ['Penanggung biaya pengelolaan', payer],
+    ['Diterbitkan', receiptDate(data.printedAt ?? new Date(), true)],
+  ];
+  return createBillingReceiptPdf({
+    receiptCode: data.documentCode,
+    paymentCode: data.documentCode,
+    paymentMethod: 'other',
+    paymentPurpose: 'management_fee',
+    residentName: data.residentName,
+    roomNumber: data.roomNumber,
+    amount: 0,
+    paidAt: null,
+    issuedAt: data.printedAt ?? new Date(),
+    allocations: [],
+    documentTitle: 'SURAT KETERANGAN HUNIAN TANGGUNGAN OWNER',
+    documentNumberLabel: 'Nomor dokumen',
+    documentStatusNote: 'Dokumen keterangan hunian — bukan tagihan sewa kamar',
+    documentStatusStamp: waived ? { label: 'BIAYA DIBEBASKAN', tone: 'success' } : undefined,
     detailRows: rows,
     propertyName: data.propertyName,
     propertyAddress: data.propertyAddress,
     issuedByName: data.issuedByName,
+    terbilangBlocks: [],
   });
 }
 

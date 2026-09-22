@@ -24,6 +24,14 @@ const contractPaidTransactionReferencesMigrationPath = new URL(
   '../../src/infrastructure/database/migrations/066_contract_paid_transaction_references.sql',
   import.meta.url,
 );
+const managementFeeDocumentMigrationPath = new URL(
+  '../../src/infrastructure/database/migrations/096_owner_sponsored_management_fee_documents.sql',
+  import.meta.url,
+);
+const historicalManagementFeeReceiptMigrationPath = new URL(
+  '../../src/infrastructure/database/migrations/097_reclassify_owner_sponsored_management_fee_receipts.sql',
+  import.meta.url,
+);
 
 void test('formal document migration is canonical and covers every issuance family', async () => {
   const [migration, manifest] = await Promise.all([
@@ -55,6 +63,41 @@ void test('formal document migration is canonical and covers every issuance fami
   assert.match(migration, /RCT-BKG-/);
   assert.match(migration, /RCT-CNL-/);
   assert.ok(manifest.includes("version: '058_formal_billing_document_numbers.sql'"));
+  assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
+});
+
+void test('management-fee receipts use their own BIAYA-PENGELOLAAN sequence family', async () => {
+  const [migration, manifest] = await Promise.all([
+    readFile(managementFeeDocumentMigrationPath, 'utf8'),
+    readFile(manifestPath, 'utf8'),
+  ]);
+  const checksum = createHash('sha256')
+    .update(await readFile(managementFeeDocumentMigrationPath))
+    .digest('hex');
+
+  assert.match(migration, /receipt_management_fee/);
+  assert.match(migration, /'BIAYA-PENGELOLAAN'/);
+  assert.match(migration, /billing_document_sequences_kind_check/);
+  assert.ok(manifest.includes("version: '096_owner_sponsored_management_fee_documents.sql'"));
+  assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
+});
+
+void test('historical owner-sponsored management-fee receipts are reclassified without losing their original audit snapshot', async () => {
+  const [migration, manifest] = await Promise.all([
+    readFile(historicalManagementFeeReceiptMigrationPath, 'utf8'),
+    readFile(manifestPath, 'utf8'),
+  ]);
+  const checksum = createHash('sha256')
+    .update(await readFile(historicalManagementFeeReceiptMigrationPath))
+    .digest('hex');
+
+  assert.match(migration, /payment\.payment_purpose='management_fee'/);
+  assert.match(migration, /receipt\.receipt_code LIKE '%\/TAGIHAN-LAIN\/%'/);
+  assert.match(migration, /next_billing_document_number\(receipt_row\.property_id,'receipt_management_fee'/);
+  assert.match(migration, /\{original_receipt_code\}/);
+  assert.match(migration, /\{original_document\}/);
+  assert.match(migration, /trg_w06_receipts_append_only/);
+  assert.ok(manifest.includes("version: '097_reclassify_owner_sponsored_management_fee_receipts.sql'"));
   assert.ok(manifest.includes(`checksumSha256: '${checksum}'`));
 });
 

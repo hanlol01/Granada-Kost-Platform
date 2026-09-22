@@ -53,6 +53,17 @@ type ResidentRow = {
   lease_start?: string | null;
   lease_end?: string | null;
   lease_authority_count?: string;
+  commercial_mode?: 'rent' | 'owner_sponsored' | null;
+  pricing_source?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
+  management_fee_mode?: 'charged' | 'waived' | null;
+  management_fee_payment_status?:
+    | 'waived'
+    | 'unpaid'
+    | 'partially_paid'
+    | 'paid'
+    | 'overpaid'
+    | null;
+  management_fee_remaining_amount?: string;
   created_at: Date;
   updated_at: Date;
 };
@@ -155,6 +166,11 @@ export class ResidentRepository {
               COALESCE(users.user_status, 'not_provisioned') AS account_status,
               projection.room_number,projection.lease_start::text,projection.lease_end::text,
               COALESCE(projection.lease_authority_count,0)::text AS lease_authority_count,
+              lease_projection.commercial_mode,
+              lease_projection.pricing_source,
+              owner_sponsorship.management_fee_mode,
+              owner_sponsorship.payment_status AS management_fee_payment_status,
+              COALESCE(owner_sponsorship.remaining_amount,0)::text AS management_fee_remaining_amount,
               COALESCE(projection.rent_payment_status,'none') AS rent_payment_status,
               COALESCE(projection.contract_settlement_stage,'none') AS contract_settlement_stage,
               projection.contract_settlement_due_date,
@@ -173,6 +189,12 @@ export class ResidentRepository {
        LEFT JOIN users archive_user ON archive_user.id=residents.archived_by_user_id
        LEFT JOIN resident_admin_lifecycle_projection projection
          ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
+       LEFT JOIN leases lease_projection
+         ON lease_projection.id=projection.projected_lease_id
+        AND lease_projection.property_id=residents.property_id
+       LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
+         ON owner_sponsorship.lease_id=projection.projected_lease_id
+        AND owner_sponsorship.property_id=residents.property_id
        LEFT JOIN LATERAL (
          SELECT CASE
                   WHEN settlement.decision_status='amount_due' THEN 'amount_due'
@@ -237,11 +259,14 @@ export class ResidentRepository {
            AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $13::integer
          ))
          AND ($14::text IS NULL OR checkout_projection.checkout_financial_status=$14)
+         AND ($15::text IS NULL OR lease_projection.commercial_mode=$15)
+         AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
+         AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)
        ORDER BY
          CASE WHEN $12::integer IS NOT NULL THEN projection.contract_settlement_due_date END ASC NULLS LAST,
          CASE WHEN $13::integer IS NOT NULL THEN projection.lease_end END ASC NULLS LAST,
          residents.created_at DESC,residents.id DESC
-       LIMIT $15 OFFSET $16`,
+       LIMIT $18 OFFSET $19`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -257,6 +282,9 @@ export class ResidentRepository {
         query.settlement_due_within_days ?? null,
         query.lease_end_within_days ?? null,
         query.checkout_financial_status ?? null,
+        query.commercial_mode ?? null,
+        query.pricing_source ?? null,
+        query.management_fee_mode ?? null,
         Math.min(Math.max(query.limit ?? 20, 1), 100),
         Math.max(query.offset ?? 0, 0),
       ],
@@ -271,6 +299,12 @@ export class ResidentRepository {
        LEFT JOIN users ON users.id = residents.user_id
        LEFT JOIN resident_admin_lifecycle_projection projection
          ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
+       LEFT JOIN leases lease_projection
+         ON lease_projection.id=projection.projected_lease_id
+        AND lease_projection.property_id=residents.property_id
+       LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
+         ON owner_sponsorship.lease_id=projection.projected_lease_id
+        AND owner_sponsorship.property_id=residents.property_id
        LEFT JOIN LATERAL (
          SELECT CASE
                   WHEN settlement.decision_status='amount_due' THEN 'amount_due'
@@ -332,7 +366,10 @@ export class ResidentRepository {
            AND projection.lease_end::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
            AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$13::integer
          ))
-         AND ($14::text IS NULL OR checkout_projection.checkout_financial_status=$14)`,
+         AND ($14::text IS NULL OR checkout_projection.checkout_financial_status=$14)
+         AND ($15::text IS NULL OR lease_projection.commercial_mode=$15)
+         AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
+         AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -348,6 +385,9 @@ export class ResidentRepository {
         query.settlement_due_within_days ?? null,
         query.lease_end_within_days ?? null,
         query.checkout_financial_status ?? null,
+        query.commercial_mode ?? null,
+        query.pricing_source ?? null,
+        query.management_fee_mode ?? null,
       ],
     );
     return Number(result.rows[0]?.total ?? 0);
@@ -816,6 +856,11 @@ export class ResidentRepository {
       leaseStart: row.lease_start ?? null,
       leaseEnd: row.lease_end ?? null,
       leaseAuthorityCount: Number(row.lease_authority_count ?? 0),
+      commercialMode: row.commercial_mode ?? null,
+      pricingSource: row.pricing_source ?? null,
+      managementFeeMode: row.management_fee_mode ?? null,
+      managementFeePaymentStatus: row.management_fee_payment_status ?? null,
+      managementFeeRemainingAmount: Number(row.management_fee_remaining_amount ?? 0),
       emergencyContacts: contactsByResident.get(row.id) ?? [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,

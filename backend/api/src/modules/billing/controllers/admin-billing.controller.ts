@@ -185,6 +185,25 @@ export class AdminBillingController {
     });
   }
 
+  @Get('billing/residents/:residentId/owner-sponsored-management-fee-document')
+  @Header('Cache-Control', 'private, no-store')
+  async ownerSponsoredManagementFeeDocument(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId') residentId: string,
+    @Query() query: AdminBillingScopeQueryDto,
+  ) {
+    const document = await this.w06.ownerSponsoredManagementFeeDocument(
+      user,
+      query.property_id,
+      residentId,
+    );
+    return new StreamableFile(document.content, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${document.filename}"`,
+      length: document.content.length,
+    });
+  }
+
   @Post('billing/payments/manual')
   @RequirePermissions('billing.manage')
   recordManual(

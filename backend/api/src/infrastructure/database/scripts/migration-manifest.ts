@@ -907,4 +907,20 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "pg_get_functiondef('validate_owner_sponsored_lease_term()'::regprocedure) NOT ILIKE '%effective_until%'",
     ],
   },
+  {
+    version: '096_owner_sponsored_management_fee_documents.sql',
+    checksumSha256: '88e355339903fde7ef83d64358805e73bae971c029086080c90e8621ff623f4e',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='billing_document_sequences_kind_check' AND pg_get_constraintdef(oid) ILIKE '%receipt_management_fee%')",
+      "pg_get_functiondef('next_billing_document_number(uuid,text,timestamp with time zone)'::regprocedure) ILIKE '%receipt_management_fee%BIAYA-PENGELOLAAN%'",
+    ],
+  },
+  {
+    version: '097_reclassify_owner_sponsored_management_fee_receipts.sql',
+    checksumSha256: '768c9f2998d49432271776050a3764b961a68a945cc46b855a2fcef47ea55d50',
+    sentinels: [
+      "NOT EXISTS (SELECT 1 FROM payment_receipts receipt JOIN payments payment ON payment.id=receipt.payment_id AND payment.property_id=receipt.property_id WHERE receipt.receipt_kind='payment' AND payment.payment_purpose='management_fee' AND receipt.receipt_code LIKE '%/TAGIHAN-LAIN/%')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_w06_receipts_append_only' AND tgrelid=to_regclass('public.payment_receipts') AND NOT tgisinternal)",
+    ],
+  },
 ] as const;

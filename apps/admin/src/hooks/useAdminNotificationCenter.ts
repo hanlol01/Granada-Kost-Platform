@@ -11,6 +11,7 @@ import {
   type NotificationCenterPriority,
   type NotificationCenterStatus,
 } from "@/lib/admin-ux-notification-center";
+import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 
 export type AdminNotificationCenterFilters = {
   status?: NotificationCenterStatus;
@@ -60,15 +61,27 @@ export function useAdminNotificationCenter(filters: AdminNotificationCenterFilte
     });
   const read = useMutation({
     mutationFn: (id: string) => markNotificationCenterRead(currentPropertyId as string, id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toastMutationSuccess("Notifikasi ditandai sudah dibaca");
+    },
+    onError: (error) => toastMutationError(error, "Notifikasi belum dapat diperbarui"),
   });
   const archive = useMutation({
     mutationFn: (id: string) => archiveNotificationCenter(currentPropertyId as string, id),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toastMutationSuccess("Notifikasi berhasil diarsipkan");
+    },
+    onError: (error) => toastMutationError(error, "Notifikasi belum dapat diarsipkan"),
   });
   const readAll = useMutation({
     mutationFn: () => markAllNotificationsRead(currentPropertyId as string),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toastMutationSuccess("Semua notifikasi telah ditandai sudah dibaca");
+    },
+    onError: (error) => toastMutationError(error, "Notifikasi belum dapat diperbarui"),
   });
   return { ...query, hasAccess, read, archive, readAll };
 }

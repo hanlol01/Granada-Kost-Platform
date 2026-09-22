@@ -32,6 +32,7 @@ import type {
   LeaseDataCorrectionSnapshot,
 } from "@/lib/admin-ux-lease-types";
 import { newIdempotencyKey } from "@/lib/idempotency";
+import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -261,10 +262,12 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
         newIdempotencyKey(),
       );
       await onCompleted();
+      toastMutationSuccess("Koreksi data penyewaan berhasil disimpan");
       onOpenChange(false);
     } catch (cause) {
       setConfirming(false);
       setError(errorMessage(cause));
+      toastMutationError(cause, "Koreksi data penyewaan belum dapat disimpan");
     } finally {
       setPending(false);
     }

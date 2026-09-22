@@ -49,6 +49,15 @@ export type ResidentCheckoutFinancialStatus =
   | 'amount_due'
   | 'closed';
 
+export type ResidentManagementFeeMode = 'charged' | 'waived' | null;
+export type ResidentManagementFeePaymentStatus =
+  | 'waived'
+  | 'unpaid'
+  | 'partially_paid'
+  | 'paid'
+  | 'overpaid'
+  | null;
+
 export type EmergencyContactRecord = {
   id: string;
   residentId: string;
@@ -100,6 +109,11 @@ export type ResidentRecord = {
   leaseStart: string | null;
   leaseEnd: string | null;
   leaseAuthorityCount: number;
+  commercialMode: 'rent' | 'owner_sponsored' | null;
+  pricingSource: 'standard' | 'negotiated' | 'owner_sponsored' | null;
+  managementFeeMode: ResidentManagementFeeMode;
+  managementFeePaymentStatus: ResidentManagementFeePaymentStatus;
+  managementFeeRemainingAmount: number;
   emergencyContacts: EmergencyContactRecord[];
   createdAt: Date;
   updatedAt: Date;

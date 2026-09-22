@@ -30,6 +30,9 @@ export type UseResidentsFilters = {
   rentPaymentStatus?: Exclude<RentPaymentStatus, "none">;
   gender?: "male" | "female" | "other";
   tenancyStatus?: "awaiting_activation" | "active" | "none";
+  pricingSource?: "negotiated";
+  commercialMode?: "owner_sponsored";
+  managementFeeMode?: "charged" | "waived";
   settlementStage?: Exclude<ContractSettlementStage, "none">;
   checkoutFinancialStatus?: Exclude<CheckoutFinancialStatus, "none">;
   settlementDueWithinDays?: number;
@@ -55,6 +58,9 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
             rent_payment_status: filters.rentPaymentStatus,
             gender: filters.gender,
             tenancy_status: filters.tenancyStatus,
+            pricing_source: filters.pricingSource,
+            commercial_mode: filters.commercialMode,
+            management_fee_mode: filters.managementFeeMode,
             contract_settlement_stage: filters.settlementStage,
             checkout_financial_status: filters.checkoutFinancialStatus,
             settlement_due_within_days: filters.settlementDueWithinDays,

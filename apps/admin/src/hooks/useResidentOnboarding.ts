@@ -9,6 +9,7 @@ import {
   type OnboardingPayload,
   type OnboardingResponse,
 } from "@/lib/admin-onboarding";
+import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 
 export type SafeOnboardingResponse = Omit<OnboardingResponse, "temporaryPassword">;
 
@@ -134,7 +135,9 @@ export function useResidentOnboarding(setTemporaryPassword: (password: string | 
           queryClient.invalidateQueries({ queryKey }),
         ),
       );
+      toastMutationSuccess("Penyewaan berhasil dibuat dan menunggu aktivasi kamar");
     },
+    onError: (error) => toastMutationError(error, "Penyewaan belum dapat dibuat"),
   });
 
   const resetMutation = mutation.reset;

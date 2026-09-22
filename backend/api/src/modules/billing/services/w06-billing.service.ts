@@ -33,6 +33,7 @@ import {
   createBillingInvoicePdf,
   createBillingReceiptPdf,
   createContractPaidDocumentPdf,
+  createOwnerSponsoredManagementFeeDocumentPdf,
   type BillingInvoiceDocument,
   type BillingReceiptDocument,
   type ContractPaidDocumentSnapshot,
@@ -83,6 +84,28 @@ type OwnerSponsoredManagementFeeProjectionRow = {
   pending_amount: string;
   remaining_amount: string;
   payment_status: 'waived' | 'unpaid' | 'partially_paid' | 'paid' | 'overpaid';
+};
+
+type OwnerSponsoredManagementFeeDocumentRow = {
+  lease_id: string;
+  resident_name: string;
+  room_number: string;
+  building_code: string | null;
+  lease_start: string;
+  lease_end: string;
+  lease_term_months: number;
+  property_name: string;
+  property_address: string | null;
+  issued_by_name: string | null;
+  owner_name: string;
+  management_fee_mode: 'charged' | 'waived';
+  management_fee_payer: 'resident' | 'owner' | 'other' | null;
+  management_fee_payer_name: string | null;
+  snapshot_monthly_management_fee: string;
+  current_projected_management_fee_amount: string;
+  verified_paid_amount: string;
+  pending_amount: string;
+  remaining_amount: string;
 };
 
 type PaymentRow = {
@@ -362,6 +385,15 @@ type ReceiptDocumentRow = {
   total_rent_received: string | number | null;
   remaining_rent_amount: string | number | null;
   final_settlement_due_at: Date | null;
+  owner_name: string | null;
+  management_fee_mode: 'charged' | 'waived' | null;
+  management_fee_payer: 'resident' | 'owner' | 'other' | null;
+  management_fee_payer_name: string | null;
+  snapshot_monthly_management_fee: string | number | null;
+  projected_management_fee_amount: string | number | null;
+  management_fee_verified_paid_amount: string | number | null;
+  management_fee_pending_amount: string | number | null;
+  management_fee_remaining_amount: string | number | null;
   payment_period_start: string | null;
   payment_period_end: string | null;
   property_name: string;
@@ -375,6 +407,13 @@ type ReceiptDocumentRow = {
 };
 type StoredReceiptSnapshot = {
   document?: Partial<ReceiptDocumentRow> & {
+    renderer_version?: string;
+    issued_at?: string | Date;
+    paid_at?: string | Date | null;
+    final_settlement_due_at?: string | Date | null;
+  };
+  original_receipt_code?: string;
+  original_document?: Partial<ReceiptDocumentRow> & {
     renderer_version?: string;
     issued_at?: string | Date;
     paid_at?: string | Date | null;
@@ -3274,13 +3313,16 @@ export class W06BillingService {
   ): Promise<BillingReceiptDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
     const stored = await this.loadStoredReceipt(propertyId, receiptId);
+    const originalReceiptCode =
+      stored.safe_snapshot?.original_receipt_code ?? stored.receipt_code;
     if (stored.document_content) {
       return {
-        filename: this.receiptFilename(stored.receipt_code, '-asli'),
+        filename: this.receiptFilename(originalReceiptCode, '-asli'),
         content: stored.document_content,
       };
     }
-    const snapshotDocument = stored.safe_snapshot?.document;
+    const snapshotDocument =
+      stored.safe_snapshot?.original_document ?? stored.safe_snapshot?.document;
     const snapshotRow = snapshotDocument
       ? this.receiptRowFromSnapshot(snapshotDocument, stored.safe_snapshot)
       : null;
@@ -3290,7 +3332,7 @@ export class W06BillingService {
         message: 'Dokumen asli kuitansi lama ini tidak tersedia',
       });
     const document = await this.createReceiptDocument(snapshotRow);
-    return { ...document, filename: this.receiptFilename(stored.receipt_code, '-asli') };
+    return { ...document, filename: this.receiptFilename(originalReceiptCode, '-asli') };
   }
 
   async contractPaidDocument(
@@ -3494,6 +3536,15 @@ export class W06BillingService {
         | 'total_rent_received'
         | 'remaining_rent_amount'
         | 'final_settlement_due_at'
+        | 'owner_name'
+        | 'management_fee_mode'
+        | 'management_fee_payer'
+        | 'management_fee_payer_name'
+        | 'snapshot_monthly_management_fee'
+        | 'projected_management_fee_amount'
+        | 'management_fee_verified_paid_amount'
+        | 'management_fee_pending_amount'
+        | 'management_fee_remaining_amount'
       >
     >(
       `SELECT lease.start_date::text AS lease_start,
@@ -3509,7 +3560,16 @@ export class W06BillingService {
                 current_checkpoint.current_due_at,
                 settlement.extension_due_at,
                 settlement.original_due_at
-              ) AS final_settlement_due_at
+              ) AS final_settlement_due_at,
+              owner_profile.full_name AS owner_name,
+              owner_sponsorship.management_fee_mode,
+              owner_sponsorship.management_fee_payer,
+              owner_sponsorship.management_fee_payer_name,
+              owner_sponsorship.snapshot_monthly_management_fee,
+              owner_sponsorship.current_projected_management_fee_amount AS projected_management_fee_amount,
+              owner_sponsorship.verified_paid_amount AS management_fee_verified_paid_amount,
+              owner_sponsorship.pending_amount AS management_fee_pending_amount,
+              owner_sponsorship.remaining_amount AS management_fee_remaining_amount
          FROM payment_receipts receipt
          LEFT JOIN payments direct_payment
            ON direct_payment.id=receipt.payment_id AND direct_payment.property_id=receipt.property_id
@@ -3518,6 +3578,11 @@ export class W06BillingService {
            ON payment.id=COALESCE(direct_payment.id,reversal.payment_id)
           AND payment.property_id=receipt.property_id
          JOIN leases lease ON lease.id=payment.lease_id AND lease.property_id=payment.property_id
+         LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
+           ON owner_sponsorship.lease_id=lease.id AND owner_sponsorship.property_id=lease.property_id
+         LEFT JOIN property_owner_profiles owner_profile
+           ON owner_profile.id=owner_sponsorship.owner_profile_id
+          AND owner_profile.property_id=owner_sponsorship.property_id
          LEFT JOIN lease_contract_settlements settlement
            ON settlement.lease_id=lease.id AND settlement.property_id=lease.property_id
          LEFT JOIN LATERAL (
@@ -3615,6 +3680,26 @@ export class W06BillingService {
       total_rent_received: document.total_rent_received ?? null,
       remaining_rent_amount: document.remaining_rent_amount ?? null,
       final_settlement_due_at: finalDueAt,
+      owner_name: document.owner_name == null ? null : String(document.owner_name),
+      management_fee_mode:
+        document.management_fee_mode === 'charged' || document.management_fee_mode === 'waived'
+          ? document.management_fee_mode
+          : null,
+      management_fee_payer:
+        document.management_fee_payer === 'resident' ||
+        document.management_fee_payer === 'owner' ||
+        document.management_fee_payer === 'other'
+          ? document.management_fee_payer
+          : null,
+      management_fee_payer_name:
+        document.management_fee_payer_name == null
+          ? null
+          : String(document.management_fee_payer_name),
+      snapshot_monthly_management_fee: document.snapshot_monthly_management_fee ?? null,
+      projected_management_fee_amount: document.projected_management_fee_amount ?? null,
+      management_fee_verified_paid_amount: document.management_fee_verified_paid_amount ?? null,
+      management_fee_pending_amount: document.management_fee_pending_amount ?? null,
+      management_fee_remaining_amount: document.management_fee_remaining_amount ?? null,
       payment_period_start:
         document.payment_period_start == null ? null : String(document.payment_period_start),
       payment_period_end:
@@ -3651,7 +3736,47 @@ export class W06BillingService {
             ? 'KUITANSI SECURITY DEPOSIT'
             : paymentClassification === 'full_settlement'
               ? 'KUITANSI PELUNASAN SEWA'
-              : undefined;
+              : paymentClassification === 'management_fee'
+                ? 'KUITANSI PEMBAYARAN BIAYA PENGELOLAAN'
+                : undefined;
+    const managementFeePayer =
+      row.management_fee_payer === 'owner'
+        ? `${row.owner_name ?? 'Owner'} (Owner)`
+        : row.management_fee_payer === 'resident'
+          ? `${row.resident_name} (Penghuni)`
+          : row.management_fee_payer === 'other'
+            ? `${row.management_fee_payer_name ?? 'Pihak lain'} (Pihak lain)`
+            : 'Belum ditentukan';
+    const feeMoney = (value: string | number | null) =>
+      new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+      }).format(this.money(value ?? 0));
+    const managementFeeRows: Array<[string, string]> | undefined =
+      paymentClassification === 'management_fee'
+        ? [
+            ['Diterima dari', managementFeePayer],
+            ['Kode transaksi', row.payment_code],
+            ['Uang sejumlah', feeMoney(row.amount)],
+            ['Untuk pembayaran', 'Biaya pengelolaan hunian tanggungan Owner'],
+            ['Status sewa kamar', 'Rp0 — ditanggung Owner'],
+            ['Periode hunian', `${row.lease_start} s.d. ${row.lease_end ?? 'berjalan'}`],
+            ['Kamar No.', row.room_number],
+            [
+              'Ketentuan biaya pengelolaan',
+              row.management_fee_mode === 'waived'
+                ? 'Dibebaskan'
+                : 'Dibayar fleksibel tanpa jatuh tempo dan denda',
+            ],
+            ['Biaya pengelolaan per bulan', feeMoney(row.snapshot_monthly_management_fee)],
+            ['Total biaya pengelolaan masa hunian', feeMoney(row.projected_management_fee_amount)],
+            ['Sudah diterima', feeMoney(row.management_fee_verified_paid_amount)],
+            ['Menunggu verifikasi', feeMoney(row.management_fee_pending_amount)],
+            ['Sisa biaya pengelolaan', feeMoney(row.management_fee_remaining_amount)],
+            ['Pembayaran via', row.payment_method],
+          ]
+        : undefined;
     return createBillingReceiptPdf({
       receiptCode: row.receipt_code,
       paymentCode: row.payment_code,
@@ -3691,6 +3816,7 @@ export class W06BillingService {
         row.contract_rent_amount != null &&
         row.total_rent_received != null &&
         row.remaining_rent_amount != null,
+      detailRows: managementFeeRows,
       ...(paymentClassification === 'other_charge'
         ? {
             leaseStart: row.payment_period_start,
@@ -3699,10 +3825,16 @@ export class W06BillingService {
             periodLabel: 'Periode tagihan',
           }
         : {}),
-      documentTitle: reversal ? 'INVOICE PEMBATALAN SEWA & REFUND' : paymentTitle,
+      documentTitle: reversal
+        ? paymentClassification === 'management_fee'
+          ? 'KUITANSI PEMBATALAN BIAYA PENGELOLAAN'
+          : 'INVOICE PEMBATALAN SEWA & REFUND'
+        : paymentTitle,
       paymentDescription: reversal
-        ? `Pembatalan sewa & refund ${row.payment_code} · ${row.reversal_reason ?? 'Pembayaran dibatalkan'}`
-        : undefined,
+        ? `${paymentClassification === 'management_fee' ? 'Pembatalan biaya pengelolaan & refund' : 'Pembatalan sewa & refund'} ${row.payment_code} · ${row.reversal_reason ?? 'Pembayaran dibatalkan'}`
+        : paymentClassification === 'management_fee'
+          ? 'Biaya pengelolaan hunian tanggungan Owner — sewa kamar Rp0, tanpa jatuh tempo dan denda.'
+          : undefined,
       buildingCode: row.building_code,
       transactionDirection: reversal ? 'correction' : 'incoming',
     });
@@ -3726,6 +3858,83 @@ export class W06BillingService {
         message: 'Invoice document not found',
       });
     return this.renderInvoiceDocument(result.rows[0]);
+  }
+
+  async ownerSponsoredManagementFeeDocument(
+    user: UserAccessContext,
+    propertyId: string,
+    residentId: string,
+  ): Promise<BillingReceiptDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const result = await this.database.client.query<OwnerSponsoredManagementFeeDocumentRow>(
+      `SELECT lease.id AS lease_id,
+              resident.full_name AS resident_name,
+              room.number AS room_number,
+              building.building_code,
+              lease.start_date::text AS lease_start,
+              lease.end_date::text AS lease_end,
+              lease.term_months AS lease_term_months,
+              property.name AS property_name,
+              property.address AS property_address,
+              issuer.display_name AS issued_by_name,
+              owner_profile.full_name AS owner_name,
+              progress.management_fee_mode,
+              progress.management_fee_payer,
+              progress.management_fee_payer_name,
+              progress.snapshot_monthly_management_fee,
+              progress.current_projected_management_fee_amount,
+              progress.verified_paid_amount,
+              progress.pending_amount,
+              progress.remaining_amount
+         FROM leases lease
+         JOIN residents resident
+           ON resident.id=lease.resident_id AND resident.property_id=lease.property_id
+         JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+         JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
+         JOIN properties property ON property.id=lease.property_id
+         JOIN owner_sponsored_management_fee_progress progress
+           ON progress.lease_id=lease.id AND progress.property_id=lease.property_id
+         JOIN property_owner_profiles owner_profile
+           ON owner_profile.id=progress.owner_profile_id
+          AND owner_profile.property_id=progress.property_id
+         LEFT JOIN users issuer ON issuer.id=$3
+        WHERE lease.property_id=$1
+          AND lease.resident_id=$2
+          AND lease.commercial_mode='owner_sponsored'
+        ORDER BY CASE lease.lease_status WHEN 'active' THEN 0 WHEN 'awaiting_activation' THEN 1 ELSE 2 END,
+                 lease.updated_at DESC,lease.id DESC
+        LIMIT 1`,
+      [propertyId, residentId, user.id],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new NotFoundException({
+        code: 'OWNER_SPONSORED_MANAGEMENT_FEE_DOCUMENT_NOT_FOUND',
+        message: 'Owner-sponsored management-fee document is unavailable',
+      });
+    }
+    return createOwnerSponsoredManagementFeeDocumentPdf({
+      documentCode: `INFO-BIAYA-PENGELOLAAN-${row.lease_id.slice(0, 8).toUpperCase()}`,
+      residentName: row.resident_name,
+      roomNumber: row.room_number,
+      buildingCode: row.building_code,
+      leaseStart: row.lease_start,
+      leaseEnd: row.lease_end,
+      leaseTermMonths: row.lease_term_months,
+      ownerName: row.owner_name,
+      managementFeeMode: row.management_fee_mode,
+      managementFeePayer: row.management_fee_payer,
+      managementFeePayerName: row.management_fee_payer_name,
+      monthlyManagementFee: this.money(row.snapshot_monthly_management_fee),
+      projectedManagementFee: this.money(row.current_projected_management_fee_amount),
+      verifiedPaid: this.money(row.verified_paid_amount),
+      pending: this.money(row.pending_amount),
+      remaining: this.money(row.remaining_amount),
+      propertyName: row.property_name,
+      propertyAddress: row.property_address,
+      issuedByName: row.issued_by_name,
+      printedAt: new Date(),
+    });
   }
 
   async myInvoiceDocument(
@@ -5608,6 +5817,15 @@ export class W06BillingService {
                GREATEST(COALESCE(lease.contract_rent_amount,0)-rent_ledger.total_rent_received,0)
                  AS remaining_rent_amount,
                settlement_deadline.final_settlement_due_at,
+               owner_profile.full_name AS owner_name,
+               owner_sponsorship.management_fee_mode,
+               owner_sponsorship.management_fee_payer,
+               owner_sponsorship.management_fee_payer_name,
+               owner_sponsorship.snapshot_monthly_management_fee,
+               owner_sponsorship.current_projected_management_fee_amount AS projected_management_fee_amount,
+               owner_sponsorship.verified_paid_amount AS management_fee_verified_paid_amount,
+               owner_sponsorship.pending_amount AS management_fee_pending_amount,
+               owner_sponsorship.remaining_amount AS management_fee_remaining_amount,
                min(COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date))::text
                  AS payment_period_start,
                max(COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date))::text
@@ -5631,6 +5849,11 @@ export class W06BillingService {
          ON uniform_adoption.property_id=payment.property_id
         AND uniform_adoption.lease_id=payment.lease_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
+       LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
+         ON owner_sponsorship.lease_id=lease.id AND owner_sponsorship.property_id=lease.property_id
+       LEFT JOIN property_owner_profiles owner_profile
+         ON owner_profile.id=owner_sponsorship.owner_profile_id
+        AND owner_profile.property_id=owner_sponsorship.property_id
        LEFT JOIN users issuer ON issuer.id=$3
        LEFT JOIN booking_lead_payment_commitments booking_commitment
          ON booking_commitment.property_id=payment.property_id
@@ -5754,7 +5977,13 @@ export class W06BillingService {
                  rent_contract.fully_paid,latest_rent_payment.id,
                  rent_payment_order.rent_payment_sequence,rent_ledger.total_rent_received,
                  uniform_adoption.lease_id,uniform_adoption.transition_due_date,
-                 settlement_deadline.final_settlement_due_at`,
+                 settlement_deadline.final_settlement_due_at,
+                 owner_profile.full_name,owner_sponsorship.management_fee_mode,
+                 owner_sponsorship.management_fee_payer,owner_sponsorship.management_fee_payer_name,
+                 owner_sponsorship.snapshot_monthly_management_fee,
+                 owner_sponsorship.current_projected_management_fee_amount,
+                 owner_sponsorship.verified_paid_amount,owner_sponsorship.pending_amount,
+                 owner_sponsorship.remaining_amount`,
       [sourcePaymentId, propertyId, actorId],
     );
     const authority = authorityResult.rows[0];
@@ -5777,11 +6006,13 @@ export class W06BillingService {
                 ? 'receipt_down_payment'
                 : authority.payment_purpose === 'security_deposit'
                   ? 'receipt_security_deposit'
-                  : ['other_charge', 'management_fee'].includes(authority.payment_purpose)
-                    ? 'receipt_other_charge'
-                    : authority.settles_rent_contract
-                      ? 'receipt_final_settlement'
-                      : 'receipt_rent';
+                  : authority.payment_purpose === 'management_fee'
+                    ? 'receipt_management_fee'
+                    : authority.payment_purpose === 'other_charge'
+                      ? 'receipt_other_charge'
+                      : authority.settles_rent_contract
+                        ? 'receipt_final_settlement'
+                        : 'receipt_rent';
     const numberResult =
       kind === 'payment' && authority.booking_receipt_code
         ? { rows: [{ document_code: authority.booking_receipt_code }] }
@@ -5833,6 +6064,15 @@ export class W06BillingService {
         total_rent_received: authority.total_rent_received,
         remaining_rent_amount: authority.remaining_rent_amount,
         final_settlement_due_at: authority.final_settlement_due_at?.toISOString() ?? null,
+        owner_name: authority.owner_name,
+        management_fee_mode: authority.management_fee_mode,
+        management_fee_payer: authority.management_fee_payer,
+        management_fee_payer_name: authority.management_fee_payer_name,
+        snapshot_monthly_management_fee: authority.snapshot_monthly_management_fee,
+        projected_management_fee_amount: authority.projected_management_fee_amount,
+        management_fee_verified_paid_amount: authority.management_fee_verified_paid_amount,
+        management_fee_pending_amount: authority.management_fee_pending_amount,
+        management_fee_remaining_amount: authority.management_fee_remaining_amount,
         property_name: authority.property_name,
         property_address: authority.property_address,
         issued_by_name: authority.issued_by_name,

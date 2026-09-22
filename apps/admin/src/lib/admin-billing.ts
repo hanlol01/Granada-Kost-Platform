@@ -1916,6 +1916,7 @@ export async function downloadAdminInvoiceDocument(
       `${env.VITE_API_BASE_URL}/admin/billing/invoices/${encodeURIComponent(invoiceId)}/document?${query}`,
       {
         credentials: "include",
+        cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       },
     );
@@ -1938,6 +1939,7 @@ export async function downloadAdminReceiptDocument(
       `${env.VITE_API_BASE_URL}/admin/billing/receipts/${encodeURIComponent(receiptId)}/document?${query}`,
       {
         credentials: "include",
+        cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       },
     );
@@ -1960,6 +1962,7 @@ export async function downloadAdminOriginalReceiptDocument(
       `${env.VITE_API_BASE_URL}/admin/billing/receipts/${encodeURIComponent(receiptId)}/original-document?${query}`,
       {
         credentials: "include",
+        cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       },
     );
@@ -1982,6 +1985,7 @@ export async function downloadAdminContractPaidDocument(
       `${env.VITE_API_BASE_URL}/admin/billing/contract-paid-documents/${encodeURIComponent(documentId)}/document?${query}`,
       {
         credentials: "include",
+        cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       },
     );
@@ -1989,4 +1993,27 @@ export async function downloadAdminContractPaidDocument(
       throw new Error(`Bukti pelunasan kontrak gagal diunduh (HTTP ${response.status}).`);
     return response;
   }, filename);
+}
+
+export async function downloadOwnerSponsoredManagementFeeDocument(
+  propertyId: string,
+  residentId: string,
+  residentName: string,
+) {
+  const query = new URLSearchParams({ property_id: propertyId });
+  const safeName = residentName.replace(/[^a-z0-9_-]+/gi, "-") || "penghuni";
+  await fetchPreviewAndDownload(async () => {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${env.VITE_API_BASE_URL}/admin/billing/residents/${encodeURIComponent(residentId)}/owner-sponsored-management-fee-document?${query}`,
+      {
+        credentials: "include",
+        cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+    if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
+      throw new Error(`Dokumen biaya pengelolaan gagal diunduh (HTTP ${response.status}).`);
+    return response;
+  }, `invoice-biaya-pengelolaan-${safeName}.pdf`);
 }

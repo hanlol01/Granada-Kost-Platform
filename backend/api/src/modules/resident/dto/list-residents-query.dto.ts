@@ -45,6 +45,20 @@ export class ListResidentsQueryDto {
   @IsIn(['awaiting_activation', 'active', 'none'])
   tenancy_status?: string;
 
+  /** Filter khusus; tarif standar tetap merupakan tampilan default. */
+  @IsOptional()
+  @IsIn(['negotiated'])
+  pricing_source?: string;
+
+  /** Hunian yang biaya sewanya ditanggung Owner. */
+  @IsOptional()
+  @IsIn(['owner_sponsored'])
+  commercial_mode?: string;
+
+  @IsOptional()
+  @IsIn(['charged', 'waived'])
+  management_fee_mode?: string;
+
   @IsOptional()
   @IsIn([
     'awaiting_activation',

@@ -31,6 +31,11 @@ function residentListItem(status: string) {
     lease_start: null,
     lease_end: null,
     lease_authority_count: 1,
+    commercial_mode: "rent",
+    pricing_source: "standard",
+    management_fee_mode: null,
+    management_fee_payment_status: null,
+    management_fee_remaining_amount: 0,
     account_status: "not_provisioned",
     rent_payment_status: "none",
     contract_settlement_stage: "none",
@@ -346,6 +351,47 @@ test("pending activation is a valid resident projection while unknown states fai
   assert.throws(() =>
     parseResidentDetail({ data: residentDetail("pending_activation", `${timestamp}`) }, propertyId),
   );
+});
+
+test("resident list preserves owner-sponsored management-fee authority", () => {
+  const page = parseResidentPage(
+    {
+      data: [
+        {
+          ...residentListItem("active"),
+          commercial_mode: "owner_sponsored",
+          pricing_source: "owner_sponsored",
+          management_fee_mode: "charged",
+          management_fee_payment_status: "partially_paid",
+          management_fee_remaining_amount: 125_000,
+        },
+      ],
+      meta: { limit: 20, offset: 0, total: 1 },
+    },
+    propertyId,
+  );
+  assert.equal(page.data[0]?.commercialMode, "owner_sponsored");
+  assert.equal(page.data[0]?.managementFeeMode, "charged");
+  assert.equal(page.data[0]?.managementFeePaymentStatus, "partially_paid");
+  assert.equal(page.data[0]?.managementFeeRemainingAmount, 125_000);
+});
+
+test("resident admin views expose owner-sponsored filters, labels, and current management document", async () => {
+  const tenants = await readFile(new URL("../routes/tenants.tsx", import.meta.url), "utf8");
+  const detail = await readFile(
+    new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(tenants, /Kesepakatan khusus/);
+  assert.match(tenants, /Hunian Tanggungan Owner/);
+  assert.match(tenants, /Dengan biaya pengelolaan/);
+  assert.match(tenants, /Tanpa biaya pengelolaan/);
+  assert.match(tenants, /Sisa fee:/);
+  assert.match(detail, /managementFeePayerLabel/);
+  assert.match(detail, /\(Owner\)/);
+  assert.match(detail, /\(Penghuni\)/);
+  assert.match(detail, /Unduh invoice biaya pengelolaan/);
 });
 
 test("tenancy projection exposes an awaiting activation lease without claiming occupancy", () => {

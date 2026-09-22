@@ -72,6 +72,7 @@ import {
   downloadAdminContractPaidDocument,
   downloadAdminOriginalReceiptDocument,
   downloadAdminReceiptDocument,
+  downloadOwnerSponsoredManagementFeeDocument,
   type BillingEvidence,
   type ResidentBilling,
 } from "@/lib/admin-billing";
@@ -102,6 +103,19 @@ const paymentPlan = {
   monthly_installments: "Pembayaran bertahap hingga tenggat",
   two_month_installments: "Pembayaran bertahap hingga tenggat",
 } as const;
+
+function managementFeePayerLabel(
+  sponsorship: NonNullable<ResidentBilling["owner_sponsorship"]>,
+  residentName: string,
+): string {
+  if (sponsorship.management_fee_mode === "waived") return "Tidak berlaku (biaya dibebaskan)";
+  if (sponsorship.management_fee_payer === "owner") return `${sponsorship.owner_name} (Owner)`;
+  if (sponsorship.management_fee_payer === "resident") return `${residentName} (Penghuni)`;
+  if (sponsorship.management_fee_payer === "other") {
+    return `${sponsorship.management_fee_payer_name ?? "Belum ditentukan"} (Pihak lain)`;
+  }
+  return "Belum ditentukan";
+}
 
 const gender = { male: "Putra", female: "Putri", other: "Lainnya" } as const;
 
@@ -1188,11 +1202,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                             "Penanggung biaya pengelolaan",
                             billing.isLoading
                               ? "Memuat penanggung..."
-                              : billing.data?.owner_sponsorship?.management_fee_mode === "waived"
-                                ? "Tidak berlaku"
-                                : billing.data?.owner_sponsorship?.management_fee_payer_name ||
-                                  billing.data?.owner_sponsorship?.owner_name ||
-                                  "Belum ditentukan",
+                              : billing.data?.owner_sponsorship
+                                ? managementFeePayerLabel(
+                                    billing.data.owner_sponsorship,
+                                    billing.data.lease.resident_name,
+                                  )
+                                : "Belum ditentukan",
                           ] as [string, string],
                         ]
                       : []),
@@ -1275,7 +1290,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     </div>
                     <DefinitionGrid
                       rows={[
-                        ["Owner penanggung", billing.data.owner_sponsorship.owner_name],
+                        [
+                          "Penanggung biaya pengelolaan",
+                          managementFeePayerLabel(
+                            billing.data.owner_sponsorship,
+                            billing.data.lease.resident_name,
+                          ),
+                        ],
                         [
                           "Ketentuan biaya pengelolaan",
                           billing.data.owner_sponsorship.management_fee_mode === "waived"
@@ -1306,6 +1327,13 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                       data={billing.data}
                       propertyId={currentPropertyId}
                       triggerLabel="Catat pembayaran biaya pengelolaan"
+                    />
+                  ) : null}
+                  {currentPropertyId ? (
+                    <OwnerSponsoredManagementFeeDocumentDownloadButton
+                      propertyId={currentPropertyId}
+                      residentId={residentId}
+                      residentName={billing.data.lease.resident_name}
                     />
                   ) : null}
                 </div>
@@ -3478,7 +3506,7 @@ function ContractPaidDocumentDownloadButton({
   propertyId: string;
   document: NonNullable<NonNullable<ResidentBilling["contract_settlement"]>["paid_document"]>;
 }) {
-  const [downloading, setDownloading] = useState<"latest" | "original" | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(false);
 
   const download = () => {
@@ -3513,6 +3541,46 @@ function ContractPaidDocumentDownloadButton({
   );
 }
 
+function OwnerSponsoredManagementFeeDocumentDownloadButton({
+  propertyId,
+  residentId,
+  residentName,
+}: {
+  propertyId: string;
+  residentId: string;
+  residentName: string;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+  return (
+    <span className="inline-flex w-full min-w-0 flex-col items-stretch gap-1">
+      <Button
+        className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
+        variant="default"
+        disabled={downloading}
+        onClick={() => {
+          setDownloading(true);
+          setError(false);
+          void downloadOwnerSponsoredManagementFeeDocument(propertyId, residentId, residentName)
+            .catch(() => setError(true))
+            .finally(() => setDownloading(false));
+        }}
+      >
+        <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+        {downloading ? "Menyiapkan..." : "Unduh invoice biaya pengelolaan"}
+      </Button>
+      <span className="text-center text-[11px] text-muted-foreground">
+        Memuat data biaya pengelolaan terbaru saat diunduh.
+      </span>
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          Invoice biaya pengelolaan belum dapat diunduh.
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function ReceiptDownloadButton({
   propertyId,
   receiptId,
@@ -3526,7 +3594,7 @@ function ReceiptDownloadButton({
   documentKind: "payment" | "refund" | "settlement";
   isContractSettled: boolean;
 }) {
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"latest" | "original" | null>(null);
   const [error, setError] = useState(false);
 
   const download = (version: "latest" | "original") => {

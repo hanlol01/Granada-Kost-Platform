@@ -56,6 +56,7 @@ function checkoutId(value: unknown): string {
 }
 
 export function useCreateLegacyCheckout() {
+  const queryClient = useQueryClient();
   return useMutation<string, unknown, CreateLegacyCheckoutInput>({
     mutationFn: async (input) =>
       checkoutId(
@@ -64,6 +65,12 @@ export function useCreateLegacyCheckout() {
           requested_check_out_date: input.requestedCheckOutDate,
         }),
       ),
+    onSuccess: (_checkoutId, input) => {
+      toastMutationSuccess("Rekonsiliasi checkout berhasil dimulai");
+      void queryClient.invalidateQueries({
+        queryKey: legacyCheckoutRoomQueryKey(input.propertyId),
+      });
+    },
     onError: (error) => toastMutationError(error, "Gagal memulai rekonsiliasi penyewaan"),
   });
 }

@@ -51,6 +51,11 @@ export type ResidentListRecord = {
   leaseStart: string | null;
   leaseEnd: string | null;
   leaseAuthorityCount: number;
+  commercialMode: "rent" | "owner_sponsored" | null;
+  pricingSource: "standard" | "negotiated" | "owner_sponsored" | null;
+  managementFeeMode: "charged" | "waived" | null;
+  managementFeePaymentStatus: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid" | null;
+  managementFeeRemainingAmount: number;
   accountStatus: ResidentAccountStatus;
   rentPaymentStatus: RentPaymentStatus;
   contractSettlementStage: ContractSettlementStage;
@@ -76,6 +81,11 @@ export type ResidentDetail = Omit<
   | "checkoutFinancialStatus"
   | "checkoutRefundAmount"
   | "checkoutRefundDueDate"
+  | "commercialMode"
+  | "pricingSource"
+  | "managementFeeMode"
+  | "managementFeePaymentStatus"
+  | "managementFeeRemainingAmount"
 > & {
   userId: string | null;
   phone: string | null;
@@ -250,6 +260,11 @@ const LIST_KEYS = [
   "lease_start",
   "lease_end",
   "lease_authority_count",
+  "commercial_mode",
+  "pricing_source",
+  "management_fee_mode",
+  "management_fee_payment_status",
+  "management_fee_remaining_amount",
   "account_status",
   "rent_payment_status",
   "contract_settlement_stage",
@@ -277,6 +292,29 @@ function parseListRecord(value: unknown): ResidentListRecord {
     leaseStart: date(item.lease_start, true),
     leaseEnd: date(item.lease_end, true),
     leaseAuthorityCount: integer(item.lease_authority_count),
+    commercialMode:
+      item.commercial_mode === null
+        ? null
+        : enumValue(item.commercial_mode, ["rent", "owner_sponsored"] as const),
+    pricingSource:
+      item.pricing_source === null
+        ? null
+        : enumValue(item.pricing_source, ["standard", "negotiated", "owner_sponsored"] as const),
+    managementFeeMode:
+      item.management_fee_mode === null
+        ? null
+        : enumValue(item.management_fee_mode, ["charged", "waived"] as const),
+    managementFeePaymentStatus:
+      item.management_fee_payment_status === null
+        ? null
+        : enumValue(item.management_fee_payment_status, [
+            "waived",
+            "unpaid",
+            "partially_paid",
+            "paid",
+            "overpaid",
+          ] as const),
+    managementFeeRemainingAmount: integer(item.management_fee_remaining_amount),
     accountStatus: enumValue(item.account_status, [
       "active",
       "inactive",

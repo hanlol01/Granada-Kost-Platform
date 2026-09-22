@@ -15,6 +15,7 @@ import type {
   W06PaymentStatus,
 } from "@/lib/admin-billing";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import {
   getBillingWorklist,
   getBillingDocuments,
@@ -304,6 +305,7 @@ function useScopedW06Mutation<TVariables, TResult>(
   propertyId: string | null,
   requestedProperty: (variables: TVariables) => string | null,
   execute: (variables: TVariables, propertyId: string) => Promise<TResult>,
+  successMessage: string,
 ) {
   const invalidate = useBillingInvalidation(propertyId);
   const scope = useW06Scope(propertyId);
@@ -314,10 +316,15 @@ function useScopedW06Mutation<TVariables, TResult>(
       scope.assertCurrent(token);
       return result;
     },
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      await invalidate();
+      toastMutationSuccess(successMessage);
+    },
+    onError: (error) => toastMutationError(error, "Perubahan pembayaran belum dapat disimpan"),
     gcTime: 0,
   });
-  useEffect(() => mutation.reset(), [propertyId, mutation.reset]);
+  const resetMutation = mutation.reset;
+  useEffect(() => resetMutation(), [propertyId, resetMutation]);
   return mutation;
 }
 
@@ -327,6 +334,7 @@ export function useRecordManualPayment(propertyId: string | null) {
     propertyId,
     (variables) => variables.input.property_id,
     (variables) => recordManualPayment(variables.input, variables.idempotencyKey),
+    "Pembayaran berhasil dicatat",
   );
 }
 
@@ -337,6 +345,7 @@ export function useVerifyPayment(propertyId: string | null) {
     () => propertyId,
     (variables, scopePropertyId) =>
       verifyPayment(scopePropertyId, variables.paymentId, variables.idempotencyKey),
+    "Pembayaran berhasil diverifikasi",
   );
 }
 
@@ -352,6 +361,7 @@ export function useRejectPayment(propertyId: string | null) {
         variables.reason,
         variables.idempotencyKey,
       ),
+    "Penolakan pembayaran berhasil dicatat",
   );
 }
 
@@ -362,6 +372,7 @@ export function useVerifyProof(propertyId: string | null) {
     () => propertyId,
     (variables, scopePropertyId) =>
       verifyProof(scopePropertyId, variables.proofId, variables.idempotencyKey),
+    "Bukti pembayaran berhasil diverifikasi",
   );
 }
 
@@ -372,6 +383,7 @@ export function useRejectProof(propertyId: string | null) {
     () => propertyId,
     (variables, scopePropertyId) =>
       rejectProof(scopePropertyId, variables.proofId, variables.reason, variables.idempotencyKey),
+    "Bukti pembayaran berhasil ditolak",
   );
 }
 
@@ -387,6 +399,7 @@ export function useReversePayment(propertyId: string | null) {
         variables.reason,
         variables.idempotencyKey,
       ),
+    "Pembayaran berhasil dibalikkan",
   );
 }
 
@@ -396,6 +409,7 @@ export function useCreateOtherCharge(propertyId: string | null) {
     propertyId,
     (variables) => variables.input.property_id,
     (variables) => createOtherCharge(variables.input, variables.idempotencyKey),
+    "Tagihan tambahan berhasil dibuat",
   );
 }
 
@@ -410,6 +424,7 @@ export function useExtendContractSettlement(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       extendContractSettlement(variables.leaseId, variables.input, variables.idempotencyKey),
+    "Perpanjangan batas pelunasan berhasil disimpan",
   );
 }
 
@@ -424,6 +439,7 @@ export function useRecordLeasePaymentPromise(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       recordLeasePaymentPromise(variables.leaseId, variables.input, variables.idempotencyKey),
+    "Janji pembayaran berhasil dicatat",
   );
 }
 
@@ -438,6 +454,7 @@ export function useStartLeaseTermination(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       startLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
+    "Proses penghentian sewa berhasil dimulai",
   );
 }
 
@@ -452,6 +469,7 @@ export function useCancelLeaseTermination(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       cancelLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
+    "Penghentian sewa berhasil dibatalkan",
   );
 }
 
@@ -466,5 +484,6 @@ export function useFinalizeLeaseTermination(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       finalizeLeaseTermination(variables.leaseId, variables.input, variables.idempotencyKey),
+    "Penghentian sewa berhasil ditetapkan",
   );
 }

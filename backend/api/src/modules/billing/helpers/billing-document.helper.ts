@@ -89,6 +89,29 @@ export type BillingReceiptDocument = {
   content: Buffer;
 };
 
+export type OwnerSponsoredManagementFeeDocumentData = {
+  documentCode: string;
+  residentName: string;
+  roomNumber: string;
+  buildingCode: string | null;
+  leaseStart: string;
+  leaseEnd: string;
+  leaseTermMonths: number;
+  ownerName: string;
+  managementFeeMode: 'charged' | 'waived';
+  managementFeePayer: 'resident' | 'owner' | 'other' | null;
+  managementFeePayerName: string | null;
+  monthlyManagementFee: number;
+  projectedManagementFee: number;
+  verifiedPaid: number;
+  pending: number;
+  remaining: number;
+  propertyName: string;
+  propertyAddress: string | null;
+  issuedByName: string | null;
+  printedAt?: Date;
+};
+
 export const BILLING_DOCUMENT_RENDERER_VERSION = 'room-label-v2';
 
 export type ContractPaidDocumentSnapshot = {
@@ -465,11 +488,16 @@ export async function createBillingInvoicePdf(
   for (const [labelText, value] of rows) {
     const isHighlightedAmount =
       labelText === 'Tagihan yang perlu dibayar' || labelText === 'Sisa tagihan';
+    // Labels are content, too. Long labels used to cross the colon/value
+    // boundary even though the value itself was already wrapped.
+    const labelLines = wrapText(bold, labelText, 10, 128);
     const valueLines = wrapText(regular, value, 10, 258);
-    const rowHeight = Math.max(22, valueLines.length * 13 + 6);
+    const rowHeight = Math.max(22, labelLines.length * 13 + 6, valueLines.length * 13 + 6);
     if (y - rowHeight < summaryAndFooterReservation) y = startContinuationPage();
     page.drawCircle({ x: 69, y: y - 7, size: 2.5, color: softNavy });
-    page.drawText(labelText, { x: 83, y: y - 10, size: 10, font: bold, color: navy });
+    labelLines.forEach((line, index) => {
+      page.drawText(line, { x: 83, y: y - 10 - index * 13, size: 10, font: bold, color: navy });
+    });
     page.drawText(':', { x: 223, y: y - 10, size: 10, font: regular, color: muted });
     valueLines.forEach((line, index) => {
       page.drawText(line, {
@@ -936,11 +964,16 @@ export async function createBillingReceiptPdf(
   }
   let y = data.documentStatusNote ? 626 : 642;
   for (const [labelText, value] of rows) {
+    // Keep both label and value within their own columns. This is especially
+    // important for contract-paid and management-fee receipts with long labels.
+    const labelLines = wrapText(bold, labelText, 10, 128);
     const valueLines = wrapText(regular, value, 10, 258);
-    const rowHeight = Math.max(22, valueLines.length * 13 + 6);
+    const rowHeight = Math.max(22, labelLines.length * 13 + 6, valueLines.length * 13 + 6);
     if (y - rowHeight < 230) y = addContinuationPage();
     page.drawCircle({ x: 69, y: y - 7, size: 2.5, color: softNavy });
-    page.drawText(labelText, { x: 83, y: y - 10, size: 10, font: bold, color: navy });
+    labelLines.forEach((line, index) => {
+      page.drawText(line, { x: 83, y: y - 10 - index * 13, size: 10, font: bold, color: navy });
+    });
     page.drawText(':', { x: 223, y: y - 10, size: 10, font: regular, color: muted });
     valueLines.forEach((line, index) => {
       page.drawText(line, { x: 238, y: y - 10 - index * 13, size: 10, font: regular, color: navy });
@@ -1040,6 +1073,63 @@ export async function createBillingReceiptPdf(
 
   const safeCode = data.receiptCode.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'kuitansi';
   return { filename: `${safeCode}.pdf`, content: Buffer.from(await document.save()) };
+}
+
+export async function createOwnerSponsoredManagementFeeDocumentPdf(
+  data: OwnerSponsoredManagementFeeDocumentData,
+): Promise<BillingReceiptDocument> {
+  const payer =
+    data.managementFeeMode === 'waived'
+      ? 'Tidak berlaku (biaya dibebaskan)'
+      : data.managementFeePayer === 'owner'
+        ? `${data.ownerName} (Owner)`
+        : data.managementFeePayer === 'resident'
+          ? `${data.residentName} (Penghuni)`
+          : data.managementFeePayer === 'other'
+            ? `${data.managementFeePayerName ?? 'Belum ditentukan'} (Pihak lain)`
+            : 'Belum ditentukan';
+  const waived = data.managementFeeMode === 'waived';
+  const rows: Array<[string, string]> = [
+    ['Penghuni', data.residentName],
+    ['Status hunian', 'Hunian Tanggungan Owner — sewa kamar Rp0'],
+    ['Owner penanggung', data.ownerName],
+    ['Penanggung biaya pengelolaan', payer],
+    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+    ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
+    [
+      'Ketentuan biaya pengelolaan',
+      waived
+        ? 'Dibebaskan — tidak ada tagihan biaya pengelolaan'
+        : 'Dibayar fleksibel tanpa jatuh tempo dan denda',
+    ],
+    ['Biaya pengelolaan per bulan', idr(waived ? 0 : data.monthlyManagementFee)],
+    ['Total biaya pengelolaan masa hunian', idr(waived ? 0 : data.projectedManagementFee)],
+    ['Sudah diterima', idr(waived ? 0 : data.verifiedPaid)],
+    ['Menunggu verifikasi', idr(waived ? 0 : data.pending)],
+    ['Sisa biaya pengelolaan', idr(waived ? 0 : data.remaining)],
+    ['Diterbitkan', receiptDate(data.printedAt ?? new Date(), true)],
+  ];
+  return createBillingReceiptPdf({
+    receiptCode: data.documentCode,
+    paymentCode: data.documentCode,
+    paymentMethod: 'other',
+    paymentPurpose: 'management_fee',
+    residentName: data.residentName,
+    roomNumber: data.roomNumber,
+    amount: waived ? 0 : data.remaining,
+    paidAt: null,
+    issuedAt: data.printedAt ?? new Date(),
+    allocations: [],
+    documentTitle: 'INVOICE BIAYA PENGELOLAAN HUNIAN',
+    documentNumberLabel: 'Nomor dokumen',
+    documentStatusNote: waived
+      ? 'Hunian Tanggungan Owner — biaya pengelolaan dibebaskan'
+      : 'Hunian Tanggungan Owner — sewa kamar Rp0',
+    detailRows: rows,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    issuedByName: data.issuedByName,
+  });
 }
 
 export function createContractPaidDocumentPdf(

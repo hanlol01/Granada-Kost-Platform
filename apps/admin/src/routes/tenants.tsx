@@ -189,6 +189,84 @@ export function RentPaymentStatusPill({
   );
 }
 
+function OwnerSponsoredBadge() {
+  return (
+    <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
+      Hunian Tanggungan Owner
+    </span>
+  );
+}
+
+function ManagementFeeModePill({ mode }: { mode: ResidentListRecord["managementFeeMode"] }) {
+  if (!mode) {
+    return (
+      <span className="inline-flex max-w-full whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+        Ketentuan fee belum tersedia
+      </span>
+    );
+  }
+
+  if (mode === "waived") {
+    return (
+      <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+        Tanpa biaya pengelolaan
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
+      Dengan biaya pengelolaan
+    </span>
+  );
+}
+
+function ManagementFeeSettlementSummary({ resident }: { resident: ResidentListRecord }) {
+  if (resident.managementFeeMode === "waived") {
+    return (
+      <div className="space-y-1.5">
+        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          Biaya dibebaskan
+        </span>
+        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
+          Lunas
+        </span>
+      </div>
+    );
+  }
+  const status = resident.managementFeePaymentStatus;
+  if (!status) {
+    return (
+      <span className="inline-flex max-w-full whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+        Status fee belum tersedia
+      </span>
+    );
+  }
+  const presentation = {
+    unpaid: { label: "Belum dibayar", className: "bg-warning/15 text-warning" },
+    partially_paid: { label: "Dibayar sebagian", className: "bg-warning/15 text-warning" },
+    paid: { label: "Lunas", className: "bg-success/15 text-success" },
+    overpaid: { label: "Lunas", className: "bg-success/15 text-success" },
+  } as const;
+  const current = status !== "waived" ? presentation[status] : presentation.unpaid;
+  return (
+    <div className="space-y-1.5">
+      <span
+        className={cn(
+          "inline-flex max-w-full whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium",
+          current.className,
+        )}
+      >
+        {current.label}
+      </span>
+      {status === "partially_paid" && resident.managementFeeRemainingAmount > 0 ? (
+        <p className="text-xs font-semibold text-foreground">
+          Sisa fee: {formatIDR(resident.managementFeeRemainingAmount)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RentPaymentStatusSummary({ resident }: { resident: ResidentListRecord }) {
   const showsRemainingBalance =
     resident.rentPaymentStatus === "partial_payment" &&
@@ -289,6 +367,9 @@ function TenantsPage() {
   const [tenancyStatus, setTenancyStatus] = useState<
     "awaiting_activation" | "active" | "none" | "all"
   >("all");
+  const [pricingSource, setPricingSource] = useState<"negotiated" | "all">("all");
+  const [commercialMode, setCommercialMode] = useState<"owner_sponsored" | "all">("all");
+  const [managementFeeMode, setManagementFeeMode] = useState<"charged" | "waived" | "all">("all");
   const [settlementStage, setSettlementStage] = useState<
     Exclude<ContractSettlementStage, "none"> | "all"
   >("all");
@@ -314,6 +395,9 @@ function TenantsPage() {
     rentPaymentStatus: rentPaymentStatus === "all" ? undefined : rentPaymentStatus,
     gender: gender === "all" ? undefined : gender,
     tenancyStatus: tenancyStatus === "all" ? undefined : tenancyStatus,
+    pricingSource: pricingSource === "all" ? undefined : pricingSource,
+    commercialMode: commercialMode === "all" ? undefined : commercialMode,
+    managementFeeMode: managementFeeMode === "all" ? undefined : managementFeeMode,
     settlementStage: settlementStage === "all" ? undefined : settlementStage,
     checkoutFinancialStatus:
       checkoutFinancialStatus === "all" ? undefined : checkoutFinancialStatus,
@@ -338,6 +422,9 @@ function TenantsPage() {
     rentPaymentStatus !== "all" ||
     gender !== "all" ||
     tenancyStatus !== "all" ||
+    pricingSource !== "all" ||
+    commercialMode !== "all" ||
+    managementFeeMode !== "all" ||
     settlementStage !== "all" ||
     checkoutFinancialStatus !== "all" ||
     deadlineWithinDays !== "" ||
@@ -349,6 +436,9 @@ function TenantsPage() {
     Number(rentPaymentStatus !== "all") +
     Number(gender !== "all") +
     Number(tenancyStatus !== "all") +
+    Number(pricingSource !== "all") +
+    Number(commercialMode !== "all") +
+    Number(managementFeeMode !== "all") +
     Number(settlementStage !== "all") +
     Number(checkoutFinancialStatus !== "all") +
     Number(deadlineWithinDays !== "") +
@@ -360,6 +450,9 @@ function TenantsPage() {
     rentPaymentStatus,
     gender,
     tenancyStatus,
+    pricingSource,
+    commercialMode,
+    managementFeeMode,
     settlementStage,
     checkoutFinancialStatus,
     deadlineTarget,
@@ -405,6 +498,11 @@ function TenantsPage() {
             none: "Belum ada penyewaan",
           }[tenancyStatus]
         }`
+      : "",
+    pricingSource !== "all" ? "tarif: Kesepakatan khusus" : "",
+    commercialMode !== "all" ? "jenis hunian: Tanggungan Owner" : "",
+    managementFeeMode !== "all"
+      ? `biaya pengelolaan: ${managementFeeMode === "charged" ? "Dengan biaya" : "Tanpa biaya"}`
       : "",
     settlementStage !== "all"
       ? `tahap pelunasan: ${
@@ -461,6 +559,9 @@ function TenantsPage() {
     setRentPaymentStatus("all");
     setGender("all");
     setTenancyStatus("all");
+    setPricingSource("all");
+    setCommercialMode("all");
+    setManagementFeeMode("all");
     setSettlementStage("all");
     setCheckoutFinancialStatus("all");
     setDeadlineTarget("settlement");
@@ -620,6 +721,55 @@ function TenantsPage() {
                 <SelectItem value="awaiting_activation">Menunggu aktivasi kamar</SelectItem>
                 <SelectItem value="active">Penyewaan aktif</SelectItem>
                 <SelectItem value="none">Belum ada penyewaan</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={pricingSource}
+              onValueChange={(value) => {
+                setPricingSource(value as "negotiated" | "all");
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter sumber tarif">
+                <SelectValue placeholder="Sumber tarif" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua sumber tarif</SelectItem>
+                <SelectItem value="negotiated">Kesepakatan khusus</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={commercialMode}
+              onValueChange={(value) => {
+                const next = value as "owner_sponsored" | "all";
+                setCommercialMode(next);
+                if (next === "all") setManagementFeeMode("all");
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter jenis pengelolaan hunian">
+                <SelectValue placeholder="Jenis pengelolaan hunian" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua jenis hunian</SelectItem>
+                <SelectItem value="owner_sponsored">Hunian Tanggungan Owner</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={managementFeeMode}
+              onValueChange={(value) => {
+                setManagementFeeMode(value as "charged" | "waived" | "all");
+                if (value !== "all") setCommercialMode("owner_sponsored");
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter ketentuan biaya pengelolaan">
+                <SelectValue placeholder="Ketentuan biaya pengelolaan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua ketentuan biaya</SelectItem>
+                <SelectItem value="charged">Dengan biaya pengelolaan</SelectItem>
+                <SelectItem value="waived">Tanpa biaya pengelolaan</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -844,35 +994,48 @@ function TenantsPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-3">
-                        <RentPaymentStatusSummary resident={resident} />
+                        {resident.commercialMode === "owner_sponsored" ? (
+                          <ManagementFeeModePill mode={resident.managementFeeMode} />
+                        ) : (
+                          <RentPaymentStatusSummary resident={resident} />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {resident.commercialMode === "owner_sponsored" ? (
+                          <ManagementFeeSettlementSummary resident={resident} />
+                        ) : (
+                          <div className="space-y-1.5">
+                            <SettlementStagePill stage={resident.contractSettlementStage} />
+                            {resident.contractSettlementStage === "paid_in_full" &&
+                            resident.leaseEnd ? (
+                              <p className="text-xs text-muted-foreground">
+                                Jadwal check-out: {formatResidentDate(resident.leaseEnd)}
+                              </p>
+                            ) : resident.contractSettlementStage === "awaiting_activation" ? (
+                              <p className="text-xs text-muted-foreground">
+                                Aktivasi kamar diperlukan
+                              </p>
+                            ) : resident.contractSettlementDueDate ? (
+                              <p className="text-xs text-muted-foreground">
+                                Tenggat pembayaran:{" "}
+                                {formatResidentDate(resident.contractSettlementDueDate)}
+                              </p>
+                            ) : null}
+                            {resident.leaseExpiredAdminActionRequired ? (
+                              <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
+                                Masa sewa berakhir — proses check-out diperlukan
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="space-y-1.5">
-                          <SettlementStagePill stage={resident.contractSettlementStage} />
-                          {resident.contractSettlementStage === "paid_in_full" &&
-                          resident.leaseEnd ? (
-                            <p className="text-xs text-muted-foreground">
-                              Jadwal check-out: {formatResidentDate(resident.leaseEnd)}
-                            </p>
-                          ) : resident.contractSettlementStage === "awaiting_activation" ? (
-                            <p className="text-xs text-muted-foreground">
-                              Aktivasi kamar diperlukan
-                            </p>
-                          ) : resident.contractSettlementDueDate ? (
-                            <p className="text-xs text-muted-foreground">
-                              Tenggat pembayaran:{" "}
-                              {formatResidentDate(resident.contractSettlementDueDate)}
-                            </p>
-                          ) : null}
-                          {resident.leaseExpiredAdminActionRequired ? (
-                            <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
-                              Masa sewa berakhir — proses check-out diperlukan
-                            </span>
+                          <ResidentStatusPill status={resident.residentStatus} />
+                          {resident.commercialMode === "owner_sponsored" ? (
+                            <OwnerSponsoredBadge />
                           ) : null}
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <ResidentStatusPill status={resident.residentStatus} />
                       </td>
                       <td className="px-4 py-3">
                         {resident.checkoutFinancialStatus === "none" ? (
@@ -937,14 +1100,26 @@ function TenantsPage() {
                       </p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <RentPaymentStatusSummary resident={resident} />
-                      <SettlementStagePill stage={resident.contractSettlementStage} />
+                      {resident.commercialMode === "owner_sponsored" ? (
+                        <>
+                          <ManagementFeeModePill mode={resident.managementFeeMode} />
+                          <ManagementFeeSettlementSummary resident={resident} />
+                        </>
+                      ) : (
+                        <>
+                          <RentPaymentStatusSummary resident={resident} />
+                          <SettlementStagePill stage={resident.contractSettlementStage} />
+                        </>
+                      )}
                       {resident.leaseExpiredAdminActionRequired ? (
                         <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
                           Masa sewa berakhir — proses check-out diperlukan
                         </span>
                       ) : null}
                       <ResidentStatusPill status={resident.residentStatus} />
+                      {resident.commercialMode === "owner_sponsored" ? (
+                        <OwnerSponsoredBadge />
+                      ) : null}
                       {resident.checkoutFinancialStatus !== "none" ? (
                         <CheckoutFinancialStatusPill status={resident.checkoutFinancialStatus} />
                       ) : null}

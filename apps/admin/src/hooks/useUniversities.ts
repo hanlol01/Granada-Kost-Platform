@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createUniversity, listUniversities } from "@/lib/admin-universities";
+import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property";
 
 export const universityQueryKeys = {
@@ -34,6 +35,8 @@ export function useCreateUniversity(propertyIdOverride?: string | null) {
       if (propertyId) {
         void queryClient.invalidateQueries({ queryKey: universityQueryKeys.all(propertyId) });
       }
+      toastMutationSuccess("Universitas berhasil ditambahkan");
     },
+    onError: (error) => toastMutationError(error, "Universitas belum dapat ditambahkan"),
   });
 }

@@ -5,6 +5,7 @@ import {
   createBillingInvoicePdf,
   createBillingReceiptPdf,
   createContractPaidDocumentPdf,
+  createOwnerSponsoredManagementFeeDocumentPdf,
 } from '../../src/modules/billing/helpers/billing-document.helper';
 
 void test('invoice renderer uses the same branded PDF authority as payment receipts', async () => {
@@ -160,6 +161,48 @@ void test('branded receipt renderer creates a one-page PDF with the canonical re
   assert.ok(result.content.length > 10_000);
   const loaded = await PDFDocument.load(result.content);
   assert.equal(loaded.getPageCount(), 1);
+});
+
+void test('owner-sponsored management-fee invoice has its own clear template and wraps long labels', async () => {
+  const result = await createOwnerSponsoredManagementFeeDocumentPdf({
+    documentCode: 'INFO-BIAYA-PENGELOLAAN-12345678',
+    residentName: 'Nona Penghuni',
+    roomNumber: 'RK-05-07',
+    buildingCode: 'RK-05',
+    leaseStart: '2026-08-01',
+    leaseEnd: '2027-08-01',
+    leaseTermMonths: 12,
+    propertyName: 'Granada Student House Jatinangor',
+    propertyAddress: 'Jatinangor, Sumedang',
+    issuedByName: 'Admin Pengelola',
+    ownerName: 'Hans Aby',
+    managementFeeMode: 'charged',
+    managementFeePayer: 'owner',
+    managementFeePayerName: null,
+    monthlyManagementFee: 1_250_000,
+    projectedManagementFee: 15_000_000,
+    verifiedPaid: 4_000_000,
+    pending: 2_000_000,
+    remaining: 9_000_000,
+    printedAt: new Date('2026-09-22T10:00:00+07:00'),
+  });
+
+  assert.equal(result.filename, 'INFO-BIAYA-PENGELOLAAN-12345678.pdf');
+  const loaded = await PDFDocument.load(result.content);
+  assert.equal(loaded.getPageCount(), 1);
+
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  const content = await (await parsed.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+
+  assert.match(text, /INVOICE BIAYA PENGELOLAAN HUNIAN/);
+  assert.match(text, /Hunian Tanggungan Owner/);
+  assert.match(text, /Hans Aby \(Owner\)/);
+  assert.match(text, /Biaya pengelolaan per bulan\s*:\s*Rp\. 1\.250\.000,-/);
+  assert.match(text, /Total biaya pengelolaan masa hunian\s*:\s*Rp\. 15\.000\.000,-/);
+  assert.match(text, /Sisa biaya pengelolaan\s*:\s*Rp\. 9\.000\.000,-/);
+  assert.doesNotMatch(text, /TAGIHAN-LAIN/);
 });
 
 void test('receipt renderer presents the building unit before the room number', async () => {

@@ -34,7 +34,6 @@ export function ResidentOnboardingDialog({
   const [name, setName] = useState(lead?.visitorName ?? "");
   const [start, setStart] = useState(lead?.preferredMoveInDate ?? "");
   const [dp, setDp] = useState("");
-  const [deposit, setDeposit] = useState("");
   const [gender, setGender] = useState<"male" | "female">(lead?.gender ?? "female");
   const [roomId, setRoomId] = useState(lead?.roomId ?? "");
   const [phone, setPhone] = useState("");
@@ -55,13 +54,7 @@ export function ResidentOnboardingDialog({
   const selectedCategory = selectedRoom?.kostType.category ?? lead?.category;
   const commercial = kostTypes.data?.items.find((item) => item.category === selectedCategory);
   const requiredDp = commercial ? Math.ceil(commercial.monthlyPrice * 12 * 0.25) : null;
-  const requiredDeposit = commercial ? 0 : null;
-  const financialAuthorityReady =
-    requiredDp !== null &&
-    requiredDeposit !== null &&
-    Number(dp) >= requiredDp &&
-    Number.isFinite(Number(deposit)) &&
-    Number(deposit) >= 0;
+  const financialAuthorityReady = requiredDp !== null && Number(dp) >= requiredDp;
   const loginPhone = manual ? phone.trim() : (lead?.visitorPhone.trim() ?? "");
   useEffect(() => {
     setName(lead?.visitorName ?? "");
@@ -69,7 +62,6 @@ export function ResidentOnboardingDialog({
     setGender(lead?.gender ?? "female");
     setRoomId(lead?.roomId ?? "");
     setDp("");
-    setDeposit("");
     setPhone("");
     setEmail("");
     setTemporaryPassword(null);
@@ -78,10 +70,9 @@ export function ResidentOnboardingDialog({
     setActivationKey(newIdempotencyKey());
   }, [lead, open, currentPropertyId, resetActivation, resetOnboarding]);
   useEffect(() => {
-    if (!open || requiredDp === null || requiredDeposit === null) return;
+    if (!open || requiredDp === null) return;
     setDp((current) => current || String(requiredDp));
-    setDeposit((current) => current || "0");
-  }, [open, requiredDeposit, requiredDp]);
+  }, [open, requiredDp]);
   if (!lead && !manual) return null;
   const clearTransientResult = () => {
     setTemporaryPassword(null);
@@ -117,7 +108,7 @@ export function ResidentOnboardingDialog({
       payment_plan_type: "two_month_installments",
       accepted_terms_version: "KMO-W05-v1",
       dp_verified_amount: Number(dp),
-      security_deposit_funded_amount: Number(deposit),
+      security_deposit_funded_amount: 0,
       payment_method: "cash",
     });
   };
@@ -238,27 +229,13 @@ export function ResidentOnboardingDialog({
             {requiredDp === null ? "." : `: ${formatIDR(requiredDp)}.`}
           </span>
         </label>
-        <label className="grid gap-1 text-sm">
-          Security deposit dicatat
-          <Input
-            type="number"
-            min="0"
-            value={deposit}
-            onChange={(event) => {
-              clearTransientResult();
-              setDeposit(event.target.value);
-            }}
-          />
-          <span className="text-xs text-muted-foreground">
-            Nilainya bebas mulai Rp0 dan terpisah dari pembayaran sewa.
-          </span>
-        </label>
-        {(dp || deposit) &&
-        requiredDp !== null &&
-        requiredDeposit !== null &&
-        !financialAuthorityReady ? (
+        <div className="rounded-md border border-primary/25 bg-primary/5 p-3 text-sm text-muted-foreground">
+          Security deposit bersifat opsional. Setelah komitmen tersimpan, Admin dapat mencatat
+          nominal target yang terkunci sesuai snapshot kontrak dari Detail Penghuni.
+        </div>
+        {dp && requiredDp !== null && !financialAuthorityReady ? (
           <p role="alert" className="text-sm text-destructive">
-            DP belum memenuhi minimum atau security deposit bukan nominal yang valid.
+            DP belum memenuhi minimum pembayaran awal.
           </p>
         ) : null}
         {mutationNotice ? (

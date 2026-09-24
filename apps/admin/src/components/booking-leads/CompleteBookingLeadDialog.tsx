@@ -83,7 +83,6 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
   const [pricingVarianceAcknowledged, setPricingVarianceAcknowledged] = useState(false);
   const [pricingResetOpen, setPricingResetOpen] = useState(false);
   const [rentCredit, setRentCredit] = useState(1_000_000);
-  const [securityDeposit, setSecurityDeposit] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
   const [paymentPaidAt, setPaymentPaidAt] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
@@ -109,7 +108,6 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
     setPricingVarianceAcknowledged(false);
     setPricingResetOpen(false);
     setRentCredit(FIXED_BOOKING_FEE);
-    setSecurityDeposit(0);
     setPaymentMethod("cash");
     setPaymentPaidAt("");
     setPaymentNote("");
@@ -235,7 +233,10 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
           pricingSource === "negotiated" ? pricingVarianceAcknowledged : undefined,
         paymentType,
         rentCreditAmount: displayedCredit,
-        securityDepositAmount: securityDeposit,
+        // Security deposit is an optional custody balance. Its target is frozen only
+        // after the lease exists, so it must be recorded from the resident detail
+        // rather than as an arbitrary amount while completing a booking lead.
+        securityDepositAmount: 0,
         paymentMethod,
         paymentPaidAt: paymentPaidAt || undefined,
         paymentEvidenceFileIds:
@@ -650,17 +651,13 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                           : "Nilai pelunasan dihitung otomatis dari total sewa."}
                     </span>
                   </label>
-                  <label className="grid gap-1.5 text-sm font-medium">
-                    Security deposit
-                    <CurrencyInput
-                      aria-label="Security deposit"
-                      value={securityDeposit}
-                      onValueChange={setSecurityDeposit}
-                    />
-                    <span className="font-normal text-muted-foreground">
-                      Jaminan kamar; tidak mengurangi sisa sewa.
+                  <div className="grid gap-1.5 rounded-lg border border-info/30 bg-info/5 px-3 py-2.5 text-sm">
+                    <span className="font-medium text-foreground">Security deposit</span>
+                    <span className="text-muted-foreground">
+                      Opsional. Catat setelah penyewaan terbentuk agar nominalnya mengikuti target
+                      deposit yang tersimpan pada kontrak.
                     </span>
-                  </label>
+                  </div>
                 </div>
                 <fieldset className="grid gap-2.5">
                   <legend className="text-sm font-medium">Metode pembayaran</legend>

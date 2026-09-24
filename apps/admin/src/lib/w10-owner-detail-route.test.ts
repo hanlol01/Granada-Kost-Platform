@@ -4,7 +4,11 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { ApiError } from "@granada-kost/api-client";
-import { parseOwnerArchiveReceipt, parseOwnerPermanentDeleteReceipt } from "./admin-property-owner";
+import {
+  parseOwnerArchiveReceipt,
+  parseOwnerPermanentDeleteReceipt,
+  parsePropertyOwnerList,
+} from "./admin-property-owner";
 import { adminErrorNotice } from "./error-normalizer";
 import {
   adminRouteRegistry,
@@ -204,6 +208,17 @@ test("W10 owner archive receipt accepts the compact backend response", () => {
       ownerId: "11111111-1111-4111-8111-111111111111",
       status: "deleted",
     },
+  );
+});
+
+test("W10 owner list accepts server-provided reusable payout bank options", () => {
+  assert.deepEqual(
+    parsePropertyOwnerList({
+      data: [],
+      payout_bank_options: ["Bank BCA", "Bank Mandiri"],
+      meta: { offset: 0, limit: 20, total: 0 },
+    }).payoutBankOptions,
+    ["Bank BCA", "Bank Mandiri"],
   );
 });
 

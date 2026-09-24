@@ -97,6 +97,29 @@ function StatusPill({ value }: { value: string }) {
   );
 }
 
+function OwnerSponsorshipStatusPill({
+  value,
+}: {
+  value: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
+}) {
+  const copy = {
+    waived: "Biaya dibebaskan",
+    unpaid: "Belum dibayar",
+    partially_paid: "Outstanding",
+    paid: "Lunas",
+    overpaid: "Lebih bayar",
+  } as const;
+  const attention = value === "unpaid" || value === "partially_paid";
+  return (
+    <Badge
+      variant="outline"
+      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
+    >
+      {copy[value]}
+    </Badge>
+  );
+}
+
 function DataItem({ label: title, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -130,6 +153,7 @@ function DetailContent({
 }) {
   const billing = residentDetail?.billing;
   const collectionItem = collection?.items.find((item) => item.room.code === asset.roomCode);
+  const ownerFee = collectionItem?.ownerSponsorship ?? asset.ownerSponsorship;
   const operations = residentDetail?.operations;
   const lease = residentDetail?.lease ?? asset.lease;
   const resident = residentDetail?.resident ?? asset.resident;
@@ -254,7 +278,7 @@ function DetailContent({
                   : "Penghuni tetap mengikuti masa hunian dan proses operasional biasa. Biaya pengelolaan dicatat terpisah dengan jadwal pembayaran fleksibel tanpa denda keterlambatan."}
               </p>
             </div>
-            <StatusPill value={asset.ownerSponsorship.paymentStatus} />
+            <OwnerSponsorshipStatusPill value={asset.ownerSponsorship.paymentStatus} />
           </div>
           <div className="mt-5 grid gap-4 border-t border-emerald-500/20 pt-5 sm:grid-cols-2 lg:grid-cols-4">
             <DataItem
@@ -315,7 +339,7 @@ function DetailContent({
               value={formatOwnerMoney(asset.commercial.longStayMonthlyPrice)}
             />
             <DataItem
-              label="Nilai kontrak 12 bulan"
+              label="Total Kontrak 12 bulan"
               value={formatOwnerMoney(asset.commercial.annualContractValue)}
             />
             <DataItem
@@ -437,22 +461,38 @@ function DetailContent({
           {collectionItem ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric
-                label="Nilai kontrak"
+                label={ownerFee ? "Sewa kamar" : "Total Kontrak"}
                 value={formatOwnerMoney(asset.commercial.annualContractValue)}
               />
-              <Metric
-                label="Sewa ditagihkan"
-                value={formatOwnerMoney(collectionItem.billing.rentInvoiced)}
-              />
-              <Metric
-                label="Sewa terverifikasi"
-                value={formatOwnerMoney(collectionItem.billing.rentVerified)}
-              />
-              <Metric
-                label="Sewa belum dibayar"
-                value={formatOwnerMoney(collectionItem.billing.rentOutstanding)}
-              />
-              <Metric label="Status tagihan" value={label(collectionItem.billing.state)} />
+              {ownerFee ? (
+                <>
+                  <Metric
+                    label="Biaya pengelolaan diterima"
+                    value={formatOwnerMoney(ownerFee.verifiedPaid)}
+                  />
+                  <Metric
+                    label="Outstanding biaya pengelolaan"
+                    value={formatOwnerMoney(ownerFee.remaining)}
+                  />
+                  <Metric label="Status biaya pengelolaan" value={label(ownerFee.paymentStatus)} />
+                </>
+              ) : (
+                <>
+                  <Metric
+                    label="Sewa ditagihkan"
+                    value={formatOwnerMoney(collectionItem.billing.rentInvoiced)}
+                  />
+                  <Metric
+                    label="Sewa terverifikasi"
+                    value={formatOwnerMoney(collectionItem.billing.rentVerified)}
+                  />
+                  <Metric
+                    label="Sewa belum dibayar"
+                    value={formatOwnerMoney(collectionItem.billing.rentOutstanding)}
+                  />
+                  <Metric label="Status tagihan" value={label(collectionItem.billing.state)} />
+                </>
+              )}
               <Metric
                 label="Jumlah invoice"
                 value={`${collectionItem.billing.invoiceCount} invoice`}
@@ -466,18 +506,9 @@ function DetailContent({
                 label="Angsuran"
                 value={`${collectionItem.billing.installmentPaid}/${collectionItem.billing.installmentTotal} dibayar`}
               />
-              <Metric
-                label="Deposit wajib"
-                value={formatOwnerMoney(collectionItem.securityDeposit.required)}
-              />
-              <Metric
-                label="Deposit terkumpul"
-                value={formatOwnerMoney(collectionItem.securityDeposit.collected)}
-              />
-              <Metric
-                label="Saldo deposit"
-                value={formatOwnerMoney(collectionItem.securityDeposit.balance)}
-              />
+              {collectionItem.securityDeposit.recorded ? (
+                <Metric label="Security deposit" value="Tercatat" />
+              ) : null}
               <Metric
                 label="Status checkpoint"
                 value={
@@ -510,16 +541,35 @@ function DetailContent({
           ) : billing ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric
-                label="Nilai kontrak"
+                label={ownerFee ? "Sewa kamar" : "Total Kontrak"}
                 value={formatOwnerMoney(asset.commercial.annualContractValue)}
               />
-              <Metric label="Sewa ditagihkan" value={formatOwnerMoney(billing.rentInvoiced)} />
-              <Metric label="Sewa terverifikasi" value={formatOwnerMoney(billing.rentVerified)} />
-              <Metric
-                label="Sewa belum dibayar"
-                value={formatOwnerMoney(billing.rentOutstanding)}
-              />
-              <Metric label="Status tagihan" value={label(billing.state)} />
+              {ownerFee ? (
+                <>
+                  <Metric
+                    label="Biaya pengelolaan diterima"
+                    value={formatOwnerMoney(ownerFee.verifiedPaid)}
+                  />
+                  <Metric
+                    label="Outstanding biaya pengelolaan"
+                    value={formatOwnerMoney(ownerFee.remaining)}
+                  />
+                  <Metric label="Status biaya pengelolaan" value={label(ownerFee.paymentStatus)} />
+                </>
+              ) : (
+                <>
+                  <Metric label="Sewa ditagihkan" value={formatOwnerMoney(billing.rentInvoiced)} />
+                  <Metric
+                    label="Sewa terverifikasi"
+                    value={formatOwnerMoney(billing.rentVerified)}
+                  />
+                  <Metric
+                    label="Sewa belum dibayar"
+                    value={formatOwnerMoney(billing.rentOutstanding)}
+                  />
+                  <Metric label="Status tagihan" value={label(billing.state)} />
+                </>
+              )}
               <Metric label="Jumlah invoice" value={`${billing.invoiceCount} invoice`} />
               <Metric label="Invoice terlambat" value={`${billing.overdueCount} invoice`} />
               <Metric label="Tagihan berikutnya" value={date(billing.nextDueDate)} />
@@ -527,15 +577,9 @@ function DetailContent({
                 label="Angsuran"
                 value={`${billing.installmentPaid}/${billing.installmentTotal} dibayar`}
               />
-              <Metric
-                label="Deposit wajib"
-                value={formatOwnerMoney(billing.securityDepositRequired)}
-              />
-              <Metric
-                label="Deposit terkumpul"
-                value={formatOwnerMoney(billing.depositCollected)}
-              />
-              <Metric label="Saldo deposit" value={formatOwnerMoney(billing.depositBalance)} />
+              {billing.securityDepositRecorded ? (
+                <Metric label="Security deposit" value="Tercatat" />
+              ) : null}
             </div>
           ) : (
             <p className="rounded-xl border border-border/70 bg-muted/25 p-4 text-sm text-muted-foreground">

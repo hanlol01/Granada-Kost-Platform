@@ -33,6 +33,10 @@ type OwnerProfileRow = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  payout_bank_name: string | null;
+  payout_account_number: string | null;
+  payout_account_holder: string | null;
+  owner_visible_note: string | null;
   profile_status: 'active' | 'archived';
   user_status: 'active' | 'inactive' | 'suspended';
   created_at: Date;
@@ -40,6 +44,10 @@ type OwnerProfileRow = {
   room_count?: string;
   scheduled_count?: string;
   total_count?: string;
+};
+
+type PayoutBankOptionRow = {
+  payout_bank_name: string;
 };
 
 type IdempotencyRow = {
@@ -55,6 +63,10 @@ type PropertyOwnerView = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  payout_bank_name: string | null;
+  payout_account_number: string | null;
+  payout_account_holder: string | null;
+  owner_visible_note: string | null;
   profile_status: 'active' | 'archived';
   account_status: 'active' | 'inactive' | 'suspended';
   active_rumah_kost_buildings: number;
@@ -88,8 +100,9 @@ export class PropertyOwnerManagementService {
     const offset = query.offset ?? 0;
     const limit = query.limit ?? 20;
     const search = query.q?.trim() ? `%${query.q.trim()}%` : null;
-    const result = await this.database.client.query<OwnerProfileRow>(
-      `SELECT profiles.*,
+    const [result, payoutBankOptions] = await Promise.all([
+      this.database.client.query<OwnerProfileRow>(
+        `SELECT profiles.*,
               users.user_status,
               COUNT(*) OVER()::text AS total_count,
               COUNT(DISTINCT building_assignments.id) FILTER (
@@ -111,10 +124,20 @@ export class PropertyOwnerManagementService {
        GROUP BY profiles.id, users.user_status
        ORDER BY profiles.created_at DESC, profiles.id DESC
        OFFSET $4 LIMIT $5`,
-      [query.property_id, query.status ?? null, search, offset, limit],
-    );
+        [query.property_id, query.status ?? null, search, offset, limit],
+      ),
+      this.database.client.query<PayoutBankOptionRow>(
+        `SELECT DISTINCT trim(payout_bank_name) AS payout_bank_name
+         FROM property_owner_profiles
+         WHERE property_id = $1
+           AND nullif(trim(payout_bank_name), '') IS NOT NULL
+         ORDER BY lower(trim(payout_bank_name)) ASC`,
+        [query.property_id],
+      ),
+    ]);
     return {
       data: result.rows.map((row) => this.mapOwner(row)),
+      payout_bank_options: payoutBankOptions.rows.map((row) => row.payout_bank_name),
       meta: {
         offset,
         limit,
@@ -306,6 +329,7 @@ export class PropertyOwnerManagementService {
     context: RequestAuditContext,
   ): Promise<OwnerCreateResponse> {
     this.assertPropertyScope(actor, dto.property_id);
+    this.assertPayoutFields(dto);
     const route = '/admin/property-owners';
     const key = this.requireIdempotencyKey(idempotencyKey);
     const normalized = {
@@ -314,6 +338,10 @@ export class PropertyOwnerManagementService {
       email: dto.email?.trim().toLowerCase() || null,
       phone: dto.phone?.trim() ? normalizeLoginIdentifier(dto.phone) : null,
       address: dto.address?.trim() || null,
+      payout_bank_name: dto.payout_bank_name?.trim() || null,
+      payout_account_number: dto.payout_account_number?.trim() || null,
+      payout_account_holder: dto.payout_account_holder?.trim() || null,
+      owner_visible_note: dto.owner_visible_note?.trim() || null,
     };
     this.assertPhone(normalized.phone);
     const phoneCandidates = loginPhoneCandidates(normalized.phone ?? '');
@@ -376,8 +404,9 @@ export class PropertyOwnerManagementService {
       const inserted = await client.query<OwnerProfileRow>(
         `INSERT INTO property_owner_profiles (
            property_id, user_id, full_name, phone, email, address,
+           payout_bank_name, payout_account_number, payout_account_holder, owner_visible_note,
            created_by_user_id, updated_by_user_id
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
          RETURNING *, 'active'::text AS user_status`,
         [
           dto.property_id,
@@ -386,6 +415,10 @@ export class PropertyOwnerManagementService {
           normalized.phone,
           normalized.email,
           normalized.address,
+          normalized.payout_bank_name,
+          normalized.payout_account_number,
+          normalized.payout_account_holder,
+          normalized.owner_visible_note,
           actor.id,
         ],
       );
@@ -441,6 +474,10 @@ export class PropertyOwnerManagementService {
       email: dto.email === undefined ? undefined : dto.email.trim().toLowerCase() || null,
       phone: dto.phone === undefined ? undefined : dto.phone.trim() || null,
       address: dto.address === undefined ? undefined : dto.address.trim() || null,
+      payout_bank_name: dto.payout_bank_name?.trim() || null,
+      payout_account_number: dto.payout_account_number?.trim() || null,
+      payout_account_holder: dto.payout_account_holder?.trim() || null,
+      owner_visible_note: dto.owner_visible_note?.trim() || null,
     });
     return this.database.transaction(async (client) => {
       const replay = await this.claimCommand(
@@ -463,6 +500,29 @@ export class PropertyOwnerManagementService {
             : null;
       const email =
         dto.email === undefined ? current.email : dto.email.trim().toLowerCase() || null;
+      const payoutBankName =
+        dto.payout_bank_name === undefined
+          ? current.payout_bank_name
+          : dto.payout_bank_name?.trim() || null;
+      const payoutAccountNumber =
+        dto.payout_account_number === undefined
+          ? current.payout_account_number
+          : dto.payout_account_number?.trim() || null;
+      const payoutAccountHolder =
+        dto.payout_account_holder === undefined
+          ? current.payout_account_holder
+          : dto.payout_account_holder?.trim() || null;
+      const ownerVisibleNote =
+        dto.owner_visible_note === undefined
+          ? current.owner_visible_note
+          : dto.owner_visible_note?.trim() || null;
+      const payoutValues = [payoutBankName, payoutAccountNumber, payoutAccountHolder];
+      if (payoutValues.some(Boolean) && payoutValues.some((value) => !value)) {
+        throw new BadRequestException({
+          code: 'PROPERTY_OWNER_PAYOUT_FIELDS_INCOMPLETE',
+          message: 'Nama bank, nomor rekening, dan atas nama harus diisi bersama',
+        });
+      }
       this.assertPhone(phone);
       const phoneCandidates = loginPhoneCandidates(phone ?? '');
       const duplicate = await client.query(
@@ -486,9 +546,11 @@ export class PropertyOwnerManagementService {
       const updated = await client.query<OwnerProfileRow>(
         `UPDATE property_owner_profiles
          SET full_name = $3, phone = $4, email = $5,
-             address = COALESCE($6, address), updated_by_user_id = $7, updated_at = now()
+             address = COALESCE($6, address), payout_bank_name = $7,
+             payout_account_number = $8, payout_account_holder = $9,
+             owner_visible_note = $10, updated_by_user_id = $11, updated_at = now()
          WHERE id = $1 AND property_id = $2
-         RETURNING *, $8::text AS user_status`,
+         RETURNING *, $12::text AS user_status`,
         [
           ownerId,
           dto.property_id,
@@ -496,6 +558,10 @@ export class PropertyOwnerManagementService {
           phone,
           email,
           dto.address?.trim(),
+          payoutBankName,
+          payoutAccountNumber,
+          payoutAccountHolder,
+          ownerVisibleNote,
           actor.id,
           current.user_status,
         ],
@@ -1032,16 +1098,20 @@ export class PropertyOwnerManagementService {
           message: 'Ownership assignment is unavailable or already released',
         });
       }
-      await client.query(
-        `UPDATE ${table}
-         SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
-             effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
-             assignment_status = 'released',
-             reason = $4,
-             released_by_user_id = $5, updated_at = now()
-         WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
-        [assignmentId, ownerId, dto.property_id, reason, actor.id],
-      );
+      try {
+        await client.query(
+          `UPDATE ${table}
+           SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
+               effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
+               assignment_status = 'released',
+               reason = $4,
+               released_by_user_id = $5, updated_at = now()
+           WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
+          [assignmentId, ownerId, dto.property_id, reason, actor.id],
+        );
+      } catch (error) {
+        this.rethrowReleaseConflict(error);
+      }
       await this.audit.write(
         {
           actorUserId: actor.id,
@@ -1136,16 +1206,20 @@ export class PropertyOwnerManagementService {
             message: 'Ownership assignment is unavailable or already released',
           });
         }
-        await client.query(
-          `UPDATE ${table}
-           SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
-               effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
-               assignment_status = 'released',
-               reason = $4,
-               released_by_user_id = $5, updated_at = now()
-           WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
-          [assignmentId, ownerId, dto.property_id, reason, actor.id],
-        );
+        try {
+          await client.query(
+            `UPDATE ${table}
+             SET effective_from = LEAST(effective_from, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),
+                 effective_until = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,
+                 assignment_status = 'released',
+                 reason = $4,
+                 released_by_user_id = $5, updated_at = now()
+             WHERE id = $1 AND owner_profile_id = $2 AND property_id = $3`,
+            [assignmentId, ownerId, dto.property_id, reason, actor.id],
+          );
+        } catch (error) {
+          this.rethrowReleaseConflict(error);
+        }
         await this.audit.write(
           {
             actorUserId: actor.id,
@@ -1413,6 +1487,10 @@ export class PropertyOwnerManagementService {
         id: owner.id,
         display_name: owner.full_name,
         property_id: owner.property_id,
+        payout_bank_name: owner.payout_bank_name,
+        payout_account_number_masked: this.maskAccountNumber(owner.payout_account_number),
+        payout_account_holder: owner.payout_account_holder,
+        owner_visible_note: owner.owner_visible_note,
       },
       assets: { rumah_kost_buildings: buildings.rows, apart_kost_rooms: rooms.rows },
       financial_summary: {
@@ -1672,6 +1750,10 @@ export class PropertyOwnerManagementService {
       phone: row.phone,
       email: row.email,
       address: row.address,
+      payout_bank_name: row.payout_bank_name,
+      payout_account_number: row.payout_account_number,
+      payout_account_holder: row.payout_account_holder,
+      owner_visible_note: row.owner_visible_note,
       profile_status: row.profile_status,
       account_status: row.user_status,
       active_rumah_kost_buildings: Number(row.building_count ?? 0),
@@ -1679,5 +1761,35 @@ export class PropertyOwnerManagementService {
       scheduled_assignments: Number(row.scheduled_count ?? 0),
       created_at: row.created_at,
     };
+  }
+
+  private assertPayoutFields(dto: CreatePropertyOwnerDto | UpdatePropertyOwnerDto): void {
+    const values = [dto.payout_bank_name, dto.payout_account_number, dto.payout_account_holder].map(
+      (value) => value?.trim() || null,
+    );
+    if (values.some(Boolean) && values.some((value) => !value)) {
+      throw new BadRequestException({
+        code: 'PROPERTY_OWNER_PAYOUT_FIELDS_INCOMPLETE',
+        message: 'Nama bank, nomor rekening, dan atas nama harus diisi bersama',
+      });
+    }
+  }
+
+  private maskAccountNumber(value: string | null | undefined): string | null {
+    const normalized = value?.trim();
+    if (!normalized) return null;
+    return `•••• ${normalized.slice(-4)}`;
+  }
+
+  private rethrowReleaseConflict(error: unknown): never {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('OWNER_SPONSORED_ACTIVE_ASSIGNMENT_RELEASE_BLOCKED')) {
+      throw new ConflictException({
+        code: 'OWNER_SPONSORED_ACTIVE_ASSIGNMENT_RELEASE_BLOCKED',
+        message:
+          'Aset tidak dapat dilepas karena masih digunakan hunian tanggungan Owner aktif. Selesaikan atau akhiri hunian tersebut terlebih dahulu.',
+      });
+    }
+    throw error;
   }
 }

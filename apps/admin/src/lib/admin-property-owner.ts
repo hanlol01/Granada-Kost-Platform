@@ -11,6 +11,10 @@ export type PropertyOwner = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  payoutBankName: string | null;
+  payoutAccountNumber: string | null;
+  payoutAccountHolder: string | null;
+  ownerVisibleNote: string | null;
   profileStatus: PropertyOwnerStatus;
   accountStatus: OwnerAccountStatus;
   activeRumahKostBuildings: number;
@@ -90,6 +94,7 @@ export type PropertyOwnerAssetOptions = {
 
 export type PropertyOwnerList = {
   data: PropertyOwner[];
+  payoutBankOptions: string[];
   meta: { offset: number; limit: number; total: number };
 };
 export type OwnerCreateReceipt = {
@@ -121,7 +126,7 @@ const string = (value: unknown, field: string): string => {
   return value;
 };
 const nullableString = (value: unknown, field: string): string | null =>
-  value === null ? null : string(value, field);
+  value === null || value === undefined ? null : string(value, field);
 const number = (value: unknown, field: string): number => {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new Error(`Respons Owner Property tidak valid: ${field}.`);
@@ -142,6 +147,10 @@ function parseOwner(value: unknown): PropertyOwner {
     phone: nullableString(value.phone, "phone"),
     email: nullableString(value.email, "email"),
     address: nullableString(value.address, "address"),
+    payoutBankName: nullableString(value.payout_bank_name, "payout_bank_name"),
+    payoutAccountNumber: nullableString(value.payout_account_number, "payout_account_number"),
+    payoutAccountHolder: nullableString(value.payout_account_holder, "payout_account_holder"),
+    ownerVisibleNote: nullableString(value.owner_visible_note, "owner_visible_note"),
     profileStatus: enumValue(value.profile_status, ["active", "archived"], "profile_status"),
     accountStatus: enumValue(
       value.account_status,
@@ -200,8 +209,14 @@ function parseRoom(value: unknown): OwnerRoomAssignment {
 export function parsePropertyOwnerList(value: unknown): PropertyOwnerList {
   if (!isObject(value) || !Array.isArray(value.data) || !isObject(value.meta))
     throw new Error("Daftar Owner Property tidak valid.");
+  const payoutBankOptions = Array.isArray(value.payout_bank_options)
+    ? value.payout_bank_options.map((option, index) =>
+        string(option, `payout_bank_options.${index}`),
+      )
+    : [];
   return {
     data: value.data.map(parseOwner),
+    payoutBankOptions,
     meta: {
       offset: number(value.meta.offset, "meta.offset"),
       limit: number(value.meta.limit, "meta.limit"),

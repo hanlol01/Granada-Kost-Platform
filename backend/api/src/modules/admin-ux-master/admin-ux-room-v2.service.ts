@@ -319,6 +319,7 @@ export class AdminUxRoomV2Service {
          commercial_version.medium_stay_monthly_price,
          commercial_version.long_stay_monthly_price,
           commercial_version.effective_date::text AS commercial_effective_date,
+          commercial_version.security_deposit_months,
           management_fee.monthly_fee_amount,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
@@ -735,6 +736,7 @@ export class AdminUxRoomV2Service {
         medium_stay_monthly_price: Number(row.medium_stay_monthly_price),
         long_stay_monthly_price: Number(row.long_stay_monthly_price),
         commercial_effective_date: String(row.commercial_effective_date).slice(0, 10),
+        security_deposit_months: Number(row.security_deposit_months),
         deposit_amount: Number(row.deposit_amount),
         management_fee_amount: Number(row.monthly_fee_amount ?? 0),
         facilities: facilitiesByType.get(String(row.kost_type_id)) ?? [],

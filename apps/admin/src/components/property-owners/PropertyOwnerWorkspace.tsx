@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PayoutBankCombobox } from "@/components/forms/PayoutBankCombobox";
 import {
   useOwnerAssetOptions,
   usePropertyOwnerDetail,
@@ -92,6 +93,32 @@ function ownerUnitCode(assetCode: string, kind: "building" | "room"): string | n
 }
 const PAGE_SIZE = 20;
 const DEFAULT_OWNER_PASSWORD = "qwerty1234#";
+const COMMON_PAYOUT_BANK_OPTIONS = [
+  "Bank BCA",
+  "Bank Mandiri",
+  "Bank BNI",
+  "Bank BRI",
+  "Bank Syariah Indonesia (BSI)",
+  "CIMB Niaga",
+  "Bank Permata",
+  "Bank Danamon",
+  "Bank BTN",
+  "Bank Jago",
+  "SeaBank Indonesia",
+  "Bank Neo Commerce",
+  "Bank Muamalat",
+  "Bank Mega",
+  "OCBC NISP",
+] as const;
+
+function uniqueBankOptions(values: readonly string[]): string[] {
+  const options = new Map<string, string>();
+  for (const value of values) {
+    const bankName = value.trim();
+    if (bankName) options.set(bankName.toLocaleLowerCase("id-ID"), bankName);
+  }
+  return [...options.values()];
+}
 
 function previousJakartaMonth(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -108,9 +135,64 @@ function previousJakartaMonth(): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function normalizeWhatsAppNumber(value: string | null | undefined): string | null {
+  const digits = value?.replace(/\D/g, "") ?? "";
+  if (!digits) return null;
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  if (digits.startsWith("62")) return digits;
+  return digits.startsWith("8") ? `62${digits}` : digits;
+}
+
+function jakartaGreeting(): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jakarta",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date()),
+  );
+  if (hour >= 5 && hour < 11) return "Selamat pagi";
+  if (hour >= 11 && hour < 15) return "Selamat siang";
+  if (hour >= 15 && hour < 18) return "Selamat sore";
+  return "Selamat malam";
+}
+
+function ownerCredentialsWhatsAppUrl({
+  name,
+  email,
+  loginPhone,
+  recipientPhone,
+  password,
+}: {
+  name: string;
+  email: string | null;
+  loginPhone: string | null;
+  recipientPhone: string | null;
+  password: string;
+}): string | null {
+  const recipient = normalizeWhatsAppNumber(recipientPhone);
+  if (!recipient) return null;
+  const lines = [
+    `${jakartaGreeting()}, Bapak/Ibu ${name}.`,
+    "",
+    "Mohon izin menyampaikan akses akun Pengelolaan Hunian Pemilik Properti Kost sebagai berikut:",
+    "",
+    ...(email ? [`Akun email login: ${email}`] : []),
+    ...(loginPhone ? [`Nomor telepon login: ${loginPhone}`] : []),
+    `Password: ${password}`,
+    "",
+    "Silakan mencoba login melalui website Pengelolaan Hunian Properti Kost Bapak/Ibu.",
+    "",
+    "Sekian informasi yang dapat kami sampaikan.",
+    "Terima kasih.",
+  ];
+  return `https://wa.me/${recipient}?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+
 type Modal =
   | "create"
   | "edit"
+  | "credentials"
   | "assign"
   | "reset"
   | "close-report"
@@ -138,6 +220,10 @@ type OwnerDraft = {
   email: string;
   address: string;
   initialPassword: string;
+  payoutBankName: string;
+  payoutAccountNumber: string;
+  payoutAccountHolder: string;
+  ownerVisibleNote: string;
 };
 const emptyDraft = (): OwnerDraft => ({
   fullName: "",
@@ -145,6 +231,10 @@ const emptyDraft = (): OwnerDraft => ({
   email: "",
   address: "",
   initialPassword: "",
+  payoutBankName: "",
+  payoutAccountNumber: "",
+  payoutAccountHolder: "",
+  ownerVisibleNote: "",
 });
 
 function StatusBadge({
@@ -223,10 +313,13 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   const [draft, setDraft] = useState<OwnerDraft>(emptyDraft);
   const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const [credentialDeliveryMode, setCredentialDeliveryMode] = useState(false);
   const [passwordReceipt, setPasswordReceipt] = useState<{
     kind: "created" | "reset";
     name: string;
-    login: string;
+    loginEmail: string | null;
+    loginPhone: string | null;
+    recipientPhone: string | null;
     password: string;
   } | null>(null);
   const [assignmentKind, setAssignmentKind] = useState<"building" | "room">("building");
@@ -269,9 +362,23 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
   const mutations = usePropertyOwnerMutations();
   const selectedOwner =
     detail.data ?? owners.data?.data.find((owner) => owner.id === selectedId) ?? null;
+  const credentialEmail = detail.data?.credentials.loginEmail ?? selectedOwner?.email ?? null;
+  const credentialLoginPhone = detail.data?.credentials.loginPhone ?? selectedOwner?.phone ?? null;
   const loading = owners.isLoading;
   const error = owners.isError;
   const hasLoginPhone = Boolean(draft.phone.trim());
+  const payoutValues = [
+    draft.payoutBankName.trim(),
+    draft.payoutAccountNumber.trim(),
+    draft.payoutAccountHolder.trim(),
+  ];
+  const hasPayoutInput = payoutValues.some(Boolean);
+  const hasCompletePayoutProfile = payoutValues.every(Boolean);
+  const payoutBankOptions = useMemo(
+    () =>
+      uniqueBankOptions([...(owners.data?.payoutBankOptions ?? []), ...COMMON_PAYOUT_BANK_OPTIONS]),
+    [owners.data?.payoutBankOptions],
+  );
   const assignmentErrors = useMemo(
     () =>
       validateOwnerAssignment({
@@ -297,6 +404,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
     setDraft(emptyDraft());
     setShowInitialPassword(false);
     setShowResetPassword(false);
+    setCredentialDeliveryMode(false);
     setAssignmentReason("");
     setAssignmentSubmitAttempted(false);
     setAssignmentAssetQuery("");
@@ -325,14 +433,25 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
       email: owner.email ?? "",
       address: owner.address ?? "",
       initialPassword: "",
+      payoutBankName: owner.payoutBankName ?? "",
+      payoutAccountNumber: owner.payoutAccountNumber ?? "",
+      payoutAccountHolder: owner.payoutAccountHolder ?? "",
+      ownerVisibleNote: owner.ownerVisibleNote ?? "",
     });
     setShowInitialPassword(false);
     setModal("edit");
+  };
+  const openPasswordReset = (forCredentialDelivery = false) => {
+    setDraft((current) => ({ ...current, initialPassword: "" }));
+    setShowResetPassword(false);
+    setCredentialDeliveryMode(forCredentialDelivery);
+    setModal("reset");
   };
   const submitOwner = async () => {
     if (
       !draft.fullName.trim() ||
       !hasLoginPhone ||
+      (hasPayoutInput && !hasCompletePayoutProfile) ||
       (modal === "create" && draft.initialPassword.length < 10)
     )
       return;
@@ -343,7 +462,9 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
         setPasswordReceipt({
           kind: "created",
           name: receipt.owner.fullName,
-          login: receipt.owner.email ?? receipt.owner.phone ?? "Tidak tersedia",
+          loginEmail: receipt.owner.email,
+          loginPhone: receipt.owner.phone,
+          recipientPhone: receipt.owner.phone,
           password: receipt.temporaryPassword,
         });
       return;
@@ -619,7 +740,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
             setAssignmentSubmitAttempted(false);
             setModal("assign");
           }}
-          onReset={() => setModal("reset")}
+          onViewCredentials={() => setModal("credentials")}
           onCloseReport={() => void navigate({ to: "/reports/property-owners" })}
           onArchive={() => {
             if (!detail.data) return;
@@ -742,6 +863,58 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                 onChange={(event) => setDraft({ ...draft, address: event.target.value })}
               />
             </Field>
+            <div className="sm:col-span-2 rounded-xl border border-border/80 bg-muted/25 p-4">
+              <div className="mb-3">
+                <p className="text-sm font-semibold text-foreground">Rekening pembayaran Owner</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Isi ketiga field rekening bersama-sama. Nomor rekening akan disamarkan pada portal
+                  Owner.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Nama Bank">
+                  <PayoutBankCombobox
+                    value={draft.payoutBankName}
+                    options={payoutBankOptions}
+                    onChange={(payoutBankName) => setDraft({ ...draft, payoutBankName })}
+                    placeholder="Pilih atau ketik nama bank"
+                  />
+                </Field>
+                <Field label="Nomor Rekening">
+                  <Input
+                    inputMode="numeric"
+                    value={draft.payoutAccountNumber}
+                    onChange={(event) =>
+                      setDraft({ ...draft, payoutAccountNumber: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Atas Nama">
+                  <Input
+                    value={draft.payoutAccountHolder}
+                    onChange={(event) =>
+                      setDraft({ ...draft, payoutAccountHolder: event.target.value })
+                    }
+                  />
+                </Field>
+              </div>
+              {hasPayoutInput && !hasCompletePayoutProfile ? (
+                <p className="mt-3 text-xs font-medium text-destructive" role="alert">
+                  Nama bank, nomor rekening, dan atas nama harus diisi bersama.
+                </p>
+              ) : null}
+            </div>
+            <Field
+              label="Catatan yang ditampilkan ke Owner"
+              hint="Catatan ini dapat dibaca oleh Owner pada portalnya."
+              className="sm:col-span-2"
+            >
+              <Textarea
+                value={draft.ownerVisibleNote}
+                onChange={(event) => setDraft({ ...draft, ownerVisibleNote: event.target.value })}
+                className="min-h-20"
+              />
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={clearModal}>
@@ -751,6 +924,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
               disabled={
                 !draft.fullName.trim() ||
                 !hasLoginPhone ||
+                (hasPayoutInput && !hasCompletePayoutProfile) ||
                 (modal === "create" && draft.initialPassword.length < 10) ||
                 mutations.create.isPending ||
                 mutations.update.isPending
@@ -878,12 +1052,75 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={modal === "credentials"} onOpenChange={(open) => !open && clearModal()}>
+        <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] min-w-0 overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Kredensial Owner</DialogTitle>
+            <DialogDescription>
+              Informasi akun untuk mengakses Portal Owner. Password yang telah tersimpan tidak
+              pernah ditampilkan kembali.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid min-w-0 gap-3 rounded-xl border border-border/80 bg-muted/25 p-4 sm:grid-cols-2">
+            <Info label="Nama Owner" value={selectedOwner?.fullName ?? "-"} />
+            <Info
+              label="Status akun"
+              value={accountLabel(selectedOwner?.accountStatus ?? "inactive")}
+            />
+            <Info
+              label="Akun email login"
+              value={credentialEmail ?? "-"}
+              className="sm:col-span-2"
+            />
+            <Info
+              label="Nomor telepon login"
+              value={
+                <WhatsAppContact phone={credentialLoginPhone} label="Nomor telepon login Owner" />
+              }
+              className="sm:col-span-2"
+            />
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Password yang tersimpan tidak dapat dibaca kembali. Untuk mengirim kredensial WhatsApp,
+            tetapkan password baru terlebih dahulu; setelah tersimpan, pesan akan siap dikirim.
+          </p>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:space-x-0">
+            <Button
+              className="col-span-2 w-fit sm:col-span-1"
+              variant="outline"
+              onClick={clearModal}
+            >
+              Tutup
+            </Button>
+            {detail.data?.credentials.resetAvailable ? (
+              <>
+                <Button
+                  className="h-auto min-h-9 w-full min-w-0 whitespace-normal px-3 py-2 text-center bg-[#25D366] text-white hover:bg-[#1ebe5d] hover:text-white"
+                  disabled={!normalizeWhatsAppNumber(credentialLoginPhone)}
+                  onClick={() => openPasswordReset(true)}
+                >
+                  <WhatsAppIcon className="mr-2 size-4" />
+                  Kirim kredensial via WhatsApp
+                </Button>
+                <Button className="w-full sm:w-auto" onClick={() => openPasswordReset()}>
+                  <KeyRound className="mr-2 size-4" />
+                  Reset password
+                </Button>
+              </>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={modal === "reset"} onOpenChange={(open) => !open && clearModal()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reset password Owner</DialogTitle>
+            <DialogTitle>
+              {credentialDeliveryMode ? "Siapkan kredensial Owner" : "Reset password Owner"}
+            </DialogTitle>
             <DialogDescription>
-              Password baru akan tampil sekali sebagai receipt. Sampaikan langsung kepada owner.
+              {credentialDeliveryMode
+                ? "Tetapkan password yang akan dikirim ke WhatsApp Owner. Password lama akan diperbarui."
+                : "Password baru akan tampil sekali sebagai receipt. Sampaikan langsung kepada Owner."}
             </DialogDescription>
           </DialogHeader>
           <Field label="Password baru" required>
@@ -947,19 +1184,19 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                     setPasswordReceipt({
                       kind: "reset",
                       name: selectedOwner?.fullName ?? "Owner",
-                      login:
-                        detail.data?.credentials.loginEmail ??
-                        detail.data?.credentials.loginPhone ??
-                        selectedOwner?.email ??
-                        selectedOwner?.phone ??
-                        "Tidak tersedia",
+                      loginEmail:
+                        detail.data?.credentials.loginEmail ?? selectedOwner?.email ?? null,
+                      loginPhone:
+                        detail.data?.credentials.loginPhone ?? selectedOwner?.phone ?? null,
+                      recipientPhone:
+                        detail.data?.credentials.loginPhone ?? selectedOwner?.phone ?? null,
                       password: receipt.temporaryPassword,
                     });
                   })
                   .catch(() => undefined);
               }}
             >
-              Reset password
+              {credentialDeliveryMode ? "Simpan & siapkan WhatsApp" : "Reset password"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1269,7 +1506,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
         open={Boolean(passwordReceipt)}
         onOpenChange={(open) => !open && setPasswordReceipt(null)}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] min-w-0 overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {passwordReceipt?.kind === "reset"
@@ -1277,19 +1514,55 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                 : "Akun Owner berhasil dibuat"}
             </DialogTitle>
             <DialogDescription>
-              Simpan password ini sekarang. Demi keamanan, password tidak dapat dilihat kembali
-              setelah dialog ditutup.
+              Password ini hanya ditampilkan sekali demi keamanan. Anda dapat menyampaikannya ke
+              Owner melalui WhatsApp sebelum menutup dialog.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-4">
-            <p className="font-semibold">{passwordReceipt?.name}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Login: {passwordReceipt?.login}</p>
-            <p className="mt-3 rounded-md bg-background px-3 py-2 font-mono text-sm break-all">
+          <div className="min-w-0 max-w-full rounded-xl border border-amber-500/35 bg-amber-500/10 p-4">
+            <p className="break-words font-semibold [overflow-wrap:anywhere]">
+              {passwordReceipt?.name}
+            </p>
+            {passwordReceipt?.loginEmail ? (
+              <p className="mt-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                Akun email login: {passwordReceipt.loginEmail}
+              </p>
+            ) : null}
+            {passwordReceipt?.loginPhone ? (
+              <p className="mt-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                Nomor telepon login: {passwordReceipt.loginPhone}
+              </p>
+            ) : null}
+            <p className="mt-3 min-w-0 max-w-full break-all rounded-md bg-background px-3 py-2 font-mono text-sm">
               {passwordReceipt?.password}
             </p>
           </div>
-          <DialogFooter>
-            <Button onClick={() => setPasswordReceipt(null)}>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:space-x-0">
+            <Button
+              className="h-auto min-h-9 w-full min-w-0 whitespace-normal px-3 py-2 text-center bg-[#25D366] text-white hover:bg-[#1ebe5d] hover:text-white"
+              disabled={
+                !ownerCredentialsWhatsAppUrl({
+                  name: passwordReceipt?.name ?? "Owner",
+                  email: passwordReceipt?.loginEmail ?? null,
+                  loginPhone: passwordReceipt?.loginPhone ?? null,
+                  recipientPhone: passwordReceipt?.recipientPhone ?? null,
+                  password: passwordReceipt?.password ?? "",
+                })
+              }
+              onClick={() => {
+                const url = ownerCredentialsWhatsAppUrl({
+                  name: passwordReceipt?.name ?? "Owner",
+                  email: passwordReceipt?.loginEmail ?? null,
+                  loginPhone: passwordReceipt?.loginPhone ?? null,
+                  recipientPhone: passwordReceipt?.recipientPhone ?? null,
+                  password: passwordReceipt?.password ?? "",
+                });
+                if (url) window.open(url, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <WhatsAppIcon className="mr-2 size-4" />
+              Kirim kredensial via WhatsApp
+            </Button>
+            <Button className="w-full sm:w-auto" onClick={() => setPasswordReceipt(null)}>
               <CheckCircle2 className="mr-2 size-4" />
               Saya sudah menyimpan password
             </Button>
@@ -1338,7 +1611,7 @@ function OwnerDetailPageContent({
   onBack,
   onEdit,
   onAssign,
-  onReset,
+  onViewCredentials,
   onCloseReport,
   onArchive,
   onDeletePermanently,
@@ -1352,7 +1625,7 @@ function OwnerDetailPageContent({
   onBack: () => void;
   onEdit: () => void;
   onAssign: () => void;
-  onReset: () => void;
+  onViewCredentials: () => void;
   onCloseReport: () => void;
   onArchive: () => void;
   onDeletePermanently: () => void;
@@ -1392,14 +1665,22 @@ function OwnerDetailPageContent({
         ) : detail ? (
           <div className="space-y-5">
             <section className="grid gap-3 rounded-2xl border border-slate-300/90 bg-slate-50/80 p-4 shadow-sm dark:border-slate-700 dark:bg-muted/25 sm:grid-cols-2">
-              <Info label="Nomor telepon profil" value={detail.phone ?? "Belum diisi"} />
+              <Info
+                label="Nomor telepon profil"
+                value={<WhatsAppContact phone={detail.phone} label="Nomor telepon profil Owner" />}
+              />
               <Info
                 label="Email untuk login"
                 value={detail.credentials.loginEmail ?? "Belum diisi"}
               />
               <Info
                 label="Nomor telepon untuk login"
-                value={detail.credentials.loginPhone ?? "Belum diisi"}
+                value={
+                  <WhatsAppContact
+                    phone={detail.credentials.loginPhone}
+                    label="Nomor telepon untuk login Owner"
+                  />
+                }
               />
               <Info label="Status akun" value={accountLabel(detail.accountStatus)} />
               <Info
@@ -1407,6 +1688,24 @@ function OwnerDetailPageContent({
                 value={detail.address ?? "Belum diisi"}
                 className="sm:col-span-2"
               />
+            </section>
+            <section className="rounded-2xl border border-slate-300/90 bg-slate-50/55 p-4 shadow-sm dark:border-slate-700 dark:bg-muted/15">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Landmark className="size-4" />
+                </span>
+                <div>
+                  <h3 className="font-semibold">Informasi rekening bank</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Rekening pembayaran yang dicatat untuk Owner Property ini.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Info label="Nama Bank" value={detail.payoutBankName ?? "-"} />
+                <Info label="Nomor Rekening" value={detail.payoutAccountNumber ?? "-"} />
+                <Info label="Atas Nama" value={detail.payoutAccountHolder ?? "-"} />
+              </div>
             </section>
             <div className="flex flex-wrap gap-2">
               {detail.profileStatus === "active" && (
@@ -1421,12 +1720,10 @@ function OwnerDetailPageContent({
                   </Button>
                 </>
               )}
-              {detail.credentials.resetAvailable && (
-                <Button variant="success" onClick={onReset}>
-                  <KeyRound className="mr-2 size-4" />
-                  Reset password
-                </Button>
-              )}
+              <Button variant="default" onClick={onViewCredentials}>
+                <KeyRound className="mr-2 size-4" />
+                Lihat kredensial Owner
+              </Button>
               {detail.profileStatus === "active" && (
                 <Button variant="outline" onClick={onCloseReport}>
                   <CalendarClock className="mr-2 size-4" />
@@ -1547,16 +1844,60 @@ function OwnerDetailPageContent({
     </section>
   );
 }
-function Info({ label, value, className }: { label: string; value: string; className?: string }) {
+function WhatsAppContact({ phone, label }: { phone: string | null; label: string }) {
+  const url = normalizeWhatsAppNumber(phone);
+  if (!phone) return <>Belum diisi</>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span>{phone}</span>
+      {url ? (
+        <a
+          href={`https://wa.me/${url}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Hubungi ${label} melalui WhatsApp`}
+          title="Buka WhatsApp"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-[#25D366] transition-colors hover:bg-[#25D366]/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <WhatsAppIcon className="size-5" />
+        </a>
+      ) : null}
+    </span>
+  );
+}
+
+function WhatsAppIcon({ className = "h-6 w-6" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+    </svg>
+  );
+}
+
+function Info({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-slate-200 bg-background p-3 shadow-sm dark:border-slate-800",
+        "min-w-0 rounded-xl border border-slate-200 bg-background p-3 shadow-sm dark:border-slate-800",
         className,
       )}
     >
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 break-words font-medium">{value}</p>
+      <p className="mt-1 min-w-0 break-words [overflow-wrap:anywhere] font-medium">{value}</p>
     </div>
   );
 }

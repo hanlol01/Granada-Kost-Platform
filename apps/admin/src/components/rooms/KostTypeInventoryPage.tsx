@@ -1361,7 +1361,7 @@ function KostTypeEditor({
             <strong className="text-foreground">
               {formatIDR((draft.longStayMonthlyPrice ?? 0) - (draft.managementFeeAmount ?? 0))}
             </strong>
-            {" · "}DP minimum 25% · deposit {draft.securityDepositMonths ?? 1} bulan tarif 3–5 bulan
+            {" · "}DP minimum 25% · deposit {draft.securityDepositMonths ?? 1} bulan tarif kontrak
             {pricingChanged
               ? draft.effectiveDate
                 ? ` · tarif efektif ${draft.effectiveDate}`
@@ -1388,8 +1388,8 @@ function KostTypeEditor({
                 <option value={2}>2 bulan</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                Kebutuhan saat ini:{" "}
-                {formatIDR((draft.shortStayMonthlyPrice ?? 0) * (draft.securityDepositMonths ?? 1))}
+                Admin hanya menetapkan 1 atau 2 bulan tarif. Target rupiah dikunci saat kontrak
+                dibuat berdasarkan tarif tier atau tarif kesepakatan yang berlaku.
               </p>
             </Field>
             <Field label="Jadwal pembayaran" required>

@@ -212,6 +212,7 @@ export type ResidentBilling = {
     rent_paid: number;
     rent_outstanding: number;
     security_deposit_required: number;
+    security_deposit_target: number;
     deposit_collected: number;
     deposit_deducted: number;
     deposit_refunded: number;
@@ -277,6 +278,21 @@ export type ResidentBilling = {
       note: string;
       recorded_at: string;
     } | null;
+    payment_promise_history: Array<{
+      id: string;
+      promised_amount: number;
+      promised_payment_date: string;
+      note: string;
+      recorded_at: string;
+    }>;
+    extension_history: Array<{
+      id: string;
+      previous_due_at: string | null;
+      revised_due_at: string;
+      previous_reason: string | null;
+      revised_reason: string | null;
+      revised_at: string;
+    }>;
     termination_case: {
       id: string;
       status: "pending" | "cancelled" | "checked_out";
@@ -336,6 +352,34 @@ export type ResidentBilling = {
     reject_reason: string | null;
   }>;
 };
+
+/**
+ * Security deposit is a liability separate from rent. In particular, a
+ * settled rent contract must not suppress the deposit action while the
+ * deposit itself has not yet been recorded.
+ */
+export function getSecurityDepositRecordingState(
+  billing: Pick<ResidentBilling, "summary" | "payments">,
+) {
+  const targetAmount = Math.max(0, billing.summary.security_deposit_target);
+  const collectedAmount = Math.max(0, billing.summary.deposit_collected);
+  const pendingConfirmation = billing.payments.some(
+    (payment) =>
+      payment.payment_purpose === "security_deposit" &&
+      payment.payment_status === "pending_confirmation",
+  );
+  const remainingAmount = Math.max(0, targetAmount - collectedAmount);
+
+  return {
+    optional: true,
+    targetAmount,
+    collectedAmount,
+    remainingAmount,
+    pendingConfirmation,
+    recorded: collectedAmount > 0,
+    canRecord: targetAmount > 0 && !pendingConfirmation && remainingAmount > 0,
+  };
+}
 
 export type ManualPaymentInput = {
   property_id: string;
@@ -862,6 +906,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       "rent_paid",
       "rent_outstanding",
       "security_deposit_required",
+      "security_deposit_target",
       "deposit_collected",
       "deposit_deducted",
       "deposit_refunded",
@@ -910,6 +955,8 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         "extension_available",
         "paid_document",
         "payment_promise",
+        "payment_promise_history",
+        "extension_history",
         "termination_case",
       ],
       "pelunasan kontrak",
@@ -942,6 +989,55 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
         promised_payment_date: date(promise.promised_payment_date, "Tanggal janji bayar"),
         note: text(promise.note, "Catatan janji bayar"),
         recorded_at: timestamp(promise.recorded_at, "Waktu pencatatan janji bayar"),
+      };
+    });
+    if (!Array.isArray(record.payment_promise_history))
+      throw new Error("Riwayat janji bayar tidak valid.");
+    const paymentPromiseHistory = record.payment_promise_history.map((value) => {
+      const promise = object(
+        value,
+        ["id", "promised_amount", "promised_payment_date", "note", "recorded_at"],
+        "riwayat janji bayar",
+      );
+      return {
+        id: uuid(promise.id, "ID riwayat janji bayar"),
+        promised_amount: integer(promise.promised_amount, "Nominal riwayat janji bayar"),
+        promised_payment_date: date(
+          promise.promised_payment_date,
+          "Tanggal rencana riwayat janji bayar",
+        ),
+        note: text(promise.note, "Catatan riwayat janji bayar"),
+        recorded_at: timestamp(promise.recorded_at, "Waktu riwayat janji bayar"),
+      };
+    });
+    if (!Array.isArray(record.extension_history))
+      throw new Error("Riwayat perubahan batas pelunasan tidak valid.");
+    const extensionHistory = record.extension_history.map((value) => {
+      const item = object(
+        value,
+        [
+          "id",
+          "previous_due_at",
+          "revised_due_at",
+          "previous_reason",
+          "revised_reason",
+          "revised_at",
+        ],
+        "riwayat perubahan batas pelunasan",
+      );
+      return {
+        id: uuid(item.id, "ID riwayat perubahan batas pelunasan"),
+        previous_due_at: nullable(item.previous_due_at, (input) =>
+          timestamp(input, "Batas pelunasan sebelum perubahan"),
+        ),
+        revised_due_at: timestamp(item.revised_due_at, "Batas pelunasan hasil perubahan"),
+        previous_reason: nullable(item.previous_reason, (input) =>
+          text(input, "Alasan sebelum perubahan"),
+        ),
+        revised_reason: nullable(item.revised_reason, (input) =>
+          text(input, "Alasan perubahan batas pelunasan"),
+        ),
+        revised_at: timestamp(item.revised_at, "Waktu perubahan batas pelunasan"),
       };
     });
     const paidDocument = nullable(record.paid_document, (value) => {
@@ -1057,6 +1153,8 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       extension_available: boolean(record.extension_available, "Izin perpanjangan"),
       paid_document: paidDocument,
       payment_promise: paymentPromise,
+      payment_promise_history: paymentPromiseHistory,
+      extension_history: extensionHistory,
       termination_case: terminationCase,
     };
   });
@@ -1160,6 +1258,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       rent_paid: integer(summary.rent_paid, "Sewa dibayar"),
       rent_outstanding: integer(summary.rent_outstanding, "Sisa sewa"),
       security_deposit_required: integer(summary.security_deposit_required, "Deposit wajib"),
+      security_deposit_target: integer(summary.security_deposit_target, "Target deposit kontrak"),
       deposit_collected: integer(summary.deposit_collected, "Deposit terkumpul"),
       deposit_deducted: integer(summary.deposit_deducted, "Potongan deposit"),
       deposit_refunded: integer(summary.deposit_refunded, "Deposit dikembalikan"),

@@ -93,6 +93,10 @@ import { BillingDocumentSearch } from "./BillingDocumentSearch";
 
 type WorkspaceTab = "unpaid" | "paid" | "pending" | "corrections" | "other";
 type PaymentKindFilter = "" | W06PaymentPurpose | "rent_contract_settled";
+type RecordableManualPaymentPurpose = Extract<
+  W06PaymentPurpose,
+  "rent" | "dp" | "security_deposit" | "management_fee" | "other_charge"
+>;
 const DEFAULT_PAID_KIND: PaymentKindFilter = "rent_contract_settled";
 const PAYMENT_DEADLINE_OPTIONS = [7, 14, 30] as const;
 
@@ -1200,7 +1204,7 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Sewa ditagihkan", formatIDR(data.summary.rent_invoiced)],
     ["Sewa dibayar", formatIDR(data.summary.rent_paid)],
     ["Sewa belum dibayar", formatIDR(data.summary.rent_outstanding)],
-    ["Deposit wajib", formatIDR(data.summary.security_deposit_required)],
+    ["Target security deposit kontrak", formatIDR(data.summary.security_deposit_target)],
     ["Deposit terkumpul", formatIDR(data.summary.deposit_collected)],
     ["Deposit dipotong", formatIDR(data.summary.deposit_deducted)],
     ["Deposit dikembalikan", formatIDR(data.summary.deposit_refunded)],
@@ -1589,6 +1593,7 @@ export function RecordPaymentDialog({
   triggerVariant,
   contractSettlementInvoiceId = null,
   contractSettlementMode,
+  allowedPurposes,
   onRecorded,
 }: {
   data: ResidentBilling;
@@ -1597,6 +1602,8 @@ export function RecordPaymentDialog({
   triggerVariant?: "default" | "outline";
   contractSettlementInvoiceId?: string | null;
   contractSettlementMode?: "choose" | "full";
+  /** Restricts the modal to a known-safe payment purpose, e.g. deposit only. */
+  allowedPurposes?: readonly RecordableManualPaymentPurpose[];
   onRecorded?: (status: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1612,6 +1619,20 @@ export function RecordPaymentDialog({
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const ownerSponsorship = data.owner_sponsorship;
   const isOwnerSponsored = ownerSponsorship !== null;
+  const permittedPurposes =
+    allowedPurposes ??
+    (isOwnerSponsored
+      ? (["rent", "dp", "security_deposit", "management_fee", "other_charge"] as const)
+      : (["rent", "dp", "security_deposit", "other_charge"] as const));
+  const defaultPurpose = allowedPurposes?.[0] ?? (isOwnerSponsored ? "management_fee" : "rent");
+  const depositOnly =
+    !contractSettlementInvoiceId &&
+    permittedPurposes.length === 1 &&
+    permittedPurposes[0] === "security_deposit";
+  const securityDepositTarget = Math.max(0, data.summary.security_deposit_target);
+  const securityDepositCollected = Math.max(0, data.summary.deposit_collected);
+  const securityDepositRemaining = Math.max(0, securityDepositTarget - securityDepositCollected);
+  const ownerSponsoredDepositNoteRequired = purpose === "security_deposit" && isOwnerSponsored;
   const isDirectLiabilityPayment = purpose === "security_deposit" || purpose === "management_fee";
   const mutation = useRecordManualPayment(propertyId);
   const verificationPolicy = useAdminPaymentVerificationPolicy(propertyId);
@@ -1639,7 +1660,9 @@ export function RecordPaymentDialog({
     .filter(([, amount]) => amount > 0)
     .map(([invoice_id, amount]) => ({ invoice_id, amount }));
   const amount = isDirectLiabilityPayment
-    ? depositAmount
+    ? purpose === "security_deposit"
+      ? securityDepositRemaining
+      : depositAmount
     : allocations.reduce((sum, item) => sum + item.amount, 0);
   const remainingAfterContractPayment =
     isContractSettlement && contractSettlementInvoice
@@ -1653,7 +1676,7 @@ export function RecordPaymentDialog({
     data: data.lease.id,
     method,
     purpose,
-    depositAmount,
+    depositAmount: purpose === "security_deposit" ? securityDepositRemaining : depositAmount,
     allocations,
     reference,
     note,
@@ -1666,7 +1689,7 @@ export function RecordPaymentDialog({
   const key = useLogicalKey(fingerprint);
   const resetForm = useCallback(() => {
     setMethod("bank_transfer");
-    setPurpose(isOwnerSponsored ? "management_fee" : "rent");
+    setPurpose(defaultPurpose);
     setSelected({});
     setDepositAmount(0);
     setReference("");
@@ -1676,7 +1699,7 @@ export function RecordPaymentDialog({
     setEvidenceBusy(false);
     setSettlementChoice("partial");
     resetPaymentMutation();
-  }, [isOwnerSponsored, resetPaymentMutation]);
+  }, [defaultPurpose, resetPaymentMutation]);
   useEffect(() => {
     if (!open) {
       resetForm();
@@ -1687,8 +1710,11 @@ export function RecordPaymentDialog({
           contractSettlementMode === "full" ? contractSettlementInvoice.outstanding_amount : 0,
       });
       setSettlementChoice(contractSettlementMode === "full" ? "full" : "partial");
+    } else if (depositOnly) {
+      setPurpose("security_deposit");
+      setSelected({});
     }
-  }, [contractSettlementInvoice, contractSettlementMode, open, resetForm]);
+  }, [contractSettlementInvoice, contractSettlementMode, depositOnly, open, resetForm]);
   function chooseSettlementPayment(next: "partial" | "full") {
     if (!contractSettlementInvoice) return;
     setSettlementChoice(next);
@@ -1699,6 +1725,11 @@ export function RecordPaymentDialog({
   }
   function submit() {
     if (!propertyId || mutation.isPending || (historicalMode && !paidAt)) return;
+    if (
+      (purpose === "security_deposit" && securityDepositRemaining <= 0) ||
+      (ownerSponsoredDepositNoteRequired && note.trim().length < 3)
+    )
+      return;
     mutation.mutate(
       {
         input: {
@@ -1740,16 +1771,22 @@ export function RecordPaymentDialog({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {isContractSettlement ? "Catat Pembayaran" : "Catat pembayaran manual"}
+              {isContractSettlement
+                ? "Catat Pembayaran"
+                : depositOnly
+                  ? "Catat Pembayaran Security Deposit"
+                  : "Catat pembayaran manual"}
             </DialogTitle>
             <DialogDescription>
               {isContractSettlement
                 ? historicalMode
                   ? "Catat pembayaran untuk pelunasan sewa kontrak. Pembayaran Admin langsung terverifikasi selama mode input historis aktif."
                   : "Catat pembayaran untuk pelunasan sewa kontrak. Tunai langsung terverifikasi; transfer bank wajib menyertakan bukti dan menunggu konfirmasi."
-                : historicalMode
-                  ? "Pilih tagihan dan nominal pembayaran. Pembayaran Admin langsung terverifikasi dan diterbitkan kuitansinya."
-                  : "Pilih tagihan dan nominal pembayaran. Transfer tetap menunggu verifikasi; kas dicatat dan diterbitkan kuitansinya secara atomik."}
+                : depositOnly
+                  ? "Security deposit dicatat sebagai dana titipan terpisah. Nilainya tidak mengurangi sisa sewa atau hak Owner."
+                  : historicalMode
+                    ? "Pilih tagihan dan nominal pembayaran. Pembayaran Admin langsung terverifikasi dan diterbitkan kuitansinya."
+                    : "Pilih tagihan dan nominal pembayaran. Transfer tetap menunggu verifikasi; kas dicatat dan diterbitkan kuitansinya secara atomik."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1804,6 +1841,10 @@ export function RecordPaymentDialog({
                   </p>
                 )}
               </div>
+            ) : depositOnly ? (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm text-primary">
+                Tujuan pembayaran: <strong>Security deposit</strong>
+              </div>
             ) : (
               <Field label="Tujuan">
                 <select
@@ -1815,13 +1856,17 @@ export function RecordPaymentDialog({
                     setDepositAmount(0);
                   }}
                 >
-                  <option value="rent">Sewa</option>
-                  <option value="dp">DP sewa</option>
-                  <option value="security_deposit">Deposit keamanan</option>
-                  {ownerSponsorship ? (
+                  {permittedPurposes.includes("rent") ? <option value="rent">Sewa</option> : null}
+                  {permittedPurposes.includes("dp") ? <option value="dp">DP sewa</option> : null}
+                  {permittedPurposes.includes("security_deposit") ? (
+                    <option value="security_deposit">Deposit keamanan</option>
+                  ) : null}
+                  {permittedPurposes.includes("management_fee") && ownerSponsorship ? (
                     <option value="management_fee">Biaya pengelolaan hunian</option>
                   ) : null}
-                  <option value="other_charge">Tagihan lainnya</option>
+                  {permittedPurposes.includes("other_charge") ? (
+                    <option value="other_charge">Tagihan lainnya</option>
+                  ) : null}
                 </select>
               </Field>
             )}
@@ -1845,35 +1890,42 @@ export function RecordPaymentDialog({
                   label={
                     purpose === "management_fee"
                       ? "Nominal biaya pengelolaan"
-                      : "Nominal deposit keamanan"
+                      : "Target security deposit kontrak"
                   }
                 >
-                  <div className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                    <span className="inline-flex items-center border-r border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
-                      Rp
-                    </span>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
-                      value={
-                        depositAmount ? new Intl.NumberFormat("id-ID").format(depositAmount) : ""
-                      }
-                      onChange={(event) => {
-                        const numeric = event.target.value.replace(/\D/g, "");
-                        setDepositAmount(numeric ? Number(numeric) : 0);
-                      }}
-                      aria-label={
-                        purpose === "management_fee"
-                          ? "Nominal biaya pengelolaan"
-                          : "Nominal deposit keamanan"
-                      }
-                    />
-                  </div>
+                  {purpose === "security_deposit" ? (
+                    <div className="rounded-md border border-primary/25 bg-background px-3 py-2.5">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Sisa target yang dicatat
+                      </p>
+                      <p className="mt-0.5 text-lg font-bold text-primary">
+                        {formatIDR(securityDepositRemaining)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                      <span className="inline-flex items-center border-r border-input bg-muted px-3 text-sm font-medium text-muted-foreground">
+                        Rp
+                      </span>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
+                        value={
+                          depositAmount ? new Intl.NumberFormat("id-ID").format(depositAmount) : ""
+                        }
+                        onChange={(event) => {
+                          const numeric = event.target.value.replace(/\D/g, "");
+                          setDepositAmount(numeric ? Number(numeric) : 0);
+                        }}
+                        aria-label="Nominal biaya pengelolaan"
+                      />
+                    </div>
+                  )}
                   <p className="text-xs font-normal text-muted-foreground">
                     {purpose === "management_fee"
                       ? "Pembayaran dapat dicatat sebagian atau sekaligus selama masa hunian. Tidak ada denda keterlambatan."
-                      : "Deposit masuk ke catatan kewajiban terpisah dan tidak dialokasikan ke tagihan sewa."}
+                      : `Deposit bersifat opsional dan tercatat sebagai dana titipan terpisah. Nominal ini dikunci sesuai sisa target snapshot kontrak ${formatIDR(securityDepositRemaining)} serta tidak dialokasikan ke tagihan sewa.`}
                   </p>
                   {purpose === "management_fee" &&
                   ownerSponsorship &&
@@ -2133,13 +2185,28 @@ export function RecordPaymentDialog({
                   : "Isi bila ada nomor kuitansi atau buku kas internal. Kode pembayaran sistem tetap dibuat otomatis."}
               </p>
             </Field>
-            <Field label="Catatan">
+            <Field
+              label={
+                ownerSponsoredDepositNoteRequired ? (
+                  <>
+                    Catatan kesepakatan deposit <span className="text-destructive">*</span>
+                  </>
+                ) : (
+                  "Catatan"
+                )
+              }
+            >
               <textarea
                 className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 maxLength={500}
               />
+              {ownerSponsoredDepositNoteRequired ? (
+                <p className="text-xs font-normal text-muted-foreground">
+                  Jelaskan kesepakatan penerimaan deposit untuk hunian tanggungan Owner.
+                </p>
+              ) : null}
             </Field>
             {mutation.isError ? (
               <InlineMessage text="Pembayaran tidak dapat disimpan. Periksa saldo invoice dan coba lagi dengan data yang sama." />
@@ -2161,6 +2228,7 @@ export function RecordPaymentDialog({
                 (purpose === "management_fee" &&
                   ownerSponsorship !== null &&
                   amount > ownerSponsorship.remaining) ||
+                (ownerSponsoredDepositNoteRequired && note.trim().length < 3) ||
                 (transferEvidenceRequired && evidenceFiles.length === 0) ||
                 (historicalMode && !paidAt)
               }

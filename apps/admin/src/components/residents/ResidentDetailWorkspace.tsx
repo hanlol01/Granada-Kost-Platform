@@ -74,6 +74,7 @@ import {
   downloadAdminReceiptDocument,
   downloadOwnerSponsoredManagementFeeDocument,
   downloadOwnerSponsoredResidenceStatement,
+  getSecurityDepositRecordingState,
   type BillingEvidence,
   type ResidentBilling,
 } from "@/lib/admin-billing";
@@ -757,6 +758,15 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const summary = billing.data?.summary;
   const settlement = billing.data?.contract_settlement ?? null;
   const canManageBilling = hasPermission("billing.manage");
+  const securityDepositRecording = billing.data
+    ? getSecurityDepositRecordingState(billing.data)
+    : null;
+  const canRecordSecurityDeposit = Boolean(
+    canManageBilling &&
+    currentPropertyId &&
+    securityDepositRecording?.canRecord &&
+    !checkoutCommand?.physicalCheckoutConfirmedAt,
+  );
   const canManageTermination = hasRole("admin") && hasPermission("lease.manage");
   const checkoutLeaseStatus = currentTenancy?.leaseStatus
     ? currentTenancy.leaseStatus
@@ -1267,12 +1277,40 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             <CardContent>
               {billing.isLoading && currentTenancy ? (
                 <Skeleton className="h-40 w-full" />
-              ) : summary && settlement ? (
+              ) : summary && settlement && billing.data ? (
                 <ContractSettlementSummary
                   settlement={settlement}
                   summary={summary}
                   propertyId={currentPropertyId}
                   leaseEnd={billing.data?.lease.end_date ?? currentTenancy?.endDate ?? null}
+                  actions={
+                    canManageTermination &&
+                    settlement.outstanding_amount > 0 &&
+                    !settlement.termination_case ? (
+                      <>
+                        <ExtendSettlementDialog
+                          leaseId={billing.data.lease.id}
+                          propertyId={currentPropertyId}
+                          finalDueAt={
+                            settlement.extension_due_at ?? settlement.final_settlement_due_at
+                          }
+                          currentReason={settlement.extension_reason}
+                          history={settlement.extension_history}
+                          onChanged={() => void billing.refetch()}
+                        />
+                        <RecordPaymentPromiseDialog
+                          leaseId={billing.data.lease.id}
+                          propertyId={currentPropertyId}
+                          suggestedAmount={
+                            settlement.checkpoint_shortfall_amount || settlement.outstanding_amount
+                          }
+                          existingPromise={settlement.payment_promise}
+                          history={settlement.payment_promise_history}
+                          onChanged={() => void billing.refetch()}
+                        />
+                      </>
+                    ) : null
+                  }
                 />
               ) : summary && billing.data?.owner_sponsorship ? (
                 <div className="space-y-4">
@@ -1339,6 +1377,14 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                           "Sisa biaya pengelolaan",
                           rupiah(billing.data.owner_sponsorship.remaining),
                         ],
+                        [
+                          "Security deposit",
+                          securityDepositRecording?.pendingConfirmation
+                            ? "Menunggu verifikasi"
+                            : securityDepositRecording?.recorded
+                              ? `${rupiah(securityDepositRecording.collectedAmount)} / ${rupiah(securityDepositRecording.targetAmount)} tercatat (opsional)`
+                              : `${rupiah(securityDepositRecording?.targetAmount ?? 0)} belum dicatat (opsional)`,
+                        ],
                       ]}
                     />
                   </div>
@@ -1378,7 +1424,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                     ["Sisa pembayaran sewa", rupiah(summary.rent_outstanding)],
                     [
                       "Deposit keamanan",
-                      `${rupiah(summary.deposit_collected)} / ${rupiah(summary.security_deposit_required)}`,
+                      securityDepositRecording?.pendingConfirmation
+                        ? "Menunggu verifikasi security deposit"
+                        : securityDepositRecording?.recorded
+                          ? `${rupiah(securityDepositRecording.collectedAmount)} / ${rupiah(securityDepositRecording.targetAmount)} tercatat (opsional)`
+                          : `${rupiah(securityDepositRecording?.targetAmount ?? 0)} belum dicatat (opsional)`,
                     ],
                     [
                       "Tagihan berikutnya",
@@ -1541,6 +1591,22 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   description="Tagihan yang telah diterbitkan akan tampil di sini."
                 />
               )}
+              {canRecordSecurityDeposit && billing.data ? (
+                <div className="mt-4 border-t border-border pt-4">
+                  <RecordPaymentDialog
+                    data={billing.data}
+                    propertyId={currentPropertyId}
+                    triggerLabel="Catat Pembayaran Security Deposit"
+                    allowedPurposes={["security_deposit"]}
+                    onRecorded={(status) => {
+                      void billing.refetch();
+                      if (status === "pending_confirmation") {
+                        setGuidanceFocusId("payment-pending-confirmation");
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
           <Card
@@ -2346,11 +2412,13 @@ function ContractSettlementSummary({
   summary,
   propertyId,
   leaseEnd,
+  actions,
 }: {
   settlement: NonNullable<ResidentBilling["contract_settlement"]>;
   summary: ResidentBilling["summary"];
   propertyId: string | null;
   leaseEnd: string | null;
+  actions?: ReactNode;
 }) {
   const currentDueAt = settlement.effective_due_at;
   const finalDueAt = settlement.final_settlement_due_at;
@@ -2455,6 +2523,14 @@ function ContractSettlementSummary({
           <p className="mt-2 text-xs text-muted-foreground">
             Catatan ini tidak menghapus status terlambat dan bukan perpanjangan tenggat.
           </p>
+        </div>
+      ) : null}
+      {actions ? (
+        <div className="space-y-2 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tindakan pelunasan
+          </p>
+          <div className="flex flex-wrap gap-2">{actions}</div>
         </div>
       ) : null}
       {!settlement.admin_action_required && settlement.outstanding_amount > 0 ? (
@@ -2623,7 +2699,7 @@ function ContractInvoicePanel({
           <RecordPaymentDialog
             data={data}
             propertyId={propertyId}
-            triggerLabel="Catat Pembayaran"
+            triggerLabel="Catat Pembayaran Kontrak"
             triggerVariant="default"
             contractSettlementInvoiceId={invoice?.id ?? null}
             contractSettlementMode="choose"
@@ -2634,30 +2710,10 @@ function ContractInvoicePanel({
           <RecordPaymentDialog
             data={data}
             propertyId={propertyId}
-            triggerLabel="Lunasi Sisa"
+            triggerLabel="Catat Pembayaran Kontrak"
             contractSettlementInvoiceId={invoice.id}
             contractSettlementMode="full"
             onRecorded={onPaymentRecorded}
-          />
-        ) : null}
-        {canManageTermination && settlement.outstanding_amount > 0 && !termination ? (
-          <ExtendSettlementDialog
-            leaseId={data.lease.id}
-            propertyId={propertyId}
-            finalDueAt={settlement.extension_due_at ?? settlement.final_settlement_due_at}
-            currentReason={settlement.extension_reason}
-            onChanged={onChanged}
-          />
-        ) : null}
-        {canManageTermination && !termination && settlement.outstanding_amount > 0 ? (
-          <RecordPaymentPromiseDialog
-            leaseId={data.lease.id}
-            propertyId={propertyId}
-            suggestedAmount={
-              settlement.checkpoint_shortfall_amount || settlement.outstanding_amount
-            }
-            existingPromise={settlement.payment_promise}
-            onChanged={onChanged}
           />
         ) : null}
         {canManageTermination && settlement.termination_eligible && !termination ? (
@@ -2717,12 +2773,14 @@ function ExtendSettlementDialog({
   propertyId,
   finalDueAt,
   currentReason,
+  history,
   onChanged,
 }: {
   leaseId: string;
   propertyId: string | null;
   finalDueAt: string | null;
   currentReason: string | null;
+  history: NonNullable<ResidentBilling["contract_settlement"]>["extension_history"];
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -2769,17 +2827,22 @@ function ExtendSettlementDialog({
     >
       <Button className="min-h-11" variant="info" onClick={() => setOpen(true)}>
         <Clock3 className="mr-2 h-4 w-4" />
-        {currentReason ? "Ubah batas pelunasan" : "Beri perpanjangan"}
+        Ubah batas pelunasan
       </Button>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Perpanjang tenggat pelunasan</DialogTitle>
+          <DialogTitle>Ubah batas pelunasan</DialogTitle>
           <DialogDescription>
             Tetapkan tanggal hasil kesepakatan Admin dan penghuni. Batas awal tetap tersimpan dan
             setiap perubahan tetap tercatat sehingga kesepakatan dapat diperbarui kembali.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          <SettlementExtensionHistory
+            currentDueAt={finalDueAt}
+            currentReason={currentReason}
+            history={history}
+          />
           <HeroUiDatePicker
             id={`contract-settlement-extension-${leaseId}`}
             label="Batas pelunasan baru"
@@ -2789,7 +2852,7 @@ function ExtendSettlementDialog({
             onChange={(value) => setExtensionDate(value ?? "")}
           />
           <label className="block text-sm font-medium">
-            Alasan perpanjangan
+            Alasan perubahan batas pelunasan
             <textarea
               className="mt-2 min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm"
               value={reason}
@@ -2812,7 +2875,7 @@ function ExtendSettlementDialog({
             disabled={mutation.isPending || reason.trim().length < 3 || !extensionDate}
             onClick={submit}
           >
-            {mutation.isPending ? "Menyimpan..." : "Simpan perpanjangan"}
+            {mutation.isPending ? "Menyimpan..." : "Simpan perubahan"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2825,12 +2888,14 @@ function RecordPaymentPromiseDialog({
   propertyId,
   suggestedAmount,
   existingPromise,
+  history,
   onChanged,
 }: {
   leaseId: string;
   propertyId: string | null;
   suggestedAmount: number;
   existingPromise: NonNullable<ResidentBilling["contract_settlement"]>["payment_promise"];
+  history: NonNullable<ResidentBilling["contract_settlement"]>["payment_promise_history"];
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -2896,6 +2961,7 @@ function RecordPaymentPromiseDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          <PaymentPromiseHistory history={history} />
           <label className="block text-sm font-medium">
             Nominal yang dijanjikan
             <CurrencyInput
@@ -2942,6 +3008,90 @@ function RecordPaymentPromiseDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SettlementExtensionHistory({
+  currentDueAt,
+  currentReason,
+  history,
+}: {
+  currentDueAt: string | null;
+  currentReason: string | null;
+  history: NonNullable<ResidentBilling["contract_settlement"]>["extension_history"];
+}) {
+  const count = history.length + (currentDueAt && currentReason ? 1 : 0);
+  return (
+    <section
+      className="rounded-lg border border-border bg-muted/25 p-3"
+      aria-label="Riwayat batas pelunasan"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Riwayat perubahan batas pelunasan</p>
+        <Badge variant="outline">{count} perubahan</Badge>
+      </div>
+      {currentDueAt && currentReason ? (
+        <div className="mt-3 rounded-md border border-primary/25 bg-primary/5 p-2.5 text-xs">
+          <p className="font-medium text-primary">Batas yang berlaku saat ini</p>
+          <p className="mt-1 text-foreground">{formatResidentDetailTimestamp(currentDueAt)}</p>
+          <p className="mt-1 text-muted-foreground">{currentReason}</p>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Belum ada perubahan batas pelunasan yang dicatat.
+        </p>
+      )}
+      {history.length ? (
+        <ol className="mt-3 space-y-2 border-l border-border pl-3">
+          {history.map((item) => (
+            <li key={item.id} className="text-xs leading-5 text-muted-foreground">
+              <p className="font-medium text-foreground">
+                {item.previous_due_at
+                  ? formatResidentDetailTimestamp(item.previous_due_at)
+                  : "Batas sebelumnya tidak tercatat"}{" "}
+                → {formatResidentDetailTimestamp(item.revised_due_at)}
+              </p>
+              <p>{item.revised_reason}</p>
+              <p className="mt-0.5">Dicatat {formatResidentDetailTimestamp(item.revised_at)}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+
+function PaymentPromiseHistory({
+  history,
+}: {
+  history: NonNullable<ResidentBilling["contract_settlement"]>["payment_promise_history"];
+}) {
+  return (
+    <section
+      className="rounded-lg border border-border bg-muted/25 p-3"
+      aria-label="Riwayat janji bayar"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">Riwayat janji bayar</p>
+        <Badge variant="outline">{history.length} catatan</Badge>
+      </div>
+      {history.length ? (
+        <ol className="mt-3 space-y-2 border-l border-border pl-3">
+          {history.map((item) => (
+            <li key={item.id} className="text-xs leading-5 text-muted-foreground">
+              <p className="font-medium text-foreground">
+                {rupiah(item.promised_amount)} ·{" "}
+                {formatResidentDetailDate(item.promised_payment_date)}
+              </p>
+              <p>{item.note}</p>
+              <p className="mt-0.5">Dicatat {formatResidentDetailTimestamp(item.recorded_at)}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">Belum ada janji bayar yang dicatat.</p>
+      )}
+    </section>
   );
 }
 

@@ -441,6 +441,9 @@ void test('contract-paid proof moves its settlement block to a continuation page
   assert.match(text, /TRX-20260903-000004-LUNAS \( Rp\. 3\.600\.000,- \)/);
   assert.doesNotMatch(text, /Pembayaran awal/);
   assert.doesNotMatch(text, /Pembayaran berikutnya/);
+  assert.doesNotMatch(text, /Akumulasi pembayaran sewa/);
+  assert.doesNotMatch(text, /Sisa kewajiban kontrak/);
+  assert.doesNotMatch(text, /Sisa kewajiban\s*:\s*Rp\. 0,-/);
 });
 
 void test('contract-paid proof moves long transaction references to a continuation page', async () => {

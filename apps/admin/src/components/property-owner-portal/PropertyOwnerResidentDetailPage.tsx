@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   BedDouble,
   CalendarDays,
-  CircleDollarSign,
   ClipboardList,
   UserRound,
   Wrench,
@@ -78,6 +77,28 @@ function BillingBadge({ state }: { state: OwnerOccupancyResidentDetail["billing"
   return <Badge className={`border ${tone}`}>{labels[state]}</Badge>;
 }
 
+function OwnerSponsorshipBadge({
+  state,
+}: {
+  state: NonNullable<OwnerOccupancyResidentDetail["ownerSponsorship"]>["paymentStatus"];
+}) {
+  const content = {
+    waived: "Biaya dibebaskan",
+    unpaid: "Belum dibayar",
+    partially_paid: "Outstanding",
+    paid: "Lunas",
+    overpaid: "Lebih bayar",
+  } as const;
+  const attention = state === "unpaid" || state === "partially_paid";
+  return (
+    <Badge
+      className={`border ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
+    >
+      {content[state]}
+    </Badge>
+  );
+}
+
 function money(value: string): string {
   return formatOwnerMoney(value);
 }
@@ -106,6 +127,15 @@ function ResidentDetailContent({ detail }: { detail: OwnerOccupancyResidentDetai
     detail.operations.renewalState ??
     detail.operations.checkoutState ??
     "Tidak ada proses khusus";
+  const sponsorship = detail.ownerSponsorship;
+  const managementFeePayer =
+    sponsorship?.managementFeeMode === "waived"
+      ? "Biaya dibebaskan oleh Owner"
+      : sponsorship?.managementFeePayer === "owner"
+        ? "Owner"
+        : sponsorship?.managementFeePayer === "resident"
+          ? "Penghuni"
+          : (sponsorship?.managementFeePayerName ?? "Belum ditentukan");
 
   return (
     <div className="space-y-5">
@@ -154,7 +184,8 @@ function ResidentDetailContent({ detail }: { detail: OwnerOccupancyResidentDetai
         <Card className="border-border/85 shadow-sm">
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="h-4 w-4 text-primary" /> Penyewaan dan tagihan
+              <CalendarDays className="h-4 w-4 text-primary" />{" "}
+              {sponsorship ? "Hunian dan biaya pengelolaan" : "Penyewaan dan tagihan"}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 p-5 sm:grid-cols-2">
@@ -167,63 +198,99 @@ function ResidentDetailContent({ detail }: { detail: OwnerOccupancyResidentDetai
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-                    Status tagihan
+                    {sponsorship ? "Status biaya pengelolaan" : "Status tagihan"}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-foreground">
-                    {labels[detail.billing.state]}
+                    {sponsorship
+                      ? sponsorship.paymentStatus === "waived"
+                        ? "Biaya dibebaskan"
+                        : sponsorship.paymentStatus === "paid"
+                          ? "Lunas"
+                          : sponsorship.paymentStatus === "partially_paid"
+                            ? "Outstanding"
+                            : sponsorship.paymentStatus === "overpaid"
+                              ? "Lebih bayar"
+                              : "Belum dibayar"
+                      : labels[detail.billing.state]}
                   </p>
                 </div>
-                <BillingBadge state={detail.billing.state} />
+                {sponsorship ? (
+                  <OwnerSponsorshipBadge state={sponsorship.paymentStatus} />
+                ) : (
+                  <BillingBadge state={detail.billing.state} />
+                )}
               </div>
               <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                Nilai di bawah berasal dari tagihan dan alokasi pembayaran yang sudah diverifikasi;
-                bukti transfer, kredensial, dan catatan internal tetap tidak ditampilkan.
+                {sponsorship
+                  ? "Sewa kamar Rp0. Hanya biaya pengelolaan yang diberlakukan ditampilkan secara terpisah; bukti transfer dan catatan internal tetap tidak ditampilkan."
+                  : "Nilai di bawah berasal dari tagihan dan alokasi pembayaran yang sudah diverifikasi; bukti transfer, kredensial, dan catatan internal tetap tidak ditampilkan."}
               </p>
             </div>
-            <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
-              <DetailItem label="Total tagihan sewa" value={money(detail.billing.rentInvoiced)} />
-              <DetailItem
-                label="Pembayaran sewa terverifikasi"
-                value={money(detail.billing.rentVerified)}
-              />
-              <DetailItem label="Sisa tagihan sewa" value={money(detail.billing.rentOutstanding)} />
-              <DetailItem
-                label="Invoice sewa"
-                value={`${detail.billing.invoiceCount} invoice · ${detail.billing.overdueCount} terlambat`}
-              />
-              <DetailItem
-                label="Progress angsuran"
-                value={`${detail.billing.installmentPaid}/${detail.billing.installmentTotal} selesai`}
-              />
-              <DetailItem
-                label="Jatuh tempo berikutnya"
-                value={optionalDate(
-                  detail.billing.nextDueDate ?? detail.billing.installmentNextDueDate,
-                )}
-              />
-            </div>
+            {sponsorship ? (
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+                <DetailItem label="Sewa kamar" value="Rp0" />
+                <DetailItem label="Penanggung biaya" value={managementFeePayer} />
+                <DetailItem
+                  label="Biaya pengelolaan per bulan"
+                  value={money(sponsorship.monthlyManagementFee)}
+                />
+                <DetailItem
+                  label="Total biaya pengelolaan"
+                  value={money(sponsorship.projectedManagementFee)}
+                />
+                <DetailItem
+                  label="Biaya pengelolaan diterima"
+                  value={money(sponsorship.verifiedPaid)}
+                />
+                <DetailItem
+                  label="Outstanding biaya pengelolaan"
+                  value={money(sponsorship.remaining)}
+                />
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+                <DetailItem label="Total tagihan sewa" value={money(detail.billing.rentInvoiced)} />
+                <DetailItem
+                  label="Pembayaran sewa terverifikasi"
+                  value={money(detail.billing.rentVerified)}
+                />
+                <DetailItem
+                  label="Sisa tagihan sewa"
+                  value={money(detail.billing.rentOutstanding)}
+                />
+                <DetailItem
+                  label="Invoice sewa"
+                  value={`${detail.billing.invoiceCount} invoice · ${detail.billing.overdueCount} terlambat`}
+                />
+                <DetailItem
+                  label="Progress angsuran"
+                  value={`${detail.billing.installmentPaid}/${detail.billing.installmentTotal} selesai`}
+                />
+                <DetailItem
+                  label="Jatuh tempo berikutnya"
+                  value={optionalDate(
+                    detail.billing.nextDueDate ?? detail.billing.installmentNextDueDate,
+                  )}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
 
-      <section>
-        <Card className="border-border/85 shadow-sm">
-          <CardHeader className="border-b border-border/70 pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CircleDollarSign className="h-4 w-4 text-primary" /> Ringkasan security deposit
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
-            <DetailItem
-              label="Ketentuan deposit"
-              value={money(detail.billing.securityDepositRequired)}
-            />
-            <DetailItem label="Deposit terkumpul" value={money(detail.billing.depositCollected)} />
-            <DetailItem label="Deposit dipotong" value={money(detail.billing.depositDeducted)} />
-            <DetailItem label="Saldo deposit" value={money(detail.billing.depositBalance)} />
-          </CardContent>
-        </Card>
-      </section>
+      {detail.billing.securityDepositRecorded ? (
+        <section>
+          <Card className="border-border/85 shadow-sm">
+            <CardHeader className="border-b border-border/70 pb-4">
+              <CardTitle className="text-base">Status security deposit</CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 text-sm text-muted-foreground">
+              Security deposit penghuni telah tercatat. Dana titipan ini tidak termasuk
+              pembayaran sewa maupun Hak Owner.
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
         <Card className="border-border/85 shadow-sm">

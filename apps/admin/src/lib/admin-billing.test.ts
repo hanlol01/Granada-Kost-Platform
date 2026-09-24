@@ -8,6 +8,7 @@ import { useVerifyPayment } from "../hooks/useAdminBilling";
 import {
   canManageW06Billing,
   canVerifyW06Payment,
+  getSecurityDepositRecordingState,
   getBillingPayments,
   getBillingWorklist,
   parseBillingPayments,
@@ -551,6 +552,32 @@ test("W06 Admin authorization and route expose manual workflows without gateway 
   assert.match(apiSource, /room_number/);
 });
 
+test("security deposit stays recordable independently from a settled rent contract", () => {
+  const unpaidDeposit = getSecurityDepositRecordingState({
+    summary: { security_deposit_target: 1_800_000, deposit_collected: 0 },
+    payments: [],
+  } as never);
+  const optionalOwnerDeposit = getSecurityDepositRecordingState({
+    summary: { security_deposit_target: 1_800_000, deposit_collected: 0 },
+    payments: [],
+  } as never);
+  const pendingDeposit = getSecurityDepositRecordingState({
+    summary: { security_deposit_target: 1_800_000, deposit_collected: 0 },
+    payments: [
+      {
+        payment_purpose: "security_deposit",
+        payment_status: "pending_confirmation",
+      },
+    ],
+  } as never);
+
+  assert.equal(unpaidDeposit.canRecord, true);
+  assert.equal(unpaidDeposit.remainingAmount, 1_800_000);
+  assert.equal(optionalOwnerDeposit.optional, true);
+  assert.equal(optionalOwnerDeposit.canRecord, true);
+  assert.equal(pendingDeposit.canRecord, false);
+});
+
 test("W07 settlement UI uses operational copy, contextual payment controls, and stacked payment history", () => {
   const residentDetail = readFileSync(
     new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url),
@@ -571,8 +598,11 @@ test("W07 settlement UI uses operational copy, contextual payment controls, and 
   assert.match(residentDetail, /Tenggat pembayaran berikutnya/);
   assert.match(residentDetail, /Batas pelunasan kontrak/);
   assert.match(residentDetail, /Jadwal check-out kontrak/);
-  assert.match(residentDetail, /triggerLabel="Catat Pembayaran"/);
-  assert.match(residentDetail, /triggerLabel="Lunasi Sisa"/);
+  assert.match(residentDetail, /triggerLabel="Catat Pembayaran Kontrak"/);
+  assert.match(residentDetail, /triggerLabel="Catat Pembayaran Security Deposit"/);
+  assert.match(workspace, /else if \(depositOnly\) \{\s*setPurpose\("security_deposit"\)/);
+  assert.match(workspace, /Sisa target yang dicatat/);
+  assert.doesNotMatch(workspace, /Nominal deposit keamanan/);
   assert.match(residentDetail, /Status verifikasi/);
   assert.match(residentDetail, /Keterangan pembayaran/);
   assert.match(residentDetail, /Pembayaran awal sewa/);

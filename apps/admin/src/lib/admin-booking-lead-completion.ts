@@ -50,6 +50,7 @@ export type BookingLeadRentalContext = {
     genderPolicy: string;
     monthlyPrice: number;
     yearlyPrice: number;
+    securityDepositMonths: 1 | 2;
   };
   paymentCommitment: LeadPaymentCommitment;
 };
@@ -163,6 +164,13 @@ function money(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
     throw new Error("Respons penyelesaian minat booking tidak valid");
   return value;
+}
+
+function securityDepositMonths(value: unknown): 1 | 2 {
+  const months = money(value);
+  if (months !== 1 && months !== 2)
+    throw new Error("Respons penyelesaian minat booking tidak valid");
+  return months;
 }
 function date(value: unknown): string {
   const valueText = text(value);
@@ -292,6 +300,7 @@ export function parseBookingLeadRentalContext(
       genderPolicy,
       monthlyPrice: money(room.monthly_price),
       yearlyPrice: money(room.yearly_price),
+      securityDepositMonths: securityDepositMonths(room.security_deposit_months),
     },
     paymentCommitment: parsed,
   };
@@ -347,6 +356,7 @@ export function parseBookingLeadCompletionQuote(
       genderPolicy,
       monthlyPrice: money(room.monthly_price),
       yearlyPrice: money(room.yearly_price),
+      securityDepositMonths: securityDepositMonths(room.security_deposit_months),
     },
   };
 }

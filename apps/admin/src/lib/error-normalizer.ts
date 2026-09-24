@@ -65,6 +65,11 @@ const CODE_NOTICES: Readonly<Record<string, Pick<AdminErrorNotice, "title" | "de
     description:
       "Akun yang pernah memiliki aset atau aktivitas keuangan harus dipertahankan sebagai arsip.",
   },
+  OWNER_SPONSORED_ACTIVE_ASSIGNMENT_RELEASE_BLOCKED: {
+    title: "Aset masih dipakai hunian tanggungan Owner",
+    description:
+      "Aset tidak dapat dilepas selama masih dipakai hunian tanggungan Owner yang aktif. Selesaikan atau akhiri hunian tersebut terlebih dahulu.",
+  },
   FILE_EXTENSION_MISMATCH: {
     title: "Format file tidak sesuai",
     description:

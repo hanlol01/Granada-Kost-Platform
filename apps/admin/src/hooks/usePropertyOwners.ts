@@ -97,9 +97,23 @@ export function usePropertyOwnerMutations() {
         phone: string;
         address?: string;
         initialPassword: string;
+        payoutBankName?: string;
+        payoutAccountNumber?: string;
+        payoutAccountHolder?: string;
+        ownerVisibleNote?: string;
       }) =>
         guarded(
-          `create:${[input.fullName, input.email, input.phone, input.address, input.initialPassword]
+          `create:${[
+            input.fullName,
+            input.email,
+            input.phone,
+            input.address,
+            input.initialPassword,
+            input.payoutBankName,
+            input.payoutAccountNumber,
+            input.payoutAccountHolder,
+            input.ownerVisibleNote,
+          ]
             .map((value) => value?.trim() ?? "")
             .join("|")}`,
           (propertyId, key) =>
@@ -111,6 +125,10 @@ export function usePropertyOwnerMutations() {
                 phone: input.phone,
                 address: input.address || undefined,
                 initial_password: input.initialPassword,
+                payout_bank_name: input.payoutBankName || undefined,
+                payout_account_number: input.payoutAccountNumber || undefined,
+                payout_account_holder: input.payoutAccountHolder || undefined,
+                owner_visible_note: input.ownerVisibleNote || undefined,
               },
               key,
             ),
@@ -125,9 +143,22 @@ export function usePropertyOwnerMutations() {
         email?: string;
         phone: string;
         address?: string;
+        payoutBankName?: string;
+        payoutAccountNumber?: string;
+        payoutAccountHolder?: string;
+        ownerVisibleNote?: string;
       }) =>
         guarded(
-          `update:${input.ownerId}:${[input.fullName, input.email, input.phone, input.address]
+          `update:${input.ownerId}:${[
+            input.fullName,
+            input.email,
+            input.phone,
+            input.address,
+            input.payoutBankName,
+            input.payoutAccountNumber,
+            input.payoutAccountHolder,
+            input.ownerVisibleNote,
+          ]
             .map((value) => value?.trim() ?? "")
             .join("|")}`,
           (propertyId, key) =>
@@ -139,6 +170,10 @@ export function usePropertyOwnerMutations() {
                 email: input.email || undefined,
                 phone: input.phone,
                 address: input.address || undefined,
+                payout_bank_name: input.payoutBankName?.trim() || null,
+                payout_account_number: input.payoutAccountNumber?.trim() || null,
+                payout_account_holder: input.payoutAccountHolder?.trim() || null,
+                owner_visible_note: input.ownerVisibleNote?.trim() || null,
               },
               key,
             ),

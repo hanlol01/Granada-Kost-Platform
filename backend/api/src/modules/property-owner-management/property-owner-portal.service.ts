@@ -12,7 +12,15 @@ import { PDFDocument, type PDFFont, rgb } from 'pdf-lib';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { UserAccessContext } from '../iam/types/iam.types';
 
-type OwnerRow = { id: string; property_id: string; full_name: string };
+type OwnerRow = {
+  id: string;
+  property_id: string;
+  full_name: string;
+  payout_bank_name: string | null;
+  payout_account_number: string | null;
+  payout_account_holder: string | null;
+  owner_visible_note: string | null;
+};
 type AssignmentRow = {
   assignment_key: string;
   effective_from: string;
@@ -244,7 +252,13 @@ export class PropertyOwnerPortalService {
     const scheduledCount = this.count(row.scheduled_count, 'scope.scheduled_count');
     const expiredCount = this.count(row.expired_count, 'scope.expired_count');
     return {
-      owner: { display_name: this.text(owner.full_name, 'owner.full_name') },
+      owner: {
+        display_name: this.text(owner.full_name, 'owner.full_name'),
+        payout_bank_name: owner.payout_bank_name,
+        payout_account_number_masked: this.maskAccountNumber(owner.payout_account_number),
+        payout_account_holder: owner.payout_account_holder,
+        owner_visible_note: owner.owner_visible_note,
+      },
       scope: {
         state:
           currentRoomCount > 0
@@ -721,15 +735,10 @@ export class PropertyOwnerPortalService {
                 AND uniform_adoption.lease_id=installments.lease_id
                WHERE installments.property_id = $1
              ), deposit_summary AS (
-               SELECT scoped_lease.security_deposit_required_amount::text AS deposit_required,
-                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.direction = 'credit'), 0)::text AS deposit_collected,
-                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'deduction'), 0)::text AS deposit_deducted,
-                      COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'refund'), 0)::text AS deposit_refunded,
-                      COALESCE(sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END), 0)::text AS deposit_balance
+               SELECT BOOL_OR(ledger.direction = 'credit') IS TRUE AS security_deposit_recorded
                FROM scoped_lease
                LEFT JOIN lease_deposit_transactions ledger
                  ON ledger.property_id = $1 AND ledger.lease_id = scoped_lease.id
-               GROUP BY scoped_lease.security_deposit_required_amount
              ), vehicle_summary AS (
                SELECT COUNT(DISTINCT vehicle.id)::int AS active_vehicle_count,
                       COUNT(DISTINCT slot.id)::int AS assigned_parking_count
@@ -809,27 +818,22 @@ export class PropertyOwnerPortalService {
           billing?.installment_next_due_date ?? null,
           'owner_occupancy.installment_next_due_date',
         ),
-        security_deposit_required: this.money(
-          billing?.deposit_required ?? '0',
-          'owner_occupancy.security_deposit_required',
-        ),
-        deposit_collected: this.money(
-          billing?.deposit_collected ?? '0',
-          'owner_occupancy.deposit_collected',
-        ),
-        deposit_deducted: this.money(
-          billing?.deposit_deducted ?? '0',
-          'owner_occupancy.deposit_deducted',
-        ),
-        deposit_refunded: this.money(
-          billing?.deposit_refunded ?? '0',
-          'owner_occupancy.deposit_refunded',
-        ),
-        deposit_balance: this.money(
-          billing?.deposit_balance ?? '0',
-          'owner_occupancy.deposit_balance',
-        ),
+        security_deposit_recorded: billing?.security_deposit_recorded === true,
       },
+      owner_sponsorship:
+        asset.owner_sponsorship === null
+          ? null
+          : {
+              management_fee_mode: asset.owner_sponsorship.management_fee_mode,
+              management_fee_payer: asset.owner_sponsorship.management_fee_payer,
+              management_fee_payer_name: asset.owner_sponsorship.management_fee_payer_name,
+              monthly_management_fee: asset.owner_sponsorship.monthly_management_fee,
+              projected_management_fee: asset.owner_sponsorship.projected_management_fee,
+              verified_paid: asset.owner_sponsorship.verified_paid,
+              pending: asset.owner_sponsorship.pending,
+              remaining: asset.owner_sponsorship.remaining,
+              payment_status: asset.owner_sponsorship.payment_status,
+            },
       operations: {
         open_complaints: asset.issues.open_complaints,
         open_maintenance: asset.issues.open_maintenance,
@@ -1268,14 +1272,10 @@ export class PropertyOwnerPortalService {
          GROUP BY lease.id
        ), deposit_summary AS (
          SELECT lease.id AS lease_id,
-                COALESCE(lease.security_deposit_required_amount, 0)::text AS deposit_required,
-                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.direction = 'credit'), 0)::text AS deposit_collected,
-                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'deduction'), 0)::text AS deposit_deducted,
-                COALESCE(sum(ledger.amount) FILTER (WHERE ledger.transaction_type = 'refund'), 0)::text AS deposit_refunded,
-                COALESCE(sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount ELSE -ledger.amount END), 0)::text AS deposit_balance
+                BOOL_OR(ledger.direction = 'credit') IS TRUE AS security_deposit_recorded
          FROM active_leases lease
          LEFT JOIN lease_deposit_transactions ledger ON ledger.property_id = lease.property_id AND ledger.lease_id = lease.id
-         GROUP BY lease.id, lease.security_deposit_required_amount
+         GROUP BY lease.id
        ), operations_summary AS (
          SELECT lease.id AS lease_id,
                 COALESCE(complaint.open_count, 0)::int AS open_complaint_count,
@@ -1373,7 +1373,8 @@ export class PropertyOwnerPortalService {
            WHERE pa.invoice_id = invoice.id
          ) initial_credit ON true
        )
-       SELECT rooms.room_code, buildings.building_code, buildings.building_name,
+       SELECT rooms.room_code, rooms.number AS room_number,
+              buildings.building_code, buildings.building_name,
               resident.full_name AS resident_display_name,
               lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
                commercial_projection.term_months,
@@ -2030,7 +2031,10 @@ export class PropertyOwnerPortalService {
 
   private async resolveOwner(actor: UserAccessContext): Promise<OwnerRow | null> {
     const result = await this.database.client.query<OwnerRow>(
-      `SELECT profiles.id, profiles.property_id, profiles.full_name FROM property_owner_profiles profiles
+      `SELECT profiles.id, profiles.property_id, profiles.full_name,
+              profiles.payout_bank_name, profiles.payout_account_number,
+              profiles.payout_account_holder, profiles.owner_visible_note
+       FROM property_owner_profiles profiles
        JOIN users ON users.id = profiles.user_id WHERE profiles.user_id = $1 AND profiles.profile_status = 'active' AND users.user_status = 'active' ORDER BY profiles.id`,
       [actor.id],
     );
@@ -2041,6 +2045,11 @@ export class PropertyOwnerPortalService {
         message: 'Authenticated owner profile is ambiguous',
       });
     return result.rows[0];
+  }
+
+  private maskAccountNumber(value: string | null): string | null {
+    const normalized = value?.trim();
+    return normalized ? `•••• ${normalized.slice(-4)}` : null;
   }
 
   private async jakartaBusinessDate(): Promise<string> {
@@ -2182,6 +2191,7 @@ export class PropertyOwnerPortalService {
     return {
       room: {
         code: this.text(row.room_code, 'owner_collection.room_code'),
+        room_number: this.text(row.room_number, 'owner_collection.room_number'),
         building_code: this.text(row.building_code, 'owner_collection.building_code'),
         building_name: this.text(row.building_name, 'owner_collection.building_name'),
       },
@@ -2291,11 +2301,7 @@ export class PropertyOwnerPortalService {
         ),
       },
       security_deposit: {
-        required: this.money(row.deposit_required, 'owner_collection.deposit_required'),
-        collected: this.money(row.deposit_collected, 'owner_collection.deposit_collected'),
-        deducted: this.money(row.deposit_deducted, 'owner_collection.deposit_deducted'),
-        refunded: this.money(row.deposit_refunded, 'owner_collection.deposit_refunded'),
-        balance: this.money(row.deposit_balance, 'owner_collection.deposit_balance'),
+        recorded: row.security_deposit_recorded === true,
       },
       settlement: {
         state: this.nullableText(row.settlement_state, 'owner_collection.settlement_state'),

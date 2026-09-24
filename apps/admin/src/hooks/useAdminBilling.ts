@@ -424,7 +424,7 @@ export function useExtendContractSettlement(propertyId: string | null) {
     (variables) => variables.input.property_id,
     (variables) =>
       extendContractSettlement(variables.leaseId, variables.input, variables.idempotencyKey),
-    "Perpanjangan batas pelunasan berhasil disimpan",
+    "Perubahan batas pelunasan berhasil disimpan",
   );
 }
 

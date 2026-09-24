@@ -15,7 +15,7 @@ void test("Admin exposes audited extension, promise-to-pay, and manual terminati
   assert.match(workspace, /Catat janji bayar/);
   assert.match(workspace, /tidak mengubah status overdue, saldo, tenggat/);
   assert.match(workspace, /settlement\.termination_eligible/);
-  assert.match(workspace, /Beri perpanjangan/);
+  assert.match(workspace, /Ubah batas pelunasan/);
   assert.doesNotMatch(workspace, /minDate=\{nextJakartaDate\(finalDueAt\)\}/);
   assert.doesNotMatch(workspace, /minDate=\{jakartaDateInput\(\)\}/);
   assert.match(workspace, /Catatan komunikasi[\s\S]*min-h-16[\s\S]*rows=\{2\}/);

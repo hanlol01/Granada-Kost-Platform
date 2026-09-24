@@ -55,6 +55,7 @@ type ContextRow = {
   short_stay_monthly_price: string | number | null;
   medium_stay_monthly_price: string | number | null;
   long_stay_monthly_price: string | number | null;
+  security_deposit_months: number | null;
   management_fee_amount: string | number | null;
 };
 
@@ -116,6 +117,7 @@ export type BookingLeadCompletionContext = {
     gender_policy: string;
     monthly_price: number;
     yearly_price: number;
+    security_deposit_months: number;
   };
   payment_commitment: LeadPaymentCommitmentResponse;
 };
@@ -173,6 +175,7 @@ export type BookingLeadCompletionQuote = {
     gender_policy: string;
     monthly_price: number;
     yearly_price: number;
+    security_deposit_months: number;
   };
 };
 
@@ -821,6 +824,7 @@ export class BookingLeadCompletionService {
             gender_policy: value.room_gender_policy!,
             monthly_price: Number(value.monthly_price),
             yearly_price: Number(value.yearly_price),
+            security_deposit_months: Number(value.security_deposit_months),
           },
           payment_commitment: this.response(commitment),
         },
@@ -892,6 +896,7 @@ export class BookingLeadCompletionService {
             gender_policy: value.room_gender_policy!,
             monthly_price: Number(value.monthly_price),
             yearly_price: Number(value.yearly_price),
+            security_deposit_months: Number(value.security_deposit_months),
           },
         },
       };
@@ -1272,6 +1277,7 @@ export class BookingLeadCompletionService {
         commercial.monthly_price, commercial.annual_contract_value AS yearly_price,
         commercial.short_stay_monthly_price, commercial.medium_stay_monthly_price,
         commercial.long_stay_monthly_price,
+        commercial.security_deposit_months,
         management_fee.monthly_fee_amount AS management_fee_amount
        FROM booking_leads lead
          LEFT JOIN booking_lead_holds hold ON hold.booking_lead_id=lead.id AND hold.property_id=lead.property_id AND hold.hold_status IN ('active','committed')
@@ -1290,7 +1296,8 @@ export class BookingLeadCompletionService {
                  commercial_version.short_stay_monthly_price,
                  commercial_version.medium_stay_monthly_price,
                  commercial_version.long_stay_monthly_price,
-                commercial_version.effective_date
+                 commercial_version.security_deposit_months,
+                 commercial_version.effective_date
            FROM kost_type_commercial_versions commercial_version
           WHERE commercial_version.kost_type_id=kost_type.id
             AND (
@@ -1463,6 +1470,12 @@ export class BookingLeadCompletionService {
   }
 
   private assertPayment(dto: CompleteBookingLeadDto, rentTotal: number): void {
+    if (dto.security_deposit_amount !== 0)
+      throw new BadRequestException({
+        code: 'BOOKING_LEAD_SECURITY_DEPOSIT_DEFERRED',
+        message:
+          'Security deposit is optional and can only be recorded from the resident detail after the lease is created',
+      });
     if (dto.payment_type === 'down_payment' && dto.rent_credit_amount <= 0)
       throw new BadRequestException({
         code: 'DOWN_PAYMENT_AMOUNT_INVALID',

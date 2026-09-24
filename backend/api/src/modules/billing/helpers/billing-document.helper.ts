@@ -474,8 +474,6 @@ export async function createBillingInvoicePdf(
             : 'Tarif standar',
       ],
       ['Nilai kontrak', idr(data.contractRentAmount)],
-      ['Akumulasi pembayaran sewa', idr(data.cumulativeRentPaid ?? 0)],
-      ['Sisa kewajiban kontrak', idr(data.contractRemainingAmount ?? data.contractRentAmount)],
     );
   }
   if (isRentInvoice && data.finalSettlementDueAt) {
@@ -1348,6 +1346,30 @@ export function createContractPaidDocumentPdf(
     }
   }
 
+  const detailRows: Array<[string, string]> = [
+    ['Nama penghuni', data.residentName],
+    ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
+    ['Periode sewa', period],
+    ...commercialRows,
+    ['Total sewa kontrak', idr(data.contractRentAmount)],
+    ['Total pembayaran diterima', idr(data.totalRentReceived)],
+    ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
+    ['Total kewajiban lunas', idr(data.totalSettledAmount)],
+    ...(data.outstandingAmount > 0
+      ? ([['Sisa kewajiban', idr(data.outstandingAmount)]] as Array<[string, string]>)
+      : []),
+    ['Status kontrak', invalidation ? 'DIBATALKAN' : 'LUNAS'],
+    ['Kontrak dinyatakan lunas', receiptDate(data.settledAt)],
+    ['Referensi transaksi', transactionReferences],
+    ['Untuk pembayaran', `Pelunasan seluruh kewajiban sewa kontrak untuk periode ${period}`],
+    [
+      'Pernyataan',
+      invalidation
+        ? `Bukti pelunasan ini dibatalkan pada ${receiptDate(invalidation.invalidatedAt)} karena ${invalidation.reason}.`
+        : `Dengan ini dinyatakan bahwa seluruh kewajiban pembayaran sewa kontrak atas ${formatRoomDescription(data.roomNumber, data.buildingCode)} untuk periode tersebut telah diterima dan dinyatakan lunas.`,
+    ],
+  ];
+
   return createBillingReceiptPdf({
     receiptCode: data.documentCode,
     paymentCode: transactionReferences,
@@ -1368,27 +1390,7 @@ export function createContractPaidDocumentPdf(
     documentTitle: 'BUKTI PELUNASAN KONTRAK SEWA',
     documentNumberLabel: 'Nomor Dokumen',
     documentStatusNote: invalidation ? 'STATUS DOKUMEN: DIBATALKAN' : undefined,
-    detailRows: [
-      ['Nama penghuni', data.residentName],
-      ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
-      ['Periode sewa', period],
-      ...commercialRows,
-      ['Total sewa kontrak', idr(data.contractRentAmount)],
-      ['Total pembayaran diterima', idr(data.totalRentReceived)],
-      ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
-      ['Total kewajiban lunas', idr(data.totalSettledAmount)],
-      ['Sisa kewajiban', idr(data.outstandingAmount)],
-      ['Status kontrak', invalidation ? 'DIBATALKAN' : 'LUNAS'],
-      ['Kontrak dinyatakan lunas', receiptDate(data.settledAt)],
-      ['Referensi transaksi', transactionReferences],
-      ['Untuk pembayaran', `Pelunasan seluruh kewajiban sewa kontrak untuk periode ${period}`],
-      [
-        'Pernyataan',
-        invalidation
-          ? `Bukti pelunasan ini dibatalkan pada ${receiptDate(invalidation.invalidatedAt)} karena ${invalidation.reason}.`
-          : `Dengan ini dinyatakan bahwa seluruh kewajiban pembayaran sewa kontrak atas ${formatRoomDescription(data.roomNumber, data.buildingCode)} untuk periode tersebut telah diterima dan dinyatakan lunas.`,
-      ],
-    ],
+    detailRows,
   });
 }
 

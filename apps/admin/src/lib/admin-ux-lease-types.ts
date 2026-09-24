@@ -287,6 +287,7 @@ export type LeaseRoomOption = {
     mediumStayMonthlyPrice: number;
     longStayMonthlyPrice: number;
     commercialEffectiveDate: string;
+    securityDepositMonths: 1 | 2;
     depositAmount: number;
     managementFeeAmount?: number;
   };

@@ -17,6 +17,14 @@ const permanentAssignmentMigrationPath = resolve(
   process.cwd(),
   'backend/api/src/infrastructure/database/migrations/095_owner_sponsored_permanent_assignment_trigger.sql',
 );
+const optionalDepositMigrationPath = resolve(
+  process.cwd(),
+  'backend/api/src/infrastructure/database/migrations/099_owner_sponsored_optional_security_deposit.sql',
+);
+const contractDepositSnapshotMigrationPath = resolve(
+  process.cwd(),
+  'backend/api/src/infrastructure/database/migrations/100_security_deposit_contract_snapshot.sql',
+);
 
 void test('owner-sponsored occupancy migration is explicit, additive, and manifest-bound', () => {
   const migration = readFileSync(migrationPath, 'utf8');
@@ -63,4 +71,33 @@ void test('permanent owner registration migration removes lease-date gates from 
   assert.match(migration, /CREATE OR REPLACE FUNCTION validate_owner_sponsored_lease_term\(\)/i);
   assert.match(migration, /assignment\.assignment_status='active'/i);
   assert.doesNotMatch(migration, /effective_from|effective_until|scheduled/i);
+});
+
+void test('optional Owner-sponsored deposit keeps room rent at zero but permits refundable funding', () => {
+  const migration = readFileSync(optionalDepositMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '099_owner_sponsored_optional_security_deposit.sql',
+  );
+
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /commercial_mode = 'owner_sponsored'[\s\S]*OR security_deposit_funded_amount <=/i);
+  assert.match(migration, /security_deposit_required_amount = 0/i);
+  assert.doesNotMatch(migration, /security_deposit_funded_amount = 0/i);
+  assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM leases|DROP TABLE/i);
+});
+
+void test('contract deposit snapshot preserves the 1–2 month policy without changing rent obligations', () => {
+  const migration = readFileSync(contractDepositSnapshotMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '100_security_deposit_contract_snapshot.sql',
+  );
+
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /2 \* contract_rent_amount\) \/ NULLIF\(term_months, 0\)/i);
+  assert.match(migration, /WHEN lease\.commercial_mode = 'owner_sponsored'[\s\S]*snapshot_reference_monthly_price/i);
+  assert.match(migration, /ELSE lease\.snapshot_monthly_price/i);
+  assert.match(migration, /security_deposit_months/i);
+  assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM leases|DROP TABLE/i);
 });

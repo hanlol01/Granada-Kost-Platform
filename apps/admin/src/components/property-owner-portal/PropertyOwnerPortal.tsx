@@ -180,6 +180,33 @@ const paymentPercentage = (verified: string, invoiced: string): number => {
   }
 };
 
+const paymentProgressTone = (percentage: number) => {
+  if (percentage >= 100)
+    return {
+      fillClass: "bg-emerald-500",
+      textClass: "text-emerald-700 dark:text-emerald-300",
+      label: "Lunas",
+    };
+  if (percentage >= 70)
+    return { fillClass: "bg-primary", textClass: "text-primary", label: "Berjalan" };
+  if (percentage >= 40)
+    return {
+      fillClass: "bg-amber-500",
+      textClass: "text-amber-700 dark:text-amber-300",
+      label: "Perlu dipantau",
+    };
+  return { fillClass: "bg-destructive", textClass: "text-destructive", label: "Perlu perhatian" };
+};
+
+const ownerRoomNumberLabel = (value: string) => value.split("-").at(-1) || value;
+
+const ownerRoomLocation = (room: {
+  buildingName: string | null;
+  buildingCode: string | null;
+  number: string;
+}) =>
+  `${room.buildingName ?? room.buildingCode ?? "Bangunan"} · Kamar ${ownerRoomNumberLabel(room.number)}`;
+
 const normalizeOwnerSearch = (value: string): string =>
   value
     .trim()
@@ -193,7 +220,32 @@ type DashboardRoomFilter =
   | "partially_paid"
   | "unpaid"
   | "settled"
-  | "not_available";
+  | "not_available"
+  | "vacant"
+  | "reserved"
+  | "awaiting_activation";
+
+type ActiveDashboardRoom = OwnerCollectionProgress["items"][number];
+type DashboardRoom =
+  | {
+      kind: "lease";
+      room: ActiveDashboardRoom["room"];
+      roomStatus: OwnerPortal["assets"][number]["roomStatus"];
+      residentDisplayName: string;
+      active: ActiveDashboardRoom;
+    }
+  | {
+      kind: "asset";
+      room: {
+        code: string;
+        number: string;
+        buildingCode: string | null;
+        buildingName: string | null;
+      };
+      roomStatus: OwnerPortal["assets"][number]["roomStatus"];
+      residentDisplayName: null;
+      assetLeaseStatus: OwnerPortal["assets"][number]["leaseStatus"];
+    };
 
 type CollectionBillingFilter = DashboardRoomFilter;
 
@@ -240,6 +292,29 @@ function StatusPill({ value }: { value: string | null | undefined }) {
       }`}
     >
       {labelOf(value)}
+    </Badge>
+  );
+}
+
+function OwnerSponsorshipStatusPill({
+  value,
+}: {
+  value: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
+}) {
+  const copy = {
+    waived: "Biaya dibebaskan",
+    unpaid: "Belum dibayar",
+    partially_paid: "Outstanding",
+    paid: "Lunas",
+    overpaid: "Lebih bayar",
+  } as const;
+  const attention = value === "unpaid" || value === "partially_paid";
+  return (
+    <Badge
+      variant="outline"
+      className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
+    >
+      {copy[value]}
     </Badge>
   );
 }
@@ -428,6 +503,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
   const [dashboardRoomFilter, setDashboardRoomFilter] = useState<DashboardRoomFilter>("all");
   const [dashboardRoomPage, setDashboardRoomPage] = useState(0);
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const dashboardRoomListRef = useRef<HTMLDivElement>(null);
   const collection = useQuery({
     queryKey: ["property-owner", "dashboard-collection-progress", ownerId],
     queryFn: () => propertyOwnerPortalApi.collectionProgress(),
@@ -451,39 +527,101 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
       percentage: paymentPercentage(received, contractValue),
     };
   }, [collection.data]);
-  const allPriorityRooms = useMemo(() => {
+  const allPriorityRooms = useMemo<DashboardRoom[]>(() => {
     const priority: Record<OwnerCollectionProgress["items"][number]["billing"]["state"], number> = {
-      overdue: 0,
+      settled: 0,
+      partially_paid: 1,
       unpaid: 2,
-      partially_paid: 2,
-      settled: 4,
-      not_available: 5,
+      overdue: 3,
+      not_available: 4,
     };
-    return [...(collection.data?.items ?? [])].sort((left, right) => {
-      const leftPriority = left.billing.h7Count > 0 ? 1 : priority[left.billing.state];
-      const rightPriority = right.billing.h7Count > 0 ? 1 : priority[right.billing.state];
+    const assetByRoomCode = new Map(portal.assets.map((asset) => [asset.roomCode, asset]));
+    const activeRooms: DashboardRoom[] = (collection.data?.items ?? []).map((active) => ({
+      kind: "lease",
+      room: active.room,
+      roomStatus: assetByRoomCode.get(active.room.code)?.roomStatus ?? "occupied",
+      residentDisplayName: active.resident.displayName,
+      active,
+    }));
+    const activeRoomCodes = new Set(activeRooms.map((item) => item.room.code));
+    const unleasedAssets: DashboardRoom[] = portal.assets
+      .filter((asset) => !activeRoomCodes.has(asset.roomCode))
+      .map((asset) => ({
+        kind: "asset",
+        room: {
+          code: asset.roomCode,
+          number: asset.roomCode,
+          buildingCode: asset.buildingCode,
+          buildingName: asset.buildingName,
+        },
+        roomStatus: asset.roomStatus,
+        residentDisplayName: null,
+        assetLeaseStatus: asset.leaseStatus,
+      }));
+    const assetPriority: Record<OwnerPortal["assets"][number]["roomStatus"], number> = {
+      awaiting_check_in: 4,
+      maintenance: 5,
+      requires_review: 5,
+      occupied: 4,
+      reserved: 6,
+      vacant: 6,
+      inactive: 5,
+    };
+    return [...activeRooms, ...unleasedAssets].sort((left, right) => {
+      const leftPriority =
+        left.kind === "lease"
+          ? priority[left.active.billing.state]
+          : left.assetLeaseStatus === "awaiting_activation"
+            ? 4
+            : assetPriority[left.roomStatus];
+      const rightPriority =
+        right.kind === "lease"
+          ? priority[right.active.billing.state]
+          : right.assetLeaseStatus === "awaiting_activation"
+            ? 4
+            : assetPriority[right.roomStatus];
       const stateDifference = leftPriority - rightPriority;
       if (stateDifference !== 0) return stateDifference;
-      const overdueDifference = right.billing.overdueCount - left.billing.overdueCount;
+      if (left.kind !== "lease" || right.kind !== "lease") {
+        return left.room.code.localeCompare(right.room.code, "id-ID");
+      }
+      const overdueDifference =
+        right.active.billing.overdueCount - left.active.billing.overdueCount;
       if (overdueDifference !== 0) return overdueDifference;
-      return right.billing.h7Count - left.billing.h7Count;
+      return right.active.billing.h7Count - left.active.billing.h7Count;
     });
-  }, [collection.data]);
+  }, [collection.data, portal.assets]);
   const filteredPriorityRooms = useMemo(() => {
     const normalizedQuery = normalizeOwnerSearch(dashboardRoomQuery);
     return allPriorityRooms.filter((item) => {
       const matchesQuery =
         !normalizedQuery ||
-        [item.room.code, item.room.buildingCode, item.room.buildingName, item.resident.displayName]
+        [
+          item.room.code,
+          item.room.number,
+          item.room.buildingCode,
+          item.room.buildingName,
+          item.residentDisplayName,
+        ]
+          .filter((value): value is string => Boolean(value))
           .map(normalizeOwnerSearch)
           .some((value) => value.includes(normalizedQuery));
+      const isAssetStatusFilter = ["vacant", "reserved", "awaiting_activation"].includes(
+        dashboardRoomFilter,
+      );
       const matchesFilter =
         dashboardRoomFilter === "all" ||
-        (dashboardRoomFilter === "h7"
-          ? item.billing.h7Count > 0
-          : dashboardRoomFilter === "overdue"
-            ? item.billing.state === "overdue" || item.billing.overdueCount > 0
-            : item.billing.state === dashboardRoomFilter);
+        (isAssetStatusFilter
+          ? dashboardRoomFilter === "awaiting_activation"
+            ? item.roomStatus === "awaiting_check_in" ||
+              (item.kind === "asset" && item.assetLeaseStatus === "awaiting_activation")
+            : item.roomStatus === dashboardRoomFilter
+          : item.kind === "lease" &&
+            (dashboardRoomFilter === "h7"
+              ? item.active.billing.h7Count > 0
+              : dashboardRoomFilter === "overdue"
+                ? item.active.billing.state === "overdue" || item.active.billing.overdueCount > 0
+                : item.active.billing.state === dashboardRoomFilter));
       return matchesQuery && matchesFilter;
     });
   }, [allPriorityRooms, dashboardRoomFilter, dashboardRoomQuery]);
@@ -512,6 +650,16 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
     setDashboardRoomQuery("");
     setDashboardRoomFilter("all");
   };
+  const changeDashboardRoomPage = (nextPage: number) => {
+    setDashboardRoomPage(Math.max(0, Math.min(dashboardRoomPageCount - 1, nextPage)));
+    window.requestAnimationFrame(() => {
+      const target = dashboardRoomListRef.current;
+      if (!target) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  const collectionProgressTone = paymentProgressTone(collectionTotals.percentage);
   const attentionCount =
     portal.issues.unreadNotifications +
     portal.issues.openComplaints +
@@ -569,8 +717,8 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
             {portal.owner?.displayName ?? "Pemilik Properti"}
           </h2>
           <p className="mt-2 max-w-2xl text-base leading-7 text-muted-foreground">
-            Pantau nilai seluruh kontrak aktif, pembayaran penghuni, dan perkiraan hak Anda tanpa
-            harus menghitung setiap kamar satu per satu.
+            {portal.owner?.ownerVisibleNote?.trim() ||
+              "Pantau nilai seluruh kontrak aktif, pembayaran penghuni, dan hak Anda tanpa harus menghitung setiap kamar satu per satu."}
           </p>
         </div>
       </section>
@@ -614,7 +762,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                   id="owner-contract-progress-title"
                   className="mt-1 text-xl font-semibold tracking-[-0.02em]"
                 >
-                  Target kontrak {formatOwnerMoney(collectionTotals.contractValue)}
+                  Total Kontrak {formatOwnerMoney(collectionTotals.contractValue)}
                 </h2>
               </div>
               <span className="owner-ledger-badge">
@@ -624,44 +772,49 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
             <div className="p-5 sm:p-6">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <p className="owner-contract-ledger-muted text-sm">Pembayaran yang sudah masuk</p>
+                  <p className="owner-contract-ledger-muted text-sm">Uang yang diterima</p>
                   <p className="mt-1 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
                     {formatOwnerMoney(collectionTotals.received)}
                   </p>
                 </div>
                 <div className="lg:text-right">
-                  <p className="text-3xl font-semibold tracking-[-0.03em]">
+                  <p
+                    className={`text-3xl font-semibold tracking-[-0.03em] ${collectionProgressTone.textClass}`}
+                  >
                     {collectionTotals.contractValue === "0"
                       ? "—"
-                      : `${collectionTotals.percentage}%`}
+                      : `${collectionTotals.percentage}% · ${collectionProgressTone.label}`}
                   </p>
                   <p className="owner-contract-ledger-muted mt-1 text-sm">
-                    dari nilai kontrak aktif
+                    dari total kontrak aktif
                   </p>
                 </div>
               </div>
               <div className="owner-ledger-progress mt-5" aria-hidden="true">
                 <div
                   data-contract-progress
-                  className="owner-payment-progress-value h-full rounded-full"
+                  className={`owner-payment-progress-value h-full rounded-full ${collectionProgressTone.fillClass}`}
                   style={{ width: `${collectionTotals.percentage}%` }}
                 />
               </div>
               <div className="owner-contract-ledger-rule mt-6 grid gap-5 border-y py-5 min-[480px]:grid-cols-2 xl:grid-cols-4">
                 <div>
-                  <p className="owner-contract-ledger-muted text-xs">Sisa pembayaran penghuni</p>
+                  <p className="owner-contract-ledger-muted text-xs">
+                    Outstanding dari Total Kontrak
+                  </p>
                   <p className="mt-1 text-lg font-semibold">
-                    {formatOwnerMoney(collectionTotals.outstanding)}
+                    {formatOwnerMoney(collectionTotals.outstanding)} dari{" "}
+                    {formatOwnerMoney(collectionTotals.contractValue)}
                   </p>
                 </div>
                 <div>
-                  <p className="owner-contract-ledger-muted text-xs">Perkiraan management fee</p>
+                  <p className="owner-contract-ledger-muted text-xs">Total Biaya Pengelolaan</p>
                   <p className="mt-1 text-lg font-semibold">
                     {formatOwnerMoney(collectionTotals.projectedFee)}
                   </p>
                 </div>
                 <div>
-                  <p className="owner-contract-ledger-muted text-xs">Perkiraan hak Owner</p>
+                  <p className="owner-contract-ledger-muted text-xs">Hak Owner</p>
                   <p className="mt-1 text-lg font-semibold">
                     {formatOwnerMoney(collectionTotals.estimatedOwnerShare)}
                   </p>
@@ -869,13 +1022,15 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
       </Card>
 
       <Card data-owner-reveal className="border-border/80 shadow-sm">
-        <CardHeader className="border-b border-border/70 pb-4">
-          <CardTitle className="text-base">Kamar yang perlu dilihat</CardTitle>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Semua kamar tersedia di sini. Lima kamar ditampilkan per halaman dan diurutkan dari
-            pembayaran yang paling perlu diperhatikan.
-          </p>
-        </CardHeader>
+        <div ref={dashboardRoomListRef} tabIndex={-1} className="scroll-mt-24 outline-none">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <CardTitle className="text-base">Kamar yang perlu dilihat</CardTitle>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Semua kamar dalam cakupan Anda tersedia di sini, termasuk kamar kosong, dipesan, dan
+              menunggu check-in. Lima kamar ditampilkan per halaman.
+            </p>
+          </CardHeader>
+        </div>
         <CardContent className="p-0">
           <div className="grid gap-3 border-b border-border/70 p-5 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.4fr)_auto] md:items-end">
             <label className="grid min-w-0 gap-2 text-sm font-semibold text-foreground">
@@ -910,6 +1065,9 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                   <SelectItem value="unpaid">Belum dibayar</SelectItem>
                   <SelectItem value="settled">Lunas</SelectItem>
                   <SelectItem value="not_available">Belum tersedia</SelectItem>
+                  <SelectItem value="vacant">Kamar kosong</SelectItem>
+                  <SelectItem value="reserved">Kamar dipesan</SelectItem>
+                  <SelectItem value="awaiting_activation">Menunggu aktivasi/check-in</SelectItem>
                 </SelectContent>
               </Select>
             </label>
@@ -927,7 +1085,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
             <div className="p-5">
               <div className="h-28 animate-pulse rounded-xl bg-muted" aria-label="Memuat kamar" />
             </div>
-          ) : collection.error ? (
+          ) : collection.error && allPriorityRooms.length === 0 ? (
             <div className="p-5">
               <ErrorState
                 error={collection.error}
@@ -939,11 +1097,65 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
           ) : filteredPriorityRooms.length ? (
             <>
               <div className="divide-y divide-border/70">
-                {dashboardRooms.map((item) => {
-                  const percentage = paymentPercentage(
-                    item.billing.rentVerified,
-                    item.lease.contractValue,
-                  );
+                {dashboardRooms.map((dashboardRoom) => {
+                  if (dashboardRoom.kind === "asset") {
+                    return (
+                      <article
+                        key={dashboardRoom.room.code}
+                        className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(14rem,1fr)_auto] lg:items-center"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-semibold text-foreground">
+                              {dashboardRoom.room.code}
+                            </h3>
+                            <StatusPill value={dashboardRoom.roomStatus} />
+                          </div>
+                          <p className="mt-2 text-base font-semibold text-foreground">
+                            Belum ada penghuni
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {ownerRoomLocation(dashboardRoom.room)}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                            {dashboardRoom.assetLeaseStatus
+                              ? `Status sewa: ${labelOf(dashboardRoom.assetLeaseStatus)}`
+                              : "Belum ada penyewaan aktif untuk kamar ini."}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-dashed border-border/80 bg-muted/25 p-4">
+                          <p className="text-sm font-semibold text-foreground">
+                            Belum ada tagihan aktif
+                          </p>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            Informasi pembayaran akan tampil setelah penyewaan aktif dan check-in
+                            tercatat.
+                          </p>
+                        </div>
+                        <Button asChild className="min-h-12 w-full lg:w-auto">
+                          <Link
+                            to="/property-owners/portal/assets/$roomCode"
+                            params={{ roomCode: dashboardRoom.room.code }}
+                          >
+                            Detail kamar <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+                          </Link>
+                        </Button>
+                      </article>
+                    );
+                  }
+                  const item = dashboardRoom.active;
+                  const isOwnerSponsored = Boolean(item.ownerSponsorship);
+                  const paymentReceived = item.ownerSponsorship
+                    ? item.ownerSponsorship.verifiedPaid
+                    : item.billing.rentVerified;
+                  const paymentTotal = item.ownerSponsorship
+                    ? item.commercial.projectedManagementFee
+                    : item.lease.contractValue;
+                  const percentage =
+                    item.ownerSponsorship?.paymentStatus === "waived"
+                      ? 100
+                      : paymentPercentage(paymentReceived, paymentTotal);
+                  const progressTone = paymentProgressTone(percentage);
                   return (
                     <article
                       key={item.room.code}
@@ -954,7 +1166,18 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                           <h3 className="text-base font-semibold text-foreground">
                             {item.room.code}
                           </h3>
-                          <StatusPill value={item.billing.state} />
+                          {item.ownerSponsorship ? (
+                            <OwnerSponsorshipStatusPill
+                              value={item.ownerSponsorship.paymentStatus}
+                            />
+                          ) : (
+                            <StatusPill value={item.billing.state} />
+                          )}
+                          {item.ownerSponsorship ? (
+                            <Badge className="border border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300">
+                              Hunian Tanggungan Owner
+                            </Badge>
+                          ) : null}
                           {item.lease.pricingSource === "negotiated" ? (
                             <Badge
                               variant="outline"
@@ -972,8 +1195,11 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="mt-1 truncate text-sm text-muted-foreground">
-                          {item.room.buildingName} · {item.resident.displayName}
+                        <p className="mt-2 text-base font-semibold text-foreground">
+                          {dashboardRoom.residentDisplayName}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {ownerRoomLocation(item.room)}
                         </p>
                         <p className="mt-2 text-xs leading-5 text-muted-foreground">
                           {item.lease.termMonths} bulan · {formatOwnerMoney(item.lease.monthlyRate)}
@@ -995,8 +1221,12 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                       </div>
                       <div>
                         <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="text-muted-foreground">Terbayar</span>
-                          <strong className="text-foreground">{percentage}%</strong>
+                          <span className="text-muted-foreground">
+                            {isOwnerSponsored ? "Biaya pengelolaan terbayar" : "Terbayar"}
+                          </span>
+                          <strong className={progressTone.textClass}>
+                            {percentage}% · {progressTone.label}
+                          </strong>
                         </div>
                         <div
                           className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
@@ -1004,25 +1234,39 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                         >
                           <div
                             data-payment-progress
-                            className="owner-payment-progress-value h-full rounded-full bg-primary"
+                            className={`owner-payment-progress-value h-full rounded-full ${progressTone.fillClass}`}
                             style={{ width: `${percentage}%` }}
                           />
                         </div>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          Sisa kontrak {formatOwnerMoney(item.billing.contractOutstanding)}
+                          Outstanding{" "}
+                          {formatOwnerMoney(
+                            item.ownerSponsorship?.remaining ?? item.billing.contractOutstanding,
+                          )}{" "}
+                          dari Total {formatOwnerMoney(paymentTotal)}
                           {item.billing.nextDueDate
                             ? ` · jatuh tempo ${localDate(item.billing.nextDueDate)}`
                             : ""}
                         </p>
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
                           <div>
-                            <span className="block text-muted-foreground">Nilai kontrak</span>
+                            <span className="block text-muted-foreground">Total Kontrak</span>
                             <strong className="mt-0.5 block text-foreground">
                               {formatOwnerMoney(item.lease.contractValue)}
                             </strong>
                           </div>
                           <div>
-                            <span className="block text-muted-foreground">Perkiraan hak Owner</span>
+                            <span className="block text-muted-foreground">
+                              Total Biaya Pengelolaan
+                            </span>
+                            <strong className="mt-0.5 block text-foreground">
+                              {item.ownerSponsorship?.paymentStatus === "waived"
+                                ? "Dibebaskan"
+                                : formatOwnerMoney(item.commercial.projectedManagementFee)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="block text-muted-foreground">Hak Owner</span>
                             <strong className="mt-0.5 block text-foreground">
                               {formatOwnerMoney(item.commercial.estimatedOwnerEntitlement)}
                             </strong>
@@ -1050,22 +1294,23 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                   <Button
                     variant="outline"
                     className="min-h-10"
-                    onClick={() => setDashboardRoomPage((page) => Math.max(0, page - 1))}
+                    onClick={() => changeDashboardRoomPage(safeDashboardRoomPage - 1)}
                     disabled={safeDashboardRoomPage === 0}
                     aria-label="Kembali ke halaman kamar sebelumnya"
                   >
                     <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
                     Kembali
                   </Button>
-                  <span className="min-w-24 text-center text-sm font-medium text-muted-foreground">
+                  <span
+                    aria-live="polite"
+                    className="min-w-24 text-center text-sm font-medium text-muted-foreground"
+                  >
                     Halaman {safeDashboardRoomPage + 1} dari {dashboardRoomPageCount}
                   </span>
                   <Button
                     variant="outline"
                     className="min-h-10"
-                    onClick={() =>
-                      setDashboardRoomPage((page) => Math.min(dashboardRoomPageCount - 1, page + 1))
-                    }
+                    onClick={() => changeDashboardRoomPage(safeDashboardRoomPage + 1)}
                     disabled={safeDashboardRoomPage >= dashboardRoomPageCount - 1}
                     aria-label="Lanjut ke halaman kamar berikutnya"
                   >
@@ -1095,9 +1340,11 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                 aria-hidden="true"
               />
               <div>
-                <p className="text-sm font-semibold text-foreground">Belum ada sewa aktif</p>
+                <p className="text-sm font-semibold text-foreground">
+                  Belum ada kamar dalam cakupan
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Kamar dengan pembayaran aktif akan tampil di bagian ini.
+                  Kamar yang menjadi cakupan kepemilikan aktif akan tampil di bagian ini.
                 </p>
               </div>
             </div>
@@ -1600,7 +1847,13 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
     return collection.items.filter((item) => {
       const matchesQuery =
         !normalizedQuery ||
-        [item.room.code, item.room.buildingCode, item.room.buildingName, item.resident.displayName]
+        [
+          item.room.code,
+          item.room.number,
+          item.room.buildingCode,
+          item.room.buildingName,
+          item.resident.displayName,
+        ]
           .map(normalizeOwnerSearch)
           .some((value) => value.includes(normalizedQuery));
       const checkpointStatus = item.settlement.checkpoint.status;
@@ -1665,7 +1918,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
             Rincian pembayaran per kamar
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Periksa nilai kontrak, uang masuk, sisa pembayaran, perkiraan biaya pengelolaan, hak
+            Periksa total kontrak, uang masuk, sisa pembayaran, perkiraan biaya pengelolaan, hak
             Owner, jadwal hunian, serta tindak lanjut operasional setiap kamar.
           </p>
         </div>
@@ -1675,25 +1928,25 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Metric
-          label="Target kontrak"
+          label="Total Kontrak"
           value={formatOwnerMoney(collection.summary.contractValueTotal)}
           description="Seluruh sewa aktif"
           icon={ReceiptText}
         />
         <Metric
-          label="Uang masuk"
+          label="Uang yang diterima"
           value={formatOwnerMoney(collection.summary.rentReceivedTotal)}
           description="Pembayaran terverifikasi"
           icon={CircleDollarSign}
         />
         <Metric
-          label="Sisa pembayaran"
+          label="Outstanding"
           value={formatOwnerMoney(collection.summary.contractOutstandingTotal)}
           description="Dari nilai seluruh kontrak"
           icon={ReceiptText}
         />
         <Metric
-          label="Perkiraan hak Owner"
+          label="Hak Owner"
           value={formatOwnerMoney(collection.summary.estimatedOwnerEntitlementTotal)}
           description="Setelah management fee"
           icon={ShieldCheck}
@@ -1815,15 +2068,17 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                   <div>
                     <CardTitle className="text-base">{item.room.code}</CardTitle>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {item.resident.displayName} · {item.room.buildingName}
+                      {item.resident.displayName} · {ownerRoomLocation(item.room)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <StatusPill
-                      value={item.ownerSponsorship?.paymentStatus ?? item.billing.state}
-                    />
                     {item.ownerSponsorship ? (
-                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                      <OwnerSponsorshipStatusPill value={item.ownerSponsorship.paymentStatus} />
+                    ) : (
+                      <StatusPill value={item.billing.state} />
+                    )}
+                    {item.ownerSponsorship ? (
+                      <Badge className="border border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/10 dark:text-sky-300">
                         Hunian Tanggungan Owner
                       </Badge>
                     ) : null}
@@ -1848,7 +2103,7 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                 </CardHeader>
                 <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
                   <FinanceRow
-                    label={item.ownerSponsorship ? "Sewa kamar" : "Nilai kontrak"}
+                    label={item.ownerSponsorship ? "Sewa kamar" : "Total Kontrak"}
                     value={formatOwnerMoney(item.lease.contractValue)}
                   />
                   <FinanceRow
@@ -1860,25 +2115,33 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                     }
                   />
                   <FinanceRow
-                    label={item.ownerSponsorship ? "Biaya pengelolaan diterima" : "Uang masuk"}
+                    label={
+                      item.ownerSponsorship ? "Biaya pengelolaan diterima" : "Uang yang diterima"
+                    }
                     value={formatOwnerMoney(
                       item.ownerSponsorship?.verifiedPaid ?? item.billing.rentVerified,
                     )}
                   />
                   <FinanceRow
-                    label={
-                      item.ownerSponsorship ? "Sisa biaya pengelolaan" : "Sisa pembayaran kontrak"
-                    }
-                    value={formatOwnerMoney(
+                    label={item.ownerSponsorship ? "Outstanding biaya pengelolaan" : "Outstanding"}
+                    value={`${formatOwnerMoney(
                       item.ownerSponsorship?.remaining ?? item.billing.contractOutstanding,
-                    )}
+                    )} dari Total ${formatOwnerMoney(
+                      item.ownerSponsorship
+                        ? item.commercial.projectedManagementFee
+                        : item.lease.contractValue,
+                    )}`}
                   />
                   <FinanceRow
-                    label="Perkiraan management fee"
-                    value={formatOwnerMoney(item.commercial.projectedManagementFee)}
+                    label="Total Biaya Pengelolaan"
+                    value={
+                      item.ownerSponsorship?.paymentStatus === "waived"
+                        ? "Dibebaskan"
+                        : formatOwnerMoney(item.commercial.projectedManagementFee)
+                    }
                   />
                   <FinanceRow
-                    label="Perkiraan hak Owner"
+                    label="Hak Owner"
                     value={formatOwnerMoney(item.commercial.estimatedOwnerEntitlement)}
                   />
                   <FinanceRow label="Check-in" value={localDate(item.lease.startDate)} />
@@ -2793,11 +3056,53 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
               Perubahan profil, kredensial, dan penugasan aset dikelola oleh administrator Kostation
               untuk menjaga otoritas dan jejak audit tetap konsisten.
             </p>
+            {portal.owner?.ownerVisibleNote ? (
+              <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-primary">
+                  Catatan dari administrator
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                  {portal.owner.ownerVisibleNote}
+                </p>
+              </div>
+            ) : null}
           </div>
         </CardContent>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
+        {portal.owner &&
+        (portal.owner.payoutBankName ||
+          portal.owner.payoutAccountNumberMasked ||
+          portal.owner.payoutAccountHolder) ? (
+          <Card className="owner-data-surface border-border/80 shadow-sm">
+            <CardHeader className="border-b border-border/70 pb-4">
+              <CardTitle className="text-base">Rekening pembayaran Owner</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Informasi rekening ditampilkan secara aman dan hanya dapat diperbarui oleh Admin.
+              </p>
+            </CardHeader>
+            <CardContent className="grid gap-3 p-5 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Nama Bank</p>
+                <p className="mt-1 text-sm font-semibold">{portal.owner.payoutBankName ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Nomor Rekening</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {portal.owner.payoutAccountNumberMasked ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Atas Nama</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {portal.owner.payoutAccountHolder ?? "—"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card className="owner-data-surface border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="text-base">Cakupan kepemilikan</CardTitle>

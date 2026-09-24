@@ -142,6 +142,7 @@ export type RoomInventory = {
     mediumStayMonthlyPrice?: number;
     longStayMonthlyPrice?: number;
     commercialEffectiveDate?: string;
+    securityDepositMonths?: 1 | 2;
     managementFeeAmount?: number;
     facilities?: Array<
       Pick<RoomFacility, "id" | "name" | "icon" | "description" | "categoryId" | "sortOrder">
@@ -1390,6 +1391,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       "medium_stay_monthly_price",
       "long_stay_monthly_price",
       "commercial_effective_date",
+      "security_deposit_months",
       "deposit_amount",
       "management_fee_amount",
       "facilities",
@@ -1404,6 +1406,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     typeof kostType.medium_stay_monthly_price !== "number" ||
     typeof kostType.long_stay_monthly_price !== "number" ||
     !isCanonicalDate(kostType.commercial_effective_date) ||
+    (kostType.security_deposit_months !== 1 && kostType.security_deposit_months !== 2) ||
     typeof kostType.deposit_amount !== "number" ||
     typeof kostType.management_fee_amount !== "number" ||
     !Array.isArray(kostType.facilities)
@@ -1489,6 +1492,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
       mediumStayMonthlyPrice: kostType.medium_stay_monthly_price,
       longStayMonthlyPrice: kostType.long_stay_monthly_price,
       commercialEffectiveDate: kostType.commercial_effective_date,
+      securityDepositMonths: kostType.security_deposit_months,
       depositAmount: kostType.deposit_amount,
       managementFeeAmount: kostType.management_fee_amount,
       facilities: kostType.facilities.map(parseRoomFacility),

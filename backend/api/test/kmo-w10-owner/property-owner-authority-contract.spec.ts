@@ -33,6 +33,8 @@ const hardeningMigrationPath =
   'src/infrastructure/database/migrations/036_property_owner_authority_hardening.sql';
 const a3MigrationPath =
   'src/infrastructure/database/migrations/037_property_owner_service_coverage_authority.sql';
+const payoutProfileMigrationPath =
+  'src/infrastructure/database/migrations/098_property_owner_payout_profile.sql';
 const propertyId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
 
@@ -241,6 +243,22 @@ void test('historical owner scope migration backdates only first permanent assig
   assert.match(sql, /assignments\.assignment_status = 'active'/);
   assert.match(sql, /assignments\.effective_until IS NULL/);
   assert.match(sql, /NOT EXISTS \(/);
+});
+
+void test('Owner payout profile migration is additive, manifest-bound, and keeps the three account fields atomic', () => {
+  const migration = readFileSync(resolve(root, payoutProfileMigrationPath), 'utf8');
+  const manifest = MIGRATION_MANIFEST.find(
+    (entry) => entry.version === '098_property_owner_payout_profile.sql',
+  );
+
+  assert.ok(manifest);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), manifest.checksumSha256);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS payout_bank_name TEXT/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS payout_account_number TEXT/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS payout_account_holder TEXT/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS owner_visible_note TEXT/);
+  assert.match(migration, /property_owner_profiles_payout_fields_check/);
+  assert.doesNotMatch(migration, /TRUNCATE|DELETE FROM property_owner_profiles|DROP TABLE/i);
 });
 
 void test('empty or foreign property scope fails before query, transaction, or password hashing', async () => {
@@ -658,6 +676,101 @@ void test('releasing ownership closes it immediately without an admin-supplied d
   ]);
 
   assert.equal(releases, 1);
+});
+
+void test('releasing an asset used by active Owner-sponsored occupancy returns a business conflict', async () => {
+  const ownerId = '55555555-5555-4555-8555-555555555555';
+  const assignmentId = '88888888-8888-4888-8888-888888888888';
+  const events: string[] = [];
+  const sentinel = {
+    query: (sql: string) => {
+      const normalized = sql.replace(/\s+/g, ' ').trim();
+      if (normalized === 'BEGIN' || normalized === 'ROLLBACK' || normalized === 'COMMIT') {
+        events.push(normalized.toLowerCase());
+        return { rows: [], rowCount: 0 };
+      }
+      if (normalized.startsWith('INSERT INTO idempotency_commands')) {
+        events.push('claim');
+        return { rows: [{ id: '44444444-4444-4444-8444-444444444444' }], rowCount: 1 };
+      }
+      if (normalized.includes('FROM property_owner_profiles profiles JOIN users')) {
+        events.push('owner-lock');
+        return {
+          rows: [
+            {
+              id: ownerId,
+              property_id: propertyId,
+              user_id: '33333333-3333-4333-8333-333333333333',
+              full_name: 'Owner Demo',
+              phone: null,
+              email: 'owner@example.test',
+              address: null,
+              profile_status: 'active',
+              user_status: 'active',
+              created_at: new Date(),
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (
+        normalized.startsWith(
+          'SELECT id, effective_from, effective_until, assignment_status FROM room_owner_assignments',
+        )
+      ) {
+        events.push('assignment-lock');
+        return {
+          rows: [
+            {
+              id: assignmentId,
+              effective_from: '2026-08-01',
+              effective_until: null,
+              assignment_status: 'active',
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      if (normalized.startsWith('UPDATE room_owner_assignments')) {
+        events.push('assignment-release-blocked');
+        throw new Error('OWNER_SPONSORED_ACTIVE_ASSIGNMENT_RELEASE_BLOCKED');
+      }
+      throw new Error(`Unexpected Owner release SQL: ${normalized}`);
+    },
+    release: () => events.push('release'),
+  };
+  const service = new PropertyOwnerManagementService(databaseServiceWithClient(sentinel), {
+    write: () => events.push('audit'),
+  } as never);
+
+  await assert.rejects(
+    service.releaseAssignment(
+      actor(),
+      ownerId,
+      'room',
+      assignmentId,
+      { property_id: propertyId, reason: 'Koreksi kepemilikan' },
+      'w10-owner-release-blocked-key-0001',
+      { correlationId: 'w10-owner-release-blocked' },
+    ),
+    (error) => {
+      assert.deepEqual(exceptionBody(error), {
+        code: 'OWNER_SPONSORED_ACTIVE_ASSIGNMENT_RELEASE_BLOCKED',
+        message:
+          'Aset tidak dapat dilepas karena masih digunakan hunian tanggungan Owner aktif. Selesaikan atau akhiri hunian tersebut terlebih dahulu.',
+      });
+      return true;
+    },
+  );
+  assert.deepEqual(events, [
+    'begin',
+    'claim',
+    'owner-lock',
+    'assignment-lock',
+    'assignment-release-blocked',
+    'rollback',
+    'release',
+  ]);
 });
 
 void test('batch ownership release locks, audits, and closes every selected asset in one command', async () => {

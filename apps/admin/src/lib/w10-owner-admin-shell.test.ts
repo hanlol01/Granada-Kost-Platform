@@ -28,6 +28,47 @@ test("W10 Admin Owner Property renders inside the canonical Admin shell", () => 
   assert.doesNotMatch(workspace, /<main\b/);
 });
 
+test("Admin can record a complete Owner payout profile without exposing it in the workspace list", () => {
+  const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
+
+  for (const label of [
+    "Nama Bank",
+    "Nomor Rekening",
+    "Atas Nama",
+    "Catatan yang ditampilkan ke Owner",
+  ]) {
+    assert.match(workspace, new RegExp(label));
+  }
+  assert.match(workspace, /Nomor rekening akan disamarkan pada portal Owner/);
+  assert.match(workspace, /harus diisi bersama/);
+  assert.match(workspace, /PayoutBankCombobox/);
+  assert.doesNotMatch(workspace, /Pilih bank yang sudah ada atau ketik bank baru/);
+  const payoutBankCombobox = source("components/forms/PayoutBankCombobox.tsx");
+  assert.match(payoutBankCombobox, /CommandGroup heading="Bank tersimpan"/);
+  assert.match(payoutBankCombobox, /CommandGroup heading="Tambah baru"/);
+  assert.match(payoutBankCombobox, /Tambahkan nama bank/);
+});
+
+test("Admin owner detail provides safe credentials and WhatsApp contact actions", () => {
+  const workspace = source("components/property-owners/PropertyOwnerWorkspace.tsx");
+
+  assert.match(workspace, /Lihat kredensial Owner/);
+  assert.match(workspace, /Kredensial Owner/);
+  assert.match(workspace, /Password yang telah tersimpan tidak/);
+  assert.match(workspace, /Kirim kredensial via WhatsApp/);
+  assert.match(workspace, /function ownerCredentialsWhatsAppUrl/);
+  assert.match(workspace, /timeZone: "Asia\/Jakarta"/);
+  assert.match(workspace, /Akun email login:/);
+  assert.match(workspace, /Nomor telepon login:/);
+  assert.match(workspace, /function WhatsAppContact/);
+  assert.match(workspace, /function WhatsAppIcon/);
+  assert.match(workspace, /Informasi rekening bank/);
+  assert.match(workspace, /Nama Bank/);
+  assert.match(workspace, /Nomor Rekening/);
+  assert.match(workspace, /Atas Nama/);
+  assert.match(workspace, /Siapkan kredensial Owner/);
+});
+
 test("W10 login delegates authenticated landing to role-aware policy", () => {
   const loginRoute = source("routes/login.tsx");
 

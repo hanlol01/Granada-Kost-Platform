@@ -923,4 +923,29 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_w06_receipts_append_only' AND tgrelid=to_regclass('public.payment_receipts') AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '098_property_owner_payout_profile.sql',
+    checksumSha256: 'a0a9f9bd6df0e0ec1530719b29e6f5c2849bbf0c6c2195d38f1f9f29928f798c',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_profiles' AND column_name='payout_bank_name')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_profiles' AND column_name='owner_visible_note')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_profiles_payout_fields_check' AND conrelid=to_regclass('public.property_owner_profiles'))",
+    ],
+  },
+  {
+    version: '099_owner_sponsored_optional_security_deposit.sql',
+    checksumSha256: '380be4af8db1b177c2b42e64add248fa7cbb02f6ed0fb472b86619f18a1ac3e8',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_security_deposit_limit_check' AND conrelid=to_regclass('public.onboarding_commitments') AND pg_get_constraintdef(oid) ILIKE '%commercial_mode = ''owner_sponsored''%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_custom_pricing_snapshot_check' AND conrelid=to_regclass('public.onboarding_commitments') AND pg_get_constraintdef(oid) ILIKE '%security_deposit_required_amount = 0%' AND pg_get_constraintdef(oid) NOT ILIKE '%security_deposit_funded_amount = 0%')",
+    ],
+  },
+  {
+    version: '100_security_deposit_contract_snapshot.sql',
+    checksumSha256: 'aa4706d28d006a21ef436465a22ad5a8a1995340e609dd887160548c5b5f139a',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='leases_snapshot_deposit_amount_nonnegative_check' AND conrelid=to_regclass('public.leases'))",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_security_deposit_limit_check' AND conrelid=to_regclass('public.onboarding_commitments') AND pg_get_constraintdef(oid) ILIKE '%2 * contract_rent_amount%')",
+    ],
+  },
 ] as const;

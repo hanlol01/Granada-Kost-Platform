@@ -50,6 +50,7 @@ type RoomRow = {
   medium_stay_monthly_price: number | string;
   long_stay_monthly_price: number | string;
   commercial_effective_date: string;
+  security_deposit_months: number | string;
   security_deposit_amount: number | string;
   management_fee_amount: number | string | null;
 };
@@ -418,6 +419,7 @@ export class OnboardingService {
                  kcv.medium_stay_monthly_price::bigint AS medium_stay_monthly_price,
                  kcv.long_stay_monthly_price::bigint AS long_stay_monthly_price,
                  kcv.effective_date::text AS commercial_effective_date,
+                kcv.security_deposit_months::int AS security_deposit_months,
                 (kcv.monthly_price * kcv.security_deposit_months)::bigint AS security_deposit_amount,
                 management_fee.monthly_fee_amount::bigint AS management_fee_amount
          FROM rooms r
@@ -712,6 +714,27 @@ export class OnboardingService {
           });
         }
         const { contractRent, dpRequired, depositRequired } = commercial;
+        // Deposit is optional, but its amount must be frozen at contract creation.
+        // Owner-sponsored occupancy has no room-rent obligation, so its deposit
+        // target deliberately uses the reference tier instead of the zero rent rate.
+        const depositBasisMonthlyRate =
+          commercialMode === 'owner_sponsored'
+            ? commercial.referenceMonthlyPrice
+            : commercial.monthlyRate;
+        const securityDepositMonths = Number(room.security_deposit_months);
+        const securityDepositTarget = depositBasisMonthlyRate * securityDepositMonths;
+        if (
+          !Number.isSafeInteger(securityDepositMonths) ||
+          ![1, 2].includes(securityDepositMonths) ||
+          !Number.isSafeInteger(depositBasisMonthlyRate) ||
+          depositBasisMonthlyRate <= 0 ||
+          !Number.isSafeInteger(securityDepositTarget) ||
+          securityDepositTarget <= 0
+        )
+          throw new ConflictException({
+            code: 'ONBOARDING_SECURITY_DEPOSIT_POLICY_INVALID',
+            message: 'Kebijakan security deposit tipe kost belum valid.',
+          });
         let ownerSponsoredFee: ReturnType<typeof calculateOwnerSponsoredManagementFee> | null =
           null;
         if (commercialMode === 'owner_sponsored') {
@@ -764,6 +787,22 @@ export class OnboardingService {
           : stagedDirectOnboarding
             ? stagedSecurityDepositAmount
             : dto.security_deposit_funded_amount;
+        if (!Number.isSafeInteger(effectiveSecurityDeposit) || effectiveSecurityDeposit < 0)
+          throw new ConflictException({
+            code: 'ONBOARDING_SECURITY_DEPOSIT_TARGET_MISMATCH',
+            message: 'Nominal security deposit pada data onboarding tidak valid.',
+          });
+        // A lease must exist before a deposit can be received. This keeps the
+        // frozen target on the lease as the single authority and prevents the
+        // legacy onboarding payload from creating a free-form deposit payment.
+        // The Admin records the optional deposit afterwards from the Tagihan
+        // card, where only the exact remaining snapshot target is allowed.
+        if (effectiveSecurityDeposit !== 0)
+          throw new ConflictException({
+            code: 'ONBOARDING_SECURITY_DEPOSIT_DEFERRED',
+            message:
+              'Security deposit dicatat setelah kontrak terbentuk melalui tombol Catat Pembayaran Security Deposit.',
+          });
         if (
           leadPaymentCommitment &&
           (bookingFeeAmount !== leadBookingFee ||
@@ -815,24 +854,15 @@ export class OnboardingService {
           paidAt?: string | Date;
           transactionCode?: string | null;
         }>;
-        let securityDepositPayment:
-          | {
-              amount: number;
-              method: 'cash' | 'bank_transfer';
-              status: 'verified' | 'pending_confirmation';
-              evidenceFileIds: string[];
-              paymentNote?: string;
-              paidAt?: string | Date;
-            }
-          | undefined;
         if (stagedDirectOnboarding) {
           const securityDepositEntries = stagedPaymentEntries.filter(
             (entry) => entry.purpose === 'security_deposit',
           );
-          if (securityDepositEntries.length > 1)
+          if (securityDepositEntries.length > 0)
             throw new BadRequestException({
-              code: 'ONBOARDING_SECURITY_DEPOSIT_DUPLICATE',
-              message: 'Security deposit hanya boleh dicatat satu kali',
+              code: 'ONBOARDING_SECURITY_DEPOSIT_DEFERRED',
+              message:
+                'Security deposit dicatat setelah kontrak terbentuk melalui tombol Catat Pembayaran Security Deposit.',
             });
           let runningRentCredit = 0;
           let rentPaymentCount = 0;
@@ -861,17 +891,6 @@ export class OnboardingService {
               policy: { requiresActualPaymentDate: false },
             };
             const evidenceFileIds = entry.evidence_file_ids ?? [];
-            if (entry.purpose === 'security_deposit') {
-              securityDepositPayment = {
-                amount: entry.amount,
-                method: entry.method,
-                status: decision.status,
-                evidenceFileIds,
-                paymentNote: entry.note,
-                paidAt: entry.paid_at,
-              };
-              continue;
-            }
             if (entry.purpose === 'booking_fee') {
               runningRentCredit += entry.amount;
               rentPayments.push({
@@ -950,33 +969,6 @@ export class OnboardingService {
               paidAt: dto.payment_paid_at,
             });
         }
-        if (!stagedDirectOnboarding)
-          securityDepositPayment =
-            effectiveSecurityDeposit > 0
-              ? {
-                  amount: effectiveSecurityDeposit,
-                  method:
-                    leadPaymentCommitment && !isBookingFeeLead
-                      ? leadPaymentCommitment.payment_method
-                      : dto.payment_method,
-                  status:
-                    leadPaymentCommitment && !isBookingFeeLead
-                      ? leadPaymentCommitment.verification_status
-                      : currentPaymentStatus,
-                  evidenceFileIds:
-                    leadPaymentCommitment && !isBookingFeeLead
-                      ? leadPaymentCommitment.payment_evidence_file_ids
-                      : (dto.payment_evidence_file_ids ?? []),
-                  paymentNote:
-                    (leadPaymentCommitment && !isBookingFeeLead
-                      ? leadPaymentCommitment.payment_note
-                      : dto.payment_note) ?? undefined,
-                  paidAt:
-                    leadPaymentCommitment && !isBookingFeeLead
-                      ? leadPaymentCommitment.paid_at
-                      : dto.payment_paid_at,
-                }
-              : undefined;
         // W07A models every newly committed lease as one contract-rent
         // obligation. The UI may still use the familiar DP/full-payment choices,
         // but those choices describe the amount received today, not a recurring
@@ -985,7 +977,6 @@ export class OnboardingService {
         // The legacy DTO field name is retained for wire compatibility. It is the
         // additional rent payment recorded today. A prior booking fee is a rent
         // credit too, while security deposit remains a separate liability.
-        const maximumSecurityDeposit = Math.floor(contractRent / dto.term_months);
         if (
           commercialMode === 'rent' &&
           (!Number.isSafeInteger(initialRentCredit) || initialRentCredit < commercial.monthlyRate)
@@ -998,15 +989,6 @@ export class OnboardingService {
           throw new ConflictException({
             code: 'ONBOARDING_RENT_PAYMENT_EXCEEDS_CONTRACT',
             message: `Total booking fee dan DP atau pelunasan tidak boleh melebihi total sewa kontrak sebesar Rp${contractRent.toLocaleString('id-ID')}`,
-          });
-        if (
-          !Number.isSafeInteger(effectiveSecurityDeposit) ||
-          effectiveSecurityDeposit < 0 ||
-          effectiveSecurityDeposit > maximumSecurityDeposit
-        )
-          throw new ConflictException({
-            code: 'ONBOARDING_SECURITY_DEPOSIT_EXCEEDS_LIMIT',
-            message: `Security deposit bersifat opsional dengan nominal minimal Rp0 dan maksimal Rp${maximumSecurityDeposit.toLocaleString('id-ID')}`,
           });
         const endDate = new Date(`${dto.start_date}T00:00:00.000Z`);
         endDate.setUTCMonth(endDate.getUTCMonth() + dto.term_months);
@@ -1076,7 +1058,7 @@ export class OnboardingService {
             dto.billing_cycle,
             commercial.monthlyRate,
             commercialMode === 'owner_sponsored' ? 0 : yearlyPrice,
-            depositRequired,
+            securityDepositTarget,
             room.room_number,
             room.kost_type_name,
             lead?.id ?? null,
@@ -1202,7 +1184,6 @@ export class OnboardingService {
               leaseId: lease.rows[0].id,
               firstRentInvoiceId: issued.firstInvoiceId,
               rentPayments,
-              securityDepositPayment,
               commandFingerprint: fingerprint,
               actor,
               context,
@@ -1333,7 +1314,7 @@ export class OnboardingService {
           agreedMonthlyPrice: commercial.monthlyRate,
           pricingAgreementReason: commercial.pricingAgreementReason,
           dpRequiredAmount: dpRequired,
-          securityDepositRequiredAmount: depositRequired,
+          securityDepositRequiredAmount: securityDepositTarget,
           ownerSponsorship:
             commercialMode === 'owner_sponsored'
               ? {

@@ -63,6 +63,7 @@ type LeaseTupleRow = {
   contract_rent_amount: string;
   dp_required_amount: string;
   security_deposit_required_amount: string;
+  snapshot_deposit_amount: string;
   payment_plan_type: 'annual_full' | 'monthly_installments' | 'two_month_installments';
   snapshot_monthly_price: string;
   pricing_source: 'standard' | 'negotiated' | 'owner_sponsored';
@@ -293,6 +294,22 @@ type ContractSettlementProjectionRow = {
     note: string;
     recorded_at: string | Date;
   } | null;
+  payment_promise_history?: Array<{
+    id: string;
+    checkpoint_id: string;
+    promised_amount: string | number;
+    promised_payment_date: string;
+    note: string;
+    recorded_at: string | Date;
+  }>;
+  extension_history?: Array<{
+    id: string;
+    previous_due_at: string | Date | null;
+    revised_due_at: string | Date;
+    previous_reason: string | null;
+    revised_reason: string | null;
+    revised_at: string | Date;
+  }>;
   monthly_rate?: string;
   first_payment_checkpoint_at?: Date | null;
   partial_payment_deadline_at?: Date | null;
@@ -494,22 +511,12 @@ export type InitialOnboardingRentPaymentInput = {
   transactionCode?: string | null;
 };
 
-export type InitialOnboardingDepositPaymentInput = {
-  amount: number;
-  method: 'bank_transfer' | 'cash';
-  status: 'pending_confirmation' | 'verified';
-  evidenceFileIds: string[];
-  paymentNote?: string;
-  paidAt?: string | Date;
-};
-
 export type InitialOnboardingPaymentInput = {
   propertyId: string;
   residentId: string;
   leaseId: string;
   firstRentInvoiceId: string;
   rentPayments: InitialOnboardingRentPaymentInput[];
-  securityDepositPayment?: InitialOnboardingDepositPaymentInput;
   commandFingerprint: string;
   actor: UserAccessContext;
   context: RequestAuditContext;
@@ -1542,8 +1549,9 @@ export class W06BillingService {
    * W05 invokes this only after it has created and locked the awaiting-activation
    * lease plus its first issued rent invoice. It deliberately receives the W05
    * transaction client: onboarding owns the one logical command/idempotency
-   * boundary, while W06 remains the sole writer of payment, allocation, deposit,
-   * receipt, audit, and event records.
+   * boundary, while W06 remains the sole writer of payment, allocation, receipt,
+   * audit, and event records. Security deposit is deliberately excluded here: it
+   * is recorded only after the frozen lease target has been created.
    */
   async recordInitialOnboardingPaymentsInTransaction(
     client: PoolClient,
@@ -1561,15 +1569,6 @@ export class W06BillingService {
           message: 'Initial rent payment must be a positive exact amount',
         });
     }
-    if (
-      input.securityDepositPayment &&
-      (!Number.isSafeInteger(input.securityDepositPayment.amount) ||
-        input.securityDepositPayment.amount <= 0)
-    )
-      throw new BadRequestException({
-        code: 'ONBOARDING_SECURITY_DEPOSIT_INVALID',
-        message: 'Security deposit must be a positive exact amount',
-      });
     if (!/^[a-f0-9]{64}$/i.test(input.commandFingerprint))
       throw new BadRequestException({
         code: 'ONBOARDING_PAYMENT_FINGERPRINT_INVALID',
@@ -1583,8 +1582,8 @@ export class W06BillingService {
       input.residentId,
     );
     const payments: Array<{
-      purpose: Extract<W06PaymentPurpose, 'rent' | 'dp' | 'security_deposit'>;
-      classification: InitialOnboardingRentPaymentClassification | 'security_deposit';
+      purpose: Extract<W06PaymentPurpose, 'rent' | 'dp'>;
+      classification: InitialOnboardingRentPaymentClassification;
       amount: number;
       method: 'bank_transfer' | 'cash';
       status: 'pending_confirmation' | 'verified';
@@ -1610,18 +1609,6 @@ export class W06BillingService {
     }));
     const receipts: InitialOnboardingPaymentSummary['receipts'] = [];
     let rentPaymentSequence = 0;
-    if (input.securityDepositPayment)
-      payments.push({
-        purpose: 'security_deposit',
-        classification: 'security_deposit',
-        amount: input.securityDepositPayment.amount,
-        method: input.securityDepositPayment.method,
-        status: input.securityDepositPayment.status,
-        evidenceFileIds: input.securityDepositPayment.evidenceFileIds,
-        paymentNote: input.securityDepositPayment.paymentNote,
-        paidAt: input.securityDepositPayment.paidAt,
-        allocations: [],
-      });
 
     for (const [index, item] of payments.entries()) {
       await this.validateEvidence(
@@ -1645,9 +1632,7 @@ export class W06BillingService {
             ? 'LUNAS'
             : item.classification === 'installment'
               ? 'SEWA'
-              : item.classification === 'security_deposit'
-                ? 'DEPOSIT'
-                : 'DP';
+              : 'DP';
       const paymentCode =
         item.transactionCode ??
         (await nextFinancialTransactionCode(
@@ -1774,16 +1759,15 @@ export class W06BillingService {
       (total, payment) => total + (payment.status === 'verified' ? payment.amount : 0),
       0,
     );
-    const deposit = input.securityDepositPayment;
     return {
-      method: input.rentPayments.at(-1)?.method ?? deposit?.method ?? 'cash',
+      method: input.rentPayments.at(-1)?.method ?? 'cash',
       status: payments.every((payment) => payment.status === 'verified')
         ? 'verified'
         : 'pending_confirmation',
       dpRecordedAmount: rentRecordedAmount,
-      securityDepositRecordedAmount: deposit?.amount ?? 0,
+      securityDepositRecordedAmount: 0,
       dpVerifiedAmount: rentVerifiedAmount,
-      securityDepositVerifiedAmount: deposit?.status === 'verified' ? deposit.amount : 0,
+      securityDepositVerifiedAmount: 0,
       receipts,
     };
   }
@@ -2044,6 +2028,13 @@ export class W06BillingService {
           code: 'PAYMENT_AMOUNT_INVALID',
           message: 'Payment amount must be positive',
         });
+      if (dto.payment_purpose === 'security_deposit')
+        await this.assertSecurityDepositPaymentEligibility(
+          client,
+          lease,
+          effectiveAmount,
+          dto.note,
+        );
       if (dto.payment_purpose === 'management_fee')
         await this.assertOwnerSponsoredManagementFeePayment(client, lease, effectiveAmount);
       const invoiceRows = await this.lockAndValidateInvoices(
@@ -4153,6 +4144,8 @@ export class W06BillingService {
                       THEN COALESCE(legacy_initial_payment.net,0) ELSE COALESCE(contract_ledger.initial_payment_allocated,0) END AS initial_payment_allocated,
                   COALESCE(checkpoint_schedule.items,'[]'::jsonb) AS settlement_checkpoints,
                   payment_promise.item AS payment_promise,
+                  COALESCE(payment_promise_history.items,'[]'::jsonb) AS payment_promise_history,
+                  COALESCE(extension_history.items,'[]'::jsonb) AS extension_history,
                  COALESCE(offsets.amount,0) AS deposit_offset_amount,
                  termination.id AS termination_case_id,termination.status AS termination_status,
                  termination.planned_checkout_date::text AS planned_checkout_date
@@ -4268,6 +4261,32 @@ export class W06BillingService {
                ORDER BY promise.recorded_at DESC,promise.id DESC
                LIMIT 1
             ) payment_promise ON true
+            LEFT JOIN LATERAL (
+              SELECT jsonb_agg(jsonb_build_object(
+                       'id',promise.id,
+                       'checkpoint_id',promise.checkpoint_id,
+                       'promised_amount',promise.promised_amount,
+                       'promised_payment_date',promise.promised_payment_date,
+                       'note',promise.note,
+                       'recorded_at',promise.recorded_at
+                     ) ORDER BY promise.recorded_at DESC,promise.id DESC) AS items
+                FROM lease_payment_promises promise
+               WHERE promise.property_id=settlement.property_id
+                 AND promise.lease_id=settlement.lease_id
+            ) payment_promise_history ON true
+            LEFT JOIN LATERAL (
+              SELECT jsonb_agg(jsonb_build_object(
+                       'id',edit.id,
+                       'previous_due_at',edit.previous_due_at,
+                       'revised_due_at',edit.revised_due_at,
+                       'previous_reason',edit.previous_reason,
+                       'revised_reason',edit.revised_reason,
+                       'revised_at',edit.revised_at
+                     ) ORDER BY edit.revised_at DESC,edit.id DESC) AS items
+                FROM lease_settlement_extension_edit_history edit
+               WHERE edit.property_id=settlement.property_id
+                 AND edit.lease_id=settlement.lease_id
+            ) extension_history ON true
            LEFT JOIN LATERAL (
              SELECT COALESCE(sum(amount),0) AS amount
                FROM contract_settlement_deposit_offsets
@@ -4527,7 +4546,11 @@ export class W06BillingService {
         rent_invoiced: rentInvoiced,
         rent_paid: rentInvoiced - rentOutstanding,
         rent_outstanding: rentOutstanding,
+        // `security_deposit_required` remains for compatibility with older
+        // projections. The optional deposit policy is governed exclusively by
+        // the frozen lease snapshot below, never by the rent receivable.
         security_deposit_required: this.money(lease.security_deposit_required_amount),
+        security_deposit_target: this.money(lease.snapshot_deposit_amount),
         deposit_collected: deposit.collected,
         deposit_deducted: deposit.deducted,
         deposit_refunded: deposit.refunded,
@@ -4822,6 +4845,78 @@ export class W06BillingService {
       });
   }
 
+  /**
+   * Deposit can be received only before physical handover. The UI follows the
+   * same rule, but this service guard keeps the checkout ledger authoritative
+   * for direct API calls and stale browser tabs.
+   */
+  private async assertSecurityDepositPaymentEligibility(
+    client: PoolClient,
+    lease: LeaseTupleRow,
+    amount: number,
+    note: string | undefined,
+  ): Promise<void> {
+    const handover = await client.query<{ physical_checkout_confirmed_at: Date | null }>(
+      `SELECT physical_checkout_confirmed_at
+         FROM lease_checkout_commands
+        WHERE property_id=$1
+          AND lease_id=$2
+          AND state <> 'cancelled'
+        ORDER BY created_at DESC,id DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [lease.property_id, lease.id],
+    );
+    if (handover.rows[0]?.physical_checkout_confirmed_at)
+      throw new ConflictException({
+        code: 'SECURITY_DEPOSIT_RECORDING_CLOSED_AFTER_HANDOVER',
+        message: 'Security deposit tidak dapat dicatat setelah serah-terima fisik check-out.',
+      });
+
+    const pending = await client.query<{ id: string }>(
+      `SELECT id
+         FROM payments
+        WHERE property_id=$1
+          AND lease_id=$2
+          AND payment_purpose='security_deposit'
+          AND payment_status='pending_confirmation'
+        LIMIT 1
+        FOR UPDATE`,
+      [lease.property_id, lease.id],
+    );
+    if (pending.rowCount)
+      throw new ConflictException({
+        code: 'SECURITY_DEPOSIT_PAYMENT_PENDING_CONFIRMATION',
+        message: 'Masih ada pembayaran security deposit yang menunggu verifikasi.',
+      });
+
+    const target = this.money(lease.snapshot_deposit_amount);
+    if (target <= 0)
+      throw new ConflictException({
+        code: 'SECURITY_DEPOSIT_TARGET_UNAVAILABLE',
+        message:
+          'Target security deposit kontrak belum tersedia. Hubungi Admin untuk memperbarui snapshot kontrak.',
+      });
+    const collected = await this.depositBalance(client, lease.id);
+    const remaining = Math.max(0, target - collected);
+    if (remaining <= 0)
+      throw new ConflictException({
+        code: 'SECURITY_DEPOSIT_ALREADY_COMPLETE',
+        message: 'Target security deposit kontrak sudah terpenuhi.',
+      });
+    if (amount !== remaining)
+      throw new UnprocessableEntityException({
+        code: 'SECURITY_DEPOSIT_TARGET_MISMATCH',
+        message: `Nominal security deposit harus tepat Rp${remaining.toLocaleString('id-ID')} sesuai sisa target kontrak.`,
+      });
+
+    if (lease.commercial_mode === 'owner_sponsored' && (note?.trim().length ?? 0) < 3)
+      throw new BadRequestException({
+        code: 'OWNER_SPONSORED_DEPOSIT_NOTE_REQUIRED',
+        message: 'Catatan kesepakatan wajib diisi untuk security deposit hunian tanggungan Owner.',
+      });
+  }
+
   private async assertContractSettlementPaymentEligibility(
     client: PoolClient,
     lease: LeaseTupleRow,
@@ -5026,6 +5121,8 @@ export class W06BillingService {
         full_payment_required: false,
         extension_available: false,
         payment_promise: null,
+        payment_promise_history: this.paymentPromiseHistory(row),
+        extension_history: this.extensionHistory(row),
         termination_case: null,
       };
     }
@@ -5163,6 +5260,8 @@ export class W06BillingService {
         !row.extension_due_at &&
         row.termination_status !== 'pending',
       payment_promise: null,
+      payment_promise_history: this.paymentPromiseHistory(row),
+      extension_history: this.extensionHistory(row),
       termination_case: row.termination_case_id
         ? {
             id: row.termination_case_id,
@@ -5307,6 +5406,8 @@ export class W06BillingService {
                 : new Date(row.payment_promise.recorded_at).toISOString(),
           }
         : null,
+      payment_promise_history: this.paymentPromiseHistory(row),
+      extension_history: this.extensionHistory(row),
       termination_case: row.termination_case_id
         ? {
             id: row.termination_case_id,
@@ -5315,6 +5416,33 @@ export class W06BillingService {
           }
         : null,
     };
+  }
+
+  private paymentPromiseHistory(row: ContractSettlementProjectionRow) {
+    return (row.payment_promise_history ?? []).map((promise) => ({
+      id: promise.id,
+      promised_amount: this.money(promise.promised_amount),
+      promised_payment_date: promise.promised_payment_date,
+      note: promise.note,
+      recorded_at: this.settlementHistoryTimestamp(promise.recorded_at),
+    }));
+  }
+
+  private extensionHistory(row: ContractSettlementProjectionRow) {
+    return (row.extension_history ?? []).map((extension) => ({
+      id: extension.id,
+      previous_due_at: extension.previous_due_at
+        ? this.settlementHistoryTimestamp(extension.previous_due_at)
+        : null,
+      revised_due_at: this.settlementHistoryTimestamp(extension.revised_due_at),
+      previous_reason: extension.previous_reason,
+      revised_reason: extension.revised_reason,
+      revised_at: this.settlementHistoryTimestamp(extension.revised_at),
+    }));
+  }
+
+  private settlementHistoryTimestamp(value: string | Date) {
+    return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
   }
 
   private async lockAndValidateInvoices(
@@ -5450,11 +5578,11 @@ export class W06BillingService {
     if (payment.payment_purpose === 'security_deposit') {
       const balance = await this.depositBalance(client, lease.id);
       const amount = this.money(payment.amount);
-      const required = this.money(lease.security_deposit_required_amount);
-      if (required > 0 && balance + amount > required)
+      const target = this.money(lease.snapshot_deposit_amount);
+      if (target <= 0 || balance + amount !== target)
         throw new UnprocessableEntityException({
-          code: 'DEPOSIT_OVERPAYMENT',
-          message: 'Security deposit exceeds the frozen lease requirement',
+          code: 'SECURITY_DEPOSIT_TARGET_MISMATCH',
+          message: 'Security deposit must exactly satisfy the frozen lease target',
         });
       await client.query(
         `INSERT INTO lease_deposit_transactions(property_id,lease_id,transaction_type,direction,amount,payment_id,reason_type,reason,settlement_status,settled_at,settled_by_user_id,metadata,created_by_user_id) VALUES($1,$2,CASE WHEN $3=0 THEN 'collection' ELSE 'top_up' END,'credit',$4,$5,'w06_verified_payment','Verified security-deposit funding','settled',now(),$6,$7::jsonb,$6)`,
@@ -5748,7 +5876,7 @@ export class W06BillingService {
     return result.rows[0];
   }
   private leaseTupleSql() {
-    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
+    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.snapshot_deposit_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
   }
   private async lockProperty(client: PoolClient, propertyId: string) {
     const result = await client.query(`SELECT id FROM properties WHERE id=$1 FOR UPDATE`, [

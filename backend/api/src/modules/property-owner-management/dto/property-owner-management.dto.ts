@@ -88,6 +88,30 @@ export class CreatePropertyOwnerDto {
   @MinLength(10)
   @MaxLength(128)
   initial_password!: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(120)
+  payout_bank_name?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(64)
+  payout_account_number?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(150)
+  payout_account_holder?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(2000)
+  owner_visible_note?: string | null;
 }
 
 export class UpdatePropertyOwnerDto {
@@ -114,6 +138,30 @@ export class UpdatePropertyOwnerDto {
   @IsString()
   @MaxLength(1000)
   address?: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(120)
+  payout_bank_name?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(64)
+  payout_account_number?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(150)
+  payout_account_holder?: string | null;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(2000)
+  owner_visible_note?: string | null;
 }
 
 export class ResetPropertyOwnerPasswordDto {

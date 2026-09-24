@@ -315,6 +315,10 @@ type HarnessOptions = {
   paymentPurpose?: 'rent' | 'dp';
   paymentCode?: string;
   commandFingerprint?: string | null;
+  commercialMode?: 'rent' | 'owner_sponsored';
+  securityDepositHandover?: boolean;
+  securityDepositPending?: boolean;
+  securityDepositBalance?: number;
   enforceOnboardingRentCreditConstraint?: boolean;
   initialIntents?: Array<{ invoice_id: string; intended_amount: string }>;
   contractSettlement?: {
@@ -395,11 +399,13 @@ function paymentHarness(options: HarnessOptions = {}) {
               room_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
               occupancy_id: null,
               lease_status: 'awaiting_activation',
+              commercial_mode: options.commercialMode ?? 'rent',
               start_date: '2026-08-01',
               end_date: '2027-07-31',
               contract_rent_amount: '21600000',
               dp_required_amount: '5400000',
               security_deposit_required_amount: '1800000',
+              snapshot_deposit_amount: '1800000',
               payment_plan_type: 'two_month_installments',
               snapshot_monthly_price: '1800000',
               snapshot_room_number: 'RK-01',
@@ -412,6 +418,32 @@ function paymentHarness(options: HarnessOptions = {}) {
         };
       if (/SELECT lease_id,resident_id FROM payments/.test(normalized))
         return { rows: [{ lease_id: LEASE_ID, resident_id: RESIDENT_ID }], rowCount: 1 };
+      if (/FROM lease_checkout_commands/.test(normalized))
+        return {
+          rows: [
+            {
+              physical_checkout_confirmed_at: options.securityDepositHandover
+                ? new Date('2026-08-20T00:00:00.000Z')
+                : null,
+            },
+          ],
+          rowCount: options.securityDepositHandover ? 1 : 0,
+        };
+      if (/FROM payments\s+WHERE property_id=\$1\s+AND lease_id=\$2\s+AND payment_purpose='security_deposit'/.test(normalized))
+        return {
+          rows: options.securityDepositPending ? [{ id: PAYMENT_ID }] : [],
+          rowCount: options.securityDepositPending ? 1 : 0,
+        };
+      if (/SELECT id\s+FROM lease_deposit_transactions/.test(normalized))
+        return {
+          rows: options.securityDepositBalance ? [{ id: 'deposit-1' }] : [],
+          rowCount: options.securityDepositBalance ? 1 : 0,
+        };
+      if (/SELECT COALESCE\(sum\(CASE direction WHEN 'credit' THEN amount ELSE -amount END\),0\) AS balance FROM lease_deposit_transactions/.test(normalized))
+        return {
+          rows: [{ balance: String(options.securityDepositBalance ?? 0) }],
+          rowCount: 1,
+        };
       if (/SELECT id,property_id,resident_id,lease_id,payment_code/.test(normalized))
         return {
           rows: [
@@ -1068,6 +1100,118 @@ test('audited cash funds the separate deposit ledger without creating an invoice
   assert.equal(
     harness.queries.some(({ sql: statement }) => /INSERT INTO payment_allocations/.test(statement)),
     false,
+  );
+});
+
+test('security deposit recording closes after handover and rejects duplicate pending transfers', async () => {
+  const deposit = {
+    property_id: PROPERTY_ID,
+    resident_id: RESIDENT_ID,
+    lease_id: LEASE_ID,
+    method: 'cash' as const,
+    payment_purpose: 'security_deposit' as const,
+    amount: 1_800_000,
+    note: 'Deposit keamanan diterima kas',
+    allocations: [],
+  };
+  for (const [options, code] of [
+    [{ securityDepositHandover: true }, 'SECURITY_DEPOSIT_RECORDING_CLOSED_AFTER_HANDOVER'],
+    [{ securityDepositPending: true }, 'SECURITY_DEPOSIT_PAYMENT_PENDING_CONFIRMATION'],
+  ] as const) {
+    const harness = paymentHarness(options);
+    await assert.rejects(
+      harness.service.recordManualPayment(actor as never, deposit, KEY, {}),
+      (error: unknown) =>
+        error instanceof Error &&
+        'getResponse' in error &&
+        (error as { getResponse: () => { code: string } }).getResponse().code === code,
+    );
+  }
+});
+
+test('security deposit must equal the remaining frozen contract target', async () => {
+  for (const amount of [1_799_999, 1_800_001]) {
+    const harness = paymentHarness();
+    await assert.rejects(
+      harness.service.recordManualPayment(
+        actor as never,
+        {
+          property_id: PROPERTY_ID,
+          resident_id: RESIDENT_ID,
+          lease_id: LEASE_ID,
+          method: 'cash',
+          payment_purpose: 'security_deposit',
+          amount,
+          note: 'Deposit keamanan diterima kas',
+          allocations: [],
+        },
+        KEY,
+        {},
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'getResponse' in error &&
+        (error as { getResponse: () => { code: string } }).getResponse().code ===
+          'SECURITY_DEPOSIT_TARGET_MISMATCH',
+    );
+    assert.equal(
+      harness.queries.some(({ sql: statement }) => /INSERT INTO payments\(/.test(statement)),
+      false,
+    );
+  }
+});
+
+test('Owner-sponsored deposit recording requires a recorded agreement note', async () => {
+  const harness = paymentHarness({ commercialMode: 'owner_sponsored' });
+  await assert.rejects(
+    harness.service.recordManualPayment(
+      actor as never,
+      {
+        property_id: PROPERTY_ID,
+        resident_id: RESIDENT_ID,
+        lease_id: LEASE_ID,
+        method: 'cash',
+        payment_purpose: 'security_deposit',
+        amount: 1_800_000,
+        allocations: [],
+      },
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'OWNER_SPONSORED_DEPOSIT_NOTE_REQUIRED',
+  );
+});
+
+test('optional security deposit cannot be recorded twice after verification', async () => {
+  const harness = paymentHarness({
+    commercialMode: 'owner_sponsored',
+    securityDepositBalance: 1_800_000,
+  });
+  await assert.rejects(
+    harness.service.recordManualPayment(
+      actor as never,
+      {
+        property_id: PROPERTY_ID,
+        resident_id: RESIDENT_ID,
+        lease_id: LEASE_ID,
+        method: 'cash',
+        payment_purpose: 'security_deposit',
+        amount: 1_800_000,
+        note: 'Deposit sukarela diterima atas kesepakatan Admin dan Owner',
+        allocations: [],
+      },
+      KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'SECURITY_DEPOSIT_ALREADY_COMPLETE',
   );
 });
 

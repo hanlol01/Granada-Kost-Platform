@@ -94,7 +94,7 @@ type Props = { onCreated: (leaseId: string) => void | Promise<void>; bookingLead
 type Gender = "male" | "female";
 type PaymentMethod = "cash" | "bank_transfer";
 type PaymentChoice = "dp" | "full";
-type PaymentEntryPurpose = "rent" | "booking_fee" | "security_deposit";
+type PaymentEntryPurpose = "rent" | "booking_fee";
 type PricingSource = "standard" | "negotiated";
 type CommercialMode = "rent" | "owner_sponsored";
 type ManagementFeeMode = "charged" | "waived";
@@ -134,17 +134,12 @@ type StagedPaymentController = {
   onToggle: (id: string) => void;
   rentAmount: number;
   bookingFeeAmount: number;
-  securityDepositAmount: number;
   recordedRentFullyPaid: boolean;
   contractFullyPaid: boolean;
   hasUnsavedDraft: boolean;
   hideDraft: boolean;
   rentPurposeDisabled: boolean;
   recentlyAddedPaymentId: string | null;
-  securityDepositPromptVisible: boolean;
-  optionalSecurityDepositDraftOpen: boolean;
-  onOpenSecurityDeposit: () => void;
-  onCancelSecurityDeposit: () => void;
 };
 
 type ResidentDraft = {
@@ -255,7 +250,7 @@ function calculateLeaseAmounts(
   return {
     contractRent,
     minimumDp: Math.ceil(contractRent * 0.25),
-    securityDeposit: 0,
+    securityDeposit: monthlyRate * room.kostType.securityDepositMonths,
     monthlyRate,
     referenceMonthlyRate,
     tierLabel:
@@ -298,7 +293,6 @@ function currency(amount: number) {
 
 function paymentPurposeLabel(purpose: PaymentEntryPurpose) {
   if (purpose === "booking_fee") return "Booking Fee";
-  if (purpose === "security_deposit") return "Security Deposit";
   return "Pembayaran Sewa";
 }
 
@@ -364,7 +358,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     () => !bookingLeadId,
   );
   const [paidRent, setPaidRent] = useState(0);
-  const [securityDeposit, setSecurityDeposit] = useState(0);
   const [bookingFee, setBookingFee] = useState(0);
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentEvidence, setPaymentEvidence] = useState<FileResponse[]>([]);
@@ -374,7 +367,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   const [recentlyAddedPaymentId, setRecentlyAddedPaymentId] = useState<string | null>(null);
-  const [optionalSecurityDepositDraftOpen, setOptionalSecurityDepositDraftOpen] = useState(false);
   const [paymentDraftAttempted, setPaymentDraftAttempted] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
@@ -443,7 +435,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setAgreedMonthlyPrice(context.paymentCommitment.agreedMonthlyPrice);
     setPricingAgreementReason(context.paymentCommitment.pricingAgreementReason ?? "");
     setPricingVarianceAcknowledged(true);
-    setSecurityDeposit(context.paymentCommitment.securityDepositAmount);
     setPaymentMethod(context.paymentCommitment.paymentMethod);
     setPaymentNote(context.paymentCommitment.paymentNote ?? "");
     setBookingFee(
@@ -484,7 +475,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setManagementFeePayerName("");
     setOwnerSponsorshipReason("");
     setPaidRent(0);
-    setSecurityDeposit(0);
     setBookingFee(0);
     setPaymentNote("");
     setPaymentPaidAt("");
@@ -495,7 +485,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setEditingPaymentId(null);
     setExpandedPaymentId(null);
     setRecentlyAddedPaymentId(null);
-    setOptionalSecurityDepositDraftOpen(false);
     setPaymentDraftAttempted(false);
     setKtpDocumentError(null);
     setServerStageOneErrors({});
@@ -531,6 +520,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           mediumStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.monthlyPrice,
           longStayMonthlyPrice: bookingQuotedMonthlyRate ?? bookingRoom.yearlyPrice / 12,
           commercialEffectiveDate: startDate,
+          securityDepositMonths: bookingRoom.securityDepositMonths,
           depositAmount: 0,
           managementFeeAmount: 0,
         },
@@ -560,7 +550,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         minimumDp: Math.ceil(
           committedCommercial.agreedMonthlyPrice * committedCommercial.termMonths * 0.25,
         ),
-        securityDeposit: 0,
+        securityDeposit:
+          committedCommercial.agreedMonthlyPrice *
+          (selectedRoom?.kostType.securityDepositMonths ?? 1),
         monthlyRate: committedCommercial.agreedMonthlyPrice,
         referenceMonthlyRate: committedCommercial.referenceMonthlyPrice,
         tierLabel:
@@ -576,7 +568,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ? {
           contractRent: bookingLeadQuote.data.contractRentAmount,
           minimumDp: bookingLeadQuote.data.suggestedDpAmount,
-          securityDeposit: 0,
+          securityDeposit:
+            (bookingQuotedMonthlyRate ?? fallbackAmounts.monthlyRate) *
+            selectedRoom.kostType.securityDepositMonths,
           monthlyRate: bookingQuotedMonthlyRate ?? fallbackAmounts.monthlyRate,
           referenceMonthlyRate: fallbackAmounts.referenceMonthlyRate,
           tierLabel: fallbackAmounts.tierLabel,
@@ -588,7 +582,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           ...rentAmounts,
           contractRent: 0,
           minimumDp: 0,
-          securityDeposit: 0,
+          securityDeposit:
+            rentAmounts.referenceMonthlyRate * (selectedRoom?.kostType.securityDepositMonths ?? 1),
           monthlyRate: 0,
         }
       : rentAmounts;
@@ -640,10 +635,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     (total, entry) => total + (entry.purpose === "booking_fee" ? entry.amount : 0),
     0,
   );
-  const stagedSecurityDepositAmount = paymentEntries.reduce(
-    (total, entry) => total + (entry.purpose === "security_deposit" ? entry.amount : 0),
-    0,
-  );
   const otherRentAmount = stagedEntriesOutsideEdit.reduce(
     (total, entry) => total + (entry.purpose === "rent" ? entry.amount : 0),
     0,
@@ -652,27 +643,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     (total, entry) => total + (entry.purpose === "booking_fee" ? entry.amount : 0),
     0,
   );
-  const otherSecurityDepositAmount = stagedEntriesOutsideEdit.reduce(
-    (total, entry) => total + (entry.purpose === "security_deposit" ? entry.amount : 0),
-    0,
-  );
-  const draftAmount =
-    paymentPurpose === "rent"
-      ? paidRent
-      : paymentPurpose === "booking_fee"
-        ? bookingFee
-        : securityDeposit;
-  const prospectiveRentCredit =
-    otherRentAmount +
-    otherBookingFeeAmount +
-    (paymentPurpose === "rent" || paymentPurpose === "booking_fee" ? draftAmount : 0);
-  const prospectiveSecurityDeposit =
-    otherSecurityDepositAmount + (paymentPurpose === "security_deposit" ? draftAmount : 0);
+  const draftAmount = paymentPurpose === "rent" ? paidRent : bookingFee;
+  const prospectiveRentCredit = otherRentAmount + otherBookingFeeAmount + draftAmount;
   const summaryRentAmount = stagedPaymentMode ? stagedRentAmount : paidRent;
   const summaryBookingFeeAmount = stagedPaymentMode ? stagedBookingFeeAmount : bookingFee;
-  const summarySecurityDepositAmount = stagedPaymentMode
-    ? stagedSecurityDepositAmount
-    : securityDeposit;
   const bookingFeeExceedsRent =
     Boolean(selectedRoom) &&
     (stagedPaymentMode
@@ -688,10 +662,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       ? amounts.contractRent - otherBookingFeeAmount - otherRentAmount
       : amounts.contractRent - bookingFee,
   );
-  const maximumSecurityDeposit = selectedRoom ? selectedRoom.kostType.shortStayMonthlyPrice : 0;
-  const securityDepositExceedsMaximum =
-    Boolean(selectedRoom) &&
-    (stagedPaymentMode ? prospectiveSecurityDeposit : securityDeposit) > maximumSecurityDeposit;
   const bookingFeeBelowMinimum =
     (stagedPaymentMode ? paymentPurpose === "booking_fee" : true) &&
     bookingFee > 0 &&
@@ -716,17 +686,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const recordedRentFullyPaid =
     amounts.contractRent > 0 && totalRentCredit === amounts.contractRent;
   const contractFullyPaid = recordedRentFullyPaid && stagedRentVerified;
-  const hasSecurityDepositStage = paymentEntries.some(
-    (entry) => entry.purpose === "security_deposit",
-  );
   const hideStagedPaymentDraft =
-    stagedPaymentMode &&
-    contractFullyPaid &&
-    !optionalSecurityDepositDraftOpen &&
-    editingPaymentId === null;
+    stagedPaymentMode && contractFullyPaid && editingPaymentId === null;
   const rentPurposeDisabled = recordedRentFullyPaid && editingPaymentId === null;
   const hasUnsavedPaymentDraft =
-    optionalSecurityDepositDraftOpen ||
     draftAmount > 0 ||
     paymentPaidAt.length > 0 ||
     paymentNote.trim().length > 0 ||
@@ -753,8 +716,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       !editingExistingBookingFee &&
       stagedEntriesOutsideEdit.some((entry) => entry.purpose === "rent")
         ? "Booking fee harus dicatat sebelum pembayaran sewa."
-        : (paymentPurpose === "booking_fee" || paymentPurpose === "security_deposit") &&
-            duplicatePurpose
+        : paymentPurpose === "booking_fee" && duplicatePurpose
           ? `${paymentPurposeLabel(paymentPurpose)} hanya boleh dicatat satu kali.`
           : "",
     amount: commercialPricingPending
@@ -765,9 +727,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           ? `Booking fee minimal ${currency(MINIMUM_BOOKING_FEE)}.`
           : rentCreditExceedsContract
             ? `Nominal melebihi sisa sewa. Maksimal yang dapat dicatat ${currency(maximumRentPayment)}.`
-            : securityDepositExceedsMaximum
-              ? `Security deposit melebihi batas maksimal ${currency(maximumSecurityDeposit)}.`
-              : "",
+            : "",
     method: paymentMethodSelected ? "" : "Pilih metode pembayaran terlebih dahulu.",
     paidAt: !paymentPaidAt
       ? "Tanggal pembayaran wajib diisi."
@@ -835,15 +795,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           paymentEntries.length > 0 &&
           totalRentCredit >= requiredInitialRent &&
           totalRentCredit <= amounts.contractRent &&
-          stagedSecurityDepositAmount <= maximumSecurityDeposit &&
           !hasUnsavedPaymentDraft &&
           !pricingVarianceError &&
           !commercialPricingPending &&
           !paymentEvidenceBusy &&
           confirmed
         : Boolean(selectedRoom) &&
-          Number.isSafeInteger(securityDeposit) &&
-          securityDeposit >= 0 &&
           Number.isSafeInteger(paidRent) &&
           paidRent >= 0 &&
           Number.isSafeInteger(bookingFee) &&
@@ -851,7 +808,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           !bookingFeeBelowMinimum &&
           !bookingFeeExceedsRent &&
           !rentCreditExceedsContract &&
-          !securityDepositExceedsMaximum &&
           !pricingVarianceError &&
           !commercialPricingPending &&
           Boolean(bookingLeadQuote.data) &&
@@ -862,28 +818,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           (!historicalPaymentDateRequired || Boolean(paymentPaidAt)) &&
           !paymentEvidenceBusy &&
           confirmed;
-
-  useEffect(() => {
-    if (
-      !stagedPaymentMode ||
-      !recordedRentFullyPaid ||
-      hasSecurityDepositStage ||
-      editingPaymentId !== null ||
-      paymentPurpose !== "rent"
-    )
-      return;
-    setPaymentPurpose("security_deposit");
-    setPaidRent(0);
-    setSecurityDeposit(0);
-    setBookingFee(0);
-    setPaymentDraftAttempted(false);
-  }, [
-    editingPaymentId,
-    hasSecurityDepositStage,
-    paymentPurpose,
-    recordedRentFullyPaid,
-    stagedPaymentMode,
-  ]);
 
   const stageTwoErrors = {
     roomId: selectedRoom ? "" : "Pilih satu kamar kosong terlebih dahulu.",
@@ -932,12 +866,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           : bookingFeeExceedsRent
             ? "Booking fee tidak boleh melebihi total sewa kontrak."
             : "",
-    securityDeposit:
-      commercialMode === "owner_sponsored" || stagedPaymentMode
-        ? ""
-        : securityDepositExceedsMaximum
-          ? `Security deposit melebihi batas. Nominalnya opsional mulai Rp0 dan maksimal ${currency(maximumSecurityDeposit)}.`
-          : "",
     paymentEvidence:
       commercialMode === "owner_sponsored" || stagedPaymentMode
         ? ""
@@ -1019,7 +947,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     setPaymentMethod("bank_transfer");
     setPaymentPaidAt("");
     setPaidRent(0);
-    setSecurityDeposit(0);
     setBookingFee(0);
     setPaymentNote("");
     setPaymentEvidence([]);
@@ -1046,19 +973,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       return;
     }
     applyPricingSource(value);
-  };
-
-  const openOptionalSecurityDepositStage = () => {
-    clearPaymentDraft();
-    setPaymentPurpose("security_deposit");
-    setOptionalSecurityDepositDraftOpen(true);
-    setConfirmed(false);
-  };
-
-  const cancelOptionalSecurityDepositStage = () => {
-    clearPaymentDraft();
-    setOptionalSecurityDepositDraftOpen(false);
-    scrollToPaymentSection();
   };
 
   const cancelPaymentEdit = () => {
@@ -1092,14 +1006,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setEditingPaymentId(null);
       setExpandedPaymentId(null);
       setRecentlyAddedPaymentId(null);
-      setOptionalSecurityDepositDraftOpen(false);
       setPaymentPurpose("rent");
       setPaymentPaidAt("");
       setPaymentNote("");
       setPaymentEvidence([]);
     }
     if (!replacingUnavailableRoom) {
-      setSecurityDeposit(0);
       setPaidRent(
         Math.max(
           0,
@@ -1125,7 +1037,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       setEditingPaymentId(null);
       setExpandedPaymentId(null);
       setRecentlyAddedPaymentId(null);
-      setOptionalSecurityDepositDraftOpen(false);
       setPaymentPurpose("rent");
       setPaymentPaidAt("");
       setPaymentNote("");
@@ -1136,7 +1047,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       if (pricingSource === "negotiated") setAgreedMonthlyPrice(nextAgreed);
       setPricingVarianceAcknowledged(false);
       const nextAmounts = calculateLeaseAmounts(selectedRoom, safe, pricingSource, nextAgreed);
-      setSecurityDeposit(0);
       setPaidRent(
         Math.max(
           0,
@@ -1218,7 +1128,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const changePaymentPurpose = (value: PaymentEntryPurpose) => {
     setPaymentPurpose(value);
     setPaidRent(0);
-    setSecurityDeposit(0);
     setBookingFee(0);
     setPaymentDraftAttempted(false);
     setConfirmed(false);
@@ -1249,20 +1158,17 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     );
     setExpandedPaymentId(null);
     if (isNewPayment) setRecentlyAddedPaymentId(id);
-    if (paymentPurpose === "security_deposit") setOptionalSecurityDepositDraftOpen(false);
     clearPaymentDraft();
     setConfirmed(false);
     scrollToPaymentSection();
   };
 
   const editPaymentStage = (entry: StagedPaymentEntry) => {
-    setOptionalSecurityDepositDraftOpen(false);
     setEditingPaymentId(entry.id);
     setExpandedPaymentId(entry.id);
     setPaymentPurpose(entry.purpose);
     setPaidRent(entry.purpose === "rent" ? entry.amount : 0);
     setBookingFee(entry.purpose === "booking_fee" ? entry.amount : 0);
-    setSecurityDeposit(entry.purpose === "security_deposit" ? entry.amount : 0);
     setPaymentMethod(entry.method);
     setPaymentPaidAt(entry.paidAt);
     setPaymentNote(entry.note);
@@ -1276,7 +1182,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     if (editingPaymentId === entry.id) clearPaymentDraft();
     if (expandedPaymentId === entry.id) setExpandedPaymentId(null);
     if (recentlyAddedPaymentId === entry.id) setRecentlyAddedPaymentId(null);
-    if (entry.purpose === "security_deposit") setOptionalSecurityDepositDraftOpen(false);
     setConfirmed(false);
   };
 
@@ -1353,8 +1258,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       accepted_terms_version:
         commercialMode === "owner_sponsored" ? "OWNER-SPONSORED-v2" : "KMO-W05-v1",
       dp_verified_amount: commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : paidRent,
-      security_deposit_funded_amount:
-        commercialMode === "owner_sponsored" || stagedPaymentMode ? 0 : securityDeposit,
+      security_deposit_funded_amount: 0,
       booking_fee_paid_amount:
         commercialMode === "owner_sponsored" || stagedPaymentMode
           ? undefined
@@ -1647,40 +1551,43 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
               <div className="rounded-xl border border-border bg-muted/30 p-4">
                 <p className="font-medium">Dokumen pembayaran awal</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Unduh kuitansi untuk setiap uang yang telah diterima. Kuitansi security deposit
-                  tetap terpisah dari pembayaran sewa.
+                  Unduh dokumen pembayaran awal yang tersedia. Kuitansi security deposit tetap
+                  terpisah dari pembayaran sewa; kuitansi angsuran sewa tersedia dari riwayat
+                  pembayaran setelah onboarding selesai.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {onboarding.data.initialPayment.receipts.map((receipt) => (
-                    <Button
-                      key={receipt.id}
-                      type="button"
-                      variant={receipt.purpose === "security_deposit" ? "outline" : "success"}
-                      onClick={() => {
-                        if (!currentPropertyId) return;
-                        setReceiptDownloadError(null);
-                        void downloadAdminReceiptDocument(
-                          currentPropertyId,
-                          receipt.id,
-                          {
-                            booking_fee: "kuitansi-booking-fee",
-                            down_payment: "kuitansi-down-payment",
-                            installment: "kuitansi-angsuran-sewa",
-                            full_settlement: "kuitansi-pelunasan-sewa",
-                            security_deposit: "kuitansi-security-deposit",
-                          }[receipt.purpose],
-                        ).catch((error: unknown) =>
-                          setReceiptDownloadError(
-                            error instanceof Error ? error.message : "Kuitansi gagal diunduh.",
-                          ),
-                        );
-                      }}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Unduh kuitansi{" "}
-                      {receiptPurposeLabel(receipt.purpose, receipt.rentPaymentSequence)}
-                    </Button>
-                  ))}
+                  {onboarding.data.initialPayment.receipts
+                    .filter((receipt) => receipt.purpose !== "installment")
+                    .map((receipt) => (
+                      <Button
+                        key={receipt.id}
+                        type="button"
+                        variant={receipt.purpose === "security_deposit" ? "outline" : "success"}
+                        onClick={() => {
+                          if (!currentPropertyId) return;
+                          setReceiptDownloadError(null);
+                          void downloadAdminReceiptDocument(
+                            currentPropertyId,
+                            receipt.id,
+                            {
+                              booking_fee: "kuitansi-booking-fee",
+                              down_payment: "kuitansi-down-payment",
+                              installment: "kuitansi-angsuran-sewa",
+                              full_settlement: "kuitansi-pelunasan-sewa",
+                              security_deposit: "kuitansi-security-deposit",
+                            }[receipt.purpose],
+                          ).catch((error: unknown) =>
+                            setReceiptDownloadError(
+                              error instanceof Error ? error.message : "Kuitansi gagal diunduh.",
+                            ),
+                          );
+                        }}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Unduh kuitansi{" "}
+                        {receiptPurposeLabel(receipt.purpose, receipt.rentPaymentSequence)}
+                      </Button>
+                    ))}
                 </div>
               </div>
             ) : null}
@@ -1862,7 +1769,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             bookingFeeExceedsRent={bookingFeeExceedsRent}
             rentCreditExceedsContract={rentCreditExceedsContract}
             maximumRentPayment={maximumRentPayment}
-            maximumSecurityDeposit={maximumSecurityDeposit}
             bookingFeeBelowMinimum={bookingFeeBelowMinimum}
             paymentChoiceSelected={paymentChoiceSelected}
             paymentMethodSelected={paymentMethodSelected}
@@ -1890,8 +1796,6 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             onPaymentEvidenceBusyChange={setPaymentEvidenceBusy}
             paidRent={paidRent}
             setPaidRent={setPaidRent}
-            securityDeposit={securityDeposit}
-            setSecurityDeposit={setSecurityDeposit}
             bookingFee={bookingFee}
             setBookingFee={stagedPaymentMode ? setBookingFee : changeBookingFee}
             stagedPayment={
@@ -1912,21 +1816,12 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
                       setExpandedPaymentId((current) => (current === id ? null : id)),
                     rentAmount: stagedRentAmount,
                     bookingFeeAmount: stagedBookingFeeAmount,
-                    securityDepositAmount: stagedSecurityDepositAmount,
                     recordedRentFullyPaid,
                     contractFullyPaid,
                     hasUnsavedDraft: hasUnsavedPaymentDraft,
                     hideDraft: hideStagedPaymentDraft,
                     rentPurposeDisabled,
                     recentlyAddedPaymentId,
-                    securityDepositPromptVisible:
-                      contractFullyPaid &&
-                      !hasSecurityDepositStage &&
-                      !optionalSecurityDepositDraftOpen &&
-                      editingPaymentId === null,
-                    optionalSecurityDepositDraftOpen,
-                    onOpenSecurityDeposit: openOptionalSecurityDepositStage,
-                    onCancelSecurityDeposit: cancelOptionalSecurityDepositStage,
                   }
                 : null
             }
@@ -2511,7 +2406,6 @@ function RoomAndPaymentStep({
   bookingFeeExceedsRent,
   rentCreditExceedsContract,
   maximumRentPayment,
-  maximumSecurityDeposit,
   bookingFeeBelowMinimum,
   paymentChoiceSelected,
   paymentMethodSelected,
@@ -2531,8 +2425,6 @@ function RoomAndPaymentStep({
   onPaymentEvidenceBusyChange,
   paidRent,
   setPaidRent,
-  securityDeposit,
-  setSecurityDeposit,
   bookingFee,
   setBookingFee,
   stagedPayment,
@@ -2582,7 +2474,6 @@ function RoomAndPaymentStep({
   bookingFeeExceedsRent: boolean;
   rentCreditExceedsContract: boolean;
   maximumRentPayment: number;
-  maximumSecurityDeposit: number;
   bookingFeeBelowMinimum: boolean;
   paymentChoiceSelected: boolean;
   paymentMethodSelected: boolean;
@@ -2602,8 +2493,6 @@ function RoomAndPaymentStep({
   onPaymentEvidenceBusyChange: (busy: boolean) => void;
   paidRent: number;
   setPaidRent: (value: number) => void;
-  securityDeposit: number;
-  setSecurityDeposit: (value: number) => void;
   bookingFee: number;
   setBookingFee: (value: number) => void;
   stagedPayment: StagedPaymentController | null;
@@ -2614,7 +2503,6 @@ function RoomAndPaymentStep({
     managementFeePayerName: string;
     ownerSponsorshipReason: string;
     paidRent: string;
-    securityDeposit: string;
     bookingFee: string;
     paymentEvidence: string;
     paymentPaidAt: string;
@@ -2636,11 +2524,6 @@ function RoomAndPaymentStep({
     stagedPayment?.entries.some(
       (entry) => entry.purpose === "booking_fee" && entry.id !== stagedPayment.editingPaymentId,
     ) ?? false;
-  const hasOtherSecurityDeposit =
-    stagedPayment?.entries.some(
-      (entry) =>
-        entry.purpose === "security_deposit" && entry.id !== stagedPayment.editingPaymentId,
-    ) ?? false;
   const hasRecordedRent =
     stagedPayment?.entries.some(
       (entry) => entry.purpose === "rent" && entry.id !== stagedPayment.editingPaymentId,
@@ -2660,8 +2543,7 @@ function RoomAndPaymentStep({
   const editorRef = useRef<HTMLDivElement>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<StagedPaymentEntry | null>(null);
   useEffect(() => {
-    if (!stagedPayment?.editingPaymentId && !stagedPayment?.optionalSecurityDepositDraftOpen)
-      return;
+    if (!stagedPayment?.editingPaymentId) return;
     const frame = requestAnimationFrame(() => {
       const editor = editorRef.current;
       if (!editor) return;
@@ -2669,7 +2551,7 @@ function RoomAndPaymentStep({
       editor.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [stagedPayment?.editingPaymentId, stagedPayment?.optionalSecurityDepositDraftOpen]);
+  }, [stagedPayment?.editingPaymentId]);
   return (
     <div className="space-y-6">
       <Card>
@@ -3031,7 +2913,6 @@ function RoomAndPaymentStep({
                         {stagedPayment.entries.map((entry, index) => {
                           const expanded = stagedPayment.expandedPaymentId === entry.id;
                           const recentlyAdded = stagedPayment.recentlyAddedPaymentId === entry.id;
-                          const isLastEntry = index === stagedPayment.entries.length - 1;
                           const entriesThroughStage = stagedPayment.entries.slice(0, index + 1);
                           const rentSequence = entriesThroughStage.filter(
                             (item) => item.purpose === "rent",
@@ -3137,30 +3018,6 @@ function RoomAndPaymentStep({
                                   ) : null}
                                 </div>
                               ) : null}
-                              {isLastEntry && stagedPayment.securityDepositPromptVisible ? (
-                                <div className="flex flex-col gap-3 border-t border-success/25 bg-success/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                                  <p className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
-                                    <CheckCircle2
-                                      className="mt-0.5 h-4 w-4 shrink-0 text-success"
-                                      aria-hidden="true"
-                                    />
-                                    <span>
-                                      Sewa kontrak sudah lunas. Tambahkan security deposit hanya
-                                      jika pembayaran jaminan juga perlu dicatat.
-                                    </span>
-                                  </p>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="min-h-11 w-full shrink-0 whitespace-nowrap border-primary/50 text-primary hover:border-primary hover:bg-primary/10 hover:text-primary sm:w-auto"
-                                    onClick={stagedPayment.onOpenSecurityDeposit}
-                                    aria-label="Tambahkan pembayaran security deposit"
-                                  >
-                                    <Plus className="h-4 w-4" aria-hidden="true" />
-                                    Tambah Security Deposit
-                                  </Button>
-                                </div>
-                              ) : null}
                             </div>
                           );
                         })}
@@ -3201,43 +3058,28 @@ function RoomAndPaymentStep({
                             kuitansinya jelas.
                           </p>
                         </div>
-                        {stagedPayment.optionalSecurityDepositDraftOpen ? (
-                          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-success/30 bg-success/5 px-4 text-sm font-semibold text-foreground">
-                            <CheckCircle2
-                              className="h-4 w-4 shrink-0 text-success"
-                              aria-hidden="true"
-                            />
-                            Tujuan tahap ini: Security Deposit
-                          </div>
-                        ) : (
-                          <div
-                            className="grid gap-2 sm:grid-cols-3"
-                            role="group"
-                            aria-label="Tujuan pembayaran"
-                          >
-                            {(["rent", "booking_fee", "security_deposit"] as const).map(
-                              (purpose) => (
-                                <Button
-                                  key={purpose}
-                                  type="button"
-                                  variant={
-                                    stagedPayment.purpose === purpose ? "default" : "outline"
-                                  }
-                                  className="min-h-11"
-                                  disabled={
-                                    (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
-                                    (purpose === "booking_fee" &&
-                                      (hasOtherBookingFee || hasRecordedRent)) ||
-                                    (purpose === "security_deposit" && hasOtherSecurityDeposit)
-                                  }
-                                  onClick={() => stagedPayment.onPurposeChange(purpose)}
-                                >
-                                  {paymentPurposeLabel(purpose)}
-                                </Button>
-                              ),
-                            )}
-                          </div>
-                        )}
+                        <div
+                          className="grid gap-2 sm:grid-cols-2"
+                          role="group"
+                          aria-label="Tujuan pembayaran"
+                        >
+                          {(["rent", "booking_fee"] as const).map((purpose) => (
+                            <Button
+                              key={purpose}
+                              type="button"
+                              variant={stagedPayment.purpose === purpose ? "default" : "outline"}
+                              className="min-h-11"
+                              disabled={
+                                (purpose === "rent" && stagedPayment.rentPurposeDisabled) ||
+                                (purpose === "booking_fee" &&
+                                  (hasOtherBookingFee || hasRecordedRent))
+                              }
+                              onClick={() => stagedPayment.onPurposeChange(purpose)}
+                            >
+                              {paymentPurposeLabel(purpose)}
+                            </Button>
+                          ))}
+                        </div>
                         {stagedDraftErrors?.purpose ? (
                           <p
                             className="text-xs text-destructive"
@@ -3440,28 +3282,6 @@ function RoomAndPaymentStep({
                           ) : null}
                         </div>
                       ) : null}
-                      {!stagedPayment || stagedPayment.purpose === "security_deposit" ? (
-                        <div className="space-y-2">
-                          <Label htmlFor="deposit">Security deposit</Label>
-                          <RupiahInput
-                            id="deposit"
-                            value={securityDeposit}
-                            onValueChange={setSecurityDeposit}
-                            invalid={Boolean(stagedDraftErrors?.amount || errors?.securityDeposit)}
-                            readOnly={initialPaymentLocked}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Opsional. Minimal Rp0 dan maksimal {currency(maximumSecurityDeposit)}
-                            (setara satu bulan berdasarkan nilai kontrak). Nominal ini terpisah dari
-                            DP.
-                          </p>
-                          {stagedDraftErrors?.amount || errors?.securityDeposit ? (
-                            <p className="text-xs text-destructive" role="alert">
-                              {stagedDraftErrors?.amount || errors?.securityDeposit}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </div>
                     {historicalEntryMode && !initialPaymentLocked ? (
                       <NoticeAlert
@@ -3533,12 +3353,12 @@ function RoomAndPaymentStep({
                         ) : null}
                       </div>
                     ) : null}
-                    {!stagedPayment && (errors?.paidRent || errors?.securityDeposit) ? (
+                    {!stagedPayment && errors?.paidRent ? (
                       <NoticeAlert
                         tone="destructive"
                         density="compact"
                         title="Nominal pembayaran belum valid"
-                        description={errors.securityDeposit || errors.paidRent}
+                        description={errors.paidRent}
                       />
                     ) : null}
                     {stagedPayment && !stagedPayment.hideDraft ? (
@@ -3550,14 +3370,6 @@ function RoomAndPaymentStep({
                             onClick={stagedPayment.onCancelEdit}
                           >
                             <X className="h-4 w-4" /> Batalkan edit
-                          </Button>
-                        ) : stagedPayment.optionalSecurityDepositDraftOpen ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={stagedPayment.onCancelSecurityDeposit}
-                          >
-                            <X className="h-4 w-4" /> Batal tambah deposit
                           </Button>
                         ) : null}
                         <Button
@@ -3708,12 +3520,12 @@ function RoomAndPaymentStep({
                         Jaminan kamar
                       </p>
                       <Summary
-                        label="Security deposit tercatat"
-                        value={currency(stagedPayment?.securityDepositAmount ?? securityDeposit)}
+                        label="Target security deposit kontrak"
+                        value={currency(amounts.securityDeposit)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Security deposit bukan pengurang sewa. Nilai ini dicatat sebagai jaminan dan
-                        menjadi pengingat pengembalian saat checkout sesuai pemeriksaan kamar.
+                        Opsional dan tidak mengurangi sewa. Catat setelah penyewaan tersimpan
+                        melalui tombol Catat Pembayaran Security Deposit pada card Tagihan.
                       </p>
                     </div>
                     <div className="space-y-2 py-4">
@@ -3747,10 +3559,8 @@ function RoomAndPaymentStep({
                         label="Total pembayaran awal tercatat"
                         value={currency(
                           stagedPayment
-                            ? stagedPayment.bookingFeeAmount +
-                                stagedPayment.rentAmount +
-                                stagedPayment.securityDepositAmount
-                            : bookingFee + paidRent + securityDeposit,
+                            ? stagedPayment.bookingFeeAmount + stagedPayment.rentAmount
+                            : bookingFee + paidRent,
                         )}
                         emphasis
                       />
@@ -3775,7 +3585,7 @@ function RoomAndPaymentStep({
                   <span>
                     {commercialMode === "owner_sponsored"
                       ? "Saya meyakini data penghuni, kamar, Owner penanggung, dan biaya pengelolaan telah sesuai."
-                      : "Saya meyakini data penghuni, kamar, seluruh pembayaran, dan security deposit telah sesuai."}
+                      : "Saya meyakini data penghuni, kamar, dan seluruh pembayaran sewa telah sesuai. Security deposit bersifat opsional dan dicatat setelah kontrak tersimpan."}
                   </span>
                 </label>
                 {errors?.confirmed ? (

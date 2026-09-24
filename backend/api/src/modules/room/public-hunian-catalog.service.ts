@@ -320,7 +320,7 @@ export class PublicHunianCatalogService {
         first.mediumStayMonthlyPrice < first.longStayMonthlyPrice ||
         !/^\d{4}-\d{2}-\d{2}$/.test(first.commercialEffectiveDate) ||
         first.minimumDpPercent !== 25 ||
-        first.securityDepositMonths !== 1 ||
+        (first.securityDepositMonths !== 1 && first.securityDepositMonths !== 2) ||
         schedules !== canonicalSchedules
       ) {
         throw new ServiceUnavailableException({

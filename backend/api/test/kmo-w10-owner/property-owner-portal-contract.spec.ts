@@ -405,11 +405,7 @@ void test('owner asset detail is identity-scoped, assignment-bound, and omits pr
                 installment_paid: 1,
                 installment_total: 6,
                 installment_next_due_date: '2026-09-05',
-                deposit_required: '180000000',
-                deposit_collected: '30000000',
-                deposit_deducted: '0',
-                deposit_refunded: '0',
-                deposit_balance: '30000000',
+                security_deposit_recorded: true,
               },
             ],
           };
@@ -476,11 +472,7 @@ void test('owner asset detail is identity-scoped, assignment-bound, and omits pr
       installment_paid: 1,
       installment_total: 6,
       installment_next_due_date: '2026-09-05',
-      security_deposit_required: '180000000',
-      deposit_collected: '30000000',
-      deposit_deducted: '0',
-      deposit_refunded: '0',
-      deposit_balance: '30000000',
+      security_deposit_recorded: true,
     },
     operations: {
       open_complaints: 1,
@@ -521,6 +513,7 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
             rows: [
               {
                 room_code: 'AK-05-03',
+                room_number: '03',
                 building_code: 'AK-05',
                 building_name: 'Apart Kost Unit 05',
                 resident_display_name: 'PUTRI',
@@ -544,11 +537,7 @@ void test('W10-R collection progress is current-lease scoped, reconciles aggrega
                 installment_total: 6,
                 installment_paid: 1,
                 installment_next_due_date: '2026-09-05',
-                deposit_required: '1800000',
-                deposit_collected: '300000',
-                deposit_deducted: '0',
-                deposit_refunded: '0',
-                deposit_balance: '300000',
+                security_deposit_recorded: true,
                 open_complaint_count: 1,
                 latest_complaint_title: 'AC kurang dingin',
                 latest_complaint_status: 'in_progress',
@@ -641,7 +630,19 @@ void test('owner profile with no current assignment returns a zero-safe empty po
       query: (sql: string) => {
         calls.push(sql);
         if (sql.includes('property_owner_profiles'))
-          return { rows: [{ id: ownerId, property_id: propertyId, full_name: 'Owner' }] };
+          return {
+            rows: [
+              {
+                id: ownerId,
+                property_id: propertyId,
+                full_name: 'Owner',
+                payout_bank_name: 'Bank Kostation',
+                payout_account_number: '1234567890',
+                payout_account_holder: 'Owner',
+                owner_visible_note: 'Catatan untuk Owner',
+              },
+            ],
+          };
         if (sql.includes('assignment_state'))
           return {
             rows: [
@@ -672,6 +673,13 @@ void test('owner profile with no current assignment returns a zero-safe empty po
   assert.equal(result.scope.state, 'empty');
   assert.equal(result.scope.room_count, 0);
   assert.deepEqual(result.assets, []);
+  assert.deepEqual(result.owner, {
+    display_name: 'Owner',
+    payout_bank_name: 'Bank Kostation',
+    payout_account_number_masked: '•••• 7890',
+    payout_account_holder: 'Owner',
+    owner_visible_note: 'Catatan untuk Owner',
+  });
   assert.match(calls[1] ?? '', /FROM assignment_state/);
 });
 
@@ -806,7 +814,7 @@ void test('historical lifecycle projections expose only clipped half-open owner-
   assert.match(sql, /notifications\.property_id = \$2 AND notifications\.recipient_user_id = \$5/);
   assert.match(sql, /notifications\.created_at >= scope\.scope_from/);
   assert.match(sql, /notifications\.created_at < scope\.scope_until/);
-  assert.match(sql, /rooms\.room_code, buildings\.building_code, buildings\.building_name/);
+  assert.match(sql, /rooms\.room_code, rooms\.number AS room_number, buildings\.building_code, buildings\.building_name/);
   assert.doesNotMatch(sql, /resident|phone|email|storage_path|payment_proof/i);
 });
 

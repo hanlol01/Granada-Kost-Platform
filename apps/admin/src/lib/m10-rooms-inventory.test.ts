@@ -199,7 +199,7 @@ test("room list and availability parsers accept only exact V2 envelopes", () => 
   }
 });
 
-test("room inventory parser accepts the management-fee snapshot returned by the API", () => {
+test("room inventory parser accepts the commercial deposit snapshot returned by the API", () => {
   const page = parseRoomInventoryListEnvelope(
     {
       data: [
@@ -233,6 +233,7 @@ test("room inventory parser accepts the management-fee snapshot returned by the 
             medium_stay_monthly_price: 1850000,
             long_stay_monthly_price: 1800000,
             commercial_effective_date: "2026-06-01",
+            security_deposit_months: 1,
             deposit_amount: 1800000,
             management_fee_amount: 300000,
             facilities: [],
@@ -248,6 +249,7 @@ test("room inventory parser accepts the management-fee snapshot returned by the 
   );
 
   assert.equal(page.items[0]?.kostType.managementFeeAmount, 300000);
+  assert.equal(page.items[0]?.kostType.securityDepositMonths, 1);
   assert.equal(page.items[0]?.status, "inspection_required");
 });
 

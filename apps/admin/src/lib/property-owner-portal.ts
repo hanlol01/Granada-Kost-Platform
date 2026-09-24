@@ -31,7 +31,13 @@ export const ownerPortalNavigation: ReadonlyArray<{ id: OwnerPortalTab; label: s
   ownerPortalRouteRegistry.map(({ id, label }) => ({ id, label }));
 
 export type OwnerPortal = {
-  owner: { displayName: string } | null;
+  owner: {
+    displayName: string;
+    payoutBankName: string | null;
+    payoutAccountNumberMasked: string | null;
+    payoutAccountHolder: string | null;
+    ownerVisibleNote: string | null;
+  } | null;
   scope: {
     state: OwnerScopeState;
     buildingCount: number;
@@ -190,12 +196,20 @@ export type OwnerOccupancyResidentDetail = {
     installmentPaid: number;
     installmentTotal: number;
     installmentNextDueDate: string | null;
-    securityDepositRequired: Money;
-    depositCollected: Money;
-    depositDeducted: Money;
-    depositRefunded: Money;
-    depositBalance: Money;
+    /** Deposit is a resident liability, not Owner revenue. */
+    securityDepositRecorded: boolean;
   };
+  ownerSponsorship: {
+    managementFeeMode: "charged" | "waived";
+    managementFeePayer: "resident" | "owner" | "other" | null;
+    managementFeePayerName: string | null;
+    monthlyManagementFee: Money;
+    projectedManagementFee: Money;
+    verifiedPaid: Money;
+    pending: Money;
+    remaining: Money;
+    paymentStatus: "waived" | "unpaid" | "partially_paid" | "paid" | "overpaid";
+  } | null;
   operations: {
     openComplaints: number;
     openMaintenance: number;
@@ -399,7 +413,7 @@ export type OwnerCollectionProgress = {
     packageCounts: { shortStay: number; mediumStay: number; longStay: number };
   };
   items: Array<{
-    room: { code: string; buildingCode: string; buildingName: string };
+    room: { code: string; number: string; buildingCode: string; buildingName: string };
     resident: { displayName: string };
     lease: {
       status: "active";
@@ -446,13 +460,7 @@ export type OwnerCollectionProgress = {
       latestWorkOrderTitle: string | null;
       latestWorkOrderStatus: string | null;
     };
-    securityDeposit: {
-      required: Money;
-      collected: Money;
-      deducted: Money;
-      refunded: Money;
-      balance: Money;
-    };
+    securityDeposit: { recorded: boolean };
     settlement: {
       state: string | null;
       originalDueAt: string | null;
@@ -481,6 +489,21 @@ function exact(value: unknown, keys: readonly string[], field: string): Record<s
     throw new Error(`Owner portal response is invalid: ${field}.`);
   return value;
 }
+function exactWithOptional(
+  value: unknown,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[],
+  field: string,
+): Record<string, unknown> {
+  if (!isObject(value)) throw new Error(`Owner portal response is invalid: ${field}.`);
+  const allowed = new Set([...requiredKeys, ...optionalKeys]);
+  if (
+    requiredKeys.some((key) => !Object.prototype.hasOwnProperty.call(value, key)) ||
+    Object.keys(value).some((key) => !allowed.has(key))
+  )
+    throw new Error(`Owner portal response is invalid: ${field}.`);
+  return value;
+}
 function string(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0)
     throw new Error(`Owner portal response is invalid: ${field}.`);
@@ -489,6 +512,9 @@ function string(value: unknown, field: string): string {
 function nullableString(value: unknown, field: string): string | null {
   return value === null ? null : string(value, field);
 }
+function optionalNullableString(value: unknown, field: string): string | null {
+  return value === undefined || value === null ? null : string(value, field);
+}
 function enumValue<T extends string>(value: unknown, values: readonly T[], field: string): T {
   const parsed = string(value, field) as T;
   if (!values.includes(parsed)) throw new Error(`Owner portal response is invalid: ${field}.`);
@@ -496,6 +522,11 @@ function enumValue<T extends string>(value: unknown, values: readonly T[], field
 }
 function count(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+    throw new Error(`Owner portal response is invalid: ${field}.`);
+  return value;
+}
+function flag(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean")
     throw new Error(`Owner portal response is invalid: ${field}.`);
   return value;
 }
@@ -534,8 +565,36 @@ export function parseOwnerPortal(value: unknown): OwnerPortal {
     root.owner === null
       ? null
       : (() => {
-          const parsed = exact(root.owner, ["display_name"], "owner");
-          return { displayName: string(parsed.display_name, "owner.display_name") };
+          const parsed = exactWithOptional(
+            root.owner,
+            ["display_name"],
+            [
+              "payout_bank_name",
+              "payout_account_number_masked",
+              "payout_account_holder",
+              "owner_visible_note",
+            ],
+            "owner",
+          );
+          return {
+            displayName: string(parsed.display_name, "owner.display_name"),
+            payoutBankName: optionalNullableString(
+              parsed.payout_bank_name,
+              "owner.payout_bank_name",
+            ),
+            payoutAccountNumberMasked: optionalNullableString(
+              parsed.payout_account_number_masked,
+              "owner.payout_account_number_masked",
+            ),
+            payoutAccountHolder: optionalNullableString(
+              parsed.payout_account_holder,
+              "owner.payout_account_holder",
+            ),
+            ownerVisibleNote: optionalNullableString(
+              parsed.owner_visible_note,
+              "owner.owner_visible_note",
+            ),
+          };
         })();
   const scope = exact(
     root.scope,
@@ -1176,7 +1235,7 @@ export function parseOwnerResourcePage(value: unknown): OwnerResourcePage {
 export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupancyResidentDetail {
   const root = exact(
     value,
-    ["resident", "room", "occupancy", "lease", "billing", "operations"],
+    ["resident", "room", "occupancy", "lease", "billing", "owner_sponsorship", "operations"],
     "occupancy_resident_detail",
   );
   const room = exact(
@@ -1197,11 +1256,7 @@ export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupanc
       "installment_paid",
       "installment_total",
       "installment_next_due_date",
-      "security_deposit_required",
-      "deposit_collected",
-      "deposit_deducted",
-      "deposit_refunded",
-      "deposit_balance",
+      "security_deposit_recorded",
     ],
     "occupancy_resident_detail.billing",
   );
@@ -1218,6 +1273,67 @@ export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupanc
     ],
     "occupancy_resident_detail.operations",
   );
+  const ownerSponsorship =
+    root.owner_sponsorship === null
+      ? null
+      : (() => {
+          const parsed = exact(
+            root.owner_sponsorship,
+            [
+              "management_fee_mode",
+              "management_fee_payer",
+              "management_fee_payer_name",
+              "monthly_management_fee",
+              "projected_management_fee",
+              "verified_paid",
+              "pending",
+              "remaining",
+              "payment_status",
+            ],
+            "occupancy_resident_detail.owner_sponsorship",
+          );
+          return {
+            managementFeeMode: enumValue(
+              parsed.management_fee_mode,
+              ["charged", "waived"],
+              "occupancy_resident_detail.owner_sponsorship.management_fee_mode",
+            ),
+            managementFeePayer:
+              parsed.management_fee_payer === null
+                ? null
+                : enumValue(
+                    parsed.management_fee_payer,
+                    ["resident", "owner", "other"],
+                    "occupancy_resident_detail.owner_sponsorship.management_fee_payer",
+                  ),
+            managementFeePayerName: nullableString(
+              parsed.management_fee_payer_name,
+              "occupancy_resident_detail.owner_sponsorship.management_fee_payer_name",
+            ),
+            monthlyManagementFee: money(
+              parsed.monthly_management_fee,
+              "occupancy_resident_detail.owner_sponsorship.monthly_management_fee",
+            ),
+            projectedManagementFee: money(
+              parsed.projected_management_fee,
+              "occupancy_resident_detail.owner_sponsorship.projected_management_fee",
+            ),
+            verifiedPaid: money(
+              parsed.verified_paid,
+              "occupancy_resident_detail.owner_sponsorship.verified_paid",
+            ),
+            pending: money(parsed.pending, "occupancy_resident_detail.owner_sponsorship.pending"),
+            remaining: money(
+              parsed.remaining,
+              "occupancy_resident_detail.owner_sponsorship.remaining",
+            ),
+            paymentStatus: enumValue(
+              parsed.payment_status,
+              ["waived", "unpaid", "partially_paid", "paid", "overpaid"],
+              "occupancy_resident_detail.owner_sponsorship.payment_status",
+            ),
+          };
+        })();
   const resident =
     root.resident === null
       ? null
@@ -1346,27 +1462,12 @@ export function parseOwnerOccupancyResidentDetail(value: unknown): OwnerOccupanc
               billing.installment_next_due_date,
               "occupancy_resident_detail.billing.installment_next_due_date",
             ),
-      securityDepositRequired: money(
-        billing.security_deposit_required,
-        "occupancy_resident_detail.billing.security_deposit_required",
-      ),
-      depositCollected: money(
-        billing.deposit_collected,
-        "occupancy_resident_detail.billing.deposit_collected",
-      ),
-      depositDeducted: money(
-        billing.deposit_deducted,
-        "occupancy_resident_detail.billing.deposit_deducted",
-      ),
-      depositRefunded: money(
-        billing.deposit_refunded,
-        "occupancy_resident_detail.billing.deposit_refunded",
-      ),
-      depositBalance: money(
-        billing.deposit_balance,
-        "occupancy_resident_detail.billing.deposit_balance",
+      securityDepositRecorded: flag(
+        billing.security_deposit_recorded,
+        "occupancy_resident_detail.billing.security_deposit_recorded",
       ),
     },
+    ownerSponsorship,
     operations: {
       openComplaints: count(
         operations.open_complaints,
@@ -2063,7 +2164,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       );
       const room = exact(
         item.room,
-        ["code", "building_code", "building_name"],
+        ["code", "room_number", "building_code", "building_name"],
         "collection_progress.item.room",
       );
       const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
@@ -2125,11 +2226,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         ],
         "collection_progress.item.operations",
       );
-      const deposit = exact(
-        item.security_deposit,
-        ["required", "collected", "deducted", "refunded", "balance"],
-        "collection_progress.item.security_deposit",
-      );
+      const deposit = exact(item.security_deposit, ["recorded"], "collection_progress.item.security_deposit");
       const settlement = exact(
         item.settlement,
         [
@@ -2152,6 +2249,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
       return {
         room: {
           code: string(room.code, "collection_progress.item.room.code"),
+          number: string(room.room_number, "collection_progress.item.room.room_number"),
           buildingCode: string(room.building_code, "collection_progress.item.room.building_code"),
           buildingName: string(room.building_name, "collection_progress.item.room.building_name"),
         },
@@ -2317,14 +2415,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
                 ),
         },
         securityDeposit: {
-          required: money(deposit.required, "collection_progress.item.security_deposit.required"),
-          collected: money(
-            deposit.collected,
-            "collection_progress.item.security_deposit.collected",
-          ),
-          deducted: money(deposit.deducted, "collection_progress.item.security_deposit.deducted"),
-          refunded: money(deposit.refunded, "collection_progress.item.security_deposit.refunded"),
-          balance: money(deposit.balance, "collection_progress.item.security_deposit.balance"),
+          recorded: flag(deposit.recorded, "collection_progress.item.security_deposit.recorded"),
         },
         settlement: {
           state: nullableString(settlement.state, "collection_progress.item.settlement.state"),

@@ -67,7 +67,7 @@ const onboardingDto = {
   accepted_terms_version: 'W05-v1',
   dp_verified_amount: 5_400_000,
   booking_fee_paid_amount: 1_000_000,
-  security_deposit_funded_amount: 1_800_000,
+  security_deposit_funded_amount: 0,
   payment_method: 'cash' as const,
   ktp_file_id: KTP_FILE_ID,
 };
@@ -180,7 +180,7 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
               kost_type_deleted_at: null,
               monthly_price: 1_800_000,
               yearly_price: 21_600_000,
-              security_deposit_amount: 1_800_000,
+              security_deposit_months: 1,
               ...options.roomOverrides,
             },
           ],
@@ -250,11 +250,6 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
             method: 'cash' | 'bank_transfer';
             status: 'verified' | 'pending_confirmation';
           }>;
-          securityDepositPayment?: {
-            amount: number;
-            method: 'cash' | 'bank_transfer';
-            status: 'verified' | 'pending_confirmation';
-          };
         },
       ) => {
         assert.equal(transactionClient, client);
@@ -280,20 +275,14 @@ function createOnboardingHarness(options: HarnessOptions = {}) {
           0,
         );
         return {
-          method:
-            input.rentPayments.at(-1)?.method ?? input.securityDepositPayment?.method ?? 'cash',
-          status:
-            input.rentPayments.every((payment) => payment.status === 'verified') &&
-            (!input.securityDepositPayment || input.securityDepositPayment.status === 'verified')
-              ? 'verified'
-              : 'pending_confirmation',
+          method: input.rentPayments.at(-1)?.method ?? 'cash',
+          status: input.rentPayments.every((payment) => payment.status === 'verified')
+            ? 'verified'
+            : 'pending_confirmation',
           dpRecordedAmount: recordedRentAmount,
-          securityDepositRecordedAmount: input.securityDepositPayment?.amount ?? 0,
+          securityDepositRecordedAmount: 0,
           dpVerifiedAmount: verifiedRentAmount,
-          securityDepositVerifiedAmount:
-            input.securityDepositPayment?.status === 'verified'
-              ? input.securityDepositPayment.amount
-              : 0,
+          securityDepositVerifiedAmount: 0,
           receipts: [],
         };
       },
@@ -614,7 +603,7 @@ test('three-month full payment accepts Rp1.000.000 booking credit plus Rp4.400.0
 
   assert.equal(response.contractRentAmount, 5_400_000);
   assert.equal(response.dpRequiredAmount, 1_350_000);
-  assert.equal(response.securityDepositRequiredAmount, 0);
+  assert.equal(response.securityDepositRequiredAmount, 1_800_000);
   assert.equal(response.initialPayment.dpRecordedAmount, 5_400_000);
   assert.equal(response.initialPayment.securityDepositRecordedAmount, 0);
 
@@ -622,7 +611,12 @@ test('three-month full payment accepts Rp1.000.000 booking credit plus Rp4.400.0
   assert.ok(leaseInsert, 'onboarding must create an awaiting-activation lease');
   assert.match(
     leaseInsert.sql,
-    /security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id\) VALUES\([\s\S]*?\$20,\$21,\$22::date,\$23,\$24,\$25,\$26,now\(\),now\(\),\$26,\$26\)/,
+    /snapshot_monthly_price,snapshot_yearly_price,snapshot_deposit_amount,snapshot_room_number/,
+    'the frozen security deposit target must be stored on the lease, not derived later',
+  );
+  assert.match(
+    leaseInsert.sql,
+    /security_deposit_required_amount,snapshot_pricing_tier,snapshot_commercial_effective_date,snapshot_reference_monthly_price,pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,signed_at,created_by_user_id,updated_by_user_id,commercial_mode\) VALUES\([\s\S]*?\$20,\$21,\$22::date,\$23,\$24,\$25,\$26,now\(\),now\(\),\$26,\$26,\$27\)/,
     'lease INSERT must bind exactly one expression for each final target column',
   );
   assert.doesNotMatch(
@@ -674,12 +668,6 @@ test('direct onboarding records ordered staged payments as DP, installments, and
           method: 'cash',
           paid_at: '2026-09-01',
         },
-        {
-          purpose: 'security_deposit',
-          amount: 1_800_000,
-          method: 'cash',
-          paid_at: '2026-09-01',
-        },
       ],
     },
     IDEMPOTENCY_KEY,
@@ -687,8 +675,49 @@ test('direct onboarding records ordered staged payments as DP, installments, and
   );
 
   assert.equal(response.initialPayment.dpRecordedAmount, 21_600_000);
-  assert.equal(response.initialPayment.securityDepositRecordedAmount, 1_800_000);
+  assert.equal(response.initialPayment.securityDepositRecordedAmount, 0);
   assert.equal(response.initialPayment.status, 'verified');
+});
+
+test('direct onboarding rejects a staged security deposit before the frozen lease target exists', async () => {
+  const harness = createOnboardingHarness({ expectedInitialRentCredit: 21_600_000 });
+  await assert.rejects(
+    harness.service.commit(
+      actor as never,
+      {
+        ...onboardingDto,
+        dp_verified_amount: 0,
+        booking_fee_paid_amount: 0,
+        security_deposit_funded_amount: 0,
+        payment_entries: [
+          {
+            purpose: 'rent',
+            amount: 21_600_000,
+            method: 'cash',
+            paid_at: '2026-08-01',
+          },
+          {
+            purpose: 'security_deposit',
+            amount: 1_800_000,
+            method: 'cash',
+            paid_at: '2026-08-01',
+          },
+        ],
+      },
+      IDEMPOTENCY_KEY,
+      {},
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'getResponse' in error &&
+      (error as { getResponse: () => { code: string } }).getResponse().code ===
+        'ONBOARDING_SECURITY_DEPOSIT_DEFERRED',
+  );
+  assert.equal(
+    harness.queries.some(({ sql }) => /INSERT INTO leases/.test(sql)),
+    false,
+    'a deposit payload must not partially create a lease before the contract snapshot exists',
+  );
 });
 
 test('direct 12-month onboarding accepts booking fee followed by installment and final settlement', async () => {
@@ -793,7 +822,7 @@ test('onboarding rejects rent payment credit above the total contract value', as
   );
 });
 
-test('onboarding keeps security deposit optional and rejects more than one contract month', async () => {
+test('onboarding keeps security deposit optional and defers any collection until the lease exists', async () => {
   const optionalDeposit = createOnboardingHarness({
     expectedInitialRentCredit: 1_800_000,
     expectedBookingFeeAmount: 0,
@@ -812,9 +841,9 @@ test('onboarding keeps security deposit optional and rejects more than one contr
     {},
   );
 
-  const excessiveDeposit = createOnboardingHarness();
+  const deferredDeposit = createOnboardingHarness();
   await assert.rejects(
-    excessiveDeposit.service.commit(
+    deferredDeposit.service.commit(
       actor as never,
       {
         ...onboardingDto,
@@ -822,7 +851,7 @@ test('onboarding keeps security deposit optional and rejects more than one contr
         billing_cycle: 'monthly',
         dp_verified_amount: 1_800_000,
         booking_fee_paid_amount: 0,
-        security_deposit_funded_amount: 1_800_001,
+        security_deposit_funded_amount: 1_800_000,
       },
       IDEMPOTENCY_KEY,
       {},
@@ -831,7 +860,7 @@ test('onboarding keeps security deposit optional and rejects more than one contr
       error instanceof Error &&
       'getResponse' in error &&
       (error as { getResponse: () => { code: string } }).getResponse().code ===
-        'ONBOARDING_SECURITY_DEPOSIT_EXCEEDS_LIMIT',
+        'ONBOARDING_SECURITY_DEPOSIT_DEFERRED',
   );
 });
 
@@ -907,7 +936,7 @@ test('onboarding reads the canonical category commercial version without legacy 
   const roomAuthority = harness.queries.find(({ sql }) => /FROM rooms r/.test(sql));
   assert.ok(roomAuthority);
   assert.match(roomAuthority.sql, /kcv\.annual_contract_value/);
-  assert.match(roomAuthority.sql, /kcv\.monthly_price \* kcv\.security_deposit_months/);
+  assert.match(roomAuthority.sql, /kcv\.security_deposit_months/);
   assert.doesNotMatch(roomAuthority.sql, /kcv\.annual_price|kt\.annual_price/);
   assert.doesNotMatch(
     roomAuthority.sql,
@@ -1126,7 +1155,7 @@ test('direct onboarding reserves its room without creating occupancy or occupyin
   );
 });
 
-test('W06 records onboarding transfer DP and free deposit on the supplied transaction client', async () => {
+test('W06 records onboarding transfer DP only on the supplied transaction client', async () => {
   const queries: Array<{ sql: string; params: readonly unknown[] }> = [];
   const audits: Array<{ entry: unknown; client: unknown }> = [];
   let paymentSequence = 0;
@@ -1248,13 +1277,6 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
         paymentNote: 'Transfer dari rekening orang tua',
       },
     ],
-    securityDepositPayment: {
-      amount: 300_000,
-      method: 'bank_transfer',
-      status: 'pending_confirmation',
-      evidenceFileIds: [PAYMENT_EVIDENCE_ID],
-      paymentNote: 'Transfer dari rekening orang tua',
-    },
     commandFingerprint: 'a'.repeat(64),
     actor: actor as never,
     context: {},
@@ -1263,13 +1285,13 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
     method: 'bank_transfer',
     status: 'pending_confirmation',
     dpRecordedAmount: 5_400_000,
-    securityDepositRecordedAmount: 300_000,
+    securityDepositRecordedAmount: 0,
     dpVerifiedAmount: 0,
     securityDepositVerifiedAmount: 0,
     receipts: [],
   });
   const paymentWrites = queries.filter(({ sql }) => /INSERT INTO payments/.test(sql));
-  assert.equal(paymentWrites.length, 2);
+  assert.equal(paymentWrites.length, 1);
   assert.equal(
     paymentWrites.every(({ sql }) =>
       /\$9::uuid,CASE WHEN \$6='verified' THEN \$9::uuid ELSE NULL END/.test(sql),
@@ -1279,7 +1301,7 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
   );
   assert.deepEqual(
     paymentWrites.map(({ params }) => params[6]),
-    ['rent', 'security_deposit'],
+    ['rent'],
   );
   assert.equal(
     paymentWrites.every(({ params }) => params[5] === 'pending_confirmation'),
@@ -1291,7 +1313,7 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
   );
   assert.equal(
     queries.filter(({ sql }) => /INSERT INTO payment_evidence_files/.test(sql)).length,
-    2,
+    1,
   );
   assert.equal(
     queries.filter(({ sql }) => /INSERT INTO payment_allocation_intents/.test(sql)).length,
@@ -1305,7 +1327,7 @@ test('W06 records onboarding transfer DP and free deposit on the supplied transa
     queries.some(({ sql }) => /INSERT INTO payment_receipts/.test(sql)),
     false,
   );
-  assert.equal(audits.length, 2);
+  assert.equal(audits.length, 1);
 });
 
 test('onboarding replay returns no credential and mismatched key reuse fails before domain lookup', async () => {

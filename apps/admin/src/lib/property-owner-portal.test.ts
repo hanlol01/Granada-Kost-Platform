@@ -46,7 +46,13 @@ const source = (relativePath: string): string =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
 const portal = () => ({
-  owner: { display_name: "Owner Demo" },
+  owner: {
+    display_name: "Owner Demo",
+    payout_bank_name: "Bank Kostation",
+    payout_account_number_masked: "•••• 1234",
+    payout_account_holder: "Owner Demo",
+    owner_visible_note: "Rekening ini digunakan untuk pencairan hak Owner.",
+  },
   scope: {
     state: "active",
     building_count: 1,
@@ -69,6 +75,28 @@ const portal = () => ({
       lease_end_date: "2026-12-31",
     },
   ],
+});
+
+test("owner portal exposes safe payout details without the full account number", () => {
+  const parsed = parseOwnerPortal(portal());
+
+  assert.equal(parsed.owner?.payoutBankName, "Bank Kostation");
+  assert.equal(parsed.owner?.payoutAccountNumberMasked, "•••• 1234");
+  assert.equal(parsed.owner?.payoutAccountHolder, "Owner Demo");
+  assert.equal(parsed.owner?.ownerVisibleNote, "Rekening ini digunakan untuk pencairan hak Owner.");
+});
+
+test("owner portal remains available while a rolling API deployment omits optional payout fields", () => {
+  const parsed = parseOwnerPortal({
+    ...portal(),
+    owner: { display_name: "Owner Demo" },
+  });
+
+  assert.equal(parsed.owner?.displayName, "Owner Demo");
+  assert.equal(parsed.owner?.payoutBankName, null);
+  assert.equal(parsed.owner?.payoutAccountNumberMasked, null);
+  assert.equal(parsed.owner?.payoutAccountHolder, null);
+  assert.equal(parsed.owner?.ownerVisibleNote, null);
 });
 
 const assetDetail = () => ({
@@ -127,12 +155,9 @@ const occupancyResidentDetail = () => ({
     installment_paid: 1,
     installment_total: 6,
     installment_next_due_date: "2026-09-05",
-    security_deposit_required: "180000000",
-    deposit_collected: "30000000",
-    deposit_deducted: "0",
-    deposit_refunded: "0",
-    deposit_balance: "30000000",
+    security_deposit_recorded: true,
   },
+  owner_sponsorship: null,
   operations: {
     open_complaints: 1,
     open_maintenance: 0,
@@ -327,13 +352,43 @@ void test("owner occupancy resident detail stays room-scoped and rejects tenant 
   assert.equal(parsed.billing.state, "partially_paid");
   assert.equal(parsed.billing.rentOutstanding, "810000000");
   assert.equal(parsed.billing.installmentPaid, 1);
-  assert.equal(parsed.billing.depositBalance, "30000000");
+  assert.equal(parsed.billing.securityDepositRecorded, true);
 
   const unsafe = occupancyResidentDetail() as ReturnType<typeof occupancyResidentDetail> & {
     resident: Record<string, unknown>;
   };
   unsafe.resident.email = "putri@example.test";
   assert.throws(() => parseOwnerOccupancyResidentDetail(unsafe));
+});
+
+void test("owner occupancy detail distinguishes Owner-sponsored fees from rent billing", () => {
+  const sponsored = {
+    ...occupancyResidentDetail(),
+    owner_sponsorship: {
+      management_fee_mode: "charged",
+      management_fee_payer: "owner",
+      management_fee_payer_name: "Owner Demo",
+      monthly_management_fee: "600000",
+      projected_management_fee: "7200000",
+      verified_paid: "1800000",
+      pending: "0",
+      remaining: "5400000",
+      payment_status: "partially_paid",
+    },
+  };
+  const parsed = parseOwnerOccupancyResidentDetail(sponsored);
+
+  assert.deepEqual(parsed.ownerSponsorship, {
+    managementFeeMode: "charged",
+    managementFeePayer: "owner",
+    managementFeePayerName: "Owner Demo",
+    monthlyManagementFee: "600000",
+    projectedManagementFee: "7200000",
+    verifiedPaid: "1800000",
+    pending: "0",
+    remaining: "5400000",
+    paymentStatus: "partially_paid",
+  });
 });
 
 void test("owner portal has a mobile-first read-only drawer shell", () => {
@@ -403,6 +458,20 @@ void test("owner occupancy detail route renders through its parent outlet", () =
   assert.match(residentDetailRoute, /PropertyOwnerResidentDetailPage/);
 });
 
+void test("Owner-sponsored occupancy screens keep rent and management fees separate", () => {
+  const residentDetail = source(
+    "components/property-owner-portal/PropertyOwnerResidentDetailPage.tsx",
+  );
+
+  assert.match(residentDetail, /Hunian dan biaya pengelolaan/);
+  assert.match(residentDetail, /Sewa kamar Rp0/);
+  assert.match(residentDetail, /Outstanding biaya pengelolaan/);
+  assert.match(
+    residentDetail,
+    /Hanya biaya pengelolaan yang diberlakukan ditampilkan secara terpisah/,
+  );
+});
+
 void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations", () => {
   const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
 
@@ -425,6 +494,26 @@ void test("E5 dashboard KPIs and alerts link to authoritative Owner destinations
   assert.match(portalComponent, /useGSAP/);
   assert.doesNotMatch(portalComponent, /ownerPortalNavigation/);
   assert.doesNotMatch(portalComponent, /useState\([^)]*openComplaints/);
+});
+
+void test("Owner dashboard keeps resident identity and room location separate and includes unleased assets", () => {
+  const portalComponent = source("components/property-owner-portal/PropertyOwnerPortal.tsx");
+
+  assert.match(portalComponent, /const activeRoomCodes = new Set/);
+  assert.match(portalComponent, /const unleasedAssets: DashboardRoom\[\]/);
+  assert.match(portalComponent, /Kamar kosong/);
+  assert.match(portalComponent, /Kamar dipesan/);
+  assert.match(portalComponent, /Menunggu aktivasi\/check-in/);
+  assert.match(portalComponent, /Belum ada penghuni/);
+  assert.match(portalComponent, /ownerRoomLocation\(item\.room\)/);
+  assert.match(portalComponent, /dashboardRoom\.residentDisplayName/);
+  assert.match(portalComponent, /ownerVisibleNote\?\.trim\(\)/);
+  assert.match(portalComponent, /target\.scrollIntoView/);
+  assert.match(portalComponent, /settled:\s*0/);
+  assert.match(portalComponent, /partially_paid:\s*1/);
+  assert.match(portalComponent, /reserved:\s*6/);
+  assert.match(portalComponent, /vacant:\s*6/);
+  assert.doesNotMatch(portalComponent, /billing\.h7Count\s*>\s*0\s*\?\s*1/);
 });
 
 void test("owner collection payment details support search, filters, and five-item pages", () => {
@@ -478,6 +567,8 @@ void test("E5 account page exposes safe identity, read-only scope, and Owner nav
   assert.match(portalComponent, /Property Owner/);
   assert.match(portalComponent, /Akses hanya baca/);
   assert.match(portalComponent, /Cakupan kepemilikan/);
+  assert.match(portalComponent, /Rekening pencairan/);
+  assert.match(portalComponent, /Catatan dari administrator/);
   assert.match(portalComponent, /Bantuan dan keamanan/);
   assert.match(portalComponent, /penugasan aset dikelola oleh administrator Kostation/);
   assert.doesNotMatch(portalComponent, /password|payment_proof|storage_path|NIK|KTP/i);

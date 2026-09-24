@@ -1112,8 +1112,10 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
           type.shortStayMonthlyPrice,
           type.mediumStayMonthlyPrice,
           type.longStayMonthlyPrice,
+          type.securityDepositMonths,
           type.depositAmount,
         ].every((value) => Number.isSafeInteger(value) && Number(value) >= 0) ||
+        ![1, 2].includes(Number(type.securityDepositMonths)) ||
         (type.managementFeeAmount !== undefined &&
           (!Number.isSafeInteger(type.managementFeeAmount) ||
             Number(type.managementFeeAmount) < 0)) ||
@@ -1141,6 +1143,7 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
           mediumStayMonthlyPrice: Number(type.mediumStayMonthlyPrice),
           longStayMonthlyPrice: Number(type.longStayMonthlyPrice),
           commercialEffectiveDate: type.commercialEffectiveDate,
+          securityDepositMonths: type.securityDepositMonths as 1 | 2,
           depositAmount: Number(type.depositAmount),
           managementFeeAmount: Number(type.managementFeeAmount ?? 0),
         },

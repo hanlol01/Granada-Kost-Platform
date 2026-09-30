@@ -146,6 +146,8 @@ export class ResidentController {
             checked_in_at: tenancy.checkedInAt?.toISOString() ?? null,
             checked_in_source: tenancy.checkedInSource,
             room_number: tenancy.roomNumber,
+            manager_room_label: tenancy.managerRoomLabel ?? null,
+            plot_number: tenancy.plotNumber ?? null,
             kost_type_name: tenancy.kostTypeName,
             building_code: tenancy.buildingCode,
             start_date: tenancy.startDate,

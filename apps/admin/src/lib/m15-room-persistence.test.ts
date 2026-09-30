@@ -101,6 +101,8 @@ function roomWire(overrides: Record<string, unknown> = {}) {
     property_id: PROPERTY_ID,
     number: "RK-01-99",
     room_code: "RK-01-99",
+    manager_room_label: null,
+    plot_number: null,
     building_id: BUILDING_ID,
     building_code: "RK-01",
     building_name: "RuKost 01",
@@ -218,6 +220,24 @@ test("mutation parser accepts only the exact V2 envelope and UUID-safe whitelist
   const parsed = parseRoomInventoryMutationEnvelope({ data: roomWire() });
   assert.equal(parsed.id, ROOM_ID);
   assert.equal(parsed.propertyId, PROPERTY_ID);
+  assert.doesNotThrow(() =>
+    parseRoomInventoryMutationEnvelope({ data: roomWire({ floor_label: "Unit 01" }) }),
+  );
+  assert.doesNotThrow(() =>
+    parseRoomInventoryMutationEnvelope({
+      data: roomWire({ floor: null, floor_code: null, floor_label: "Unit 01" }),
+    }),
+  );
+  assert.doesNotThrow(() =>
+    parseRoomInventoryMutationEnvelope({
+      data: roomWire({
+        floor: "Lantai Atas / Lantai 2",
+        floor_code: "A",
+        floor_label: "Lantai Atas / Lantai 2",
+      }),
+    }),
+    "sparse inventory updates may return a legacy floor label with a canonical floor code",
+  );
   assert.deepEqual(Object.keys(parsed).sort(), [
     "activeLease",
     "activeOccupancy",
@@ -231,8 +251,10 @@ test("mutation parser accepts only the exact V2 envelope and UUID-safe whitelist
     "id",
     "kostType",
     "leaseReconciliationRequired",
+    "managerRoomLabel",
     "number",
     "primaryPhotoFileId",
+    "plotNumber",
     "propertyId",
     "publicVisible",
     "roomCode",
@@ -254,8 +276,13 @@ test("mutation parser accepts only the exact V2 envelope and UUID-safe whitelist
   assert.throws(() =>
     parseRoomInventoryMutationEnvelope({ data: roomWire({ gender_policy: null }) }),
   );
-  assert.throws(() => parseRoomInventoryMutationEnvelope({ data: roomWire({ floor_code: null }) }));
-  assert.throws(() => parseRoomInventoryMutationEnvelope({ data: roomWire({ floor: "2" }) }));
+  assert.doesNotThrow(() =>
+    parseRoomInventoryMutationEnvelope({ data: roomWire({ floor_code: null }) }),
+  );
+  assert.doesNotThrow(
+    () => parseRoomInventoryMutationEnvelope({ data: roomWire({ floor: "2" }) }),
+    "the API response's persisted floor value is authoritative for sparse updates",
+  );
   assert.throws(() =>
     parseRoomInventoryMutationEnvelope({ data: roomWire({ primary_photo_file_id: "" }) }),
   );
@@ -543,7 +570,8 @@ test("editor renders authoritative gender, exact floors, and no forbidden payloa
   assert.match(editor, /Lantai Atas \/ Lantai 2/);
   assert.doesNotMatch(editor, /<SelectItem value="mixed">/);
   assert.doesNotMatch(body, /genderPolicy|category|floorLabel|monthlyPrice|depositAmount|facilit/);
-  assert.match(body, /floorCode: draft\.floorCode/);
+  assert.match(body, /if \(plotNumber !== optionalRoomText\(room\.plotNumber \?\? ""\)\)/);
+  assert.match(body, /input\.floorCode = draft\.floorCode/);
   assert.match(editor, /roomStructuralEditLocked\(room\)/);
   assert.match(editor, /disabled=\{pending \|\| structuralLocked\}/);
   assert.match(editor, /Identitas dan lokasi kamar dikunci/);

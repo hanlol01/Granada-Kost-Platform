@@ -127,11 +127,14 @@ export class PropertyOwnerManagementService {
         [query.property_id, query.status ?? null, search, offset, limit],
       ),
       this.database.client.query<PayoutBankOptionRow>(
-        `SELECT DISTINCT trim(payout_bank_name) AS payout_bank_name
-         FROM property_owner_profiles
-         WHERE property_id = $1
-           AND nullif(trim(payout_bank_name), '') IS NOT NULL
-         ORDER BY lower(trim(payout_bank_name)) ASC`,
+        `SELECT payout_bank_name
+         FROM (
+           SELECT DISTINCT trim(payout_bank_name) AS payout_bank_name
+           FROM property_owner_profiles
+           WHERE property_id = $1
+             AND nullif(trim(payout_bank_name), '') IS NOT NULL
+         ) AS payout_banks
+         ORDER BY lower(payout_bank_name) ASC`,
         [query.property_id],
       ),
     ]);

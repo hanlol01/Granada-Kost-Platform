@@ -13,7 +13,12 @@ import { type FilePurpose, type FileResponse } from "@granada-kost/domain";
 import { apiClient } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationError, toastMutationSuccess } from "@/lib/mutation-feedback";
-import { FilePreparationError, fetchFileBlob, prepareFileForUpload } from "@/lib/file-utils";
+import {
+  createDocumentSignatureDerivative,
+  FilePreparationError,
+  fetchFileBlob,
+  prepareFileForUpload,
+} from "@/lib/file-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,8 +95,12 @@ export function useFileUpload(options?: FileUploadHookOptions) {
     mutationFn: async (input) => {
       let prepared;
       try {
-        prepared = await prepareFileForUpload(input.file, input.filePurpose, {
-          compress: input.compress,
+        const source =
+          input.filePurpose === "document_signature"
+            ? await createDocumentSignatureDerivative(input.file)
+            : input.file;
+        prepared = await prepareFileForUpload(source, input.filePurpose, {
+          compress: input.filePurpose === "document_signature" ? false : input.compress,
         });
       } catch (error) {
         if (!(error instanceof FilePreparationError)) throw error;

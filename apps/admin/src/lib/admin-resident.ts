@@ -142,6 +142,8 @@ export type ResidentTenancy = {
   checkedInAt: string | null;
   checkedInSource: "lifecycle" | "correction" | "history" | "occupancy" | null;
   roomNumber: string;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
   kostTypeName: string;
   buildingCode: string;
   startDate: string;
@@ -537,6 +539,8 @@ export function parseResidentTenancy(
     "checked_in_at",
     "checked_in_source",
     "room_number",
+    "manager_room_label",
+    "plot_number",
     "kost_type_name",
     "building_code",
     "start_date",
@@ -581,6 +585,8 @@ export function parseResidentTenancy(
             "occupancy",
           ] as const),
     roomNumber: text(item.room_number) as string,
+    managerRoomLabel: text(item.manager_room_label, true),
+    plotNumber: text(item.plot_number, true),
     kostTypeName: text(item.kost_type_name) as string,
     buildingCode: text(item.building_code) as string,
     startDate: date(item.start_date) as string,

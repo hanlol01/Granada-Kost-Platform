@@ -89,6 +89,8 @@ type ResidentTenancyRow = {
   checked_in_at: Date | null;
   checked_in_source: ResidentTenancyRecord['checkedInSource'];
   room_number: string;
+  manager_room_label: string | null;
+  plot_number: string | null;
   kost_type_name: string;
   building_code: string;
   start_date: string;
@@ -422,7 +424,8 @@ export class ResidentRepository {
                 WHEN occupancy.start_date IS NOT NULL THEN 'occupancy'
                 ELSE NULL
               END AS checked_in_source,
-              rooms.number AS room_number,leases.snapshot_kost_type_name AS kost_type_name,
+               rooms.number AS room_number,rooms.manager_room_label,rooms.plot_number,
+               leases.snapshot_kost_type_name AS kost_type_name,
               buildings.building_code,leases.start_date::text,leases.end_date::text,
               leases.term_months,leases.payment_plan_type,leases.snapshot_monthly_price,
               leases.contract_rent_amount,leases.pricing_source,leases.commercial_mode
@@ -466,6 +469,8 @@ export class ResidentRepository {
       checkedInAt: row.checked_in_at,
       checkedInSource: row.checked_in_source,
       roomNumber: row.room_number,
+      managerRoomLabel: row.manager_room_label,
+      plotNumber: row.plot_number,
       kostTypeName: row.kost_type_name,
       buildingCode: row.building_code,
       startDate: row.start_date,

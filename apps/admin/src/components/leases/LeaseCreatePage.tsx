@@ -2672,8 +2672,8 @@ function RoomAndPaymentStep({
                 {ownerSponsoredAvailable ? (
                   <Button
                     type="button"
-                    variant={commercialMode === "owner_sponsored" ? "success" : "info"}
-                    className="h-auto min-h-16 justify-start whitespace-normal border-2 border-success px-4 py-3 text-left"
+                    variant={commercialMode === "owner_sponsored" ? "default" : "info"}
+                    className="h-auto min-h-16 justify-start whitespace-normal border-2 border-primary px-4 py-3 text-left"
                     aria-pressed={commercialMode === "owner_sponsored"}
                     onClick={() => onCommercialMode("owner_sponsored")}
                   >

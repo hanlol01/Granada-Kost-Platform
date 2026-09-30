@@ -306,6 +306,88 @@ export async function compressImage(file: File): Promise<Blob> {
   });
 }
 
+/**
+ * Normalizes a handwritten signature for its compact document slot. It removes
+ * white canvas margins, preserves proportional ink, and emits metadata-free
+ * PNG so Admin never has to crop or resize the source image manually.
+ */
+export async function createDocumentSignatureDerivative(source: File): Promise<File> {
+  if (!isImageMime(source.type)) {
+    throw new FilePreparationError(
+      "CLIENT_MIME_NOT_ALLOWED",
+      "Tanda tangan harus berupa gambar JPG, PNG, atau WebP.",
+    );
+  }
+  const bitmap = await createImageBitmap(source);
+  try {
+    const longestSide = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, 1200 / Math.max(longestSide, 1));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new FilePreparationError("SIGNATURE_DERIVATIVE_UNAVAILABLE", "Gambar tanda tangan tidak dapat diproses.");
+    context.drawImage(bitmap, 0, 0, width, height);
+
+    const pixels = context.getImageData(0, 0, width, height);
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let offset = 0; offset < pixels.data.length; offset += 4) {
+      const red = pixels.data[offset];
+      const green = pixels.data[offset + 1];
+      const blue = pixels.data[offset + 2];
+      const alpha = pixels.data[offset + 3];
+      const nearlyWhite = red > 245 && green > 245 && blue > 245;
+      if (alpha < 18 || nearlyWhite) {
+        pixels.data[offset + 3] = 0;
+        continue;
+      }
+      const index = offset / 4;
+      const x = index % width;
+      const y = Math.floor(index / width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    context.putImageData(pixels, 0, 0);
+    if (maxX < minX || maxY < minY) {
+      throw new FilePreparationError(
+        "SIGNATURE_INK_NOT_FOUND",
+        "Tanda tangan tidak terlihat. Gunakan gambar dengan tinta yang lebih jelas.",
+      );
+    }
+
+    const padding = Math.max(12, Math.ceil(Math.max(maxX - minX + 1, maxY - minY + 1) * 0.08));
+    const sourceX = Math.max(0, minX - padding);
+    const sourceY = Math.max(0, minY - padding);
+    const sourceWidth = Math.min(width - sourceX, maxX - minX + 1 + padding * 2);
+    const sourceHeight = Math.min(height - sourceY, maxY - minY + 1 + padding * 2);
+    const output = document.createElement("canvas");
+    output.width = sourceWidth;
+    output.height = sourceHeight;
+    const outputContext = output.getContext("2d");
+    if (!outputContext) throw new FilePreparationError("SIGNATURE_DERIVATIVE_UNAVAILABLE", "Gambar tanda tangan tidak dapat diproses.");
+    outputContext.drawImage(canvas, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      output.toBlob(
+        (result) => (result ? resolve(result) : reject(new Error("SIGNATURE_DERIVATIVE_FAILED"))),
+        "image/png",
+      );
+    });
+    return new File([blob], `${stemOf(source.name)}-tanda-tangan.png`, {
+      type: "image/png",
+      lastModified: Date.now(),
+    });
+  } finally {
+    bitmap.close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Authorized blob fetch for file preview / download
 // ---------------------------------------------------------------------------

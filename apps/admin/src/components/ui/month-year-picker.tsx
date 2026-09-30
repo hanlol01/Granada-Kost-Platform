@@ -1,5 +1,5 @@
 import { CalendarDays, ChevronDown } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -22,6 +22,9 @@ type MonthYearPickerProps = {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  title?: string;
+  description?: string;
+  yearLabel?: string;
   className?: string;
 };
 
@@ -52,8 +55,12 @@ export function MonthYearPicker({
   value,
   onChange,
   label = "Pilih bulan tagihan",
+  title = "Periode tagihan",
+  description = "Pilih bulan dan tahun untuk daftar tagihan.",
+  yearLabel = "Tahun tagihan",
   className,
 }: MonthYearPickerProps) {
+  const [open, setOpen] = useState(false);
   const selected = parseMonth(value);
   const years = useMemo(() => {
     const current = todayYear();
@@ -62,8 +69,13 @@ export function MonthYearPicker({
     return Array.from({ length: highest - lowest + 1 }, (_, index) => lowest + index);
   }, [selected.year]);
 
+  const handleChange = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -81,16 +93,16 @@ export function MonthYearPicker({
       <PopoverContent className="w-[19rem] space-y-4 p-4" align="start">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold">Periode tagihan</p>
-            <p className="text-xs text-muted-foreground">
-              Pilih bulan dan tahun untuk daftar tagihan.
-            </p>
+            <p className="text-sm font-semibold">{title}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
           </div>
           <select
             className="h-9 rounded-md border border-input bg-background px-2 text-sm font-medium"
             value={selected.year}
-            onChange={(event) => onChange(valueFor(Number(event.target.value), selected.month))}
-            aria-label="Tahun tagihan"
+            onChange={(event) =>
+              handleChange(valueFor(Number(event.target.value), selected.month))
+            }
+            aria-label={yearLabel}
           >
             {years.map((year) => (
               <option key={year} value={year}>
@@ -109,7 +121,7 @@ export function MonthYearPicker({
                 type="button"
                 variant={selectedMonth ? "default" : "outline"}
                 className="h-10 px-2 text-xs"
-                onClick={() => onChange(valueFor(selected.year, month))}
+                onClick={() => handleChange(valueFor(selected.year, month))}
               >
                 {name.slice(0, 3)}
               </Button>

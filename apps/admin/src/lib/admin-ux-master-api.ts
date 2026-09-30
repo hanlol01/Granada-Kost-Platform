@@ -122,6 +122,8 @@ export type RoomInventory = {
   propertyId: string;
   number: string;
   roomCode?: string | null;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
   buildingId: string;
   buildingCode?: string | null;
   buildingName?: string | null;
@@ -167,6 +169,8 @@ export type RoomDetail = {
   propertyId: string;
   number: string;
   roomCode: string | null;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
   building: { id: string; code: string; name: string };
   category: { id: string; code: KostTypeCategory; name: string };
   physical: {
@@ -458,6 +462,8 @@ export type RoomInventoryInput = {
   kostTypeId: string;
   number: string;
   roomCode?: string | null;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
   buildingId: string;
   floorCode: "A" | "B";
   unitCode?: string | null;
@@ -1323,6 +1329,8 @@ const ROOM_BASE_KEYS = [
   "property_id",
   "number",
   "room_code",
+  "manager_room_label",
+  "plot_number",
   "building_id",
   "building_code",
   "building_name",
@@ -1441,6 +1449,8 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     !isNonEmptyString(value.property_id) ||
     !isNonEmptyString(value.number) ||
     !isNullableString(value.room_code) ||
+    !isNullableString(value.manager_room_label) ||
+    !isNullableString(value.plot_number) ||
     !isNonEmptyString(value.building_id) ||
     !isNullableString(value.building_code) ||
     !isNullableString(value.building_name) ||
@@ -1469,6 +1479,8 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     propertyId: value.property_id,
     number: value.number,
     roomCode: value.room_code,
+    managerRoomLabel: value.manager_room_label,
+    plotNumber: value.plot_number,
     buildingId: value.building_id,
     buildingCode: value.building_code,
     buildingName: value.building_name,
@@ -1583,17 +1595,12 @@ export function parseRoomInventoryMutationEnvelope(value: unknown): RoomInventor
   ) {
     throw new Error("Invalid room mutation commercial snapshot.");
   }
-  const canonicalFloor =
-    room.floorCode === "A"
-      ? { floor: "2", label: "Lantai Atas / LT.2" }
-      : room.floorCode === "B"
-        ? { floor: "1", label: "Lantai Bawah / LT.1" }
-        : null;
+  // Sparse inventory updates can preserve legacy floor labels/codes when the
+  // Admin changes only a plot number or manager-facing room label. The server
+  // is authoritative for stored floor values; this parser validates their
+  // shapes without rejecting historical combinations.
   if (
     (room.genderPolicy !== "male" && room.genderPolicy !== "female") ||
-    !canonicalFloor ||
-    room.floor !== canonicalFloor.floor ||
-    room.floorLabel !== canonicalFloor.label ||
     !isNonEmptyString(room.buildingCode) ||
     !isNonEmptyString(room.buildingName) ||
     room.activeLease !== null
@@ -1714,6 +1721,8 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
       "property_id",
       "number",
       "room_code",
+      "manager_room_label",
+      "plot_number",
       "building",
       "category",
       "physical",
@@ -2019,6 +2028,8 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     propertyId: data.property_id,
     number: requiredString(data.number, "number"),
     roomCode: nullableDetailString(data.room_code, "room code"),
+    managerRoomLabel: nullableDetailString(data.manager_room_label, "manager room label"),
+    plotNumber: nullableDetailString(data.plot_number, "plot number"),
     building: {
       id: building.id,
       code: requiredString(building.code, "building code"),
@@ -2186,6 +2197,8 @@ export function roomDetailToInventory(detail: RoomDetail): RoomInventory {
     propertyId: detail.propertyId,
     number: detail.number,
     roomCode: detail.roomCode,
+    managerRoomLabel: detail.managerRoomLabel,
+    plotNumber: detail.plotNumber,
     buildingId: detail.building.id,
     buildingCode: detail.building.code,
     buildingName: detail.building.name,
@@ -2356,6 +2369,8 @@ export function toRoomPersistenceBody(
   assign("kost_type_id", input.kostTypeId);
   assign("number", input.number);
   assign("room_code", input.roomCode);
+  assign("manager_room_label", input.managerRoomLabel);
+  assign("plot_number", input.plotNumber);
   assign("building_id", input.buildingId);
   assign("floor_code", input.floorCode);
   assign("unit_code", input.unitCode);

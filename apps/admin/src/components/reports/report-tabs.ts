@@ -26,8 +26,8 @@ export const reportTabs = [
   {
     type: "property-owners",
     route: "/reports/property-owners",
-    label: "Setoran Owner",
-    description: "Hak, publikasi, dan setoran",
+    label: "Realisasi Owner",
+    description: "Hak Owner, transfer, dan publikasi",
   },
 ] as const;
 

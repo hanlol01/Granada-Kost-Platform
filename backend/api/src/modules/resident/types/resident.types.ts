@@ -144,6 +144,8 @@ export type ResidentTenancyRecord = {
   checkedInAt: Date | null;
   checkedInSource: 'lifecycle' | 'correction' | 'history' | 'occupancy' | null;
   roomNumber: string;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
   kostTypeName: string;
   buildingCode: string;
   startDate: string;

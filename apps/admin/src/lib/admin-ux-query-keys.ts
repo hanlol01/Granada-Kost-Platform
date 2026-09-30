@@ -203,6 +203,8 @@ export const adminUxQueryKeys = {
   settings: {
     profile: (propertyId: string) => ["settings", "property", propertyId] as const,
     preference: (userId: string) => ["settings", "preference", userId] as const,
+    organization: (propertyId: string) => ["settings", "organization", propertyId] as const,
+    document: (propertyId: string) => ["settings", "document", propertyId] as const,
   },
 } as const;
 
@@ -214,6 +216,8 @@ export function roomPersistenceInvalidationKeys(
     adminUxQueryKeys.rooms.all(propertyId),
     adminUxQueryKeys.rooms.detail(propertyId, roomId),
     adminUxQueryKeys.rooms.availabilityAll(propertyId),
+    adminUxQueryKeys.residents.all(propertyId),
+    adminUxQueryKeys.propertyOwners.all(propertyId),
     adminUxQueryKeys.kostTypes.all(propertyId),
     adminUxQueryKeys.dashboard.summary(propertyId),
   ];

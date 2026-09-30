@@ -257,6 +257,8 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             <DefinitionGrid
               items={[
                 ["Nomor kamar", detail.number],
+                ["Nomor Kamar by Pengelola", detail.managerRoomLabel || "-"],
+                ["Nomor Kavling", detail.plotNumber || "-"],
                 ["Kode kamar", detail.roomCode ?? "Belum ditetapkan"],
                 ["Bangunan", `${detail.building.code} · ${detail.building.name}`],
                 ["Kategori", detail.category.name],

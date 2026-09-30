@@ -1157,6 +1157,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 <DefinitionGrid
                   rows={[
                     ["No unit kamar", currentTenancy.roomNumber],
+                    ["Nomor Kamar by Pengelola", currentTenancy.managerRoomLabel || "-"],
+                    ["Nomor Kavling", currentTenancy.plotNumber || "-"],
                     ["Tipe kost", currentTenancy.kostTypeName],
                     ["Bangunan", currentTenancy.buildingCode],
                     [

@@ -489,11 +489,14 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
   {
     id: "settings",
     to: "/settings",
-    label: "Pengaturan",
+    label: "Pengaturan Umum",
     section: "lainnya",
     order: 150,
     icon: Settings,
-    access: { roles: ["owner", "manager"], readCapabilities: ["property.manage"] },
+    access: {
+      roles: ["owner", "manager", "admin"],
+      anyReadCapabilities: ["property.manage", "property_owner.manage"],
+    },
     navigation: { sidebar: true, mobilePriority: 110 },
   },
   {

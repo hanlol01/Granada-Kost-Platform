@@ -388,12 +388,14 @@ test("route, hook, registry, and cache wiring preserve exact authorities", () =>
 
   assert.match(route, /useAdminSettings\(\)/);
   assert.match(route, /<PersistentSettingsPanels/);
+  assert.match(route, /useGeneralSettings\(\)/);
+  assert.match(route, /<GeneralSettingsPanels/);
   assert.doesNotMatch(route, /Fitur dummy|Upload Logo|defaultValue="Kos Mawar Indah"/);
 
   const settingsRoute = adminRouteRegistry.find((routeMetadata) => routeMetadata.id === "settings");
   assert.ok(settingsRoute);
-  assert.deepEqual(settingsRoute.access.roles, ["owner", "manager"]);
-  assert.deepEqual(settingsRoute.access.readCapabilities, ["property.manage"]);
+  assert.deepEqual(settingsRoute.access.roles, ["owner", "manager", "admin"]);
+  assert.deepEqual(settingsRoute.access.anyReadCapabilities, ["property.manage", "property_owner.manage"]);
   assert.equal(
     getRouteAccessDecision(settingsRoute, {
       roles: ["owner"],
@@ -408,7 +410,14 @@ test("route, hook, registry, and cache wiring preserve exact authorities", () =>
     }),
     "allowed",
   );
-  for (const role of ["admin", "property_owner", "resident", "technician"] as const) {
+  assert.equal(
+    getRouteAccessDecision(settingsRoute, {
+      roles: ["admin"],
+      permissions: ["property_owner.manage"],
+    }),
+    "allowed",
+  );
+  for (const role of ["property_owner", "resident", "technician"] as const) {
     assert.equal(
       getRouteAccessDecision(settingsRoute, {
         roles: [role],

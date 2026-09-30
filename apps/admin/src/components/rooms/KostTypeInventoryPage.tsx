@@ -837,10 +837,11 @@ export function RoomInventoryTable({
     <>
       <Card className="overflow-hidden border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="bg-muted/75 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Kamar</th>
+                <th className="px-4 py-3">No. Kavling</th>
                 <th className="px-4 py-3">Bangunan</th>
                 {showCategory ? <th className="px-4 py-3">Kategori</th> : null}
                 <th className="px-4 py-3">Jenis Kelamin</th>
@@ -874,6 +875,9 @@ export function RoomInventoryTable({
                           </span>
                         ) : null}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3 text-foreground/80">
+                      {room.plotNumber?.trim() || <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="px-4 py-3 text-foreground/80">
                       {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
@@ -1492,6 +1496,8 @@ function Field({
 }
 
 type RoomDraft = {
+  managerRoomLabel: string;
+  plotNumber: string;
   kostTypeId: string;
   number: string;
   roomCode: string;
@@ -1515,6 +1521,8 @@ const ROOM_FIELD_ID: Record<RoomDraftField, string> = {
 
 function draftForRoom(room: RoomInventory): RoomDraft {
   return {
+    managerRoomLabel: room.managerRoomLabel ?? "",
+    plotNumber: room.plotNumber ?? "",
     kostTypeId: room.kostType.id,
     number: room.number,
     roomCode: room.roomCode ?? "",
@@ -1552,19 +1560,32 @@ function validateRoomDraft(
   return errors;
 }
 
-function roomInputFromDraft(draft: RoomDraft): RoomInventoryUpdateInput {
+function roomInputFromDraft(room: RoomInventory, draft: RoomDraft): RoomInventoryUpdateInput {
   if (!draft.floorCode) throw new Error("ROOM_FLOOR_REQUIRED");
-  return {
-    kostTypeId: draft.kostTypeId,
-    number: draft.number.trim(),
-    roomCode: optionalRoomText(draft.roomCode),
-    buildingId: draft.buildingId,
-    floorCode: draft.floorCode,
-    unitCode: optionalRoomText(draft.unitCode),
-    sizeLabel: optionalRoomText(draft.sizeLabel),
-    primaryPhotoFileId: draft.primaryPhotoFileId,
-    publicVisible: draft.publicVisible,
-  };
+  const input: RoomInventoryUpdateInput = {};
+  const managerRoomLabel = optionalRoomText(draft.managerRoomLabel);
+  const plotNumber = optionalRoomText(draft.plotNumber);
+  const roomCode = optionalRoomText(draft.roomCode);
+  const unitCode = optionalRoomText(draft.unitCode);
+  const sizeLabel = optionalRoomText(draft.sizeLabel);
+  const number = draft.number.trim();
+
+  if (managerRoomLabel !== optionalRoomText(room.managerRoomLabel ?? "")) {
+    input.managerRoomLabel = managerRoomLabel;
+  }
+  if (plotNumber !== optionalRoomText(room.plotNumber ?? "")) input.plotNumber = plotNumber;
+  if (draft.kostTypeId !== room.kostType.id) input.kostTypeId = draft.kostTypeId;
+  if (number !== room.number) input.number = number;
+  if (roomCode !== optionalRoomText(room.roomCode ?? "")) input.roomCode = roomCode;
+  if (draft.buildingId !== (room.buildingId ?? "")) input.buildingId = draft.buildingId;
+  if (draft.floorCode !== (room.floorCode ?? "")) input.floorCode = draft.floorCode;
+  if (unitCode !== optionalRoomText(room.unitCode ?? "")) input.unitCode = unitCode;
+  if (sizeLabel !== optionalRoomText(room.sizeLabel ?? "")) input.sizeLabel = sizeLabel;
+  if (draft.primaryPhotoFileId !== (room.primaryPhotoFileId ?? null)) {
+    input.primaryPhotoFileId = draft.primaryPhotoFileId;
+  }
+  if (draft.publicVisible !== room.publicVisible) input.publicVisible = draft.publicVisible;
+  return input;
 }
 
 function RoomFormField({
@@ -1701,7 +1722,7 @@ export function RoomInventoryEditor({
 
     const generation = editorGeneration.current;
     const roomId = room.id;
-    const updateInput = roomInputFromDraft(draft);
+    const updateInput = roomInputFromDraft(room, draft);
     if (roomStructuralEditLocked(room) && roomStructuralInputChanged(room, updateInput)) {
       setErrors({
         number: "Identitas struktural terkunci oleh status operasional terbaru.",
@@ -1763,11 +1784,38 @@ export function RoomInventoryEditor({
               className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground"
             >
               Identitas dan lokasi kamar dikunci selama booking, hunian, atau penyewaan masih aktif.
-              Anda tetap dapat mengubah ukuran, foto utama, dan visibilitas katalog.
+              Anda tetap dapat mengubah label kamar, nomor kavling, ukuran, foto utama, dan
+              visibilitas katalog.
             </div>
           ) : null}
           <section className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground">Identitas dan lokasi</h3>
+            <RoomFormField id="room-manager-label" label="Nomor Kamar by Pengelola">
+              <Input
+                id="room-manager-label"
+                className="min-h-11"
+                value={draft.managerRoomLabel}
+                maxLength={160}
+                disabled={pending}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, managerRoomLabel: event.target.value }))
+                }
+                placeholder="Rumah Kost · Unit 1, Kamar 2"
+              />
+            </RoomFormField>
+            <RoomFormField id="room-plot-number" label="Nomor Kavling">
+              <Input
+                id="room-plot-number"
+                className="min-h-11"
+                value={draft.plotNumber}
+                maxLength={80}
+                disabled={pending}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, plotNumber: event.target.value }))
+                }
+                placeholder="Mis. 1 atau 6A"
+              />
+            </RoomFormField>
             <div className="grid gap-4 sm:grid-cols-2">
               <RoomFormField
                 id={ROOM_FIELD_ID.number}

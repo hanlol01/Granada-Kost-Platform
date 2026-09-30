@@ -199,6 +199,24 @@ export class FileService {
   ): Promise<{ success: true; file: FileRecord }> {
     const before = await this.requireActiveFile(fileId);
     await this.assertCanAccess(user, before, 'file.delete.denied', context);
+    if (
+      before.filePurpose === 'owner_realization_evidence' &&
+      (await this.files.isOwnerRealizationEvidenceAttached(fileId))
+    ) {
+      throw new BadRequestException({
+        code: 'OWNER_REALIZATION_EVIDENCE_IMMUTABLE',
+        message: 'Bukti yang sudah tercatat pada Realisasi Owner tidak dapat dihapus.',
+      });
+    }
+    if (
+      before.filePurpose === 'document_signature' &&
+      (await this.files.isDocumentSignatureAttached(fileId))
+    ) {
+      throw new BadRequestException({
+        code: 'DOCUMENT_SIGNATURE_ATTACHED',
+        message: 'Tanda tangan yang sedang dipakai pada pengaturan dokumen harus dilepas dari Pengaturan Umum terlebih dahulu.',
+      });
+    }
 
     const deleted = await this.files.softDelete(fileId, user.id);
     if (!deleted) {
@@ -527,6 +545,19 @@ export class FileService {
   ): Promise<void> {
     await this.properties.assertCanReadProperty(user, propertyId);
 
+    if (
+      (purpose === 'owner_realization_evidence' || purpose === 'document_signature') &&
+      !user.roles.includes('admin')
+    ) {
+      throw new ForbiddenException({
+        code: 'FILE_PURPOSE_DENIED',
+        message:
+          purpose === 'document_signature'
+            ? 'Tanda tangan dokumen hanya dapat diunggah Admin.'
+            : 'Bukti Realisasi Owner hanya dapat diunggah Admin.',
+      });
+    }
+
     if (purpose === 'ktp') {
       if (user.roles.some((role) => KTP_FILE_ROLES.has(role))) {
         return;
@@ -574,6 +605,20 @@ export class FileService {
   ): Promise<void> {
     try {
       await this.properties.assertCanReadProperty(user, record.propertyId);
+
+      if (
+        (record.filePurpose === 'owner_realization_evidence' ||
+          record.filePurpose === 'document_signature') &&
+        !user.roles.includes('admin')
+      ) {
+        throw new ForbiddenException({
+          code: 'FILE_ACCESS_DENIED',
+          message:
+            record.filePurpose === 'document_signature'
+              ? 'Tanda tangan dokumen bersifat privat untuk Admin.'
+              : 'Bukti Realisasi Owner bersifat privat untuk Admin.',
+        });
+      }
 
       if (record.filePurpose === 'ktp' && !user.roles.some((role) => KTP_FILE_ROLES.has(role))) {
         throw new ForbiddenException({

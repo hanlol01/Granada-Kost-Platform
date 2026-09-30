@@ -1,6 +1,8 @@
 export type RoomDetailMoney = number | null;
 
 export type AdminRoomDetailProjection = {
+  manager_room_label: string | null;
+  plot_number: string | null;
   id: string;
   property_id: string;
   number: string;

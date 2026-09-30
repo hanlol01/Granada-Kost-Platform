@@ -16,9 +16,13 @@ export type ReportResult = {
   property_name: string;
   period: { date_from: string; date_to: string };
   generated_at: string;
+  generated_by?: string;
   filter_checksum: string;
   methodology: string;
+  filter_summary?: Array<[string, ReportScalar]>;
   summary: Record<string, number>;
   rows: ReportRow[];
+  /** Optional audited appendices such as transfers, corrections, or exclusions. */
+  additional_sheets?: Array<{ name: string; rows: ReportScalar[][] }>;
   meta: { limit: number; offset: number; total: number };
 };

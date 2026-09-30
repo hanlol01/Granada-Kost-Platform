@@ -48,11 +48,15 @@ import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortal
 import { useAuth } from "@/lib/auth";
 import { getOwnerPortalRoute } from "@/lib/property-owner-route-registry";
 import {
+  downloadOwnerRealizationReceipt,
+  downloadOwnerRealization,
+  downloadOwnerRealizationProgress,
   downloadOwnerReport,
   formatOwnerMoney,
   getOwnerPortalViewState,
   groupOwnerAssets,
   propertyOwnerPortalApi,
+  viewOwnerRealizationEvidence,
   type OwnerPortal,
   type OwnerAssetFilters,
   type OwnerKostType,
@@ -60,6 +64,8 @@ import {
   type OwnerFinance,
   type OwnerCollectionProgress,
   type OwnerReport,
+  type OwnerRealizationDocument,
+  type OwnerRealizationProgress,
 } from "@/lib/property-owner-portal";
 
 gsap.registerPlugin(useGSAP);
@@ -921,6 +927,8 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
         </Card>
       </section>
 
+      <OwnerRealizationCard initialPeriod={period} />
+
       <Card data-owner-reveal className="border-border/80 shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1755,6 +1763,220 @@ function PeriodToolbar({
   );
 }
 
+function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null }) {
+  const [period, setPeriod] = useState(initialPeriod ?? periodNow);
+  const [expanded, setExpanded] = useState(false);
+  const [refreshCountdown, setRefreshCountdown] = useState(0);
+  const progress = useQuery({
+    queryKey: ["property-owner", "realization-progress", period],
+    queryFn: () => propertyOwnerPortalApi.realizationProgress(period),
+    enabled: Boolean(period),
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (initialPeriod) setPeriod(initialPeriod);
+  }, [initialPeriod]);
+
+  useEffect(() => {
+    if (refreshCountdown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setRefreshCountdown((value) => Math.max(value - 1, 0));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [refreshCountdown]);
+
+  const refreshProgress = () => {
+    if (progress.isFetching || refreshCountdown > 0) return;
+    setRefreshCountdown(60);
+    void progress.refetch();
+  };
+
+  const data: OwnerRealizationProgress | undefined = progress.data;
+  const statusCopy = data?.state === "published"
+    ? "Realisasi diterbitkan"
+    : data?.state === "empty"
+      ? "Belum ada data layak"
+      : "Progress sementara";
+  const publishedTransfers = data?.transfers ?? [];
+  return (
+    <Card className="owner-data-surface border-primary/25 shadow-sm" data-owner-reveal>
+      <CardHeader className="border-b border-border/70 pb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ReceiptText className="h-5 w-5 text-primary" aria-hidden="true" />
+              Realisasi Owner
+            </CardTitle>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Pantau kamar yang sudah layak direalisasikan dan status pencairan dana Anda.
+            </p>
+          </div>
+          {data ? (
+            <Badge
+              variant="outline"
+              className={
+                data.state === "published"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  : "border-primary/35 bg-primary/10 text-primary"
+              }
+            >
+              {statusCopy}
+            </Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            Periode realisasi
+            <MonthYearPicker value={period} onChange={(value) => { setPeriod(value); setExpanded(false); }} label="Periode realisasi Owner" />
+          </label>
+          <Button
+            type="button"
+            className="min-h-11 shrink-0 bg-[#25D366] text-white hover:bg-[#1fb855] disabled:cursor-not-allowed disabled:opacity-70 focus-visible:ring-[#25D366]"
+            onClick={refreshProgress}
+            disabled={progress.isFetching || refreshCountdown > 0}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            {progress.isFetching
+              ? "Memperbarui…"
+              : refreshCountdown > 0
+                ? `Perbarui lagi dalam ${refreshCountdown} detik`
+                : "Perbarui data"}
+          </Button>
+        </div>
+        {progress.isLoading ? <LoadingState label="Memuat progres realisasi…" /> : null}
+        {progress.error ? (
+          <ErrorState
+            error={progress.error}
+            onRetry={() => void progress.refetch()}
+            title="Progres realisasi belum dapat dimuat"
+            backTo="/property-owners/portal"
+          />
+        ) : null}
+        {data && !progress.error ? (
+          <>
+            {data.state === "published" ? (
+              <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-900 dark:text-emerald-100">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <p>
+                  Realisasi periode ini sudah diterbitkan. Dana yang berhasil dicatat sebagai
+                  transfer: <strong>{formatOwnerMoney(data.summary.transferredTotal)}</strong>.
+                </p>
+              </div>
+            ) : data.state === "empty" ? (
+              <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
+                <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <p>Belum ada kamar yang layak direalisasikan pada periode ini. Data akan terbarui setelah pembayaran dinyatakan lunas.</p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm leading-6 text-foreground">
+                <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                <p>
+                  Ini adalah progres sementara. Nominal transfer tetap <strong>Rp 0</strong> sampai
+                  Pihak Pengelola menerbitkan dan mencatat transfer berhasil.
+                </p>
+              </div>
+            )}
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                ["Kamar siap direalisasi", data.summary.roomCount],
+                ["Total kontrak", data.summary.eligibleContractTotal],
+                ["Hak Owner", data.summary.realizationTotal],
+                ["Sudah ditransfer", data.summary.transferredTotal],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-border/80 bg-muted/20 p-4">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {label === "Kamar siap direalisasi" ? value : formatOwnerMoney(value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {data.payoutDestination ? (
+              <div className="rounded-xl border border-border/80 bg-background p-4 text-sm">
+                <p className="font-semibold text-foreground">Rekening pencairan</p>
+                <p className="mt-1 text-muted-foreground">
+                  {data.payoutDestination.bankName ?? "Bank belum diisi"} · {data.payoutDestination.accountNumberMasked ?? "Rekening belum diisi"} · {data.payoutDestination.accountHolder ?? "Nama pemilik belum diisi"}
+                </p>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" className="min-h-11" onClick={() => setExpanded((value) => !value)}>
+                <Eye className="mr-2 h-4 w-4" />
+                {expanded ? "Sembunyikan rincian" : "Lihat rincian realisasi"}
+              </Button>
+              <Button type="button" className="min-h-11 bg-red-600 text-white hover:bg-red-700" onClick={() => void downloadOwnerRealizationProgress(period, "pdf")}>
+                <FileText className="mr-2 h-4 w-4" /> Unduh PDF
+              </Button>
+              <Button type="button" className="min-h-11 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void downloadOwnerRealizationProgress(period, "xlsx")}>
+                <Download className="mr-2 h-4 w-4" /> Unduh Excel
+              </Button>
+            </div>
+            {expanded ? (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="bg-muted/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3">No.</th>
+                      <th className="px-4 py-3">Kamar</th>
+                      <th className="px-4 py-3">Penghuni</th>
+                      <th className="px-4 py-3">Total sewa</th>
+                      <th className="px-4 py-3">Hak Owner</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.lines.length ? data.lines.map((line, index) => (
+                      <tr key={`${line.roomCode}-${line.residentName ?? "line"}-${index}`} className="border-t border-border/70">
+                        <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-foreground">
+                          {line.roomCode}<span className="block text-xs font-normal text-muted-foreground">No. Kavling {line.plotNumber ?? "—"}</span>
+                        </td>
+                        <td className="px-4 py-3">{line.residentName ?? "—"}</td>
+                        <td className="px-4 py-3">{formatOwnerMoney(line.contractTotal)}</td>
+                        <td className="px-4 py-3 font-semibold">{formatOwnerMoney(line.realizationTotal)}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Belum ada kamar yang layak direalisasikan pada periode ini.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {data.state === "published" && publishedTransfers.length ? (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-foreground">Kuitansi dan bukti transfer</p>
+                {publishedTransfers.map((transfer) => (
+                  <div key={transfer.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 p-3">
+                    <div className="text-sm">
+                      <p className="font-semibold">{formatOwnerMoney(transfer.amount)} · {localDate(transfer.transferredAt)}</p>
+                      <p className="text-xs text-muted-foreground">{transfer.receiptNumber ?? transfer.reference} · {transfer.hasEvidence ? "Bukti digital tersedia" : "Bukti digital belum tersedia"}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {data.realization ? <Button type="button" className="min-h-10 bg-[#25D366] text-white hover:bg-[#1fb855]" onClick={() => void downloadOwnerRealizationReceipt(data.realization!.id, transfer.id)}><Download className="mr-2 h-4 w-4" /> Unduh kuitansi</Button> : null}
+                      {data.realization && transfer.evidenceFiles.map((file) => (
+                        <Button
+                          key={file.id}
+                          type="button"
+                          className="min-h-10 bg-[#25D366] text-white hover:bg-[#1fb855]"
+                          onClick={() => void viewOwnerRealizationEvidence(data.realization!.id, transfer.id, file.id, file.originalFilename)}
+                        >
+                          <Eye className="mr-2 h-4 w-4" /> Lihat bukti{transfer.evidenceFiles.length > 1 ? ` ${transfer.evidenceFiles.indexOf(file) + 1}` : ""}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ReportSummary({ report }: { report: OwnerReport }) {
   return (
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -2482,6 +2704,8 @@ function Reports({
         </CardContent>
       </Card>
       <CollectionPaymentOverview collection={collection} />
+      <OwnerRealizationCard initialPeriod={report.period.period.slice(0, 7)} />
+      <OwnerRealizationDocuments />
       <section className="space-y-4" aria-labelledby="owner-report-finance-heading">
         <div>
           <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground">
@@ -2559,6 +2783,74 @@ function Reports({
         }))}
       />
     </div>
+  );
+}
+
+/** Published receipts are a separate, immutable payout trail.  The Owner never
+ * sees Admin diagnostics, drafts, un-published reports, or other Owners' data. */
+function OwnerRealizationDocuments() {
+  const documents = useQuery({
+    queryKey: ["property-owner", "published-realizations"],
+    queryFn: () => propertyOwnerPortalApi.realizations(),
+    staleTime: 30_000,
+  });
+  if (documents.isLoading) return <LoadingState label="Memuat dokumen realisasi..." />;
+  if (documents.isError) {
+    return (
+      <ErrorState
+        error={documents.error}
+        onRetry={() => void documents.refetch()}
+        title="Dokumen Realisasi Owner belum dapat dimuat"
+      />
+    );
+  }
+  const rows: OwnerRealizationDocument[] = documents.data?.rows ?? [];
+  return (
+    <Card className="owner-data-surface border-border/90 shadow-sm">
+      <CardHeader className="border-b border-border/70 pb-4">
+        <CardTitle className="text-base">Dokumen Realisasi Owner</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Hanya Realisasi yang sudah selesai dan diterbitkan oleh Admin yang tersedia di sini.
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length ? (
+          rows.map((row) => (
+            <div
+              key={`${row.id}-${row.transfer_id ?? "report"}`}
+              className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 p-5 last:border-b-0"
+            >
+              <div>
+                <p className="font-semibold text-foreground">
+                  {row.receipt_number ?? row.realization_reference}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Periode {dashboardPeriodLabel(row.realization_period)} · Realisasi{" "}
+                  {formatOwnerMoney(row.realization_total)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Transfer {formatOwnerMoney(String(row.transfer_amount ?? 0))} ·{" "}
+                  {row.transferred_at ? localDate(row.transferred_at) : "—"}
+                </p>
+              </div>
+              {row.transfer_id ? (
+                <Button
+                  type="button"
+                  className="bg-[#25D366] text-white hover:bg-[#1fb855]"
+                  onClick={() => void downloadOwnerRealizationReceipt(row.id, row.transfer_id!)}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Unduh kuitansi
+                </Button>
+              ) : null}
+            </div>
+          ))
+        ) : (
+          <p className="p-5 text-sm text-muted-foreground">
+            Belum ada dokumen Realisasi Owner yang diterbitkan untuk akun ini.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

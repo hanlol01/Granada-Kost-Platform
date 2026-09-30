@@ -1,14 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  BedDouble,
-  CalendarDays,
-  ClipboardList,
-  UserRound,
-  Wrench,
-} from "lucide-react";
+import { ArrowLeft, BedDouble, CalendarDays, ClipboardList, UserRound, Wrench } from "lucide-react";
 import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
@@ -285,8 +278,8 @@ function ResidentDetailContent({ detail }: { detail: OwnerOccupancyResidentDetai
               <CardTitle className="text-base">Status security deposit</CardTitle>
             </CardHeader>
             <CardContent className="p-5 text-sm text-muted-foreground">
-              Security deposit penghuni telah tercatat. Dana titipan ini tidak termasuk
-              pembayaran sewa maupun Hak Owner.
+              Security deposit penghuni telah tercatat. Dana titipan ini tidak termasuk pembayaran
+              sewa maupun Hak Owner.
             </CardContent>
           </Card>
         </section>

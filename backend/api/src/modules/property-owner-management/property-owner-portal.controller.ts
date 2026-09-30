@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
@@ -7,6 +7,7 @@ import { RequireRoles } from '../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../rbac/guards/rbac.guard';
 import { PropertyOwnerPortalService } from './property-owner-portal.service';
+import { PropertyOwnerRealizationService } from './property-owner-realization.service';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('property_owner')
@@ -20,7 +21,10 @@ import { PropertyOwnerPortalService } from './property-owner-portal.service';
 )
 @Controller('my/property-owner')
 export class PropertyOwnerPortalController {
-  constructor(private readonly portal: PropertyOwnerPortalService) {}
+  constructor(
+    private readonly portal: PropertyOwnerPortalService,
+    private readonly realizations: PropertyOwnerRealizationService,
+  ) {}
 
   @Get('portal')
   getPortal(@CurrentUser() actor: UserAccessContext) {
@@ -87,6 +91,82 @@ export class PropertyOwnerPortalController {
   @Get('collection-progress')
   collectionProgress(@CurrentUser() actor: UserAccessContext) {
     return this.portal.collectionProgress(actor);
+  }
+
+  /** Only documents explicitly published to the authenticated Owner appear here. */
+  @Get('realizations')
+  realizationsList(@CurrentUser() actor: UserAccessContext) {
+    return this.realizations.listPublishedForOwner(actor);
+  }
+
+  @Get('realizations/progress')
+  realizationProgress(
+    @CurrentUser() actor: UserAccessContext,
+    @Query('period') period: string | undefined,
+  ) {
+    return this.realizations.portalProgress(actor, period ?? this.realizations.currentPeriod());
+  }
+
+  @Get('realizations/progress/export')
+  async realizationProgressExport(
+    @CurrentUser() actor: UserAccessContext,
+    @Query('period') period: string | undefined,
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.realizations.portalProgressExport(
+      actor,
+      period ?? this.realizations.currentPeriod(),
+      format ?? '',
+    );
+    response.setHeader('Content-Type', file.contentType);
+    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    return new StreamableFile(file.content);
+  }
+
+  @Get('realizations/:realizationId/transfers/:transferId/receipt')
+  async realizationReceipt(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('realizationId') realizationId: string,
+    @Param('transferId') transferId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.realizations.ownerReceipt(actor, realizationId, transferId);
+    response.setHeader('Content-Type', file.contentType);
+    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    return new StreamableFile(file.content);
+  }
+
+  @Get('realizations/:realizationId/export')
+  async realizationExport(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('realizationId', new ParseUUIDPipe({ version: '4' })) realizationId: string,
+    @Query('format') format: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.realizations.ownerExport(actor, realizationId, format ?? '');
+    response.setHeader('Content-Type', file.contentType);
+    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    return new StreamableFile(file.content);
+  }
+
+  @Get('realizations/:realizationId/transfers/:transferId/evidence/:fileId')
+  async realizationEvidence(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('realizationId', new ParseUUIDPipe({ version: '4' })) realizationId: string,
+    @Param('transferId', new ParseUUIDPipe({ version: '4' })) transferId: string,
+    @Param('fileId', new ParseUUIDPipe({ version: '4' })) fileId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.realizations.ownerEvidence(actor, realizationId, transferId, fileId);
+    response.setHeader('Content-Type', file.contentType);
+    response.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    return new StreamableFile(file.content);
   }
 
   @Get('reports/export')

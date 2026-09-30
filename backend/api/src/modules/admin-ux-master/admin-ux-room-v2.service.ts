@@ -310,6 +310,7 @@ export class AdminUxRoomV2Service {
     const result = await this.database.client.query<Row>(
       `SELECT
          room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
+         room.manager_room_label, room.plot_number,
          room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
          room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
@@ -422,9 +423,10 @@ export class AdminUxRoomV2Service {
           input.building_id !== undefined && input.building_id !== beforeBuildingId;
 
         const proposedFloorCode = (input.floor_code ?? before.floor_code) as FloorCode | undefined;
-        const canonicalFloor = proposedFloorCode
-          ? this.canonicalFloor(proposedFloorCode)
-          : { floor: before.floor ?? null, floorLabel: before.floor_label ?? null };
+        const canonicalFloor =
+          input.floor_code !== undefined && proposedFloorCode
+            ? this.canonicalFloor(proposedFloorCode)
+            : { floor: before.floor ?? null, floorLabel: before.floor_label ?? null };
         this.assertFloorInputs(input, canonicalFloor);
         const proposed = {
           kostTypeId: proposedKostTypeId,
@@ -447,6 +449,12 @@ export class AdminUxRoomV2Service {
               ? input.primary_photo_file_id
               : (before.primary_photo_file_id ?? null),
           publicVisible: input.public_visible ?? Boolean(before.public_visible),
+          managerRoomLabel:
+            input.manager_room_label !== undefined
+              ? input.manager_room_label
+              : (before.manager_room_label ?? null),
+          plotNumber:
+            input.plot_number !== undefined ? input.plot_number : (before.plot_number ?? null),
         };
         const structuralChanged = this.structuralRoomChanged(before, proposed);
         if (structuralChanged) {
@@ -461,7 +469,8 @@ export class AdminUxRoomV2Service {
            SET kost_type_id = $3, number = $4, room_code = $5, building_id = $6, category = $7,
                unit_code = $8, gender_policy = $9, floor = $10, floor_code = $11, floor_label = $12,
                 size_label = $13, primary_photo_file_id = $14, public_visible = $15,
-                updated_by_user_id = $16, updated_at = now()
+                 updated_by_user_id = $16, updated_at = now(),
+                 manager_room_label = $17, plot_number = $18
            WHERE id = $1 AND property_id = $2
            RETURNING id`,
           [
@@ -481,6 +490,8 @@ export class AdminUxRoomV2Service {
             proposed.primaryPhotoFileId,
             proposed.publicVisible,
             user.id,
+            proposed.managerRoomLabel,
+            proposed.plotNumber,
           ],
         );
         if (!result.rows[0]) this.throwRoomNotFound();
@@ -587,7 +598,8 @@ export class AdminUxRoomV2Service {
     const result = await queryable.query<Row>(
       `SELECT
          room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
-         room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
+          room.manager_room_label, room.plot_number,
+          room.unit_code, room.gender_policy, room.floor, room.floor_code, room.floor_label, room.size_label,
          room.room_status, room.primary_photo_file_id, room.public_visible, room.created_at, room.updated_at,
          kost_type.name AS kost_type_name, kost_type.slug AS kost_type_slug, kost_type.category AS kost_type_category,
          commercial_version.monthly_price,
@@ -595,8 +607,10 @@ export class AdminUxRoomV2Service {
          commercial_version.short_stay_monthly_price,
          commercial_version.medium_stay_monthly_price,
          commercial_version.long_stay_monthly_price,
-         commercial_version.effective_date::text AS commercial_effective_date,
-         (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
+          commercial_version.effective_date::text AS commercial_effective_date,
+          commercial_version.security_deposit_months,
+          management_fee.monthly_fee_amount,
+          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
          building.building_code, building.building_name
        FROM rooms room
@@ -615,8 +629,13 @@ export class AdminUxRoomV2Service {
            AND version.effective_date <= CURRENT_DATE
          ORDER BY version.effective_date DESC, version.id DESC
          LIMIT 1
-       ) commercial_version ON true
-       LEFT JOIN room_buildings building
+        ) commercial_version ON true
+        LEFT JOIN LATERAL (
+          SELECT fee.monthly_fee_amount FROM property_management_fee_versions fee
+          WHERE fee.property_id=room.property_id AND fee.effective_date<=CURRENT_DATE
+          ORDER BY fee.effective_date DESC,fee.id DESC LIMIT 1
+        ) management_fee ON true
+        LEFT JOIN room_buildings building
          ON building.id = room.building_id
         AND building.property_id = room.property_id
        WHERE room.id = $1
@@ -711,6 +730,8 @@ export class AdminUxRoomV2Service {
       property_id: row.property_id,
       number: row.number,
       room_code: row.room_code,
+      manager_room_label: row.manager_room_label ?? null,
+      plot_number: row.plot_number ?? null,
       building_id: row.building_id,
       building_code: row.building_code,
       building_name: row.building_name,
@@ -1329,6 +1350,8 @@ export class AdminUxRoomV2Service {
       kost_type_id: row.kost_type_id,
       number: row.number,
       room_code: row.room_code,
+      manager_room_label: row.manager_room_label ?? null,
+      plot_number: row.plot_number ?? null,
       building_id: row.building_id,
       category: row.category ?? (row.kost_type as Row | undefined)?.category,
       unit_code: row.unit_code,

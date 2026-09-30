@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { LogOut, User } from "lucide-react";
+import { LogOut, Settings, User } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -73,6 +73,12 @@ export function UserMenu() {
         <DropdownMenuItem disabled className="text-xs">
           <User className="mr-2 h-3.5 w-3.5" /> Role: {primaryRole.replace("_", " ")}
         </DropdownMenuItem>
+        {user?.roles?.includes("admin") ? (
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/settings" })}>
+            <Settings className="mr-2 h-3.5 w-3.5" />
+            Pengaturan Umum
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={(e) => {

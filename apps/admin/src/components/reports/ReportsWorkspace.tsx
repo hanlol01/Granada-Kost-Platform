@@ -1,14 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
+  CheckCircle2,
   Download,
+  FileClock,
   FileSpreadsheet,
   FileText,
+  Landmark,
   RefreshCcw,
   Search,
+  WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
@@ -16,7 +21,10 @@ import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FilterResultNotice } from "@/components/ui/filter-result-notice";
+import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useM4AllRoomBuildings } from "@/hooks/useAdminUxMaster";
 import {
   downloadAdminReport,
@@ -28,37 +36,57 @@ import {
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 import { reportTabs } from "./report-tabs";
+import "./reports-workspace.css";
 const PAGE_SIZE = 20;
 
 export function ReportNavigation({ active }: { active: (typeof reportTabs)[number]["type"] }) {
+  const navigate = useNavigate();
+
   return (
-    <nav
-      aria-label="Jenis laporan"
-      className="grid gap-2 rounded-xl border bg-card p-2 sm:grid-cols-2 xl:grid-cols-5"
+    <Tabs
+      className="rounded-2xl border border-primary/20 bg-card/50 p-3 shadow-sm sm:p-4"
+      aria-labelledby="reports-workspace-heading"
+      value={active}
+      onValueChange={(value) => {
+        const nextTab = reportTabs.find((tab) => tab.type === value);
+        if (nextTab) void navigate({ to: nextTab.route });
+      }}
     >
-      {reportTabs.map((tab) => (
-        <Button
-          key={tab.type}
-          asChild
-          variant={tab.type === active ? "default" : "ghost"}
-          className="h-auto justify-start px-4 py-3 text-left"
-        >
-          <Link to={tab.route}>
-            <span>
-              <span className="block font-semibold">{tab.label}</span>
+      <div className="mb-4 flex items-start gap-3 border-b border-border/70 pb-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+          <WalletCards className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 id="reports-workspace-heading" className="text-base font-semibold text-foreground">
+            Ruang kerja laporan
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pilih laporan operasional dan keuangan yang ingin ditinjau.
+          </p>
+        </div>
+      </div>
+      <TabsList className="grid h-auto w-full grid-cols-1 gap-1 rounded-xl border border-primary/20 bg-primary/10 p-1 sm:grid-cols-2 xl:grid-cols-5">
+        {reportTabs.map((tab) => (
+          <TabsTrigger
+            key={tab.type}
+            value={tab.type}
+            className="min-h-12 w-full whitespace-normal px-3 text-center font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+          >
+            <span className="grid gap-0.5">
+              <span className="block">{tab.label}</span>
               <span
                 className={cn(
-                  "mt-0.5 block text-xs",
+                  "block text-xs font-normal leading-snug",
                   tab.type === active ? "text-primary-foreground/75" : "text-muted-foreground",
                 )}
               >
                 {tab.description}
               </span>
             </span>
-          </Link>
-        </Button>
-      ))}
-    </nav>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -98,6 +126,72 @@ const summaryLabels: Record<string, string> = {
   owner_paid: "Sudah dibayarkan ke Owner",
   owner_unpaid: "Belum dibayarkan ke Owner",
   net_operational_cash: "Arus kas operasional bersih",
+};
+
+const summaryIcons: Record<string, typeof WalletCards> = {
+  total_contracts: FileText,
+  active_contracts: CheckCircle2,
+  started_contracts: FileClock,
+  ended_contracts: FileClock,
+  ending_soon: FileClock,
+  contract_value: WalletCards,
+  checkout_total: FileText,
+  checkout_in_progress: FileClock,
+  same_day_departures: FileClock,
+  checkout_refund: WalletCards,
+  checkout_amount_due: WalletCards,
+  checkout_damage: Building2,
+  total_payments: WalletCards,
+  verified_rent: CheckCircle2,
+  management_fee_collected: Building2,
+  deposit_collected: WalletCards,
+  other_income: WalletCards,
+  pending_amount: FileClock,
+  reversed_amount: RefreshCcw,
+  total_expenses: Building2,
+  paid_amount: CheckCircle2,
+  pending_expense_amount: FileClock,
+  approved_amount: CheckCircle2,
+  cancelled_or_reversed: RefreshCcw,
+  rent_cash_in: WalletCards,
+  management_fee_cash_in: Building2,
+  other_cash_in: WalletCards,
+  deposit_refunded: RefreshCcw,
+  expenses_paid: Building2,
+  receivables: FileClock,
+  management_fee: Building2,
+  owner_entitlement_recorded: Landmark,
+  owner_paid: Landmark,
+  owner_unpaid: Landmark,
+  net_operational_cash: Landmark,
+};
+
+const summaryTones: Record<string, "blue" | "green" | "amber" | "slate"> = {
+  active_contracts: "green",
+  verified_rent: "green",
+  paid_amount: "green",
+  approved_amount: "green",
+  owner_paid: "green",
+  expenses_paid: "green",
+  ending_soon: "amber",
+  checkout_amount_due: "amber",
+  checkout_damage: "amber",
+  pending_amount: "amber",
+  pending_expense_amount: "amber",
+  receivables: "amber",
+  owner_unpaid: "amber",
+  ended_contracts: "slate",
+  checkout_refund: "slate",
+  reversed_amount: "slate",
+  cancelled_or_reversed: "slate",
+  deposit_refunded: "slate",
+};
+
+const summaryHelperText: Record<AdminReportType, string> = {
+  leases: "Sesuai periode dan filter penyewaan",
+  payments: "Sesuai periode dan filter pembayaran",
+  expenses: "Sesuai periode dan filter pengeluaran",
+  finance: "Sesuai periode dan filter keuangan",
 };
 
 const moneyKeys = new Set([
@@ -257,6 +351,45 @@ const valueLabels: Record<string, string> = {
   maintenance: "Dalam perawatan",
 };
 
+const filterLabels: Partial<Record<keyof AdminReportFilters, string>> = {
+  category: "Tipe / kategori",
+  building_id: "Bangunan",
+  status: "Status",
+  gender: "Gender penghuni",
+  method: "Metode",
+  purpose: "Tujuan pembayaran",
+  payment_plan: "Rencana pembayaran",
+  date_basis: "Dasar tanggal",
+  has_evidence: "Bukti transaksi",
+  exit_type: "Jenis check-out",
+  checkout_status: "Status operasional",
+  financial_status: "Status keuangan akhir",
+  same_day: "Check-out mendadak",
+  has_refund: "Pengembalian dana",
+  has_amount_due: "Tagihan akhir",
+  has_damage: "Kerusakan tercatat",
+};
+
+function formatFilterDate(value: string) {
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(
+    new Date(`${value}T00:00:00`),
+  );
+}
+
+function formatFilterValue(key: keyof AdminReportFilters, value: string) {
+  if (key === "date_basis") {
+    return (
+      {
+        active: "Aktif dalam periode",
+        started: "Mulai dalam periode",
+        ended: "Berakhir dalam periode",
+      }[value] ?? value
+    );
+  }
+  if (["yes", "no"].includes(value)) return value === "yes" ? "Ada" : "Tidak ada";
+  return valueLabels[value] ?? value.replaceAll("_", " ");
+}
+
 function display(key: string, value: ReportScalar) {
   if (value === null || value === "") return "—";
   if (moneyKeys.has(key) && typeof value === "number") return rupiah(value);
@@ -338,18 +471,82 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
     defaultFilters(currentPropertyId ?? ""),
   );
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
+  const [filterNoticeRevision, setFilterNoticeRevision] = useState(1);
+  const searchDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!currentPropertyId) return;
-    const restored: AdminReportFilters = defaultFilters(currentPropertyId);
-    const params = new URLSearchParams(window.location.search);
-    const keys: Array<keyof AdminReportFilters> = [
-      "date_from",
-      "date_to",
-      "q",
-      "status",
+    const restoreFromUrl = () => {
+      const restored: AdminReportFilters = defaultFilters(currentPropertyId);
+      const params = new URLSearchParams(window.location.search);
+      const keys: Array<keyof AdminReportFilters> = [
+        "date_from",
+        "date_to",
+        "q",
+        "status",
+        "category",
+        "building_id",
+        "gender",
+        "method",
+        "purpose",
+        "payment_plan",
+        "date_basis",
+        "has_evidence",
+        "exit_type",
+        "checkout_status",
+        "financial_status",
+        "same_day",
+        "has_refund",
+        "has_amount_due",
+        "has_damage",
+      ];
+      keys.forEach((key) => {
+        const value = params.get(key);
+        if (value) restored[key] = value as never;
+      });
+      const offset = Number(params.get("offset"));
+      restored.offset = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
+      setFilterNoticeRevision(1);
+      setDraft(restored);
+      setApplied(restored);
+    };
+    restoreFromUrl();
+    window.addEventListener("popstate", restoreFromUrl);
+    return () => window.removeEventListener("popstate", restoreFromUrl);
+  }, [currentPropertyId, type]);
+
+  useEffect(
+    () => () => {
+      if (searchDebounceRef.current !== null) window.clearTimeout(searchDebounceRef.current);
+    },
+    [],
+  );
+
+  const filters = useMemo(
+    () => ({ ...applied, property_id: currentPropertyId ?? "", limit: PAGE_SIZE }),
+    [applied, currentPropertyId],
+  );
+  const query = useQuery({
+    queryKey: ["admin-report", type, filters],
+    queryFn: () => getAdminReport(type, filters),
+    enabled: Boolean(currentPropertyId),
+    placeholderData: (previous) => previous,
+  });
+
+  const filterCriteria = useMemo(() => {
+    const criteria: string[] = [];
+    const searchTerm = applied.q?.trim();
+    if (searchTerm) criteria.push(`pencarian "${searchTerm}"`);
+    if (applied.date_from || applied.date_to) {
+      const from = applied.date_from ? formatFilterDate(applied.date_from) : "awal";
+      const to = applied.date_to ? formatFilterDate(applied.date_to) : "akhir";
+      criteria.push(`periode ${from}–${to}`);
+    }
+
+    const optionalKeys: Array<keyof AdminReportFilters> = [
       "category",
       "building_id",
+      "status",
       "gender",
       "method",
       "purpose",
@@ -364,42 +561,55 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
       "has_amount_due",
       "has_damage",
     ];
-    keys.forEach((key) => {
-      const value = params.get(key);
-      if (value) restored[key] = value as never;
+    optionalKeys.forEach((key) => {
+      const value = applied[key];
+      if (typeof value !== "string" || !value) return;
+      const label =
+        key === "category" && type === "expenses" ? "kategori pengeluaran" : filterLabels[key];
+      if (!label) return;
+      const displayValue =
+        key === "building_id"
+          ? (buildings.data ?? []).find((building) => building.id === value)?.buildingName ??
+            "bangunan dipilih"
+          : formatFilterValue(key, value);
+      criteria.push(`${label}: ${displayValue}`);
     });
-    const offset = Number(params.get("offset"));
-    restored.offset = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
-    setDraft(restored);
-    setApplied(restored);
-  }, [currentPropertyId, type]);
+    return criteria;
+  }, [applied, buildings.data, type]);
 
-  const filters = useMemo(
-    () => ({ ...applied, property_id: currentPropertyId ?? "", limit: PAGE_SIZE }),
-    [applied, currentPropertyId],
-  );
-  const query = useQuery({
-    queryKey: ["admin-report", type, filters],
-    queryFn: () => getAdminReport(type, filters),
-    enabled: Boolean(currentPropertyId),
-    placeholderData: (previous) => previous,
-  });
-
-  const update = (key: keyof AdminReportFilters, value: string) =>
-    setDraft((current) => ({ ...current, [key]: value || undefined }));
-  const apply = () => {
-    const next = { ...draft, property_id: currentPropertyId ?? "", limit: PAGE_SIZE, offset: 0 };
+  const apply = (nextDraft: AdminReportFilters = draft) => {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+    const next = { ...nextDraft, property_id: currentPropertyId ?? "", limit: PAGE_SIZE, offset: 0 };
     setApplied(next);
+    setFilterNoticeRevision((revision) => revision + 1);
     const url = new URL(window.location.href);
     Object.entries(next).forEach(([key, value]) =>
       value ? url.searchParams.set(key, String(value)) : url.searchParams.delete(key),
     );
     history.replaceState(null, "", url);
   };
+  const update = (key: keyof AdminReportFilters, value: string) => {
+    const next = { ...draft, [key]: value || undefined };
+    setDraft(next);
+    if (key === "q") {
+      if (searchDebounceRef.current !== null) window.clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = window.setTimeout(() => apply(next), 400);
+      return;
+    }
+    apply(next);
+  };
   const reset = () => {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
     const next = defaultFilters(currentPropertyId ?? "");
     setDraft(next);
     setApplied(next);
+    setFilterNoticeRevision((revision) => revision + 1);
     history.replaceState(null, "", window.location.pathname);
   };
   const page = (offset: number) => {
@@ -435,32 +645,30 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
 
   return (
     <AppShell title="Laporan" subtitle="Ringkasan resmi untuk operasional dan keuangan properti">
-      <div className="space-y-5">
+      <div className="reports-page">
         <ReportNavigation active={type} />
 
-        <Card>
+        <Card className="reports-filter-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">
               Filter {reportTabs.find((tab) => tab.type === type)?.label}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1 text-sm font-medium">
-              Dari tanggal
-              <Input
-                type="date"
-                value={draft.date_from}
-                onChange={(event) => update("date_from", event.target.value)}
-              />
-            </label>
-            <label className="space-y-1 text-sm font-medium">
-              Sampai tanggal
-              <Input
-                type="date"
-                value={draft.date_to}
-                onChange={(event) => update("date_to", event.target.value)}
-              />
-            </label>
+            <HeroUiDatePicker
+              id="report-date-from"
+              label="Dari tanggal"
+              value={draft.date_from}
+              onChange={(value) => update("date_from", value ?? "")}
+              className="min-w-0 gap-2"
+            />
+            <HeroUiDatePicker
+              id="report-date-to"
+              label="Sampai tanggal"
+              value={draft.date_to}
+              onChange={(value) => update("date_to", value ?? "")}
+              className="min-w-0 gap-2"
+            />
             <label className="space-y-1 text-sm font-medium xl:col-span-2">
               Pencarian
               <div className="relative">
@@ -469,6 +677,12 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                   className="pl-9"
                   value={draft.q ?? ""}
                   onChange={(event) => update("q", event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      apply({ ...draft, q: event.currentTarget.value || undefined });
+                    }
+                  }}
                   placeholder="Cari penghuni, kamar, kode, bangunan, atau referensi"
                 />
               </div>
@@ -732,19 +946,48 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                 </label>
               </>
             ) : null}
-            <div className="flex items-end gap-2 md:col-span-2 xl:col-span-4">
-              <Button onClick={apply} disabled={query.isFetching}>
-                <FileText />
-                Tampilkan
-              </Button>
+            <div className="flex flex-wrap items-center gap-2 md:col-span-2 xl:col-span-4">
               <Button variant="destructive" onClick={reset}>
                 <RefreshCcw />
                 Reset filter
               </Button>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button
+                  className="bg-[#e2231a] text-white hover:bg-[#b91c16]"
+                  onClick={() => void exportReport("pdf")}
+                  disabled={Boolean(exporting) || query.isFetching}
+                >
+                  <Download />
+                  {exporting === "pdf" ? "Membuat PDF..." : "Unduh PDF"}
+                </Button>
+                <Button
+                  className="bg-[#217346] text-white hover:bg-[#185c37]"
+                  onClick={() => void exportReport("xlsx")}
+                  disabled={Boolean(exporting) || query.isFetching}
+                >
+                  <FileSpreadsheet />
+                  {exporting === "xlsx" ? "Membuat Excel..." : "Unduh Excel"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
 
+        {filterNoticeRevision > 0 && data && !query.isFetching && !query.error ? (
+          <FilterResultNotice
+            key={filterNoticeRevision}
+            entityLabel={{
+              leases: "penyewaan",
+              payments: "pembayaran",
+              expenses: "pengeluaran",
+              finance: "aktivitas keuangan",
+            }[type]}
+            resultCount={data.meta.total}
+            activeFilterCount={filterCriteria.length}
+            searchTerm={applied.q}
+            criteria={filterCriteria}
+          />
+        ) : null}
         {query.isLoading ? <LoadingState label="Menyiapkan laporan..." /> : null}
         {query.error ? (
           <ErrorState
@@ -757,47 +1000,38 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
           <>
             <section
               aria-label="Ringkasan laporan"
-              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              className="reports-summary-grid"
             >
-              {Object.entries(data.summary).map(([key, value]) => (
-                <Card
-                  key={key}
-                  className={cn(key === "net_operational_cash" && "border-primary/40 bg-primary/5")}
-                >
-                  <CardContent className="p-5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {summaryLabels[key] ?? key}
-                    </p>
-                    <p className="mt-2 text-xl font-semibold tracking-tight">
+              {Object.entries(data.summary).map(([key, value]) => {
+                const SummaryIcon = summaryIcons[key] ?? WalletCards;
+
+                return (
+                  <article
+                    key={key}
+                    className="reports-summary-card"
+                    data-tone={summaryTones[key] ?? "blue"}
+                  >
+                    <span className="reports-summary-card__icon">
+                      <SummaryIcon aria-hidden="true" />
+                    </span>
+                    <p>{summaryLabels[key] ?? key}</p>
+                    <strong>
                       {moneyKeys.has(key)
                         ? rupiah(value)
                         : new Intl.NumberFormat("id-ID").format(value)}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+                    </strong>
+                    <small>{summaryHelperText[type]}</small>
+                  </article>
+                );
+              })}
             </section>
 
-            <Card>
-              <CardHeader className="gap-3 border-b sm:flex-row sm:items-center sm:justify-between">
+            <Card className="reports-data-card">
+              <CardHeader className="gap-3 border-b">
                 <div>
                   <CardTitle>{data.title}</CardTitle>
                   <p className="mt-1 text-sm font-medium text-foreground">{data.property_name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{data.methodology}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => void exportReport("pdf")} disabled={Boolean(exporting)}>
-                    <Download />
-                    {exporting === "pdf" ? "Membuat PDF..." : "Unduh PDF"}
-                  </Button>
-                  <Button
-                    className="bg-emerald-700 text-white hover:bg-emerald-800"
-                    onClick={() => void exportReport("xlsx")}
-                    disabled={Boolean(exporting)}
-                  >
-                    <FileSpreadsheet />
-                    {exporting === "xlsx" ? "Membuat XLSX..." : "Unduh XLSX"}
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="p-0">

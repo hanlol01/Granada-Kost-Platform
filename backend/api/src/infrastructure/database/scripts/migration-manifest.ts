@@ -948,4 +948,102 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='onboarding_commitments_security_deposit_limit_check' AND conrelid=to_regclass('public.onboarding_commitments') AND pg_get_constraintdef(oid) ILIKE '%2 * contract_rent_amount%')",
     ],
   },
+  {
+    version: '101_owner_realization_rework.sql',
+    checksumSha256: '693868c143470bd576c2d141bf36ba6b9162a5e6824efcac8fd0c1dd3bf105d8',
+    sentinels: [
+      "to_regclass('public.property_owner_realizations') IS NOT NULL",
+      "to_regclass('public.property_owner_realization_lines') IS NOT NULL",
+      "to_regclass('public.property_owner_realization_transfers') IS NOT NULL",
+      "to_regprocedure('next_owner_realization_receipt_number(uuid,timestamp with time zone)') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM permissions WHERE code='property_owner.realization.manage')",
+    ],
+  },
+  {
+    version: '102_owner_realization_recovery_disposition.sql',
+    checksumSha256: 'c42c55e85f5bb23ea48718b0aa93c57ec3eaab54305282f8cd273fc4e1156605',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_realization_corrections' AND column_name='recovery_disposition')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_realization_corrections_recovery_check' AND conrelid=to_regclass('public.property_owner_realization_corrections'))",
+    ],
+  },
+  {
+    version: '103_owner_realization_transfer_reference_guard.sql',
+    checksumSha256: '31f7dd57dd6c935b12d4ad9307265087e1e45132e2994b70d349205b7923e1e5',
+    sentinels: ["to_regclass('public.uq_owner_realization_transfer_reference') IS NOT NULL"],
+  },
+  {
+    version: '104_owner_realization_voided_period_replacement.sql',
+    checksumSha256: '24d5d442b7a3fca7d053b6f4f831c00b0aadc0ef10e873121a291ad86da7075c',
+    sentinels: [
+      "to_regclass('public.uq_property_owner_realization_non_void_owner_period') IS NOT NULL",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='property_owner_realizations_owner_period_unique' AND conrelid=to_regclass('public.property_owner_realizations'))",
+    ],
+  },
+  {
+    version: '105_owner_realization_multiple_batches.sql',
+    checksumSha256: 'ddfcaf3ce7518157c1876990f439e4b7a0f6edbb0d60239538e4c0e0b941756b',
+    sentinels: [
+      "to_regclass('public.idx_property_owner_realization_batches') IS NOT NULL",
+      "to_regclass('public.uq_property_owner_realization_non_void_owner_period') IS NULL",
+    ],
+  },
+  {
+    version: '106_owner_realization_evidence.sql',
+    checksumSha256: 'ae7b6decb325e041f51e9deb943003b49b3d389904098840a97254c73a543a18',
+    sentinels: [
+      "to_regclass('public.property_owner_realization_evidence_files') IS NOT NULL",
+      "to_regclass('public.property_owner_realization_recovery_events') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_purpose_check' AND pg_get_constraintdef(oid) ILIKE '%owner_realization_evidence%')",
+    ],
+  },
+  {
+    version: '107_owner_realization_evidence_immutability.sql',
+    checksumSha256: '589368fb4dae0ab724ec18afcdefab2d6cceb19b8bff0db1d9eab1cf75685c63',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_owner_realization_evidence_immutable' AND NOT tgisinternal)",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_owner_realization_recovery_event_immutable' AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '108_owner_realization_legacy_issuer_label.sql',
+    checksumSha256: 'bb898119c4caf3c4a177536e6510f8f65ec49d17e347ef2f56294b0fd9da6561',
+    sentinels: [
+      "to_regclass('public.property_owner_realization_legacy_issuer_labels') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_owner_realization_legacy_issuer_immutable' AND NOT tgisinternal)",
+    ],
+  },
+  {
+    version: '109_owner_realization_evidence_five_mb.sql',
+    checksumSha256: '2bfb7fe2e3f2a8da692fb9f3ccb23ee3b25881f65b67a8d31a1aa2dee3e94fc9',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_size_check' AND pg_get_constraintdef(oid) ILIKE '%5242880%')",
+    ],
+  },
+  {
+    version: '110_organization_document_settings.sql',
+    checksumSha256: '78ba9116a8cbc714d5ef8c6c90b43251e1f63f32ac886beff4c02a97c6b12db3',
+    sentinels: [
+      "to_regclass('public.organization_settings') IS NOT NULL",
+      "to_regclass('public.property_document_signatories') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_purpose_check' AND pg_get_constraintdef(oid) ILIKE '%document_signature%')",
+    ],
+  },
+  {
+    version: '111_room_operational_identifiers.sql',
+    checksumSha256: 'bf95204878d7d038128ef31748e5b735be79864e16e222ff6c69ee10cd4f3c09',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='manager_room_label')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='owner_room_number')",
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='plot_number')",
+    ],
+  },
+  {
+    version: '112_room_single_plot_identifier.sql',
+    checksumSha256: 'bacf8d85c661d53d8e2b7acf01e3c4c346864cece8e2ff237c95df38fb49c9f0',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='plot_number')",
+      "NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='owner_room_number')",
+    ],
+  },
 ] as const;

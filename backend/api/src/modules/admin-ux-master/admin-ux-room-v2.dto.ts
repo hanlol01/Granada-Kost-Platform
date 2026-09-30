@@ -241,6 +241,18 @@ export class CreateRoomV2Dto {
 
 export class UpdateRoomV2Dto {
   @IsOptional()
+  @Transform(clearableTrimmedString)
+  @IsString()
+  @MaxLength(160)
+  manager_room_label?: string | null;
+
+  @IsOptional()
+  @Transform(clearableTrimmedString)
+  @IsString()
+  @MaxLength(80)
+  plot_number?: string | null;
+
+  @IsOptional()
   @Transform(trimmedString)
   @IsUUID('4')
   kost_type_id?: string;

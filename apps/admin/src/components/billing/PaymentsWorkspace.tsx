@@ -1488,7 +1488,7 @@ function AdminReceiptDialog({
   }, [receiptId]);
   return (
     <Dialog open={Boolean(receiptId)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] min-w-0 max-w-lg overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Kuitansi pembayaran</DialogTitle>
           <DialogDescription>
@@ -1504,7 +1504,7 @@ function AdminReceiptDialog({
             onRetry={() => void query.refetch()}
           />
         ) : query.data ? (
-          <div className="space-y-2 rounded-xl border border-border p-4 text-sm">
+          <div className="w-full min-w-0 max-w-full space-y-2 overflow-hidden rounded-xl border border-border p-4 text-sm">
             <DetailRow label="Nomor" value={query.data.receipt_code} />
             <DetailRow label="Diterbitkan" value={formatBillingDate(query.data.issued_at)} />
             <DetailRow label="Pembayaran" value={query.data.snapshot.payment_code} />
@@ -1518,11 +1518,11 @@ function AdminReceiptDialog({
             PDF kuitansi belum dapat diunduh. Silakan coba lagi.
           </p>
         ) : null}
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:flex-wrap sm:space-x-0">
           {query.data && propertyId ? (
             <>
               <Button
-                className="min-h-11"
+                className="min-h-11 min-w-0 max-w-full whitespace-normal"
                 variant="info"
                 disabled={isDownloading}
                 onClick={() => {
@@ -1544,7 +1544,7 @@ function AdminReceiptDialog({
                 {isDownloading ? "Menyiapkan PDF..." : "Unduh kuitansi terbaru"}
               </Button>
               <Button
-                className="min-h-11"
+                className="min-h-11 min-w-0 max-w-full whitespace-normal"
                 variant="outline"
                 disabled={isDownloading}
                 onClick={() => {
@@ -1567,7 +1567,11 @@ function AdminReceiptDialog({
               </Button>
             </>
           ) : null}
-          <Button className="min-h-11 gap-2" variant="secondary" onClick={onClose}>
+          <Button
+            className="min-h-11 min-w-0 max-w-full gap-2 whitespace-normal"
+            variant="secondary"
+            onClick={onClose}
+          >
             <X className="size-4" aria-hidden="true" />
             Tutup
           </Button>
@@ -1579,9 +1583,9 @@ function AdminReceiptDialog({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-semibold">{value}</span>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-3">
+      <span className="min-w-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 text-right font-semibold [overflow-wrap:anywhere]">{value}</span>
     </div>
   );
 }

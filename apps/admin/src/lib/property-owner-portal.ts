@@ -7,6 +7,68 @@ import {
 } from "@/lib/property-owner-route-registry";
 
 export type OwnerPortalTab = OwnerPortalRouteId;
+export type OwnerRealizationDocument = {
+  id: string;
+  realization_reference: string;
+  realization_period: string;
+  realization_total: Money;
+  transferred_total: Money;
+  published_at: string | null;
+  transfer_id: string | null;
+  transfer_amount: Money | null;
+  transferred_at: string | null;
+  receipt_number: string | null;
+};
+export type OwnerRealizationProgress = {
+  period: string;
+  state: "empty" | "progress" | "published";
+  ownerName: string | null;
+  realization: {
+    id: string;
+    reference: string;
+    status: string;
+    publishedAt: string | null;
+    preparedAt: string | null;
+  } | null;
+  payoutDestination: {
+    bankName: string | null;
+    accountHolder: string | null;
+    accountNumberMasked: string | null;
+  } | null;
+  summary: {
+    roomCount: string;
+    eligibleContractTotal: Money;
+    managementFeeTotal: Money;
+    realizationTotal: Money;
+    transferredTotal: Money;
+  };
+  lines: Array<{
+    id: string | null;
+    roomCode: string;
+    buildingName: string | null;
+    residentName: string | null;
+    plotNumber: string | null;
+    durationMonths: number | null;
+    paymentCompletedAt: string | null;
+    contractTotal: Money;
+    managementFee: Money;
+    realizationTotal: Money;
+  }>;
+  transfers: Array<{
+    id: string;
+    amount: Money;
+    method: string;
+    reference: string;
+    transferredAt: string;
+    receiptNumber: string | null;
+    hasEvidence: boolean;
+    evidenceFiles: Array<{
+      id: string;
+      originalFilename: string;
+      mimeType: string;
+    }>;
+  }>;
+};
 export type OwnerScopeState = "active" | "scheduled" | "historical" | "empty";
 export type Money = string;
 export type OwnerKostType = "rukost" | "apartkost";
@@ -526,8 +588,7 @@ function count(value: unknown, field: string): number {
   return value;
 }
 function flag(value: unknown, field: string): boolean {
-  if (typeof value !== "boolean")
-    throw new Error(`Owner portal response is invalid: ${field}.`);
+  if (typeof value !== "boolean") throw new Error(`Owner portal response is invalid: ${field}.`);
   return value;
 }
 function money(value: unknown, field: string, signed = false): Money {
@@ -1679,6 +1740,85 @@ export function parseOwnerFinance(value: unknown): OwnerFinance {
   };
 }
 
+function parseOwnerRealizationProgress(value: unknown): OwnerRealizationProgress {
+  if (!isObject(value)) throw new Error("Owner realization progress response is invalid.");
+  const summary = isObject(value.summary) ? value.summary : {};
+  const destination = isObject(value.payout_destination) ? value.payout_destination : null;
+  const realization = isObject(value.realization) ? value.realization : null;
+  const lines = Array.isArray(value.lines) ? value.lines : [];
+  const transfers = Array.isArray(value.transfers) ? value.transfers : [];
+  const textOrNull = (entry: unknown): string | null =>
+    typeof entry === "string" && entry.length > 0 ? entry : null;
+  const moneyOrZero = (entry: unknown): string =>
+    typeof entry === "string" || typeof entry === "number" ? String(entry) : "0";
+  return {
+    period: string(value.period, "realization_progress.period"),
+    state: enumValue(value.state, ["empty", "progress", "published"], "realization_progress.state"),
+    ownerName: textOrNull(value.owner_name),
+    realization: realization
+      ? {
+          id: string(realization.id, "realization_progress.realization.id"),
+          reference: string(realization.reference, "realization_progress.realization.reference"),
+          status: string(realization.status, "realization_progress.realization.status"),
+          publishedAt: textOrNull(realization.published_at),
+          preparedAt: textOrNull(realization.prepared_at),
+        }
+      : null,
+    payoutDestination: destination
+      ? {
+          bankName: textOrNull(destination.bank_name),
+          accountHolder: textOrNull(destination.account_holder),
+          accountNumberMasked: textOrNull(destination.account_number_masked),
+        }
+      : null,
+    summary: {
+      roomCount: moneyOrZero(summary.room_count),
+      eligibleContractTotal: moneyOrZero(summary.eligible_contract_total),
+      managementFeeTotal: moneyOrZero(summary.management_fee_total),
+      realizationTotal: moneyOrZero(summary.realization_total),
+      transferredTotal: moneyOrZero(summary.transferred_total),
+    },
+    lines: lines.map((entry, index) => {
+      const row = isObject(entry) ? entry : {};
+      return {
+        id: textOrNull(row.id),
+        roomCode: string(row.room_code_snapshot, `realization_progress.lines.${index}.room_code_snapshot`),
+        buildingName: textOrNull(row.building_name_snapshot),
+        residentName: textOrNull(row.resident_name_snapshot),
+        plotNumber: textOrNull(row.plot_number_snapshot),
+        durationMonths: typeof row.duration_months === "number" ? row.duration_months : null,
+        paymentCompletedAt: textOrNull(row.payment_completed_at),
+        contractTotal: moneyOrZero(row.contract_total_amount),
+        managementFee: moneyOrZero(row.management_fee_amount),
+        realizationTotal: moneyOrZero(row.net_realization_amount),
+      };
+    }),
+    transfers: transfers.map((entry, index) => {
+      const row = isObject(entry) ? entry : {};
+      return {
+        id: string(row.id, `realization_progress.transfers.${index}.id`),
+        amount: moneyOrZero(row.amount),
+        method: textOrNull(row.method) ?? "other",
+        reference: textOrNull(row.reference) ?? "Tanpa referensi",
+        transferredAt: textOrNull(row.transferred_at) ?? "",
+        receiptNumber: textOrNull(row.receipt_number),
+        hasEvidence: row.has_evidence === true,
+        evidenceFiles: Array.isArray(row.evidence_files)
+          ? row.evidence_files.flatMap((file) => {
+              const item = isObject(file) ? file : {};
+              if (typeof item.id !== "string") return [];
+              return [{
+                id: item.id,
+                originalFilename: textOrNull(item.original_filename) ?? "Bukti transfer",
+                mimeType: textOrNull(item.mime_type) ?? "application/octet-stream",
+              }];
+            })
+          : [],
+      };
+    }),
+  };
+}
+
 export function parseOwnerReport(value: unknown): OwnerReport {
   const root = exact(
     value,
@@ -2226,7 +2366,11 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         ],
         "collection_progress.item.operations",
       );
-      const deposit = exact(item.security_deposit, ["recorded"], "collection_progress.item.security_deposit");
+      const deposit = exact(
+        item.security_deposit,
+        ["recorded"],
+        "collection_progress.item.security_deposit",
+      );
       const settlement = exact(
         item.settlement,
         [
@@ -2494,7 +2638,109 @@ export const propertyOwnerPortalApi = {
     apiClient
       .get<unknown>("/my/property-owner/collection-progress")
       .then(parseOwnerCollectionProgress),
+  realizations: () =>
+    apiClient.get<{ rows: OwnerRealizationDocument[] }>("/my/property-owner/realizations"),
+  realizationProgress: (period: string) =>
+    apiClient.get<unknown>("/my/property-owner/realizations/progress", { query: { period } }).then(
+      parseOwnerRealizationProgress,
+    ),
 };
+
+export async function downloadOwnerRealizationReceipt(
+  realizationId: string,
+  transferId: string,
+): Promise<void> {
+  await fetchPreviewAndDownload(
+    async () => {
+      const token = getAccessToken();
+      const response = await fetch(
+        `${env.VITE_API_BASE_URL}/my/property-owner/realizations/${encodeURIComponent(realizationId)}/transfers/${encodeURIComponent(transferId)}/receipt`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Owner realization receipt download failed (HTTP ${response.status}).`);
+      return response;
+    },
+    "kuitansi-realisasi-owner.pdf",
+    { preview: true },
+  );
+}
+
+export async function downloadOwnerRealization(
+  realizationId: string,
+  format: "pdf" | "xlsx",
+): Promise<void> {
+  const query = new URLSearchParams({ format });
+  await fetchPreviewAndDownload(
+    async () => {
+      const token = getAccessToken();
+      const response = await fetch(
+        `${env.VITE_API_BASE_URL}/my/property-owner/realizations/${encodeURIComponent(realizationId)}/export?${query}`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Owner realization export failed (HTTP ${response.status}).`);
+      return response;
+    },
+    `realisasi-owner-${realizationId}.${format}`,
+    { preview: format === "pdf" },
+  );
+}
+
+export async function downloadOwnerRealizationProgress(
+  period: string,
+  format: "pdf" | "xlsx",
+): Promise<void> {
+  const query = new URLSearchParams({ period, format });
+  await fetchPreviewAndDownload(
+    async () => {
+      const token = getAccessToken();
+      const response = await fetch(
+        `${env.VITE_API_BASE_URL}/my/property-owner/realizations/progress/export?${query}`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Owner realization progress export failed (HTTP ${response.status}).`);
+      return response;
+    },
+    `realisasi-owner-${period}.${format}`,
+    { preview: format === "pdf" },
+  );
+}
+
+export async function viewOwnerRealizationEvidence(
+  realizationId: string,
+  transferId: string,
+  fileId: string,
+  filename: string,
+): Promise<void> {
+  await fetchPreviewAndDownload(
+    async () => {
+      const token = getAccessToken();
+      const response = await fetch(
+        `${env.VITE_API_BASE_URL}/my/property-owner/realizations/${encodeURIComponent(realizationId)}/transfers/${encodeURIComponent(transferId)}/evidence/${encodeURIComponent(fileId)}`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Owner realization evidence view failed (HTTP ${response.status}).`);
+      return response;
+    },
+    filename,
+    { preview: true },
+  );
+}
 export async function downloadOwnerReport(period: string, format: "pdf" | "xlsx"): Promise<void> {
   const query = new URLSearchParams({ period, format });
   await fetchPreviewAndDownload(

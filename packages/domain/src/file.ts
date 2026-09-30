@@ -21,6 +21,8 @@ export const FILE_PURPOSES = [
   "ktp",
   "profile_photo",
   "hunian_gallery",
+  "owner_realization_evidence",
+  "document_signature",
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -51,6 +53,36 @@ export type FilePurposePolicy = {
 };
 
 export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
+  document_signature: {
+    purpose: "document_signature",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    maxBytesByMimeType: {
+      "image/jpeg": 2 * 1024 * 1024,
+      "image/png": 2 * 1024 * 1024,
+      "image/webp": 2 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 1,
+    label: "Tanda tangan dokumen",
+    compressImages: true,
+  },
+  owner_realization_evidence: {
+    purpose: "owner_realization_evidence",
+    allowedMimeTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ],
+    maxBytesByMimeType: {
+      "image/jpeg": 5 * 1024 * 1024,
+      "image/png": 5 * 1024 * 1024,
+      "image/webp": 5 * 1024 * 1024,
+      "application/pdf": 5 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 3,
+    label: "Bukti realisasi Owner",
+    compressImages: true,
+  },
   payment_proof: {
     purpose: "payment_proof",
     allowedMimeTypes: [

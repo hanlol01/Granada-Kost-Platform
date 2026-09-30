@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../infrastructure/database/database.service';
-import { CreateFileRecordInput, FileRecord, FileStorageDriver, SupportedMimeType } from './types/file.types';
+import {
+  CreateFileRecordInput,
+  FileRecord,
+  FileStorageDriver,
+  SupportedMimeType,
+} from './types/file.types';
 import type { FilePurpose } from './types/file.types';
 
 type FileRow = {
@@ -27,6 +32,26 @@ type FileRow = {
 @Injectable()
 export class FileRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async isOwnerRealizationEvidenceAttached(fileId: string): Promise<boolean> {
+    const result = await this.database.client.query<{ attached: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM property_owner_realization_evidence_files WHERE file_id=$1) AS attached`,
+      [fileId],
+    );
+    return result.rows[0]?.attached === true;
+  }
+
+  async isDocumentSignatureAttached(fileId: string): Promise<boolean> {
+    const result = await this.database.client.query<{ attached: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1
+         FROM property_document_signatories
+         WHERE signature_file_id=$1
+       ) AS attached`,
+      [fileId],
+    );
+    return result.rows[0]?.attached === true;
+  }
 
   async create(input: CreateFileRecordInput): Promise<FileRecord> {
     const result = await this.database.client.query<FileRow>(

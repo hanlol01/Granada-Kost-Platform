@@ -1,6 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { OwnerSettlementWorkspace } from "@/components/reports/OwnerSettlementWorkspace";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/reports/property-owners")({
-  component: OwnerSettlementWorkspace,
+  component: ReportsPropertyOwnersLayout,
 });
+
+function ReportsPropertyOwnersLayout() {
+  return <Outlet />;
+}

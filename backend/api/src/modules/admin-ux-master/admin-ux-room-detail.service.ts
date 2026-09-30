@@ -414,7 +414,8 @@ export class AdminUxRoomDetailService {
   ): Promise<Row> {
     const result = await client.query<Row>(
       `SELECT room.id, room.property_id, room.kost_type_id, room.number, room.room_code,
-              room.building_id, room.unit_code, room.gender_policy, room.floor_code,
+               room.manager_room_label, room.plot_number,
+               room.building_id, room.unit_code, room.gender_policy, room.floor_code,
               room.floor_label, room.size_label, room.room_status, room.public_visible,
               room.primary_photo_file_id, room.import_notes, room.updated_at,
               building.building_code, building.building_name,
@@ -537,6 +538,8 @@ export class AdminUxRoomDetailService {
       property_id: text(room.property_id),
       number: text(room.number),
       room_code: nullableText(room.room_code),
+      manager_room_label: nullableText(room.manager_room_label),
+      plot_number: nullableText(room.plot_number),
       building: {
         id: text(room.building_id),
         code: text(room.building_code),

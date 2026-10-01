@@ -153,6 +153,12 @@ async function applyOne(client: PoolClient, source: MigrationSource): Promise<vo
   });
 }
 
+async function recordSatisfiedNoop(client: PoolClient, source: MigrationSource): Promise<void> {
+  await inTransaction(client, async () => {
+    await recordLedger(client, source, 0);
+  });
+}
+
 async function bootstrapLedger(
   client: PoolClient,
   source: MigrationSource,
@@ -256,6 +262,12 @@ export async function runMigrations(
     for (const source of sources) {
       if (appliedVersions.has(source.version)) continue;
       if (await sentinelPresent(client, source)) {
+        if (source.recordSatisfiedNoop === true) {
+          await recordSatisfiedNoop(client, source);
+          appliedVersions.add(source.version);
+          baselined += 1;
+          continue;
+        }
         throw new Error(`Unledgered migration state detected: ${source.version}`);
       }
       await applyOne(client, source);

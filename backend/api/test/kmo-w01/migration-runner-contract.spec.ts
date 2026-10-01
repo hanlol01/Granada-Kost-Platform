@@ -98,7 +98,7 @@ class FakeClient {
       throw new Error('synthetic migration failure');
     }
     if (text.includes("to_regclass('public.schema_migrations')") && text.includes('AS present')) {
-      return { rows: [{ present: this.state.ledgerPresent } as T] };
+      return { rows: [{ present: this.state.ledgerPresent } as unknown as T] };
     }
     if (text.startsWith('SELECT ') && text.endsWith(' AS present')) {
       this.sentinelQueries += 1;
@@ -106,7 +106,7 @@ class FakeClient {
       await new Promise<void>((resolve) => setImmediate(resolve));
       const present = this.sentinelPresence.shift() ?? false;
       this.sentinelQueries -= 1;
-      return { rows: [{ present } as T] };
+      return { rows: [{ present } as unknown as T] };
     }
     if (text.includes('CREATE TABLE IF NOT EXISTS schema_migrations')) {
       this.state.bodyWrites += 1;
@@ -123,7 +123,7 @@ class FakeClient {
       return {
         rows: [...this.state.ledger.entries()]
           .sort(([left], [right]) => left.localeCompare(right))
-          .map(([version, checksum_sha256]) => ({ version, checksum_sha256 }) as T),
+          .map(([version, checksum_sha256]) => ({ version, checksum_sha256 }) as unknown as T),
       };
     }
     if (!text.includes('pg_advisory_')) this.state.bodyWrites += 1;
@@ -318,6 +318,35 @@ void test('KMO-W01 locks before validation and rejects partial, order, and check
   assert.match(drift.calls[0]!, /pg_advisory_lock/);
   assert.match(drift.calls.at(-1)!, /pg_advisory_unlock/);
   assert.equal(drift.state.bodyWrites, 0);
+});
+
+void test('KMO-W01 records only the explicitly reconciled v097 no-op state', async () => {
+  const sources = await loadMigrationSources();
+  const v097Index = sources.findIndex(
+    (source) => source.version === '097_reclassify_owner_sponsored_management_fee_receipts.sql',
+  );
+  assert.ok(v097Index > 0);
+
+  const ledgerThrough096 = MIGRATION_MANIFEST.slice(0, v097Index).map((entry) => ({
+    version: entry.version,
+    checksum_sha256: entry.checksumSha256,
+  }));
+  const reconciled = new FakeClient(ledgerThrough096);
+  reconciled.sentinelPresence = [true, ...Array(MANIFEST_COUNT - v097Index - 1).fill(false)];
+
+  assert.deepEqual(await runMigrations(reconciled as never, sources), {
+    applied: MANIFEST_COUNT - v097Index - 1,
+    baselined: 1,
+    alreadyApplied: v097Index,
+  });
+  assert.equal(reconciled.ledger.has(sources[v097Index]!.version), true);
+  assert.equal(reconciled.state.bodyWrites, MANIFEST_COUNT - v097Index - 1);
+
+  const unsafe = new FakeClient(ledgerThrough096);
+  unsafe.sentinelPresence = [false, true];
+  await assert.rejects(runMigrations(unsafe as never, sources), /098_property_owner_payout_profile/);
+  assert.equal(unsafe.ledger.has(sources[v097Index]!.version), true);
+  assert.equal(unsafe.ledger.has(sources[v097Index + 1]!.version), false);
 });
 
 void test('KMO-W01 body and ledger failures roll back atomically and preserve the original error', async () => {

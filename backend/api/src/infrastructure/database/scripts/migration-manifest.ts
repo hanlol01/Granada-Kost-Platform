@@ -2,6 +2,13 @@ export type MigrationManifestEntry = {
   version: string;
   checksumSha256: string;
   sentinels: readonly string[];
+  /**
+   * Explicit, narrowly-scoped reconciliation authority for a post-ledger
+   * data migration. When every sentinel is already true, its SQL is a safe
+   * no-op and the runner may record the verified state in the ledger instead
+   * of replaying a mutation that is no longer needed.
+   */
+  recordSatisfiedNoop?: true;
 };
 
 export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
@@ -922,6 +929,10 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM payment_receipts receipt JOIN payments payment ON payment.id=receipt.payment_id AND payment.property_id=receipt.property_id WHERE receipt.receipt_kind='payment' AND payment.payment_purpose='management_fee' AND receipt.receipt_code LIKE '%/TAGIHAN-LAIN/%')",
       "EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_w06_receipts_append_only' AND tgrelid=to_regclass('public.payment_receipts') AND NOT tgisinternal)",
     ],
+    // This migration only reclassifies legacy TAGIHAN-LAIN receipts, then
+    // restores the append-only trigger. With neither legacy receipt nor a
+    // missing trigger, recording the verified no-op state is safe.
+    recordSatisfiedNoop: true,
   },
   {
     version: '098_property_owner_payout_profile.sql',

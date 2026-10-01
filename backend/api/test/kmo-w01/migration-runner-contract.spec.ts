@@ -292,6 +292,16 @@ void test('KMO-W01 fresh, atomic baseline, and immediate replay execute each bod
   assert.equal(baselineWrites.length, PRE_LEDGER_COUNT + 1);
 });
 
+void test('KMO-W01 v109 does not mistake the retired 10 MiB evidence policy for 5 MiB', () => {
+  const v109 = MIGRATION_MANIFEST.find(
+    (entry) => entry.version === '109_owner_realization_evidence_five_mb.sql',
+  );
+  assert.ok(v109);
+  assert.equal(v109.sentinels.length, 2);
+  assert.ok(v109.sentinels.some((sentinel) => sentinel.includes('file_size_bytes <= 5242880')));
+  assert.ok(v109.sentinels.some((sentinel) => sentinel.includes('10485760')));
+});
+
 void test('KMO-W01 locks before validation and rejects partial, order, and checksum drift', async () => {
   const sources = await loadMigrationSources();
   const partial = new FakeClient();

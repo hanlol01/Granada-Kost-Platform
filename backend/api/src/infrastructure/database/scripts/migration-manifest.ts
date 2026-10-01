@@ -1028,7 +1028,8 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
     version: '109_owner_realization_evidence_five_mb.sql',
     checksumSha256: '2bfb7fe2e3f2a8da692fb9f3ccb23ee3b25881f65b67a8d31a1aa2dee3e94fc9',
     sentinels: [
-      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_size_check' AND pg_get_constraintdef(oid) ILIKE '%5242880%')",
+      "EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_size_check' AND conrelid=to_regclass('public.files') AND pg_get_constraintdef(oid) ILIKE '%file_size_bytes <= 5242880%' AND pg_get_constraintdef(oid) NOT ILIKE '%owner_realization_evidence%')",
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='files_size_check' AND conrelid=to_regclass('public.files') AND pg_get_constraintdef(oid) ILIKE '%10485760%')",
     ],
   },
   {

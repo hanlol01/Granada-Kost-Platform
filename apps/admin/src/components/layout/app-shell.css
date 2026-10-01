@@ -11,6 +11,21 @@
   display: none;
 }
 
+@media (max-width: 1023px) {
+  .app-shell-actions > * {
+    max-width: 100%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell-header-layout {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .app-shell-controls {
+    grid-column: 3;
+  }
+}
+
 .app-shell-breadcrumb nav {
   margin-top: 0;
 }

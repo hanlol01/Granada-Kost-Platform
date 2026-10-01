@@ -2461,7 +2461,7 @@ function CollectionPaymentOverview({
 }) {
   return (
     <section className="space-y-4" aria-labelledby="owner-collection-heading">
-      <div className="owner-info-surface rounded-xl border border-primary/25 px-5 py-4 shadow-sm">
+      <div className="owner-info-surface owner-collection-overview rounded-xl border border-primary/25 px-5 py-4 shadow-sm">
         <p className="text-xs font-semibold tracking-[0.14em] text-primary">
           PEMBAYARAN PENGHUNI AKTIF
         </p>

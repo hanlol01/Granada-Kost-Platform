@@ -1,4 +1,14 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { documentDisposition } from '../../shared/utils/download-filename';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
@@ -120,7 +130,7 @@ export class PropertyOwnerPortalController {
       format ?? '',
     );
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -134,7 +144,7 @@ export class PropertyOwnerPortalController {
   ) {
     const file = await this.realizations.ownerReceipt(actor, realizationId, transferId);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -148,7 +158,7 @@ export class PropertyOwnerPortalController {
   ) {
     const file = await this.realizations.ownerExport(actor, realizationId, format ?? '');
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -163,7 +173,7 @@ export class PropertyOwnerPortalController {
   ) {
     const file = await this.realizations.ownerEvidence(actor, realizationId, transferId, fileId);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename, 'inline'));
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, max-age=300');
     return new StreamableFile(file.content);
@@ -178,7 +188,7 @@ export class PropertyOwnerPortalController {
   ) {
     const exportResult = await this.portal.export(actor, period ?? '', format ?? '');
     response.setHeader('Content-Type', exportResult.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${exportResult.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(exportResult.filename));
     response.setHeader('X-Report-Scope-Checksum', exportResult.checksum);
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(exportResult.content);

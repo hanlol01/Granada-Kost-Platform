@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { checkoutInvoiceBalanceSql } from './helpers/checkout-read-model.helper';
 import {
   BILLING_DOCUMENT_RENDERER_VERSION,
   createLeaseExitOfficialDocumentPdf,
@@ -126,6 +127,7 @@ type LeaseRow = {
   resident_id: string;
   room_id: string;
   lease_status: string;
+  commercial_mode: 'rent' | 'owner_sponsored';
   start_date: string;
   end_date: string;
   snapshot_monthly_price: string;
@@ -308,8 +310,81 @@ export class LeaseCheckoutService {
               refund.settlement_reason AS exit_refund_settlement_reason,
               refund.settled_at AS exit_refund_settled_at,
               refund.transaction_code AS exit_refund_transaction_code,
-              COALESCE((
-                SELECT jsonb_agg(jsonb_build_object(
+               CASE WHEN settlement.decision_status='amount_due'
+                 THEN CASE WHEN current_balance.link_count>0 THEN current_balance.remaining_amount ELSE settlement.amount_due END
+                 ELSE 0 END AS current_amount_due,
+               jsonb_build_object(
+                 'stages',COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object('stage',stage.stage,'recorded_at',stage.recorded_at,
+                     'recorded_by',actor.display_name) ORDER BY stage.stage)
+                   FROM (VALUES
+                     (1,command.created_at,command.created_by_user_id),
+                     (2,COALESCE(command.approved_at,command.scheduled_at),COALESCE(command.approved_by_user_id,command.scheduled_by_user_id)),
+                     (3,command.handover_recorded_at,command.handover_recorded_by_user_id),
+                     (4,command.inspection_recorded_at,command.inspection_recorded_by_user_id),
+                     (5,command.completed_at,command.completed_by_user_id)
+                   ) stage(stage,recorded_at,actor_id)
+                   LEFT JOIN users actor ON actor.id=stage.actor_id
+                   WHERE stage.recorded_at IS NOT NULL
+                 ),'[]'::jsonb),
+                 'evidence',COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object(
+                     'id',evidence.id,'category',evidence.evidence_category,'metadata',evidence.metadata,
+                     'recorded_at',evidence.recorded_at,'recorded_by',actor.display_name,
+                     'file_unavailable',evidence.file_id IS NOT NULL AND file.id IS NULL,
+                     'file',CASE WHEN file.id IS NULL THEN NULL ELSE jsonb_build_object(
+                       'id',file.id,'original_filename',file.original_filename,
+                       'sanitized_filename',file.sanitized_filename,'mime_type',file.mime_type,
+                       'file_size_bytes',file.file_size_bytes) END
+                   ) ORDER BY evidence.recorded_at,evidence.id)
+                   FROM lease_checkout_evidence evidence
+                   LEFT JOIN users actor ON actor.id=evidence.recorded_by_user_id
+                   LEFT JOIN files file ON file.id=evidence.file_id AND file.property_id=command.property_id AND file.is_deleted=false
+                   WHERE evidence.checkout_command_id=command.id AND evidence.property_id=command.property_id
+                 ),'[]'::jsonb),
+                  'final_payments',COALESCE((
+                    SELECT jsonb_agg(jsonb_build_object(
+                      'id',payment.id,'payment_code',payment.payment_code,
+                      'payment_status',payment.payment_status,'payment_method',payment.payment_method,
+                      'paid_at',payment.paid_at,'verified_at',payment.verified_at,
+                      'allocated_amount',payment_link.allocated_amount,
+                      'evidence',COALESCE((
+                        SELECT jsonb_agg(jsonb_build_object(
+                          'id',file.id,'original_filename',file.original_filename,
+                          'sanitized_filename',file.sanitized_filename,'mime_type',file.mime_type,
+                          'file_size_bytes',file.file_size_bytes) ORDER BY file.created_at,file.id)
+                        FROM payment_evidence_files evidence_link
+                        JOIN files file ON file.id=evidence_link.file_id AND file.property_id=payment.property_id AND file.is_deleted=false
+                        WHERE evidence_link.payment_id=payment.id AND evidence_link.property_id=payment.property_id
+                      ),'[]'::jsonb)
+                    ) ORDER BY payment.paid_at,payment.id)
+                    FROM (
+                      SELECT allocation.payment_id,sum(GREATEST(allocation.allocated_amount-COALESCE(reversed.amount,0),0)) AS allocated_amount
+                      FROM lease_exit_final_invoice_links link
+                      JOIN payment_allocations allocation ON allocation.invoice_id=link.invoice_id
+                      LEFT JOIN LATERAL (
+                        SELECT sum(reversal.reversed_amount) AS amount FROM payment_reversal_allocations reversal
+                        WHERE reversal.original_allocation_id=allocation.id
+                      ) reversed ON true
+                      WHERE link.final_settlement_id=settlement.id AND link.property_id=command.property_id
+                      GROUP BY allocation.payment_id
+                    ) payment_link
+                    JOIN payments payment ON payment.id=payment_link.payment_id
+                      AND payment.property_id=command.property_id AND payment.lease_id=command.lease_id
+                  ),'[]'::jsonb),
+                  'financial_summary',CASE WHEN settlement.id IS NULL THEN NULL ELSE jsonb_build_object(
+                   'verified_rent_payment_amount',settlement.verified_rent_payment_amount,
+                   'existing_invoice_credit_amount',settlement.existing_invoice_credit_amount,
+                   'earned_rent_amount',settlement.earned_rent_amount,
+                   'deposit_liability_amount',settlement.deposit_liability_amount,
+                   'deposit_deduction_amount',settlement.deposit_deduction_amount,
+                   'deposit_rent_offset_amount',settlement.deposit_rent_offset_amount,
+                   'refundable_deposit_amount',settlement.refundable_deposit_amount,
+                   'refund_adjustment_reason',settlement.refund_adjustment_reason
+                 ) END
+               ) AS history,
+               COALESCE((
+                 SELECT jsonb_agg(jsonb_build_object(
                   'id',file.id,'original_filename',file.original_filename,
                   'sanitized_filename',file.sanitized_filename,'mime_type',file.mime_type,
                   'file_size_bytes',file.file_size_bytes
@@ -349,8 +424,9 @@ export class LeaseCheckoutService {
        JOIN residents resident
          ON resident.id=command.resident_id
         AND resident.property_id=command.property_id
-       LEFT JOIN lease_exit_final_settlements settlement ON settlement.checkout_command_id=command.id
-       LEFT JOIN lease_exit_refunds refund ON refund.final_settlement_id=settlement.id
+        LEFT JOIN lease_exit_final_settlements settlement ON settlement.checkout_command_id=command.id AND settlement.property_id=command.property_id
+        LEFT JOIN lease_exit_refunds refund ON refund.final_settlement_id=settlement.id AND refund.property_id=command.property_id
+        LEFT JOIN LATERAL (${checkoutInvoiceBalanceSql('settlement')}) current_balance ON true
        WHERE command.lease_id=$1 ORDER BY command.created_at DESC`,
       [leaseId],
     );
@@ -466,6 +542,7 @@ export class LeaseCheckoutService {
             noticeDate: today,
             effectiveDate: dto.effective_date,
             monthlyRateAmount: Number(lease.snapshot_monthly_price),
+            commercialMode: lease.commercial_mode,
           });
         } catch (error) {
           throw new UnprocessableEntityException({
@@ -650,6 +727,7 @@ export class LeaseCheckoutService {
             plannedLeaseEndDate: lease.end_date,
             actualPossessionReturnedDate: lease.end_date,
             monthlyRateAmount: Number(lease.snapshot_monthly_price),
+            commercialMode: lease.commercial_mode,
             graceDays: LATE_CHECKOUT_GRACE_DAYS,
             penaltyDayCap: LATE_CHECKOUT_PENALTY_DAY_CAP,
           });
@@ -928,6 +1006,7 @@ export class LeaseCheckoutService {
             noticeDate: today,
             effectiveDate: dto.effective_date,
             monthlyRateAmount: Number(lease.snapshot_monthly_price),
+            commercialMode: lease.commercial_mode,
           });
         } catch (error) {
           throw new UnprocessableEntityException({
@@ -1191,6 +1270,7 @@ export class LeaseCheckoutService {
                 plannedLeaseEndDate: checkout.planned_lease_end_date ?? lease.end_date,
                 actualPossessionReturnedDate: today,
                 monthlyRateAmount: Number(lease.snapshot_monthly_price),
+                commercialMode: lease.commercial_mode,
                 graceDays: checkout.late_checkout_grace_days ?? LATE_CHECKOUT_GRACE_DAYS,
                 penaltyDayCap:
                   checkout.late_checkout_penalty_day_cap ?? LATE_CHECKOUT_PENALTY_DAY_CAP,
@@ -1360,6 +1440,8 @@ export class LeaseCheckoutService {
           });
         await this.insertEvidence(client, checkout, 'inspection', inspectionEvidence, user.id, {
           notes_present: Boolean(dto.notes),
+          notes: dto.notes?.trim() || null,
+          room_status_after: dto.room_status_after,
         });
         if (checkout.exit_type) {
           const roomUpdated = await client.query(
@@ -1525,6 +1607,7 @@ export class LeaseCheckoutService {
             damage_amount_due: directAmount,
             responsible_party: 'resident',
             funding_party: fundingParty,
+            reason: deduction.reason,
           });
         }
         let refundAmount = balance - credited - appliedDamageDeductionTotal;
@@ -1823,6 +1906,7 @@ export class LeaseCheckoutService {
             final_rent_refund_amount: finalRentRefundAmount,
             final_deposit_refund_amount: finalDepositRefundAmount,
             refund_adjustment_amount: refundAdjustmentAmount,
+            reason: dto.refund_adjustment_reason?.trim() || null,
             documented_damage_amount: quote.documentedDamageAmount,
             deposit_deduction_amount: quote.depositDeductionAmount,
             damage_amount_due: quote.damageAmountDue,
@@ -2973,6 +3057,7 @@ export class LeaseCheckoutService {
         actualCheckoutDate: actualCheckoutDate ?? checkout.effective_date,
         contractRentAmount: Number(lease.contract_rent_amount),
         monthlyRateAmount: Number(lease.snapshot_monthly_price),
+        commercialMode: lease.commercial_mode,
         verifiedRentPaymentAmount: verifiedRentPayment,
         existingInvoiceCreditAmount: existingInvoiceCredit,
         depositLiabilityAmount: depositBalance,
@@ -3601,7 +3686,7 @@ export class LeaseCheckoutService {
   }
   private async lockLease(client: PoolClient, leaseId: string) {
     const result = await client.query<LeaseRow>(
-      `SELECT id,property_id,occupancy_id,resident_id,room_id,lease_status,start_date::text,end_date::text,
+      `SELECT id,property_id,occupancy_id,resident_id,room_id,lease_status,commercial_mode,start_date::text,end_date::text,
               snapshot_monthly_price,contract_rent_amount
        FROM leases WHERE id=$1 FOR UPDATE`,
       [leaseId],

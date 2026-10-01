@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LeaseCheckoutService } from '../../src/modules/lease/lease-checkout.service';
+import { W06BillingService } from '../../src/modules/billing/services/w06-billing.service';
 
 const PROPERTY_ID = '11111111-1111-4111-8111-111111111111';
 const LEASE_ID = '22222222-2222-4222-8222-222222222222';
@@ -39,10 +40,25 @@ type Options = {
   invoiceTotal?: number;
   invoicePaid?: number;
   depositBalance?: number;
+  commercialMode?: 'rent' | 'owner_sponsored';
+  monthlyRate?: number;
+  contractRent?: number;
+  useRealBilling?: boolean;
+  filePurpose?: string;
+  filePropertyId?: string;
+  fileDeleted?: boolean;
+  fileMimeType?: string;
+  fileSize?: number;
+  fileUploaderId?: string;
+  fileEvidenceAttached?: boolean;
+  leaseStartDate?: string;
+  leaseEndDate?: string;
+  latePenalty?: number;
 };
 function harness(options: Options = {}) {
   const events: string[] = [];
   const queries: string[] = [];
+  const writes: { sql: string; params: readonly unknown[] }[] = [];
   let state = options.state ?? 'settlement_pending';
   let documentSequence = 0;
   let documentNumberSequence = 0;
@@ -80,7 +96,9 @@ function harness(options: Options = {}) {
     late_checkout_daily_penalty_amount: options.lateCheckoutPolicy ? '60000' : null,
     late_checkout_overdue_days: options.lateCheckoutPolicy ? 0 : null,
     late_checkout_penalty_days: options.lateCheckoutPolicy ? 0 : null,
-    late_checkout_penalty_amount: options.lateCheckoutPolicy ? '0' : null,
+    late_checkout_penalty_amount: options.lateCheckoutPolicy
+      ? String(options.latePenalty ?? 0)
+      : null,
     physical_checkout_confirmed_at: options.physicalConfirmed
       ? new Date('2026-09-27T00:00:00.000Z')
       : null,
@@ -92,6 +110,7 @@ function harness(options: Options = {}) {
       await Promise.resolve();
       const q = normalize(sql);
       queries.push(q);
+      if (/^(INSERT|UPDATE)/.test(q)) writes.push({ sql: q, params });
       if (/INSERT INTO idempotency_commands/.test(q)) {
         if (options.idempotencyConflict) return { rows: [], rowCount: 0 };
         return { rows: [{ request_fingerprint: 'new' }], rowCount: 1 };
@@ -137,7 +156,10 @@ function harness(options: Options = {}) {
         return { rows: [command()], rowCount: 1 };
       if (/SELECT inspection_room_status FROM lease_checkout_commands/.test(q))
         return { rows: [{ inspection_room_status: 'inspection_required' }], rowCount: 1 };
-      if (/FROM leases WHERE id=\$1 FOR UPDATE/.test(q))
+      if (
+        /FROM leases WHERE id=\$1 FOR UPDATE/.test(q) ||
+        /FROM leases l JOIN residents resident/.test(q)
+      )
         return {
           rows: [
             {
@@ -147,20 +169,77 @@ function harness(options: Options = {}) {
               resident_id: RESIDENT_ID,
               room_id: ROOM_ID,
               lease_status: options.leaseStatus ?? 'active',
-              start_date: '2026-08-28',
-              end_date: '2027-02-28',
-              snapshot_monthly_price: '1800000',
-              contract_rent_amount: '10800000',
+              start_date: options.leaseStartDate ?? '2026-08-28',
+              end_date: options.leaseEndDate ?? '2027-02-28',
+              commercial_mode: options.commercialMode ?? 'rent',
+              snapshot_monthly_price: String(options.monthlyRate ?? 1_800_000),
+              contract_rent_amount: String(options.contractRent ?? 10_800_000),
+              snapshot_room_number: 'AK-18-01',
+              resident_name: 'Fahmi',
+              building_code: 'AK',
+              snapshot_kost_type_name: 'Kost Eksklusif',
+              payment_plan_type: 'full',
             },
           ],
           rowCount: 1,
         };
       if (/FROM occupancies WHERE/.test(q) || /FROM rooms WHERE/.test(q))
         return { rows: [{ id: params[0] }], rowCount: 1 };
-      if (/SELECT id FROM files WHERE/.test(q))
+      if (/SELECT id FROM files WHERE/.test(q)) {
+        // Model the real upload purpose rather than blindly accepting every id.
+        const unavailable =
+          options.fileDeleted ||
+          (options.filePropertyId ?? PROPERTY_ID) !== params[1] ||
+          (/file_purpose=\$4/.test(q) &&
+            (params[3] !== (options.filePurpose ?? 'payment_proof') ||
+              params[2] !== (options.fileUploaderId ?? USER_ID)));
         return {
-          rows: ((params[0] as string[] | undefined) ?? []).map((id) => ({ id })),
-          rowCount: ((params[0] as string[] | undefined) ?? []).length,
+          rows: unavailable
+            ? []
+            : ((params[0] as string[] | undefined) ?? []).map((id) => ({ id })),
+          rowCount: unavailable ? 0 : ((params[0] as string[] | undefined) ?? []).length,
+        };
+      }
+      if (/SELECT file.id FROM files file/.test(q)) {
+        const ids = params[0] as string[];
+        const valid =
+          !options.fileDeleted &&
+          (options.filePropertyId ?? PROPERTY_ID) === params[1] &&
+          ['payment_proof', 'complaint_attachment'].includes(
+            options.filePurpose ?? 'payment_proof',
+          ) &&
+          ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(
+            options.fileMimeType ?? 'image/png',
+          ) &&
+          (options.fileSize ?? 1024) > 0 &&
+          (options.fileSize ?? 1024) <= 5 * 1024 * 1024;
+        const rows = valid
+          ? ids
+              .filter(
+                (id) =>
+                  options.fileEvidenceAttached !== false &&
+                  writes.some(
+                    ({ sql, params: evidence }) =>
+                      /INSERT INTO lease_checkout_evidence/.test(sql) &&
+                      evidence[0] === params[1] &&
+                      evidence[1] === params[2] &&
+                      evidence[2] === 'damage' &&
+                      evidence[3] === id,
+                  ),
+              )
+              .map((id) => ({ id }))
+          : [];
+        assert.match(q, /checkout\.lease_id=\$4 AND checkout\.resident_id=\$5/);
+        assert.equal(params[3], LEASE_ID);
+        assert.equal(params[4], RESIDENT_ID);
+        return { rows, rowCount: rows.length };
+      }
+      if (/INSERT INTO billing_periods/.test(q))
+        return { rows: [{ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }], rowCount: 1 };
+      if (/INSERT INTO invoices/.test(q))
+        return {
+          rows: [{ id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', invoice_code: 'INV-CHECKOUT-TEST' }],
+          rowCount: 1,
         };
       if (
         /SELECT (?:DISTINCT )?evidence_category/.test(q) &&
@@ -405,7 +484,17 @@ function harness(options: Options = {}) {
     },
   };
   const w06 = {
-    issueCheckoutFinalChargeInTransaction: async () => {
+    issueCheckoutFinalChargeInTransaction: async (
+      ...args: Parameters<W06BillingService['issueCheckoutFinalChargeInTransaction']>
+    ) => {
+      if (options.useRealBilling) {
+        const billing = new W06BillingService(
+          repo as never,
+          undefined as never,
+          undefined as never,
+        );
+        return billing.issueCheckoutFinalChargeInTransaction(...args);
+      }
       await Promise.resolve();
       events.push('w06-final-charge');
       return {
@@ -422,6 +511,7 @@ function harness(options: Options = {}) {
     service: new LeaseCheckoutService(repo as never, features as never, w06 as never),
     events,
     queries,
+    writes,
   };
 }
 
@@ -430,6 +520,228 @@ function errorCode(error: unknown): string | undefined {
   const response = (error as { response?: unknown }).response;
   if (!response || typeof response !== 'object' || !('code' in response)) return undefined;
   return typeof response.code === 'string' ? response.code : undefined;
+}
+
+void test('checkout completion accepts its uploaded damage evidence when issuing the final charge', async () => {
+  const h = harness({
+    m5Exit: true,
+    physicalConfirmed: true,
+    leaseStatus: 'ended',
+    lateCheckoutPolicy: true,
+    latePenalty: 1_260_000,
+    actualCheckoutDate: '2026-09-24',
+    monthlyRate: 1_600_000,
+    contractRent: 1_600_000,
+    leaseStartDate: '2026-08-01',
+    leaseEndDate: '2026-09-01',
+    invoiceTotal: 1_600_000,
+    invoicePaid: 1_600_000,
+    depositBalance: 0,
+    useRealBilling: true,
+    filePurpose: 'payment_proof',
+  });
+  const result = await h.service.complete(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    {
+      room_status_after: 'inspection_required',
+      damage_deductions: [
+        {
+          amount: 300_000,
+          reason: 'Kerusakan terdokumentasi',
+          evidence_file_ids: [EVIDENCE_FILE_ID],
+        },
+      ],
+    },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 200);
+  const invoice = h.writes.find(({ sql }) => /INSERT INTO invoices/.test(sql));
+  assert.equal(invoice?.params[7], 1_560_000);
+  assert.ok(h.queries.some((q) => /INSERT INTO invoice_evidence_files/.test(q)));
+  assert.equal(h.events.at(-1), 'commit');
+});
+
+void test('owner-sponsored checkout can save its plan without inventing a positive rent', async () => {
+  const h = harness({ commercialMode: 'owner_sponsored', monthlyRate: 0, contractRent: 0 });
+  const result = await h.service.createLateCheckoutPlan(
+    admin as never,
+    LEASE_ID,
+    {
+      exit_type: 'normal_expiry',
+      effective_date: '2027-02-28',
+      reason: 'Masa hunian selesai',
+      request_source: 'admin',
+    },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 201);
+  const plan = h.writes.find(({ sql }) => /INSERT INTO lease_checkout_commands/.test(sql));
+  assert.equal(plan?.params[18], 0);
+});
+
+void test('owner-sponsored checkout previews and completes settlement with zero rent', async () => {
+  const h = harness({
+    commercialMode: 'owner_sponsored',
+    monthlyRate: 0,
+    contractRent: 0,
+    m5Exit: true,
+    physicalConfirmed: true,
+    leaseStatus: 'ended',
+    actualCheckoutDate: '2026-10-01',
+    invoiceTotal: 0,
+    invoicePaid: 0,
+    depositBalance: 0,
+  });
+  const dto = { room_status_after: 'inspection_required' as const };
+  const preview = await h.service.previewSettlement(admin as never, LEASE_ID, COMMAND_ID, dto);
+  assert.equal(preview.data.quote.earned_rent_amount, 0);
+  assert.equal(preview.data.quote.amount_due, 0);
+  const result = await h.service.complete(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    dto,
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 200);
+  assert.ok(!h.queries.some((q) => /INSERT INTO invoices|INSERT INTO payment_allocations/.test(q)));
+  assert.ok(h.queries.some((q) => /UPDATE owner_sponsored_lease_terms/.test(q)));
+});
+
+for (const filePurpose of ['payment_proof', 'complaint_attachment']) {
+  void test(`checkout final charge accepts ${filePurpose} evidence recorded by an earlier Admin`, async () => {
+    const h = harness({
+      m5Exit: true,
+      physicalConfirmed: true,
+      leaseStatus: 'ended',
+      actualCheckoutDate: '2026-10-01',
+      invoiceTotal: 1_800_000,
+      invoicePaid: 1_800_000,
+      depositBalance: 0,
+      useRealBilling: true,
+      filePurpose,
+      fileUploaderId: '99999999-9999-4999-8999-999999999999',
+    });
+    const result = await h.service.complete(
+      admin as never,
+      LEASE_ID,
+      COMMAND_ID,
+      {
+        room_status_after: 'inspection_required',
+        damage_deductions: [
+          { amount: 300_000, reason: 'Kerusakan', evidence_file_ids: [EVIDENCE_FILE_ID] },
+        ],
+      },
+      '1234567890123456',
+      context,
+    );
+    assert.equal(result.status, 200);
+  });
+}
+
+for (const [label, options] of [
+  ['another property', { filePropertyId: '99999999-9999-4999-8999-999999999999' }],
+  ['deleted file', { fileDeleted: true }],
+  ['unrelated file purpose', { filePurpose: 'resident_identity' }],
+  ['invalid MIME', { fileMimeType: 'text/html' }],
+  ['oversized file', { fileSize: 5 * 1024 * 1024 + 1 }],
+  ['unlinked evidence', { fileEvidenceAttached: false }],
+] as const) {
+  void test(`checkout final charge rejects ${label} and rolls back`, async () => {
+    const h = harness({
+      m5Exit: true,
+      physicalConfirmed: true,
+      leaseStatus: 'ended',
+      actualCheckoutDate: '2026-10-01',
+      invoiceTotal: 1_800_000,
+      invoicePaid: 1_800_000,
+      depositBalance: 0,
+      useRealBilling: true,
+      ...options,
+    });
+    await assert.rejects(
+      () =>
+        h.service.complete(
+          admin as never,
+          LEASE_ID,
+          COMMAND_ID,
+          {
+            room_status_after: 'inspection_required',
+            damage_deductions: [
+              { amount: 300_000, reason: 'Kerusakan', evidence_file_ids: [EVIDENCE_FILE_ID] },
+            ],
+          },
+          '1234567890123456',
+          context,
+        ),
+      (error: unknown) => errorCode(error) === 'CHECKOUT_EVIDENCE_SCOPE_INVALID',
+    );
+    assert.equal(h.events.at(-1), 'rollback');
+    assert.ok(!h.queries.some((q) => /INSERT INTO invoices/.test(q)));
+  });
+}
+
+void test('ordinary paid rent still rejects a zero monthly tariff at plan creation', async () => {
+  const h = harness({ commercialMode: 'rent', monthlyRate: 0 });
+  await assert.rejects(
+    () =>
+      h.service.createLateCheckoutPlan(
+        admin as never,
+        LEASE_ID,
+        {
+          exit_type: 'normal_expiry',
+          effective_date: '2027-02-28',
+          reason: 'Selesai',
+          request_source: 'admin',
+        },
+        '1234567890123456',
+        context,
+      ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_LATE_PENALTY_POLICY_INVALID',
+  );
+  assert.equal(h.events.at(-1), 'rollback');
+});
+
+for (const paid of [0, 800_000, 1_600_000]) {
+  void test(`checkout rent settlement handles ${paid} verified rent without treating evidence as another payment`, async () => {
+    const h = harness({
+      m5Exit: true,
+      physicalConfirmed: true,
+      leaseStatus: 'ended',
+      actualCheckoutDate: '2026-09-24',
+      leaseStartDate: '2026-08-01',
+      leaseEndDate: '2026-09-01',
+      monthlyRate: 1_600_000,
+      contractRent: 1_600_000,
+      invoiceTotal: 1_600_000,
+      invoicePaid: paid,
+      depositBalance: 0,
+      useRealBilling: true,
+    });
+    const dto = {
+      room_status_after: 'inspection_required' as const,
+      damage_deductions: [
+        { amount: 300_000, reason: 'Kerusakan', evidence_file_ids: [EVIDENCE_FILE_ID] },
+      ],
+    };
+    const preview = await h.service.previewSettlement(admin as never, LEASE_ID, COMMAND_ID, dto);
+    assert.equal(preview.data.quote.amount_due, 1_600_000 - paid + 300_000);
+    const result = await h.service.complete(
+      admin as never,
+      LEASE_ID,
+      COMMAND_ID,
+      dto,
+      '1234567890123456',
+      context,
+    );
+    assert.equal(result.status, 200);
+    assert.ok(!h.queries.some((q) => /INSERT INTO payment_allocations/.test(q)));
+  });
 }
 
 void test('W07D completion is atomic, reconciles W06 credit, releases parking, and produces a weekday refund due date', async () => {

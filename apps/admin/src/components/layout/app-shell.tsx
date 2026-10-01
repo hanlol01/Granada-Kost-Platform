@@ -3,7 +3,7 @@ import { Bell, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AppBreadcrumb } from "./Breadcrumb";
-import { RegistryBottomNav, RegistrySidebar } from "./registry-navigation";
+import { RegistryMobileSidebar, RegistrySidebar } from "./registry-navigation";
 import { UserMenu } from "./user-menu";
 import "./app-shell.css";
 
@@ -28,7 +28,7 @@ export function AppShell({
   leadingAction,
   eyebrow,
   sidebar = <RegistrySidebar />,
-  bottomNavigation = <RegistryBottomNav />,
+  bottomNavigation,
   breadcrumb = <AppBreadcrumb />,
   notificationAction,
   contentClassName,
@@ -85,8 +85,9 @@ export function AppShell({
           data-header-visible={headerVisible}
           className="app-shell-header sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur"
         >
-          <div className="flex min-h-16 items-center gap-3 px-4 py-3 md:px-8 md:py-3.5">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="app-shell-header-layout grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-3 px-4 py-3 md:px-8 md:py-3.5">
+            <RegistryMobileSidebar />
+            <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-2 lg:col-span-1 lg:row-start-1">
               {leadingAction ? <div className="shrink-0">{leadingAction}</div> : null}
               <div className="min-w-0">
                 {eyebrow ? (
@@ -94,24 +95,23 @@ export function AppShell({
                     {eyebrow}
                   </p>
                 ) : null}
-                <h1 className="truncate text-lg font-semibold tracking-tight text-foreground md:text-2xl">
+                <h1 className="line-clamp-2 break-words text-lg font-semibold tracking-tight text-foreground md:text-2xl">
                   {title}
                 </h1>
                 {subtitle ? (
-                  <p className="mt-0.5 max-w-[min(60vw,42rem)] truncate text-xs text-muted-foreground sm:text-sm">
+                  <p className="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground sm:text-sm">
                     {subtitle}
                   </p>
                 ) : null}
               </div>
             </div>
-            <div className="app-shell-actions flex min-w-0 max-w-[52vw] shrink-0 items-center justify-end gap-1 overflow-x-auto sm:max-w-[62vw] sm:gap-2 md:max-w-none">
-              {actions}
+            <div className="app-shell-controls col-start-2 row-start-1 flex shrink-0 items-center justify-end gap-1">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={toggleDark}
                 aria-label="Ubah tema"
-                className="text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                className="h-11 w-11 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
@@ -119,7 +119,7 @@ export function AppShell({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="relative text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  className="relative h-11 w-11 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   aria-label="Notifikasi"
                 >
                   <Bell className="h-4 w-4" />
@@ -128,6 +128,11 @@ export function AppShell({
               )}
               <UserMenu />
             </div>
+            {actions ? (
+              <div className="app-shell-actions col-span-2 flex min-w-0 flex-wrap items-center gap-2 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:justify-end">
+                {actions}
+              </div>
+            ) : null}
           </div>
         </header>
         {breadcrumb ? (
@@ -135,9 +140,7 @@ export function AppShell({
             {breadcrumb}
           </div>
         ) : null}
-        <main
-          className={cn("flex-1 animate-fade-in px-4 py-6 pb-24 md:px-8 lg:pb-6", contentClassName)}
-        >
+        <main className={cn("flex-1 animate-fade-in px-4 py-6 md:px-8", contentClassName)}>
           {children}
         </main>
       </div>

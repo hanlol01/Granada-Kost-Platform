@@ -72,30 +72,49 @@ export class ApiClient {
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
-  get<T>(path: string, options: Omit<RequestOptions, "method" | "body"> = {}): Promise<T> {
+  get<T>(
+    path: string,
+    options: Omit<RequestOptions, "method" | "body"> = {},
+  ): Promise<T> {
     return this.request<T>(path, { ...options, method: "GET" });
   }
 
-  post<T>(path: string, body?: unknown, options: Omit<RequestOptions, "method"> = {}): Promise<T> {
+  post<T>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, "method"> = {},
+  ): Promise<T> {
     return this.request<T>(path, { ...options, method: "POST", body });
   }
 
-  patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, "method"> = {}): Promise<T> {
+  patch<T>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, "method"> = {},
+  ): Promise<T> {
     return this.request<T>(path, { ...options, method: "PATCH", body });
   }
 
-  put<T>(path: string, body?: unknown, options: Omit<RequestOptions, "method"> = {}): Promise<T> {
+  put<T>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, "method"> = {},
+  ): Promise<T> {
     return this.request<T>(path, { ...options, method: "PUT", body });
   }
 
-  delete<T>(path: string, options: Omit<RequestOptions, "method" | "body"> = {}): Promise<T> {
+  delete<T>(
+    path: string,
+    options: Omit<RequestOptions, "method" | "body"> = {},
+  ): Promise<T> {
     return this.request<T>(path, { ...options, method: "DELETE" });
   }
 
   // Lower-level entrypoint. Returns parsed envelope when present, otherwise raw JSON.
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const method = options.method ?? "GET";
-    const correlationId = options.headers?.["X-Correlation-Id"] ?? generateCorrelationId();
+    const correlationId =
+      options.headers?.["X-Correlation-Id"] ?? generateCorrelationId();
 
     return this.executeWithAuth<T>(path, options, method, correlationId, false);
   }
@@ -115,13 +134,17 @@ export class ApiClient {
 
     let response: Response;
     try {
-      response = await this.doFetch(url, {
-        method,
-        headers,
-        body,
-        signal: options.signal,
-        credentials: "include", // refresh cookie (ADR-FE-003)
-      }, options.retryOnNetworkError !== false && method === "GET");
+      response = await this.doFetch(
+        url,
+        {
+          method,
+          headers,
+          body,
+          signal: options.signal,
+          credentials: "include", // refresh cookie (ADR-FE-003)
+        },
+        options.retryOnNetworkError !== false && method === "GET",
+      );
     } catch (networkError) {
       const err = this.normalizeNetworkError(networkError, correlationId);
       this.onError?.(err);
@@ -129,19 +152,36 @@ export class ApiClient {
     }
 
     // 401 → single-flight refresh, then retry once.
-    if (response.status === 401 && !options.anonymous && !didRefresh && this.tokenProvider) {
+    if (
+      response.status === 401 &&
+      !options.anonymous &&
+      !didRefresh &&
+      this.tokenProvider
+    ) {
       const refreshed = await this.runRefreshOnce();
       if (refreshed) {
-        return this.executeWithAuth<T>(path, options, method, correlationId, true);
+        return this.executeWithAuth<T>(
+          path,
+          options,
+          method,
+          correlationId,
+          true,
+        );
       }
       this.tokenProvider.onAuthFailure?.();
     }
 
-    return this.parseResponse<T>(response, correlationId, options.unwrapData !== false);
+    return this.parseResponse<T>(
+      response,
+      correlationId,
+      options.unwrapData !== false,
+    );
   }
 
   private buildUrl(path: string, query?: RequestOptions["query"]): string {
-    const normalized = path.startsWith("http") ? path : `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+    const normalized = path.startsWith("http")
+      ? path
+      : `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
     if (!query) return normalized;
     const usp = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
@@ -150,10 +190,15 @@ export class ApiClient {
     }
     const qs = usp.toString();
     if (!qs) return normalized;
-    return normalized.includes("?") ? `${normalized}&${qs}` : `${normalized}?${qs}`;
+    return normalized.includes("?")
+      ? `${normalized}&${qs}`
+      : `${normalized}?${qs}`;
   }
 
-  private buildHeaders(options: RequestOptions, correlationId: string): Headers {
+  private buildHeaders(
+    options: RequestOptions,
+    correlationId: string,
+  ): Headers {
     const headers = new Headers(options.headers ?? {});
     headers.set("Accept", "application/json");
     headers.set("X-Correlation-Id", correlationId);
@@ -174,7 +219,8 @@ export class ApiClient {
       return rawBody;
     }
     if (typeof rawBody === "string") {
-      if (!headers.has("Content-Type")) headers.set("Content-Type", "text/plain;charset=utf-8");
+      if (!headers.has("Content-Type"))
+        headers.set("Content-Type", "text/plain;charset=utf-8");
       return rawBody;
     }
     headers.set("Content-Type", "application/json");
@@ -229,7 +275,8 @@ export class ApiClient {
     unwrapData: boolean,
   ): Promise<T> {
     const contentType = response.headers.get("content-type") ?? "";
-    const serverCorrelationId = response.headers.get("x-correlation-id") ?? correlationId;
+    const serverCorrelationId =
+      response.headers.get("x-correlation-id") ?? correlationId;
 
     // 204 No Content
     if (response.status === 204) {
@@ -268,7 +315,11 @@ export class ApiClient {
     }
 
     if (!response.ok) {
-      const apiErr = this.normalizeErrorPayload(payload, response.status, serverCorrelationId);
+      const apiErr = this.normalizeErrorPayload(
+        payload,
+        response.status,
+        serverCorrelationId,
+      );
       this.onError?.(apiErr);
       throw apiErr;
     }
@@ -341,7 +392,9 @@ export class ApiClient {
       case 503:
         return ERROR_CODES.PROVIDER_UNAVAILABLE;
       default:
-        return status >= 500 ? ERROR_CODES.INTERNAL_ERROR : ERROR_CODES.INTERNAL_ERROR;
+        return status >= 500
+          ? ERROR_CODES.INTERNAL_ERROR
+          : ERROR_CODES.INTERNAL_ERROR;
     }
   }
 }
@@ -349,7 +402,9 @@ export class ApiClient {
 function generateCorrelationId(): string {
   // Prefer the platform UUID generator (Cloudflare Workers, modern browsers, Node 19+).
   const cryptoObj: Crypto | undefined =
-    typeof globalThis !== "undefined" ? (globalThis.crypto as Crypto | undefined) : undefined;
+    typeof globalThis !== "undefined"
+      ? (globalThis.crypto as Crypto | undefined)
+      : undefined;
   if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
     return cryptoObj.randomUUID();
   }
@@ -363,4 +418,10 @@ function sleep(ms: number): Promise<void> {
 
 // Re-export for ergonomics so apps need only one import.
 export { ApiError, ERROR_CODES };
+export {
+  fetchPreviewAndDownload,
+  downloadObjectUrl,
+  responseDownloadFilename,
+  safeDownloadFilename,
+} from "./document-download";
 export type { ApiErrorShape, ApiErrorCode } from "@granada-kost/domain";

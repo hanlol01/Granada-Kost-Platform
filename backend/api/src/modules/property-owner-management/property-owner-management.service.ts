@@ -157,7 +157,10 @@ export class PropertyOwnerManagementService {
         `SELECT assignments.id, assignments.effective_from, assignments.effective_until,
                 assignments.assignment_status, assignments.reason,
                 buildings.id AS building_id, buildings.building_code, buildings.building_name,
-                buildings.gender_policy, COUNT(rooms.id)::int AS covered_room_count
+                 buildings.gender_policy, COUNT(rooms.id)::int AS covered_room_count,
+                 COALESCE(jsonb_agg(jsonb_build_object('id',rooms.id,'room_code',rooms.room_code,
+                   'plot_number',rooms.plot_number,'gender_policy',rooms.gender_policy)
+                   ORDER BY rooms.room_code,rooms.id) FILTER (WHERE rooms.id IS NOT NULL),'[]'::jsonb) AS rooms
          FROM building_owner_assignments assignments
          JOIN room_buildings buildings ON buildings.id = assignments.building_id
          LEFT JOIN rooms ON rooms.building_id = buildings.id AND rooms.property_id = assignments.property_id
@@ -170,7 +173,7 @@ export class PropertyOwnerManagementService {
       this.database.client.query(
         `SELECT assignments.id, assignments.effective_from, assignments.effective_until,
                 assignments.assignment_status, assignments.reason,
-                rooms.id AS room_id, rooms.room_code, rooms.gender_policy,
+                 rooms.id AS room_id, rooms.room_code, rooms.gender_policy, rooms.plot_number,
                 buildings.building_code, buildings.building_name
          FROM room_owner_assignments assignments
          JOIN rooms ON rooms.id = assignments.room_id
@@ -270,7 +273,10 @@ export class PropertyOwnerManagementService {
     const [buildings, rooms] = await Promise.all([
       this.database.client.query(
         `SELECT buildings.id, buildings.building_code, buildings.building_name,
-                buildings.gender_policy, COUNT(rooms.id)::int AS room_count,
+                 buildings.gender_policy, COUNT(rooms.id)::int AS room_count,
+                 COALESCE(jsonb_agg(jsonb_build_object('id',rooms.id,'room_code',rooms.room_code,
+                   'plot_number',rooms.plot_number,'gender_policy',rooms.gender_policy)
+                   ORDER BY rooms.room_code,rooms.id) FILTER (WHERE rooms.id IS NOT NULL),'[]'::jsonb) AS rooms,
                 CASE WHEN assignment.id IS NULL THEN 'available' ELSE 'assigned' END AS availability,
                 CASE WHEN assignment.id IS NULL THEN NULL ELSE
                   json_build_object('id', assignment.owner_profile_id, 'full_name', assignment.owner_name)
@@ -296,7 +302,7 @@ export class PropertyOwnerManagementService {
         [propertyId],
       ),
       this.database.client.query(
-        `SELECT rooms.id, rooms.room_code, rooms.room_status, rooms.gender_policy,
+        `SELECT rooms.id, rooms.room_code, rooms.room_status, rooms.gender_policy, rooms.plot_number,
                 buildings.building_code, buildings.building_name,
                 CASE WHEN assignment.id IS NULL THEN 'available' ELSE 'assigned' END AS availability,
                 CASE WHEN assignment.id IS NULL THEN NULL ELSE

@@ -328,7 +328,11 @@ export async function createDocumentSignatureDerivative(source: File): Promise<F
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) throw new FilePreparationError("SIGNATURE_DERIVATIVE_UNAVAILABLE", "Gambar tanda tangan tidak dapat diproses.");
+    if (!context)
+      throw new FilePreparationError(
+        "SIGNATURE_DERIVATIVE_UNAVAILABLE",
+        "Gambar tanda tangan tidak dapat diproses.",
+      );
     context.drawImage(bitmap, 0, 0, width, height);
 
     const pixels = context.getImageData(0, 0, width, height);
@@ -371,8 +375,22 @@ export async function createDocumentSignatureDerivative(source: File): Promise<F
     output.width = sourceWidth;
     output.height = sourceHeight;
     const outputContext = output.getContext("2d");
-    if (!outputContext) throw new FilePreparationError("SIGNATURE_DERIVATIVE_UNAVAILABLE", "Gambar tanda tangan tidak dapat diproses.");
-    outputContext.drawImage(canvas, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+    if (!outputContext)
+      throw new FilePreparationError(
+        "SIGNATURE_DERIVATIVE_UNAVAILABLE",
+        "Gambar tanda tangan tidak dapat diproses.",
+      );
+    outputContext.drawImage(
+      canvas,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight,
+    );
     const blob = await new Promise<Blob>((resolve, reject) => {
       output.toBlob(
         (result) => (result ? resolve(result) : reject(new Error("SIGNATURE_DERIVATIVE_FAILED"))),
@@ -400,7 +418,7 @@ export async function createDocumentSignatureDerivative(source: File): Promise<F
  * Uses getAccessToken() from lib/api.ts — same proxyTokenProvider used by
  * the ApiClient singleton. No second auth source (ADR-FE-003).
  */
-export async function fetchFileBlob(fileId: string): Promise<string> {
+export async function fetchFileResponse(fileId: string): Promise<Response> {
   const token = getAccessToken();
   const baseUrl = env.VITE_API_BASE_URL;
   const url = `${baseUrl}/files/${fileId}/content`;
@@ -419,8 +437,12 @@ export async function fetchFileBlob(fileId: string): Promise<string> {
     throw new Error(`Gagal mengambil file: HTTP ${response.status}`);
   }
 
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
+  return response;
+}
+
+export async function fetchFileBlob(fileId: string): Promise<string> {
+  const response = await fetchFileResponse(fileId);
+  return URL.createObjectURL(await response.blob());
 }
 
 // ---------------------------------------------------------------------------

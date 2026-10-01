@@ -1782,7 +1782,10 @@ function parseOwnerRealizationProgress(value: unknown): OwnerRealizationProgress
       const row = isObject(entry) ? entry : {};
       return {
         id: textOrNull(row.id),
-        roomCode: string(row.room_code_snapshot, `realization_progress.lines.${index}.room_code_snapshot`),
+        roomCode: string(
+          row.room_code_snapshot,
+          `realization_progress.lines.${index}.room_code_snapshot`,
+        ),
         buildingName: textOrNull(row.building_name_snapshot),
         residentName: textOrNull(row.resident_name_snapshot),
         plotNumber: textOrNull(row.plot_number_snapshot),
@@ -1807,11 +1810,13 @@ function parseOwnerRealizationProgress(value: unknown): OwnerRealizationProgress
           ? row.evidence_files.flatMap((file) => {
               const item = isObject(file) ? file : {};
               if (typeof item.id !== "string") return [];
-              return [{
-                id: item.id,
-                originalFilename: textOrNull(item.original_filename) ?? "Bukti transfer",
-                mimeType: textOrNull(item.mime_type) ?? "application/octet-stream",
-              }];
+              return [
+                {
+                  id: item.id,
+                  originalFilename: textOrNull(item.original_filename) ?? "Bukti transfer",
+                  mimeType: textOrNull(item.mime_type) ?? "application/octet-stream",
+                },
+              ];
             })
           : [],
       };
@@ -2641,9 +2646,9 @@ export const propertyOwnerPortalApi = {
   realizations: () =>
     apiClient.get<{ rows: OwnerRealizationDocument[] }>("/my/property-owner/realizations"),
   realizationProgress: (period: string) =>
-    apiClient.get<unknown>("/my/property-owner/realizations/progress", { query: { period } }).then(
-      parseOwnerRealizationProgress,
-    ),
+    apiClient
+      .get<unknown>("/my/property-owner/realizations/progress", { query: { period } })
+      .then(parseOwnerRealizationProgress),
 };
 
 export async function downloadOwnerRealizationReceipt(
@@ -2688,7 +2693,7 @@ export async function downloadOwnerRealization(
         throw new Error(`Owner realization export failed (HTTP ${response.status}).`);
       return response;
     },
-    `realisasi-owner-${realizationId}.${format}`,
+    `Realisasi-Owner.${format}`,
     { preview: format === "pdf" },
   );
 }

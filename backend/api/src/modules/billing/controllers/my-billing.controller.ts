@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -79,7 +80,7 @@ export class MyBillingController {
     const document = await this.w06.myReceiptDocument(user, receiptId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Kuitansi-Pembayaran'),
       length: document.content.length,
     });
   }
@@ -93,7 +94,7 @@ export class MyBillingController {
     const document = await this.w06.myInvoiceDocument(user, invoiceId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Invoice-Sewa'),
       length: document.content.length,
     });
   }

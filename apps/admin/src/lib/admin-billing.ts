@@ -2097,10 +2097,9 @@ export async function downloadAdminContractPaidDocument(
 export async function downloadOwnerSponsoredManagementFeeDocument(
   propertyId: string,
   residentId: string,
-  residentName: string,
+  _residentName: string,
 ) {
   const query = new URLSearchParams({ property_id: propertyId });
-  const safeName = residentName.replace(/[^a-z0-9_-]+/gi, "-") || "penghuni";
   await fetchPreviewAndDownload(async () => {
     const token = getAccessToken();
     const response = await fetch(
@@ -2114,16 +2113,15 @@ export async function downloadOwnerSponsoredManagementFeeDocument(
     if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
       throw new Error(`Dokumen biaya pengelolaan gagal diunduh (HTTP ${response.status}).`);
     return response;
-  }, `invoice-biaya-pengelolaan-${safeName}.pdf`);
+  }, "Invoice-Biaya-Pengelolaan.pdf");
 }
 
 export async function downloadOwnerSponsoredResidenceStatement(
   propertyId: string,
   residentId: string,
-  residentName: string,
+  _residentName: string,
 ) {
   const query = new URLSearchParams({ property_id: propertyId });
-  const safeName = residentName.replace(/[^a-z0-9_-]+/gi, "-") || "penghuni";
   await fetchPreviewAndDownload(async () => {
     const token = getAccessToken();
     const response = await fetch(
@@ -2137,5 +2135,5 @@ export async function downloadOwnerSponsoredResidenceStatement(
     if (!response.ok || response.headers.get("content-type")?.split(";")[0] !== "application/pdf")
       throw new Error(`Surat keterangan hunian Owner gagal diunduh (HTTP ${response.status}).`);
     return response;
-  }, `surat-hunian-owner-${safeName}.pdf`);
+  }, "Surat-Hunian-Owner.pdf");
 }

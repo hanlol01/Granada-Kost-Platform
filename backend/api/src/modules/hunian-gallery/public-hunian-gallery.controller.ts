@@ -1,5 +1,6 @@
 import { Controller, Get, Header, Param, ParseUUIDPipe, Req, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { documentDisposition } from '../../shared/utils/download-filename';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
 import { HunianGalleryRateLimiterService } from './hunian-gallery-rate-limiter.service';
 import { HunianGalleryService } from './hunian-gallery.service';
@@ -23,7 +24,13 @@ export class PublicHunianGalleryController {
     response.setHeader('Content-Type', record.mimeType);
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'public, max-age=300');
-    response.setHeader('Content-Disposition', 'inline');
+    response.setHeader(
+      'Content-Disposition',
+      documentDisposition(
+        `Foto-Hunian-${record.createdAt.toISOString().slice(0, 10)}.${record.fileExtension}`,
+        'inline',
+      ),
+    );
     response.send(buffer);
   }
 }

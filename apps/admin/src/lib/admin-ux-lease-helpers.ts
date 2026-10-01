@@ -30,6 +30,7 @@ export type CheckoutActionContext = {
   decisionStatus: "refund_pending" | "amount_due" | "closed" | null;
   refundStatus: "pending" | "settled" | "waived" | "reversed" | null;
   amountDue: number | null;
+  currentAmountDue?: number | null;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -111,10 +112,12 @@ export function checkoutActionLabel(
   if (checkout.state !== "completed") return "Lanjutkan proses check-out";
 
   const financialOpen =
-    checkout.decisionStatus === "refund_pending" ||
-    checkout.decisionStatus === "amount_due" ||
+    (checkout.decisionStatus === "refund_pending" &&
+      !["settled", "waived"].includes(checkout.refundStatus ?? "")) ||
+    (checkout.decisionStatus === "amount_due" && checkout.currentAmountDue === undefined) ||
     checkout.refundStatus === "pending" ||
-    (checkout.amountDue ?? 0) > 0;
+    checkout.refundStatus === "reversed" ||
+    (checkout.currentAmountDue ?? checkout.amountDue ?? 0) > 0;
   return financialOpen ? "Lihat penyelesaian check-out" : "Lihat riwayat check-out";
 }
 

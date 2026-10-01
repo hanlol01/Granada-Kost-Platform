@@ -1046,4 +1046,13 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rooms' AND column_name='owner_room_number')",
     ],
   },
+  {
+    version: '113_room_transfer_contract_addendum.sql',
+    checksumSha256: '2f1539e780dd273d18f4e2bf8c3cf9bf62e1160065ae287b48b6155c1b08f9d1',
+    sentinels: [
+      "NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('public.room_transfer_records') AND conname IN ('room_transfer_records_from_lease_unique','room_transfer_records_to_lease_unique'))",
+      "to_regclass('public.idx_room_transfer_records_from_lease') IS NOT NULL",
+      "to_regclass('public.idx_room_transfer_records_to_lease') IS NOT NULL",
+    ],
+  },
 ] as const;

@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -61,7 +62,7 @@ export class PropertyOwnerRealizationController {
   ) {
     const file = await this.realizations.exportQueue(actor, query, format);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -75,7 +76,7 @@ export class PropertyOwnerRealizationController {
   ) {
     const file = await this.realizations.exportFinanceRequest(actor, query, format);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -94,7 +95,7 @@ export class PropertyOwnerRealizationController {
   ) {
     const file = await this.realizations.exportNotEligible(actor, query, format);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -291,7 +292,7 @@ export class PropertyOwnerRealizationController {
   ) {
     const file = await this.realizations.export(actor, realizationId, propertyId, format);
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }
@@ -311,7 +312,7 @@ export class PropertyOwnerRealizationController {
       propertyId,
     );
     response.setHeader('Content-Type', file.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
   }

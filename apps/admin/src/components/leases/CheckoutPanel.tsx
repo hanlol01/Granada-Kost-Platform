@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
+import { CheckoutRecordedStage } from "./CheckoutRecordedStage";
 import { FilePreviewModal, type FilePreviewReference } from "@/components/file/FilePreviewModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -397,7 +398,7 @@ function CheckoutStageHistory({
   const copy: Record<CheckoutStage, { title: string; detail: string }> = {
     1: {
       title: "Rencana check-out telah disimpan",
-      detail: `Rencana keluar ${command.effectiveDate}. Alasan dan sumber permintaan tersimpan di riwayat proses.`,
+      detail: `Rencana keluar ${formatIndonesianFullDate(command.effectiveDate)}. Alasan dan sumber permintaan tersimpan di riwayat proses.`,
     },
     2: {
       title:
@@ -434,7 +435,9 @@ function CheckoutStageHistory({
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
             {onEdit
               ? "Perubahan tahap ini tetap dicatat dalam riwayat proses."
-              : "Tahap ini sudah tersimpan. Gunakan “Batalkan & mulai ulang” jika proses perlu diisi kembali dari awal."}
+              : command.state === "completed"
+                ? "Riwayat ini hanya untuk pemeriksaan. Penyelesaian akhir dan dokumen yang diterbitkan tidak diubah."
+                : "Tahap ini sudah tersimpan. Gunakan “Batalkan & mulai ulang” jika proses perlu diisi kembali dari awal."}
           </p>
 
           {onEdit ? (
@@ -446,6 +449,7 @@ function CheckoutStageHistory({
           ) : null}
         </div>
       </div>
+      <CheckoutRecordedStage command={command} stage={stage} />
     </div>
   );
 }
@@ -1566,8 +1570,7 @@ export function CheckoutPanel({
                   </Button>
                 </div>
               </fieldset>
-            ) : isReviewingPreviousStage ||
-              (command.state === "completed" && visibleStage === 5 && !hasPendingExitRefund) ? (
+            ) : isReviewingPreviousStage ? (
               <CheckoutStageHistory
                 stage={visibleStage}
                 command={command}
@@ -2768,6 +2771,7 @@ export function CheckoutPanel({
                         Keputusan final tersimpan dan tidak dihitung ulang dari data UI.
                       </p>
                     </div>
+                    <CheckoutRecordedStage command={command} stage={5} />
                     {command.finalSettlementId ? (
                       <div className="grid gap-3 rounded-md bg-muted/30 p-4 text-sm sm:grid-cols-3">
                         <p>
@@ -2801,11 +2805,19 @@ export function CheckoutPanel({
                           </strong>
                         </p>
                         <p>
-                          Sisa kewajiban
+                          Kewajiban saat penyelesaian ditetapkan
                           <strong className="block text-foreground">
                             {rupiah.format(command.amountDue ?? 0)}
                           </strong>
                         </p>
+                        {command.currentAmountDue !== undefined ? (
+                          <p>
+                            Sisa tagihan akhir saat ini
+                            <strong className="block text-foreground">
+                              {rupiah.format(command.currentAmountDue ?? 0)}
+                            </strong>
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                     {(command.documents ?? []).length ? (

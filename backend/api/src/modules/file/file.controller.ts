@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { documentDisposition } from '../../shared/utils/download-filename';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
@@ -70,14 +71,18 @@ export class FileController {
     @Req() request: RequestWithCorrelationId,
     @Res() response: Response,
   ) {
-    const { record, buffer } = await this.files.readContent(user, fileId, this.auditContext(user, request));
+    const { record, buffer } = await this.files.readContent(
+      user,
+      fileId,
+      this.auditContext(user, request),
+    );
     const disposition = query.download ? 'attachment' : 'inline';
     response.setHeader('Content-Type', record.mimeType);
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, max-age=300');
     response.setHeader(
       'Content-Disposition',
-      `${disposition}; filename="${this.contentDispositionFilename(record.sanitizedFilename)}"`,
+      documentDisposition(await this.files.downloadName(record), disposition),
     );
     response.send(buffer);
   }
@@ -102,9 +107,5 @@ export class FileController {
       userAgent: request.headers['user-agent'],
       correlationId: request.correlationId,
     };
-  }
-
-  private contentDispositionFilename(filename: string): string {
-    return filename.replace(/["\\\r\n]/g, '_');
   }
 }

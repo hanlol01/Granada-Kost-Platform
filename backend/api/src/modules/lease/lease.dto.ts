@@ -238,6 +238,13 @@ export class PreviewLeaseDataCorrectionDto {
 export class CommitLeaseDataCorrectionDto extends PreviewLeaseDataCorrectionDto {}
 
 export class DepositPaymentDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  evidence_file_ids?: string[];
+
   @IsIn(['cash', 'bank_transfer', 'qris', 'ewallet', 'other'])
   payment_method!: 'cash' | 'bank_transfer' | 'qris' | 'ewallet' | 'other';
 

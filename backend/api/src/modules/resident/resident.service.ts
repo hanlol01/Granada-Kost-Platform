@@ -66,6 +66,11 @@ export class ResidentService {
     return resident;
   }
 
+  async attentionSummary(user: UserAccessContext, propertyId: string) {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    return this.residents.attentionSummary(propertyId, this.scopeIds(user));
+  }
+
   async tenancy(user: UserAccessContext, residentId: string, propertyId: string) {
     await this.properties.assertCanReadProperty(user, propertyId);
     const resident = await this.residents.findByIdInProperty(residentId, propertyId);

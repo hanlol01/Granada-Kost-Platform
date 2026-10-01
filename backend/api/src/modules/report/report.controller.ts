@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import { Controller, Get, Param, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import type { UserAccessContext } from '../iam/types/iam.types';
@@ -35,7 +36,7 @@ export class ReportController {
   ) {
     const result = await this.reports.export(actor, type, query);
     response.setHeader('Content-Type', result.content_type);
-    response.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    response.setHeader('Content-Disposition', documentDisposition(result.filename));
     response.setHeader('X-Report-Filter-Checksum', result.filter_checksum);
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(result.content);

@@ -1,12 +1,5 @@
-// FilePreviewModal — full-screen preview for images and PDF-friendly download
-// for non-image files.
-//
-// Uses shadcn Dialog (Radix). Image preview fetches an authorized blob URL.
-// PDF files are opened in a new tab via the blob URL.
-// Object URLs are revoked on dialog close/unmount.
-
-import { useEffect, useState } from "react";
-import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
+import { useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,104 +9,111 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useFilePreview } from "@/hooks/useFileUpload";
-import { formatFileSize, isImageMime, isPdfMime, fetchFileBlob } from "@/lib/file-utils";
+import { formatFileSize, isImageMime, isPdfMime, fetchFileResponse } from "@/lib/file-utils";
+import { fetchPreviewAndDownload } from "@/lib/document-download";
 import type { FileResponse } from "@granada-kost/domain";
 
-export type FilePreviewModalProps = {
-  /** File metadata from the backend. Null = modal closed. */
-  file: FileResponse | null;
-  /** Called when the modal is closed. */
-  onClose: () => void;
-};
+export type FilePreviewReference = Pick<
+  FileResponse,
+  "id" | "original_filename" | "mime_type" | "file_size_bytes"
+> &
+  Partial<Pick<FileResponse, "sanitized_filename">>;
+export type FilePreviewModalProps = { file: FilePreviewReference | null; onClose: () => void };
 
 export function FilePreviewModal({ file, onClose }: FilePreviewModalProps) {
-  const isOpen = file !== null;
   const isImage = file ? isImageMime(file.mime_type) : false;
   const isPdf = file ? isPdfMime(file.mime_type) : false;
-
-  const { data: blobUrl, isLoading, isError } = useFilePreview(isOpen && isImage ? file!.id : null);
-
-  const [localBlobUrl, setLocalBlobUrl] = useState<string | null>(null);
-
-  // Revoke object URLs when dialog closes or unmounts.
-  useEffect(() => {
-    return () => {
-      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
-    };
-  }, [localBlobUrl]);
-
-  async function handleOpenPdf() {
-    if (!file) return;
-    try {
-      const url = await fetchFileBlob(file.id);
-      setLocalBlobUrl(url);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      // Error handling via toast is done in the hook layer.
-    }
-  }
+  const {
+    data: blobUrl,
+    isLoading,
+    isError,
+  } = useFilePreview(file && (isImage || isPdf) ? file.id : null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
 
   async function handleDownload() {
-    if (!file) return;
+    if (!file || downloading) return;
+    setDownloading(true);
+    setDownloadError("");
     try {
-      const url = await fetchFileBlob(file.id);
-      setLocalBlobUrl(url);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.sanitized_filename || file.original_filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const extension =
+        file.mime_type === "application/pdf" ? "pdf" : file.mime_type.split("/")[1] || "bin";
+      await fetchPreviewAndDownload(
+        () => fetchFileResponse(file.id),
+        `Berkas-Terlampir.${extension}`,
+        { preview: false },
+      );
     } catch {
-      // Errors surfaced via console in fetchFileBlob.
+      setDownloadError("Berkas gagal diunduh. Silakan coba kembali.");
+    } finally {
+      setDownloading(false);
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[95vw] sm:max-w-2xl p-0 overflow-hidden">
-        <DialogHeader className="p-4 pb-2">
-          <DialogTitle className="truncate text-sm font-semibold">
-            {file?.original_filename ?? "Preview"}
+    <Dialog
+      open={file !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setDownloadError("");
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 p-4 pr-12">
+          <DialogTitle className="break-words text-sm font-semibold">
+            {file?.original_filename ?? "Pratinjau berkas"}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {file ? formatFileSize(file.file_size_bytes) : ""}
           </DialogDescription>
         </DialogHeader>
-
-        {/* Image preview */}
-        {isImage && (
-          <div className="flex min-h-[200px] items-center justify-center bg-black/5 px-4 pb-4">
-            {isLoading && <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />}
-            {isError && <p className="text-sm text-destructive">Gagal memuat gambar.</p>}
-            {blobUrl && (
-              <img
-                src={blobUrl}
-                alt={file?.original_filename ?? ""}
-                className="max-h-[60vh] w-auto rounded-lg object-contain"
-              />
-            )}
-          </div>
-        )}
-
-        {/* PDF placeholder */}
-        {isPdf && (
-          <div className="flex flex-col items-center gap-3 px-4 pb-4 pt-2">
-            <FileText className="h-16 w-16 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Dokumen PDF</p>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenPdf}>
-              <ExternalLink className="h-3.5 w-3.5" />
-              Buka di tab baru
-            </Button>
-          </div>
-        )}
-
-        {/* Download button */}
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/30 px-4 pb-4">
+          {isLoading && (
+            <Loader2
+              aria-label="Memuat berkas"
+              className="h-8 w-8 animate-spin text-muted-foreground"
+            />
+          )}
+          {isError && (
+            <p role="alert" className="text-sm text-destructive">
+              Berkas gagal dimuat. Silakan coba kembali.
+            </p>
+          )}
+          {isImage && blobUrl && (
+            <img
+              src={blobUrl}
+              alt={file?.original_filename ?? "Bukti"}
+              className="max-h-[65dvh] max-w-full rounded-md object-contain"
+            />
+          )}
+          {isPdf && blobUrl && (
+            <iframe
+              src={`${blobUrl}#toolbar=0`}
+              title="Pratinjau PDF"
+              className="h-[60dvh] w-full rounded-md border border-border"
+            />
+          )}
+        </div>
         {file && (
-          <div className="flex justify-end border-t px-4 py-3">
-            <Button variant="ghost" size="sm" className="gap-2 text-xs" onClick={handleDownload}>
-              <Download className="h-3.5 w-3.5" />
-              Download
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border px-4 py-3">
+            {downloadError && (
+              <p role="alert" className="text-sm text-destructive">
+                {downloadError}
+              </p>
+            )}
+            <Button
+              className="min-h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={downloading}
+              onClick={() => void handleDownload()}
+            >
+              {downloading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {downloading ? "Mengunduh…" : "Unduh"}
             </Button>
           </div>
         )}

@@ -152,6 +152,22 @@ export type CheckoutState =
   | "completed"
   | "cancelled";
 
+export type CheckoutRecordedEvidence = {
+  id: string;
+  category: string;
+  metadata: Record<string, unknown>;
+  recordedAt: string;
+  recordedBy: string | null;
+  fileUnavailable: boolean;
+  file: {
+    id: string;
+    originalFilename: string;
+    sanitizedFilename: string;
+    mimeType: string;
+    fileSizeBytes: number;
+  } | null;
+};
+
 export type CheckoutCommand = {
   id: string;
   propertyId: string;
@@ -200,6 +216,31 @@ export type CheckoutCommand = {
   grossRefundAmount: number | null;
   grossAmountDue: number | null;
   amountDue: number | null;
+  currentAmountDue?: number | null;
+  history?: {
+    stages: Array<{ stage: number; recordedAt: string; recordedBy: string | null }>;
+    evidence: CheckoutRecordedEvidence[];
+    finalPayments?: Array<{
+      id: string;
+      paymentCode: string;
+      paymentStatus: "pending_confirmation" | "verified" | "reversed";
+      paymentMethod: string;
+      paidAt: string | null;
+      verifiedAt: string | null;
+      allocatedAmount: number;
+      evidence: NonNullable<CheckoutRecordedEvidence["file"]>[];
+    }>;
+    financialSummary: {
+      verifiedRentPaymentAmount: number;
+      existingInvoiceCreditAmount: number;
+      earnedRentAmount: number;
+      depositLiabilityAmount: number;
+      depositDeductionAmount: number;
+      depositRentOffsetAmount: number;
+      refundableDepositAmount: number;
+      refundAdjustmentReason: string | null;
+    } | null;
+  };
   settlementLateCheckoutPenaltyAmount: number | null;
   settlementLateCheckoutPenaltyDueAmount: number | null;
   settlementDecisionStatus: "refund_pending" | "amount_due" | "closed" | null;
@@ -349,6 +390,11 @@ export type TransferPreview = {
     targetNextBillingDate: string;
     dueDay: number;
     contractualEndDate: string | null;
+    currentMonthlyRent: number;
+    agreedMonthlyRent: number;
+    targetReferenceMonthlyRent: number;
+    tariffReviewDate: string;
+    contractPreserved: boolean;
   };
   oldOutstandingAmount: number;
 };

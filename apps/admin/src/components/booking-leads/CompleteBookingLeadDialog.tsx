@@ -739,15 +739,18 @@ export function CompleteBookingLeadDialog({ open, lead, onOpenChange, onComplete
                     maxLength={500}
                   />
                 </label>
-                <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                  <p>
-                    Total sewa <b>{formatIDR(totalRent)}</b>
-                  </p>
-                  <p>
-                    Sisa pembayaran sewa{" "}
-                    <b>{formatIDR(Math.max(0, totalRent - displayedCredit))}</b>
-                  </p>
-                </div>
+                <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                  <dt className="text-muted-foreground">Total sewa</dt>
+                  <dd className="whitespace-nowrap text-right font-semibold tabular-nums">
+                    {formatIDR(totalRent)}
+                  </dd>
+                  <dt className="border-t border-border/70 pt-2 font-medium text-foreground">
+                    Sisa pembayaran sewa
+                  </dt>
+                  <dd className="border-t border-border/70 pt-2 text-right font-semibold tabular-nums">
+                    {formatIDR(Math.max(0, totalRent - displayedCredit))}
+                  </dd>
+                </dl>
                 {submitAttempted && error ? (
                   <p
                     id="complete-booking-lead-error"

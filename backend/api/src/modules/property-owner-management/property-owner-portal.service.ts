@@ -11,6 +11,7 @@ import * as fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, type PDFFont, rgb } from 'pdf-lib';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { UserAccessContext } from '../iam/types/iam.types';
+import { contractRoomIdSql } from '../lease/helpers/contract-room-reference.helper';
 
 type OwnerRow = {
   id: string;
@@ -1136,13 +1137,13 @@ export class PropertyOwnerPortalService {
        ), scoped_rooms AS (
          SELECT DISTINCT room_id FROM raw_scope
        ), active_leases AS (
-         SELECT lease.id, lease.property_id, lease.room_id, lease.resident_id,
+         SELECT lease.id, lease.property_id, scope.room_id, lease.resident_id,
                  lease.start_date, lease.end_date, lease.security_deposit_required_amount,
                   lease.commercial_mode,
                  lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount,
                  lease.pricing_source
          FROM leases lease
-         JOIN scoped_rooms scope ON scope.room_id = lease.room_id
+         JOIN scoped_rooms scope ON scope.room_id = (${contractRoomIdSql('lease')})
          WHERE lease.property_id = $2 AND lease.lease_status = 'active'
        ), commercial_base AS (
          SELECT lease.id AS lease_id,

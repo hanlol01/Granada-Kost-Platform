@@ -4,10 +4,18 @@ import {
   ChevronDown,
   ChevronRight,
   MoreHorizontal,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   getVisibleRoutes,
   isRouteActive,
@@ -57,6 +65,7 @@ function RouteLink({
       to={route.to as never}
       search={route.search as never}
       onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
       aria-label={compact ? route.label : undefined}
       title={compact ? route.label : undefined}
       className={cn(
@@ -299,6 +308,47 @@ export function RegistrySidebar() {
         ))}
       </nav>
     </aside>
+  );
+}
+
+export function RegistryMobileSidebar() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const access = useRouteAccess();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => setOpen(false), [pathname]);
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <button
+          type="button"
+          aria-label="Buka menu navigasi"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      </SheetTrigger>
+      <SheetContent
+        side="left"
+        className="flex w-[min(88vw,20rem)] flex-col border-sidebar-border bg-sidebar p-0"
+      >
+        <SheetHeader className="border-b border-sidebar-border px-5 py-6 text-left">
+          <SheetTitle>Menu pengelolaan</SheetTitle>
+          <SheetDescription>Pilih halaman yang ingin Anda buka.</SheetDescription>
+        </SheetHeader>
+        <nav
+          aria-label="Navigasi utama"
+          className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+        >
+          <MoreRoutes
+            routes={getVisibleRoutes(access)}
+            pathname={pathname}
+            onNavigate={() => setOpen(false)}
+          />
+        </nav>
+      </SheetContent>
+    </Sheet>
   );
 }
 

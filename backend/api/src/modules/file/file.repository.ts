@@ -120,6 +120,83 @@ export class FileRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  /** Invoked only after authorization; codes never contain people's names. */
+  async downloadContext(
+    record: FileRecord,
+  ): Promise<{ label: string; code: string; sequence: string }> {
+    const result = await this.database.client.query<{
+      label: string;
+      code: string;
+      sequence: string;
+    }>(
+      `WITH context AS (
+         SELECT 1 AS priority, 'Bukti-Transfer' AS label, p.payment_code AS code,
+                e.created_at, e.id, e.file_id, p.id::text AS group_id
+           FROM payment_evidence_files e JOIN payments p ON p.id=e.payment_id
+          WHERE e.property_id=$2 AND p.property_id=$2
+         UNION ALL
+         SELECT 2, 'Bukti-Pembayaran', COALESCE(p.payment_code,i.invoice_code),
+                e.created_at,e.id,e.file_id,proof.id::text
+           FROM payment_proof_files e JOIN payment_proofs proof ON proof.id=e.payment_proof_id
+           JOIN invoices i ON i.id=proof.invoice_id LEFT JOIN payments p ON p.id=proof.payment_id
+          WHERE proof.property_id=$2 AND i.property_id=$2
+         UNION ALL
+         SELECT 3, CASE WHEN e.entity_kind='transfer' THEN 'Bukti-Transfer-Owner'
+                        WHEN e.entity_kind='recovery_event' THEN 'Bukti-Pengembalian-Owner'
+                        ELSE 'Bukti-Penyesuaian-Owner' END,
+                COALESCE(t.receipt_number,r.realization_reference),e.created_at,e.id,e.file_id,e.entity_id::text
+           FROM property_owner_realization_evidence_files e
+           JOIN property_owner_realizations r ON r.id=e.realization_id
+           LEFT JOIN property_owner_realization_transfers t ON t.id=e.entity_id AND e.entity_kind='transfer'
+          WHERE e.property_id=$2 AND r.property_id=$2
+         UNION ALL
+         SELECT 4, 'Bukti-Tagihan',i.invoice_code,e.created_at,e.id,e.file_id,i.id::text
+           FROM invoice_evidence_files e JOIN invoices i ON i.id=e.invoice_id WHERE e.property_id=$2 AND i.property_id=$2
+         UNION ALL
+         SELECT 5, 'Bukti-Pengembalian',l.lease_code,e.created_at,e.id,e.evidence_file_id,l.id::text
+           FROM lease_exit_refunds e JOIN leases l ON l.id=e.lease_id WHERE e.property_id=$2 AND l.property_id=$2
+         UNION ALL
+         SELECT 6, 'Bukti-Check-Out',l.lease_code,e.recorded_at,e.id,e.file_id,c.id::text
+           FROM lease_checkout_evidence e JOIN lease_checkout_commands c ON c.id=e.checkout_command_id
+           JOIN leases l ON l.id=c.lease_id WHERE e.property_id=$2 AND l.property_id=$2
+         UNION ALL
+         SELECT 7, 'Bukti-Booking',c.transaction_code,c.created_at,c.id,e.file_id,c.id::text
+           FROM booking_lead_payment_commitments c CROSS JOIN LATERAL unnest(c.payment_evidence_file_ids) AS e(file_id) WHERE c.property_id=$2
+         UNION ALL
+         SELECT 8, 'Bukti-Pengembalian-Booking',c.transaction_code,c.created_at,c.id,e.file_id,c.id::text
+           FROM booking_lead_payment_commitment_refunds c CROSS JOIN LATERAL unnest(c.refund_evidence_file_ids) AS e(file_id) WHERE c.property_id=$2
+         UNION ALL
+         SELECT 9, 'Lampiran-Komplain',c.complaint_code,e.created_at,e.id,e.file_id,c.id::text
+           FROM complaint_files e JOIN complaints c ON c.id=e.complaint_id WHERE c.property_id=$2
+         UNION ALL
+         SELECT 10, 'Lampiran-Perawatan',c.work_order_code,e.created_at,e.id,e.file_id,c.id::text
+           FROM maintenance_work_order_files e JOIN maintenance_work_orders c ON c.id=e.work_order_id WHERE c.property_id=$2
+         UNION ALL
+         SELECT 11, 'Berkas-Kendaraan',c.vehicle_code,e.created_at,e.id,e.file_id,c.id::text
+           FROM vehicle_files e JOIN vehicles c ON c.id=e.vehicle_id WHERE c.property_id=$2
+       ), numbered AS (
+         SELECT *,row_number() OVER (PARTITION BY priority,group_id ORDER BY created_at,id,file_id)::text AS sequence FROM context
+       )
+       SELECT label,code,sequence FROM numbered WHERE file_id=$1 ORDER BY priority LIMIT 1`,
+      [record.id, record.propertyId],
+    );
+    if (result.rows[0]) return result.rows[0];
+    const fallback = await this.database.client.query<{ sequence: string; code: string }>(
+      `SELECT to_char(f.created_at AT TIME ZONE 'Asia/Jakarta','YYYY-MM-DD') AS code,
+              (SELECT count(*) FROM files earlier
+                WHERE earlier.property_id=f.property_id AND earlier.file_purpose=f.file_purpose
+                  AND (earlier.created_at AT TIME ZONE 'Asia/Jakarta')::date=(f.created_at AT TIME ZONE 'Asia/Jakarta')::date
+                  AND (earlier.created_at,earlier.id)<=(f.created_at,f.id))::text AS sequence
+         FROM files f WHERE f.id=$1 AND f.property_id=$2`,
+      [record.id, record.propertyId],
+    );
+    return {
+      label: 'Berkas',
+      code: fallback.rows[0]?.code ?? record.createdAt.toISOString().slice(0, 10),
+      sequence: fallback.rows[0]?.sequence ?? '1',
+    };
+  }
+
   async activeBytesForProperty(propertyId: string): Promise<number> {
     const result = await this.database.client.query<{ total_bytes: string | null }>(
       `SELECT COALESCE(SUM(file_size_bytes), 0)::text AS total_bytes

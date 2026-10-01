@@ -13,3 +13,4 @@ coverage/
 /mockup/
 uploads/
 backend/api/uploads/
+backend/api/.room-transfer-test-run/

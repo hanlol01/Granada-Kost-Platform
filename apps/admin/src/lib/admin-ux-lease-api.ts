@@ -185,7 +185,12 @@ export async function downloadLeaseExitDocument(
 export type DepositCollectInput = {
   transactionType: "collection" | "top_up";
   amount: number;
-  payment: { paymentMethod: PaymentMethod; paymentCode?: string; referenceNumber?: string };
+  payment: {
+    paymentMethod: PaymentMethod;
+    paymentCode?: string;
+    referenceNumber?: string;
+    evidenceFileIds?: string[];
+  };
   overrideReason?: string;
 };
 
@@ -207,7 +212,12 @@ export type TransferInput = Omit<TransferPreviewInput, "effectiveDate"> &
     exceptionReason: string;
     topUp?: {
       amount: number;
-      payment: { paymentMethod: PaymentMethod; paymentCode?: string; referenceNumber?: string };
+      payment: {
+        paymentMethod: PaymentMethod;
+        paymentCode?: string;
+        referenceNumber?: string;
+        evidenceFileIds?: string[];
+      };
     };
   };
 
@@ -419,6 +429,7 @@ function toPaymentBody(payment: DepositCollectInput["payment"]) {
     payment_method: payment.paymentMethod,
     payment_code: text(payment.paymentCode),
     reference_number: text(payment.referenceNumber),
+    evidence_file_ids: payment.evidenceFileIds,
   };
 }
 

@@ -10,7 +10,9 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ResidentNotifications } from "@/components/residents/ResidentNotifications";
+import { RESIDENT_ATTENTION, type ResidentAttentionCategory } from "@/lib/admin-resident-attention";
 import { AppShell } from "@/components/layout/app-shell";
 import { LeaseCreatePage } from "@/components/leases/LeaseCreatePage";
 import { EmptyState } from "@/components/state/EmptyState";
@@ -73,6 +75,14 @@ export function CheckoutFinancialStatusPill({
   const presentation: Record<CheckoutFinancialStatus, { label: string; className: string }> = {
     none: { label: "Belum ada check-out", className: "bg-muted text-muted-foreground" },
     in_progress: { label: "Proses check-out berjalan", className: "bg-primary-soft text-primary" },
+    awaiting_handover: {
+      label: "Menunggu tanggal serah-terima",
+      className: "bg-primary-soft text-primary",
+    },
+    handover_overdue: {
+      label: "Terlambat serah-terima",
+      className: "bg-destructive/15 text-destructive",
+    },
     refund_pending: {
       label: "Menunggu pengembalian dana",
       className: "bg-warning/15 text-warning",
@@ -374,13 +384,18 @@ function TenantsPage() {
     Exclude<ContractSettlementStage, "none"> | "all"
   >("all");
   const [checkoutFinancialStatus, setCheckoutFinancialStatus] = useState<
-    Exclude<CheckoutFinancialStatus, "none"> | "all"
+    Exclude<CheckoutFinancialStatus, "none"> | "all" | "attention"
   >("all");
   const [deadlineTarget, setDeadlineTarget] = useState<DeadlineTarget>("settlement");
   const [deadlineWithinDays, setDeadlineWithinDays] = useState("");
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
   const [offset, setOffset] = useState(0);
+  const [attentionCategory, setAttentionCategory] = useState<ResidentAttentionCategory | null>(
+    null,
+  );
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const pendingScroll = useRef(false);
   const { user, hasPermission } = useAuth();
   const { currentPropertyId } = useProperty();
   const hasLeaseAuthority =
@@ -390,6 +405,7 @@ function TenantsPage() {
     Boolean(currentPropertyId);
   const leaseCreateEnabled = hasLeaseAuthority && isAdminUxLeaseEnabled();
   const residents = useResidents({
+    attentionCategory: attentionCategory ?? undefined,
     q,
     status: residentStatus === "all" ? undefined : residentStatus,
     rentPaymentStatus: rentPaymentStatus === "all" ? undefined : rentPaymentStatus,
@@ -417,6 +433,7 @@ function TenantsPage() {
   const list = residents.data?.data ?? [];
   const total = residents.data?.meta.total ?? 0;
   const hasFilter =
+    attentionCategory !== null ||
     q.trim() !== "" ||
     residentStatus !== "all" ||
     rentPaymentStatus !== "all" ||
@@ -431,6 +448,7 @@ function TenantsPage() {
     Boolean(createdFrom) ||
     Boolean(createdTo);
   const activeFilterCount =
+    Number(attentionCategory !== null) +
     Number(q.trim() !== "") +
     Number(residentStatus !== "all") +
     Number(rentPaymentStatus !== "all") +
@@ -445,6 +463,7 @@ function TenantsPage() {
     Number(Boolean(createdFrom)) +
     Number(Boolean(createdTo));
   const filterSignature = [
+    attentionCategory,
     q.trim(),
     residentStatus,
     rentPaymentStatus,
@@ -461,6 +480,7 @@ function TenantsPage() {
     createdTo,
   ].join("|");
   const filterCriteria = [
+    attentionCategory ? `pemberitahuan: ${RESIDENT_ATTENTION[attentionCategory].label}` : "",
     q.trim() ? `pencarian "${q.trim()}"` : "",
     residentStatus !== "all"
       ? `status penghuni: ${
@@ -529,6 +549,9 @@ function TenantsPage() {
       ? `status penyelesaian check-out: ${
           {
             in_progress: "Proses check-out berjalan",
+            awaiting_handover: "Menunggu tanggal serah-terima",
+            handover_overdue: "Terlambat serah-terima",
+            attention: "Masih perlu tindakan",
             refund_pending: "Menunggu pengembalian dana",
             refund_settled: "Pengembalian dana selesai",
             refund_waived: "Hak pengembalian dilepaskan",
@@ -551,9 +574,23 @@ function TenantsPage() {
 
   useEffect(() => {
     setOffset(0);
+    setAttentionCategory(null);
   }, [currentPropertyId]);
 
+  useEffect(() => {
+    if (pendingScroll.current && !residents.isFetching && !residents.isPlaceholderData) {
+      pendingScroll.current = false;
+      resultsRef.current?.scrollIntoView({
+        block: "start",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+      });
+    }
+  }, [residents.isFetching, residents.isPlaceholderData, attentionCategory]);
+
   const resetFilters = () => {
+    setAttentionCategory(null);
     setQ("");
     setResidentStatus("all");
     setRentPaymentStatus("all");
@@ -597,6 +634,15 @@ function TenantsPage() {
         ) : null
       }
     >
+      <ResidentNotifications
+        key={currentPropertyId}
+        selected={attentionCategory}
+        onSelect={(category) => {
+          resetFilters();
+          setAttentionCategory(category);
+          pendingScroll.current = true;
+        }}
+      />
       <Card className="mb-5 border-border bg-muted/15">
         <CardContent className="p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -627,7 +673,7 @@ function TenantsPage() {
                 <SelectValue placeholder="Status penghuni" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Operasional (aktif & menunggu aktivasi)</SelectItem>
+                <SelectItem value="all">Semua status penghuni</SelectItem>
                 <SelectItem value="pending_activation">Menunggu aktivasi</SelectItem>
                 <SelectItem value="active">Aktif</SelectItem>
                 <SelectItem value="inactive">Nonaktif</SelectItem>
@@ -803,7 +849,7 @@ function TenantsPage() {
               value={checkoutFinancialStatus}
               onValueChange={(value) => {
                 setCheckoutFinancialStatus(
-                  value as Exclude<CheckoutFinancialStatus, "none"> | "all",
+                  value as Exclude<CheckoutFinancialStatus, "none"> | "all" | "attention",
                 );
                 setOffset(0);
               }}
@@ -813,6 +859,9 @@ function TenantsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua status check-out</SelectItem>
+                <SelectItem value="attention">Masih perlu tindakan</SelectItem>
+                <SelectItem value="awaiting_handover">Menunggu tanggal serah-terima</SelectItem>
+                <SelectItem value="handover_overdue">Terlambat serah-terima</SelectItem>
                 <SelectItem value="in_progress">Proses check-out berjalan</SelectItem>
                 <SelectItem value="refund_pending">Menunggu pengembalian dana</SelectItem>
                 <SelectItem value="refund_settled">Pengembalian dana selesai</SelectItem>
@@ -906,6 +955,30 @@ function TenantsPage() {
         </CardContent>
       </Card>
 
+      <div
+        ref={resultsRef}
+        className="scroll-mt-24"
+        tabIndex={-1}
+        aria-label="Hasil filter penghuni"
+      >
+        {attentionCategory ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary-soft/40 p-3">
+            <p className="flex-1 text-sm">
+              Fokus: <strong>{RESIDENT_ATTENTION[attentionCategory].label}</strong>
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAttentionCategory(null);
+                setOffset(0);
+              }}
+            >
+              Hapus fokus
+            </Button>
+          </div>
+        ) : null}
+      </div>
       {!residents.isLoading && !residents.isFetching && !residents.error ? (
         <FilterResultNotice
           key={filterSignature}
@@ -1045,6 +1118,13 @@ function TenantsPage() {
                             <CheckoutFinancialStatusPill
                               status={resident.checkoutFinancialStatus}
                             />
+                            {(resident.checkoutFinancialStatus === "awaiting_handover" ||
+                              resident.checkoutFinancialStatus === "handover_overdue") &&
+                            resident.checkoutHandoverDate ? (
+                              <p className="text-xs text-muted-foreground">
+                                Rencana: {formatResidentDate(resident.checkoutHandoverDate)}
+                              </p>
+                            ) : null}
                             {resident.checkoutFinancialStatus === "refund_pending" &&
                             resident.checkoutRefundAmount > 0 ? (
                               <p className="text-xs font-semibold text-foreground">
@@ -1121,7 +1201,17 @@ function TenantsPage() {
                         <OwnerSponsoredBadge />
                       ) : null}
                       {resident.checkoutFinancialStatus !== "none" ? (
-                        <CheckoutFinancialStatusPill status={resident.checkoutFinancialStatus} />
+                        <div className="space-y-1">
+                          <CheckoutFinancialStatusPill status={resident.checkoutFinancialStatus} />
+                          {(resident.checkoutFinancialStatus === "awaiting_handover" ||
+                            resident.checkoutFinancialStatus === "handover_overdue") &&
+                          resident.checkoutHandoverDate ? (
+                            <p className="text-xs text-muted-foreground">
+                              Rencana serah-terima:{" "}
+                              {formatResidentDate(resident.checkoutHandoverDate)}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   </div>

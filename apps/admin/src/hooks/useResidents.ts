@@ -14,6 +14,10 @@ import {
   type ResidentTenancy,
 } from "@/lib/admin-resident";
 import { useProperty } from "@/lib/property";
+import {
+  parseResidentAttention,
+  type ResidentAttentionCategory,
+} from "@/lib/admin-resident-attention";
 
 export type {
   ResidentDetail,
@@ -34,7 +38,8 @@ export type UseResidentsFilters = {
   commercialMode?: "owner_sponsored";
   managementFeeMode?: "charged" | "waived";
   settlementStage?: Exclude<ContractSettlementStage, "none">;
-  checkoutFinancialStatus?: Exclude<CheckoutFinancialStatus, "none">;
+  checkoutFinancialStatus?: Exclude<CheckoutFinancialStatus, "none"> | "attention";
+  attentionCategory?: ResidentAttentionCategory;
   settlementDueWithinDays?: number;
   leaseEndWithinDays?: number;
   createdFrom?: string;
@@ -63,6 +68,7 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
             management_fee_mode: filters.managementFeeMode,
             contract_settlement_stage: filters.settlementStage,
             checkout_financial_status: filters.checkoutFinancialStatus,
+            attention_category: filters.attentionCategory,
             settlement_due_within_days: filters.settlementDueWithinDays,
             lease_end_within_days: filters.leaseEndWithinDays,
             created_from: filters.createdFrom,
@@ -78,6 +84,25 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
     },
     enabled: Boolean(currentPropertyId),
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useResidentAttention() {
+  const { currentPropertyId } = useProperty();
+  return useQuery({
+    queryKey: ["residents", currentPropertyId ?? "none", "attention-summary"],
+    queryFn: async ({ signal }) => {
+      if (!currentPropertyId) throw new Error("Property scope belum aktif.");
+      return parseResidentAttention(
+        await adminUxV2Requester.get("/residents/attention-summary", {
+          query: { property_id: currentPropertyId },
+          signal,
+        }),
+        currentPropertyId,
+      );
+    },
+    enabled: Boolean(currentPropertyId),
+    refetchInterval: 60_000,
   });
 }
 

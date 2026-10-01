@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -150,7 +151,7 @@ export class ReminderShareController {
     const document = await this.reminders.sharedInvoiceDocument(token);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Invoice-Sewa'),
       length: document.content.length,
     });
   }

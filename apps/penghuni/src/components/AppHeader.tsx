@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Bell } from "lucide-react";
 import "./AppHeader.css";
+import { ResidentSidebar } from "./ResidentSidebar";
 
 export function AppHeader({
   title,
@@ -46,30 +47,36 @@ export function AppHeader({
       className="resident-app-header sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur-xl"
     >
       <div className="flex min-h-14 items-center gap-3 px-4 py-3">
+        <ResidentSidebar />
         {back && (
           <Link
             to="/"
-            className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-foreground hover:bg-accent"
+            aria-label="Kembali ke Beranda"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-accent"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold tracking-tight text-foreground">
+          <h1 className="line-clamp-2 break-words text-base font-semibold tracking-tight text-foreground">
             {title}
           </h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle && (
+            <p className="line-clamp-2 break-words text-xs text-muted-foreground">{subtitle}</p>
+          )}
         </div>
-        {action ?? (
+        {action ? null : (
           <Link
             to="/notifications"
-            className="relative flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-foreground hover:bg-accent"
+            aria-label="Notifikasi"
+            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground hover:bg-accent"
           >
             <Bell className="h-4.5 w-4.5" />
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-destructive" />
           </Link>
         )}
       </div>
+      {action ? <div className="flex min-w-0 flex-wrap gap-2 px-4 pb-3">{action}</div> : null}
     </header>
   );
 }

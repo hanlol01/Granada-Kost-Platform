@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  RESIDENT_ATTENTION_PREDICATES,
+  ResidentAttentionCategory,
+} from '../repositories/resident-attention.sql';
+import {
   IsBoolean,
   IsDateString,
   IsIn,
@@ -86,8 +90,15 @@ export class ListResidentsQueryDto {
     'refund_waived',
     'amount_due',
     'closed',
+    'awaiting_handover',
+    'handover_overdue',
+    'attention',
   ])
   checkout_financial_status?: string;
+
+  @IsOptional()
+  @IsIn(Object.keys(RESIDENT_ATTENTION_PREDICATES))
+  attention_category?: ResidentAttentionCategory;
 
   @IsOptional()
   @Type(() => Number)

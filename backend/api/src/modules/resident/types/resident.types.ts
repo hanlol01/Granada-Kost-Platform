@@ -43,6 +43,8 @@ export type ResidentContractSettlementStage =
 export type ResidentCheckoutFinancialStatus =
   | 'none'
   | 'in_progress'
+  | 'awaiting_handover'
+  | 'handover_overdue'
   | 'refund_pending'
   | 'refund_settled'
   | 'refund_waived'
@@ -105,6 +107,7 @@ export type ResidentRecord = {
   checkoutFinancialStatus: ResidentCheckoutFinancialStatus;
   checkoutRefundAmount: number;
   checkoutRefundDueDate: string | null;
+  checkoutHandoverDate?: string | null;
   roomNumber: string | null;
   leaseStart: string | null;
   leaseEnd: string | null;

@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -113,7 +114,7 @@ export class BookingLeadCompletionController {
     const document = await this.completions.paymentCommitmentReceiptDocument(leadId, propertyId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Kuitansi-Booking'),
       length: document.content.length,
     });
   }
@@ -130,7 +131,11 @@ export class BookingLeadCompletionController {
     const document = await this.completions.cancellationReceiptDocument(leadId, propertyId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(
+        document.filename,
+        'attachment',
+        'Kuitansi-Pengembalian-Booking',
+      ),
       length: document.content.length,
     });
   }

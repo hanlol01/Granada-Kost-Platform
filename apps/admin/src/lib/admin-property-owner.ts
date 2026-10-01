@@ -23,6 +23,13 @@ export type PropertyOwner = {
   createdAt: string;
 };
 
+export type OwnerInventoryRoom = {
+  id: string;
+  roomCode: string;
+  plotNumber: string | null;
+  genderPolicy: string | null;
+};
+
 export type OwnerBuildingAssignment = {
   id: string;
   buildingId: string;
@@ -30,6 +37,7 @@ export type OwnerBuildingAssignment = {
   buildingName: string | null;
   genderPolicy: string | null;
   coveredRoomCount: number;
+  rooms?: OwnerInventoryRoom[];
   effectiveFrom: string;
   effectiveUntil: string | null;
   assignmentStatus: AssignmentStatus;
@@ -40,6 +48,7 @@ export type OwnerRoomAssignment = {
   id: string;
   roomId: string;
   roomCode: string;
+  plotNumber?: string | null;
   buildingCode: string | null;
   buildingName: string | null;
   genderPolicy: string | null;
@@ -82,6 +91,8 @@ export type OwnerAssetOption = {
   name: string | null;
   genderPolicy: string | null;
   roomCount?: number;
+  rooms?: OwnerInventoryRoom[];
+  plotNumber?: string | null;
   roomStatus?: string | null;
   availability: "available" | "assigned";
   currentOwner: { id: string; fullName: string } | null;
@@ -167,6 +178,34 @@ function parseOwner(value: unknown): PropertyOwner {
   };
 }
 
+function parseInventoryRooms(value: unknown): OwnerInventoryRoom[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("Rincian kamar aset tidak valid.");
+  return value.map((room) => {
+    if (!isObject(room)) throw new Error("Rincian kamar aset tidak valid.");
+    return {
+      id: string(room.id, "room.id"),
+      roomCode: string(room.room_code, "room.room_code"),
+      plotNumber: nullableString(room.plot_number ?? null, "room.plot_number"),
+      genderPolicy: nullableString(room.gender_policy, "room.gender_policy"),
+    };
+  });
+}
+
+export function ownerPlotNumbers(rooms: readonly OwnerInventoryRoom[]): string {
+  return (
+    [
+      ...new Set(
+        rooms
+          .map((room) => room.plotNumber?.trim())
+          .filter((plot): plot is string => Boolean(plot)),
+      ),
+    ]
+      .sort((a, b) => a.localeCompare(b, "id", { numeric: true }))
+      .join(", ") || "—"
+  );
+}
+
 function parseBuilding(value: unknown): OwnerBuildingAssignment {
   if (!isObject(value)) throw new Error("Respons assignment bangunan tidak valid.");
   return {
@@ -176,6 +215,7 @@ function parseBuilding(value: unknown): OwnerBuildingAssignment {
     buildingName: nullableString(value.building_name, "building_name"),
     genderPolicy: nullableString(value.gender_policy, "gender_policy"),
     coveredRoomCount: number(value.covered_room_count, "covered_room_count"),
+    rooms: parseInventoryRooms(value.rooms),
     effectiveFrom: string(value.effective_from, "effective_from"),
     effectiveUntil: nullableString(value.effective_until, "effective_until"),
     assignmentStatus: enumValue(
@@ -192,6 +232,7 @@ function parseRoom(value: unknown): OwnerRoomAssignment {
     id: string(value.id, "id"),
     roomId: string(value.room_id, "room_id"),
     roomCode: string(value.room_code, "room_code"),
+    plotNumber: nullableString(value.plot_number ?? null, "plot_number"),
     buildingCode: nullableString(value.building_code, "building_code"),
     buildingName: nullableString(value.building_name, "building_name"),
     genderPolicy: nullableString(value.gender_policy, "gender_policy"),
@@ -327,6 +368,9 @@ export function parseOwnerAssetOptions(value: unknown): PropertyOwnerAssetOption
       ),
       genderPolicy: nullableString(item.gender_policy, "asset.gender_policy"),
       roomCount: kind === "building" ? number(item.room_count, "room_count") : undefined,
+      rooms: kind === "building" ? parseInventoryRooms(item.rooms) : undefined,
+      plotNumber:
+        kind === "room" ? nullableString(item.plot_number ?? null, "plot_number") : undefined,
       roomStatus: kind === "room" ? nullableString(item.room_status, "room_status") : undefined,
       availability: enumValue(item.availability, ["available", "assigned"], "availability"),
       currentOwner: parseOwner(current, "current_owner"),

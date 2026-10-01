@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
@@ -10,7 +10,9 @@ import {
   buildLateCheckoutPenaltyQuote,
 } from '../../src/modules/lease/helpers/lease-exit-policy.helper';
 
-const root = resolve(__dirname, '../..');
+const sourceRoot = resolve(__dirname, '../..');
+// Compiled test runs keep fixtures in the original API workspace.
+const root = existsSync(resolve(sourceRoot, 'package.json')) ? sourceRoot : process.cwd();
 const migrationPath = resolve(
   root,
   'src/infrastructure/database/migrations/052_lease_exit_request_approval_m5.sql',
@@ -199,6 +201,72 @@ void test('a checkout can snapshot a manual daily penalty, including for a zero-
   assert.equal(estimate.dailyPenaltyAmount, 75_000);
   assert.equal(estimate.chargedDays, 4);
   assert.equal(estimate.lateCheckoutPenaltyAmount, 300_000);
+});
+
+void test('sponsored checkout derives a zero default penalty while retaining grace dates and the day cap', () => {
+  const quote = buildLateCheckoutPenaltyQuote({
+    commercialMode: 'owner_sponsored',
+    plannedLeaseEndDate: '2026-09-01',
+    actualPossessionReturnedDate: '2026-10-24',
+    monthlyRateAmount: 0,
+  });
+  assert.equal(quote.contractLastOccupancyDate, '2026-08-31');
+  assert.equal(quote.penaltyFreeUntilDate, '2026-09-03');
+  assert.equal(quote.chargedDays, 30);
+  assert.equal(quote.dailyPenaltyAmount, 0);
+  assert.equal(quote.lateCheckoutPenaltyAmount, 0);
+});
+
+void test('sponsored notice retains date rules without inventing rent-based compensation', () => {
+  for (const exitType of ['resident_early_termination', 'normal_expiry'] as const) {
+    const quote = buildLeaseExitNoticeQuote({
+      commercialMode: 'owner_sponsored',
+      exitType,
+      leaseStartDate: '2026-08-01',
+      plannedEndDate: '2026-11-01',
+      noticeDate: '2026-09-30',
+      effectiveDate: exitType === 'normal_expiry' ? '2026-11-01' : '2026-09-30',
+      monthlyRateAmount: 0,
+    });
+    assert.equal(quote.dailyRateAmount, 0);
+    assert.equal(quote.recommendedShortNoticeCharge, 0);
+  }
+});
+
+void test('sponsored final settlement keeps documented damage and an approved daily fine separate from zero rent', () => {
+  const quote = buildLeaseExitFinancialQuote({
+    commercialMode: 'owner_sponsored',
+    leaseStartDate: '2026-08-01',
+    actualCheckoutDate: '2026-09-24',
+    contractRentAmount: 0,
+    monthlyRateAmount: 0,
+    verifiedRentPaymentAmount: 0,
+    existingInvoiceCreditAmount: 0,
+    depositLiabilityAmount: 0,
+    documentedDamageAmount: 300_000,
+    approvedShortNoticeCharge: 0,
+    lateCheckoutPenaltyAmount: 150_000,
+    depositRentOffsetAmount: 0,
+  });
+  assert.equal(quote.earnedRentAmount, 0);
+  assert.equal(quote.damageAmountDue, 300_000);
+  assert.equal(quote.lateCheckoutPenaltyDue, 150_000);
+  assert.equal(quote.amountDue, 450_000);
+});
+
+void test('paid leases do not inherit the zero-rent sponsored exemption', () => {
+  for (const rate of [0, -1, NaN, 1.5]) {
+    assert.throws(
+      () =>
+        buildLateCheckoutPenaltyQuote({
+          commercialMode: 'rent',
+          plannedLeaseEndDate: '2026-09-01',
+          actualPossessionReturnedDate: '2026-09-24',
+          monthlyRateAmount: rate,
+        }),
+      /positive safe integer/,
+    );
+  }
 });
 
 void test('late checkout penalty consumes unused rent credit before becoming an amount due', () => {

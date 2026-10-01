@@ -129,6 +129,21 @@ di luar alur check-out sampai ada otoritas koreksi keuangan tersendiri.
   to future earned service periods, including eligible active leases; it is never retroactive.
 - A lease snapshots its selected pricing tier and monthly rate when committed.
 
+## Room Transfer Language
+
+**Deposit Tercatat**:
+Saldo dana deposit yang benar-benar diterima dan belum dipotong atau dikembalikan,
+berdasarkan buku transaksi deposit. Nominal pada referensi tarif bukan bukti dana
+diterima dan tidak otomatis membuat kewajiban tambahan saat pindah kamar.
+
+**Alasan Diproses Hari Ini**:
+Alasan operasional mengapa perpindahan tidak menunggu batas periode tagihan.
+Catatan ini berbeda dari alasan penghuni berpindah kamar dan wajib tersimpan
+pada perpindahan hari yang sama.
+
+Keputusan deposit opsional, tarif siklus berikutnya, dan kriteria revisi pindah
+kamar disimpan pada [handoff pindah kamar](handoff/06_ROOM_TRANSFER_DEPOSIT_AND_SAME_DAY_HANDOFF.md).
+
 ## Primary References
 
 - [Owner policy decisions and glossary](OWNER_POLICY_DECISIONS_AND_GLOSSARY.md)

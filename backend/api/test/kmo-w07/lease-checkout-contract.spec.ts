@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -10,7 +10,9 @@ import test from 'node:test';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
 import { LeaseCheckoutService } from '../../src/modules/lease/lease-checkout.service';
 
-const root = resolve(__dirname, '../..');
+const sourceRoot = resolve(__dirname, '../..');
+// Compiled test runs keep fixtures in the original API workspace.
+const root = existsSync(resolve(sourceRoot, 'package.json')) ? sourceRoot : process.cwd();
 const source = (path: string) => readFile(resolve(root, path), 'utf8');
 
 async function reserveLocalPort(): Promise<number> {

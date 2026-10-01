@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -135,7 +136,7 @@ export class AdminBillingController {
     const document = await this.w06.receiptDocument(user, query.property_id, receiptId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Kuitansi-Pembayaran'),
       length: document.content.length,
     });
   }
@@ -150,7 +151,7 @@ export class AdminBillingController {
     const document = await this.w06.originalReceiptDocument(user, query.property_id, receiptId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Kuitansi-Pembayaran-Asli'),
       length: document.content.length,
     });
   }
@@ -165,7 +166,7 @@ export class AdminBillingController {
     const document = await this.w06.contractPaidDocument(user, query.property_id, documentId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Bukti-Pelunasan-Kontrak'),
       length: document.content.length,
     });
   }
@@ -180,7 +181,7 @@ export class AdminBillingController {
     const document = await this.w06.invoiceDocument(user, query.property_id, invoiceId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Invoice-Sewa'),
       length: document.content.length,
     });
   }
@@ -199,7 +200,11 @@ export class AdminBillingController {
     );
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(
+        document.filename,
+        'attachment',
+        'Invoice-Biaya-Pengelolaan',
+      ),
       length: document.content.length,
     });
   }
@@ -218,7 +223,11 @@ export class AdminBillingController {
     );
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(
+        document.filename,
+        'attachment',
+        'Surat-Hunian-Tanggungan-Owner',
+      ),
       length: document.content.length,
     });
   }

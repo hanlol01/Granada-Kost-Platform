@@ -153,7 +153,8 @@ test("checkout notice can be cancelled with an audited reason and rupiah input",
 test("checkout operational evidence is optional and monetary evidence remains protected", async () => {
   const panel = await source("../components/leases/CheckoutPanel.tsx");
   assert.doesNotMatch(panel, /noticeExceptionEvidence\.length === 0/);
-  assert.match(panel, /label="Bukti pendukung pemberitahuan singkat"/);
+  const history = await source("./checkout-history.ts");
+  assert.match(history, /notice_exception: \{ stage: 1/);
   assert.match(panel, /label="Bukti pengembalian kunci dan akses"/);
   assert.match(panel, /label="Bukti pemeriksaan inventaris"/);
   assert.match(panel, /label="Bukti hasil inspeksi kamar"/);
@@ -305,10 +306,8 @@ test("refund follow-up opens the actionable refund form instead of the checkout 
   assert.match(panel, /const refundSectionRef = useRef<HTMLDivElement>/);
   assert.match(panel, /initialFocus !== "refund"/);
   assert.match(panel, /ref=\{refundSectionRef\}/);
-  assert.match(
-    panel,
-    /command\.state === "completed" && visibleStage === 5 && !hasPendingExitRefund/,
-  );
+  assert.doesNotMatch(panel, /command\.state === "completed" && visibleStage === 5 && !hasPendingExitRefund/);
+  assert.match(panel, /<CheckoutRecordedStage command=\{command\} stage=\{5\}/);
 });
 
 test("refund follow-up keeps optional notes optional and exposes persisted transfer evidence", async () => {

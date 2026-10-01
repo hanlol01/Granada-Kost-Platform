@@ -65,6 +65,7 @@ export type LeaseExitFinancialQuote = {
 };
 
 type LeaseExitNoticeQuoteInput = {
+  commercialMode?: 'rent' | 'owner_sponsored';
   exitType: LeaseExitType;
   leaseStartDate: string;
   plannedEndDate: string;
@@ -74,6 +75,7 @@ type LeaseExitNoticeQuoteInput = {
 };
 
 type LeaseExitFinancialQuoteInput = {
+  commercialMode?: 'rent' | 'owner_sponsored';
   leaseStartDate: string;
   actualCheckoutDate: string;
   contractRentAmount: number;
@@ -103,7 +105,7 @@ export function buildLeaseExitNoticeQuote(input: LeaseExitNoticeQuoteInput): Lea
   const plannedEnd = parseBusinessDate(input.plannedEndDate);
   const notice = parseBusinessDate(input.noticeDate);
   const effective = parseBusinessDate(input.effectiveDate);
-  const monthlyRate = assertPositiveMoney(input.monthlyRateAmount);
+  const monthlyRate = assertLeaseMonthlyRate(input.monthlyRateAmount, input.commercialMode);
 
   if (effective.getTime() < notice.getTime())
     throw new RangeError('Checkout effective date cannot be before the notice date');
@@ -141,7 +143,9 @@ export function buildLeaseExitFinancialQuote(
   const leaseStart = parseBusinessDate(input.leaseStartDate);
   const checkout = parseBusinessDate(input.actualCheckoutDate);
   const contractRent = assertNonNegativeMoney(input.contractRentAmount, 'contract rent');
-  const monthlyRate = assertPositiveMoney(input.monthlyRateAmount);
+  const monthlyRate = assertLeaseMonthlyRate(input.monthlyRateAmount, input.commercialMode);
+  if (input.commercialMode === 'owner_sponsored' && contractRent !== 0)
+    throw new RangeError('Owner-sponsored contract rent must be zero');
   const verifiedPayment = assertNonNegativeMoney(
     input.verifiedRentPaymentAmount,
     'verified rent payment',
@@ -239,6 +243,7 @@ export function buildLeaseExitFinancialQuote(
  * final contractual occupancy date is one calendar day before it.
  */
 export function buildLateCheckoutPenaltyQuote(input: {
+  commercialMode?: 'rent' | 'owner_sponsored';
   plannedLeaseEndDate: string;
   actualPossessionReturnedDate: string;
   monthlyRateAmount: number;
@@ -251,7 +256,7 @@ export function buildLateCheckoutPenaltyQuote(input: {
   const actualReturn = parseBusinessDate(input.actualPossessionReturnedDate);
   const monthlyRate =
     input.dailyPenaltyAmount === undefined
-      ? assertPositiveMoney(input.monthlyRateAmount)
+      ? assertLeaseMonthlyRate(input.monthlyRateAmount, input.commercialMode)
       : assertNonNegativeMoney(input.monthlyRateAmount, 'Monthly rate');
   const graceDays = input.graceDays ?? LATE_CHECKOUT_GRACE_DAYS;
   const penaltyDayCap = input.penaltyDayCap ?? LATE_CHECKOUT_PENALTY_DAY_CAP;
@@ -346,6 +351,19 @@ function assertPositiveMoney(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0)
     throw new RangeError('Monthly rate must be a positive safe integer');
   return value;
+}
+
+function assertLeaseMonthlyRate(
+  value: number,
+  commercialMode: 'rent' | 'owner_sponsored' = 'rent',
+): number {
+  // Sponsored occupancy has no rent tariff. Do not invent one or relax the
+  // positive-tariff invariant for ordinary paid leases.
+  if (commercialMode === 'owner_sponsored') {
+    if (value !== 0) throw new RangeError('Owner-sponsored monthly rent must be zero');
+    return 0;
+  }
+  return assertPositiveMoney(value);
 }
 
 function assertNonNegativeMoney(value: number, label: string): number {

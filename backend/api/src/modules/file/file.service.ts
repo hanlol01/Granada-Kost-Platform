@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
+import { downloadFilename } from '../../shared/utils/download-filename';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { UserAccessContext } from '../iam/types/iam.types';
@@ -214,7 +215,8 @@ export class FileService {
     ) {
       throw new BadRequestException({
         code: 'DOCUMENT_SIGNATURE_ATTACHED',
-        message: 'Tanda tangan yang sedang dipakai pada pengaturan dokumen harus dilepas dari Pengaturan Umum terlebih dahulu.',
+        message:
+          'Tanda tangan yang sedang dipakai pada pengaturan dokumen harus dilepas dari Pengaturan Umum terlebih dahulu.',
       });
     }
 
@@ -255,6 +257,31 @@ export class FileService {
       created_at: record.createdAt,
       updated_at: record.updatedAt,
     };
+  }
+
+  async downloadName(record: FileRecord): Promise<string> {
+    const context = await this.files.downloadContext(record);
+    const sequence = context.sequence.padStart(2, '0');
+    const labels: Partial<Record<FilePurpose, string>> = {
+      payment_proof: 'Bukti-Pembayaran',
+      expense_proof: 'Bukti-Pengeluaran',
+      room_photo: 'Foto-Kamar',
+      property_logo: 'Logo-Properti',
+      hunian_gallery: 'Foto-Hunian',
+      ktp: 'Identitas',
+      profile_photo: 'Foto-Profil',
+      document_signature: 'Tanda-Tangan',
+      owner_realization_evidence: 'Bukti-Realisasi-Owner',
+      complaint_attachment: 'Lampiran-Komplain',
+      maintenance_attachment: 'Lampiran-Perawatan',
+      vehicle_photo: 'Foto-Kendaraan',
+      vehicle_document: 'Dokumen-Kendaraan',
+    };
+    const label =
+      context.label === 'Berkas'
+        ? (labels[record.filePurpose] ?? 'Berkas-Terlampir')
+        : context.label;
+    return downloadFilename(`${label}-${context.code}-${sequence}.${record.fileExtension}`);
   }
 
   private assertFilePresent(

@@ -26,6 +26,7 @@ import { UserAccessContext } from '../iam/types/iam.types';
 import { RequestAuditContext } from '../property/types/property.types';
 import { resolveHistoricalRealizationTransfers } from './owner-realization-historical-transfer.helper';
 import { transferEvidenceIsValid } from './owner-realization-evidence-policy';
+import { contractRoomIdSql } from '../lease/helpers/contract-room-reference.helper';
 import {
   ChangeOwnerRealizationStatusDto,
   CancelOwnerRealizationDto,
@@ -2161,27 +2162,27 @@ export class PropertyOwnerRealizationService {
         for (const line of dto.lines) {
           const matches = line.lease_id
             ? await client.query<HistoricalLeaseMatch>(
-                `SELECT lease.id,lease.resident_id,lease.room_id,
+                `SELECT lease.id,lease.resident_id,room.id AS room_id,
                        COALESCE(room.building_id,room.id)::text AS asset_id,
                        COALESCE(building.building_code,room.room_code) AS building_code,
                        COALESCE(building.building_name,room.room_code) AS building_name,
                        room.room_code,lease.term_months,
                       lease.activated_at::text,lease.end_date::text
                  FROM leases lease
-                 JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+                 JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
                   LEFT JOIN room_buildings building ON building.id=room.building_id
                 WHERE lease.id=$1 AND lease.property_id=$2`,
                 [line.lease_id, dto.property_id],
               )
             : await client.query<HistoricalLeaseMatch>(
-                `SELECT lease.id,lease.resident_id,lease.room_id,
+                `SELECT lease.id,lease.resident_id,room.id AS room_id,
                        COALESCE(room.building_id,room.id)::text AS asset_id,
                        COALESCE(building.building_code,room.room_code) AS building_code,
                        COALESCE(building.building_name,room.room_code) AS building_name,
                        room.room_code,lease.term_months,
                       lease.activated_at::text,lease.end_date::text
                  FROM leases lease
-                 JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+                 JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
                   LEFT JOIN room_buildings building ON building.id=room.building_id
                  JOIN residents resident ON resident.id=lease.resident_id
                 WHERE lease.property_id=$1
@@ -2956,7 +2957,7 @@ export class PropertyOwnerRealizationService {
     return {
       content: buffer,
       contentType: record.mimeType,
-      filename: record.sanitizedFilename.replace(/["\\\r\n]/g, '_'),
+      filename: await this.fileService.downloadName(record),
     };
   }
 
@@ -3056,7 +3057,7 @@ export class PropertyOwnerRealizationService {
             AND invoice.authority_source='contract_schedule' AND invoice.invoice_status<>'void'
           GROUP BY invoice.lease_id
        ), scoped AS (
-         SELECT lease.id AS lease_id,lease.room_id,lease.resident_id,lease.term_months,lease.pricing_source,
+         SELECT lease.id AS lease_id,room.id AS room_id,lease.resident_id,lease.term_months,lease.pricing_source,
                 lease.snapshot_pricing_tier,lease.snapshot_monthly_price,lease.snapshot_reference_monthly_price,
                 lease.contract_rent_amount,lease.start_date,lease.end_date,lease.activated_at,
                  COALESCE(room.building_id,room.id)::text AS asset_id,
@@ -3070,7 +3071,7 @@ export class PropertyOwnerRealizationService {
                 COALESCE(fee.monthly_fee_amount,0)::bigint * COALESCE(lease.term_months,0) AS management_fee_amount,
                 fee.effective_date AS fee_effective_date
            FROM leases lease
-           JOIN rooms room ON room.id=lease.room_id AND room.property_id=lease.property_id
+           JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
            LEFT JOIN room_buildings building ON building.id=room.building_id
            JOIN residents resident ON resident.id=lease.resident_id
            JOIN rent_ledger ledger ON ledger.lease_id=lease.id
@@ -3079,7 +3080,7 @@ export class PropertyOwnerRealizationService {
                FROM (
                  SELECT room_assignment.owner_profile_id,'room'::text AS ownership_kind,0 AS priority
                    FROM room_owner_assignments room_assignment
-                  WHERE room_assignment.room_id=lease.room_id AND room_assignment.property_id=lease.property_id
+                  WHERE room_assignment.room_id=room.id AND room_assignment.property_id=lease.property_id
                     AND room_assignment.assignment_status='active'
                  UNION ALL
                  SELECT building_assignment.owner_profile_id,'building'::text,1
@@ -3136,7 +3137,7 @@ export class PropertyOwnerRealizationService {
                 ELSE 'PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD'
               END AS reason_code
          FROM leases lease
-         JOIN rooms room ON room.id=lease.room_id
+         JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
          JOIN residents resident ON resident.id=lease.resident_id
          LEFT JOIN LATERAL (
            SELECT COALESCE(sum(invoice.credit_amount + allocation.net_amount),0)::bigint AS verified_rent_credit,
@@ -3163,7 +3164,7 @@ export class PropertyOwnerRealizationService {
               FROM (
                 SELECT room_assignment.owner_profile_id,0 AS priority,room_assignment.effective_from
                   FROM room_owner_assignments room_assignment
-                 WHERE room_assignment.room_id=lease.room_id AND room_assignment.property_id=lease.property_id
+                 WHERE room_assignment.room_id=room.id AND room_assignment.property_id=lease.property_id
                    AND room_assignment.assignment_status='active'
                 UNION ALL
                 SELECT building_assignment.owner_profile_id,1 AS priority,building_assignment.effective_from

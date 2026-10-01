@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import { Controller, Get, Header, Param, StreamableFile, UseGuards } from '@nestjs/common';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
@@ -20,7 +21,7 @@ export class MyLeaseExitDocumentController {
     const document = await this.checkout.myDocumentFile(user, documentId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Dokumen-Check-Out'),
       length: document.content.length,
     });
   }

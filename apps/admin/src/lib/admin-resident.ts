@@ -36,6 +36,8 @@ export type ContractSettlementStage =
 export type CheckoutFinancialStatus =
   | "none"
   | "in_progress"
+  | "awaiting_handover"
+  | "handover_overdue"
   | "refund_pending"
   | "refund_settled"
   | "refund_waived"
@@ -66,6 +68,7 @@ export type ResidentListRecord = {
   checkoutFinancialStatus: CheckoutFinancialStatus;
   checkoutRefundAmount: number;
   checkoutRefundDueDate: string | null;
+  checkoutHandoverDate?: string | null;
   residentStatus: ResidentStatus;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +84,7 @@ export type ResidentDetail = Omit<
   | "checkoutFinancialStatus"
   | "checkoutRefundAmount"
   | "checkoutRefundDueDate"
+  | "checkoutHandoverDate"
   | "commercialMode"
   | "pricingSource"
   | "managementFeeMode"
@@ -284,7 +288,10 @@ const LIST_KEYS = [
 
 function parseListRecord(value: unknown): ResidentListRecord {
   const item = record(value);
-  exact(item, LIST_KEYS);
+  exact(item, [
+    ...LIST_KEYS,
+    ...("checkout_handover_date" in item ? ["checkout_handover_date"] : []),
+  ]);
   return {
     id: uuid(item.id) as string,
     propertyId: uuid(item.property_id) as string,
@@ -363,6 +370,8 @@ function parseListRecord(value: unknown): ResidentListRecord {
     checkoutFinancialStatus: enumValue(item.checkout_financial_status, [
       "none",
       "in_progress",
+      "awaiting_handover",
+      "handover_overdue",
       "refund_pending",
       "refund_settled",
       "refund_waived",
@@ -371,6 +380,7 @@ function parseListRecord(value: unknown): ResidentListRecord {
     ]),
     checkoutRefundAmount: integer(item.checkout_refund_amount),
     checkoutRefundDueDate: date(item.checkout_refund_due_date, true),
+    checkoutHandoverDate: date(item.checkout_handover_date ?? null, true),
     residentStatus: enumValue(item.resident_status, [
       "draft",
       "pending_activation",

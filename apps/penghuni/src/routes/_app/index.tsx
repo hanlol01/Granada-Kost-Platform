@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState } from "@/components/state";
 import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
+import { AppHeader } from "@/components/AppHeader";
 import { usePenghuniHome, type PenghuniHomeView } from "@/hooks/usePenghuniHome";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
@@ -44,6 +45,7 @@ function HomePage() {
 
   return (
     <div className="flex flex-col gap-5 animate-[fade-in_0.4s_ease-out]">
+      <AppHeader title="Beranda Penghuni" />
       {/* Hero */}
       <section className="relative overflow-hidden rounded-b-3xl bg-[image:var(--gradient-primary)] px-5 pt-6 pb-10 text-primary-foreground">
         <ResidentContextHero profile={profile} />

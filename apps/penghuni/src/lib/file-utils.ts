@@ -297,7 +297,7 @@ export async function compressImage(file: File): Promise<Blob> {
  * Uses getAccessToken() from lib/api.ts — same proxyTokenProvider used by
  * the ApiClient singleton. No second auth source (ADR-FE-003).
  */
-export async function fetchFileBlob(fileId: string): Promise<string> {
+export async function fetchFileResponse(fileId: string): Promise<Response> {
   const token = getAccessToken();
   const baseUrl = env.VITE_API_BASE_URL;
   const url = `${baseUrl}/files/${fileId}/content`;
@@ -316,8 +316,12 @@ export async function fetchFileBlob(fileId: string): Promise<string> {
     throw new Error(`Gagal mengambil file: HTTP ${response.status}`);
   }
 
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
+  return response;
+}
+
+export async function fetchFileBlob(fileId: string): Promise<string> {
+  const response = await fetchFileResponse(fileId);
+  return URL.createObjectURL(await response.blob());
 }
 
 // ---------------------------------------------------------------------------

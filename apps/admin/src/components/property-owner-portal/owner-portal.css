@@ -426,6 +426,23 @@ body {
   --owner-card-shadow: 0 16px 34px -28px oklch(0.02 0.04 250 / 82%);
 }
 
+.dark .owner-portal-root .owner-collection-overview {
+  --owner-surface-info: oklch(0.24 0.055 250);
+  --owner-border: oklch(1 0.01 250 / 18%);
+  --owner-finance-foreground: oklch(0.985 0.005 250);
+  --owner-finance-muted: oklch(0.88 0.02 250);
+  border-color: var(--owner-border);
+}
+
+.dark .owner-portal-root .owner-collection-overview .text-primary,
+.dark .owner-portal-root .owner-collection-overview .text-foreground {
+  color: var(--owner-finance-foreground);
+}
+
+.dark .owner-portal-root .owner-collection-overview .text-muted-foreground {
+  color: var(--owner-finance-muted);
+}
+
 .dark .owner-filter-surface {
   background: oklch(0.225 0.03 250);
 }

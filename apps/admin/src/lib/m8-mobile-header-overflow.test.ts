@@ -135,14 +135,14 @@ test("M8.1-F1: header stays compact and keeps breadcrumbs outside the header", (
   );
   assert.ok(layout, "header layout wrapper is missing");
   const classes = classNames(layout.openingElement);
-  for (const token of ["flex", "min-h-16", "items-center"]) {
+  for (const token of ["grid", "min-h-16", "items-center"]) {
     assert.ok(classes.has(token), `header layout is missing ${token}`);
   }
   assert.match(source, /data-header-visible/);
   assert.match(source, /app-shell-breadcrumb/);
 });
 
-test("M8.1-F1: action row owns all controls and scrolls without widening the viewport", () => {
+test("M8.1-F1: page actions have their own wrapping row on mobile", () => {
   const appShell = findAppShell(parseTsx(source, APP_SHELL_PATH));
   const candidates: ts.JsxElement[] = [];
   visit(appShell, (node) => {
@@ -150,10 +150,12 @@ test("M8.1-F1: action row owns all controls and scrolls without widening the vie
   });
   assert.equal(candidates.length, 1, "expected one action container owning {actions}");
   const actionRow = candidates[0]!;
-  assert.deepEqual(actionChildOrder(actionRow), ["actions", "Ubah tema", "Notifikasi", "UserMenu"]);
+  assert.deepEqual(actionChildOrder(actionRow), ["actions"]);
 
   const classes = classNames(actionRow.openingElement);
-  for (const token of ["flex", "min-w-0", "shrink-0", "overflow-x-auto", "justify-end"]) {
+  for (const token of ["flex", "min-w-0", "flex-wrap", "col-span-2"]) {
     assert.ok(classes.has(token), `action row is missing ${token}`);
   }
+  assert.match(source, /RegistryMobileSidebar/);
+  assert.doesNotMatch(source, /RegistryBottomNav/);
 });

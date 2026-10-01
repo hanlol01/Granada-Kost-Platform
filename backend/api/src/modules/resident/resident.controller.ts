@@ -72,6 +72,15 @@ export class ResidentController {
     );
   }
 
+  @Get('attention-summary')
+  @RequirePermissions('resident.read')
+  async attentionSummary(
+    @CurrentUser() user: UserAccessContext,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    return v2Data(await this.residents.attentionSummary(user, propertyId));
+  }
+
   @Get('universities')
   @RequirePermissions('resident.read')
   async listUniversities(
@@ -292,6 +301,7 @@ export class ResidentController {
         checkout_financial_status: resident.checkoutFinancialStatus,
         checkout_refund_amount: resident.checkoutRefundAmount,
         checkout_refund_due_date: resident.checkoutRefundDueDate,
+        checkout_handover_date: resident.checkoutHandoverDate ?? null,
         resident_status: resident.residentStatus,
         created_at: resident.createdAt,
         updated_at: resident.updatedAt,

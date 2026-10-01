@@ -42,7 +42,13 @@ import {
   usePropertyOwnerMutations,
   usePropertyOwners,
 } from "@/hooks/usePropertyOwners";
-import type { AssignmentStatus, OwnerAssetOption, PropertyOwner } from "@/lib/admin-property-owner";
+import {
+  ownerPlotNumbers,
+  type OwnerInventoryRoom,
+  type AssignmentStatus,
+  type OwnerAssetOption,
+  type PropertyOwner,
+} from "@/lib/admin-property-owner";
 import { validateOwnerAssignment } from "@/lib/property-owner-assignment-validation";
 import { cn } from "@/lib/utils";
 
@@ -258,6 +264,40 @@ function StatusBadge({
   );
 }
 
+function OwnerRoomInventory({ rooms }: { rooms: readonly OwnerInventoryRoom[] }) {
+  return (
+    <details className="mt-3 rounded-lg border border-border bg-background/60">
+      <summary className="min-h-11 cursor-pointer rounded-lg px-3 py-2.5 text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Rincian {rooms.length} kamar
+      </summary>
+      {rooms.length ? (
+        <ul className="max-h-64 divide-y divide-border overflow-y-auto border-t border-border">
+          {rooms.map((room) => (
+            <li
+              key={room.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm"
+            >
+              <div>
+                <p className="font-semibold">{room.roomCode}</p>
+                <p className="text-xs text-muted-foreground">
+                  No. Kavling: {room.plotNumber || "—"}
+                </p>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {roomGenderLabel(room.genderPolicy) ?? "—"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          Rincian kamar belum tersedia.
+        </p>
+      )}
+    </details>
+  );
+}
+
 function AssetSelection({
   label,
   option,
@@ -271,35 +311,43 @@ function AssetSelection({
 }) {
   const unavailable = option.availability !== "available";
   return (
-    <label
+    <div
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+        "rounded-xl border p-3 transition-colors",
         checked ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
         unavailable && "cursor-not-allowed opacity-55",
       )}
     >
-      <input
-        aria-label={label}
-        type="checkbox"
-        checked={checked}
-        disabled={unavailable}
-        onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 h-4 w-4 accent-primary"
-      />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2">
-          <strong>{label}</strong>
-          <StatusBadge tone={unavailable ? "amber" : "green"}>
-            {unavailable ? `Milik ${option.currentOwner?.fullName ?? "owner lain"}` : "Tersedia"}
-          </StatusBadge>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          aria-label={label}
+          type="checkbox"
+          checked={checked}
+          disabled={unavailable}
+          onChange={(event) => onChange(event.target.checked)}
+          className="mt-1 h-4 w-4 accent-primary"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <strong>{label}</strong>
+            <StatusBadge tone={unavailable ? "amber" : "green"}>
+              {unavailable ? `Milik ${option.currentOwner?.fullName ?? "owner lain"}` : "Tersedia"}
+            </StatusBadge>
+          </span>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            {option.name ?? ""}
+            {roomGenderLabel(option.genderPolicy)
+              ? ` · ${roomGenderLabel(option.genderPolicy)}`
+              : ""}
+            {option.roomCount !== undefined ? ` · mencakup ${option.roomCount} kamar` : ""}
+          </span>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            No. Kavling: {option.rooms ? ownerPlotNumbers(option.rooms) : option.plotNumber || "—"}
+          </span>
         </span>
-        <span className="mt-1 block text-xs text-muted-foreground">
-          {option.name ?? ""}
-          {option.genderPolicy ? ` · ${option.genderPolicy}` : ""}
-          {option.roomCount !== undefined ? ` · mencakup ${option.roomCount} kamar` : ""}
-        </span>
-      </span>
-    </label>
+      </label>
+      {option.roomCount !== undefined ? <OwnerRoomInventory rooms={option.rooms ?? []} /> : null}
+    </div>
   );
 }
 
@@ -1753,6 +1801,7 @@ function OwnerDetailPageContent({
                   id: asset.id,
                   title: asset.buildingCode,
                   description: `${asset.buildingName ?? "Bangunan"} · mencakup ${asset.coveredRoomCount} kamar`,
+                  rooms: asset.rooms ?? [],
                   status: asset.assignmentStatus,
                   kind: "building" as const,
                 }))}
@@ -1770,6 +1819,7 @@ function OwnerDetailPageContent({
                 items={detail.assets.apartKostRooms.map((asset) => ({
                   id: asset.id,
                   title: asset.roomCode,
+                  plotNumber: asset.plotNumber,
                   description: [
                     asset.buildingCode ?? "Bangunan",
                     roomGenderLabel(asset.genderPolicy),
@@ -1921,6 +1971,8 @@ function AssetBlock({
     description: string;
     status: AssignmentStatus;
     kind: "building" | "room";
+    rooms?: OwnerInventoryRoom[];
+    plotNumber?: string | null;
   }[];
   kind: "building" | "room";
   onRelease: (target: ReleaseTarget) => void;
@@ -1943,7 +1995,12 @@ function AssetBlock({
   const filteredItems = items.filter((item) => {
     if (unitFilter && ownerUnitCode(item.title, kind) !== unitFilter) return false;
     if (normalizedQuery) {
-      const searchableValues = [item.title, item.description].map((value) => value.toLowerCase());
+      const searchableValues = [
+        item.title,
+        item.description,
+        item.plotNumber ?? "",
+        ...(item.rooms ?? []).flatMap((room) => [room.roomCode, room.plotNumber ?? ""]),
+      ].map((value) => value.toLowerCase());
       return searchableValues.some(
         (value) =>
           value.includes(normalizedQuery) || compactAssetSearch(value).includes(compactQuery),
@@ -2053,7 +2110,7 @@ function AssetBlock({
         <div className="grid gap-3 sm:grid-cols-2">
           {filteredItems.map((item) => {
             const canSelect = isSelecting && item.status === "active";
-            const Card = canSelect ? "label" : "article";
+            const Card = "article";
             return (
               <Card
                 key={item.id}
@@ -2066,7 +2123,7 @@ function AssetBlock({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <label className={cn("flex items-center gap-2", canSelect && "cursor-pointer")}>
                       {canSelect ? (
                         <input
                           aria-label={`Pilih ${item.title}`}
@@ -2076,9 +2133,13 @@ function AssetBlock({
                           className="size-4 accent-primary"
                         />
                       ) : null}
-                      <h4 className="font-semibold">{item.title}</h4>
-                    </div>
+                      <span className="font-semibold">{item.title}</span>
+                    </label>
                     <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      No. Kavling:{" "}
+                      {item.rooms ? ownerPlotNumbers(item.rooms) : item.plotNumber || "—"}
+                    </p>
                   </div>
                   <StatusBadge
                     tone={
@@ -2092,6 +2153,7 @@ function AssetBlock({
                     {assignmentStatusLabel(item.status)}
                   </StatusBadge>
                 </div>
+                {item.kind === "building" ? <OwnerRoomInventory rooms={item.rooms ?? []} /> : null}
                 {!isSelecting && item.status === "active" && (
                   <Button
                     className="mt-4"

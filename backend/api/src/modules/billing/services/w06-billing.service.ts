@@ -3056,14 +3056,7 @@ export class W06BillingService {
       input.residentId,
       true,
     );
-    await this.validateEvidence(
-      client,
-      input.evidenceFileIds,
-      input.propertyId,
-      input.actorUserId,
-      false,
-      'complaint_attachment',
-    );
+    await this.validateCheckoutDamageEvidence(client, input);
     const periodKey = `CHECKOUT-${input.checkoutCommandId}`;
     const period = await client.query<{ id: string }>(
       `INSERT INTO billing_periods(property_id,period_key,start_date,end_date,due_date,status,created_by_user_id)
@@ -5911,6 +5904,38 @@ export class W06BillingService {
         ],
       );
   }
+  private async validateCheckoutDamageEvidence(
+    client: PoolClient,
+    input: CheckoutFinalChargeInput,
+  ): Promise<void> {
+    const ids = [...new Set(input.evidenceFileIds)].sort();
+    if (!ids.length) return;
+    // Checkout has already recorded the damage evidence in this transaction.
+    // Validate that authority, not the generic payment/complaint upload path:
+    // another Admin may legitimately finish an inspection recorded earlier.
+    const result = await client.query<{ id: string }>(
+      `SELECT file.id FROM files file
+       WHERE file.id=ANY($1::uuid[]) AND file.property_id=$2 AND file.is_deleted=false
+         AND file.file_purpose IN ('payment_proof','complaint_attachment')
+         AND file.mime_type IN ('image/jpeg','image/png','image/webp','application/pdf')
+         AND file.file_size_bytes BETWEEN 1 AND 5242880
+         AND EXISTS (
+           SELECT 1 FROM lease_checkout_evidence evidence
+           JOIN lease_checkout_commands checkout ON checkout.id=evidence.checkout_command_id
+           WHERE evidence.file_id=file.id AND evidence.property_id=$2
+             AND evidence.checkout_command_id=$3 AND evidence.evidence_category='damage'
+             AND checkout.property_id=$2 AND checkout.lease_id=$4 AND checkout.resident_id=$5
+         )
+       ORDER BY file.id FOR SHARE OF file`,
+      [ids, input.propertyId, input.checkoutCommandId, input.leaseId, input.residentId],
+    );
+    if (result.rows.length !== ids.length)
+      throw new ConflictException({
+        code: 'CHECKOUT_EVIDENCE_SCOPE_INVALID',
+        message: 'Bukti kerusakan check-out tidak tersedia atau tidak sesuai dengan penyewaan ini',
+      });
+  }
+
   private async validateEvidence(
     client: PoolClient,
     fileIds: string[],

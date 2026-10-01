@@ -5,6 +5,12 @@ import { EmergencyContactDto } from '../dto/emergency-contact.dto';
 import { ListResidentsQueryDto } from '../dto/list-residents-query.dto';
 import { UpdateResidentDto } from '../dto/update-resident.dto';
 import {
+  CHECKOUT_STATUS_FILTER_SQL,
+  RESIDENT_CHECKOUT_JOIN,
+  RESIDENT_ATTENTION_PREDICATES,
+  residentAttentionFilterSql,
+} from './resident-attention.sql';
+import {
   EmergencyContactRecord,
   ResidentRecord,
   ResidentTenancyRecord,
@@ -49,6 +55,7 @@ type ResidentRow = {
   checkout_financial_status?: ResidentRecord['checkoutFinancialStatus'];
   checkout_refund_amount?: string;
   checkout_refund_due_date?: string | null;
+  checkout_handover_date?: string | null;
   room_number?: string | null;
   lease_start?: string | null;
   lease_end?: string | null;
@@ -185,7 +192,8 @@ export class ResidentRepository {
               COALESCE(checkout_projection.checkout_financial_status,'none')
                 AS checkout_financial_status,
               COALESCE(checkout_projection.refund_amount,0)::text AS checkout_refund_amount,
-              checkout_projection.refund_due_date::text AS checkout_refund_due_date
+              checkout_projection.refund_due_date::text AS checkout_refund_due_date,
+              checkout_projection.handover_date::text AS checkout_handover_date
        FROM residents
        LEFT JOIN users ON users.id = residents.user_id
        LEFT JOIN users archive_user ON archive_user.id=residents.archived_by_user_id
@@ -197,37 +205,10 @@ export class ResidentRepository {
        LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
          ON owner_sponsorship.lease_id=projection.projected_lease_id
         AND owner_sponsorship.property_id=residents.property_id
-       LEFT JOIN LATERAL (
-         SELECT CASE
-                  WHEN settlement.decision_status='amount_due' THEN 'amount_due'
-                  WHEN refund.refund_status='pending'
-                    OR settlement.decision_status='refund_pending' THEN 'refund_pending'
-                  WHEN refund.refund_status='settled' THEN 'refund_settled'
-                  WHEN refund.refund_status='waived' THEN 'refund_waived'
-                  WHEN settlement.decision_status='closed' THEN 'closed'
-                  ELSE 'in_progress'
-                END AS checkout_financial_status,
-                refund.amount AS refund_amount,
-                refund.refund_due_date
-         FROM lease_checkout_commands checkout
-         LEFT JOIN lease_exit_final_settlements settlement
-           ON settlement.checkout_command_id=checkout.id
-          AND settlement.property_id=checkout.property_id
-         LEFT JOIN lease_exit_refunds refund
-           ON refund.final_settlement_id=settlement.id
-          AND refund.property_id=checkout.property_id
-         WHERE checkout.resident_id=residents.id
-           AND checkout.property_id=residents.property_id
-           AND checkout.state<>'cancelled'
-         ORDER BY checkout.created_at DESC,checkout.id DESC
-         LIMIT 1
-       ) checkout_projection ON true
+       ${RESIDENT_CHECKOUT_JOIN}
        WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR residents.property_id = $2)
-         AND (($3::text IS NULL AND $14::text IS NULL
-               AND residents.resident_status IN ('active','pending_activation'))
-              OR ($3::text IS NULL AND $14::text IS NOT NULL)
-              OR residents.resident_status = $3)
+         AND ($3::text IS NULL OR residents.resident_status = $3)
          AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
          AND ($5::text IS NULL OR projection.rent_payment_status = $5)
          AND ($6::text IS NULL OR residents.gender = $6)
@@ -260,15 +241,16 @@ export class ResidentRepository {
            AND projection.lease_end::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
            AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date + $13::integer
          ))
-         AND ($14::text IS NULL OR checkout_projection.checkout_financial_status=$14)
+         AND ${CHECKOUT_STATUS_FILTER_SQL}
          AND ($15::text IS NULL OR lease_projection.commercial_mode=$15)
          AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
          AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)
+         AND ${residentAttentionFilterSql('$18')}
        ORDER BY
          CASE WHEN $12::integer IS NOT NULL THEN projection.contract_settlement_due_date END ASC NULLS LAST,
          CASE WHEN $13::integer IS NOT NULL THEN projection.lease_end END ASC NULLS LAST,
          residents.created_at DESC,residents.id DESC
-       LIMIT $18 OFFSET $19`,
+       LIMIT $19 OFFSET $20`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -287,6 +269,7 @@ export class ResidentRepository {
         query.commercial_mode ?? null,
         query.pricing_source ?? null,
         query.management_fee_mode ?? null,
+        query.attention_category ?? null,
         Math.min(Math.max(query.limit ?? 20, 1), 100),
         Math.max(query.offset ?? 0, 0),
       ],
@@ -307,35 +290,10 @@ export class ResidentRepository {
        LEFT JOIN owner_sponsored_management_fee_progress owner_sponsorship
          ON owner_sponsorship.lease_id=projection.projected_lease_id
         AND owner_sponsorship.property_id=residents.property_id
-       LEFT JOIN LATERAL (
-         SELECT CASE
-                  WHEN settlement.decision_status='amount_due' THEN 'amount_due'
-                  WHEN refund.refund_status='pending'
-                    OR settlement.decision_status='refund_pending' THEN 'refund_pending'
-                  WHEN refund.refund_status='settled' THEN 'refund_settled'
-                  WHEN refund.refund_status='waived' THEN 'refund_waived'
-                  WHEN settlement.decision_status='closed' THEN 'closed'
-                  ELSE 'in_progress'
-                END AS checkout_financial_status
-         FROM lease_checkout_commands checkout
-         LEFT JOIN lease_exit_final_settlements settlement
-           ON settlement.checkout_command_id=checkout.id
-          AND settlement.property_id=checkout.property_id
-         LEFT JOIN lease_exit_refunds refund
-           ON refund.final_settlement_id=settlement.id
-          AND refund.property_id=checkout.property_id
-         WHERE checkout.resident_id=residents.id
-           AND checkout.property_id=residents.property_id
-           AND checkout.state<>'cancelled'
-         ORDER BY checkout.created_at DESC,checkout.id DESC
-         LIMIT 1
-       ) checkout_projection ON true
+       ${RESIDENT_CHECKOUT_JOIN}
        WHERE ($1::uuid[] IS NULL OR residents.property_id = ANY($1::uuid[]))
          AND ($2::uuid IS NULL OR residents.property_id = $2)
-         AND (($3::text IS NULL AND $14::text IS NULL
-               AND residents.resident_status IN ('active','pending_activation'))
-              OR ($3::text IS NULL AND $14::text IS NOT NULL)
-              OR residents.resident_status = $3)
+         AND ($3::text IS NULL OR residents.resident_status = $3)
          AND ($4::text IS NULL OR COALESCE(users.user_status, 'not_provisioned') = $4)
          AND ($5::text IS NULL OR projection.rent_payment_status = $5)
          AND ($6::text IS NULL OR residents.gender = $6)
@@ -368,10 +326,11 @@ export class ResidentRepository {
            AND projection.lease_end::date >= (now() AT TIME ZONE 'Asia/Jakarta')::date
            AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date+$13::integer
          ))
-         AND ($14::text IS NULL OR checkout_projection.checkout_financial_status=$14)
+         AND ${CHECKOUT_STATUS_FILTER_SQL}
          AND ($15::text IS NULL OR lease_projection.commercial_mode=$15)
          AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
-         AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)`,
+         AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)
+         AND ${residentAttentionFilterSql('$18')}`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -390,9 +349,30 @@ export class ResidentRepository {
         query.commercial_mode ?? null,
         query.pricing_source ?? null,
         query.management_fee_mode ?? null,
+        query.attention_category ?? null,
       ],
     );
     return Number(result.rows[0]?.total ?? 0);
+  }
+
+  async attentionSummary(propertyId: string, propertyIds?: string[]) {
+    const categories = Object.entries(RESIDENT_ATTENTION_PREDICATES);
+    const result = await this.database.client.query<Record<string, string>>(
+      `SELECT ${categories.map(([category, predicate]) => `COUNT(*) FILTER (WHERE ${predicate})::text AS ${category}`).join(',')}
+       FROM residents
+       LEFT JOIN resident_admin_lifecycle_projection projection
+         ON projection.resident_id=residents.id AND projection.property_id=residents.property_id
+       ${RESIDENT_CHECKOUT_JOIN}
+       WHERE ($1::uuid[] IS NULL OR residents.property_id=ANY($1::uuid[]))
+         AND residents.property_id=$2`,
+      [propertyIds === undefined ? null : propertyIds, propertyId],
+    );
+    return {
+      property_id: propertyId,
+      counts: Object.fromEntries(
+        categories.map(([category]) => [category, Number(result.rows[0]?.[category] ?? 0)]),
+      ),
+    };
   }
 
   async findById(id: string): Promise<ResidentRecord | null> {
@@ -857,6 +837,7 @@ export class ResidentRepository {
       checkoutFinancialStatus: row.checkout_financial_status ?? 'none',
       checkoutRefundAmount: Number(row.checkout_refund_amount ?? 0),
       checkoutRefundDueDate: row.checkout_refund_due_date ?? null,
+      checkoutHandoverDate: row.checkout_handover_date ?? null,
       roomNumber: row.room_number ?? null,
       leaseStart: row.lease_start ?? null,
       leaseEnd: row.lease_end ?? null,

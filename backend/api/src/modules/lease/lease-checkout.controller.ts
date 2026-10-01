@@ -1,3 +1,4 @@
+import { documentDisposition } from '../../shared/utils/download-filename';
 import {
   Body,
   Controller,
@@ -71,7 +72,7 @@ export class LeaseCheckoutController {
     const document = await this.checkout.documentFile(user, leaseId, commandId, documentId);
     return new StreamableFile(document.content, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${document.filename}"`,
+      disposition: documentDisposition(document.filename, 'attachment', 'Dokumen-Check-Out'),
       length: document.content.length,
     });
   }

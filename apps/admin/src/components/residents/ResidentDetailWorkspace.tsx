@@ -785,6 +785,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           decisionStatus: checkoutCommand.settlementDecisionStatus,
           refundStatus: checkoutCommand.exitRefundStatus,
           amountDue: checkoutCommand.amountDue,
+          currentAmountDue: checkoutCommand.currentAmountDue,
         }
       : null,
   );

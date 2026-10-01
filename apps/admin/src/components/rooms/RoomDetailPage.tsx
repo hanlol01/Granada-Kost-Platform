@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomInventoryEditor, type BuildingOption } from "@/components/rooms/KostTypeInventoryPage";
+import { RoomInspectionDialog } from "@/components/rooms/RoomInspectionDialog";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
   const typesQuery = useM4KostTypes({ category, limit: 100 });
   const buildingsQuery = useM4RoomBuildings(category);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [inspectionOpen, setInspectionOpen] = useState(false);
 
   const canManage = hasRoomWriteAuthority(
     user?.roles ?? [],
@@ -165,6 +167,14 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
               Edit Kamar
             </Button>
           ) : null}
+          {canManage &&
+          user?.roles.includes("admin") &&
+          detail.physical.status === "inspection_required" ? (
+            <Button className="min-h-11" onClick={() => setInspectionOpen(true)}>
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Periksa kamar
+            </Button>
+          ) : null}
         </>
       }
     >
@@ -229,6 +239,16 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
             </div>
           </div>
         </header>
+
+        {detail.physical.status === "inspection_required" ? (
+          <section className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
+            <p className="font-semibold">Kamar menunggu pemeriksaan</p>
+            <p className="mt-1">
+              Penghuni sudah meninggalkan kamar. Gunakan tombol Periksa kamar untuk mencatat hasil:
+              Siap digunakan menjadi Kosong, atau Perlu perbaikan menjadi Perawatan.
+            </p>
+          </section>
+        ) : null}
 
         {detail.reconciliation.state !== "normal" ? (
           <section
@@ -542,7 +562,20 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                   <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-foreground/65" />
                   <div className="min-w-0">
                     <p className="break-words text-sm font-medium text-foreground">{event.label}</p>
-                    <p className="text-xs text-foreground/70">{formatDate(event.occurredAt)}</p>
+                    {event.description ? (
+                      <p className="break-words text-sm text-foreground/80">{event.description}</p>
+                    ) : null}
+                    <p className="text-xs text-foreground/70">
+                      {new Intl.DateTimeFormat("id-ID", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "Asia/Jakarta",
+                      }).format(new Date(event.occurredAt))}{" "}
+                      WIB
+                    </p>
                   </div>
                 </li>
               ))}
@@ -572,6 +605,16 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
           }
         }}
       />
+      {inspectionOpen ? (
+        <RoomInspectionDialog
+          key={`${detail.propertyId}:${detail.id}`}
+          roomId={detail.id}
+          roomNumber={detail.number}
+          propertyId={detail.propertyId}
+          open={inspectionOpen}
+          onOpenChange={setInspectionOpen}
+        />
+      ) : null}
     </AppShell>
   );
 }

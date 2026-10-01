@@ -100,7 +100,7 @@ export const ROOM_STATUS_LABEL: Record<RoomStatus, string> = {
   maintenance: "Maintenance",
   inactive: "Tidak Aktif",
   requires_review: "Perlu Review",
-  inspection_required: "Perlu inspeksi",
+  inspection_required: "Perlu Pemeriksaan",
 };
 
 export const KOST_TYPE_LABEL: Record<KostTypeCategory, string> = {

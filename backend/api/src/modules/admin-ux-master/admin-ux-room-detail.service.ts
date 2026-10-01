@@ -14,6 +14,7 @@ import { UserAccessContext } from '../iam/types/iam.types';
 import { PropertyService } from '../property/property.service';
 import { GetRoomByNumberV2QueryDto } from './admin-ux-room-v2.dto';
 import type { AdminRoomDetailProjection } from './admin-ux-room-detail.types';
+import { ROOM_ACTIVITY_SQL } from './room-activity.sql';
 
 type Row = Record<string, unknown>;
 
@@ -81,6 +82,11 @@ const TIMELINE_LABELS: Readonly<Record<string, string>> = {
   lease_closed: 'Penyewaan ditutup',
   lease_transferred_out: 'Penyewaan dipindahkan dari kamar',
   lease_transferred_in: 'Penyewaan dipindahkan ke kamar',
+  room_transfer_out: 'Penghuni pindah ke kamar lain',
+  room_transfer_in: 'Penghuni pindah dari kamar lain',
+  checkout_financial_completed: 'Penyelesaian check-out selesai',
+  room_inspection_passed: 'Pemeriksaan selesai · Kamar siap digunakan',
+  room_inspection_failed: 'Pemeriksaan selesai · Kamar perlu perbaikan',
   maintenance_open: 'Work order perawatan dibuka',
   maintenance_assigned: 'Work order perawatan ditugaskan',
   maintenance_in_progress: 'Perawatan sedang dikerjakan',
@@ -304,53 +310,7 @@ export class AdminUxRoomDetailService {
            LIMIT 20`,
         [propertyId, roomId],
       ),
-      client.query<Row>(
-        `SELECT event_type, occurred_at
-           FROM (
-             SELECT 'room_updated'::text AS event_type, audit.occurred_at
-             FROM audit_logs audit
-             WHERE audit.property_id = $1 AND audit.resource_type = 'room'
-               AND audit.resource_id = $2
-               AND audit.action IN ('room.update.v2', 'room.status_update.v2')
-             UNION ALL
-             SELECT 'occupancy_' || history.event_type, history.created_at
-             FROM occupancy_history history
-             JOIN occupancies occupancy
-               ON occupancy.id = history.occupancy_id
-              AND occupancy.property_id = $1
-             WHERE occupancy.room_id = $2
-             UNION ALL
-             SELECT 'lease_' || history.event_type, history.created_at
-             FROM lease_history history
-             JOIN leases lease
-               ON lease.id = history.lease_id
-              AND lease.property_id = history.property_id
-             WHERE history.property_id = $1 AND lease.room_id = $2
-             UNION ALL
-             SELECT 'hold_created', hold.created_at
-             FROM booking_lead_holds hold
-             WHERE hold.property_id = $1 AND hold.room_id = $2
-             UNION ALL
-             SELECT 'hold_released', hold.released_at
-             FROM booking_lead_holds hold
-             WHERE hold.property_id = $1 AND hold.room_id = $2 AND hold.released_at IS NOT NULL
-             UNION ALL
-             SELECT 'hold_expired', hold.expires_at
-             FROM booking_lead_holds hold
-             WHERE hold.property_id = $1 AND hold.room_id = $2 AND hold.hold_status = 'expired'
-             UNION ALL
-             SELECT 'maintenance_' || history.to_status, history.changed_at
-             FROM maintenance_work_order_histories history
-             JOIN maintenance_work_orders work_order
-               ON work_order.id = history.work_order_id
-              AND work_order.property_id = $1
-             WHERE work_order.room_id = $2
-           ) safe_timeline
-           WHERE occurred_at IS NOT NULL
-           ORDER BY occurred_at DESC, event_type
-           LIMIT 50`,
-        [propertyId, roomId],
-      ),
+      client.query<Row>(ROOM_ACTIVITY_SQL, [propertyId, roomId]),
     ]);
     if (vehiclesResult.rows.some((vehicle) => Number(vehicle.parking_assignment_count) > 1)) {
       this.throwAmbiguous('ROOM_PARKING_AUTHORITY_AMBIGUOUS');
@@ -672,7 +632,24 @@ export class AdminUxRoomDetailService {
       timeline: timeline.flatMap((item) => {
         const eventType = text(item.event_type);
         const label = TIMELINE_LABELS[eventType];
-        return label ? [{ event_type: eventType, label, occurred_at: iso(item.occurred_at) }] : [];
+        if (!label) return [];
+        const residentName = text(item.resident_name);
+        const otherRoom = text(item.other_room_number);
+        const movement =
+          eventType === 'room_transfer_out'
+            ? `Pindah ke ${otherRoom || '—'}`
+            : eventType === 'room_transfer_in'
+              ? `Pindah dari ${otherRoom || '—'}`
+              : '';
+        const description = [residentName, movement, text(item.notes)].filter(Boolean).join(' · ');
+        return [
+          {
+            event_type: eventType,
+            label,
+            occurred_at: iso(item.occurred_at),
+            ...(description ? { description } : {}),
+          },
+        ];
       }),
       links: {
         resident: occupancy ? `/tenants/${encodeURIComponent(text(occupancy.resident_id))}` : null,

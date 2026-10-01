@@ -31,7 +31,13 @@ function fixture(
     activeHold?: boolean;
     activeMaintenance?: boolean;
     importNotes?: string | null;
-    timeline?: Array<{ event_type: string; occurred_at: string }>;
+    timeline?: Array<{
+      event_type: string;
+      occurred_at: string;
+      resident_name?: string;
+      other_room_number?: string;
+      notes?: string;
+    }>;
     category?: 'rukost' | 'apartkost';
     ownership?: {
       owner_full_name: string;
@@ -140,6 +146,7 @@ function fixture(
             : [],
       };
     }
+    if (sql.includes('safe_timeline')) return { rows: options.timeline ?? [] };
     if (sql.includes('FROM invoices invoice')) {
       return {
         rows: [
@@ -345,6 +352,50 @@ void test('zero lease preserves resident and declares legacy reconciliation', as
   assert.equal(response.data.reconciliation.state, 'lease_reconciliation_required');
 });
 
+void test('room activity includes safe resident, movement and inspection descriptions', async () => {
+  const response = await fixture({
+    timeline: [
+      {
+        event_type: 'room_transfer_out',
+        occurred_at: '2026-10-01T01:00:00Z',
+        resident_name: 'Negosiasi',
+        other_room_number: 'RK-06-06',
+      },
+      {
+        event_type: 'room_transfer_in',
+        occurred_at: '2026-10-01T01:00:00Z',
+        resident_name: 'Negosiasi',
+        other_room_number: 'RK-06-03',
+      },
+      {
+        event_type: 'occupancy_check_out',
+        occurred_at: '2026-10-01T02:00:00Z',
+        resident_name: 'Negotuh',
+      },
+      {
+        event_type: 'checkout_financial_completed',
+        occurred_at: '2026-10-02T02:00:00Z',
+        resident_name: 'Negotuh',
+      },
+      {
+        event_type: 'room_inspection_failed',
+        occurred_at: '2026-10-01T03:00:00Z',
+        notes: 'Pintu rusak',
+      },
+    ],
+  }).service.getByNumber(user as never, 'RK-01-01', { property_id: PROPERTY_ID });
+  assert.deepEqual(
+    response.data.timeline.map((event) => [event.label, event.description]),
+    [
+      ['Penghuni pindah ke kamar lain', 'Negosiasi · Pindah ke RK-06-06'],
+      ['Penghuni pindah dari kamar lain', 'Negosiasi · Pindah dari RK-06-03'],
+      ['Penghuni check-out', 'Negotuh'],
+      ['Penyelesaian check-out selesai', 'Negotuh'],
+      ['Pemeriksaan selesai · Kamar perlu perbaikan', 'Pintu rusak'],
+    ],
+  );
+});
+
 void test('active lease without active occupancy remains explicit reconciliation', async () => {
   const current = fixture({ occupancies: 0 });
   const response = await current.service.getByNumber(user as never, 'RK-01-01', {
@@ -397,7 +448,7 @@ function assertSourceContract(candidate: string) {
   assert.match(candidate, /room\.number = \$2/);
   assert.doesNotMatch(candidate, /room\.room_code = \$2/);
   assert.match(candidate, /result\.rows\.length > 1/);
-  assert.doesNotMatch(candidate, /LIMIT 1/);
+  assert.doesNotMatch(candidate, /ORDER BY room\.id\s+LIMIT 1/);
   assert.match(candidate, /SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
   assert.match(candidate, /active_hold_exists/);
   assert.match(candidate, /active_maintenance_exists/);
@@ -408,9 +459,10 @@ function assertSourceContract(candidate: string) {
   assert.match(candidate, /dp_verified_amount: null/);
   assert.match(candidate, /FROM building_owner_assignments assignment/);
   assert.match(candidate, /FROM room_owner_assignments assignment/);
-  assert.match(candidate, /CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Jakarta'\)::date/);
+  assert.match(candidate, /assignment\.assignment_status = 'active'/);
+  assert.match(candidate, /profile\.profile_status = 'active'/);
   assert.match(candidate, /source: 'kostation_default'/);
-  assert.match(candidate, /audit\.occurred_at/);
+  assert.match(candidate, /ROOM_ACTIVITY_SQL/);
   assert.match(candidate, /TIMELINE_LABELS\[eventType\]/);
   assert.doesNotMatch(candidate, /resident\.phone/);
   assert.doesNotMatch(candidate, /before_data|after_data|user_agent|ip_address/);
@@ -430,7 +482,7 @@ void test('source contract is mutation-sensitive for property scope, ambiguity, 
     detail.replace('ORDER BY room.id', 'ORDER BY room.id LIMIT 1'),
     detail.replaceAll("allocation.target_type = 'invoice'", "allocation.target_type = 'deposit'"),
     detail.replace("source: 'kostation_default'", "source: 'investor'"),
-    detail.replace('audit.occurred_at', 'audit.after_data'),
+    detail.replaceAll('ROOM_ACTIVITY_SQL', 'UNSAFE_TIMELINE'),
     detail.replace('TIMELINE_LABELS[eventType]', 'eventType'),
   ]) {
     assert.throws(() => assertSourceContract(mutation));

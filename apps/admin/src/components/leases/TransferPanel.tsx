@@ -4,6 +4,8 @@
 import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 import { ApiError } from "@granada-kost/api-client";
+import type { FileResponse } from "@granada-kost/domain";
+import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import {
   ArrowLeftRight,
   CalendarClock,
@@ -306,15 +308,16 @@ export function TransferResultCard({
       </CardHeader>
       <CardContent className="space-y-4 text-sm text-foreground">
         <p>
-          Penghuni telah dipindahkan ke kamar {result.targetLease.room.number}. Riwayat kamar lama,
-          tagihan, dan security deposit tetap tersimpan.
+          Penghuni berhasil pindah dari kamar {result.sourceLease.room.number} ke kamar{" "}
+          {result.targetLease.room.number}. Riwayat kamar lama, kontrak, pembayaran, tagihan, dan
+          deposit tetap tersimpan.
         </p>
         <div className="grid gap-3 sm:grid-cols-3">
           <KeyValue
-            label="Security deposit yang dialihkan"
+            label="Deposit yang tetap tersimpan"
             value={formatIDR(result.transferRecord.carriedDepositAmount)}
           />
-          <KeyValue label="Top-up" value={formatIDR(result.transferRecord.topUpAmount)} />
+          <KeyValue label="Tambahan deposit" value={formatIDR(result.transferRecord.topUpAmount)} />
           <KeyValue label="Tunggakan lama" value={formatIDR(result.oldOutstandingAmount)} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-100/80">
@@ -332,9 +335,9 @@ export function TransferResultCard({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => onOpenLease(result.targetLease.id)}>Buka penyewaan baru</Button>
+          <Button onClick={() => onOpenLease(result.targetLease.id)}>Buka penyewaan</Button>
           <Button variant="secondary" onClick={onClose}>
-            Kembali ke Detail
+            Tutup Perpindahan Kamar
           </Button>
         </div>
       </CardContent>
@@ -423,6 +426,7 @@ export function TransferPanel({
   residentGender,
   onClose,
   onOpenLease,
+  onCompleted,
 }: {
   leaseId: string;
   leaseStatus: "active" | "ended" | "cancelled" | "transferred";
@@ -432,10 +436,13 @@ export function TransferPanel({
   residentGender?: ResidentGender;
   onClose: () => void;
   onOpenLease: (leaseId: string) => void;
+  onCompleted?: () => void;
 }) {
   const rooms = useM6LeaseAvailableRooms();
   const [path, setPath] = useState<TransferPath>("end_period");
   const [topUpReferenceNumber, setTopUpReferenceNumber] = useState("");
+  const [topUpEvidence, setTopUpEvidence] = useState<FileResponse[]>([]);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [targetRoomId, setTargetRoomId] = useState("");
   const [reasonCode, setReasonCode] = useState<TransferReasonCode>("resident_request");
   const [reasonDetail, setReasonDetail] = useState("");
@@ -444,11 +451,13 @@ export function TransferPanel({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank_transfer");
   const [preview, setPreview] = useState<TransferPreview | null>(null);
   const [previewError, setPreviewError] = useState<unknown>(null);
+  const [previewVersionMismatch, setPreviewVersionMismatch] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<TransferResult | null>(null);
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<TransferCommand | null>(null);
   const intentKey = useRef<string | null>(null);
+  const previewRequestVersion = useRef(0);
 
   const commands = useM6TransferCommands(leaseId, transferFlagEnabled && leaseStatus === "active");
   const transferFeatureDisabled =
@@ -492,7 +501,9 @@ export function TransferPanel({
   const topUpRequiredAmount = preview?.deposit.topUpRequiredAmount ?? 0;
   const topUpPaymentValid =
     topUpRequiredAmount === 0 ||
-    hasRequiredLeasePaymentReference(topUpRequiredAmount, topUpReferenceNumber);
+    (hasRequiredLeasePaymentReference(topUpRequiredAmount, topUpReferenceNumber) &&
+      !evidenceBusy &&
+      (paymentMethod !== "bank_transfer" || topUpEvidence.length > 0));
   const today = useMemo(() => jakartaToday(), []);
   const reasonValid = reasonCode !== "other" || reasonDetail.trim().length > 0;
   const sameDayValid = exceptionReason.trim().length > 0;
@@ -506,7 +517,11 @@ export function TransferPanel({
         ? today
         : (options?.effectiveDate ?? scheduledDate) || undefined;
     if (!allowed || !roomId) return;
+    const requestVersion = ++previewRequestVersion.current;
+    setPreview(null);
+    setConfirmOpen(false);
     setPreviewError(null);
+    setPreviewVersionMismatch(false);
     setResult(null);
     setScheduleNotice(null);
     try {
@@ -515,9 +530,16 @@ export function TransferPanel({
         effectiveDate: requestedDate,
         transferPath: path,
       });
+      if (requestVersion !== previewRequestVersion.current) return;
+      if (response.billing.contractPreserved !== true) {
+        setPreview(null);
+        setPreviewVersionMismatch(true);
+        return;
+      }
       setPreview(response);
       if (path === "end_period") setScheduledDate(response.effectiveDate);
     } catch (error) {
+      if (requestVersion !== previewRequestVersion.current) return;
       setPreviewError(error);
       setPreview(null);
     }
@@ -543,6 +565,7 @@ export function TransferPanel({
               payment: {
                 paymentMethod,
                 referenceNumber: topUpReferenceNumber.trim(),
+                evidenceFileIds: topUpEvidence.map((file) => file.id),
               },
             }
           : undefined,
@@ -550,6 +573,7 @@ export function TransferPanel({
       });
       intentKey.current = null;
       setResult(response);
+      onCompleted?.();
       setConfirmOpen(false);
     } catch {
       /* safe toast from mutation; key remains available for a retry */
@@ -619,6 +643,8 @@ export function TransferPanel({
         description="Pindah kamar hanya dapat dilakukan oleh Admin pada penyewaan yang masih aktif."
       />
     );
+  if (result)
+    return <TransferResultCard result={result} onOpenLease={onOpenLease} onClose={onClose} />;
   if (rooms.isLoading) return <LoadingState label="Memuat kamar tujuan..." />;
   if (rooms.error)
     return (
@@ -628,9 +654,6 @@ export function TransferPanel({
         onRetry={() => void rooms.refetch()}
       />
     );
-  if (result)
-    return <TransferResultCard result={result} onOpenLease={onOpenLease} onClose={onClose} />;
-
   return (
     <Card className="border-border bg-card shadow-sm">
       <CardHeader>
@@ -638,8 +661,8 @@ export function TransferPanel({
           <ArrowLeftRight className="h-5 w-5 text-primary" /> Pindah Kamar
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Pilih kamar tujuan. Sistem akan memeriksa tagihan, tanggal perpindahan, dan security
-          deposit sebelum perubahan disimpan.
+          Pilih kamar tujuan, lalu periksa tanggal, kontrak, dan deposit yang tercatat sebelum
+          perubahan disimpan.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -650,7 +673,7 @@ export function TransferPanel({
               <p className="font-semibold text-foreground">Sebelum memindahkan penghuni</p>
               <ol className="list-decimal space-y-1 pl-4 text-sm text-muted-foreground">
                 <li>Pilih cara perpindahan dan kamar kosong yang sesuai.</li>
-                <li>Tinjau tanggal rekomendasi, tagihan, dan security deposit.</li>
+                <li>Tinjau tanggal rekomendasi, tagihan, dan deposit yang tercatat.</li>
                 <li>Isi alasan, lalu jadwalkan atau proses perpindahan hari ini.</li>
               </ol>
               <p className="text-xs text-muted-foreground">
@@ -662,9 +685,12 @@ export function TransferPanel({
         <Tabs
           value={path}
           onValueChange={(value) => {
+            previewRequestVersion.current++;
             setPath(value as TransferPath);
             setPreview(null);
             setPreviewError(null);
+            setPreviewVersionMismatch(false);
+            setConfirmOpen(false);
             setScheduleNotice(null);
             intentKey.current = null;
           }}
@@ -762,6 +788,12 @@ export function TransferPanel({
             Batal
           </Button>
         </div>
+        {previewVersionMismatch ? (
+          <ActionDeniedPanel
+            title="API pindah kamar perlu dimuat ulang"
+            description="Form sudah diperbarui, tetapi API masih memakai perhitungan lama. Restart API setelah migration terbaru diterapkan, lalu tinjau kembali perpindahan. Tidak ada data yang disimpan."
+          />
+        ) : null}
         {previewError ? (
           <PreviewErrorNotice
             error={previewError}
@@ -774,7 +806,8 @@ export function TransferPanel({
             <div>
               <p className="font-semibold text-foreground">Ringkasan Pindah Kamar</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Periksa kembali kamar, tanggal, tagihan, dan security deposit sebelum melanjutkan.
+                Periksa kembali kamar, tanggal, tarif yang disepakati, dan deposit sebelum
+                melanjutkan.
               </p>
             </div>
             <div className="grid gap-3 text-sm sm:grid-cols-2">
@@ -791,17 +824,32 @@ export function TransferPanel({
                     : " · berlaku hari ini")
                 }
               />
+              {preview.deposit.carriedAmount > 0 || preview.deposit.targetRequiredAmount > 0 ? (
+                <>
+                  <KeyValue
+                    label="Deposit yang sudah diterima"
+                    value={formatIDR(preview.deposit.carriedAmount)}
+                  />
+                  <KeyValue
+                    label="Kewajiban deposit sesuai kontrak"
+                    value={formatIDR(preview.deposit.targetRequiredAmount)}
+                  />
+                </>
+              ) : (
+                <div className="rounded-lg border border-border bg-background/60 p-3 sm:col-span-2">
+                  <p className="font-semibold text-foreground">Tidak ada deposit yang tercatat</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Perpindahan ini tidak memerlukan pembayaran tambahan deposit.
+                  </p>
+                </div>
+              )}
               <KeyValue
-                label="Security deposit yang sudah tercatat"
-                value={formatIDR(preview.deposit.carriedAmount)}
+                label="Tarif sewa yang tetap berlaku"
+                value={formatIDR(preview.billing.agreedMonthlyRent) + " / bulan"}
               />
               <KeyValue
-                label="Ketentuan security deposit kamar tujuan"
-                value={
-                  preview.deposit.targetRequiredAmount > 0
-                    ? formatIDR(preview.deposit.targetRequiredAmount)
-                    : "Belum ditentukan"
-                }
+                label="Siklus tagihan berikutnya"
+                value={formatDate(preview.billing.tariffReviewDate)}
               />
               <KeyValue
                 label="Tagihan kamar lama yang belum dibayar"
@@ -812,7 +860,7 @@ export function TransferPanel({
                 value={
                   preview.billing.targetInvoiceWillBeIssued
                     ? "Dibuat pada tanggal perpindahan"
-                    : "Mulai siklus berikutnya"
+                    : "Tagihan yang sudah ada tetap berlaku; tidak dibuat ulang"
                 }
               />
               <KeyValue
@@ -860,7 +908,10 @@ export function TransferPanel({
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <p>
                 Masa sewa tidak diperpanjang. Tagihan lama tetap tercatat pada kamar sebelumnya,
-                sedangkan kamar lama perlu diperiksa sebelum dapat dipakai kembali.
+                sedangkan kamar lama perlu diperiksa sebelum dapat dipakai kembali. Tarif dan
+                pembayaran kontrak tetap berlaku. Jika tarif tujuan berbeda, perubahan harus
+                disepakati terpisah mulai siklus tagihan berikutnya; tidak ada selisih sewa
+                otomatis.
               </p>
             </div>
             {path === "same_day_exception" && topUpRequiredAmount > 0 ? (
@@ -868,11 +919,11 @@ export function TransferPanel({
                 <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
                   <div className="space-y-1">
                     <p className="font-semibold text-foreground">
-                      Selisih security deposit: {formatIDR(topUpRequiredAmount)}
+                      Tambahan deposit sesuai kontrak: {formatIDR(topUpRequiredAmount)}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Nominal ini melengkapi security deposit kamar tujuan. Nilainya terpisah dari
-                      DP dan pembayaran sewa.
+                      Nominal ini melengkapi kewajiban deposit yang sudah disepakati pada kontrak.
+                      Nilainya terpisah dari DP dan pembayaran sewa.
                     </p>
                   </div>
                   <Field label="Metode pembayaran selisih deposit" required>
@@ -906,6 +957,19 @@ export function TransferPanel({
                       placeholder="Masukkan nomor referensi pembayaran"
                     />
                   </Field>
+                  <EvidenceFileUploadField
+                    propertyId={preview.sourceLease.propertyId}
+                    label="Bukti pembayaran tambahan deposit"
+                    description="Gambar atau PDF, maksimal 5 MB per file. Bukti wajib untuk transfer bank."
+                    values={topUpEvidence}
+                    onChange={(files) => {
+                      setTopUpEvidence(files);
+                      intentKey.current = null;
+                    }}
+                    onBusyChange={setEvidenceBusy}
+                    required={paymentMethod === "bank_transfer"}
+                    disabled={transfer.isPending}
+                  />
                 </div>
               ) : (
                 <ActionDeniedPanel
@@ -916,8 +980,8 @@ export function TransferPanel({
             ) : null}
             {path === "end_period" && topUpRequiredAmount > 0 ? (
               <ActionDeniedPanel
-                title="Security deposit kamar tujuan belum terpenuhi"
-                description="Security deposit yang sudah tercatat lebih kecil daripada ketentuan kamar tujuan. Pilih kamar dengan ketentuan deposit yang sama, atau gunakan perpindahan hari ini agar Admin berizin dapat mencatat selisihnya."
+                title="Kewajiban deposit kontrak belum terpenuhi"
+                description="Deposit yang diterima masih kurang dari kesepakatan kontrak. Selesaikan kekurangannya terlebih dahulu, atau gunakan perpindahan hari ini agar Admin berizin dapat mencatat tambahan deposit beserta buktinya."
               />
             ) : null}
             <ReasonFields
@@ -933,7 +997,7 @@ export function TransferPanel({
               }}
             />
             {path === "same_day_exception" ? (
-              <Field label="Alasan pengecualian hari yang sama" required>
+              <Field label="Alasan diproses hari ini" required>
                 <Textarea
                   value={exceptionReason}
                   maxLength={2000}
@@ -944,6 +1008,10 @@ export function TransferPanel({
                   }}
                   placeholder="Jelaskan mengapa perpindahan harus dilakukan hari ini"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Jelaskan mengapa perpindahan tidak dapat menunggu jadwal tagihan. Ini berbeda dari
+                  alasan pindah kamar yang menjelaskan mengapa kamar perlu diganti.
+                </p>
               </Field>
             ) : null}
             <Button
@@ -1054,7 +1122,29 @@ export function TransferPanel({
         }
         pending={transfer.isPending || schedule.isPending}
         onConfirm={path === "same_day_exception" ? submitSameDay : submitSchedule}
-      />
+      >
+        {preview ? (
+          <div className="grid gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm sm:grid-cols-2">
+            <KeyValue label="Kamar sebelumnya" value={preview.sourceLease.room.number} />
+            <KeyValue label="Kamar tujuan" value={preview.targetRoom.number} />
+            <KeyValue label="Tanggal perpindahan" value={formatDate(preview.effectiveDate)} />
+            <KeyValue
+              label="Akhir kontrak tetap"
+              value={formatDate(preview.billing.contractualEndDate)}
+            />
+            <KeyValue
+              label="Tarif tetap berlaku"
+              value={formatIDR(preview.billing.agreedMonthlyRent) + " / bulan"}
+            />
+            <KeyValue label="Deposit tersimpan" value={formatIDR(preview.deposit.carriedAmount)} />
+            <KeyValue label="Tambahan deposit" value={formatIDR(topUpRequiredAmount)} />
+            <KeyValue
+              label="Tagihan belum dibayar"
+              value={formatIDR(preview.oldOutstandingAmount)}
+            />
+          </div>
+        ) : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={Boolean(cancelTarget)}
         onOpenChange={(open) => {

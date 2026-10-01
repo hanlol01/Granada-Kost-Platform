@@ -81,6 +81,7 @@ type Props = {
 
 export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }: Props) {
   const detail = useM6Lease(leaseId);
+  const [completedTransferLeaseId, setCompletedTransferLeaseId] = useState<string | null>(null);
   const billing = useM6LeaseBillingSummary(leaseId);
   const { user, hasPermission } = useAuth();
   const roles = user?.roles ?? [];
@@ -145,15 +146,24 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
           <div className="flex flex-wrap gap-2">
             {canTransfer ? (
               <Button
-                variant={transferPanelOpen ? "destructive" : "info"}
-                onClick={() => onSearchChange({ panel: transferPanelOpen ? "detail" : "transfer" })}
+                variant={
+                  transferPanelOpen && completedTransferLeaseId !== leaseId ? "destructive" : "info"
+                }
+                onClick={() => {
+                  if (!transferPanelOpen) setCompletedTransferLeaseId(null);
+                  onSearchChange({ panel: transferPanelOpen ? "detail" : "transfer" });
+                }}
               >
                 {transferPanelOpen ? (
                   <XCircle className="mr-2 h-4 w-4" />
                 ) : (
                   <ArrowLeftRight className="mr-2 h-4 w-4" />
                 )}
-                {transferPanelOpen ? "Batal Pindah Kamar" : "Pindah Kamar"}
+                {transferPanelOpen
+                  ? completedTransferLeaseId === leaseId
+                    ? "Tutup Perpindahan Kamar"
+                    : "Batal Pindah Kamar"
+                  : "Pindah Kamar"}
               </Button>
             ) : null}
             {isAdmin && canManage && renewalFlagEnabled ? (
@@ -181,6 +191,7 @@ export function LeaseDetailPage({ leaseId, search, onSearchChange, onOpenLease }
             transferFlagEnabled={transferFlagEnabled}
             onClose={() => onSearchChange({ panel: "detail" })}
             onOpenLease={onOpenLease}
+            onCompleted={() => setCompletedTransferLeaseId(leaseId)}
           />
         ) : search.panel === "renewal" ? (
           <RenewalPanel

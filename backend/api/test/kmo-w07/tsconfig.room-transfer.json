@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../.room-transfer-test-run",
+    "rootDir": "../..",
+    "incremental": false,
+    "esModuleInterop": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["room-transfer-*.ts", "../kmo-w02/full-room-detail-contract.spec.ts"],
+  "exclude": []
+}

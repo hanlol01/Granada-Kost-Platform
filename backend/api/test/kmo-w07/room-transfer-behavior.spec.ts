@@ -31,6 +31,9 @@ type TransferOptions = {
   billingAnchorDay?: number;
   carriedDeposit?: number;
   requiredDeposit?: number;
+  agreedDeposit?: number;
+  contractRent?: number | null;
+  evidenceValid?: boolean;
   commandEffectiveDate?: string;
   targetRoomStatus?: string;
   failOn?: RegExp;
@@ -84,6 +87,8 @@ function transferHarness(options: TransferOptions = {}) {
     snapshot_monthly_price: '1800000',
     snapshot_yearly_price: '19800000',
     snapshot_deposit_amount: String(requiredDeposit),
+    security_deposit_required_amount: String(options.agreedDeposit ?? requiredDeposit),
+    contract_rent_amount: options.contractRent === undefined ? null : options.contractRent,
     snapshot_room_number: 'A-01',
     snapshot_kost_type_name: 'Standard',
     notes: null,
@@ -115,6 +120,7 @@ function transferHarness(options: TransferOptions = {}) {
       snapshot_monthly_price: '1800000',
       snapshot_yearly_price: '19800000',
       snapshot_deposit_amount: String(requiredDeposit),
+      security_deposit_required_amount: String(options.agreedDeposit ?? requiredDeposit),
       source_end_date: sourceEndDate,
       carried_deposit_amount: carriedDeposit,
       required_target_deposit_amount: requiredDeposit,
@@ -171,6 +177,13 @@ function transferHarness(options: TransferOptions = {}) {
         return { rows: [{ today }], rowCount: 1 };
       if (/SELECT next_financial_transaction_code/.test(q))
         return { rows: [{ code: 'TRX-20260825-000001-TAMBAH-DEPOSIT' }], rowCount: 1 };
+      if (/SELECT id FROM files WHERE id=ANY/.test(q)) {
+        return { rows: options.evidenceValid ? (params[0] as string[]).map((id) => ({ id })) : [] };
+      }
+      if (/INSERT INTO payment_evidence_files/.test(q)) {
+        record();
+        return { rows: [], rowCount: 1 };
+      }
       if (/^SELECT property_id FROM leases WHERE id = \$1$/.test(q))
         return { rows: [{ property_id: PROPERTY_ID }], rowCount: 1 };
       if (/FROM lease_transfer_commands WHERE id = \$1 FOR UPDATE/.test(q))
@@ -301,6 +314,21 @@ function transferHarness(options: TransferOptions = {}) {
         record();
         return {
           rows: [leaseRow(LEASE_ID, { lease_status: 'transferred', end_date: today })],
+          rowCount: 1,
+        };
+      }
+      if (/UPDATE leases SET room_id =/.test(q)) {
+        record();
+        targetLeaseId = LEASE_ID;
+        return {
+          rows: [
+            leaseRow(LEASE_ID, {
+              room_id: TARGET_ROOM_ID,
+              occupancy_id: 'target-occupancy',
+              snapshot_room_number: 'B-01',
+              next_billing_date: params[6],
+            }),
+          ],
           rowCount: 1,
         };
       }
@@ -481,6 +509,213 @@ const adminActor = {
 };
 const idempotencyKey = 'w07b-transfer-behaviour-0001';
 
+test('zero agreed deposit ignores tariff deposit and retains the paid contract on a same-day move', async () => {
+  const h = transferHarness({
+    agreedDeposit: 0,
+    carriedDeposit: 0,
+    requiredDeposit: 1_900_000,
+    contractRent: 18_000_000,
+  });
+  const { data: preview } = await h.service.preview(adminActor as never, LEASE_ID, {
+    target_room_id: TARGET_ROOM_ID,
+    transfer_path: 'same_day_exception',
+  });
+  assert.equal((preview.deposit as { top_up_required_amount: number }).top_up_required_amount, 0);
+  assert.equal(
+    (preview.billing as { target_invoice_will_be_issued: boolean }).target_invoice_will_be_issued,
+    false,
+  );
+  const response = await h.service.transfer(
+    adminActor as never,
+    LEASE_ID,
+    {
+      target_room_id: TARGET_ROOM_ID,
+      effective_date: '2026-09-10',
+      reason_code: 'resident_request',
+      exception_reason: 'Penghuni perlu pindah hari ini',
+    },
+    idempotencyKey,
+    auditContext,
+  );
+  const result = response.body.data as { target_lease: { id: string; end_date: string } };
+  assert.equal(result.target_lease.id, LEASE_ID);
+  assert.equal(result.target_lease.end_date, '2027-03-31');
+  assert.equal(
+    committedMatching(
+      h.committed,
+      /INSERT INTO (leases|payments|invoices|payment_allocations|lease_deposit_transactions)\b/,
+    ).length,
+    0,
+  );
+  const update = committedMatching(h.committed, /UPDATE leases SET room_id =/)[0];
+  assert.ok(update);
+  assert.doesNotMatch(
+    update.sql.split('RETURNING')[0],
+    /contract_rent_amount|snapshot_monthly_price|start_date|end_date/,
+  );
+});
+
+test('an agreed deposit shortfall uses a lease-scoped payment and deposit ledger, never invoice allocations', async () => {
+  const h = transferHarness({
+    agreedDeposit: 500_000,
+    carriedDeposit: 300_000,
+    requiredDeposit: 1_900_000,
+  });
+  await h.service.transfer(
+    adminActor as never,
+    LEASE_ID,
+    {
+      target_room_id: TARGET_ROOM_ID,
+      effective_date: '2026-09-10',
+      reason_code: 'resident_request',
+      exception_reason: 'Penghuni perlu pindah hari ini',
+      top_up: {
+        amount: 200_000,
+        payment: { payment_method: 'cash', reference_number: 'BUKTI-DEPOSIT-1' },
+      },
+    },
+    idempotencyKey,
+    auditContext,
+  );
+  assert.equal(committedMatching(h.committed, /INSERT INTO payment_allocations/).length, 0);
+  assert.match(committedMatching(h.committed, /INSERT INTO payments/)[0].sql, /lease_id/);
+  assert.equal(
+    h.ledger[LEASE_ID].reduce(
+      (sum, row) => sum + (row.direction === 'credit' ? row.amount : -row.amount),
+      0,
+    ),
+    500_000,
+  );
+});
+
+test('received deposit remains intact even when the agreement has no mandatory deposit', async () => {
+  const h = transferHarness({
+    agreedDeposit: 0,
+    carriedDeposit: 300_000,
+    requiredDeposit: 1_900_000,
+  });
+  const response = await h.service.transfer(
+    adminActor as never,
+    LEASE_ID,
+    {
+      target_room_id: TARGET_ROOM_ID,
+      effective_date: '2026-09-10',
+      reason_code: 'resident_request',
+      exception_reason: 'Perpindahan hari ini',
+    },
+    idempotencyKey,
+    auditContext,
+  );
+  assert.equal(
+    (response.body.data as { deposit: { balance_amount: number } }).deposit.balance_amount,
+    300_000,
+  );
+  assert.equal(
+    committedMatching(h.committed, /INSERT INTO lease_deposit_transactions|INSERT INTO payments/)
+      .length,
+    0,
+  );
+});
+
+test('bank deposit top-up without evidence rolls back every lifecycle write', async () => {
+  const h = transferHarness({ agreedDeposit: 500_000, carriedDeposit: 300_000 });
+  await assert.rejects(
+    h.service.transfer(
+      adminActor as never,
+      LEASE_ID,
+      {
+        target_room_id: TARGET_ROOM_ID,
+        effective_date: '2026-09-10',
+        reason_code: 'resident_request',
+        exception_reason: 'Perpindahan hari ini',
+        top_up: {
+          amount: 200_000,
+          payment: { payment_method: 'bank_transfer', reference_number: 'BANK-1' },
+        },
+      },
+      idempotencyKey,
+      auditContext,
+    ),
+    (error) => errorCode(error) === 'TRANSFER_PROOF_REQUIRED',
+  );
+  assert.equal(h.committed.length, 0);
+  assert.deepEqual(h.events, ['begin', 'rollback']);
+});
+
+test('deposit evidence from another scope is rejected without partial writes', async () => {
+  const h = transferHarness({ agreedDeposit: 500_000, carriedDeposit: 300_000 });
+  await assert.rejects(
+    h.service.transfer(
+      adminActor as never,
+      LEASE_ID,
+      {
+        target_room_id: TARGET_ROOM_ID,
+        effective_date: '2026-09-10',
+        reason_code: 'resident_request',
+        exception_reason: 'Perpindahan hari ini',
+        top_up: {
+          amount: 200_000,
+          payment: {
+            payment_method: 'bank_transfer',
+            reference_number: 'BANK-1',
+            evidence_file_ids: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+          },
+        },
+      },
+      idempotencyKey,
+      auditContext,
+    ),
+    (error) => errorCode(error) === 'PAYMENT_EVIDENCE_SCOPE_INVALID',
+  );
+  assert.equal(h.committed.length, 0);
+});
+
+test('valid bank evidence is linked to the deposit payment with property and actor scope', async () => {
+  const h = transferHarness({
+    agreedDeposit: 500_000,
+    carriedDeposit: 300_000,
+    evidenceValid: true,
+  });
+  const fileId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await h.service.transfer(
+    adminActor as never,
+    LEASE_ID,
+    {
+      target_room_id: TARGET_ROOM_ID,
+      effective_date: '2026-09-10',
+      reason_code: 'resident_request',
+      exception_reason: 'Perpindahan hari ini',
+      top_up: {
+        amount: 200_000,
+        payment: {
+          payment_method: 'bank_transfer',
+          reference_number: 'BANK-1',
+          evidence_file_ids: [fileId],
+        },
+      },
+    },
+    idempotencyKey,
+    auditContext,
+  );
+  assert.deepEqual(committedMatching(h.committed, /INSERT INTO payment_evidence_files/)[0].params, [
+    PROPERTY_ID,
+    'deposit-payment',
+    fileId,
+    'transfer_proof',
+    USER_ID,
+  ]);
+  assert.ok(h.queries.some((q) => /uploader_user_id=\$3/.test(q) && /5242880/.test(q)));
+});
+
+test('a canonical fully or partially paid contract is not re-invoiced by scheduled transfer', async () => {
+  const h = transferHarness({ contractRent: 18_000_000 });
+  assert.equal(
+    (await h.service.executeScheduledTransfer(COMMAND_ID, 'canonical-schedule')).state,
+    'executed',
+  );
+  assert.equal(committedMatching(h.committed, /INSERT INTO invoices|INSERT INTO leases/).length, 0);
+});
+
 test('preview recommends the first valid billing boundary when no date is supplied', async () => {
   const harness = transferHarness({
     today: '2026-09-10',
@@ -552,7 +787,7 @@ test('schedule snapshots the normalized boundary when the stored billing cursor 
   assert.equal(snapshot.next_billing_date, '2026-08-25');
 });
 
-test('cutover advances a stale cursor and gives the successor the following boundary', async () => {
+test('cutover advances a stale cursor on the unchanged contract', async () => {
   const harness = transferHarness({
     today: '2026-08-25',
     commandEffectiveDate: '2026-08-25',
@@ -563,9 +798,9 @@ test('cutover advances a stale cursor and gives the successor the following boun
   const outcome = await harness.service.executeScheduledTransfer(COMMAND_ID, 'run-stale-cursor');
 
   assert.equal(outcome.state, 'executed');
-  const successor = committedMatching(harness.committed, /INSERT INTO leases/)[0];
-  assert.ok(successor);
-  assert.equal(successor.params[10], '2026-09-25');
+  const movedLease = committedMatching(harness.committed, /UPDATE leases SET room_id =/)[0];
+  assert.ok(movedLease);
+  assert.equal(movedLease.params[6], '2026-09-25');
 });
 
 test('a due scheduled command executes at its boundary and inherits the contractual end date', async () => {
@@ -579,19 +814,20 @@ test('a due scheduled command executes at its boundary and inherits the contract
   assert.equal(outcome.late, false);
   assert.deepEqual(harness.events, ['begin', 'commit']);
 
-  // The successor lease inherits the source contractual end date, while the
-  // source lease closes at the transfer date.
-  const insertLease = committedMatching(harness.committed, /INSERT INTO leases/)[0];
-  assert.ok(insertLease);
-  assert.equal(insertLease.params[7], '2027-03-31');
-  const closeSource = committedMatching(
-    harness.committed,
-    /UPDATE leases SET lease_status = 'transferred'/,
-  )[0];
-  assert.ok(closeSource);
-  assert.equal(closeSource.params[1], '2026-09-10');
+  const movedLease = committedMatching(harness.committed, /UPDATE leases SET room_id =/)[0];
+  assert.ok(movedLease);
+  assert.equal(movedLease.params[0], LEASE_ID);
+  assert.doesNotMatch(
+    movedLease.sql.split('RETURNING')[0],
+    /start_date|end_date|snapshot_monthly_price/,
+  );
+  assert.equal(
+    committedMatching(harness.committed, /INSERT INTO leases|SET lease_status = 'transferred'/)
+      .length,
+    0,
+  );
 
-  // Boundary cutover issues the successor's first cycle invoice.
+  // Only legacy cycle-billed contracts issue a next-cycle invoice.
   assert.equal(committedMatching(harness.committed, /INSERT INTO invoices/).length, 1);
   // The transfer record metadata records the surviving contractual end date.
   const record = committedMatching(harness.committed, /INSERT INTO room_transfer_records/)[0];
@@ -1090,7 +1326,7 @@ test('reusing an idempotency key with a different payload fails closed', async (
     harness.service.resolveRoomInspection(
       adminRoomActor as never,
       SOURCE_ROOM_ID,
-      { outcome: 'fail' },
+      { outcome: 'fail', notes: 'Perlu perbaikan pintu' },
       roomKey,
       roomContext as never,
     ),
@@ -1126,4 +1362,30 @@ test('inspection resolution cannot make an actively occupied room available', as
     (error) => errorCode(error) === 'ROOM_ACTIVE_OCCUPANCY_CONFLICT',
   );
   assert.equal(committedMatching(harness.committed, /UPDATE rooms/).length, 0);
+});
+
+test('inspection failure requires a repair reason and records the maintenance result', async () => {
+  const harness = roomHarness();
+  await assert.rejects(
+    harness.service.resolveRoomInspection(
+      adminRoomActor as never,
+      SOURCE_ROOM_ID,
+      { outcome: 'fail', notes: '   ' },
+      roomKey,
+      roomContext as never,
+    ),
+    (error) => errorCode(error) === 'ROOM_INSPECTION_REASON_REQUIRED',
+  );
+  assert.equal(harness.committed.length, 0);
+  const result = await harness.service.resolveRoomInspection(
+    adminRoomActor as never,
+    SOURCE_ROOM_ID,
+    { outcome: 'fail', notes: ' Pintu rusak ' },
+    roomKey,
+    roomContext as never,
+  );
+  const data = result.body.data as { room_status: string; notes: string };
+  assert.equal(data.room_status, 'maintenance');
+  assert.equal(data.notes, 'Pintu rusak');
+  assert.equal(committedMatching(harness.committed, /UPDATE rooms/).length, 1);
 });

@@ -4,10 +4,11 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import { UserAccessContext } from '../iam/types/iam.types';
@@ -51,6 +52,8 @@ type LeaseRow = {
   snapshot_monthly_price: string;
   snapshot_yearly_price: string;
   snapshot_deposit_amount: string;
+  security_deposit_required_amount: string;
+  contract_rent_amount: string | null;
   snapshot_room_number: string;
   snapshot_kost_type_name: string;
   notes: string | null;
@@ -185,6 +188,7 @@ const BOUNDARY_SEARCH_HORIZON = 24;
 
 @Injectable()
 export class LeaseTransferService {
+  private readonly logger = new Logger(LeaseTransferService.name);
   constructor(
     private readonly leases: LeaseRepository,
     private readonly features: LeaseFeatureService,
@@ -206,6 +210,7 @@ export class LeaseTransferService {
       await this.features.assertTransferEnabled(scope.property_id, client);
       const source = await this.lockLease(client, leaseId, 'FOR SHARE');
       this.assertTransferableLease(source);
+      this.assertWithinContract(source, today);
       const sourceNextBillingDate = this.currentOrNextBillingBoundary(source, today);
       if (source.room_id === dto.target_room_id) {
         throw new UnprocessableEntityException({
@@ -216,7 +221,9 @@ export class LeaseTransferService {
       const transferPath = this.resolveTransferPath(dto, today);
       const validEffectiveDates =
         transferPath === 'end_period'
-          ? this.futureBillingBoundaries(source, today).slice(0, 6)
+          ? this.futureBillingBoundaries(source, today)
+              .filter((date) => !source.end_date || date < source.end_date)
+              .slice(0, 6)
           : [today];
       const effectiveDate = dto.effective_date ?? validEffectiveDates[0];
       if (!effectiveDate) {
@@ -252,13 +259,15 @@ export class LeaseTransferService {
           message: 'Source lease has an invalid negative deposit balance',
         });
       }
-      const targetRequiredDeposit = Number(targetKostType.deposit_amount);
+      const targetRequiredDeposit = this.agreedDeposit(source);
       const topUpRequired = Math.max(0, targetRequiredDeposit - carriedDeposit);
       const currentCycleInvoiceExists = invoices.some(
         (invoice) => invoice.cycle_start_date === today,
       );
       const targetInvoiceWillBeIssued =
-        sourceNextBillingDate === today && !currentCycleInvoiceExists;
+        source.contract_rent_amount == null &&
+        sourceNextBillingDate === today &&
+        !currentCycleInvoiceExists;
 
       return {
         data: {
@@ -287,6 +296,11 @@ export class LeaseTransferService {
             due_day: UNIFORM_RENT_DUE_DAY,
             // The successor lease inherits the source contractual end date.
             contractual_end_date: source.end_date,
+            current_monthly_rent: Number(source.snapshot_monthly_price),
+            agreed_monthly_rent: Number(source.snapshot_monthly_price),
+            target_reference_monthly_rent: Number(targetKostType.monthly_price),
+            tariff_review_date: sourceNextBillingDate,
+            contract_preserved: true,
           },
           valid_effective_dates: validEffectiveDates,
           old_outstanding_amount: await this.outstandingAmount(
@@ -418,7 +432,7 @@ export class LeaseTransferService {
             message: 'Source lease has an invalid negative deposit balance',
           });
         }
-        const requiredTargetDeposit = Number(targetKostType.deposit_amount);
+        const requiredTargetDeposit = this.agreedDeposit(source);
         if (requiredTargetDeposit > carriedDeposit) {
           throw new UnprocessableEntityException({
             code: 'TRANSFER_SCHEDULE_TOP_UP_REQUIRED',
@@ -789,6 +803,20 @@ export class LeaseTransferService {
     await this.features.assertTransferEnabled(input.propertyId, client);
     const source = await this.lockLease(client, input.leaseId, 'FOR UPDATE');
     this.assertTransferableLease(source);
+    this.assertWithinContract(source, today);
+    if (!input.commandId) {
+      const scheduled = await client.query<{ id: string }>(
+        `SELECT id FROM lease_transfer_commands WHERE from_lease_id = $1 AND state = 'scheduled' FOR UPDATE`,
+        [source.id],
+      );
+      if (scheduled.rows.length) {
+        throw new ConflictException({
+          code: 'TRANSFER_ALREADY_SCHEDULED',
+          message:
+            'Batalkan jadwal pindah kamar yang masih aktif sebelum memproses perpindahan hari ini.',
+        });
+      }
+    }
     const sourceNextBillingDate = this.currentOrNextBillingBoundary(source, today);
     // W07B revision 2: the contractual end date snapshotted when the command
     // was scheduled must still hold at cutover; otherwise the command fails
@@ -867,7 +895,7 @@ export class LeaseTransferService {
         message: 'Source lease has an invalid negative deposit balance',
       });
     }
-    const requiredTargetDeposit = Number(targetKostType.deposit_amount);
+    const requiredTargetDeposit = this.agreedDeposit(source);
     const requiredTopUp = Math.max(0, requiredTargetDeposit - carriedDeposit);
     this.assertTopUpAmount(input.topUp, requiredTopUp);
     if (input.topUp) this.assertFinancialActor(input.user);
@@ -875,7 +903,10 @@ export class LeaseTransferService {
     const sourceCurrentCycleInvoiceExists = invoices.some(
       (invoice) => invoice.cycle_start_date === today,
     );
-    const issueTargetInvoice = sourceNextBillingDate === today && !sourceCurrentCycleInvoiceExists;
+    const issueTargetInvoice =
+      source.contract_rent_amount == null &&
+      sourceNextBillingDate === today &&
+      !sourceCurrentCycleInvoiceExists;
     const targetNextBillingDate =
       sourceNextBillingDate === today
         ? nextBillingStart(today, source.billing_cycle, source.billing_anchor_day)
@@ -886,8 +917,9 @@ export class LeaseTransferService {
       true,
     );
 
-    // The old active rows are ended before target active rows are inserted,
-    // preserving partial-unique resident and room invariants in one tx.
+    // A physical move is an addendum, not a new commercial agreement. Retain
+    // the lease identity so invoices, allocations, contract paid state and
+    // signed terms remain attached to the same contract (DEC-LEASE-004).
     await client.query(
       `UPDATE occupancies
        SET occupancy_status = 'transferred', end_date = $2::date,
@@ -895,15 +927,6 @@ export class LeaseTransferService {
        WHERE id = $1`,
       [source.occupancy_id, today, input.user.id],
     );
-    const transferredSourceResult = await client.query<LeaseRow>(
-      `UPDATE leases
-       SET lease_status = 'transferred', end_date = $2::date, closed_at = now(),
-           closed_by_user_id = $3, close_reason = $4, updated_by_user_id = $3, updated_at = now()
-       WHERE id = $1
-       RETURNING ${this.leaseColumns()}`,
-      [source.id, today, input.user.id, this.transferCloseReason(input)],
-    );
-    const transferredSource = transferredSourceResult.rows[0];
 
     const targetOccupancyResult = await client.query<{ id: string }>(
       `INSERT INTO occupancies (
@@ -913,41 +936,21 @@ export class LeaseTransferService {
       [input.propertyId, targetRoom.id, resident.id, today, input.user.id],
     );
     const targetOccupancyId = targetOccupancyResult.rows[0].id;
-    const targetLeaseCode = this.newLeaseCode(today);
     const targetLeaseResult = await client.query<LeaseRow>(
-      `INSERT INTO leases (
-         property_id, lease_code, resident_id, room_id, occupancy_id, kost_type_id,
-         lease_status, start_date, end_date, billing_cycle, billing_anchor_day, next_billing_date,
-         snapshot_monthly_price, snapshot_yearly_price, snapshot_deposit_amount,
-         snapshot_room_number, snapshot_kost_type_name, notes, transferred_from_lease_id,
-         created_by_user_id, updated_by_user_id
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, 'active', $7::date, $8::date, $9, $10, $11::date,
-         $12, $13, $14, $15, $16, $17, $18, $19, $19
-       )
-       RETURNING ${this.leaseColumns()}`,
+      `UPDATE leases
+       SET room_id = $2, occupancy_id = $3, kost_type_id = $4,
+           snapshot_room_number = $5, snapshot_kost_type_name = $6,
+           next_billing_date = $7::date, updated_by_user_id = $8, updated_at = now()
+       WHERE id = $1
+        RETURNING ${this.leaseColumns()}`,
       [
-        input.propertyId,
-        targetLeaseCode,
-        resident.id,
+        source.id,
         targetRoom.id,
         targetOccupancyId,
         targetKostType.id,
-        today,
-        // W07B revision 2: the successor lease inherits the source lease's
-        // original contractual end date; the source closes at the transfer
-        // date while the contractual term survives on the successor.
-        source.end_date,
-        source.billing_cycle,
-        UNIFORM_RENT_DUE_DAY,
-        targetNextBillingDate,
-        targetKostType.monthly_price,
-        targetKostType.yearly_price,
-        targetKostType.deposit_amount,
         targetRoom.number,
         targetKostType.name,
-        source.notes,
-        source.id,
+        targetNextBillingDate,
         input.user.id,
       ],
     );
@@ -983,6 +986,10 @@ export class LeaseTransferService {
         JSON.stringify({
           late_execution: input.lateExecution,
           source_end_date: source.end_date,
+          agreement_preserved: true,
+          source_monthly_rent: Number(source.snapshot_monthly_price),
+          agreed_monthly_rent: Number(source.snapshot_monthly_price),
+          source_deposit_required_amount: requiredTargetDeposit,
         }),
       ],
     );
@@ -1041,30 +1048,8 @@ export class LeaseTransferService {
       });
     }
 
-    await this.insertLedger(client, {
-      propertyId: input.propertyId,
-      leaseId: source.id,
-      transactionType: 'carry_forward',
-      direction: 'debit',
-      amount: carriedDeposit,
-      transferRecordId: transferRecord.id,
-      reasonType: 'transfer',
-      reason: 'Lease transfer carry-forward',
-      metadata: { counterpart_lease_id: targetLease.id },
-      actorUserId: input.user.id,
-    });
-    await this.insertLedger(client, {
-      propertyId: input.propertyId,
-      leaseId: targetLease.id,
-      transactionType: 'carry_forward',
-      direction: 'credit',
-      amount: carriedDeposit,
-      transferRecordId: transferRecord.id,
-      reasonType: 'transfer',
-      reason: 'Lease transfer carry-forward',
-      metadata: { counterpart_lease_id: source.id },
-      actorUserId: input.user.id,
-    });
+    // Deposit already belongs to this unchanged lease. The transfer record
+    // records the carried balance without inventing debit/credit movements.
 
     let topUpPayment: PaymentRow | null = null;
     if (input.topUp) {
@@ -1075,12 +1060,10 @@ export class LeaseTransferService {
         input.topUp.amount,
         input.topUp.payment,
         input.user.id,
+        targetLease.id,
       );
-      await client.query(
-        `INSERT INTO payment_allocations (payment_id, target_type, target_id, allocated_amount)
-         VALUES ($1, 'deposit', $2, $3)`,
-        [topUpPayment.id, targetLease.id, input.topUp.amount],
-      );
+      // W06 allocations are invoice-only. Deposit is accounted for by the
+      // lease-scoped payment and deposit ledger, never a synthetic allocation.
       await this.insertLedger(client, {
         propertyId: input.propertyId,
         leaseId: targetLease.id,
@@ -1097,7 +1080,6 @@ export class LeaseTransferService {
       });
     }
 
-    await this.refreshDepositCache(client, source.id, input.user.id);
     const targetDeposit = await this.refreshDepositCache(client, targetLease.id, input.user.id);
 
     // W07B decision 5: the old room enters inspection_required at cutover. It
@@ -1265,11 +1247,7 @@ export class LeaseTransferService {
         transfer_command_id: input.commandId,
         transfer_path: input.transferPath,
         executed_late: input.lateExecution,
-        source_lease: this.safeLease(
-          transferredSource,
-          sourceRoom.number,
-          source.snapshot_kost_type_name,
-        ),
+        source_lease: this.safeLease(source, sourceRoom.number, source.snapshot_kost_type_name),
         target_lease: this.safeLease(targetLease, targetRoom.number, targetKostType.name),
         transfer_record: {
           id: transferRecord.id,
@@ -1351,6 +1329,23 @@ export class LeaseTransferService {
         return { status, body, replayed: false };
       });
     } catch (error) {
+      if (!(error instanceof HttpException)) {
+        const failure = error as { code?: unknown; constraint?: unknown } | null;
+        const safeCode =
+          typeof failure?.code === 'string' && /^[0-9A-Z]{5}$/.test(failure.code)
+            ? failure.code
+            : null;
+        const constraint =
+          typeof failure?.constraint === 'string' && /^[a-z0-9_]{1,128}$/.test(failure.constraint)
+            ? failure.constraint
+            : null;
+        this.logger.error({
+          event: 'lease_transfer_command_failed',
+          correlation_id: context.correlationId ?? null,
+          sql_state: safeCode,
+          constraint,
+        });
+      }
       this.rethrowKnownDatabaseConflict(error);
     }
   }
@@ -1639,7 +1634,7 @@ export class LeaseTransferService {
       deposit_collected_amount: string;
       deposit_deduction_amount: string;
       deposit_refunded_amount: string;
-      snapshot_deposit_amount: string;
+      security_deposit_required_amount: string;
     }>(
       `WITH totals AS (
          SELECT
@@ -1657,13 +1652,13 @@ export class LeaseTransferService {
        FROM totals
        WHERE leases.id = $1
        RETURNING leases.deposit_collected_amount, leases.deposit_deduction_amount,
-                 leases.deposit_refunded_amount, leases.snapshot_deposit_amount`,
+                  leases.deposit_refunded_amount, leases.security_deposit_required_amount`,
       [leaseId, actorUserId],
     );
     const cache = result.rows[0];
     const ledger = await this.readLedger(client, leaseId, 'FOR UPDATE');
     return {
-      required_amount: Number(cache.snapshot_deposit_amount),
+      required_amount: Number(cache.security_deposit_required_amount),
       collected_amount: Number(cache.deposit_collected_amount),
       deduction_amount: Number(cache.deposit_deduction_amount),
       refunded_amount: Number(cache.deposit_refunded_amount),
@@ -1678,7 +1673,36 @@ export class LeaseTransferService {
     amount: number,
     payment: DepositPaymentDto,
     actorUserId: string,
+    leaseId: string,
   ): Promise<PaymentRow> {
+    const evidence = payment.evidence_file_ids ?? [];
+    if (evidence.length > 5 || new Set(evidence).size !== evidence.length) {
+      throw new BadRequestException({
+        code: 'PAYMENT_EVIDENCE_INVALID',
+        message: 'Lampirkan maksimal 5 bukti pembayaran yang berbeda.',
+      });
+    }
+    if (payment.payment_method === 'bank_transfer' && evidence.length === 0) {
+      throw new BadRequestException({
+        code: 'TRANSFER_PROOF_REQUIRED',
+        message: 'Bukti transfer tambahan deposit wajib dilampirkan.',
+      });
+    }
+    if (evidence.length) {
+      const files = await client.query<{ id: string }>(
+        `SELECT id FROM files WHERE id=ANY($1::uuid[]) AND property_id=$2
+         AND uploader_user_id=$3 AND file_purpose='payment_proof' AND is_deleted=false
+         AND mime_type IN ('image/jpeg','image/png','image/webp','application/pdf')
+         AND file_size_bytes BETWEEN 1 AND 5242880 ORDER BY id FOR UPDATE`,
+        [[...evidence].sort(), propertyId, actorUserId],
+      );
+      if (files.rows.length !== evidence.length) {
+        throw new ConflictException({
+          code: 'PAYMENT_EVIDENCE_SCOPE_INVALID',
+          message: 'Bukti pembayaran tidak tersedia atau bukan milik properti dan akun ini.',
+        });
+      }
+    }
     if (!payment.payment_code?.trim() && !payment.reference_number?.trim()) {
       throw new BadRequestException({
         code: 'DEPOSIT_PAYMENT_REFERENCE_REQUIRED',
@@ -1694,8 +1718,8 @@ export class LeaseTransferService {
     const result = await client.query<PaymentRow>(
       `INSERT INTO payments (
          property_id, resident_id, payment_code, payment_method, payment_status, payment_purpose, amount,
-         paid_at, verified_at, received_by_user_id, verified_by_user_id, reference_number, notes
-       ) VALUES ($1, $2, $3, $4, 'verified', 'security_deposit', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9)
+         paid_at, verified_at, received_by_user_id, verified_by_user_id, reference_number, notes, lease_id
+       ) VALUES ($1, $2, $3, $4, 'verified', 'security_deposit', $5, COALESCE($6::timestamptz, now()), now(), $7, $7, $8, $9, $10)
        RETURNING id, payment_code`,
       [
         propertyId,
@@ -1707,9 +1731,24 @@ export class LeaseTransferService {
         actorUserId,
         payment.reference_number?.trim() ?? payment.payment_code?.trim() ?? null,
         payment.notes?.trim() ?? null,
+        leaseId,
       ],
     );
-    return result.rows[0];
+    const recorded = result.rows[0];
+    for (const fileId of [...evidence].sort()) {
+      await client.query(
+        `INSERT INTO payment_evidence_files(property_id,payment_id,file_id,evidence_kind,created_by_user_id)
+         VALUES($1,$2,$3,$4,$5)`,
+        [
+          propertyId,
+          recorded.id,
+          fileId,
+          payment.payment_method === 'cash' ? 'cash_evidence' : 'transfer_proof',
+          actorUserId,
+        ],
+      );
+    }
+    return recorded;
   }
 
   private async issueTargetCycleInvoice(
@@ -2015,6 +2054,7 @@ export class LeaseTransferService {
 
   /** W07B ruling B2: any strictly future billing-cycle boundary is allowed. */
   private assertFutureBoundaryDate(value: string, today: string, source: LeaseRow): void {
+    this.assertWithinContract(source, value);
     if (value <= today) {
       throw new UnprocessableEntityException({
         code: 'TRANSFER_EFFECTIVE_DATE_MUST_BE_FUTURE',
@@ -2027,6 +2067,16 @@ export class LeaseTransferService {
         code: 'TRANSFER_EFFECTIVE_DATE_NOT_BOUNDARY',
         message:
           'Scheduled transfer effective date must be a future billing-cycle boundary of the source lease',
+      });
+    }
+  }
+
+  private assertWithinContract(source: LeaseRow, date: string): void {
+    if (date < source.start_date || (source.end_date && date >= source.end_date)) {
+      throw new ConflictException({
+        code: 'TRANSFER_OUTSIDE_CONTRACT',
+        message:
+          'Tanggal pindah harus berada dalam masa kontrak yang masih berlaku. Periksa masa sewa terlebih dahulu.',
       });
     }
   }
@@ -2342,10 +2392,6 @@ export class LeaseTransferService {
     return JSON.stringify(value);
   }
 
-  private newLeaseCode(today: string): string {
-    return `LS-${today.replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
-  }
-
   private async jakartaToday(client: PoolClient): Promise<string> {
     const result = await client.query<{ today: string }>(
       `SELECT (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS today`,
@@ -2359,7 +2405,19 @@ export class LeaseTransferService {
             commercial_mode,
             next_billing_date::text, snapshot_monthly_price, snapshot_yearly_price, snapshot_deposit_amount,
             snapshot_room_number, snapshot_kost_type_name, notes,
+            security_deposit_required_amount, contract_rent_amount,
             deposit_collected_amount, deposit_deduction_amount, deposit_refunded_amount`;
+  }
+
+  private agreedDeposit(lease: LeaseRow): number {
+    const amount = Number(lease.security_deposit_required_amount);
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new ConflictException({
+        code: 'DEPOSIT_AGREEMENT_INVALID',
+        message: 'Kewajiban deposit pada kontrak perlu diperiksa sebelum pindah kamar.',
+      });
+    }
+    return amount;
   }
 
   private rethrowKnownDatabaseConflict(error: unknown): never {

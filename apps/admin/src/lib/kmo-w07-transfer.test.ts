@@ -234,13 +234,16 @@ test("W07B TransferPanel keeps one authority for both paths and one entry per su
     /Tanggal alternatif hanya dapat dipilih dari daftar tanggal yang disahkan sistem/,
   );
   assert.match(panel, /TRANSFER_REASON_LABEL/);
-  assert.match(panel, /Alasan pengecualian hari yang sama/);
+  assert.match(panel, /Alasan diproses hari ini/);
+  assert.match(panel, /Tidak ada deposit yang tercatat/);
+  assert.match(panel, /EvidenceFileUploadField/);
+  assert.match(panel, /contractPreserved !== true/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.schedule/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.cancel/);
   assert.match(panel, /adminUxLeaseApi\.transfer\.command/);
   assert.match(panel, /useM6TransferCommands/);
   // Revision 3: the scheduled path refuses a deposit top-up up front.
-  assert.match(panel, /Security deposit kamar tujuan belum terpenuhi/);
+  assert.match(panel, /Kewajiban deposit kontrak belum terpenuhi/);
   assert.match(panel, /topUpRequiredAmount > 0/);
   // Revision 2: the surviving contractual end date is shown to the operator.
   assert.match(panel, /Sewa tetap berakhir/);

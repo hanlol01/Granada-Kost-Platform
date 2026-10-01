@@ -1,16 +1,58 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
 import { LeaseTransferScheduler } from '../../src/modules/lease/lease-transfer.scheduler';
 import { LeaseTransferService } from '../../src/modules/lease/lease-transfer.service';
+import { contractRoomIdSql } from '../../src/modules/lease/helpers/contract-room-reference.helper';
 
-const root = resolve(__dirname, '../..');
+const candidateRoot = resolve(__dirname, '../..');
+const root = existsSync(resolve(candidateRoot, 'src/modules/lease/lease-transfer.service.ts'))
+  ? candidateRoot
+  : resolve(candidateRoot, '..');
 
 async function source(path: string): Promise<string> {
   return readFile(resolve(root, path), 'utf8');
 }
+
+test('full-contract financial room follows the first physical addendum, not current occupancy', () => {
+  const sql = contractRoomIdSql('lease');
+  assert.match(sql, /contract_rent_amount IS NOT NULL/);
+  assert.match(sql, /transfer\.property_id = lease\.property_id/);
+  assert.match(sql, /transfer\.from_lease_id = lease\.id/);
+  assert.match(sql, /transfer\.to_lease_id = lease\.id/);
+  assert.match(sql, /ORDER BY transfer\.created_at, transfer\.id LIMIT 1/);
+  assert.throws(() => contractRoomIdSql('lease; DROP TABLE leases'), /Invalid lease SQL alias/);
+});
+
+test('Owner realization and payment progress use the unchanged commercial room reference', async () => {
+  const realization = await source(
+    'src/modules/property-owner-management/property-owner-realization.service.ts',
+  );
+  const portal = await source(
+    'src/modules/property-owner-management/property-owner-portal.service.ts',
+  );
+  assert.equal(realization.split("contractRoomIdSql('lease')").length - 1, 4);
+  assert.match(realization, /room_assignment\.room_id=room\.id/);
+  assert.match(
+    portal,
+    /JOIN scoped_rooms scope ON scope\.room_id = \(\$\{contractRoomIdSql\('lease'\)\}\)/,
+  );
+});
+
+test('room addendum migration is checksum registered and never rewrites historic transfers', async () => {
+  const version = '113_room_transfer_contract_addendum.sql';
+  const sql = await source(`src/infrastructure/database/migrations/${version}`);
+  const entry = MIGRATION_MANIFEST.find((migration) => migration.version === version);
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(sql).digest('hex'), entry.checksumSha256);
+  assert.match(sql, /DROP CONSTRAINT IF EXISTS room_transfer_records_from_lease_unique/);
+  assert.match(sql, /DROP CONSTRAINT IF EXISTS room_transfer_records_to_lease_unique/);
+  assert.doesNotMatch(sql, /\b(UPDATE|DELETE FROM|TRUNCATE)\b/i);
+});
 
 test('W07B wiring exports the transfer service and scheduler', () => {
   assert.equal(typeof LeaseTransferService, 'function');
@@ -276,9 +318,10 @@ test('W07B read-side maps inspection_required into requires_review without owner
   assert.match(dashboard, /IN \('maintenance', 'requires_review', 'inspection_required'\)/);
 });
 
-test('W07B keeps predecessor-successor linkage on leases and room_transfer_records (decision 1)', async () => {
+test('physical moves retain the contract and record room-to-room linkage', async () => {
   const transfer = await source('src/modules/lease/lease-transfer.service.ts');
-  assert.match(transfer, /transferred_from_lease_id/);
+  assert.match(transfer, /UPDATE leases\s+SET room_id/);
+  assert.doesNotMatch(transfer, /INSERT INTO leases/);
   assert.match(transfer, /INSERT INTO room_transfer_records/);
   assert.match(transfer, /transfer_command_id, transfer_path, reason_code/);
   assert.doesNotMatch(transfer, /lease_addenda/i);
@@ -288,7 +331,7 @@ test('W07B keeps predecessor-successor linkage on leases and room_transfer_recor
   assert.doesNotMatch(migration, /lease_addenda/i);
 });
 
-test('W07B revision 2 preserves the contractual end date on the successor lease', async () => {
+test('physical moves preserve the contractual end date without rewriting commercial authority', async () => {
   const transfer = await source('src/modules/lease/lease-transfer.service.ts');
   // The original end date travels inside the scheduled commercial snapshot.
   const scheduleRegion = transfer.slice(
@@ -299,13 +342,16 @@ test('W07B revision 2 preserves the contractual end date on the successor lease'
   // Cutover validates the snapshotted end date again before mutating state.
   assert.match(transfer, /TRANSFER_SOURCE_END_DATE_CHANGED/);
   assert.match(transfer, /input\.expectedSourceEndDate !== source\.end_date/);
-  // The successor INSERT carries the source contractual end date.
+  // The addendum updates only room/occupancy context, not the agreement.
   const insertRegion = transfer.slice(
     transfer.indexOf('const targetLeaseResult'),
     transfer.indexOf('const transferRecordResult'),
   );
-  assert.match(insertRegion, /start_date, end_date, billing_cycle/);
-  assert.match(insertRegion, /\$7::date, \$8::date, \$9, \$10, \$11::date/);
+  assert.match(insertRegion, /UPDATE leases/);
+  assert.doesNotMatch(
+    insertRegion.split('RETURNING')[0],
+    /start_date|end_date|contract_rent_amount|snapshot_monthly_price/,
+  );
   // Preview exposes the surviving contractual term.
   assert.match(transfer, /contractual_end_date: source\.end_date/);
   assert.match(transfer, /source_end_date: 'source_end_date' in snapshot/);

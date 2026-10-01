@@ -625,6 +625,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
+  const [completedTransferLeaseId, setCompletedTransferLeaseId] = useState<string | null>(null);
   const transferPanelRef = useRef<HTMLElement | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutEntryFocus, setCheckoutEntryFocus] = useState<CheckoutEntryFocus>("overview");
@@ -866,16 +867,27 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           ) : null}
           {canTransferEntry && currentTenancy ? (
             <Button
-              variant={transferOpen ? "destructive" : "info"}
+              variant={
+                transferOpen && completedTransferLeaseId !== currentTenancy.leaseId
+                  ? "destructive"
+                  : "info"
+              }
               className="min-h-11"
-              onClick={() => setTransferOpen((open) => !open)}
+              onClick={() => {
+                if (!transferOpen) setCompletedTransferLeaseId(null);
+                setTransferOpen((open) => !open);
+              }}
             >
               {transferOpen ? (
                 <XCircle className="mr-1 h-4 w-4" />
               ) : (
                 <ArrowLeftRight className="mr-1 h-4 w-4" />
               )}
-              {transferOpen ? "Batal Pindah Kamar" : "Pindah Kamar"}
+              {transferOpen
+                ? completedTransferLeaseId === currentTenancy.leaseId
+                  ? "Tutup Perpindahan Kamar"
+                  : "Batal Pindah Kamar"
+                : "Pindah Kamar"}
             </Button>
           ) : null}
           {canManageTermination &&
@@ -942,6 +954,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             })}
             transferFlagEnabled={transferFlagEnabled}
             residentGender={resident.gender ?? undefined}
+            onCompleted={() => setCompletedTransferLeaseId(currentTenancy.leaseId)}
             onClose={() => setTransferOpen(false)}
             onOpenLease={(leaseId) =>
               void navigate({ to: "/penyewaan/$leaseId", params: { leaseId } })

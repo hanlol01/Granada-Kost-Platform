@@ -14,6 +14,15 @@ features:
 4. [Owner-sponsored occupancy](04_OWNER_SPONSORED_OCCUPANCY_HANDOFF.md), covering
    rent-free family occupancy with separately payable management fees.
 
+For resident check-out history, property-wide attention filters or Owner room
+inventory revisions, read [the read-model extension](05_RESIDENT_CHECKOUT_HISTORY_AND_ATTENTION_HANDOFF.md).
+
+For the room-transfer deposit and same-day-flow revision, read
+[the room-transfer handoff](06_ROOM_TRANSFER_DEPOSIT_AND_SAME_DAY_HANDOFF.md).
+The reported HTTP 500 was reproduced on a disposable database and fixed locally.
+The user has since confirmed a successful same-day move; post-transfer room
+inspection and room activity have been approved and implemented locally.
+
 The shared dependency and release gates are in
 [the roadmap](00_COMMERCIAL_AND_CHECKOUT_ROADMAP.md).
 

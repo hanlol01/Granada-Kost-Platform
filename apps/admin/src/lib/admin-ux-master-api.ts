@@ -263,7 +263,7 @@ export type RoomDetail = {
     effectiveUntil: string | null;
     assignmentStatus: "active" | null;
   };
-  timeline: Array<{ eventType: string; label: string; occurredAt: string }>;
+  timeline: Array<{ eventType: string; label: string; occurredAt: string; description?: string }>;
   links: {
     resident: string | null;
     lease: string | null;
@@ -1703,6 +1703,11 @@ const TIMELINE_EVENT_LABELS = {
   lease_closed: "Penyewaan ditutup",
   lease_transferred_out: "Penyewaan dipindahkan dari kamar",
   lease_transferred_in: "Penyewaan dipindahkan ke kamar",
+  room_transfer_out: "Penghuni pindah ke kamar lain",
+  room_transfer_in: "Penghuni pindah dari kamar lain",
+  checkout_financial_completed: "Penyelesaian check-out selesai",
+  room_inspection_passed: "Pemeriksaan selesai · Kamar siap digunakan",
+  room_inspection_failed: "Pemeriksaan selesai · Kamar perlu perbaikan",
   maintenance_open: "Work order perawatan dibuka",
   maintenance_assigned: "Work order perawatan ditugaskan",
   maintenance_in_progress: "Perawatan sedang dikerjakan",
@@ -1991,7 +1996,13 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
   }
   const timeline = Array.isArray(data.timeline)
     ? data.timeline.map((value) => {
-        const record = exactRecord(value, ["event_type", "label", "occurred_at"], "timeline");
+        const record = exactRecord(
+          value,
+          isPlainRecord(value) && Object.hasOwn(value, "description")
+            ? ["event_type", "label", "occurred_at", "description"]
+            : ["event_type", "label", "occurred_at"],
+          "timeline",
+        );
         const eventType = requiredString(record.event_type, "timeline event");
         const expectedLabel =
           TIMELINE_EVENT_LABELS[eventType as keyof typeof TIMELINE_EVENT_LABELS];
@@ -2002,6 +2013,11 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
           eventType,
           label: expectedLabel,
           occurredAt: dateLike(record.occurred_at, "timeline timestamp"),
+          ...(record.description === undefined
+            ? {}
+            : {
+                description: requiredString(record.description, "timeline description"),
+              }),
         };
       })
     : (() => {
@@ -2621,6 +2637,18 @@ export const adminUxMasterApi = {
     },
   },
   rooms: {
+    resolveInspection: (
+      roomId: string,
+      input: { outcome: "pass" | "fail"; notes?: string },
+      idempotencyKey: string,
+    ) =>
+      data<{ id: string; propertyId: string; roomStatus: "vacant" | "maintenance" }>(
+        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
+          `/rooms/${encodeURIComponent(roomId)}/inspection-resolution`,
+          input,
+          { idempotencyKey },
+        ),
+      ),
     list: (
       input: PropertyPageInput & {
         kostTypeId?: string;

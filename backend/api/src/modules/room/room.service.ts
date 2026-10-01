@@ -242,6 +242,12 @@ export class RoomService {
     const route = `POST /rooms/${roomId}/inspection-resolution`;
     const key = this.requireIdempotencyKey(idempotencyKey);
     const notes = input.notes?.trim() || null;
+    if (input.outcome === 'fail' && !notes) {
+      throw new BadRequestException({
+        code: 'ROOM_INSPECTION_REASON_REQUIRED',
+        message: 'Catat alasan kamar memerlukan perbaikan.',
+      });
+    }
     const fingerprint = this.requestFingerprint({
       route,
       actor_id: user.id,
@@ -280,7 +286,7 @@ export class RoomService {
       if (room.room_status !== 'inspection_required') {
         throw new ConflictException({
           code: 'ROOM_INSPECTION_NOT_PENDING',
-          message: 'Room is not awaiting transfer inspection',
+          message: 'Kamar tidak sedang menunggu pemeriksaan.',
         });
       }
       const activeOccupancy = await client.query<{ id: string }>(

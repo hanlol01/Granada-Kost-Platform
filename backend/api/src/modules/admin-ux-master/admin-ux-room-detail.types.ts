@@ -111,6 +111,7 @@ export type AdminRoomDetailProjection = {
     event_type: string;
     label: string;
     occurred_at: string;
+    description?: string;
   }>;
   links: {
     resident: string | null;

@@ -27,6 +27,7 @@ import { CheckoutPanel } from "@/components/leases/CheckoutPanel";
 import { PAYMENT_METHOD_LABEL } from "@/components/leases/transfer-shared";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -549,16 +550,10 @@ function DepositTab({
                       {entry.direction === "credit" ? "Kredit" : "Debit"}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge
-                        variant="outline"
-                        className={
-                          entry.settlementStatus === "pending"
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-                            : "border-slate-700 bg-slate-800 text-slate-300"
-                        }
-                      >
-                        {settlementLabel(entry.settlementStatus)}
-                      </Badge>
+                      <StatusBadge
+                        label={settlementLabel(entry.settlementStatus)}
+                        tone={entry.settlementStatus === "pending" ? "warning" : "neutral"}
+                      />
                     </td>
                     <td className="px-4 py-3 text-slate-300">
                       {new Date(entry.createdAt).toLocaleDateString("id-ID")}

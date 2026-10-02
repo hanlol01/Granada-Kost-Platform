@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState, LoadingState } from "@/components/state";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
@@ -241,6 +241,7 @@ const columnLabels: Record<string, string> = {
   start_date: "Mulai",
   end_date: "Berakhir",
   term_months: "Durasi",
+  service_period: "Masa sewa",
   payment_plan: "Rencana bayar",
   pricing_tier: "Paket harga",
   pricing_source: "Sumber tarif",
@@ -403,6 +404,33 @@ function display(key: string, value: ReportScalar) {
   return valueLabels[String(value)] ?? String(value).replaceAll("_", " ");
 }
 
+function reportStatusTone(value: ReportScalar): StatusTone {
+  const status = String(value ?? "");
+  if (["paid", "verified", "approved", "completed", "closed", "active"].includes(status))
+    return "success";
+  if (["rejected", "cancelled", "reversed", "amount_due"].includes(status)) return "danger";
+  if (
+    [
+      "awaiting_activation",
+      "pending_confirmation",
+      "pending_approval",
+      "inspection_required",
+      "settlement_pending",
+      "refund_pending",
+      "scheduled",
+      "maintenance",
+    ].includes(status)
+  )
+    return "warning";
+  if (["transferred", "notice_received"].includes(status)) return "info";
+  return "neutral";
+}
+
+function reportStatusLabel(value: ReportScalar): string {
+  if (value === null || value === "") return "—";
+  return valueLabels[String(value)] ?? "Status tidak diketahui";
+}
+
 const visibleColumns: Record<AdminReportType, string[]> = {
   leases: [
     "lease_code",
@@ -412,6 +440,7 @@ const visibleColumns: Record<AdminReportType, string[]> = {
     "start_date",
     "end_date",
     "term_months",
+    "service_period",
     "pricing_source",
     "reference_monthly_price",
     "agreed_monthly_price",
@@ -569,8 +598,8 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
       if (!label) return;
       const displayValue =
         key === "building_id"
-          ? (buildings.data ?? []).find((building) => building.id === value)?.buildingName ??
-            "bangunan dipilih"
+          ? ((buildings.data ?? []).find((building) => building.id === value)?.buildingName ??
+            "bangunan dipilih")
           : formatFilterValue(key, value);
       criteria.push(`${label}: ${displayValue}`);
     });
@@ -582,7 +611,12 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
       window.clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = null;
     }
-    const next = { ...nextDraft, property_id: currentPropertyId ?? "", limit: PAGE_SIZE, offset: 0 };
+    const next = {
+      ...nextDraft,
+      property_id: currentPropertyId ?? "",
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
     setApplied(next);
     setFilterNoticeRevision((revision) => revision + 1);
     const url = new URL(window.location.href);
@@ -976,12 +1010,14 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
         {filterNoticeRevision > 0 && data && !query.isFetching && !query.error ? (
           <FilterResultNotice
             key={filterNoticeRevision}
-            entityLabel={{
-              leases: "penyewaan",
-              payments: "pembayaran",
-              expenses: "pengeluaran",
-              finance: "aktivitas keuangan",
-            }[type]}
+            entityLabel={
+              {
+                leases: "penyewaan",
+                payments: "pembayaran",
+                expenses: "pengeluaran",
+                finance: "aktivitas keuangan",
+              }[type]
+            }
             resultCount={data.meta.total}
             activeFilterCount={filterCriteria.length}
             searchTerm={applied.q}
@@ -998,10 +1034,7 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
         ) : null}
         {data ? (
           <>
-            <section
-              aria-label="Ringkasan laporan"
-              className="reports-summary-grid"
-            >
+            <section aria-label="Ringkasan laporan" className="reports-summary-grid">
               {Object.entries(data.summary).map(([key, value]) => {
                 const SummaryIcon = summaryIcons[key] ?? WalletCards;
 
@@ -1072,9 +1105,10 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                                   key === "checkout_status" ||
                                   key === "financial_status" ||
                                   key === "movement" ? (
-                                    <Badge variant="outline" className="capitalize">
-                                      {display(key, row[key])}
-                                    </Badge>
+                                    <StatusBadge
+                                      label={reportStatusLabel(row[key])}
+                                      tone={reportStatusTone(row[key])}
+                                    />
                                   ) : (
                                     display(key, row[key])
                                   )}
@@ -1091,9 +1125,14 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
                           <div className="flex items-start justify-between gap-3">
                             <p className="font-semibold">{display(columns[0], row[columns[0]])}</p>
                             {row.status || row.lease_status || row.movement ? (
-                              <Badge variant="outline" className="capitalize">
-                                {display("status", row.status ?? row.lease_status ?? row.movement)}
-                              </Badge>
+                              <StatusBadge
+                                label={reportStatusLabel(
+                                  row.status ?? row.lease_status ?? row.movement,
+                                )}
+                                tone={reportStatusTone(
+                                  row.status ?? row.lease_status ?? row.movement,
+                                )}
+                              />
                             ) : null}
                           </div>
                           <dl className="grid grid-cols-2 gap-x-3 gap-y-2">

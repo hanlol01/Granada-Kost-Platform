@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -96,6 +97,17 @@ export class LeaseController {
   @RequirePermissions('lease.read')
   get(@CurrentUser() user: UserAccessContext, @Param('leaseId') leaseId: string) {
     return this.leases.get(user, leaseId);
+  }
+
+  @Get('residents/:residentId/data-corrections')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.read')
+  listResidentDataCorrections(
+    @CurrentUser() user: UserAccessContext,
+    @Param('residentId', new ParseUUIDPipe({ version: '4' })) residentId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    return this.corrections.listForResident(user, residentId, propertyId);
   }
 
   @Post(':leaseId/data-correction/preview')

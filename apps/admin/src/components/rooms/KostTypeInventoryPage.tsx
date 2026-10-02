@@ -23,8 +23,10 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { QuickBookingDialog } from "@/components/booking-leads/QuickBookingDialog";
 import { CompatibilityCheckoutDialog } from "@/components/rooms/CompatibilityCheckoutDialog";
+import { RoomNotifications } from "@/components/rooms/RoomNotifications";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -99,6 +101,7 @@ import {
   useM4Mutation,
   useM4RoomBuildings,
   useM4RoomInventory,
+  useM4RoomStatusCounts,
   useKostTypeCommercialMutation,
   useRoomPersistenceMutation,
 } from "@/hooks/useAdminUxMaster";
@@ -118,15 +121,15 @@ export type BuildingOption = {
 
 const EMPTY_ROOM_ITEMS: RoomInventory[] = [];
 
-const STATUS_TONE: Record<RoomInventory["status"], string> = {
-  vacant: "border-success/30 bg-success/10 text-success",
-  reserved: "border-warning/30 bg-warning/10 text-warning",
-  awaiting_check_in: "border-info/30 bg-info/10 text-info",
-  occupied: "border-primary/30 bg-primary/10 text-primary",
-  maintenance: "border-warning/30 bg-warning/10 text-warning",
-  inactive: "border-border bg-muted text-muted-foreground",
-  requires_review: "border-destructive/30 bg-destructive/10 text-destructive",
-  inspection_required: "border-warning/40 bg-warning/15 text-warning",
+const STATUS_TONE: Record<RoomInventory["status"], StatusTone> = {
+  vacant: "success",
+  reserved: "warning",
+  awaiting_check_in: "info",
+  occupied: "info",
+  maintenance: "warning",
+  inactive: "neutral",
+  requires_review: "danger",
+  inspection_required: "warning",
 };
 
 function roomLabel(room: RoomInventory): string {
@@ -134,11 +137,7 @@ function roomLabel(room: RoomInventory): string {
 }
 
 function RoomStatusBadge({ status }: { status: RoomInventory["status"] }) {
-  return (
-    <Badge className={cn("whitespace-nowrap border", STATUS_TONE[status])} variant="outline">
-      {ROOM_STATUS_LABEL[status]}
-    </Badge>
-  );
+  return <StatusBadge label={ROOM_STATUS_LABEL[status]} tone={STATUS_TONE[status]} />;
 }
 
 export function KostTypeInventoryPage({ category, search, onSearchChange }: Props) {
@@ -166,6 +165,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     limit: search.limit,
     offset: search.offset,
   });
+  const roomStatusCounts = useM4RoomStatusCounts(category);
   const [typeEditor, setTypeEditor] = useState<KostType | null | "create">(null);
   const [roomEditor, setRoomEditor] = useState<RoomInventory | null>(null);
   const [statusRoom, setStatusRoom] = useState<RoomInventory | null>(null);
@@ -310,6 +310,27 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
           <ManagementFeeScheduleNotice kostType={activeType} />
         ) : null}
 
+        <RoomNotifications
+          counts={roomStatusCounts.counts}
+          isLoading={roomStatusCounts.isLoading}
+          isError={roomStatusCounts.isError}
+          onRetry={() => void roomStatusCounts.refetch()}
+          onSelect={(status) =>
+            onSearchChange({
+              q: "",
+              buildingId: undefined,
+              floorCode: undefined,
+              status,
+              genderPolicy: undefined,
+              activeOccupancy: undefined,
+              reconciliationState: undefined,
+              offset: 0,
+            })
+          }
+          selected={search.status}
+          scopeLabel={KOST_TYPE_LABEL[category]}
+        />
+
         <NoticeAlert
           tone={activeType ? "info" : "warning"}
           title={
@@ -392,24 +413,14 @@ function KostTypeHeader({ kostType }: { kostType: KostType }) {
             <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">
               {KOST_TYPE_LABEL[kostType.category]}
             </Badge>
-            <Badge
-              variant="outline"
-              className={
-                kostType.status === "active"
-                  ? "border-success/30 bg-success/10 text-success"
-                  : "border-border bg-muted text-muted-foreground"
-              }
-            >
-              {kostType.status === "active" ? "Aktif" : "Tidak Aktif"}
-            </Badge>
+            <StatusBadge
+              label={kostType.status === "active" ? "Aktif" : "Tidak aktif"}
+              tone={kostType.status === "active" ? "success" : "neutral"}
+            />
             {kostType.publicVisible ? (
-              <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
-                <Eye className="mr-1 h-3 w-3" /> Publik
-              </Badge>
+              <StatusBadge label="Publik" tone="success" icon={Eye} />
             ) : (
-              <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
-                <EyeOff className="mr-1 h-3 w-3" /> Internal
-              </Badge>
+              <StatusBadge label="Internal" tone="neutral" icon={EyeOff} />
             )}
           </div>
           <CardTitle className="text-xl text-foreground">{kostType.name}</CardTitle>
@@ -837,12 +848,13 @@ export function RoomInventoryTable({
     <>
       <Card className="overflow-hidden border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-muted/75 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Kamar</th>
                 <th className="px-4 py-3">No. Kavling</th>
                 <th className="px-4 py-3">Bangunan</th>
+                <th className="px-4 py-3">Pemilik/Owner</th>
                 {showCategory ? <th className="px-4 py-3">Kategori</th> : null}
                 <th className="px-4 py-3">Jenis Kelamin</th>
                 <th className="px-4 py-3">Status</th>
@@ -882,6 +894,9 @@ export function RoomInventoryTable({
                     <td className="px-4 py-3 text-foreground/80">
                       {room.buildingName || room.buildingCode || room.unitCode || "Belum bernama"}
                     </td>
+                    <td className="px-4 py-3 text-foreground/80">
+                      {room.ownerName?.trim() || <span className="text-muted-foreground">—</span>}
+                    </td>
                     {showCategory ? (
                       <td className="px-4 py-3 text-foreground/80">
                         {KOST_TYPE_LABEL[room.kostType.category]}
@@ -894,12 +909,7 @@ export function RoomInventoryTable({
                       <div className="flex flex-col items-start gap-1.5">
                         <RoomStatusBadge status={room.status} />
                         {room.leaseReconciliationRequired ? (
-                          <Badge
-                            variant="outline"
-                            className="border-warning/30 bg-warning/10 text-warning-foreground"
-                          >
-                            Perlu rekonsiliasi penyewaan
-                          </Badge>
+                          <StatusBadge label="Perlu rekonsiliasi penyewaan" tone="warning" />
                         ) : null}
                       </div>
                     </td>

@@ -29,6 +29,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge as SemanticStatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -958,12 +959,12 @@ function WorklistPanel({
                     </p>
                   </TableCell>
                   <TableCell>
-                    {formatContractPeriod(item.term_months, item.contract_start, item.contract_end)}
+                    {item.service_period_pending ? `${item.term_months ?? "—"} bulan · Menunggu check-in` : formatContractPeriod(item.term_months, item.contract_start, item.contract_end)}
                   </TableCell>
                   <TableCell>
-                    <p>{dateOnly(item.settlement_due_date)}</p>
+                    <p>{item.service_period_pending ? "Ditentukan setelah check-in" : dateOnly(item.settlement_due_date)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {item.settlement_due_date === item.final_settlement_due_date
+                      {item.service_period_pending ? "Masa sewa belum dimulai" : item.settlement_due_date === item.final_settlement_due_date
                         ? "Pelunasan akhir"
                         : "Checkpoint berjalan"}
                     </p>
@@ -1076,7 +1077,7 @@ function ResidentBillingPanel({
               <p className="mt-1 font-semibold text-foreground">
                 {durationMonths} bulan
                 <span className="font-normal text-muted-foreground">
-                  {` (${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)})`}
+                  {data.lease.service_period_pending ? " · Masa sewa belum dimulai—menunggu check-in" : ` (${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)})`}
                 </span>
               </p>
             </div>
@@ -1147,17 +1148,16 @@ function OwnerSponsoredBillingCard({ data }: { data: ResidentBilling }) {
                 : "Sewa kamar tidak ditagihkan. Biaya pengelolaan tetap dicatat terpisah dan dapat dibayar kapan saja selama masa hunian."}
             </p>
           </div>
-          <Badge
-            className={cn(
+          <SemanticStatusBadge
+            label={statusLabel}
+            tone={
               sponsorship.payment_status === "unpaid"
-                ? "bg-destructive/15 text-destructive hover:bg-destructive/15"
+                ? "danger"
                 : sponsorship.payment_status === "partially_paid"
-                  ? "bg-warning/15 text-warning hover:bg-warning/15"
-                  : "bg-emerald-600 text-white hover:bg-emerald-600",
-            )}
-          >
-            {statusLabel}
-          </Badge>
+                  ? "warning"
+                  : "success"
+            }
+          />
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -1209,11 +1209,11 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Deposit dipotong", formatIDR(data.summary.deposit_deducted)],
     ["Deposit dikembalikan", formatIDR(data.summary.deposit_refunded)],
     ["Saldo deposit", formatIDR(data.summary.deposit_balance)],
-    ["Periode", `${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)}`],
-    ["Sisa kontrak", `${data.lease.remaining_days} hari`],
+    ["Periode", data.lease.service_period_pending ? "Masa sewa belum dimulai—menunggu check-in" : `${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)}`],
+    ["Sisa kontrak", data.lease.service_period_pending ? "Menunggu check-in" : `${data.lease.remaining_days} hari`],
     ["Paket", data.lease.payment_plan === "annual_full" ? "Tahunan penuh" : "Angsuran dua bulanan"],
     ["Progress", `${data.summary.installment_paid}/${data.summary.installment_total} angsuran`],
-    settlement?.status === "paid"
+    data.lease.service_period_pending ? ["Tenggat pelunasan", "Ditentukan setelah check-in"] : settlement?.status === "paid"
       ? ["Jadwal check-out kontrak", dateOnly(data.lease.end_date)]
       : [
           "Tenggat pembayaran berikutnya",
@@ -1318,7 +1318,7 @@ function InvoiceHistory({
               <div>
                 <p className="font-medium">{invoice.invoice_code}</p>
                 <p className="text-xs text-muted-foreground">
-                  {invoice.invoice_purpose === "rent"
+                  {invoice.invoice_purpose === "rent" && data.lease.service_period_pending ? `${data.lease.term_months ?? leaseDurationMonths(data.lease.start_date, data.lease.end_date)} bulan · Masa sewa belum dimulai—menunggu check-in` : invoice.invoice_purpose === "rent"
                     ? `Periode kontrak ${formatContractPeriod(
                         leaseDurationMonths(data.lease.start_date, data.lease.end_date),
                         data.lease.start_date,
@@ -1340,9 +1340,10 @@ function InvoiceHistory({
               <span className="font-semibold">{formatIDR(invoice.outstanding_amount)} tersisa</span>
             </div>
             {invoice.invoice_status !== "draft" ? (
+              <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 variant="info"
-                className="mt-3 min-h-11"
+                className="min-h-11"
                 disabled={!propertyId || documentId === invoice.id}
                 onClick={() => {
                   if (!propertyId) return;
@@ -1359,6 +1360,13 @@ function InvoiceHistory({
                 <Download className="mr-2 h-4 w-4" />
                 {documentId === invoice.id ? "Menyiapkan PDF..." : "Unduh invoice"}
               </Button>
+              <Button variant="outline" className="min-h-11" disabled={!propertyId || documentId === invoice.id} onClick={() => {
+                if (!propertyId) return;
+                setDocumentId(invoice.id); setDocumentError(null);
+                void downloadAdminInvoiceDocument(propertyId, invoice.id, invoice.invoice_code, true)
+                  .catch(() => setDocumentError(invoice.id)).finally(() => setDocumentId(null));
+              }}>Lihat periode penerbitan awal</Button>
+              </div>
             ) : null}
             {documentError === invoice.id ? (
               <p role="alert" className="mt-2 text-xs text-destructive">
@@ -2435,7 +2443,7 @@ function ContractPaidDetailDialog({
               <DetailRow label="Metode terakhir" value={methodLabel(payment.payment_method)} />
               <DetailRow
                 label="Periode sewa"
-                value={`${formatBillingDate(document.lease_start)} s.d. ${formatBillingDate(document.lease_end)}`}
+                value={document.service_period_pending ? `${document.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in` : `${formatBillingDate(document.lease_start)} s.d. ${formatBillingDate(document.lease_end)}`}
               />
               <DetailRow
                 label="Total sewa kontrak"
@@ -3204,23 +3212,19 @@ function StatusBadge({ status }: { status: string }) {
     contract_settled: "Sewa kontrak lunas",
     rent_partial: "Pembayaran sewa sebagian",
   };
-  const tone =
+  const tone: StatusTone =
     status === "paid" || status === "verified" || status === "contract_settled"
-      ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+      ? "success"
       : status === "partially_paid" ||
           status === "rent_partial" ||
           status === "pending_confirmation"
-        ? "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
+        ? "warning"
         : status === "issued"
-          ? "border-sky-500/35 bg-sky-500/12 text-sky-700 dark:text-sky-300"
+          ? "info"
           : status === "overdue" || status === "rejected" || status === "reversed"
-            ? "border-rose-500/35 bg-rose-500/12 text-rose-700 dark:text-rose-300"
-            : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300";
-  return (
-    <Badge variant="outline" className={`rounded-full px-2.5 py-1 font-semibold ${tone}`}>
-      {label[status] ?? "Tidak tersedia"}
-    </Badge>
-  );
+            ? "danger"
+            : "neutral";
+  return <SemanticStatusBadge label={label[status] ?? "Status tidak diketahui"} tone={tone} />;
 }
 function PageButtons({
   offset,

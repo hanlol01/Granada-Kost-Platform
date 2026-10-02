@@ -23,6 +23,7 @@ type ActivationLeaseRow = {
   occupancy_id: string | null;
   lease_status: string;
   commercial_mode: 'rent' | 'owner_sponsored';
+  service_period_state: string;
   start_date: string;
   end_date: string | null;
   renewed_from_lease_id: string | null;
@@ -176,6 +177,7 @@ export class LeaseActivationService {
         actorId: actor.id,
         source: 'manual_exception',
         correlationId: context.correlationId ?? null,
+        physicalCheckInRequested: dto.confirm_check_in === true,
       });
       if (dto.confirm_check_in === true) {
         await this.checkIns.confirmLocked(client, actor, leaseId, {
@@ -369,6 +371,7 @@ export class LeaseActivationService {
       businessDate?: string;
       attemptKey?: string;
       attemptType?: 'automatic_cutoff' | 'technical_retry';
+      physicalCheckInRequested?: boolean;
     },
   ): Promise<LeaseActivationResponse> {
     const { propertyId, leaseId } = input;
@@ -390,7 +393,7 @@ export class LeaseActivationService {
 
     const row = await client.query<ActivationLeaseRow>(
       `SELECT
-         l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date,l.end_date,
+          l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.service_period_state,l.start_date,l.end_date,
          l.renewed_from_lease_id,l.onboarding_commitment_id,r.room_status,r.number AS room_number,
          l.security_deposit_required_amount,
          r.property_id AS room_property_id,r.category AS room_category,
@@ -441,19 +444,23 @@ export class LeaseActivationService {
     const activationWindow = await client.query<{
       activation_is_available: boolean;
       effective_is_valid: boolean;
+      not_future: boolean;
     }>(
       `SELECT
          $1::date <= COALESCE($2::date,(now() AT TIME ZONE 'Asia/Jakarta')::date) AS activation_is_available,
          COALESCE(($3::timestamptz AT TIME ZONE 'Asia/Jakarta')::date,$1::date)
-           BETWEEN $1::date AND COALESCE($2::date,(now() AT TIME ZONE 'Asia/Jakarta')::date) AS effective_is_valid`,
+            BETWEEN $1::date AND COALESCE($2::date,(now() AT TIME ZONE 'Asia/Jakarta')::date) AS effective_is_valid,
+          COALESCE($3::timestamptz,now()) <= now() AS not_future`,
       [lease.start_date, input.businessDate ?? null, input.activatedAt],
     );
-    if (!activationWindow.rows[0]?.activation_is_available)
+    if (activationWindow.rows[0]?.not_future === false)
+      throw new ConflictException({ code: 'LEASE_ACTIVATION_TIME_INVALID', message: 'Aktivasi tidak dapat dicatat untuk waktu mendatang. Pilih waktu aktivasi yang sudah terjadi.' });
+    if (!activationWindow.rows[0]?.activation_is_available && !input.physicalCheckInRequested)
       throw new ConflictException({
         code: 'LEASE_ACTIVATION_NOT_YET_AVAILABLE',
         message: 'Lease cannot be activated before its Jakarta start date',
       });
-    if (!activationWindow.rows[0]?.effective_is_valid)
+    if (!activationWindow.rows[0]?.effective_is_valid && !input.physicalCheckInRequested)
       throw new ConflictException({
         code: 'LEASE_ACTIVATION_EFFECTIVE_TIME_INVALID',
         message: 'Activation time must be between the planned start date and today in Jakarta',
@@ -528,7 +535,8 @@ export class LeaseActivationService {
         code: 'LEASE_CONTRACT_SETTLEMENT_NOT_READY',
         message: 'Penyelesaian kontrak belum siap untuk aktivasi',
       });
-    if (contractSettlement && contractSettlement.state !== 'awaiting_activation')
+    if (contractSettlement && contractSettlement.state !== 'awaiting_activation' &&
+        !(lease.service_period_state === 'pending_check_in' && contractSettlement.state === 'paid'))
       throw new ConflictException({
         code: 'LEASE_CONTRACT_SETTLEMENT_NOT_READY',
         message: 'Contract settlement is not awaiting activation',
@@ -614,7 +622,7 @@ export class LeaseActivationService {
         `SELECT $1::date <= (COALESCE($2::timestamptz,now()) AT TIME ZONE 'Asia/Jakarta')::date AS due_is_valid`,
         [financial.first_due_date, input.activatedAt],
       );
-      if (!dueBoundary.rows[0]?.due_is_valid)
+      if (!dueBoundary.rows[0]?.due_is_valid && !(input.physicalCheckInRequested && lease.service_period_state === 'pending_check_in'))
         throw new ConflictException({
           code: 'LEASE_ACTIVATION_FIRST_INSTALLMENT_NOT_DUE',
           message: 'First installment must be due no later than activation',
@@ -696,7 +704,7 @@ export class LeaseActivationService {
         message: 'Lease activation was changed by another command',
       });
 
-    if (contractSettlement) {
+    if (contractSettlement && lease.service_period_state !== 'pending_check_in') {
       if (contractSettlement.policy_snapshot_id && !contractSettlement.final_checkpoint_due_at)
         throw new ConflictException({
           code: 'LEASE_SETTLEMENT_POLICY_CHECKPOINT_MISSING',

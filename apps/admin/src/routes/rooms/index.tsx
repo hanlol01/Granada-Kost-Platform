@@ -8,6 +8,7 @@ import {
   RoomInventoryTable,
   type BuildingOption,
 } from "@/components/rooms/KostTypeInventoryPage";
+import { RoomNotifications } from "@/components/rooms/RoomNotifications";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Card, CardContent } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
@@ -264,6 +265,28 @@ function RoomsPage() {
             note="Tersedia pada seluruh properti"
           />
         </div>
+
+        <RoomNotifications
+          counts={counts}
+          isLoading={false}
+          isError={false}
+          onRetry={() => void availabilityQuery.refetch()}
+          onSelect={(status) =>
+            onSearchChange({
+              q: "",
+              category: undefined,
+              buildingId: undefined,
+              floorCode: undefined,
+              status,
+              genderPolicy: undefined,
+              activeOccupancy: undefined,
+              reconciliationState: undefined,
+              offset: 0,
+            })
+          }
+          selected={search.status}
+          scopeLabel="pada properti aktif"
+        />
 
         <Card className="border-border bg-card">
           <CardContent className="p-5">

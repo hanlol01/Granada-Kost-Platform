@@ -523,7 +523,7 @@ export class ReminderHistoryService {
          WHERE i.property_id=l.property_id AND i.lease_id=l.id
            AND i.invoice_status IN ('issued','partially_paid','overdue')
        ) arrears ON true
-       WHERE l.id=$1 AND l.property_id=$2 AND l.lease_status='active' AND l.end_date IS NOT NULL`,
+       WHERE l.id=$1 AND l.property_id=$2 AND l.lease_status='active' AND l.end_date IS NOT NULL AND l.service_period_state<>'pending_check_in'`,
       [leaseId, propertyId],
     );
     return result.rows[0] ?? null;

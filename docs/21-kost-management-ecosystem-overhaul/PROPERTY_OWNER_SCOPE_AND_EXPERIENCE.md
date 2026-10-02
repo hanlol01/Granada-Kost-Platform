@@ -18,7 +18,7 @@ legal-document references; it does not replace the government land registry.
 | ---------------- | ------------------------- | ------------------------- | -------------------------------- |
 | `owner`          | Global Kostation operator | All authorized properties | Operational writes by permission |
 | `admin`          | Property operator         | Assigned property         | Operational writes by permission |
-| `property_owner` | Asset owner/investor      | Effective assigned assets and safe active-lease continuity | None; read-only |
+| `property_owner` | Asset owner/investor      | Effective assigned assets and safe active-lease continuity | Operational/financial reads; own login email/password settings only |
 
 The two owner roles are never interchangeable.
 
@@ -63,6 +63,13 @@ One profile maps to at most one account. Admin sets the initial password and see
 it only in the creation receipt. Later detail views show login identity and a
 Reset Password action, not the password. Property Owners are not forced to change
 their password at first login.
+
+Account-settings extension implemented locally on 2 October 2026: Owner may change
+their own login email directly without email verification and change their own
+password with current-password confirmation. Both commands require the current
+password, preserve the account/profile link, are audited, and revoke sessions.
+Official Owner name, phone, payout destination, assignments, and lifecycle remain
+Admin-managed. See [Handoff 07](handoff/07_OWNER_ACCOUNT_AND_LEASE_CORRECTION_HISTORY_HANDOFF.md).
 
 Archive is a soft lifecycle action. It is rejected while any active or scheduled
 assignment remains. Hard deletion is allowed only for a draft profile that has no
@@ -298,7 +305,9 @@ scope, and ownership period. A former owner cannot export current data.
 
 ## 9. Security and Privacy
 
-- Every owner endpoint requires `property_owner` plus a read-only permission.
+- Every Owner business-data endpoint requires `property_owner` plus a read-only
+  permission. The approved own-account email/password commands are the limited
+  exception; they never grant operational or financial mutation authority.
 - Scope is resolved from authenticated account -> Owner Profile -> effective
   assignments.
 - Empty or duplicate identity fails closed.

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { FileText, Mail, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -308,17 +309,16 @@ export function ReminderComposerDialog({
                   WhatsApp dibuka secara manual. Email belum tersedia dan tidak akan dikirim.
                 </p>
                 {recordedStatus ? (
-                  <Badge
-                    variant="outline"
-                    className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  >
-                    Riwayat:{" "}
-                    {recordedStatus === "previewed"
-                      ? "preview tercatat"
-                      : recordedStatus === "external_opened"
-                        ? "WhatsApp dibuka"
-                        : "dikirim manual"}
-                  </Badge>
+                  <StatusBadge
+                    label={`Riwayat: ${
+                      recordedStatus === "previewed"
+                        ? "preview tercatat"
+                        : recordedStatus === "external_opened"
+                          ? "WhatsApp dibuka"
+                          : "dikirim manual"
+                    }`}
+                    tone={recordedStatus === "previewed" ? "info" : "success"}
+                  />
                 ) : null}
               </section>
             ) : null}

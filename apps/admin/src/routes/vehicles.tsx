@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import { Input } from "@/components/ui/input";
 import { NoticeAlert } from "@/components/ui/notice-alert";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -156,13 +157,13 @@ function VehiclesRoute() {
   );
 }
 
-const STATUS_LABEL: Record<VehicleStatus, { label: string; cls: string }> = {
-  pending_approval: { label: "Menunggu Approval", cls: "bg-warning/20 text-warning-foreground" },
-  active: { label: "Aktif", cls: "bg-success/15 text-success" },
-  rejected: { label: "Ditolak", cls: "bg-destructive/15 text-destructive" },
-  suspended: { label: "Suspended", cls: "bg-warning/20 text-warning-foreground" },
-  transfer_pending: { label: "Transfer", cls: "bg-chart-4/15 text-chart-4" },
-  inactive: { label: "Tidak Aktif", cls: "bg-muted text-muted-foreground" },
+const STATUS_LABEL: Record<VehicleStatus, { label: string; tone: StatusTone }> = {
+  pending_approval: { label: "Menunggu persetujuan", tone: "warning" },
+  active: { label: "Aktif", tone: "success" },
+  rejected: { label: "Ditolak", tone: "danger" },
+  suspended: { label: "Ditangguhkan", tone: "warning" },
+  transfer_pending: { label: "Menunggu pengalihan", tone: "warning" },
+  inactive: { label: "Tidak aktif", tone: "neutral" },
 };
 
 const TYPE_ICON: Record<VehicleType, LucideIcon> = {
@@ -190,17 +191,8 @@ const vehicleIdentity = (vehicle: VehicleRecord): string =>
   [vehicle.brand, vehicle.plateNumber].filter(Boolean).join(" · ") || vehicle.vehicleCode;
 
 function VehicleStatusBadge({ status }: { status: VehicleStatus }) {
-  const meta = STATUS_LABEL[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium",
-        meta.cls,
-      )}
-    >
-      {meta.label}
-    </span>
-  );
+  const meta = STATUS_LABEL[status] ?? { label: "Status tidak diketahui", tone: "neutral" };
+  return <StatusBadge label={meta.label} tone={meta.tone} />;
 }
 
 function availableActions(status: VehicleStatus): TransitionKind[] {

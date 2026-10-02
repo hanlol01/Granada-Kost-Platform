@@ -3,7 +3,7 @@ import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { Eye, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState, LoadingState } from "@/components/state";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
@@ -156,11 +156,22 @@ function SyaratKetentuanRoute() {
                 Draft dapat diubah; versi published bersifat immutable.
               </p>
             </div>
-            <Badge variant="outline">
-              {workspace.data?.versions.find((version) => version.publicationStatus === "published")
-                ? `Published v${workspace.data.versions.find((version) => version.publicationStatus === "published")?.version}`
-                : "Belum published"}
-            </Badge>
+            <StatusBadge
+              label={
+                workspace.data?.versions.find(
+                  (version) => version.publicationStatus === "published",
+                )
+                  ? `Terbit v${workspace.data.versions.find((version) => version.publicationStatus === "published")?.version}`
+                  : "Belum diterbitkan"
+              }
+              tone={
+                workspace.data?.versions.some(
+                  (version) => version.publicationStatus === "published",
+                )
+                  ? "success"
+                  : "neutral"
+              }
+            />
           </CardHeader>
         </Card>
 
@@ -410,9 +421,10 @@ function SyaratKetentuanRoute() {
                   <span className="text-sm">
                     Versi {version.version} · efektif {version.effectiveDate}
                   </span>
-                  <Badge variant="outline">
-                    {version.publicationStatus === "published" ? "Published" : "Archived"}
-                  </Badge>
+                  <StatusBadge
+                    label={version.publicationStatus === "published" ? "Terbit" : "Diarsipkan"}
+                    tone={version.publicationStatus === "published" ? "success" : "neutral"}
+                  />
                   <Button
                     variant="outline"
                     className="min-h-11"

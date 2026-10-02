@@ -81,7 +81,7 @@ export const ownerPortalRouteRegistry: readonly OwnerPortalRouteMetadata[] = [
   },
   {
     id: "account",
-    label: "Profil Akun",
+    label: "Pengaturan akun",
     shortLabel: "Profil",
     to: "/property-owners/portal/account",
     description: "Identitas akun dan batas akses hanya baca",

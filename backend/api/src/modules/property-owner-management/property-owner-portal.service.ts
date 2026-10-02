@@ -351,6 +351,7 @@ export class PropertyOwnerPortalService {
               management_fee.effective_date::text AS management_fee_effective_date,
                lease.lease_status, lease.commercial_mode,
                lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+               lease.service_period_state='pending_check_in' AS service_period_pending,
                resident.full_name AS resident_display_name, occupancy.start_date::text AS occupancy_start_date,
                sponsorship.management_fee_mode,
                sponsorship.management_fee_payer,
@@ -536,7 +537,8 @@ export class PropertyOwnerPortalService {
                 ['rent', 'owner_sponsored'],
                 'asset.lease.commercial_mode',
               ),
-              start_date: this.date(row.lease_start_date, 'asset.lease_start_date'),
+               service_period_pending: row.service_period_pending === true,
+               start_date: this.date(row.lease_start_date, 'asset.lease_start_date'),
               end_date: this.nullableDate(row.lease_end_date, 'asset.lease_end_date'),
             },
       resident:
@@ -694,13 +696,15 @@ export class PropertyOwnerPortalService {
                                   uniform_adoption.transition_due_date,
                                   uniform_rent_due_date_15(COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date))
                                 )
-                           ELSE invoice.due_date
+                           ELSE COALESCE(effective_period.due_date,invoice.due_date)
                       END AS due_date
                FROM invoices invoice
                JOIN scoped_lease ON scoped_lease.id = invoice.lease_id
+               LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=invoice.id AND effective_period.property_id=invoice.property_id
                LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
                  ON uniform_adoption.property_id=invoice.property_id
                 AND uniform_adoption.lease_id=invoice.lease_id
+                AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id)
                LEFT JOIN LATERAL (
                  SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
                  FROM payment_allocations pa
@@ -714,7 +718,7 @@ export class PropertyOwnerPortalService {
                  COALESCE(sum(total_amount - outstanding_amount) FILTER (WHERE invoice_purpose = 'rent'), 0)::text AS rent_verified,
                  COALESCE(sum(outstanding_amount) FILTER (WHERE invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
                  COUNT(*) FILTER (WHERE invoice_purpose = 'rent')::int AS invoice_count,
-                  COUNT(*) FILTER (WHERE invoice_purpose = 'rent' AND outstanding_amount > 0 AND invoice_status = 'overdue')::int AS overdue_count,
+                  COUNT(*) FILTER (WHERE invoice_purpose = 'rent' AND outstanding_amount > 0 AND invoice_status = 'overdue' AND due_date<(now() AT TIME ZONE 'Asia/Jakarta')::date)::int AS overdue_count,
                  (MIN(due_date) FILTER (WHERE invoice_purpose = 'rent' AND outstanding_amount > 0))::text AS next_due_date
                FROM scoped_invoices
              ), installment_summary AS (
@@ -729,11 +733,12 @@ export class PropertyOwnerPortalService {
                              ELSE installments.due_date
                         END
                       ) FILTER (WHERE installment_status IN ('scheduled', 'issued', 'partially_paid')))::text AS installment_next_due_date
-               FROM lease_installments installments
+               FROM lease_installment_effective_periods installments
                JOIN scoped_lease ON scoped_lease.id = installments.lease_id
                LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
                  ON uniform_adoption.property_id=installments.property_id
                 AND uniform_adoption.lease_id=installments.lease_id
+                AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=installments.lease_id AND version.property_id=installments.property_id)
                WHERE installments.property_id = $1
              ), deposit_summary AS (
                SELECT BOOL_OR(ledger.direction = 'credit') IS TRUE AS security_deposit_recorded
@@ -1138,7 +1143,7 @@ export class PropertyOwnerPortalService {
          SELECT DISTINCT room_id FROM raw_scope
        ), active_leases AS (
          SELECT lease.id, lease.property_id, scope.room_id, lease.resident_id,
-                 lease.start_date, lease.end_date, lease.security_deposit_required_amount,
+                  lease.start_date, lease.end_date, lease.service_period_state, lease.security_deposit_required_amount,
                   lease.commercial_mode,
                  lease.snapshot_monthly_price, lease.term_months, lease.contract_rent_amount,
                  lease.pricing_source
@@ -1221,7 +1226,7 @@ export class PropertyOwnerPortalService {
                 COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
                 COALESCE(sum(GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
                 COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent')::int AS invoice_count,
-                COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::int AS overdue_count,
+                 COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND invoice.effective_due_date<(now() AT TIME ZONE 'Asia/Jakarta')::date AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::int AS overdue_count,
                 COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0 AND invoice.effective_due_date BETWEEN (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date + 7)::int AS h7_count,
                 MIN(invoice.effective_due_date) FILTER (WHERE invoice.invoice_purpose = 'rent' AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::text AS next_due_date
          FROM active_leases lease
@@ -1234,13 +1239,15 @@ export class PropertyOwnerPortalService {
                               uniform_adoption.transition_due_date,
                               uniform_rent_due_date_15(COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date))
                             )
-                       ELSE invoice.due_date
+                        ELSE COALESCE(effective_period.due_date,invoice.due_date)
                   END AS effective_due_date,
                   COALESCE(allocation.net,0) AS allocated_amount
-             FROM invoices invoice
+              FROM invoices invoice
+              LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=invoice.id AND effective_period.property_id=invoice.property_id
              LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
                ON uniform_adoption.property_id=invoice.property_id
               AND uniform_adoption.lease_id=invoice.lease_id
+              AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id)
              LEFT JOIN LATERAL (
                SELECT COALESCE(sum(pa.allocated_amount), 0) - COALESCE(sum(pra.reversed_amount), 0) AS net
                FROM payment_allocations pa
@@ -1266,10 +1273,11 @@ export class PropertyOwnerPortalService {
                   END
                 ) FILTER (WHERE installment.installment_status IN ('scheduled', 'issued', 'partially_paid'))::text AS installment_next_due_date
          FROM active_leases lease
-         LEFT JOIN lease_installments installment ON installment.property_id = lease.property_id AND installment.lease_id = lease.id
+          LEFT JOIN lease_installment_effective_periods installment ON installment.property_id = lease.property_id AND installment.lease_id = lease.id
          LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
            ON uniform_adoption.property_id=lease.property_id
           AND uniform_adoption.lease_id=lease.id
+          AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=lease.id AND version.property_id=lease.property_id)
          GROUP BY lease.id
        ), deposit_summary AS (
          SELECT lease.id AS lease_id,
@@ -1377,7 +1385,8 @@ export class PropertyOwnerPortalService {
        SELECT rooms.room_code, rooms.number AS room_number,
               buildings.building_code, buildings.building_name,
               resident.full_name AS resident_display_name,
-              lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+               lease.start_date::text AS lease_start_date, lease.end_date::text AS lease_end_date,
+               lease.service_period_state='pending_check_in' AS service_period_pending,
                commercial_projection.term_months,
                commercial_projection.monthly_rate::text,
                commercial_projection.pricing_source,
@@ -2158,8 +2167,8 @@ export class PropertyOwnerPortalService {
     const rentVerified = this.money(row.rent_verified, 'owner_collection.rent_verified');
     const rentOutstanding = this.money(row.rent_outstanding, 'owner_collection.rent_outstanding');
     const invoiceCount = this.count(row.invoice_count, 'owner_collection.invoice_count');
-    const overdueCount = this.count(row.overdue_count, 'owner_collection.overdue_count');
-    const h7Count = this.count(row.h7_count, 'owner_collection.h7_count');
+    const overdueCount = row.service_period_pending ? 0 : this.count(row.overdue_count, 'owner_collection.overdue_count');
+    const h7Count = row.service_period_pending ? 0 : this.count(row.h7_count, 'owner_collection.h7_count');
     const contractValue = this.money(row.contract_value, 'owner_collection.contract_value');
     const contractOutstanding = this.money(
       row.contract_outstanding,
@@ -2179,12 +2188,12 @@ export class PropertyOwnerPortalService {
               : 'unpaid';
 
     const checkpointStatus = this.enumValue(
-      row.checkpoint_status ?? 'not_available',
+      row.service_period_pending ? 'not_available' : row.checkpoint_status ?? 'not_available',
       ['not_available', 'not_required', 'met', 'pending', 'overdue'] as const,
       'owner_collection.checkpoint_status',
     );
     const reminderStage = this.nullableEnum(
-      row.reminder_stage,
+      row.service_period_pending ? null : row.reminder_stage,
       ['H-30', 'H-14', 'H-7', 'H-0', 'D+1', 'D+7'] as const,
       'owner_collection.reminder_stage',
     );
@@ -2204,6 +2213,7 @@ export class PropertyOwnerPortalService {
       },
       lease: {
         status: 'active' as const,
+        service_period_pending: row.service_period_pending === true,
         commercial_mode: this.enumValue(
           row.commercial_mode ?? 'rent',
           ['rent', 'owner_sponsored'] as const,
@@ -2230,11 +2240,11 @@ export class PropertyOwnerPortalService {
         invoice_count: invoiceCount,
         overdue_count: overdueCount,
         h7_count: h7Count,
-        next_due_date: this.nullableDate(row.next_due_date, 'owner_collection.next_due_date'),
+        next_due_date: row.service_period_pending ? null : this.nullableDate(row.next_due_date, 'owner_collection.next_due_date'),
         installment_total: this.count(row.installment_total, 'owner_collection.installment_total'),
         installment_paid: this.count(row.installment_paid, 'owner_collection.installment_paid'),
         installment_next_due_date: this.nullableDate(
-          row.installment_next_due_date,
+          row.service_period_pending ? null : row.installment_next_due_date,
           'owner_collection.installment_next_due_date',
         ),
       },
@@ -2248,7 +2258,7 @@ export class PropertyOwnerPortalService {
           'owner_collection.projected_management_fee',
         ),
         estimated_owner_entitlement: this.money(
-          row.estimated_owner_entitlement,
+          row.service_period_pending ? 0 : row.estimated_owner_entitlement,
           'owner_collection.estimated_owner_entitlement',
         ),
       },
@@ -2306,9 +2316,9 @@ export class PropertyOwnerPortalService {
       },
       settlement: {
         state: this.nullableText(row.settlement_state, 'owner_collection.settlement_state'),
-        original_due_at: this.nullableText(row.original_due_at, 'owner_collection.original_due_at'),
+        original_due_at: this.nullableText(row.service_period_pending ? null : row.original_due_at, 'owner_collection.original_due_at'),
         effective_due_at: this.nullableText(
-          row.effective_due_at,
+          row.service_period_pending ? null : row.effective_due_at,
           'owner_collection.effective_due_at',
         ),
         outstanding_amount: this.money(
@@ -2317,7 +2327,7 @@ export class PropertyOwnerPortalService {
         ),
         reminder_stage: reminderStage,
         checkpoint: {
-          due_at: this.nullableText(row.checkpoint_due_at, 'owner_collection.checkpoint_due_at'),
+          due_at: this.nullableText(row.service_period_pending ? null : row.checkpoint_due_at, 'owner_collection.checkpoint_due_at'),
           required_amount: this.money(
             row.checkpoint_required,
             'owner_collection.checkpoint_required',

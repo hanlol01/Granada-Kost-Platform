@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -671,17 +672,9 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
   );
 }
 function ResultBadge({ result }: { result: ActivityResult }) {
-  const className =
-    result === "succeeded"
-      ? "border-success/30 bg-success/10 text-success"
-      : result === "pending"
-        ? "border-warning/30 bg-warning/10 text-warning"
-        : "border-destructive/30 bg-destructive/10 text-destructive";
-  return (
-    <Badge variant="outline" className={className}>
-      {RESULT_LABELS[result]}
-    </Badge>
-  );
+  const tone: StatusTone =
+    result === "succeeded" ? "success" : result === "pending" ? "warning" : "danger";
+  return <StatusBadge label={RESULT_LABELS[result]} tone={tone} />;
 }
 function targetSummary(item: ActivityLogItem) {
   return (

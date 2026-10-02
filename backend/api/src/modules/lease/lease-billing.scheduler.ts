@@ -327,7 +327,10 @@ export class LeaseBillingScheduler implements OnModuleInit, OnModuleDestroy {
               snapshot_monthly_price, snapshot_yearly_price, snapshot_room_number
        FROM leases
        WHERE property_id = $1
-         AND lease_status = 'active'
+          AND lease_status = 'active'
+          AND service_period_state <> 'pending_check_in'
+          AND payment_plan_type IS NULL
+          AND commercial_mode <> 'owner_sponsored'
          AND next_billing_date <= $2::date
          AND NOT (id = ANY($3::uuid[]))
        ORDER BY next_billing_date, id

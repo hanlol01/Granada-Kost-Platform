@@ -27,6 +27,7 @@ import type {
   CheckoutSettlementQuote,
   LeaseDataCorrectionPreview,
   LeaseDataCorrectionRecord,
+  ResidentLeaseCorrectionRecord,
 } from "./admin-ux-lease-types";
 
 export type LeasePageInput = { propertyId: string; limit?: number; offset?: number };
@@ -579,6 +580,13 @@ export const adminUxLeaseApi = {
       data<{ corrections: LeaseDataCorrectionRecord[] }>(
         adminUxV2Requester.get<V2DataEnvelope<unknown>>(
           "/leases/" + encodeURIComponent(leaseId) + "/data-corrections",
+        ),
+      ),
+    listResidentDataCorrections: (residentId: string, propertyId: string, signal?: AbortSignal) =>
+      data<{ corrections: ResidentLeaseCorrectionRecord[] }>(
+        adminUxV2Requester.get<V2DataEnvelope<unknown>>(
+          "/leases/residents/" + encodeURIComponent(residentId) + "/data-corrections",
+          { query: { property_id: propertyId }, signal },
         ),
       ),
     commitDataCorrection: (

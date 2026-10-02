@@ -21,6 +21,7 @@ import { RoomInventoryEditor, type BuildingOption } from "@/components/rooms/Kos
 import { RoomInspectionDialog } from "@/components/rooms/RoomInspectionDialog";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -49,20 +50,16 @@ function ownershipSourceLabel(
   return "Belum ada assignment Owner Property";
 }
 
-function roomStatusBadgeClass(status: string): string {
-  const base = "border text-foreground shadow-sm";
-  if (status === "occupied") return `${base} border-success/45 bg-success/10`;
-  if (status === "reserved") return `${base} border-warning/50 bg-warning/15`;
-  if (
-    status === "maintenance" ||
-    status === "requires_review" ||
-    status === "inspection_required"
-  ) {
-    return `${base} border-warning/55 bg-warning/20`;
-  }
-  if (status === "inactive") return `${base} border-destructive/45 bg-destructive/10`;
-  return `${base} border-foreground/15 bg-muted/70`;
-}
+const ROOM_STATUS_TONE: Record<RoomInventory["status"], StatusTone> = {
+  vacant: "success",
+  reserved: "warning",
+  awaiting_check_in: "info",
+  occupied: "info",
+  maintenance: "warning",
+  inactive: "neutral",
+  requires_review: "danger",
+  inspection_required: "warning",
+};
 
 export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
   const navigate = useNavigate();
@@ -211,9 +208,10 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={roomStatusBadgeClass(detail.physical.status)}>
-                  {ROOM_STATUS_LABEL[detail.physical.status]}
-                </Badge>
+                <StatusBadge
+                  label={ROOM_STATUS_LABEL[detail.physical.status]}
+                  tone={ROOM_STATUS_TONE[detail.physical.status]}
+                />
                 <Badge
                   variant="outline"
                   className="border-info/45 bg-info/10 text-foreground shadow-sm"
@@ -576,6 +574,15 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                       }).format(new Date(event.occurredAt))}{" "}
                       WIB
                     </p>
+                    {event.residentPath ? (
+                      <Link
+                        to="/tenants/$residentId"
+                        params={{ residentId: event.residentPath.split("/").at(-1)! }}
+                        className="mt-2 inline-flex min-h-10 items-center text-sm font-medium text-primary underline underline-offset-4"
+                      >
+                        Lihat riwayat koreksi penghuni
+                      </Link>
+                    ) : null}
                   </div>
                 </li>
               ))}

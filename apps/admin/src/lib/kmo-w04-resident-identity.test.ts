@@ -32,6 +32,8 @@ test("resident tenancy accepts the immutable commercial projection used by check
         checked_in_at: "2026-08-01T01:00:00.000Z",
         checked_in_source: "lifecycle",
         room_number: "RK-01-11",
+        manager_room_label: "Rumah Kost · Unit 1, Kamar 11",
+        plot_number: null,
         kost_type_name: "Rumah Kost",
         building_code: "RK-01",
         start_date: "2026-08-01",
@@ -64,6 +66,11 @@ function listItem() {
     lease_start: null,
     lease_end: null,
     lease_authority_count: 0,
+    commercial_mode: null,
+    pricing_source: null,
+    management_fee_mode: null,
+    management_fee_payment_status: null,
+    management_fee_remaining_amount: 0,
     account_status: "not_provisioned",
     rent_payment_status: "none",
     contract_settlement_stage: "none",
@@ -117,6 +124,36 @@ function detail() {
     profile_photo_file_id: null,
   };
 }
+
+test("resident correction count accepts new projection and old responses without leaking history", () => {
+  for (const [wireCount, expected] of [
+    [undefined, 0],
+    [0, 0],
+    [3, 3],
+  ] as const) {
+    const item = {
+      ...listItem(),
+      ...(wireCount === undefined ? {} : { lease_correction_count: wireCount }),
+    };
+    const parsed = parseResidentPage(
+      { data: [item], meta: { limit: 20, offset: 0, total: 1 } },
+      PROPERTY_ID,
+    );
+    assert.equal(parsed.data[0].leaseCorrectionCount, expected);
+    assert.equal("corrections" in parsed.data[0], false);
+  }
+  for (const count of [-1, 1.5, "3"]) {
+    assert.throws(() =>
+      parseResidentPage(
+        {
+          data: [{ ...listItem(), lease_correction_count: count }],
+          meta: { limit: 20, offset: 0, total: 1 },
+        },
+        PROPERTY_ID,
+      ),
+    );
+  }
+});
 
 test("resident list parser preserves exact property-scoped pagination without list PII", () => {
   const parsed = parseResidentPage(

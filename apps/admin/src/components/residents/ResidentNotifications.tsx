@@ -25,7 +25,12 @@ export function ResidentNotifications({
     (category) => (summary.data?.counts[category] ?? 0) > 0,
   );
   return (
-    <Card className="mb-5 overflow-hidden">
+    <Card
+      className={cn(
+        "relative mb-5 overflow-hidden border-primary/45 bg-primary/[0.04] shadow-sm after:pointer-events-none after:absolute after:inset-1 after:rounded-lg after:ring-2 after:ring-primary/35 after:content-['']",
+        categories.length > 0 && "after:animate-pulse motion-reduce:after:animate-none",
+      )}
+    >
       <button
         type="button"
         aria-expanded={open}

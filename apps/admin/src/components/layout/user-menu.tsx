@@ -79,6 +79,14 @@ export function UserMenu() {
             Pengaturan Umum
           </DropdownMenuItem>
         ) : null}
+        {user?.roles?.includes("property_owner") ? (
+          <DropdownMenuItem
+            onSelect={() => void navigate({ to: "/property-owners/portal/account" })}
+          >
+            <Settings className="mr-2 h-3.5 w-3.5" />
+            Pengaturan akun
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={(e) => {

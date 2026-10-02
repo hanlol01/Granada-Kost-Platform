@@ -16,6 +16,7 @@ import {
 import { LoadingState, ErrorState, EmptyState } from "@/components/state";
 import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
 import { AppHeader } from "@/components/AppHeader";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { usePenghuniHome, type PenghuniHomeView } from "@/hooks/usePenghuniHome";
 import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
@@ -325,19 +326,17 @@ function SectionTitle({ title, to }: { title: string; to: string }) {
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    overdue: { label: "Telat", cls: "bg-destructive text-destructive-foreground" },
-    unpaid: { label: "Belum Lunas", cls: "bg-warning text-warning-foreground" },
-    issued: { label: "Diterbitkan", cls: "bg-warning text-warning-foreground" },
-    partially_paid: { label: "Sebagian", cls: "bg-warning text-warning-foreground" },
-    draft: { label: "Draft", cls: "bg-secondary text-foreground" },
-    paid: { label: "Lunas", cls: "bg-success text-success-foreground" },
-    void: { label: "Dibatalkan", cls: "bg-secondary text-foreground" },
+  const map: Record<string, { label: string; tone: StatusTone }> = {
+    overdue: { label: "Telat", tone: "danger" },
+    unpaid: { label: "Belum Lunas", tone: "warning" },
+    issued: { label: "Diterbitkan", tone: "info" },
+    partially_paid: { label: "Sebagian", tone: "warning" },
+    draft: { label: "Draf", tone: "neutral" },
+    paid: { label: "Lunas", tone: "success" },
+    void: { label: "Dibatalkan", tone: "neutral" },
   };
-  const s = map[status] ?? { label: status, cls: "bg-secondary text-foreground" };
-  return (
-    <span className={"rounded-full px-2 py-0.5 text-[10px] font-semibold " + s.cls}>{s.label}</span>
-  );
+  const s = map[status] ?? { label: "Status tidak diketahui", tone: "neutral" };
+  return <StatusBadge label={s.label} tone={s.tone} />;
 }
 
 function paymentMethodLabel(method: string): string {

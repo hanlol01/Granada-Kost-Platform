@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Braces, CheckCircle2, FilePenLine, Save } from "lucide-react";
+import { Braces, FilePenLine, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -136,18 +137,11 @@ export function ReminderTemplateDialog({ propertyId }: { propertyId: string | nu
                 {REQUIRED_VARIABLES.map((variable) => {
                   const present = !missingVariables.includes(variable);
                   return (
-                    <Badge
+                    <StatusBadge
                       key={variable}
-                      variant="outline"
-                      className={
-                        present
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : "border-destructive/40 bg-destructive/10 text-destructive"
-                      }
-                    >
-                      {present ? <CheckCircle2 className="mr-1 h-3 w-3" /> : null}
-                      {variable}
-                    </Badge>
+                      label={variable}
+                      tone={present ? "success" : "danger"}
+                    />
                   );
                 })}
               </div>

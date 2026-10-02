@@ -112,6 +112,8 @@ export type ResidentRecord = {
   leaseStart: string | null;
   leaseEnd: string | null;
   leaseAuthorityCount: number;
+  leaseCorrectionCount?: number;
+  leaseTermMonths?: number | null;
   commercialMode: 'rent' | 'owner_sponsored' | null;
   pricingSource: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   managementFeeMode: ResidentManagementFeeMode;
@@ -129,6 +131,8 @@ export type ResidentRecord = {
  * being presented as an active occupancy.
  */
 export type ResidentTenancyRecord = {
+  servicePeriodState?: 'legacy' | 'pending_check_in' | 'started';
+  plannedStartDate?: string;
   residentId: string;
   propertyId: string;
   leaseId: string;

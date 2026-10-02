@@ -662,7 +662,7 @@ export class AdminUxRoomV2Service {
     const typePropertyIds = typeScopes.map((scope) => scope.propertyId);
     const roomIds = rows.map((row) => String(row.id));
     const propertyIds = rows.map((row) => String(row.property_id));
-    const [facilities, occupancies] = await Promise.all([
+    const [facilities, occupancies, ownershipAssignments] = await Promise.all([
       queryable.query<Row>(
         `WITH scoped AS (
            SELECT unnest($1::uuid[]) AS kost_type_id,
@@ -704,6 +704,46 @@ export class AdminUxRoomV2Service {
             [roomIds, propertyIds],
           )
         : Promise.resolve({ rows: [] as Row[] }),
+      queryable.query<Row>(
+        `WITH scoped AS (
+           SELECT *
+           FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::uuid[])
+             AS rooms(room_id, property_id, category, building_id)
+         )
+         SELECT scoped.room_id, owner.full_name AS owner_name
+         FROM scoped
+         LEFT JOIN LATERAL (
+           SELECT assignment.owner_profile_id, assignment.updated_at, assignment.id
+           FROM room_owner_assignments assignment
+           WHERE scoped.category = 'apartkost'
+             AND assignment.property_id = scoped.property_id
+             AND assignment.room_id = scoped.room_id
+             AND assignment.assignment_status = 'active'
+           UNION ALL
+           SELECT assignment.owner_profile_id, assignment.updated_at, assignment.id
+           FROM building_owner_assignments assignment
+           WHERE scoped.category = 'rukost'
+             AND assignment.property_id = scoped.property_id
+             AND assignment.building_id = scoped.building_id
+             AND assignment.assignment_status = 'active'
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 1
+         ) assignment ON true
+         LEFT JOIN property_owner_profiles owner
+           ON owner.id = assignment.owner_profile_id
+          AND owner.property_id = scoped.property_id
+          AND owner.profile_status = 'active'`,
+        [
+          roomIds,
+          propertyIds,
+          rows.map((row) => String(row.kost_type_category)),
+          rows.map((row) =>
+            row.building_id === null || row.building_id === undefined
+              ? null
+              : String(row.building_id),
+          ),
+        ],
+      ),
     ]);
     const facilitiesByType = new Map<string, Record<string, unknown>[]>();
     for (const facility of facilities.rows) {
@@ -713,6 +753,15 @@ export class AdminUxRoomV2Service {
     }
     const occupancyByRoom = new Map<string, Record<string, unknown>>();
     const reconciliationByRoom = new Map<string, boolean>();
+    const ownerNameByRoom = new Map<string, string | null>();
+    for (const assignment of ownershipAssignments.rows) {
+      ownerNameByRoom.set(
+        String(assignment.room_id),
+        assignment.owner_name === null || assignment.owner_name === undefined
+          ? null
+          : String(assignment.owner_name),
+      );
+    }
     for (const occupancy of occupancies.rows) {
       occupancyByRoom.set(String(occupancy.room_id), {
         id: occupancy.id,
@@ -728,6 +777,7 @@ export class AdminUxRoomV2Service {
     return rows.map((row) => ({
       id: row.id,
       property_id: row.property_id,
+      owner_name: ownerNameByRoom.get(String(row.id)) ?? 'KOSTATION',
       number: row.number,
       room_code: row.room_code,
       manager_room_label: row.manager_room_label ?? null,

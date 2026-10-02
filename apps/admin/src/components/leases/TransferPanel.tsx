@@ -21,6 +21,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -331,7 +332,7 @@ export function TransferResultCard({
               result.transferRecord.reasonCode}
           </Badge>
           {result.transferRecord.executedLate ? (
-            <Badge variant="outline">Dieksekusi terlambat</Badge>
+            <StatusBadge label="Dieksekusi terlambat" tone="warning" />
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -401,19 +402,20 @@ function ReasonFields({
 }
 
 function CommandStateBadge({ command }: { command: TransferCommand }) {
-  const tone =
+  const tone: StatusTone =
     command.state === "scheduled"
-      ? "border-blue-500/40 bg-blue-500/15 text-blue-700 dark:text-blue-200"
+      ? "info"
       : command.state === "executed"
-        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
+        ? "success"
         : command.state === "cancelled"
-          ? "border-border bg-muted text-muted-foreground"
-          : "border-rose-500/40 bg-rose-500/15 text-rose-700 dark:text-rose-200";
+          ? "neutral"
+          : "danger";
+  const label = TRANSFER_COMMAND_STATE_LABEL[command.state] ?? "Status tidak diketahui";
   return (
-    <Badge variant="outline" className={tone}>
-      {TRANSFER_COMMAND_STATE_LABEL[command.state] ?? command.state}
-      {command.executedLate && command.state === "executed" ? " · terlambat" : ""}
-    </Badge>
+    <StatusBadge
+      label={`${label}${command.executedLate && command.state === "executed" ? " · terlambat" : ""}`}
+      tone={tone}
+    />
   );
 }
 

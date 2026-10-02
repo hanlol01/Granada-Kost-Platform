@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
 import { NoticeAlert } from "@/components/ui/notice-alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,50 +148,52 @@ function tabToStatusGroup(tab: ComplaintTab): ComplaintStatusGroup | undefined {
   }
 }
 
-const STATUS_META: Record<StoredComplaintStatus, { label: string; cls: string; icon: LucideIcon }> =
-  {
-    submitted: {
-      label: "Menunggu",
-      cls: "bg-warning/20 text-warning-foreground border-warning/30",
-      icon: Clock,
-    },
-    acknowledged: {
-      label: "Dilihat",
-      cls: "bg-primary-soft text-primary border-primary/20",
-      icon: Clock,
-    },
-    in_progress: {
-      label: "Diproses",
-      cls: "bg-primary-soft text-primary border-primary/20",
-      icon: Loader2,
-    },
-    on_hold: { label: "Ditahan", cls: "bg-muted text-muted-foreground border-border", icon: Clock },
-    escalated: {
-      label: "Eskalasi",
-      cls: "bg-destructive/15 text-destructive border-destructive/30",
-      icon: MessageSquareWarning,
-    },
-    resolved: {
-      label: "Selesai",
-      cls: "bg-success/15 text-success border-success/30",
-      icon: CheckCircle2,
-    },
-    reopened: {
-      label: "Dibuka Ulang",
-      cls: "bg-warning/20 text-warning-foreground border-warning/30",
-      icon: MessageSquareWarning,
-    },
-    closed: {
-      label: "Ditutup",
-      cls: "bg-muted text-muted-foreground border-border",
-      icon: CheckCircle2,
-    },
-    cancelled: {
-      label: "Dibatalkan",
-      cls: "bg-muted text-muted-foreground border-border line-through",
-      icon: MessageSquareWarning,
-    },
-  };
+const STATUS_META: Record<
+  StoredComplaintStatus,
+  { label: string; tone: StatusTone; icon: LucideIcon }
+> = {
+  submitted: {
+    label: "Menunggu",
+    tone: "warning",
+    icon: Clock,
+  },
+  acknowledged: {
+    label: "Dilihat",
+    tone: "info",
+    icon: Clock,
+  },
+  in_progress: {
+    label: "Diproses",
+    tone: "info",
+    icon: Loader2,
+  },
+  on_hold: { label: "Ditahan", tone: "warning", icon: Clock },
+  escalated: {
+    label: "Eskalasi",
+    tone: "danger",
+    icon: MessageSquareWarning,
+  },
+  resolved: {
+    label: "Selesai",
+    tone: "success",
+    icon: CheckCircle2,
+  },
+  reopened: {
+    label: "Dibuka Ulang",
+    tone: "warning",
+    icon: MessageSquareWarning,
+  },
+  closed: {
+    label: "Ditutup",
+    tone: "neutral",
+    icon: CheckCircle2,
+  },
+  cancelled: {
+    label: "Dibatalkan",
+    tone: "neutral",
+    icon: MessageSquareWarning,
+  },
+};
 
 const PRIO_META: Record<ComplaintPriority, string> = {
   low: "bg-muted text-muted-foreground",
@@ -893,9 +896,12 @@ function ComplaintsPage() {
                           {c.description}
                         </p>
                       </div>
-                      <Badge variant="outline" className={`shrink-0 gap-1 ${meta.cls}`}>
-                        <Icon className="h-3 w-3" /> {meta.label}
-                      </Badge>
+                      <StatusBadge
+                        label={meta.label}
+                        tone={meta.tone}
+                        icon={Icon}
+                        className="shrink-0"
+                      />
                     </div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
                       <span>

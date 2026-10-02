@@ -375,26 +375,31 @@ export class ReminderComposerService {
     const result = await this.database.client.query<InvoiceRow>(
       `SELECT i.id,i.resident_id,i.lease_id,i.invoice_status,i.invoice_code,i.snapshot_resident_name AS resident_name,i.snapshot_room_number AS room_number,
               room.category AS room_category,room.unit_code AS room_unit_code,building.building_name,
-              p.name AS property_name,r.phone AS resident_phone,r.parent_name,r.parent_phone,i.snapshot_period_start_date::text AS period_start,i.snapshot_period_end_date::text AS period_end,
+              p.name AS property_name,r.phone AS resident_phone,r.parent_name,r.parent_phone,
+              COALESCE(effective_period.coverage_start_date,i.snapshot_period_start_date)::text AS period_start,
+              COALESCE(effective_period.coverage_end_date,i.snapshot_period_end_date)::text AS period_end,
               CASE WHEN uniform_adoption.lease_id IS NOT NULL
-                        AND COALESCE(i.cycle_start_date,i.snapshot_period_start_date) IS NOT NULL
+                        AND COALESCE(effective_period.coverage_start_date,i.cycle_start_date,i.snapshot_period_start_date) IS NOT NULL
                    THEN GREATEST(
                           uniform_adoption.transition_due_date,
-                          uniform_rent_due_date_15(COALESCE(i.cycle_start_date,i.snapshot_period_start_date))
+                          uniform_rent_due_date_15(COALESCE(effective_period.coverage_start_date,i.cycle_start_date,i.snapshot_period_start_date))
                         )::text
-                   ELSE i.due_date::text
+                   ELSE COALESCE(effective_period.due_date,i.due_date)::text
               END AS due_date,
               l.start_date::text AS lease_start,l.end_date::text AS lease_end,
               GREATEST(i.total_amount-COALESCE(i.credit_amount,0)-COALESCE(a.allocated_amount,0),0)::text AS outstanding_amount,
               (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS now_date,
               EXTRACT(HOUR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int AS now_hour
-       FROM invoices i JOIN properties p ON p.id=i.property_id JOIN residents r ON r.id=i.resident_id JOIN leases l ON l.id=i.lease_id
+        FROM invoices i JOIN properties p ON p.id=i.property_id JOIN residents r ON r.id=i.resident_id JOIN leases l ON l.id=i.lease_id
+        LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.id=i.installment_id
+          AND effective_period.property_id=i.property_id
        LEFT JOIN rooms room ON room.id=i.room_id AND room.property_id=i.property_id
        LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
        LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
-         ON uniform_adoption.property_id=i.property_id AND uniform_adoption.lease_id=i.lease_id
+          ON uniform_adoption.property_id=i.property_id AND uniform_adoption.lease_id=i.lease_id
+         AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=i.lease_id AND version.property_id=i.property_id)
        LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS allocated_amount FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id AND pa.allocation_status='active') a ON TRUE
-       WHERE i.property_id=$1 AND i.id=ANY($2::uuid[])`,
+        WHERE i.property_id=$1 AND i.id=ANY($2::uuid[]) AND l.service_period_state<>'pending_check_in'`,
       [propertyId, invoiceIds],
     );
     return result.rows;

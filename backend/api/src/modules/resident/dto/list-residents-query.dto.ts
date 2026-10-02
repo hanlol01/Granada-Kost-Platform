@@ -101,6 +101,10 @@ export class ListResidentsQueryDto {
   attention_category?: ResidentAttentionCategory;
 
   @IsOptional()
+  @IsIn(['ever', 'never'])
+  correction_history?: 'ever' | 'never';
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)

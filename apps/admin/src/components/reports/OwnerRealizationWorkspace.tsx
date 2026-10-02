@@ -33,6 +33,7 @@ import { ReportNavigation } from "@/components/reports/ReportsWorkspace";
 import { ErrorState, LoadingState } from "@/components/state";
 import { HistoricalRealizationSourceCombobox } from "@/components/reports/HistoricalRealizationSourceCombobox";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -244,7 +245,7 @@ function monthLabel(value: string) {
   );
 }
 
-function tone(status: OwnerRealizationStatus | "not_prepared") {
+function tone(status: OwnerRealizationStatus | "not_prepared"): StatusTone {
   if (status === "void") return "danger";
   if (status === "realized" || status === "published_to_owner") return "success";
   if (["awaiting_review", "submitted_to_finance", "awaiting_transfer"].includes(status))
@@ -376,7 +377,9 @@ function OwnerProgressSummary({
       tabIndex={-1}
       className="flex items-start justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-emerald-950 shadow-sm outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2 dark:border-emerald-400/30 dark:bg-emerald-950/20 dark:text-emerald-50"
       aria-live="polite"
-      aria-label={isHistory ? "Ringkasan penerbitan riwayat realisasi" : "Ringkasan realisasi Owner"}
+      aria-label={
+        isHistory ? "Ringkasan penerbitan riwayat realisasi" : "Ringkasan realisasi Owner"
+      }
     >
       <div className="flex min-w-0 items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
@@ -392,7 +395,8 @@ function OwnerProgressSummary({
               {isHistory ? "Ringkasan Riwayat Realisasi Owner" : "Ringkasan Realisasi Owner"}
             </p>
             <p className="mt-1 text-base font-semibold tracking-tight">
-              {counts.published} Owner {isHistory ? "sudah diterbitkan" : "sudah direalisasi"} dari {counts.total} Owner
+              {counts.published} Owner {isHistory ? "sudah diterbitkan" : "sudah direalisasi"} dari{" "}
+              {counts.total} Owner
             </p>
             <p className="mt-1 text-sm text-emerald-800/80 dark:text-emerald-100/80">
               {remaining} Owner {isHistory ? "menunggu diterbitkan" : "belum direalisasi"}
@@ -465,10 +469,15 @@ export function OwnerRealizationWorkspace() {
         limit: PAGE_SIZE,
         offset: Number.isSafeInteger(offset) && offset >= 0 ? offset : 0,
         ...(params.get("q") ? { q: params.get("q")! } : {}),
-        ...(params.get("status") ? { status: params.get("status") as OwnerRealizationFilters["status"] } : {}),
+        ...(params.get("status")
+          ? { status: params.get("status") as OwnerRealizationFilters["status"] }
+          : {}),
         owner_profile_status:
-          params.get("owner_profile_status") === "archived" || params.get("owner_profile_status") === "all"
-            ? (params.get("owner_profile_status") as OwnerRealizationFilters["owner_profile_status"])
+          params.get("owner_profile_status") === "archived" ||
+          params.get("owner_profile_status") === "all"
+            ? (params.get(
+                "owner_profile_status",
+              ) as OwnerRealizationFilters["owner_profile_status"])
             : "active",
       };
       setFilterNoticeRevision(1);
@@ -803,7 +812,12 @@ export function OwnerRealizationWorkspace() {
       window.clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = null;
     }
-    const next = { ...nextDraft, property_id: currentPropertyId ?? "", offset: 0, limit: PAGE_SIZE };
+    const next = {
+      ...nextDraft,
+      property_id: currentPropertyId ?? "",
+      offset: 0,
+      limit: PAGE_SIZE,
+    };
     setApplied(next);
     setFilterNoticeRevision((revision) => revision + 1);
     const url = new URL(window.location.href);
@@ -880,7 +894,9 @@ export function OwnerRealizationWorkspace() {
       await downloadOwnerRealizationFinanceRequest(applied, format);
       toast.success(`Form pengajuan Finance ${format.toUpperCase()} berhasil diunduh.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Form pengajuan Finance belum dapat diunduh.");
+      toast.error(
+        error instanceof Error ? error.message : "Form pengajuan Finance belum dapat diunduh.",
+      );
     }
   };
   const switchWorkspace = (workspace: "active" | "history" | "not_eligible") => {
@@ -1212,10 +1228,7 @@ export function OwnerRealizationWorkspace() {
             ) : null}
           </div>
         </section>
-        {applied.workspace !== "not_eligible" &&
-        list.data &&
-        !list.isFetching &&
-        !list.isError ? (
+        {applied.workspace !== "not_eligible" && list.data && !list.isFetching && !list.isError ? (
           <OwnerProgressSummary
             key={filterNoticeRevision}
             workspace={applied.workspace === "history" ? "history" : "active"}
@@ -1281,9 +1294,10 @@ export function OwnerRealizationWorkspace() {
                       <td className="px-4 py-3">{row.resident_name}</td>
                       <td className="px-4 py-3 tabular-nums">{rupiah(row.contract_rent_amount)}</td>
                       <td className="px-4 py-3">
-                        <Badge variant="outline">
-                          {row.reason_label ?? notEligibleLabel(row.reason_code)}
-                        </Badge>
+                        <StatusBadge
+                          label={row.reason_label ?? notEligibleLabel(row.reason_code)}
+                          tone="warning"
+                        />
                       </td>
                     </tr>
                   ))}
@@ -1427,7 +1441,9 @@ export function OwnerRealizationWorkspace() {
                                               >
                                                 <span className="owner-report-asset-room__identity">
                                                   <strong>{room.room_code}</strong>
-                                                  <span>No. Kavling: {room.plot_number || "—"}</span>
+                                                  <span>
+                                                    No. Kavling: {room.plot_number || "—"}
+                                                  </span>
                                                   <span>
                                                     {room.resident_name ??
                                                       "Nama penghuni tidak tersedia"}
@@ -1468,9 +1484,10 @@ export function OwnerRealizationWorkspace() {
                           </td>
                           <td data-label="Tahap">
                             <div className="owner-report-badges">
-                              <Badge data-tone={tone(currentStatus)}>
-                                {statusLabel[currentStatus]}
-                              </Badge>
+                              <StatusBadge
+                                label={statusLabel[currentStatus]}
+                                tone={tone(currentStatus)}
+                              />
                               {row.realization && row.realization.entry_kind !== "system" ? (
                                 <Badge data-tone="neutral">Historis</Badge>
                               ) : null}

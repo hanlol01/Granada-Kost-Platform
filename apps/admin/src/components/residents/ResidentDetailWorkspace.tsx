@@ -1,4 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { ResidentCorrectionHistory } from "./ResidentCorrectionHistory";
+import { ResidentServicePeriodHistory } from "./ResidentServicePeriodHistory";
 import { ApiError } from "@granada-kost/api-client";
 import type { FileResponse } from "@granada-kost/domain";
 import {
@@ -42,6 +45,7 @@ import { LeaseDataCorrectionDialog } from "@/components/leases/LeaseDataCorrecti
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
@@ -63,7 +67,7 @@ import {
   useRecordLeasePaymentPromise,
   useStartLeaseTermination,
 } from "@/hooks/useAdminBilling";
-import { useLeaseActivation, useLeaseCheckIn } from "@/hooks/useLeaseActivation";
+import { useLeaseActivation, useLeaseCheckIn, useLeaseCheckInPreview } from "@/hooks/useLeaseActivation";
 import { useResidentDetail, useResidentTenancy } from "@/hooks/useResidents";
 import { useBookingLeadProgress } from "@/hooks/useBookingLeads";
 import { useResidentAccountSummary, useResetResidentPassword } from "@/hooks/useResidentMutations";
@@ -603,6 +607,7 @@ function ResidentGuidanceCards({
 }
 
 export function ResidentDetailWorkspace({ residentId }: Props) {
+  const queryClient = useQueryClient();
   const { currentPropertyId } = useProperty();
   const { user, hasPermission, hasRole } = useAuth();
   const navigate = useNavigate();
@@ -622,6 +627,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const [activationOnly, setActivationOnly] = useState(false);
   const [showActivationDates, setShowActivationDates] = useState(false);
   const [showCheckInDate, setShowCheckInDate] = useState(false);
+  const [checkInReason, setCheckInReason] = useState("");
+  const checkInPreview = useLeaseCheckInPreview(
+    tenancy.data?.leaseId,
+    checkInEffectiveDate ? jakartaStartTimestamp(checkInEffectiveDate) : undefined,
+    confirmCheckIn || (confirmActivation && !activationOnly),
+  );
   const [cancellationOpen, setCancellationOpen] = useState(false);
   // W07B B5: same TransferPanel + same API authority as LeaseDetailPage.
   const [transferOpen, setTransferOpen] = useState(false);
@@ -730,14 +741,10 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const resident = detail.data;
   const residentName = resident.fullName.trim() || "Tanpa nama";
   const currentTenancy = tenancy.data ?? null;
-  const checkInMinimumDate = currentTenancy
-    ? [
-        currentTenancy.startDate,
-        currentTenancy.activatedAt
-          ? jakartaDateInput(new Date(currentTenancy.activatedAt))
-          : currentTenancy.startDate,
-      ].sort()[1]
-    : undefined;
+  const checkInMinimumDate = undefined;
+  const checkInReviewReady = !!checkInPreview.data && !checkInPreview.isFetching && !checkInPreview.error &&
+    (!checkInPreview.data.reasonRequired || checkInReason.trim().length >= 3);
+  const servicePeriodPending = currentTenancy?.servicePeriodState === "pending_check_in";
   const canManage = hasPermission("resident.manage");
   const canActivate =
     hasPermission("lease.manage") && currentTenancy?.leaseStatus === "awaiting_activation";
@@ -844,10 +851,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
           ) : null}
           {canActivate ? (
             <ActivationRoomAction
-              startDate={currentTenancy.startDate}
+              startDate={jakartaDateInput()}
               onActivate={() => {
-                setActivationEffectiveDate(currentTenancy.startDate);
-                setCheckInEffectiveDate(currentTenancy.startDate);
+                setActivationEffectiveDate(jakartaDateInput());
+                setCheckInEffectiveDate(jakartaDateInput());
+                setCheckInReason("");
                 setActivationOnly(false);
                 setShowActivationDates(false);
                 setConfirmActivation(true);
@@ -859,6 +867,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               className="min-h-11"
               onClick={() => {
                 setCheckInEffectiveDate(jakartaDateInput());
+                setCheckInReason("");
                 setShowCheckInDate(false);
                 setConfirmCheckIn(true);
               }}
@@ -1204,8 +1213,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                         ? formatResidentDetailTimestamp(currentTenancy.checkedInAt)
                         : "Belum tercatat",
                     ],
-                    ["Tanggal mulai", formatResidentDetailDate(currentTenancy.startDate)],
-                    ["Tanggal berakhir", formatResidentDetailDate(currentTenancy.endDate)],
+                    [servicePeriodPending ? "Rencana check-in" : "Tanggal mulai", formatResidentDetailDate(servicePeriodPending ? currentTenancy.plannedStartDate ?? currentTenancy.startDate : currentTenancy.startDate)],
+                    ["Masa sewa", servicePeriodPending ? "Belum dimulai—menunggu check-in" : `Sampai ${formatResidentDetailDate(currentTenancy.endDate)}`],
                     ["Durasi sewa", `${currentTenancy.termMonths} bulan`],
                     ["Skema pelunasan", paymentPlan[currentTenancy.paymentPlanType]],
                     [
@@ -1261,8 +1270,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                           ? "Dipindahkan"
                           : "Selesai / historis",
                     ],
-                    ["Tanggal mulai", formatResidentDetailDate(billing.data.lease.start_date)],
-                    ["Tanggal berakhir", formatResidentDetailDate(billing.data.lease.end_date)],
+                    ["Masa sewa", billing.data.lease.service_period_pending ? `${billing.data.lease.term_months ?? "—"} bulan · Belum dimulai—menunggu check-in` : `${formatResidentDetailDate(billing.data.lease.start_date)} – ${formatResidentDetailDate(billing.data.lease.end_date)}`],
                     ["Total sewa kontrak", rupiah(billing.data.lease.contract_rent)],
                     ["Tarif bulanan kontrak", rupiah(billing.data.lease.monthly_rate)],
                     [
@@ -1342,23 +1350,25 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                             : "Sewa kamar Rp0. Biaya pengelolaan tetap berjalan tanpa jatuh tempo dan denda keterlambatan."}
                         </p>
                       </div>
-                      <Badge
-                        className={cn(
-                          billing.data.owner_sponsorship.payment_status === "unpaid"
-                            ? "bg-destructive/15 text-destructive hover:bg-destructive/15"
+                      <StatusBadge
+                        label={
+                          billing.data.owner_sponsorship.payment_status === "waived"
+                            ? "Biaya dibebaskan"
+                            : billing.data.owner_sponsorship.payment_status === "paid"
+                              ? "Lunas"
+                              : billing.data.owner_sponsorship.payment_status === "partially_paid"
+                                ? "Outstanding"
+                                : "Belum dibayar"
+                        }
+                        tone={
+                          billing.data.owner_sponsorship.payment_status === "waived" ||
+                          billing.data.owner_sponsorship.payment_status === "paid"
+                            ? "success"
                             : billing.data.owner_sponsorship.payment_status === "partially_paid"
-                              ? "bg-warning/15 text-warning hover:bg-warning/15"
-                              : "bg-emerald-600 text-white hover:bg-emerald-600",
-                        )}
-                      >
-                        {billing.data.owner_sponsorship.payment_status === "waived"
-                          ? "Biaya dibebaskan"
-                          : billing.data.owner_sponsorship.payment_status === "paid"
-                            ? "Lunas"
-                            : billing.data.owner_sponsorship.payment_status === "partially_paid"
-                              ? "Outstanding"
-                              : "Belum dibayar"}
-                      </Badge>
+                              ? "warning"
+                              : "danger"
+                        }
+                      />
                     </div>
                     <DefinitionGrid
                       rows={[
@@ -1590,8 +1600,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                         <tr key={invoice.id} className="border-t border-border">
                           <td className="py-3 font-medium">{invoice.invoice_code}</td>
                           <td className="py-3">
-                            {formatResidentDate(invoice.coverage_start)} –{" "}
-                            {formatResidentDate(invoice.coverage_end)}
+                            {billing.data.lease.service_period_pending && invoice.invoice_purpose === "rent" ? "Belum dimulai—menunggu check-in" : `${formatResidentDate(invoice.coverage_start)} – ${formatResidentDate(invoice.coverage_end)}`}
                           </td>
                           <td className="py-3">{rupiah(invoice.outstanding_amount)}</td>
                           <td className="py-3">{invoice.invoice_status}</td>
@@ -1776,6 +1785,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         </section>
 
         <ResidentOperationalCards residentId={resident.id} />
+        {hasRole("admin") && hasPermission("lease.read") ? (
+          <>
+          <ResidentCorrectionHistory residentId={resident.id} />
+          {currentTenancy?.leaseId ? <ResidentServicePeriodHistory leaseId={currentTenancy.leaseId} propertyId={currentPropertyId} /> : null}
+          </>
+        ) : null}
       </div>
 
       <ResidentFormDialog
@@ -1795,6 +1810,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               tenancy.refetch(),
               billing.refetch(),
               bookingProgress.refetch(),
+              queryClient.invalidateQueries({ queryKey: ["resident-correction-history"] }),
+              queryClient.invalidateQueries({ queryKey: ["lease-service-period-history"] }),
+              queryClient.invalidateQueries({ queryKey: ["residents"] }),
+              queryClient.invalidateQueries({ queryKey: ["rooms"] }),
+              queryClient.invalidateQueries({ queryKey: ["roomDetail"] }),
             ])
           }
         />
@@ -1830,11 +1850,11 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         description={
           activationOnly
             ? "Gunakan pilihan ini hanya jika kontrak sudah aktif tetapi penghuni belum menerima kamar."
-            : "Untuk alur normal, aktivasi kontrak dan check-in dicatat bersamaan mengikuti tanggal mulai sewa."
+             : "Tanggal check-in fisik memulai masa sewa. Pembayaran yang sudah diterima tetap tercatat tanpa perubahan nominal."
         }
         confirmLabel={activationOnly ? "Aktifkan kamar saja" : "Aktifkan & check-in"}
         pending={activation.isPending}
-        confirmDisabled={!activationEffectiveDate || (!activationOnly && !checkInEffectiveDate)}
+        confirmDisabled={!activationEffectiveDate || (!activationOnly && (!checkInEffectiveDate || !checkInReviewReady))}
         onConfirm={async () => {
           if (!currentTenancy || !activationEffectiveDate) return;
           await activation.mutateAsync({
@@ -1846,6 +1866,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               !activationOnly && checkInEffectiveDate
                 ? jakartaStartTimestamp(checkInEffectiveDate)
                 : undefined,
+            note: checkInReason.trim() || undefined,
           });
           setConfirmActivation(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
@@ -1864,7 +1885,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {showActivationDates
                 ? "Tanggal disesuaikan untuk pencatatan historis."
-                : "Otomatis mengikuti tanggal mulai sewa yang sudah dicatat."}
+                 : "Menggunakan tanggal hari ini. Masa sewa dimulai saat check-in, bukan saat pembayaran atau aktivasi saja."}
             </p>
           </div>
 
@@ -1887,20 +1908,19 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 </div>
                 <Button
                   type="button"
-                  variant={showActivationDates ? "info" : "outline"}
+                  variant="default"
                   className="min-h-11 w-full justify-center whitespace-nowrap px-3 text-sm"
                   aria-pressed={showActivationDates}
                   disabled={activation.isPending}
                   onClick={() => {
                     if (showActivationDates && currentTenancy) {
-                      setActivationEffectiveDate(currentTenancy.startDate);
-                      setCheckInEffectiveDate(currentTenancy.startDate);
+                      setActivationEffectiveDate(jakartaDateInput());
+                      setCheckInEffectiveDate(jakartaDateInput());
                     }
                     setShowActivationDates((visible) => !visible);
                   }}
                 >
-                  <CalendarClock className="mr-1.5 h-4 w-4" />
-                  {showActivationDates ? "Gunakan tanggal mulai sewa" : "Sesuaikan tanggal aktual"}
+                  {showActivationDates ? "Gunakan tanggal hari ini" : "Sesuaikan tanggal aktual"}
                 </Button>
               </div>
               <div className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-background p-3">
@@ -1912,13 +1932,12 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 </div>
                 <Button
                   type="button"
-                  variant={activationOnly ? "info" : "outline"}
+                  variant="default"
                   className="min-h-11 w-full justify-center whitespace-nowrap px-3 text-sm"
                   aria-pressed={activationOnly}
                   disabled={activation.isPending}
                   onClick={() => setActivationOnly((value) => !value)}
                 >
-                  <LogIn className="mr-1.5 h-4 w-4" />
                   {activationOnly ? "Aktifkan sekaligus check-in" : "Aktifkan tanpa check-in"}
                 </Button>
               </div>
@@ -1931,7 +1950,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                 id="resident-activation-date"
                 label="Tanggal aktivasi sebenarnya"
                 value={activationEffectiveDate}
-                minDate={currentTenancy?.startDate}
                 maxDate={jakartaDateInput()}
                 required
                 disabled={activation.isPending}
@@ -1948,7 +1966,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
                   id="resident-check-in-date"
                   label="Tanggal check-in sebenarnya"
                   value={checkInEffectiveDate}
-                  minDate={activationEffectiveDate || currentTenancy?.startDate}
                   maxDate={jakartaDateInput()}
                   required
                   disabled={activation.isPending}
@@ -1961,22 +1978,26 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               </p>
             </div>
           ) : null}
+          {!activationOnly ? <CheckInPeriodReview preview={checkInPreview} reason={checkInReason} onReasonChange={setCheckInReason} /> : (
+            <p className="rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm">Aktivasi saja tidak memulai masa sewa. Durasi dan periode berlaku setelah check-in fisik dicatat.</p>
+          )}
         </div>
       </ConfirmDialog>
       <ConfirmDialog
         open={confirmCheckIn}
         onOpenChange={setConfirmCheckIn}
         title="Konfirmasi check-in fisik"
-        description="Konfirmasi ini membuat occupancy aktif dan menandai kamar sebagai dihuni. Pastikan penghuni benar-benar telah menerima kamar."
+        description="Pastikan penghuni benar-benar telah menerima kamar. Tanggal ini memulai masa sewa sesuai durasi yang disepakati."
         confirmLabel="Konfirmasi check-in"
         pending={checkIn.isPending}
-        confirmDisabled={!checkInEffectiveDate}
+        confirmDisabled={!checkInEffectiveDate || !checkInReviewReady}
         onConfirm={async () => {
           if (!currentTenancy || !checkInEffectiveDate) return;
           await checkIn.mutateAsync({
             leaseId: currentTenancy.leaseId,
             idempotencyKey: newIdempotencyKey(),
             checkedInAt: jakartaStartTimestamp(checkInEffectiveDate),
+            notes: checkInReason.trim() || undefined,
           });
           setConfirmCheckIn(false);
           await Promise.all([detail.refetch(), tenancy.refetch(), billing.refetch()]);
@@ -2016,10 +2037,39 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
               onChange={(value) => setCheckInEffectiveDate(value ?? "")}
             />
           ) : null}
+          <CheckInPeriodReview preview={checkInPreview} reason={checkInReason} onReasonChange={setCheckInReason} />
         </div>
       </ConfirmDialog>
     </AppShell>
   );
+}
+
+function CheckInPeriodReview({ preview, reason, onReasonChange }: {
+  preview: ReturnType<typeof useLeaseCheckInPreview>;
+  reason: string;
+  onReasonChange: (value: string) => void;
+}) {
+  if (preview.isFetching) return <p role="status" className="text-sm text-muted-foreground">Memeriksa periode sewa dan jadwal kamar...</p>;
+  if (preview.error) return <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm">
+    <p>{preview.error instanceof Error ? preview.error.message : "Ringkasan check-in belum dapat dimuat."}</p>
+    <Button type="button" variant="outline" className="mt-3" onClick={() => void preview.refetch()}>Periksa ulang</Button>
+  </div>;
+  if (!preview.data) return null;
+  const data = preview.data;
+  return <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/5 p-4">
+    <p className="text-sm font-semibold">Tinjau periode sewa setelah check-in</p>
+    <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+      <dt>Rencana check-in</dt><dd>{formatResidentDetailDate(data.plannedStartDate)}</dd>
+      <dt>Mulai berlaku</dt><dd>{formatResidentDetailDate(data.startDate)}</dd>
+      <dt>Jadwal akhir sewa</dt><dd>{formatResidentDetailDate(data.endDate)}</dd>
+      <dt>Durasi</dt><dd>{data.termMonths} bulan</dd>
+      <dt>Nilai kontrak tetap</dt><dd>{rupiah(data.contractRentAmount)}</dd>
+      <dt>Pembayaran tercatat</dt><dd>{rupiah(data.verifiedPaymentAmount)}</dd>
+    </dl>
+    <p className="text-xs leading-5 text-muted-foreground">Tanggal dan nominal pembayaran tidak berubah. {data.documentCount} dokumen tetap tersimpan; unduhan terbaru mengikuti periode yang berlaku.</p>
+    <label className="block text-sm font-medium" htmlFor="check-in-period-reason">Alasan pencatatan{data.reasonRequired ? " *" : " (opsional)"}</label>
+    <Input id="check-in-period-reason" maxLength={160} value={reason} onChange={event => onReasonChange(event.target.value)} placeholder="Jelaskan perubahan tanggal atau pencatatan historis" aria-required={data.reasonRequired} />
+  </div>;
 }
 
 function ResidentCredentialsDialog({
@@ -2388,22 +2438,18 @@ function SettlementStatusPill({
 }: {
   status: NonNullable<ResidentBilling["contract_settlement"]>["status"];
 }) {
-  const className = {
-    awaiting_activation: "bg-warning/15 text-warning",
-    open: "bg-primary/15 text-primary",
-    extended: "bg-primary/15 text-primary",
-    overdue: "bg-destructive/15 text-destructive",
-    admin_action_required: "bg-destructive/15 text-destructive",
-    termination_pending: "bg-warning/15 text-warning",
-    terminated: "bg-muted text-muted-foreground",
-    paid: "bg-success/15 text-success",
-    cancelled: "bg-muted text-muted-foreground",
-  }[status];
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>
-      {settlementStatusLabel(status)}
-    </span>
-  );
+  const tones: Record<typeof status, StatusTone> = {
+    awaiting_activation: "warning",
+    open: "info",
+    extended: "info",
+    overdue: "danger",
+    admin_action_required: "danger",
+    termination_pending: "warning",
+    terminated: "neutral",
+    paid: "success",
+    cancelled: "neutral",
+  };
+  return <StatusBadge label={settlementStatusLabel(status)} tone={tones[status]} />;
 }
 
 function ContractPaymentBadges({
@@ -2681,7 +2727,9 @@ function ContractInvoicePanel({
             value={rupiah(settlement.outstanding_amount)}
             highlight
           />
-          {settlement.status === "paid" ? (
+          {data.lease.service_period_pending ? (
+            <SummaryMetric label="Masa sewa" value={`${data.lease.term_months ?? "—"} bulan · Belum dimulai—menunggu check-in`} />
+          ) : settlement.status === "paid" ? (
             <SummaryMetric
               label="Jadwal check-out kontrak"
               value={formatResidentDetailDate(data.lease.end_date)}
@@ -2699,9 +2747,7 @@ function ContractInvoicePanel({
             />
           )}
         </div>
-        <div className="mt-3">
-          <FirstPaymentCheckpointCard settlement={settlement} />
-        </div>
+        {!data.lease.service_period_pending ? <div className="mt-3"><FirstPaymentCheckpointCard settlement={settlement} /></div> : null}
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           Pembayaran awal mencakup DP dan/atau booking fee yang telah terverifikasi saat penyewaan
           dibuat. Pembayaran berikutnya tercatat setelah admin menerima uang sewa tambahan dari
@@ -3707,11 +3753,11 @@ function ContractPaidDocumentDownloadButton({
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(false);
 
-  const download = () => {
+  const download = (original = false) => {
     if (downloading) return;
     setDownloading(true);
     setError(false);
-    void downloadAdminContractPaidDocument(propertyId, document.id, document.document_code)
+    void downloadAdminContractPaidDocument(propertyId, document.id, document.document_code, original)
       .catch(() => setError(true))
       .finally(() => setDownloading(false));
   };
@@ -3722,10 +3768,13 @@ function ContractPaidDocumentDownloadButton({
         className="min-h-11 w-full min-w-0 px-3 text-xs sm:text-sm"
         variant="success"
         disabled={downloading}
-        onClick={download}
+        onClick={() => download()}
       >
         <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
         {downloading ? "Menyiapkan..." : "Unduh bukti kontrak lunas"}
+      </Button>
+      <Button variant="outline" className="min-h-11" disabled={downloading} onClick={() => download(true)}>
+        Lihat catatan penerbitan awal
       </Button>
       <span className="text-center text-[11px] text-muted-foreground">
         {document.document_code}

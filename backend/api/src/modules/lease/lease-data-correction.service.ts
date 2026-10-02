@@ -17,6 +17,7 @@ import {
   calculateLeaseCorrectionImpact,
 } from './lease-data-correction.helper';
 import { LeaseRepository } from './lease.repository';
+import { LeaseServicePeriodService } from './lease-service-period.service';
 
 type LeaseCorrectionRow = {
   id: string;
@@ -104,6 +105,7 @@ export class LeaseDataCorrectionService {
   constructor(
     private readonly leases: LeaseRepository,
     private readonly billing: W06BillingService,
+    private readonly periods: LeaseServicePeriodService,
   ) {}
 
   async preview(user: UserAccessContext, leaseId: string, dto: PreviewLeaseDataCorrectionDto) {
@@ -135,6 +137,60 @@ export class LeaseDataCorrectionService {
       [leaseId, lease.rows[0].property_id],
     );
     return { data: { corrections: rows.rows.map((row) => this.toCorrectionResponse(row)) } };
+  }
+
+  async listForResident(user: UserAccessContext, residentId: string, propertyId: string) {
+    if (
+      !user.roles.includes('admin') ||
+      !user.permissions.includes('lease.read') ||
+      (!user.roles.includes('owner') && !user.propertyIds.includes(propertyId))
+    ) {
+      throw new ForbiddenException({
+        code: 'LEASE_CORRECTION_HISTORY_FORBIDDEN',
+        message: 'Riwayat koreksi hanya tersedia untuk Admin properti terkait.',
+      });
+    }
+    const resident = await this.leases.query(
+      'SELECT id FROM residents WHERE id = $1 AND property_id = $2',
+      [residentId, propertyId],
+    );
+    if (!resident.rows.length) {
+      throw new NotFoundException({
+        code: 'RESIDENT_NOT_FOUND',
+        message: 'Penghuni tidak ditemukan.',
+      });
+    }
+    const rows = await this.leases.query<
+      LeaseCorrectionRow & {
+        created_by_name: string | null;
+        room_number: string | null;
+      }
+    >(
+      `SELECT correction.*, actor.display_name AS created_by_name,
+              COALESCE(origin.number, room.number, lease.snapshot_room_number) AS room_number
+       FROM lease_data_corrections correction
+       JOIN leases lease ON lease.id = correction.lease_id AND lease.property_id = correction.property_id
+       LEFT JOIN users actor ON actor.id = correction.created_by_user_id
+       LEFT JOIN rooms room ON room.id = lease.room_id AND room.property_id = lease.property_id
+       LEFT JOIN LATERAL (
+         SELECT source.number FROM room_transfer_records transfer
+         JOIN rooms source ON source.id = transfer.from_room_id AND source.property_id = transfer.property_id
+         WHERE transfer.from_lease_id = lease.id AND transfer.property_id = lease.property_id
+         ORDER BY transfer.created_at, transfer.id LIMIT 1
+       ) origin ON true
+       WHERE lease.resident_id = $1 AND correction.property_id = $2
+       ORDER BY correction.created_at DESC, correction.sequence_number DESC, correction.id DESC`,
+      [residentId, propertyId],
+    );
+    return {
+      data: {
+        corrections: rows.rows.map((row) => ({
+          ...this.toCorrectionResponse(row),
+          created_by_name: row.created_by_name,
+          room_number: row.room_number,
+        })),
+      },
+    };
   }
 
   async commit(
@@ -223,12 +279,27 @@ export class LeaseDataCorrectionService {
         ],
       );
 
+      const checkInPeriodAmended =
+        !!preview.previous.checkedInDate &&
+        (preview.previous.checkedInDate !== preview.corrected.checkedInDate ||
+          preview.previous.startDate !== preview.corrected.startDate);
+      if (checkInPeriodAmended)
+        await this.periods.finalizeLocked(client, {
+          leaseId,
+          propertyId: preview.propertyId,
+          checkedInAt: new Date(`${preview.corrected.checkedInDate}T00:00:00+07:00`),
+          actorId: user.id,
+          reason: dto.reason,
+          commandFingerprint,
+          source: 'lease_data_correction',
+        });
       await this.applyEffectiveLease(client, user.id, leaseId, preview);
       if (preview.impact.contractCredit > 0)
         await this.applyContractCredit(client, correctionId, user.id, preview);
       if (preview.impact.additionalCharge > 0)
         await this.createAdditionalCharge(client, correctionId, user.id, preview);
       if (
+        !checkInPeriodAmended &&
         preview.commercialMode === 'rent' &&
         (preview.previous.startDate !== preview.corrected.startDate ||
           preview.previous.termMonths !== preview.corrected.termMonths ||
@@ -247,7 +318,7 @@ export class LeaseDataCorrectionService {
           leaseId,
           correctionId,
           preview.impact.contractDelta,
-          preview.previous.startDate !== preview.corrected.startDate ||
+          (!checkInPeriodAmended && preview.previous.startDate !== preview.corrected.startDate) ||
             preview.previous.termMonths !== preview.corrected.termMonths,
         ],
       );
@@ -294,7 +365,7 @@ export class LeaseDataCorrectionService {
               lease.snapshot_kost_type_name,lease.activated_at,lifecycle.checked_in_at AS lifecycle_checked_in_at,
               COALESCE(
                 latest_correction.corrected_snapshot->>'checkedInDate',
-                lifecycle.checked_in_at::date::text,
+                (lifecycle.checked_in_at AT TIME ZONE 'Asia/Jakarta')::date::text,
                 check_in_history.event_date::text,
                 occupancy.start_date::text
               ) AS effective_checked_in_date
@@ -353,9 +424,34 @@ export class LeaseDataCorrectionService {
       pricingSource: lease.pricing_source,
       pricingAgreementReason: lease.pricing_agreement_reason,
     };
-    const startDate = dto.start_date ?? previous.startDate;
+    const isCheckInDateAmendment =
+      !!dto.checked_in_date &&
+      !!previous.checkedInDate &&
+      (dto.checked_in_date !== previous.checkedInDate ||
+        previous.startDate !== dto.checked_in_date);
+    if (
+      isCheckInDateAmendment &&
+      ((dto.term_months != null && dto.term_months !== previous.termMonths) ||
+        (dto.agreed_monthly_price != null &&
+          dto.agreed_monthly_price !== previous.agreedMonthlyPrice) ||
+        (dto.pricing_source != null && dto.pricing_source !== previous.pricingSource))
+    )
+      throw new ConflictException({
+        code: 'LEASE_CHECK_IN_CORRECTION_SEPARATE_COMMERCIAL_REVIEW_REQUIRED',
+        message:
+          'Koreksi tanggal check-in mempertahankan durasi dan tarif yang disepakati. Simpan koreksi tanggal terlebih dahulu; tinjau perubahan tarif atau durasi sebagai koreksi terpisah.',
+      });
+    const startDate = isCheckInDateAmendment
+      ? dto.checked_in_date!
+      : (dto.start_date ?? previous.startDate);
     const termMonths = dto.term_months ?? previous.termMonths;
     const checkedInDate = dto.checked_in_date ?? previous.checkedInDate;
+    if (previous.checkedInDate && dto.start_date && dto.start_date !== checkedInDate)
+      throw new ConflictException({
+        code: 'LEASE_SERVICE_PERIOD_CHECK_IN_ANCHOR_REQUIRED',
+        message:
+          'Tanggal mulai sewa harus mengikuti check-in fisik. Ubah tanggal check-in pada koreksi ini jika pencatatan sebelumnya keliru; pembayaran tetap menggunakan tanggal aslinya.',
+      });
     const endDate = calculateCorrectedLeaseEndDate(startDate, termMonths);
     const today = this.today();
     if (endDate <= today)
@@ -404,7 +500,25 @@ export class LeaseDataCorrectionService {
           'Hunian Tanggungan Owner tidak menggunakan tarif sewa. Koreksi hanya dapat mengubah tanggal atau durasi.',
       });
     let corrected: CorrectionSnapshot;
-    if (!periodChanged && !pricingChanged) {
+    if (isCheckInDateAmendment) {
+      await this.periods.validateAmendmentLocked(
+        client,
+        leaseId,
+        lease.property_id,
+        checkedInDate!,
+      );
+      const locks = await client.query(
+        `SELECT 1 FROM property_owner_realization_lease_locks WHERE lease_id=$1 AND lock_status='locked' LIMIT 1`,
+        [leaseId],
+      );
+      if (locks.rowCount)
+        throw new ConflictException({
+          code: 'LEASE_CHECK_IN_CORRECTION_OWNER_REALIZATION_BLOCKED',
+          message:
+            'Tanggal check-in terkait realisasi Owner yang sudah disiapkan. Batalkan realisasi yang belum ditransfer atau catat koreksi melalui alur realisasi sebelum mengubah tanggal; dokumen terbit tetap dipertahankan.',
+        });
+      corrected = { ...previous, startDate, endDate, checkedInDate };
+    } else if (!periodChanged && !pricingChanged) {
       // A historical check-in correction must not silently re-price the contract.
       corrected = { ...previous, checkedInDate };
     } else {
@@ -559,12 +673,12 @@ export class LeaseDataCorrectionService {
     preview: PreviewResult,
   ) {
     const commercialChanged =
-      preview.previous.startDate !== preview.corrected.startDate ||
       preview.previous.termMonths !== preview.corrected.termMonths ||
       preview.previous.agreedMonthlyPrice !== preview.corrected.agreedMonthlyPrice ||
       preview.previous.pricingSource !== preview.corrected.pricingSource;
     await client.query(
       `UPDATE leases SET start_date=$2::date,end_date=$3::date,term_months=$4,
+               planned_start_date=CASE WHEN service_period_state='pending_check_in' THEN $2::date ELSE planned_start_date END,
               snapshot_monthly_price=CASE WHEN $13 THEN $5 ELSE snapshot_monthly_price END,
               snapshot_yearly_price=CASE WHEN $13 THEN $5*12 ELSE snapshot_yearly_price END,
               contract_rent_amount=CASE WHEN $13 THEN $6 ELSE contract_rent_amount END,

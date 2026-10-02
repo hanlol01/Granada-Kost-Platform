@@ -3,6 +3,7 @@ import { CalendarClock, CheckCircle2, CircleDollarSign, ShieldAlert, XCircle } f
 import { ConfirmDialog } from "@/components/confirm/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -295,9 +296,20 @@ function RenewalCommandCard({
             </CardTitle>
             <p className="mt-1 text-sm text-slate-400">Command {command.id.slice(0, 8)}</p>
           </div>
-          <Badge variant="outline" className="border-slate-700 bg-slate-800 text-slate-200">
-            {STATE_LABEL[command.state]}
-          </Badge>
+          <StatusBadge
+            label={STATE_LABEL[command.state]}
+            tone={
+              command.state === "activated"
+                ? "success"
+                : command.state === "approved"
+                  ? "info"
+                  : command.state === "draft"
+                    ? "warning"
+                    : command.state === "failed"
+                      ? "danger"
+                      : "neutral"
+            }
+          />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -495,12 +507,10 @@ function RenewalEligibilityBanner({ eligibility }: { eligibility: RenewalEligibi
       <CardContent className="space-y-2">
         {rows.map((row) => (
           <div key={row.stage} className="flex items-center gap-2 text-sm">
-            <Badge
-              variant={row.tone === "action" ? "destructive" : "outline"}
-              className={row.tone === "clear" ? "border-emerald-600 text-emerald-300" : undefined}
-            >
-              {row.stage}
-            </Badge>
+            <StatusBadge
+              label={row.stage}
+              tone={row.tone === "action" ? "danger" : row.tone === "clear" ? "success" : "neutral"}
+            />
             <span className={row.tone === "action" ? "text-amber-200" : "text-slate-300"}>
               {row.text}
             </span>

@@ -24,6 +24,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ReportNavigation } from "@/components/reports/ReportsWorkspace";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge as SemanticStatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -92,7 +93,7 @@ const reviewLabels: Record<OwnerReportReviewStatus, string> = {
   void: "Dibatalkan",
 };
 
-function statusTone(status: OwnerReportReviewStatus) {
+function statusTone(status: OwnerReportReviewStatus): StatusTone {
   if (status === "void") return "danger";
   if (status === "paid" || status === "approved") return "success";
   if (status === "ready_for_review") return "warning";
@@ -103,13 +104,18 @@ function statusTone(status: OwnerReportReviewStatus) {
 function StatusBadge({ row }: { row: OwnerSettlementReportRow }) {
   return (
     <div className="owner-report-badges">
-      <Badge data-tone={statusTone(row.review_status)}>{reviewLabels[row.review_status]}</Badge>
-      <Badge data-tone={row.publication_status === "published" ? "success" : "neutral"}>
-        {row.publication_status === "published" ? "Sudah terbit" : "Belum terbit"}
-      </Badge>
-      <Badge data-tone={row.payout_status === "paid" ? "success" : "neutral"}>
-        {row.payout_status === "paid" ? "Sudah disetor" : "Belum disetor"}
-      </Badge>
+      <SemanticStatusBadge
+        label={reviewLabels[row.review_status]}
+        tone={statusTone(row.review_status)}
+      />
+      <SemanticStatusBadge
+        label={row.publication_status === "published" ? "Sudah terbit" : "Belum terbit"}
+        tone={row.publication_status === "published" ? "success" : "neutral"}
+      />
+      <SemanticStatusBadge
+        label={row.payout_status === "paid" ? "Sudah disetor" : "Belum disetor"}
+        tone={row.payout_status === "paid" ? "success" : "neutral"}
+      />
     </div>
   );
 }

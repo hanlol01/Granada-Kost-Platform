@@ -296,6 +296,7 @@ export function invalidationKeysFor(
     case "lease-update":
     case "lease-deposit":
       return [
+        ["lease-service-period-history", propertyId],
         adminUxQueryKeys.leases.all(propertyId),
         ["lease", propertyId],
         ["leaseBillingSummary", propertyId],

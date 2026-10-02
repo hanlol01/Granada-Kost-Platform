@@ -17,6 +17,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -83,7 +84,7 @@ function BillingPage() {
       <ReadOnlyNotice />
       <BalanceHero billing={billing} />
       <BillingNotice billing={billing} />
-      <SettlementProgress billing={billing} />
+      {!billing.lease.service_period_pending ? <SettlementProgress billing={billing} /> : null}
       <ContractSummary billing={billing} />
       <FinancialSeparationSummary billing={billing} />
       <section aria-labelledby="invoice-heading">
@@ -94,7 +95,7 @@ function BillingPage() {
         />
         <div className="mt-3 space-y-3">
           {billing.invoices.length ? (
-            billing.invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} />)
+            billing.invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} servicePeriodPending={billing.lease.service_period_pending} />)
           ) : (
             <Card>
               <CardContent className="p-4">
@@ -295,7 +296,7 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
         <CardContent className="space-y-2 text-sm">
           <SummaryRow
             label="Periode"
-            value={`${jakartaDate(billing.lease.start_date)} – ${jakartaDate(billing.lease.end_date)}`}
+            value={billing.lease.service_period_pending ? `${billing.lease.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in` : `${jakartaDate(billing.lease.start_date)} – ${jakartaDate(billing.lease.end_date)}`}
           />
           <SummaryRow label="Nilai sewa" value={idr(billing.lease.contract_rent)} />
           <SummaryRow label="Tarif bulanan kontrak" value={idr(billing.lease.monthly_rate)} />
@@ -307,7 +308,7 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
           <p className="rounded-xl bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
             Tarif ini adalah snapshot sesuai durasi dan tanggal efektif saat kontrak dibuat.
           </p>
-          <SummaryRow label="Sisa masa kontrak" value={`${billing.lease.remaining_days} hari`} />
+          <SummaryRow label="Sisa masa kontrak" value={billing.lease.service_period_pending ? "Menunggu check-in" : `${billing.lease.remaining_days} hari`} />
         </CardContent>
       </Card>
       <Card>
@@ -381,7 +382,7 @@ function FinancialSeparationSummary({ billing }: { billing: MyW06Billing }) {
   );
 }
 
-function InvoiceCard({ invoice }: { invoice: Invoice }) {
+function InvoiceCard({ invoice, servicePeriodPending }: { invoice: Invoice; servicePeriodPending?: boolean }) {
   const [documentState, setDocumentState] = useState<"idle" | "loading" | "error">("idle");
   return (
     <Card className={invoice.invoice_status === "overdue" ? "border-destructive/40" : undefined}>
@@ -391,7 +392,7 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
             <p className="font-semibold">{invoice.invoice_code}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {invoice.invoice_purpose === "rent" ? "Sewa" : "Tagihan lainnya"} ·{" "}
-              {jakartaDate(invoice.coverage_start)} – {jakartaDate(invoice.coverage_end)}
+              {servicePeriodPending && invoice.invoice_purpose === "rent" ? "Masa sewa belum dimulai—menunggu check-in" : `${jakartaDate(invoice.coverage_start)} – ${jakartaDate(invoice.coverage_end)}`}
             </p>
           </div>
           <InvoiceBadge status={invoice.invoice_status} />
@@ -399,7 +400,7 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
         <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-muted p-3 text-sm">
           <SummaryRow label="Total" value={idr(invoice.total_amount)} stacked />
           <SummaryRow label="Sisa" value={idr(invoice.outstanding_amount)} stacked />
-          <SummaryRow label="Jatuh tempo" value={jakartaDate(invoice.due_date)} stacked />
+          <SummaryRow label="Jatuh tempo" value={servicePeriodPending && invoice.invoice_purpose === "rent" ? "Ditentukan setelah check-in" : jakartaDate(invoice.due_date)} stacked />
           <SummaryRow
             label="Status pembayaran"
             value={invoiceStatusLabel(invoice.invoice_status)}
@@ -553,7 +554,16 @@ function FinancialTimeline({
                       <p className="font-bold">{financialAmount(event.direction, event.amount)}</p>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline">{financialStatusLabel(event.status)}</Badge>
+                      <StatusBadge
+                        label={financialStatusLabel(event.status)}
+                        tone={
+                          event.status === "posted"
+                            ? "success"
+                            : event.status === "reversed"
+                              ? "neutral"
+                              : "warning"
+                        }
+                      />
                       {event.reference ? <span>{event.reference}</span> : null}
                       {event.subtype ? <span>· {financialSubtypeLabel(event.subtype)}</span> : null}
                     </div>
@@ -792,19 +802,15 @@ function SummaryRow({
   );
 }
 function InvoiceBadge({ status }: { status: W06InvoiceStatus }) {
-  const styles: Record<W06InvoiceStatus, string> = {
-    draft: "border-border bg-muted text-muted-foreground",
-    issued: "border-primary/30 bg-primary/10 text-primary",
-    partially_paid: "border-warning/30 bg-warning/10 text-warning",
-    paid: "border-success/30 bg-success/10 text-success",
-    overdue: "border-destructive/30 bg-destructive/10 text-destructive",
-    void: "border-border bg-muted text-muted-foreground",
+  const tones: Record<W06InvoiceStatus, StatusTone> = {
+    draft: "neutral",
+    issued: "info",
+    partially_paid: "warning",
+    paid: "success",
+    overdue: "danger",
+    void: "neutral",
   };
-  return (
-    <Badge variant="outline" className={styles[status]}>
-      {invoiceStatusLabel(status)}
-    </Badge>
-  );
+  return <StatusBadge label={invoiceStatusLabel(status)} tone={tones[status]} />;
 }
 function ProofBadge({ status }: { status: W06ProofStatus }) {
   const labels: Record<W06ProofStatus, string> = {
@@ -813,29 +819,13 @@ function ProofBadge({ status }: { status: W06ProofStatus }) {
     rejected: "Ditolak",
     expired: "Kedaluwarsa",
   };
-  const icon =
-    status === "verified" ? (
-      <CheckCircle2 className="mr-1 h-3 w-3" />
-    ) : status === "rejected" ? (
-      <AlertTriangle className="mr-1 h-3 w-3" />
-    ) : (
-      <Clock3 className="mr-1 h-3 w-3" />
-    );
-  return (
-    <Badge
-      variant="outline"
-      className={
-        status === "verified"
-          ? "border-success/30 bg-success/10 text-success"
-          : status === "rejected" || status === "expired"
-            ? "border-destructive/30 bg-destructive/10 text-destructive"
-            : "border-warning/30 bg-warning/10 text-warning"
-      }
-    >
-      {icon}
-      {labels[status]}
-    </Badge>
-  );
+  const tones: Record<W06ProofStatus, StatusTone> = {
+    pending_review: "warning",
+    verified: "success",
+    rejected: "danger",
+    expired: "danger",
+  };
+  return <StatusBadge label={labels[status]} tone={tones[status]} />;
 }
 function PaymentBadge({ status }: { status: MyW06Billing["payments"][number]["payment_status"] }) {
   const labels = {
@@ -844,17 +834,13 @@ function PaymentBadge({ status }: { status: MyW06Billing["payments"][number]["pa
     rejected: "Ditolak",
     reversed: "Dibatalkan",
   } as const;
-  const classes = {
-    verified: "border-success/30 bg-success/10 text-success",
-    pending_confirmation: "border-warning/30 bg-warning/10 text-warning",
-    rejected: "border-destructive/30 bg-destructive/10 text-destructive",
-    reversed: "border-border bg-muted text-muted-foreground",
+  const tones: Record<MyW06Billing["payments"][number]["payment_status"], StatusTone> = {
+    verified: "success",
+    pending_confirmation: "warning",
+    rejected: "danger",
+    reversed: "neutral",
   } as const;
-  return (
-    <Badge variant="outline" className={classes[status]}>
-      {labels[status]}
-    </Badge>
-  );
+  return <StatusBadge label={labels[status]} tone={tones[status]} />;
 }
 function SettlementBadge({ status }: { status: Settlement["status"] }) {
   const labels: Record<Settlement["status"], string> = {
@@ -867,21 +853,17 @@ function SettlementBadge({ status }: { status: Settlement["status"] }) {
     terminated: "Dihentikan",
     paid: "Lunas",
   };
-  const className =
-    status === "paid"
-      ? "border-success/30 bg-success/10 text-success"
-      : status === "overdue" || status === "admin_action_required"
-        ? "border-destructive/30 bg-destructive/10 text-destructive"
-        : status === "termination_pending"
-          ? "border-warning/30 bg-warning/10 text-warning"
-          : status === "terminated"
-            ? "border-border bg-muted text-muted-foreground"
-            : "border-primary/30 bg-primary/10 text-primary";
-  return (
-    <Badge variant="outline" className={className}>
-      {labels[status]}
-    </Badge>
-  );
+  const tones: Record<Settlement["status"], StatusTone> = {
+    awaiting_activation: "warning",
+    open: "info",
+    extended: "info",
+    overdue: "danger",
+    admin_action_required: "danger",
+    termination_pending: "warning",
+    terminated: "neutral",
+    paid: "success",
+  };
+  return <StatusBadge label={labels[status]} tone={tones[status]} />;
 }
 function financialEventLabel(eventType: FinancialEvent["event_type"]) {
   const labels: Record<FinancialEvent["event_type"], string> = {

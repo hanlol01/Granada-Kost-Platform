@@ -263,7 +263,8 @@ function notEligibleReasonLabel(code: string): string {
     {
       OWNER_ASSIGNMENT_UNAVAILABLE: 'Owner belum terhubung ke kamar',
       OWNER_SPONSORED_EXCLUDED: 'Hunian tanggungan Owner',
-      OUTSTANDING_CONTRACT_RENT: 'Kontrak belum lunas',
+    OUTSTANDING_CONTRACT_RENT: 'Kontrak belum lunas',
+    AWAITING_PHYSICAL_CHECK_IN: 'Menunggu check-in fisik',
       ALREADY_ALLOCATED_TO_REALIZATION: 'Sudah masuk realisasi lain',
       PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD: 'Pelunasan di luar periode',
     }[code] ?? 'Belum memenuhi syarat realisasi'
@@ -3059,7 +3060,8 @@ export class PropertyOwnerRealizationService {
        ), scoped AS (
          SELECT lease.id AS lease_id,room.id AS room_id,lease.resident_id,lease.term_months,lease.pricing_source,
                 lease.snapshot_pricing_tier,lease.snapshot_monthly_price,lease.snapshot_reference_monthly_price,
-                lease.contract_rent_amount,lease.start_date,lease.end_date,lease.activated_at,
+                 lease.contract_rent_amount,lease.start_date,lease.end_date,
+                 COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') AS checked_in_at,
                  COALESCE(room.building_id,room.id)::text AS asset_id,
                  COALESCE(building.building_code,room.room_code) AS building_code,
                  room.room_code,room.plot_number,COALESCE(building.building_name,room.room_code) AS building_name,
@@ -3070,7 +3072,9 @@ export class PropertyOwnerRealizationService {
                 COALESCE(fee.monthly_fee_amount,0)::bigint AS monthly_management_fee,
                 COALESCE(fee.monthly_fee_amount,0)::bigint * COALESCE(lease.term_months,0) AS management_fee_amount,
                 fee.effective_date AS fee_effective_date
-           FROM leases lease
+            FROM leases lease
+            LEFT JOIN lease_activation_lifecycles check_in ON check_in.lease_id=lease.id AND check_in.property_id=lease.property_id
+            LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id AND occupancy.occupancy_status<>'cancelled'
            JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
            LEFT JOIN room_buildings building ON building.id=room.building_id
            JOIN residents resident ON resident.id=lease.resident_id
@@ -3096,10 +3100,14 @@ export class PropertyOwnerRealizationService {
               WHERE version.property_id=lease.property_id AND version.effective_date<=lease.start_date
               ORDER BY version.effective_date DESC LIMIT 1
            ) fee ON true
-          WHERE lease.property_id=$1 AND lease.commercial_mode='rent'
+           WHERE lease.property_id=$1 AND lease.commercial_mode='rent'
+             AND lease.service_period_state<>'pending_check_in'
+             AND COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NOT NULL
             AND lease.contract_rent_amount>0 AND ledger.verified_rent_credit>=lease.contract_rent_amount
             AND ledger.paid_in_full_at IS NOT NULL
-            AND ($2::date IS NULL OR ledger.paid_in_full_at::date < $2::date)
+             AND ($2::date IS NULL OR (GREATEST(ledger.paid_in_full_at,
+               COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta'))
+               AT TIME ZONE 'Asia/Jakarta')::date < $2::date)
        )
         SELECT scoped.lease_id,scoped.room_id,scoped.resident_id,scoped.owner_profile_id,
                 scoped.asset_id,scoped.building_code,scoped.room_code,scoped.plot_number,
@@ -3109,7 +3117,7 @@ export class PropertyOwnerRealizationService {
               scoped.snapshot_reference_monthly_price::text AS reference_monthly_price,
               scoped.monthly_management_fee::text AS monthly_management_fee,
               scoped.paid_in_full_at::text AS payment_completed_at,
-              scoped.activated_at::text AS check_in_at,scoped.end_date::text AS check_out_at,
+               scoped.checked_in_at::text AS check_in_at,scoped.end_date::text AS check_out_at,
               scoped.verified_rent_credit::text AS money_received_amount,scoped.contract_rent_amount::text AS contract_total_amount,
               GREATEST(scoped.contract_rent_amount-scoped.verified_rent_credit,0)::text AS outstanding_amount,
               scoped.management_fee_amount::text, (scoped.contract_rent_amount-scoped.management_fee_amount)::text AS net_realization_amount,
@@ -3132,6 +3140,7 @@ export class PropertyOwnerRealizationService {
               CASE
                 WHEN assignment.owner_profile_id IS NULL THEN 'OWNER_ASSIGNMENT_UNAVAILABLE'
                 WHEN lease.commercial_mode='owner_sponsored' THEN 'OWNER_SPONSORED_EXCLUDED'
+                WHEN lease.service_period_state='pending_check_in' OR COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NULL THEN 'AWAITING_PHYSICAL_CHECK_IN'
                 WHEN COALESCE(ledger.verified_rent_credit,0)<COALESCE(lease.contract_rent_amount,0) THEN 'OUTSTANDING_CONTRACT_RENT'
                 WHEN lock.id IS NOT NULL THEN 'ALREADY_ALLOCATED_TO_REALIZATION'
                 ELSE 'PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD'
@@ -3143,7 +3152,9 @@ export class PropertyOwnerRealizationService {
            SELECT COALESCE(sum(invoice.credit_amount + allocation.net_amount),0)::bigint AS verified_rent_credit,
                   max(payment_dates.latest_paid_at) AS paid_in_full_at
              FROM invoices invoice
-             LEFT JOIN LATERAL (
+             LEFT JOIN lease_activation_lifecycles check_in ON check_in.lease_id=lease.id AND check_in.property_id=lease.property_id
+          LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lease.property_id
+          LEFT JOIN LATERAL (
                SELECT COALESCE(sum(a.allocated_amount),0)::bigint AS net_amount
                  FROM payment_allocations a JOIN payments p ON p.id=a.payment_id AND p.payment_status='verified'
                 WHERE a.invoice_id=invoice.id AND a.allocation_status='active'
@@ -3178,9 +3189,9 @@ export class PropertyOwnerRealizationService {
           LEFT JOIN property_owner_realization_lease_locks lock ON lock.lease_id=lease.id AND lock.lock_status='locked'
           WHERE lease.property_id=$1 AND lease.contract_rent_amount IS NOT NULL
            AND ($3::uuid IS NULL OR assignment.owner_profile_id=$3::uuid)
-           AND (assignment.owner_profile_id IS NULL OR lease.commercial_mode='owner_sponsored' OR COALESCE(ledger.verified_rent_credit,0)<lease.contract_rent_amount
+            AND (assignment.owner_profile_id IS NULL OR lease.commercial_mode='owner_sponsored' OR lease.service_period_state='pending_check_in' OR COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NULL OR COALESCE(ledger.verified_rent_credit,0)<lease.contract_rent_amount
              OR lock.id IS NOT NULL
-             OR (ledger.paid_in_full_at IS NOT NULL AND ledger.paid_in_full_at::date >= $2::date))
+             OR (ledger.paid_in_full_at IS NOT NULL AND (GREATEST(ledger.paid_in_full_at,COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta')) AT TIME ZONE 'Asia/Jakarta')::date >= $2::date))
         ORDER BY room.room_code,resident.full_name`,
       [propertyId, period.until, ownerId ?? null],
     );
@@ -3831,6 +3842,7 @@ export class PropertyOwnerRealizationService {
       OWNER_ASSIGNMENT_UNAVAILABLE: 'Owner aset belum ditetapkan',
       OWNER_SPONSORED_EXCLUDED: 'Hunian tanggungan Owner',
       OUTSTANDING_CONTRACT_RENT: 'Outstanding kontrak',
+      AWAITING_PHYSICAL_CHECK_IN: 'Menunggu check-in fisik',
       ALREADY_ALLOCATED_TO_REALIZATION: 'Sudah dialokasikan ke Realisasi lain',
       PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD: 'Lunas setelah periode rilis',
     };

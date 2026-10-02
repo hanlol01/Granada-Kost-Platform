@@ -933,6 +933,7 @@ export class BookingLeadCompletionService {
       building_code: string | null;
       start_date: string;
       end_date: string | null;
+      service_period_pending: boolean;
       term_months: number;
       contract_rent_amount: string | number | null;
       property_name: string;
@@ -944,7 +945,9 @@ export class BookingLeadCompletionService {
               commitment.verification_status,commitment.rent_credit_amount,
               commitment.paid_at,commitment.created_at,
               lead.visitor_name,room.number AS room_number,building.building_code AS building_code,
-              commitment.start_date::text AS start_date,commitment.end_date::text AS end_date,
+              COALESCE(lease.start_date,commitment.start_date)::text AS start_date,
+               COALESCE(lease.end_date,commitment.end_date)::text AS end_date,
+               (lease.id IS NULL OR lease.service_period_state='pending_check_in') AS service_period_pending,
               commitment.term_months,commitment.contract_rent_amount,
               property.name AS property_name,property.address AS property_address,
               issuer.display_name AS issued_by_name
@@ -955,6 +958,7 @@ export class BookingLeadCompletionService {
          JOIN rooms room ON room.id=commitment.room_id AND room.property_id=commitment.property_id
          LEFT JOIN room_buildings building ON building.id=room.building_id AND building.property_id=room.property_id
          LEFT JOIN users issuer ON issuer.id=commitment.created_by_user_id
+          LEFT JOIN leases lease ON lease.id=lead.lease_id AND lease.property_id=lead.property_id
         WHERE commitment.booking_lead_id=$1 AND commitment.property_id=$2`,
       [leadId, propertyId],
     );
@@ -993,7 +997,8 @@ export class BookingLeadCompletionService {
       leaseStart: row.start_date,
       leaseEnd: row.end_date,
       leaseTermMonths: row.term_months,
-      periodLabel: row.payment_type === 'booking_fee' ? 'Rencana periode sewa' : 'Periode sewa',
+      servicePeriodPending: row.service_period_pending,
+      periodLabel: 'Periode sewa',
       contractRentAmount:
         row.contract_rent_amount == null ? null : Number(row.contract_rent_amount),
     });
@@ -1071,6 +1076,7 @@ export class BookingLeadCompletionService {
       leaseEnd: row.end_date,
       leaseTermMonths: row.term_months,
       periodLabel: 'Rencana periode sewa',
+      servicePeriodPending: true,
     });
   }
 

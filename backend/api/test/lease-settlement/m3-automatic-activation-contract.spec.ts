@@ -6,7 +6,7 @@ import test from 'node:test';
 import { MIGRATION_MANIFEST } from '../../src/infrastructure/database/scripts/migration-manifest';
 import { LeaseCheckInService } from '../../src/modules/lease/lease-check-in.service';
 
-const root = resolve(__dirname, '../..');
+const root = process.env.KOSTATION_TEST_SOURCE_ROOT ? resolve(process.env.KOSTATION_TEST_SOURCE_ROOT) : resolve(__dirname, '../..');
 const read = (relative: string) => readFileSync(resolve(root, relative), 'utf8');
 const migrationPath =
   'src/infrastructure/database/migrations/050_automatic_activation_physical_check_in.sql';
@@ -67,7 +67,7 @@ void test('new commitments schedule Jakarta cutoff while one full month remains 
   assert.match(issuance, /INSERT INTO lease_activation_lifecycles/);
   assert.match(issuance, /\$3::date \+ TIME '00:05'/);
   assert.match(issuance, /\$3::date \+ 1 \+ TIME '00:05'/);
-  assert.match(onboarding, /initialRentCredit < room\.monthly_price/);
+  assert.match(onboarding, /initialRentCredit < commercial\.monthlyRate/);
 });
 
 void test('physical check-in transaction creates one occupancy after authority and conflict checks', async () => {
@@ -129,6 +129,7 @@ void test('physical check-in transaction creates one occupancy after authority a
         await Promise.resolve();
       },
     } as never,
+    { finalizeLocked: async () => ({ startDate: '2026-08-29', endDate: '2027-08-29', versionId: lifecycleId, sequenceNumber: 1 }) } as never,
   );
   const result = await service.confirm(
     {
@@ -149,6 +150,7 @@ void test('physical check-in transaction creates one occupancy after authority a
     occupancyStatus: 'active',
     roomStatus: 'occupied',
     checkedInAt: checkedInAt.toISOString(),
+    servicePeriod: { startDate: '2026-08-29', endDate: '2027-08-29', versionId: lifecycleId, sequenceNumber: 1 },
   });
   const authorityIndex = queries.findIndex((sql) => /SELECT lifecycle\.id/.test(sql));
   const conflictIndex = queries.findIndex((sql) => /AS occupancy_count/.test(sql));

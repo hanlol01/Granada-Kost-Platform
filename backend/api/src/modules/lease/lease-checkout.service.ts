@@ -3775,6 +3775,10 @@ export class LeaseCheckoutService {
         code: 'LEASE_STATE_CONFLICT',
         message: 'Only an active lease may be checked out',
       });
+    if (!lease.occupancy_id) throw new ConflictException({
+      code: 'CHECKOUT_PHYSICAL_CHECK_IN_REQUIRED',
+      message: 'Penghuni belum tercatat check-in fisik, sehingga masa sewa dan denda check-out belum dimulai. Catat serah-terima kamar yang sebenarnya atau gunakan pembatalan penyewaan yang belum dimulai.',
+    });
   }
   private assertCheckoutTuple(checkout: CheckoutRow, lease: LeaseRow) {
     if (

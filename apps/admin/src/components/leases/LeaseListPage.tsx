@@ -13,6 +13,7 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,19 +48,15 @@ type Props = {
 
 const EMPTY_LEASES: LeaseSummary[] = [];
 
-const STATUS_TONE: Record<LeaseStatus, string> = {
-  active: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  ended: "border-slate-700 bg-slate-800 text-slate-300",
-  cancelled: "border-rose-500/30 bg-rose-500/10 text-rose-300",
-  transferred: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+const STATUS_TONE: Record<LeaseStatus, StatusTone> = {
+  active: "success",
+  ended: "neutral",
+  cancelled: "danger",
+  transferred: "info",
 };
 
 function LeaseStatusBadge({ status }: { status: LeaseStatus }) {
-  return (
-    <Badge className={cn("border", STATUS_TONE[status])} variant="outline">
-      {LEASE_STATUS_LABEL[status]}
-    </Badge>
-  );
+  return <StatusBadge label={LEASE_STATUS_LABEL[status]} tone={STATUS_TONE[status]} />;
 }
 
 export function LeaseListPage({ search, onSearchChange }: Props) {

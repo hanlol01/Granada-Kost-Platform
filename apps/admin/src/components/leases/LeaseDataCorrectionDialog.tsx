@@ -68,6 +68,17 @@ function dateLabel(value: string | null) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function checkInBusinessDate(value: string | null) {
+  return value
+    ? new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jakarta",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(value))
+    : "";
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
@@ -132,11 +143,11 @@ function SnapshotColumn({
 
 export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompleted }: Props) {
   const isOwnerSponsored = tenancy.commercialMode === "owner_sponsored";
-  const [startDate, setStartDate] = useState(tenancy.startDate);
-  const [termMonths, setTermMonths] = useState(tenancy.termMonths);
-  const [checkedInDate, setCheckedInDate] = useState(
-    tenancy.checkedInAt ? tenancy.checkedInAt.slice(0, 10) : "",
+  const [startDate, setStartDate] = useState(
+    tenancy.checkedInAt ? checkInBusinessDate(tenancy.checkedInAt) : tenancy.startDate,
   );
+  const [termMonths, setTermMonths] = useState(tenancy.termMonths);
+  const [checkedInDate, setCheckedInDate] = useState(checkInBusinessDate(tenancy.checkedInAt));
   const [pricingSource, setPricingSource] = useState<"standard" | "negotiated">(
     tenancy.pricingSource === "owner_sponsored" ? "standard" : tenancy.pricingSource,
   );
@@ -150,13 +161,20 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
-  const periodChanged = startDate !== tenancy.startDate || termMonths !== tenancy.termMonths;
+  const checkInDateAmended = Boolean(
+    tenancy.checkedInAt &&
+    (checkedInDate !== checkInBusinessDate(tenancy.checkedInAt) || startDate !== tenancy.startDate),
+  );
+  const periodChanged =
+    !checkInDateAmended && (startDate !== tenancy.startDate || termMonths !== tenancy.termMonths);
 
   useEffect(() => {
     if (!open) return;
-    setStartDate(tenancy.startDate);
+    setStartDate(
+      tenancy.checkedInAt ? checkInBusinessDate(tenancy.checkedInAt) : tenancy.startDate,
+    );
     setTermMonths(tenancy.termMonths);
-    setCheckedInDate(tenancy.checkedInAt ? tenancy.checkedInAt.slice(0, 10) : "");
+    setCheckedInDate(checkInBusinessDate(tenancy.checkedInAt));
     setPricingSource(
       tenancy.pricingSource === "owner_sponsored" ? "standard" : tenancy.pricingSource,
     );
@@ -207,6 +225,8 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
     if (!Number.isInteger(termMonths) || termMonths < 1 || termMonths > 120)
       return "Durasi sewa harus antara 1 sampai 120 bulan.";
     if (tenancy.checkedInAt && !checkedInDate) return "Tanggal check-in wajib diisi.";
+    if (checkInDateAmended && termMonths !== tenancy.termMonths)
+      return "Simpan koreksi tanggal check-in terlebih dahulu. Perubahan durasi memerlukan peninjauan terpisah.";
     if (
       !isOwnerSponsored &&
       periodChanged &&
@@ -321,6 +341,12 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
                 id="lease-correction-start-date"
                 label="Tanggal mulai kontrak"
                 value={startDate}
+                disabled={Boolean(tenancy.checkedInAt)}
+                description={
+                  tenancy.checkedInAt
+                    ? "Otomatis mengikuti tanggal check-in fisik. Koreksi tanggal check-in pada field berikutnya bila catatan sebelumnya keliru."
+                    : "Tanggal rencana; masa sewa belum dimulai sebelum check-in."
+                }
                 onChange={(value) => {
                   setStartDate(value ?? "");
                   invalidatePreview();
@@ -352,6 +378,7 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
                   maxDate={todayInJakarta()}
                   onChange={(value) => {
                     setCheckedInDate(value ?? "");
+                    setStartDate(value ?? "");
                     invalidatePreview();
                   }}
                   description={

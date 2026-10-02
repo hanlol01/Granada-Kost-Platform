@@ -171,6 +171,22 @@ export class AdminBillingController {
     });
   }
 
+  @Get('billing/contract-paid-documents/:documentId/original-document')
+  @Header('Cache-Control', 'private, no-store')
+  async originalContractPaidDocument(@CurrentUser() user: UserAccessContext, @Param('documentId') documentId: string, @Query() query: AdminBillingScopeQueryDto) {
+    const document = await this.w06.contractPaidDocument(user, query.property_id, documentId, true);
+    return new StreamableFile(document.content, { type: 'application/pdf',
+      disposition: documentDisposition(document.filename.replace(/\.pdf$/i, '-asli.pdf'), 'attachment', 'Bukti-Pelunasan-Kontrak-Asli'), length: document.content.length });
+  }
+
+  @Get('billing/invoices/:invoiceId/original-document')
+  @Header('Cache-Control', 'private, no-store')
+  async originalInvoiceDocument(@CurrentUser() user: UserAccessContext, @Param('invoiceId') invoiceId: string, @Query() query: AdminBillingScopeQueryDto) {
+    const document = await this.w06.originalInvoiceDocument(user, query.property_id, invoiceId);
+    return new StreamableFile(document.content, { type: 'application/pdf',
+      disposition: documentDisposition(document.filename, 'attachment', 'Invoice-Periode-Awal'), length: document.content.length });
+  }
+
   @Get('billing/invoices/:invoiceId/document')
   @Header('Cache-Control', 'private, no-store')
   async invoiceDocument(

@@ -4,7 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -255,7 +255,7 @@ function SmartLockPage() {
       }
       actions={
         <div className="flex items-center gap-2">
-          {simulatedMode ? <Badge variant="secondary">SIMULATED</Badge> : null}
+          {simulatedMode ? <StatusBadge label="Mode simulasi" tone="warning" /> : null}
           <Button
             variant="outline"
             size="sm"
@@ -467,9 +467,11 @@ function SmartLockPage() {
                 </div>
                 <div className="rounded-lg bg-muted/40 p-3">
                   <p className="text-xs text-muted-foreground">Auto Lock</p>
-                  <Badge variant={detail.autoLock ? "default" : "secondary"} className="mt-1">
-                    {detail.autoLock ? "Aktif" : "Nonaktif"}
-                  </Badge>
+                  <StatusBadge
+                    label={detail.autoLock ? "Aktif" : "Nonaktif"}
+                    tone={detail.autoLock ? "success" : "neutral"}
+                    className="mt-1"
+                  />
                 </div>
               </div>
               {detail.restrictedReason && (

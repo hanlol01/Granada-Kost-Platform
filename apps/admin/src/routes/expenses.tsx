@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { NoticeAlert } from "@/components/ui/notice-alert";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
@@ -38,15 +39,15 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/expenses")({ component: ExpensesPage });
 
-const STATUS_TONE: Record<ExpenseStatus, string> = {
-  draft: "border-border bg-muted text-muted-foreground",
-  pending_approval: "border-warning/30 bg-warning/15 text-warning-foreground",
-  approved: "border-primary/30 bg-primary-soft text-primary",
-  paid: "border-success/30 bg-success/15 text-success",
-  rejected: "border-destructive/30 bg-destructive/15 text-destructive",
-  cancelled: "border-border bg-muted text-muted-foreground",
-  reversed: "border-destructive/30 bg-destructive/15 text-destructive",
-  archived: "border-border bg-muted text-muted-foreground",
+const STATUS_TONE: Record<ExpenseStatus, StatusTone> = {
+  draft: "neutral",
+  pending_approval: "warning",
+  approved: "info",
+  paid: "success",
+  rejected: "danger",
+  cancelled: "neutral",
+  reversed: "danger",
+  archived: "neutral",
 };
 
 const METHODS: ExpensePaymentMethod[] = ["cash", "bank_transfer", "qris", "ewallet", "other"];
@@ -398,10 +399,7 @@ function ExpenseCard({
             {formatDate(item.expenseDate)} · {EXPENSE_METHOD_LABEL[item.paymentMethod]}
           </p>
         </div>
-        <Badge variant="outline" className={STATUS_TONE[item.status]}>
-          {item.status === "paid" ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : null}
-          {EXPENSE_STATUS_LABEL[item.status]}
-        </Badge>
+        <StatusBadge label={EXPENSE_STATUS_LABEL[item.status]} tone={STATUS_TONE[item.status]} />
       </div>
       <div className="mt-4 flex items-end justify-between gap-3">
         <div>

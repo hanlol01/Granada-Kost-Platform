@@ -15,6 +15,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -53,17 +54,17 @@ function formatDate(value: string) {
   );
 }
 
-function statusClass(status: ReminderHistoryStatus) {
+function statusTone(status: ReminderHistoryStatus): StatusTone {
   if (status === "manual_sent") {
-    return "border-success/35 bg-success/10 text-success";
+    return "success";
   }
   if (status === "external_opened") {
-    return "border-primary/35 bg-primary/10 text-primary";
+    return "info";
   }
   if (status === "failed") {
-    return "border-destructive/50 bg-destructive/10 text-destructive";
+    return "danger";
   }
-  return "border-border bg-muted/60 text-muted-foreground";
+  return "neutral";
 }
 
 function channelClass(channel: ReminderHistoryChannel) {
@@ -287,9 +288,10 @@ function ReminderHistoryPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className={statusClass(attempt.outcome_status)}>
-                        {reminderHistoryStatusLabels[attempt.outcome_status]}
-                      </Badge>
+                      <StatusBadge
+                        label={reminderHistoryStatusLabels[attempt.outcome_status]}
+                        tone={statusTone(attempt.outcome_status)}
+                      />
                       <Badge variant="outline" className={channelClass(attempt.channel)}>
                         {reminderHistoryChannelLabels[attempt.channel]}
                       </Badge>
@@ -302,12 +304,7 @@ function ReminderHistoryPage() {
                         </Badge>
                       ) : null}
                       {attempt.archived_at ? (
-                        <Badge
-                          variant="outline"
-                          className="border-border bg-muted/60 text-muted-foreground"
-                        >
-                          Diarsipkan
-                        </Badge>
+                        <StatusBadge label="Diarsipkan" tone="neutral" />
                       ) : null}
                     </div>
                   </div>

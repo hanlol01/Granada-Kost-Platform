@@ -75,6 +75,7 @@ const TIMELINE_LABELS: Readonly<Record<string, string>> = {
   occupancy_check_out: 'Penghuni check-out',
   lease_created: 'Penyewaan diaktifkan',
   lease_updated: 'Penyewaan diperbarui',
+  lease_lease_data_corrected: 'Data penyewaan dikoreksi',
   lease_invoice_generated: 'Tagihan penyewaan dibuat',
   lease_deposit_collected: 'Deposit jaminan diterima',
   lease_deposit_refunded: 'Deposit jaminan dikembalikan',
@@ -648,6 +649,9 @@ export class AdminUxRoomDetailService {
             label,
             occurred_at: iso(item.occurred_at),
             ...(description ? { description } : {}),
+            ...(eventType === 'lease_lease_data_corrected' && item.resident_id
+              ? { resident_path: `/tenants/${encodeURIComponent(text(item.resident_id))}` }
+              : {}),
           },
         ];
       }),

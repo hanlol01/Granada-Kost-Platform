@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ import {
 import { ErrorState, LoadingState } from "@/components/state";
 import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
 import { useAuth } from "@/lib/auth";
+import { OwnerAccountSettings } from "./OwnerAccountSettings";
 import { getOwnerPortalRoute } from "@/lib/property-owner-route-registry";
 import {
   downloadOwnerRealizationReceipt,
@@ -264,41 +266,72 @@ type CollectionCheckpointFilter =
   | "not_available";
 
 function StatusPill({ value }: { value: string | null | undefined }) {
-  const warning = [
-    "awaiting_check_in",
-    "maintenance",
-    "requires_review",
-    "awaiting_payout",
-    "partially_paid",
-    "overdue",
-    "open",
-    "on_hold",
-    "urgent",
-    "high",
-  ].includes(value ?? "");
-  const muted = [
-    "vacant",
-    "inactive",
-    "ended",
-    "cancelled",
-    "archived",
-    "low",
-    "unavailable",
-    "not_available",
-  ].includes(value ?? "");
+  const tones: Record<string, StatusTone> = {
+    vacant: "success",
+    reserved: "warning",
+    awaiting_check_in: "warning",
+    occupied: "info",
+    maintenance: "warning",
+    inactive: "neutral",
+    requires_review: "danger",
+    draft: "neutral",
+    awaiting_activation: "warning",
+    active: "success",
+    ended: "neutral",
+    completed: "success",
+    cancelled: "neutral",
+    transferred: "info",
+    recognized: "info",
+    reversed: "neutral",
+    reversal: "neutral",
+    refund: "info",
+    transfer_proration: "info",
+    clawback: "warning",
+    ready_for_review: "warning",
+    approved: "success",
+    paid: "success",
+    void: "neutral",
+    payout: "info",
+    unavailable: "neutral",
+    awaiting_payout: "warning",
+    reconciled: "success",
+    scheduled: "info",
+    historical: "neutral",
+    empty: "neutral",
+    current: "info",
+    unpaid: "warning",
+    partially_paid: "warning",
+    waived: "neutral",
+    overdue: "danger",
+    settled: "success",
+    not_available: "neutral",
+    submitted: "info",
+    acknowledged: "info",
+    in_progress: "info",
+    on_hold: "warning",
+    escalated: "danger",
+    resolved: "success",
+    reopened: "warning",
+    closed: "neutral",
+    open: "warning",
+    assigned: "info",
+    rework_required: "danger",
+    verified: "success",
+    unread: "warning",
+    read: "neutral",
+    archived: "neutral",
+    low: "neutral",
+    medium: "info",
+    high: "warning",
+    urgent: "danger",
+    normal: "neutral",
+  };
+  const label = value ? statusLabel[value] : null;
   return (
-    <Badge
-      variant="outline"
-      className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
-        warning
-          ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-          : muted
-            ? "border-border bg-muted/50 text-muted-foreground"
-            : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-      }`}
-    >
-      {labelOf(value)}
-    </Badge>
+    <StatusBadge
+      label={label ?? "Status tidak diketahui"}
+      tone={value ? (tones[value] ?? "neutral") : "neutral"}
+    />
   );
 }
 
@@ -314,15 +347,14 @@ function OwnerSponsorshipStatusPill({
     paid: "Lunas",
     overpaid: "Lebih bayar",
   } as const;
-  const attention = value === "unpaid" || value === "partially_paid";
-  return (
-    <Badge
-      variant="outline"
-      className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
-    >
-      {copy[value]}
-    </Badge>
-  );
+  const tones = {
+    waived: "neutral",
+    unpaid: "warning",
+    partially_paid: "warning",
+    paid: "success",
+    overpaid: "warning",
+  } as const;
+  return <StatusBadge label={copy[value]} tone={tones[value]} />;
 }
 
 function Metric({
@@ -1195,12 +1227,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                             </Badge>
                           ) : null}
                           {item.billing.h7Count > 0 && item.billing.state !== "overdue" ? (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                            >
-                              Jatuh tempo ≤ 7 hari
-                            </Badge>
+                            <StatusBadge label="Jatuh tempo ≤ 7 hari" tone="warning" />
                           ) : null}
                         </div>
                         <p className="mt-2 text-base font-semibold text-foreground">
@@ -1213,7 +1240,7 @@ function Dashboard({ portal, ownerId }: { portal: OwnerPortal; ownerId: string }
                           {item.lease.termMonths} bulan · {formatOwnerMoney(item.lease.monthlyRate)}
                           /bulan
                           <span aria-hidden="true"> · </span>
-                          {localDate(item.lease.startDate)}–{localDate(item.lease.endDate)}
+                          {item.lease.servicePeriodPending ? `${item.lease.termMonths} bulan · Menunggu check-in` : `${localDate(item.lease.startDate)}–${localDate(item.lease.endDate)}`}
                         </p>
                         {item.operations.openComplaintCount > 0 ||
                         item.operations.activeWorkOrderCount > 0 ? (
@@ -1793,11 +1820,12 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
   };
 
   const data: OwnerRealizationProgress | undefined = progress.data;
-  const statusCopy = data?.state === "published"
-    ? "Realisasi diterbitkan"
-    : data?.state === "empty"
-      ? "Belum ada data layak"
-      : "Progress sementara";
+  const statusCopy =
+    data?.state === "published"
+      ? "Realisasi diterbitkan"
+      : data?.state === "empty"
+        ? "Belum ada data layak"
+        : "Progress sementara";
   const publishedTransfers = data?.transfers ?? [];
   return (
     <Card className="owner-data-surface border-primary/25 shadow-sm" data-owner-reveal>
@@ -1813,16 +1841,10 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
             </p>
           </div>
           {data ? (
-            <Badge
-              variant="outline"
-              className={
-                data.state === "published"
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  : "border-primary/35 bg-primary/10 text-primary"
-              }
-            >
-              {statusCopy}
-            </Badge>
+            <StatusBadge
+              label={statusCopy}
+              tone={data.state === "published" ? "success" : "info"}
+            />
           ) : null}
         </div>
       </CardHeader>
@@ -1830,7 +1852,14 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Periode realisasi
-            <MonthYearPicker value={period} onChange={(value) => { setPeriod(value); setExpanded(false); }} label="Periode realisasi Owner" />
+            <MonthYearPicker
+              value={period}
+              onChange={(value) => {
+                setPeriod(value);
+                setExpanded(false);
+              }}
+              label="Periode realisasi Owner"
+            />
           </label>
           <Button
             type="button"
@@ -1868,7 +1897,10 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
             ) : data.state === "empty" ? (
               <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
                 <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                <p>Belum ada kamar yang layak direalisasikan pada periode ini. Data akan terbarui setelah pembayaran dinyatakan lunas.</p>
+                <p>
+                  Belum ada kamar yang layak direalisasikan pada periode ini. Data akan terbarui
+                  setelah pembayaran dinyatakan lunas.
+                </p>
               </div>
             ) : (
               <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm leading-6 text-foreground">
@@ -1898,19 +1930,33 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
               <div className="rounded-xl border border-border/80 bg-background p-4 text-sm">
                 <p className="font-semibold text-foreground">Rekening pencairan</p>
                 <p className="mt-1 text-muted-foreground">
-                  {data.payoutDestination.bankName ?? "Bank belum diisi"} · {data.payoutDestination.accountNumberMasked ?? "Rekening belum diisi"} · {data.payoutDestination.accountHolder ?? "Nama pemilik belum diisi"}
+                  {data.payoutDestination.bankName ?? "Bank belum diisi"} ·{" "}
+                  {data.payoutDestination.accountNumberMasked ?? "Rekening belum diisi"} ·{" "}
+                  {data.payoutDestination.accountHolder ?? "Nama pemilik belum diisi"}
                 </p>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" className="min-h-11" onClick={() => setExpanded((value) => !value)}>
+              <Button
+                type="button"
+                className="min-h-11"
+                onClick={() => setExpanded((value) => !value)}
+              >
                 <Eye className="mr-2 h-4 w-4" />
                 {expanded ? "Sembunyikan rincian" : "Lihat rincian realisasi"}
               </Button>
-              <Button type="button" className="min-h-11 bg-red-600 text-white hover:bg-red-700" onClick={() => void downloadOwnerRealizationProgress(period, "pdf")}>
+              <Button
+                type="button"
+                className="min-h-11 bg-red-600 text-white hover:bg-red-700"
+                onClick={() => void downloadOwnerRealizationProgress(period, "pdf")}
+              >
                 <FileText className="mr-2 h-4 w-4" /> Unduh PDF
               </Button>
-              <Button type="button" className="min-h-11 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void downloadOwnerRealizationProgress(period, "xlsx")}>
+              <Button
+                type="button"
+                className="min-h-11 bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => void downloadOwnerRealizationProgress(period, "xlsx")}
+              >
                 <Download className="mr-2 h-4 w-4" /> Unduh Excel
               </Button>
             </div>
@@ -1927,18 +1973,32 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
                     </tr>
                   </thead>
                   <tbody>
-                    {data.lines.length ? data.lines.map((line, index) => (
-                      <tr key={`${line.roomCode}-${line.residentName ?? "line"}-${index}`} className="border-t border-border/70">
-                        <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-foreground">
-                          {line.roomCode}<span className="block text-xs font-normal text-muted-foreground">No. Kavling {line.plotNumber ?? "—"}</span>
+                    {data.lines.length ? (
+                      data.lines.map((line, index) => (
+                        <tr
+                          key={`${line.roomCode}-${line.residentName ?? "line"}-${index}`}
+                          className="border-t border-border/70"
+                        >
+                          <td className="px-4 py-3 text-muted-foreground">{index + 1}</td>
+                          <td className="px-4 py-3 font-semibold text-foreground">
+                            {line.roomCode}
+                            <span className="block text-xs font-normal text-muted-foreground">
+                              No. Kavling {line.plotNumber ?? "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">{line.residentName ?? "—"}</td>
+                          <td className="px-4 py-3">{formatOwnerMoney(line.contractTotal)}</td>
+                          <td className="px-4 py-3 font-semibold">
+                            {formatOwnerMoney(line.realizationTotal)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                          Belum ada kamar yang layak direalisasikan pada periode ini.
                         </td>
-                        <td className="px-4 py-3">{line.residentName ?? "—"}</td>
-                        <td className="px-4 py-3">{formatOwnerMoney(line.contractTotal)}</td>
-                        <td className="px-4 py-3 font-semibold">{formatOwnerMoney(line.realizationTotal)}</td>
                       </tr>
-                    )) : (
-                      <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Belum ada kamar yang layak direalisasikan pada periode ini.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1948,23 +2008,54 @@ function OwnerRealizationCard({ initialPeriod }: { initialPeriod?: string | null
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-foreground">Kuitansi dan bukti transfer</p>
                 {publishedTransfers.map((transfer) => (
-                  <div key={transfer.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 p-3">
+                  <div
+                    key={transfer.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 p-3"
+                  >
                     <div className="text-sm">
-                      <p className="font-semibold">{formatOwnerMoney(transfer.amount)} · {localDate(transfer.transferredAt)}</p>
-                      <p className="text-xs text-muted-foreground">{transfer.receiptNumber ?? transfer.reference} · {transfer.hasEvidence ? "Bukti digital tersedia" : "Bukti digital belum tersedia"}</p>
+                      <p className="font-semibold">
+                        {formatOwnerMoney(transfer.amount)} · {localDate(transfer.transferredAt)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {transfer.receiptNumber ?? transfer.reference} ·{" "}
+                        {transfer.hasEvidence
+                          ? "Bukti digital tersedia"
+                          : "Bukti digital belum tersedia"}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {data.realization ? <Button type="button" className="min-h-10 bg-[#25D366] text-white hover:bg-[#1fb855]" onClick={() => void downloadOwnerRealizationReceipt(data.realization!.id, transfer.id)}><Download className="mr-2 h-4 w-4" /> Unduh kuitansi</Button> : null}
-                      {data.realization && transfer.evidenceFiles.map((file) => (
+                      {data.realization ? (
                         <Button
-                          key={file.id}
                           type="button"
                           className="min-h-10 bg-[#25D366] text-white hover:bg-[#1fb855]"
-                          onClick={() => void viewOwnerRealizationEvidence(data.realization!.id, transfer.id, file.id, file.originalFilename)}
+                          onClick={() =>
+                            void downloadOwnerRealizationReceipt(data.realization!.id, transfer.id)
+                          }
                         >
-                          <Eye className="mr-2 h-4 w-4" /> Lihat bukti{transfer.evidenceFiles.length > 1 ? ` ${transfer.evidenceFiles.indexOf(file) + 1}` : ""}
+                          <Download className="mr-2 h-4 w-4" /> Unduh kuitansi
                         </Button>
-                      ))}
+                      ) : null}
+                      {data.realization &&
+                        transfer.evidenceFiles.map((file) => (
+                          <Button
+                            key={file.id}
+                            type="button"
+                            className="min-h-10 bg-[#25D366] text-white hover:bg-[#1fb855]"
+                            onClick={() =>
+                              void viewOwnerRealizationEvidence(
+                                data.realization!.id,
+                                transfer.id,
+                                file.id,
+                                file.originalFilename,
+                              )
+                            }
+                          >
+                            <Eye className="mr-2 h-4 w-4" /> Lihat bukti
+                            {transfer.evidenceFiles.length > 1
+                              ? ` ${transfer.evidenceFiles.indexOf(file) + 1}`
+                              : ""}
+                          </Button>
+                        ))}
                     </div>
                   </div>
                 ))}
@@ -2312,14 +2403,12 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                         Tarif kesepakatan
                       </Badge>
                     ) : null}
-                    {alert ? <Badge variant="destructive">Terlambat</Badge> : null}
+                    {alert ? <StatusBadge label="Terlambat" tone="danger" /> : null}
                     {!alert && h7 ? (
-                      <Badge className="border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                        H-7
-                      </Badge>
+                      <StatusBadge label="Jatuh tempo ≤ 7 hari" tone="warning" />
                     ) : null}
                     {item.settlement.checkpoint.status === "pending" ? (
-                      <Badge variant="outline">Checkpoint</Badge>
+                      <StatusBadge label="Menunggu pemeriksaan" tone="warning" />
                     ) : null}
                   </div>
                 </CardHeader>
@@ -2366,8 +2455,8 @@ function CollectionProgress({ collection }: { collection: OwnerCollectionProgres
                     label="Hak Owner"
                     value={formatOwnerMoney(item.commercial.estimatedOwnerEntitlement)}
                   />
-                  <FinanceRow label="Check-in" value={localDate(item.lease.startDate)} />
-                  <FinanceRow label="Check-out" value={localDate(item.lease.endDate)} />
+                  <FinanceRow label="Check-in" value={item.lease.servicePeriodPending ? "Menunggu check-in" : localDate(item.lease.startDate)} />
+                  <FinanceRow label="Check-out" value={item.lease.servicePeriodPending ? "Ditentukan setelah check-in" : localDate(item.lease.endDate)} />
                   <FinanceRow
                     label="Target pelunasan"
                     value={
@@ -3310,6 +3399,7 @@ function ReportPanel({
 }
 
 function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: string | null }) {
+  const { user } = useAuth();
   const scopeLabel =
     portal.scope.state === "active"
       ? "Cakupan aktif"
@@ -3321,8 +3411,8 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
   return (
     <PortalSection
       eyebrow="Akun"
-      title="Profil akun"
-      description="Informasi akses ditampilkan tanpa mengekspos kredensial atau data privat yang tidak diperlukan."
+      title="Pengaturan akun"
+      description="Perbarui email dan password untuk akses portal Anda."
     >
       <Card className="owner-data-surface border-border/80 shadow-sm">
         <CardContent className="grid gap-6 p-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
@@ -3336,22 +3426,25 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
             <p className="mt-1 text-sm text-muted-foreground">
               {accountEmail ?? "Email akun tidak tersedia"}
             </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Nomor telepon: {user?.phone ?? "—"}
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
                 Property Owner
               </span>
               <span className="inline-flex rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-                Akses hanya baca
+                Data operasional hanya baca
               </span>
             </div>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Perubahan profil, kredensial, dan penugasan aset dikelola oleh administrator Kostation
-              untuk menjaga otoritas dan jejak audit tetap konsisten.
+              Email dan password dapat Anda perbarui di bawah. Perubahan nama resmi, nomor telepon,
+              rekening, dan penugasan aset dilakukan oleh Pihak Pengelola.
             </p>
             {portal.owner?.ownerVisibleNote ? (
               <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-primary">
-                  Catatan dari administrator
+                  Catatan dari Pihak Pengelola
                 </p>
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
                   {portal.owner.ownerVisibleNote}
@@ -3361,6 +3454,8 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
           </div>
         </CardContent>
       </Card>
+
+      <OwnerAccountSettings accountEmail={accountEmail} />
 
       <div className="grid gap-4 md:grid-cols-2">
         {portal.owner &&
@@ -3430,15 +3525,15 @@ function Account({ portal, accountEmail }: { portal: OwnerPortal; accountEmail: 
           <CardHeader className="border-b border-border/70 pb-4">
             <CardTitle className="text-base">Bantuan dan keamanan</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Portal ini tidak menyediakan perubahan data atau akses ke informasi privat penghuni.
+              Pengaturan akun hanya berlaku untuk akses Anda sendiri.
             </p>
           </CardHeader>
           <CardContent className="space-y-3 p-5">
             <div className="flex items-start gap-3 rounded-xl border border-border/80 p-4">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               <p className="text-sm leading-6 text-muted-foreground">
-                Jika nama, email, atau cakupan aset perlu diperbarui, hubungi administrator
-                Kostation.
+                Jika nama, nomor telepon, rekening, atau cakupan aset perlu diperbarui, hubungi
+                Pihak Pengelola.
               </p>
             </div>
             <Link

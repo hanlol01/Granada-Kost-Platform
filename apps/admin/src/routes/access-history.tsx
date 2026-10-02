@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Select,
   SelectContent,
@@ -216,15 +217,10 @@ function AccessHistoryPage() {
                       </Badge>
                     </td>
                     <td className="py-3 px-3">
-                      {l.status === "success" ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Success
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
-                          <XCircle className="h-3.5 w-3.5" /> Failed
-                        </span>
-                      )}
+                      <StatusBadge
+                        label={l.status === "success" ? "Berhasil" : "Gagal"}
+                        tone={l.status === "success" ? "success" : "danger"}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -253,11 +249,10 @@ function AccessHistoryPage() {
                       </p>
                     </div>
                   </div>
-                  {l.status === "success" ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-destructive" />
-                  )}
+                  <StatusBadge
+                    label={l.status === "success" ? "Berhasil" : "Gagal"}
+                    tone={l.status === "success" ? "success" : "danger"}
+                  />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-2">
                   {new Date(l.time).toLocaleString("id-ID", {

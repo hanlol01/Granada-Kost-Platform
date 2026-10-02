@@ -12,6 +12,7 @@ import { UserAccessContext } from '../iam/types/iam.types';
 import { PropertyService } from '../property/property.service';
 import { RequestAuditContext } from '../property/types/property.types';
 import { ConfirmLeaseCheckInDto } from './dto/confirm-lease-check-in.dto';
+import { LeaseServicePeriodService } from './lease-service-period.service';
 
 type CheckInReplayRow = {
   request_fingerprint: string;
@@ -39,6 +40,7 @@ export type LeaseCheckInResponse = {
   occupancyStatus: 'active';
   roomStatus: 'occupied';
   checkedInAt: string;
+  servicePeriod?: { startDate: string | null; endDate: string | null; versionId: string; sequenceNumber: number };
 };
 
 type LockedCheckInInput = {
@@ -57,6 +59,7 @@ export class LeaseCheckInService {
     private readonly database: DatabaseService,
     private readonly properties: PropertyService,
     private readonly audit: AuditRepository,
+    private readonly periods: LeaseServicePeriodService,
   ) {}
 
   async confirm(
@@ -162,18 +165,20 @@ export class LeaseCheckInService {
     const time = await client.query<{ checked_in_at: Date; valid: boolean }>(
       `WITH chosen AS (SELECT COALESCE($1::timestamptz,now()) AS checked_in_at)
        SELECT chosen.checked_in_at,
-              chosen.checked_in_at >= $2::timestamptz
-              AND chosen.checked_in_at <= now()
-              AND (chosen.checked_in_at AT TIME ZONE 'Asia/Jakarta')::date >= $3::date AS valid
+              chosen.checked_in_at <= now() AS valid
          FROM chosen`,
-      [input.checkedInAt, row.activated_at, row.start_date],
+      [input.checkedInAt],
     );
     if (!row.activated_at || !time.rows[0]?.valid)
       throw new ConflictException({
         code: 'LEASE_CHECK_IN_TIME_INVALID',
-        message: 'Physical check-in time must be after activation and not in the future',
+        message: 'Tanggal check-in harus sesuai serah-terima fisik dan tidak boleh berada di masa mendatang.',
       });
     const checkedInAt = time.rows[0].checked_in_at;
+    const servicePeriod = await this.periods.finalizeLocked(client, {
+      leaseId, propertyId: input.propertyId, checkedInAt, actorId: actor.id,
+      reason: input.notes, commandFingerprint: input.attemptKey,
+    });
 
     const conflicts = await client.query<{ occupancy_count: string; lease_count: string }>(
       `SELECT
@@ -284,7 +289,7 @@ export class LeaseCheckInService {
         leaseId,
         actor.id,
         checkedInAt,
-        JSON.stringify({ occupancy_id: occupancyId, room_id: row.room_id }),
+        JSON.stringify({ occupancy_id: occupancyId, room_id: row.room_id, service_period: servicePeriod }),
       ],
     );
     await this.audit.write(
@@ -298,6 +303,7 @@ export class LeaseCheckInService {
           occupancy_id: occupancyId,
           room_status: 'occupied',
           checked_in_at: checkedInAt.toISOString(),
+          service_period: servicePeriod,
         },
         resultStatus: 'success',
         ...input.context,
@@ -324,6 +330,7 @@ export class LeaseCheckInService {
       occupancyStatus: 'active',
       roomStatus: 'occupied',
       checkedInAt: checkedInAt.toISOString(),
+      servicePeriod,
     };
   }
 

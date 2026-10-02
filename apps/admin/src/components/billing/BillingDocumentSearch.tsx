@@ -8,7 +8,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -255,12 +255,11 @@ export function BillingDocumentSearch({ propertyId }: { propertyId: string | nul
                         ) : null}
                       </div>
                       <div className="flex min-w-0 items-center lg:justify-start">
-                        <Badge
-                          variant="outline"
-                          className={`whitespace-nowrap ${statusClass(document.status)}`}
-                        >
-                          {statusLabel(document.status)}
-                        </Badge>
+                        <StatusBadge
+                          label={statusLabel(document.status)}
+                          tone={statusTone(document.status)}
+                          className="whitespace-nowrap"
+                        />
                       </div>
                       <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
                         <Button
@@ -429,14 +428,14 @@ function statusLabel(status: string) {
       reversed: "Dibatalkan",
       refunded: "Direfund",
       invalidated: "Tidak berlaku",
-    }[status] ?? status.replaceAll("_", " ")
+    }[status] ?? "Status tidak diketahui"
   );
 }
 
-function statusClass(status: string) {
-  if (["paid", "verified", "issued"].includes(status))
-    return "border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+function statusTone(status: string): StatusTone {
+  if (["paid", "verified", "issued"].includes(status)) return "success";
   if (["overdue", "rejected", "void", "reversed", "refunded", "invalidated"].includes(status))
-    return "border-destructive/35 bg-destructive/10 text-destructive";
-  return "border-amber-500/35 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+    return "danger";
+  if (["partially_paid", "pending_confirmation"].includes(status)) return "warning";
+  return "neutral";
 }

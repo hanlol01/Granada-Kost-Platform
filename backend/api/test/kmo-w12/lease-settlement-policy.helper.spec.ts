@@ -42,7 +42,7 @@ void test('v4 gives a July three-month contract its final deadline on 15 October
   );
 });
 
-void test('v4 keeps a coverage that starts on or before the 15th in its month', () => {
+void test('v4 one-month final deadline uses the 15th at the one-month offset for an early-month start', () => {
   const policy = buildLeaseSettlementPolicyScheduleV4({
     leaseStartDate: '2026-08-01',
     termMonths: 1,
@@ -50,11 +50,11 @@ void test('v4 keeps a coverage that starts on or before the 15th in its month', 
   });
   assert.deepEqual(
     policy.checkpoints.map(({ dueDate }) => dueDate),
-    ['2026-08-15'],
+    ['2026-09-15'],
   );
 });
 
-void test('v4 moves a coverage that starts after the 15th to the following month', () => {
+void test('v4 one-month final deadline rolls the offset date after the 15th into the next month', () => {
   const policy = buildLeaseSettlementPolicyScheduleV4({
     leaseStartDate: '2026-08-16',
     termMonths: 1,
@@ -62,7 +62,7 @@ void test('v4 moves a coverage that starts after the 15th to the following month
   });
   assert.deepEqual(
     policy.checkpoints.map(({ dueDate }) => dueDate),
-    ['2026-09-15'],
+    ['2026-10-15'],
   );
 });
 

@@ -70,6 +70,7 @@ export type BillingDocumentSearchPage = {
 };
 
 export type BillingWorklistItem = {
+  service_period_pending?: boolean;
   id: string;
   invoice_code: string;
   resident_id: string;
@@ -136,6 +137,8 @@ export type BillingWorkspacePayment = BillingPayment & {
     outstanding_amount: number;
     lease_start: string;
     lease_end: string;
+    service_period_pending?: boolean;
+    term_months?: number;
     transaction_references: Array<{ code: string; amount: number }>;
   } | null;
   evidence: BillingEvidence[];
@@ -177,6 +180,8 @@ export type BillingPage<T> = { data: T[]; meta: { limit: number; offset: number;
 
 export type ResidentBilling = {
   lease: {
+    service_period_pending?: boolean;
+    term_months?: number | null;
     id: string;
     resident_id: string;
     resident_name: string;
@@ -490,6 +495,17 @@ function text(value: unknown, label: string): string {
     throw new Error(`${label} tidak valid.`);
   return value;
 }
+
+function optionalPeriodKeys(value: unknown): string[] {
+  if (typeof value !== "object" || value === null) return [];
+  return ["service_period_pending", "term_months"].filter(key => key in value);
+}
+
+function periodPending(value: unknown): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") throw new Error("Status masa sewa tidak valid.");
+  return value;
+}
 function uuid(value: unknown, label: string): string {
   const result = text(value, label);
   if (!UUID.test(result)) throw new Error(`${label} tidak valid.`);
@@ -657,6 +673,7 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
         "lease_start",
         "lease_end",
         "transaction_references",
+        ...optionalPeriodKeys(value),
       ],
       "dokumen pelunasan kontrak",
     );
@@ -671,6 +688,8 @@ function workspacePayment(value: unknown): BillingWorkspacePayment {
       outstanding_amount: integer(document.outstanding_amount, "Sisa kewajiban sewa"),
       lease_start: date(document.lease_start, "Tanggal mulai sewa"),
       lease_end: date(document.lease_end, "Tanggal akhir sewa"),
+      service_period_pending: periodPending(document.service_period_pending),
+      term_months: document.term_months == null ? undefined : integer(document.term_months, "Durasi sewa"),
       transaction_references: document.transaction_references.map((value) => {
         const reference = object(value, ["code", "amount"], "referensi transaksi pelunasan");
         return {
@@ -771,6 +790,7 @@ export function parseBillingWorklist(value: unknown): BillingWorklist {
           "term_months",
           "settlement_due_date",
           "final_settlement_due_date",
+          ...optionalPeriodKeys(item).filter(key => key !== "term_months"),
           "invoice_status",
           "total_amount",
           "outstanding_amount",
@@ -784,6 +804,7 @@ export function parseBillingWorklist(value: unknown): BillingWorklist {
         lease_id: uuid(row.lease_id, "ID sewa"),
         resident_name: text(row.resident_name, "Nama penghuni"),
         room_number: text(row.room_number, "Nomor kamar"),
+        service_period_pending: periodPending(row.service_period_pending),
         coverage_start: date(row.coverage_start, "Awal cakupan"),
         coverage_end: date(row.coverage_end, "Akhir cakupan"),
         due_date: date(row.due_date, "Jatuh tempo"),
@@ -896,6 +917,7 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       "pricing_source",
       "remaining_days",
       "note",
+      ...optionalPeriodKeys(data.lease),
     ],
     "sewa",
   );
@@ -1232,6 +1254,8 @@ export function parseResidentBilling(value: unknown): ResidentBilling {
       ),
       start_date: date(lease.start_date, "Tanggal mulai"),
       end_date: date(lease.end_date, "Tanggal selesai"),
+      service_period_pending: periodPending(lease.service_period_pending),
+      term_months: lease.term_months == null ? null : integer(lease.term_months, "Durasi kontrak"),
       payment_plan: oneOf(
         lease.payment_plan,
         ["annual_full", "monthly_installments", "two_month_installments"] as const,
@@ -2006,13 +2030,14 @@ export async function downloadAdminInvoiceDocument(
   propertyId: string,
   invoiceId: string,
   invoiceCode: string,
+  original = false,
 ) {
   const query = new URLSearchParams({ property_id: propertyId });
-  const filename = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}.pdf`;
+  const filename = `${invoiceCode.replace(/[^a-z0-9_-]+/gi, "-") || "invoice"}${original ? "-periode-awal" : ""}.pdf`;
   await fetchPreviewAndDownload(async () => {
     const token = getAccessToken();
     const response = await fetch(
-      `${env.VITE_API_BASE_URL}/admin/billing/invoices/${encodeURIComponent(invoiceId)}/document?${query}`,
+      `${env.VITE_API_BASE_URL}/admin/billing/invoices/${encodeURIComponent(invoiceId)}/${original ? "original-document" : "document"}?${query}`,
       {
         credentials: "include",
         cache: "no-store",
@@ -2075,13 +2100,14 @@ export async function downloadAdminContractPaidDocument(
   propertyId: string,
   documentId: string,
   documentCode: string,
+  original = false,
 ) {
   const query = new URLSearchParams({ property_id: propertyId });
-  const filename = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "bukti-kontrak-lunas"}.pdf`;
+  const filename = `${documentCode.replace(/[^a-z0-9_-]+/gi, "-") || "bukti-kontrak-lunas"}${original ? "-asli" : ""}.pdf`;
   await fetchPreviewAndDownload(async () => {
     const token = getAccessToken();
     const response = await fetch(
-      `${env.VITE_API_BASE_URL}/admin/billing/contract-paid-documents/${encodeURIComponent(documentId)}/document?${query}`,
+      `${env.VITE_API_BASE_URL}/admin/billing/contract-paid-documents/${encodeURIComponent(documentId)}/${original ? "original-document" : "document"}?${query}`,
       {
         credentials: "include",
         cache: "no-store",

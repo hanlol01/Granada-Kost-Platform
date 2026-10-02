@@ -509,7 +509,8 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
        WHERE settlement.property_id=$1
          AND settlement.policy_snapshot_id IS NOT NULL
           AND settlement.state='open'
-          AND lease.lease_status='active'
+              AND lease.lease_status='active'
+              AND lease.service_period_state<>'pending_check_in'
           AND ($2::uuid IS NULL OR checkpoint.id=$2)
           AND COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at)
               <= (($3::date + 8 + TIME '00:00' - INTERVAL '1 microsecond') AT TIME ZONE 'Asia/Jakarta')

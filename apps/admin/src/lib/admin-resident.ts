@@ -53,6 +53,8 @@ export type ResidentListRecord = {
   leaseStart: string | null;
   leaseEnd: string | null;
   leaseAuthorityCount: number;
+  leaseCorrectionCount?: number;
+  leaseTermMonths?: number | null;
   commercialMode: "rent" | "owner_sponsored" | null;
   pricingSource: "standard" | "negotiated" | "owner_sponsored" | null;
   managementFeeMode: "charged" | "waived" | null;
@@ -128,6 +130,8 @@ export type ResidentPage = {
 };
 
 export type ResidentTenancy = {
+  servicePeriodState?: "legacy" | "pending_check_in" | "started";
+  plannedStartDate?: string;
   residentId: string;
   propertyId: string;
   leaseId: string;
@@ -291,6 +295,8 @@ function parseListRecord(value: unknown): ResidentListRecord {
   exact(item, [
     ...LIST_KEYS,
     ...("checkout_handover_date" in item ? ["checkout_handover_date"] : []),
+    ...("lease_correction_count" in item ? ["lease_correction_count"] : []),
+    ...("lease_term_months" in item ? ["lease_term_months"] : []),
   ]);
   return {
     id: uuid(item.id) as string,
@@ -301,6 +307,8 @@ function parseListRecord(value: unknown): ResidentListRecord {
     leaseStart: date(item.lease_start, true),
     leaseEnd: date(item.lease_end, true),
     leaseAuthorityCount: integer(item.lease_authority_count),
+    leaseCorrectionCount: integer(item.lease_correction_count ?? 0),
+    leaseTermMonths: item.lease_term_months == null ? null : integer(item.lease_term_months),
     commercialMode:
       item.commercial_mode === null
         ? null
@@ -561,6 +569,8 @@ export function parseResidentTenancy(
     "agreed_monthly_price",
     "contract_rent_amount",
     "pricing_source",
+    ...("service_period_state" in item ? ["service_period_state"] : []),
+    ...("planned_start_date" in item ? ["planned_start_date"] : []),
   ]);
   const propertyId = uuid(item.property_id) as string;
   const residentId = uuid(item.resident_id) as string;
@@ -601,6 +611,8 @@ export function parseResidentTenancy(
     buildingCode: text(item.building_code) as string,
     startDate: date(item.start_date) as string,
     endDate: date(item.end_date) as string,
+    servicePeriodState: item.service_period_state == null ? "legacy" : enumValue(item.service_period_state, ["legacy", "pending_check_in", "started"] as const),
+    plannedStartDate: item.planned_start_date == null ? date(item.start_date) as string : date(item.planned_start_date) as string,
     termMonths: integer(item.term_months),
     paymentPlanType: enumValue(item.payment_plan_type, [
       "annual_full",

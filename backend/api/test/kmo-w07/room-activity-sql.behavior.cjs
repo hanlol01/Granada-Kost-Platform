@@ -12,7 +12,7 @@ const fixture = `WITH
  (VALUES ('${id(6)}'::uuid,'${id(1)}'::uuid,'${id(5)}'::uuid,'${id(7)}'::uuid,'${id(2)}'::uuid,'${id(3)}'::uuid,'2026-10-01T01:00:00Z'::timestamptz)),
  leases(id,property_id,resident_id,room_id) AS (VALUES ('${id(7)}'::uuid,'${id(1)}'::uuid,'${id(5)}'::uuid,'${id(3)}'::uuid)),
  lease_history(lease_id,property_id,event_type,created_at) AS
- (VALUES ('${id(7)}'::uuid,'${id(1)}'::uuid,'transferred_out','2026-10-01T01:00:00Z'::timestamptz),('${id(7)}'::uuid,'${id(1)}'::uuid,'transferred_in','2026-10-01T01:00:00Z'::timestamptz)),
+ (VALUES ('${id(7)}'::uuid,'${id(1)}'::uuid,'transferred_out','2026-10-01T01:00:00Z'::timestamptz),('${id(7)}'::uuid,'${id(1)}'::uuid,'transferred_in','2026-10-01T01:00:00Z'::timestamptz),('${id(7)}'::uuid,'${id(1)}'::uuid,'lease_data_corrected','2026-09-29T01:00:00Z'::timestamptz)),
  audit_logs(property_id,resource_type,resource_id,action,occurred_at) AS
  (SELECT NULL::uuid,NULL::text,NULL::uuid,NULL::text,NULL::timestamptz WHERE false),
  occupancies(id,property_id,resident_id,room_id) AS (VALUES ('${id(8)}'::uuid,'${id(1)}'::uuid,'${id(5)}'::uuid,'${id(3)}'::uuid)),
@@ -54,9 +54,13 @@ async function main() {
     assert.equal(origin.filter((event) => /transfer/.test(event.event_type)).length, 1);
     assert.equal(origin.find((event) => event.event_type === 'room_transfer_out').other_room_number, 'RK-06-06');
     assert.equal(origin.find((event) => event.event_type === 'room_inspection_failed').notes, 'Pintu rusak');
+    const correction = origin.filter((event) => event.event_type === 'lease_lease_data_corrected');
+    assert.equal(correction.length, 1);
+    assert.equal(correction[0].resident_id, id(5));
     const destination = (await activity(3)).rows;
     assert.equal(destination.filter((event) => /transfer/.test(event.event_type)).length, 1);
     assert.equal(destination.find((event) => event.event_type === 'room_transfer_in').other_room_number, 'RK-06-03');
+    assert.ok(!destination.some((event) => event.event_type === 'lease_lease_data_corrected'));
     assert.equal((await activity(4)).rows.length, 0);
     const scenarios = [
       ['scheduled','closed',null,0,0,false], ['completed','refund_pending','pending',0,0,false],

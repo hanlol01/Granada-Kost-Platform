@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { BookingLeadDisplayStatus } from "@/lib/admin-booking-lead";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 
 type StatusPresentation = {
@@ -88,17 +89,11 @@ export function BookingLeadStatusBadge({
   className?: string;
 }) {
   const presentation = STATUS_PRESENTATION[status];
-  const Icon = presentation.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex min-h-7 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold leading-4 whitespace-nowrap shadow-sm",
-        presentation.className,
-        className,
-      )}
-    >
-      <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-      {label}
-    </span>
+    <StatusBadge
+      label={label}
+      icon={presentation.icon}
+      className={cn(presentation.className, "whitespace-nowrap", className)}
+    />
   );
 }

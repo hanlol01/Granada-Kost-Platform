@@ -146,6 +146,7 @@ export type OwnerAssetDetail = {
   lease: {
     status: LeaseStatus;
     commercialMode: "rent" | "owner_sponsored";
+    servicePeriodPending?: boolean;
     startDate: string;
     endDate: string | null;
   } | null;
@@ -210,7 +211,7 @@ export type OwnerResource = {
   };
   occupancyStatus: "active" | "ended" | "transferred" | null;
   occupancyStartDate: string | null;
-  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  lease: { status: LeaseStatus; startDate: string; endDate: string | null; servicePeriodPending?: boolean } | null;
   resident: { displayName: string } | null;
   billingState: "current" | "partially_paid" | "overdue" | "settled" | "not_available";
   endingSoon: boolean;
@@ -246,7 +247,7 @@ export type OwnerOccupancyResidentDetail = {
     buildingName: string;
   };
   occupancy: { status: "active"; startDate: string } | null;
-  lease: { status: LeaseStatus; startDate: string; endDate: string | null } | null;
+  lease: { status: LeaseStatus; startDate: string; endDate: string | null; servicePeriodPending?: boolean } | null;
   billing: {
     state: "current" | "partially_paid" | "overdue" | "settled" | "not_available";
     rentInvoiced: Money;
@@ -480,6 +481,7 @@ export type OwnerCollectionProgress = {
     lease: {
       status: "active";
       commercialMode: "rent" | "owner_sponsored";
+      servicePeriodPending?: boolean;
       startDate: string;
       endDate: string | null;
       termMonths: number;
@@ -878,11 +880,8 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
     root.lease === null
       ? null
       : (() => {
-          const parsed = exact(
-            root.lease,
-            ["status", "commercial_mode", "start_date", "end_date"],
-            "asset_detail.lease",
-          );
+          const parsed = exactWithOptional(root.lease,
+            ["status", "commercial_mode", "start_date", "end_date"], ["service_period_pending"], "asset_detail.lease");
           return {
             status: enumValue<LeaseStatus>(
               parsed.status,
@@ -903,6 +902,7 @@ export function parseOwnerAssetDetail(value: unknown): OwnerAssetDetail {
               "asset_detail.lease.commercial_mode",
             ),
             startDate: date(parsed.start_date, "asset_detail.lease.start_date"),
+            servicePeriodPending: parsed.service_period_pending === true,
             endDate:
               parsed.end_date === null
                 ? null
@@ -2313,7 +2313,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
         "collection_progress.item.room",
       );
       const resident = exact(item.resident, ["display_name"], "collection_progress.item.resident");
-      const lease = exact(
+      const lease = exactWithOptional(
         item.lease,
         [
           "status",
@@ -2325,6 +2325,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
           "pricing_source",
           "contract_value",
         ],
+        ["service_period_pending"],
         "collection_progress.item.lease",
       );
       const billing = exact(
@@ -2420,6 +2421,7 @@ export function parseOwnerCollectionProgress(value: unknown): OwnerCollectionPro
             "collection_progress.item.lease.commercial_mode",
           ),
           startDate: date(lease.start_date, "collection_progress.item.lease.start_date"),
+          servicePeriodPending: lease.service_period_pending === true,
           endDate: nullableDate(lease.end_date, "collection_progress.item.lease.end_date"),
           termMonths: count(lease.term_months, "collection_progress.item.lease.term_months"),
           monthlyRate: money(lease.monthly_rate, "collection_progress.item.lease.monthly_rate"),

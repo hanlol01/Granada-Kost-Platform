@@ -51,6 +51,8 @@ import {
 import { AdminPaymentVerificationPolicyService } from './admin-payment-verification-policy.service';
 
 type LeaseTupleRow = {
+  service_period_pending?: boolean;
+  term_months?: number;
   id: string;
   property_id: string;
   resident_id: string;
@@ -90,6 +92,7 @@ type OwnerSponsoredManagementFeeProjectionRow = {
 };
 
 type OwnerSponsoredManagementFeeDocumentRow = {
+  service_period_pending?: boolean;
   lease_id: string;
   resident_name: string;
   room_number: string;
@@ -225,6 +228,8 @@ type PaymentWorkspaceRow = PaymentProjectionRow & {
   contract_paid_outstanding_amount: string | null;
   contract_paid_lease_start: string | null;
   contract_paid_lease_end: string | null;
+  contract_paid_period_pending?: boolean;
+  contract_paid_term_months?: number;
   contract_paid_transaction_references: Array<{ code: string; amount: string | number }> | null;
   evidence: Array<{
     id: string;
@@ -356,6 +361,9 @@ type ProofWorkspaceRow = ProofProjectionRow & {
   }>;
 };
 type InvoiceDocumentRow = {
+  period_version_number?: number | null;
+  period_authority_note?: string;
+  service_period_pending?: boolean;
   invoice_code: string;
   invoice_status: string;
   invoice_purpose: 'rent' | 'other_charge';
@@ -383,6 +391,8 @@ type InvoiceDocumentRow = {
   pricing_source: 'standard' | 'negotiated' | 'owner_sponsored' | null;
 };
 type ReceiptDocumentRow = {
+  period_authority_note?: string;
+  service_period_pending?: boolean;
   receipt_code: string;
   receipt_kind: 'payment' | 'reversal';
   amount: string;
@@ -475,6 +485,9 @@ type ContractPaidDocumentProjectionRow = {
   invalidated_at: Date | null;
 };
 type ContractPaidDocumentStoredRow = ContractPaidDocumentProjectionRow & {
+  service_period_pending?: boolean;
+  effective_start?: string;
+  effective_end?: string;
   safe_snapshot: ContractPaidDocumentSnapshot;
   invalidation_reason: string | null;
   settling_paid_at: Date;
@@ -646,6 +659,7 @@ export class W06BillingService {
       CASE WHEN i.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
            THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(i.cycle_start_date))
       END,
+      effective_period.due_date,
       i.due_date
     )`;
     const finalSettlementDueDate = `COALESCE(
@@ -655,6 +669,7 @@ export class W06BillingService {
       CASE WHEN i.cycle_start_date IS NOT NULL AND uniform_adoption.lease_id IS NOT NULL
            THEN GREATEST(uniform_adoption.transition_due_date, uniform_rent_due_date_15(i.cycle_start_date))
       END,
+      effective_period.due_date,
       i.due_date
     )`;
     const values = [
@@ -667,13 +682,19 @@ export class W06BillingService {
       limit,
       offset,
     ];
+    const operationalStatus = `CASE WHEN i.invoice_status='overdue'
+      AND (lease.service_period_state='pending_check_in' OR ${settlementDueDate}>=(now() AT TIME ZONE 'Asia/Jakarta')::date)
+      THEN CASE WHEN COALESCE(allocation.net_allocated,0)>0 THEN 'partially_paid' ELSE 'issued' END
+      ELSE i.invoice_status END`;
     const common = `
       FROM invoices i
       JOIN leases lease ON lease.id=i.lease_id AND lease.property_id=i.property_id
+      LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=i.id AND effective_period.property_id=i.property_id
       LEFT JOIN lease_contract_settlements settlement
         ON settlement.property_id=i.property_id AND settlement.lease_id=i.lease_id
       LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
         ON uniform_adoption.property_id=i.property_id AND uniform_adoption.lease_id=i.lease_id
+       AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=i.lease_id AND version.property_id=i.property_id)
       LEFT JOIN LATERAL (
         SELECT (COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AT TIME ZONE 'Asia/Jakarta')::date
           AS final_due_date
@@ -745,7 +766,7 @@ export class W06BillingService {
         AND i.lease_id IS NOT NULL
         AND i.authority_source='contract_schedule'
         AND i.invoice_status IN ('issued','partially_paid','overdue')
-        AND ($3::text IS NULL OR i.invoice_status=$3)
+        AND ($3::text IS NULL OR ${operationalStatus}=$3)
         -- The unpaid worklist is an operational queue, not a historical month
         -- report.  A legacy invoice can move to the next uniform due date
         -- (the 15th) while it is still outstanding.  Filtering by the selected
@@ -788,18 +809,20 @@ export class W06BillingService {
         invoice_status: string;
         total_amount: string;
         outstanding_amount: string;
+        service_period_pending: boolean;
       }>(
         `SELECT i.id,i.invoice_code,i.resident_id,i.lease_id,
+                  lease.service_period_state='pending_check_in' AS service_period_pending,
                 i.snapshot_resident_name AS resident_name,i.snapshot_room_number AS room_number,
-                 COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
-                 COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
-                 i.due_date::text,
+                  COALESCE(effective_period.coverage_start_date,i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
+                  COALESCE(effective_period.coverage_end_date,i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
+                  COALESCE(effective_period.due_date,i.due_date)::text AS due_date,
                  COALESCE(lease.start_date,i.snapshot_period_start_date)::text AS contract_start,
                  COALESCE(checkout_period.planned_lease_end_date,lease.end_date,i.snapshot_period_end_date)::text AS contract_end,
                  lease.term_months,
                  ${settlementDueDate}::text AS settlement_due_date,
                   ${finalSettlementDueDate}::text AS final_settlement_due_date,
-                 i.invoice_status,i.total_amount,
+                 ${operationalStatus} AS invoice_status,i.total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
          ${common} ORDER BY ${order} LIMIT $7 OFFSET $8`,
         values,
@@ -813,6 +836,7 @@ export class W06BillingService {
         lease_id: row.lease_id,
         resident_name: row.resident_name,
         room_number: row.room_number,
+        service_period_pending: row.service_period_pending,
         coverage_start: row.coverage_start,
         coverage_end: row.coverage_end,
         due_date: row.due_date,
@@ -821,7 +845,7 @@ export class W06BillingService {
         term_months: row.term_months == null ? null : Number(row.term_months),
         settlement_due_date: row.settlement_due_date,
         final_settlement_due_date: row.final_settlement_due_date,
-        invoice_status: this.publicInvoiceStatus(row.invoice_status),
+        invoice_status: this.publicInvoiceStatus(row.service_period_pending && row.invoice_status === 'overdue' ? 'issued' : row.invoice_status),
         total_amount: this.money(row.total_amount),
         outstanding_amount: this.money(row.outstanding_amount),
       })),
@@ -1186,8 +1210,10 @@ export class W06BillingService {
                 contract_paid_document.safe_snapshot->>'contractRentAmount' AS contract_paid_contract_rent_amount,
                 contract_paid_document.safe_snapshot->>'totalRentReceived' AS contract_paid_total_rent_received,
                 contract_paid_document.safe_snapshot->>'outstandingAmount' AS contract_paid_outstanding_amount,
-                contract_paid_document.safe_snapshot->>'leaseStart' AS contract_paid_lease_start,
-                contract_paid_document.safe_snapshot->>'leaseEnd' AS contract_paid_lease_end,
+                lease.start_date::text AS contract_paid_lease_start,
+                lease.end_date::text AS contract_paid_lease_end,
+                lease.service_period_state='pending_check_in' AS contract_paid_period_pending,
+                lease.term_months AS contract_paid_term_months,
                 contract_paid_document.safe_snapshot->'transactionReferences' AS contract_paid_transaction_references,
                 COALESCE(allocation_rows.items,'[]'::jsonb) AS allocations,
                 COALESCE(evidence_rows.items,'[]'::jsonb) AS evidence
@@ -3324,6 +3350,7 @@ export class W06BillingService {
     user: UserAccessContext,
     propertyId: string,
     documentId: string,
+    original = false,
   ): Promise<BillingReceiptDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
     const result = await this.database.client.query<ContractPaidDocumentStoredRow>(
@@ -3333,12 +3360,15 @@ export class W06BillingService {
               paid_document.invalidated_at,
               paid_document.safe_snapshot,
               paid_document.invalidation_reason,
-              settling_payment.paid_at AS settling_paid_at
+               settling_payment.paid_at AS settling_paid_at,
+               lease.service_period_state='pending_check_in' AS service_period_pending,
+               lease.start_date::text AS effective_start,lease.end_date::text AS effective_end
          FROM lease_contract_paid_documents paid_document
-         JOIN payments settling_payment
+          JOIN payments settling_payment
            ON settling_payment.id=paid_document.settling_payment_id
           AND settling_payment.property_id=paid_document.property_id
-          AND settling_payment.lease_id=paid_document.lease_id
+           AND settling_payment.lease_id=paid_document.lease_id
+          JOIN leases lease ON lease.id=paid_document.lease_id AND lease.property_id=paid_document.property_id
         WHERE paid_document.id=$1 AND paid_document.property_id=$2`,
       [documentId, propertyId],
     );
@@ -3351,6 +3381,11 @@ export class W06BillingService {
     return createContractPaidDocumentPdf(
       {
         ...row.safe_snapshot,
+        leaseStart: original ? row.safe_snapshot.leaseStart : row.effective_start ?? row.safe_snapshot.leaseStart,
+        leaseEnd: original ? row.safe_snapshot.leaseEnd : row.effective_end ?? row.safe_snapshot.leaseEnd,
+        servicePeriodPending: original ? row.safe_snapshot.servicePeriodPending : row.service_period_pending,
+        periodAuthorityNote: original ? 'Salinan catatan penerbitan awal. Gunakan dokumen terbaru untuk periode sewa yang berlaku.'
+          : 'Periode mengikuti catatan check-in yang berlaku. Tanggal dan nominal pembayaran tetap sesuai transaksi asli.',
         settledAt: row.settling_paid_at.toISOString(),
       },
       row.invalidated_at
@@ -3481,7 +3516,8 @@ export class W06BillingService {
         code: 'RECEIPT_DOCUMENT_NOT_FOUND',
         message: 'Receipt document not found',
       });
-    return this.createReceiptDocument(row);
+    const currentAuthority = await this.currentReceiptSettlementAuthority(propertyId, receiptId);
+    return this.createReceiptDocument({ ...row, ...(currentAuthority ?? {}) });
   }
 
   private async loadStoredReceipt(propertyId: string, receiptId: string) {
@@ -3512,6 +3548,7 @@ export class W06BillingService {
     const result = await this.database.client.query<
       Pick<
         ReceiptDocumentRow,
+        | 'service_period_pending'
         | 'lease_start'
         | 'lease_end'
         | 'lease_term_months'
@@ -3532,7 +3569,8 @@ export class W06BillingService {
         | 'management_fee_remaining_amount'
       >
     >(
-      `SELECT lease.start_date::text AS lease_start,
+      `SELECT lease.service_period_state='pending_check_in' AS service_period_pending,
+               lease.start_date::text AS lease_start,
               lease.end_date::text AS lease_end,
               lease.term_months AS lease_term_months,
               lease.contract_rent_amount,
@@ -3604,7 +3642,7 @@ export class W06BillingService {
         WHERE receipt.id=$1 AND receipt.property_id=$2`,
       [receiptId, propertyId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? { ...result.rows[0], period_authority_note: 'Periode mengikuti catatan check-in yang berlaku. Tanggal dan nominal pembayaran tetap sesuai transaksi asli.' } : null;
   }
 
   private receiptRowFromSnapshot(
@@ -3650,6 +3688,7 @@ export class W06BillingService {
       room_number: String(document.room_number),
       building_code: String(document.building_code ?? ''),
       lease_start: String(document.lease_start),
+      service_period_pending: document.service_period_pending === true,
       lease_end: document.lease_end == null ? null : String(document.lease_end),
       lease_term_months:
         document.lease_term_months == null ? null : Number(document.lease_term_months),
@@ -3742,6 +3781,7 @@ export class W06BillingService {
         leaseStart: row.lease_start,
         leaseEnd: row.lease_end,
         leaseTermMonths: row.lease_term_months,
+        servicePeriodPending: row.service_period_pending,
         ownerName: row.owner_name,
         managementFeeMode: row.management_fee_mode,
         managementFeePayer: row.management_fee_payer,
@@ -3778,7 +3818,9 @@ export class W06BillingService {
             ['Uang sejumlah', feeMoney(row.amount)],
             ['Untuk pembayaran', 'Biaya pengelolaan hunian tanggungan Owner'],
             ['Status sewa kamar', 'Rp0 — ditanggung Owner'],
-            ['Periode hunian', `${row.lease_start} s.d. ${row.lease_end ?? 'berjalan'}`],
+            ['Periode hunian', row.service_period_pending
+              ? `${row.lease_term_months ?? '—'} bulan · Masa sewa belum dimulai—menunggu check-in`
+              : `${row.lease_start} s.d. ${row.lease_end ?? 'berjalan'}`],
             ['Kamar No.', row.room_number],
             [
               'Ketentuan biaya pengelolaan',
@@ -3796,6 +3838,7 @@ export class W06BillingService {
         : undefined;
     return createBillingReceiptPdf({
       receiptCode: row.receipt_code,
+      periodAuthorityNote: row.period_authority_note,
       paymentCode: row.payment_code,
       paymentMethod: row.payment_method,
       paymentPurpose: paymentClassification,
@@ -3815,6 +3858,7 @@ export class W06BillingService {
       leaseStart: row.lease_start,
       leaseEnd: row.lease_end,
       leaseTermMonths: row.lease_term_months,
+      servicePeriodPending: row.service_period_pending,
       contractRentAmount:
         row.contract_rent_amount == null ? null : this.money(row.contract_rent_amount),
       agreedMonthlyPrice:
@@ -3877,6 +3921,34 @@ export class W06BillingService {
     return this.renderInvoiceDocument(result.rows[0]);
   }
 
+  async originalInvoiceDocument(user: UserAccessContext, propertyId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
+    await this.properties.assertCanReadProperty(user, propertyId);
+    const result = await this.database.client.query<InvoiceDocumentRow>(`${this.invoiceDocumentSql()}
+      WHERE invoice.id=$1 AND invoice.property_id=$2 AND invoice.lease_id IS NOT NULL AND invoice.invoice_status<>'draft'`, [invoiceId, propertyId]);
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException({ code: 'INVOICE_DOCUMENT_NOT_FOUND', message: 'Invoice penyewaan tidak ditemukan.' });
+    const history = await this.database.client.query<{
+      coverage_start: string; coverage_end: string; due_date: string;
+      period: { startDate: string; endDate: string; servicePeriodPending?: boolean } | null;
+    }>(`SELECT COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
+        COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,invoice.due_date::text,
+        COALESCE((SELECT version.effective_snapshot FROM lease_service_period_versions version
+          WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id AND version.created_at<=invoice.issued_at
+          ORDER BY version.sequence_number DESC LIMIT 1),
+          (SELECT version.previous_snapshot FROM lease_service_period_versions version
+           WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id ORDER BY version.sequence_number LIMIT 1)) AS period
+        FROM invoices invoice WHERE invoice.id=$1 AND invoice.property_id=$2`, [invoiceId, propertyId]);
+    const original = history.rows[0];
+    const document = await this.renderInvoiceDocument({ ...row, ...original,
+      contract_start: original.period?.startDate ?? row.contract_start,
+      contract_end: original.period?.endDate ?? row.contract_end,
+      service_period_pending: original.period?.servicePeriodPending ?? row.service_period_pending,
+      current_settlement_due_at: null, final_settlement_due_at: null,
+      period_authority_note: 'Salinan periode penerbitan awal; saldo pembayaran adalah saldo terbaru. Gunakan invoice terbaru untuk periode dan batas pembayaran yang berlaku.',
+    });
+    return { ...document, filename: document.filename.replace(/\.pdf$/i, '-periode-awal.pdf') };
+  }
+
   async ownerSponsoredManagementFeeDocument(
     user: UserAccessContext,
     propertyId: string,
@@ -3898,6 +3970,7 @@ export class W06BillingService {
       leaseEnd: row.lease_end,
       leaseTermMonths: row.lease_term_months,
       ownerName: row.owner_name,
+      servicePeriodPending: row.service_period_pending,
       managementFeeMode: row.management_fee_mode,
       managementFeePayer: row.management_fee_payer,
       managementFeePayerName: row.management_fee_payer_name,
@@ -3929,6 +4002,7 @@ export class W06BillingService {
       leaseEnd: row.lease_end,
       leaseTermMonths: row.lease_term_months,
       ownerName: row.owner_name,
+      servicePeriodPending: row.service_period_pending,
       managementFeeMode: row.management_fee_mode,
       managementFeePayer: row.management_fee_payer,
       managementFeePayerName: row.management_fee_payer_name,
@@ -3951,6 +4025,7 @@ export class W06BillingService {
   ): Promise<OwnerSponsoredManagementFeeDocumentRow> {
     const result = await this.database.client.query<OwnerSponsoredManagementFeeDocumentRow>(
       `SELECT lease.id AS lease_id,
+               lease.service_period_state='pending_check_in' AS service_period_pending,
               resident.full_name AS resident_name,
               room.number AS room_number,
               building.building_code,
@@ -4061,15 +4136,17 @@ export class W06BillingService {
                             uniform_adoption.transition_due_date,
                             uniform_rent_due_date_15(COALESCE(i.cycle_start_date,i.snapshot_period_start_date))
                           )::text
-                     ELSE i.due_date::text
+                     ELSE COALESCE(effective_period.due_date,i.due_date)::text
                 END AS due_date,
-                COALESCE(i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
-                COALESCE(i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
+                 COALESCE(effective_period.coverage_start_date,i.cycle_start_date,i.snapshot_period_start_date)::text AS coverage_start,
+                 COALESCE(effective_period.coverage_end_date,i.cycle_end_date,i.snapshot_period_end_date)::text AS coverage_end,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0) AS outstanding_amount
-           FROM invoices i
+            FROM invoices i
+            LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=i.id AND effective_period.property_id=i.property_id
            LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
              ON uniform_adoption.property_id=i.property_id
             AND uniform_adoption.lease_id=i.lease_id
+            AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=i.lease_id AND version.property_id=i.property_id)
            LEFT JOIN LATERAL(
              SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
                FROM payment_allocations pa
@@ -4102,10 +4179,11 @@ export class W06BillingService {
                     END
                   ) FILTER(WHERE installment.installment_status IN('scheduled','issued','partially_paid'))
                 )::text AS next_due
-           FROM lease_installments installment
+            FROM lease_installment_effective_periods installment
            LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
              ON uniform_adoption.property_id=installment.property_id
             AND uniform_adoption.lease_id=installment.lease_id
+            AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=installment.lease_id AND version.property_id=installment.property_id)
           WHERE installment.property_id=$1 AND installment.lease_id=$2`,
         [lease.property_id, lease.id],
       ),
@@ -4482,7 +4560,11 @@ export class W06BillingService {
         [lease.property_id, lease.id],
       ),
     ]);
-    const invoices = invoiceResult.rows.map((row) => this.sanitizeInvoice(row));
+    const invoices = invoiceResult.rows.map((row) => this.sanitizeInvoice({ ...row,
+      invoice_status: row.invoice_purpose === 'rent'
+        ? this.currentPeriodInvoiceStatus(row.invoice_status, lease.service_period_pending === true, row.due_date, Number(row.total_amount) - Number(row.outstanding_amount))
+        : row.invoice_status,
+    }));
     const payments = paymentResult.rows.map((row) => ({
       ...this.sanitizePaymentDetail(row),
       ...(view === 'admin' ? { evidence: this.sanitizeEvidenceFiles(row.evidence) } : {}),
@@ -4500,6 +4582,15 @@ export class W06BillingService {
     const contractSettlement = settlement
       ? {
           ...this.projectContractSettlement(settlement),
+          ...(lease.service_period_pending ? {
+            status: this.projectContractSettlement(settlement).outstanding_amount === 0 ? 'paid' as const : 'awaiting_activation' as const,
+            original_due_at: null, effective_due_at: null, final_settlement_due_at: null,
+            extension_due_at: null, extension_reason: null, reminder_stage: null,
+            admin_action_required: false, termination_eligible: false, extension_available: false,
+            partial_payment_allowed: this.projectContractSettlement(settlement).outstanding_amount > 0,
+            full_payment_required: false,
+            first_payment_checkpoint: { ...this.projectContractSettlement(settlement).first_payment_checkpoint, due_at: null },
+          } : {}),
           ...(view === 'admin'
             ? {
                 paid_document: paidDocument
@@ -4527,6 +4618,8 @@ export class W06BillingService {
         status: lease.lease_status,
         start_date: lease.start_date,
         end_date: lease.end_date,
+        service_period_pending: lease.service_period_pending === true,
+        term_months: lease.term_months ?? null,
         payment_plan: lease.payment_plan_type,
         commercial_mode: lease.commercial_mode,
         contract_rent: this.money(lease.contract_rent_amount),
@@ -4550,9 +4643,9 @@ export class W06BillingService {
         deposit_balance: deposit.balance,
         installment_paid: Number(progress.paid),
         installment_total: Number(progress.total),
-        next_due_date: progress.next_due,
+        next_due_date: lease.service_period_pending ? null : progress.next_due,
         overdue_count: invoices.filter(
-          (row) => row.invoice_status === 'overdue' && row.outstanding_amount > 0,
+          (row) => !lease.service_period_pending && row.invoice_status === 'overdue' && row.outstanding_amount > 0,
         ).length,
       },
       owner_sponsorship: ownerSponsorshipResult.rows[0]
@@ -4616,10 +4709,13 @@ export class W06BillingService {
 
   private invoiceDocumentSql() {
     return `SELECT invoice.invoice_code,invoice.invoice_status,invoice.invoice_purpose,
+                    (SELECT max(version.sequence_number) FROM lease_service_period_versions version
+                      WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id) AS period_version_number,
+                    lease.service_period_state='pending_check_in' AS service_period_pending,
                    invoice.snapshot_resident_name,invoice.snapshot_room_number,
                    invoice.snapshot_building_code,
-                   COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
-                   COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,
+                    COALESCE(effective_period.coverage_start_date,invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
+                    COALESCE(effective_period.coverage_end_date,invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,
                     COALESCE(
                       (
                         COALESCE(
@@ -4638,7 +4734,7 @@ export class W06BillingService {
                           END
                         ) AT TIME ZONE 'Asia/Jakarta'
                       )::date,
-                      invoice.due_date
+                       effective_period.due_date,invoice.due_date
                     )::text AS due_date,invoice.total_amount,invoice.issued_at,
                     property.name AS property_name,property.address AS property_address,
                     issuer.display_name AS issued_by_name,
@@ -4670,7 +4766,8 @@ export class W06BillingService {
                       ) AS final_settlement_due_at
                 FROM invoices invoice
                JOIN properties property ON property.id=invoice.property_id
-                LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
+                 LEFT JOIN leases lease ON lease.id=invoice.lease_id AND lease.property_id=invoice.property_id
+                 LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=invoice.id AND effective_period.property_id=invoice.property_id
                LEFT JOIN LATERAL (
                  SELECT command.planned_lease_end_date
                    FROM lease_checkout_commands command
@@ -4713,6 +4810,7 @@ export class W06BillingService {
                  LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
                    ON uniform_adoption.property_id=invoice.property_id
                   AND uniform_adoption.lease_id=invoice.lease_id
+                  AND NOT EXISTS(SELECT 1 FROM lease_service_period_versions version WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id)
                 LEFT JOIN LATERAL (
                   SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at) AS current_due_at
                     FROM lease_settlement_checkpoints checkpoint
@@ -4751,10 +4849,20 @@ export class W06BillingService {
                 ) final_checkpoint ON true`;
   }
 
+  private currentPeriodInvoiceStatus(status: string, pending: boolean, dueDate: string, received: number) {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    if (status === 'overdue' && (pending || dueDate >= today)) return received > 0 ? 'partially_paid' : 'issued';
+    return status;
+  }
+
   private renderInvoiceDocument(row: InvoiceDocumentRow): Promise<BillingInvoiceDocument> {
     return createBillingInvoicePdf({
       invoiceCode: row.invoice_code,
-      invoiceStatus: this.publicInvoiceStatus(row.invoice_status),
+      periodAuthorityNote: row.period_authority_note ?? (row.period_version_number
+        ? `Periode berlaku mengikuti catatan check-in versi ${row.period_version_number}; menggantikan periode rencana. Transaksi pembayaran tetap menggunakan tanggal asli.` : undefined),
+      invoiceStatus: this.publicInvoiceStatus(row.invoice_purpose === 'rent'
+        ? this.currentPeriodInvoiceStatus(row.invoice_status, row.service_period_pending === true, row.due_date, Number(row.total_amount) - Number(row.outstanding_amount))
+        : row.invoice_status),
       invoicePurpose: row.invoice_purpose,
       residentName: row.snapshot_resident_name,
       roomNumber: row.snapshot_room_number,
@@ -4764,6 +4872,7 @@ export class W06BillingService {
       dueDate: row.due_date,
       contractStart: row.contract_start,
       contractEnd: row.contract_end,
+      servicePeriodPending: row.service_period_pending,
       currentSettlementDueAt: row.current_settlement_due_at,
       finalSettlementDueAt: row.final_settlement_due_at,
       totalAmount: this.money(row.total_amount),
@@ -5652,11 +5761,13 @@ export class W06BillingService {
                 WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)=0 THEN 'paid'
                 WHEN settlement.id IS NOT NULL
                   AND settlement.activated_at IS NOT NULL
+                  AND (i.invoice_purpose<>'rent' OR NOT EXISTS (SELECT 1 FROM leases lease WHERE lease.id=i.lease_id AND lease.service_period_state='pending_check_in'))
                   AND COALESCE(settlement.extension_due_at,settlement.original_due_at)<now()
                   THEN 'overdue'
                 WHEN COALESCE(a.net,0)>0 THEN 'partially_paid'
                 WHEN settlement.id IS NULL
-                  AND i.due_date<(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
+                  AND (i.invoice_purpose<>'rent' OR NOT EXISTS (SELECT 1 FROM leases lease WHERE lease.id=i.lease_id AND lease.service_period_state='pending_check_in'))
+                  AND COALESCE((SELECT period.due_date FROM lease_installment_effective_periods period WHERE period.invoice_id=i.id AND period.property_id=i.property_id),i.due_date)<(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date
                   THEN 'overdue'
                 ELSE 'issued'
               END,
@@ -5869,7 +5980,7 @@ export class W06BillingService {
     return result.rows[0];
   }
   private leaseTupleSql() {
-    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.snapshot_deposit_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) AS remaining_days FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
+    return `SELECT l.id,l.property_id,l.resident_id,l.room_id,l.occupancy_id,l.lease_status,l.commercial_mode,l.start_date::text,l.end_date::text,l.contract_rent_amount,l.dp_required_amount,l.security_deposit_required_amount,l.snapshot_deposit_amount,l.payment_plan_type,l.snapshot_monthly_price,COALESCE(l.pricing_source,'standard') AS pricing_source,l.snapshot_room_number,l.snapshot_kost_type_name,building.building_code,resident.full_name AS resident_name,CASE WHEN l.service_period_state='pending_check_in' THEN 0 ELSE GREATEST(l.end_date-(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date,0) END AS remaining_days,l.service_period_state='pending_check_in' AS service_period_pending,l.term_months FROM leases l JOIN residents resident ON resident.id=l.resident_id AND resident.property_id=l.property_id JOIN rooms room ON room.id=l.room_id AND room.property_id=l.property_id JOIN room_buildings building ON building.id=room.building_id AND building.property_id=l.property_id`;
   }
   private async lockProperty(client: PoolClient, propertyId: string) {
     const result = await client.query(`SELECT id FROM properties WHERE id=$1 FOR UPDATE`, [
@@ -6035,6 +6146,7 @@ export class W06BillingService {
       });
     const authorityResult = await client.query<ReceiptAuthorityRow>(
       `SELECT payment.payment_code,payment.payment_method,payment.payment_purpose,payment.paid_at,
+                lease.service_period_state='pending_check_in' AS service_period_pending,
                resident.full_name AS resident_name,room.number AS room_number,
                building.building_code AS building_code,
                lease.start_date::text AS lease_start,lease.end_date::text AS lease_end,
@@ -6167,6 +6279,10 @@ export class W06BillingService {
            (
               SELECT COALESCE(extension.extension_due_at,due_override.effective_due_at,checkpoint.due_at)
               FROM lease_settlement_checkpoints checkpoint
+              JOIN lease_contract_settlements current_settlement
+                ON current_settlement.lease_id=checkpoint.lease_id
+               AND current_settlement.property_id=checkpoint.property_id
+               AND current_settlement.policy_snapshot_id=checkpoint.policy_snapshot_id
               LEFT JOIN lease_settlement_extensions extension
                 ON extension.checkpoint_id=checkpoint.id
                AND extension.property_id=checkpoint.property_id
@@ -6287,6 +6403,7 @@ export class W06BillingService {
         lease_start: authority.lease_start,
         lease_end: authority.lease_end,
         lease_term_months: authority.lease_term_months,
+        service_period_pending: authority.service_period_pending,
         contract_rent_amount: authority.contract_rent_amount,
         agreed_monthly_price: authority.agreed_monthly_price,
         pricing_source: authority.pricing_source,
@@ -6532,6 +6649,8 @@ export class W06BillingService {
             outstanding_amount: this.money(row.contract_paid_outstanding_amount ?? 0),
             lease_start: row.contract_paid_lease_start,
             lease_end: row.contract_paid_lease_end,
+            service_period_pending: row.contract_paid_period_pending === true,
+            term_months: row.contract_paid_term_months,
             transaction_references: (Array.isArray(row.contract_paid_transaction_references)
               ? row.contract_paid_transaction_references
               : []

@@ -120,6 +120,7 @@ export type KostTypeRule = {
 export type RoomInventory = {
   id: string;
   propertyId: string;
+  ownerName?: string | null;
   number: string;
   roomCode?: string | null;
   managerRoomLabel?: string | null;
@@ -263,7 +264,13 @@ export type RoomDetail = {
     effectiveUntil: string | null;
     assignmentStatus: "active" | null;
   };
-  timeline: Array<{ eventType: string; label: string; occurredAt: string; description?: string }>;
+  timeline: Array<{
+    eventType: string;
+    label: string;
+    occurredAt: string;
+    description?: string;
+    residentPath?: string;
+  }>;
   links: {
     resident: string | null;
     lease: string | null;
@@ -1379,9 +1386,13 @@ function parseRoomFacility(
 }
 
 function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): RoomInventory {
-  const expectedKeys = includeActiveLease
-    ? [...ROOM_BASE_KEYS, "active_occupancy", "lease_reconciliation_required"]
-    : [...ROOM_BASE_KEYS];
+  const hasOwnerName =
+    isPlainRecord(value) && Object.prototype.hasOwnProperty.call(value, "owner_name");
+  const expectedKeys = [
+    ...ROOM_BASE_KEYS,
+    ...(hasOwnerName ? ["owner_name"] : []),
+    ...(includeActiveLease ? ["active_occupancy", "lease_reconciliation_required"] : []),
+  ];
   if (!isPlainRecord(value) || !hasExactKeys(value, expectedKeys)) {
     throw new Error("Invalid room inventory record.");
   }
@@ -1468,6 +1479,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
     typeof value.public_visible !== "boolean" ||
     typeof value.created_at !== "string" ||
     typeof value.updated_at !== "string" ||
+    (hasOwnerName && !isNullableString(value.owner_name)) ||
     (includeActiveLease && typeof value.lease_reconciliation_required !== "boolean")
   ) {
     throw new Error("Invalid room inventory record.");
@@ -1477,6 +1489,7 @@ function parseRoomInventoryRecord(value: unknown, includeActiveLease: boolean): 
   return {
     id: value.id,
     propertyId: value.property_id,
+    ownerName: hasOwnerName ? (value.owner_name as string | null) : null,
     number: value.number,
     roomCode: value.room_code,
     managerRoomLabel: value.manager_room_label,
@@ -1696,6 +1709,7 @@ const TIMELINE_EVENT_LABELS = {
   occupancy_check_out: "Penghuni check-out",
   lease_created: "Penyewaan diaktifkan",
   lease_updated: "Penyewaan diperbarui",
+  lease_lease_data_corrected: "Data penyewaan dikoreksi",
   lease_invoice_generated: "Tagihan penyewaan dibuat",
   lease_deposit_collected: "Deposit jaminan diterima",
   lease_deposit_refunded: "Deposit jaminan dikembalikan",
@@ -1998,9 +2012,15 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
     ? data.timeline.map((value) => {
         const record = exactRecord(
           value,
-          isPlainRecord(value) && Object.hasOwn(value, "description")
-            ? ["event_type", "label", "occurred_at", "description"]
-            : ["event_type", "label", "occurred_at"],
+          [
+            "event_type",
+            "label",
+            "occurred_at",
+            ...(isPlainRecord(value) && Object.hasOwn(value, "description") ? ["description"] : []),
+            ...(isPlainRecord(value) && Object.hasOwn(value, "resident_path")
+              ? ["resident_path"]
+              : []),
+          ],
           "timeline",
         );
         const eventType = requiredString(record.event_type, "timeline event");
@@ -2009,10 +2029,24 @@ export function parseRoomDetailEnvelope(value: unknown): RoomDetail {
         if (!expectedLabel || record.label !== expectedLabel) {
           throw new Error("Invalid room detail timeline event.");
         }
+        const residentPath =
+          record.resident_path === undefined
+            ? undefined
+            : requiredString(record.resident_path, "timeline resident link");
+        if (
+          residentPath !== undefined &&
+          (eventType !== "lease_lease_data_corrected" ||
+            !/^\/tenants\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              residentPath,
+            ))
+        ) {
+          throw new Error("Invalid room detail resident link.");
+        }
         return {
           eventType,
           label: expectedLabel,
           occurredAt: dateLike(record.occurred_at, "timeline timestamp"),
+          ...(residentPath ? { residentPath } : {}),
           ...(record.description === undefined
             ? {}
             : {

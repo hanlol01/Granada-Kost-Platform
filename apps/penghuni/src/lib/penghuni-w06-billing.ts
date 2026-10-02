@@ -86,6 +86,8 @@ export type MyW06ContractSettlement = {
 
 export type MyW06Billing = {
   lease: {
+    service_period_pending?: boolean;
+    term_months?: number | null;
     id: string;
     property_id: string;
     resident_name?: string;
@@ -537,7 +539,7 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       "remaining_days",
       "note",
     ],
-    ["resident_name", "room_number"],
+    ["resident_name", "room_number", "service_period_pending", "term_months", "commercial_mode"],
     "Kontrak billing",
   );
   const summary = object(
@@ -577,6 +579,8 @@ export function parseMyW06Billing(value: unknown): MyW06Billing {
       ),
       start_date: date(lease.start_date, "Mulai kontrak"),
       end_date: date(lease.end_date, "Akhir kontrak"),
+      service_period_pending: lease.service_period_pending === true,
+      term_months: lease.term_months == null ? null : integer(lease.term_months, "Durasi kontrak"),
       payment_plan: oneOf(
         lease.payment_plan,
         ["annual_full", "monthly_installments", "two_month_installments"] as const,

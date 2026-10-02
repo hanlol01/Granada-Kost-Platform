@@ -1,4 +1,15 @@
-import { Body, Controller, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
 import { CurrentUser } from '../rbac/decorators/current-user.decorator';
 import { RequirePermissions } from '../rbac/decorators/permissions.decorator';
@@ -10,6 +21,7 @@ import { ActivateLeaseDto } from './dto/activate-lease.dto';
 import { ConfirmLeaseCheckInDto } from './dto/confirm-lease-check-in.dto';
 import { LeaseActivationService } from './lease-activation.service';
 import { LeaseCheckInService } from './lease-check-in.service';
+import { LeaseServicePeriodService } from './lease-service-period.service';
 
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
@@ -19,7 +31,26 @@ export class LeaseActivationController {
   constructor(
     private readonly activations: LeaseActivationService,
     private readonly checkIns: LeaseCheckInService,
+    private readonly periods: LeaseServicePeriodService,
   ) {}
+  @Post(':leaseId/check-in/preview')
+  previewCheckIn(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', new ParseUUIDPipe({ version: '4' })) leaseId: string,
+    @Body() dto: ConfirmLeaseCheckInDto,
+  ) {
+    return this.periods.preview(user, leaseId, dto);
+  }
+
+  @Get(':leaseId/service-period/history')
+  @RequirePermissions('lease.read')
+  periodHistory(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', new ParseUUIDPipe({ version: '4' })) leaseId: string,
+    @Query('property_id', new ParseUUIDPipe({ version: '4' })) propertyId: string,
+  ) {
+    return this.periods.history(user, leaseId, propertyId);
+  }
   @Post(':leaseId/activate')
   activate(
     @CurrentUser() user: UserAccessContext,

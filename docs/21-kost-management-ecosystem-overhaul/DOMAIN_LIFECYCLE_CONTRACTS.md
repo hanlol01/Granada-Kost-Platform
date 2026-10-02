@@ -264,7 +264,10 @@ irretrievable; reset requires a new audited command.
 - issue a temporary credential only through the same dedicated, authorized,
   non-cacheable one-time receipt contract; Property Owner is not forced to
   change it on first login, while later recovery uses an audited reset command;
-- keep all Property Owner application actions read-only;
+- keep all Property Owner operational and financial actions read-only; the
+  approved account-settings extension permits only own login email/password
+  changes with current-password confirmation and session revocation, as defined
+  in [Handoff 07](handoff/07_OWNER_ACCOUNT_AND_LEASE_CORRECTION_HISTORY_HANDOFF.md);
 - return an honest empty scope when no active ownership assignment remains.
 
 `owner` and `property_owner` are never interchangeable.

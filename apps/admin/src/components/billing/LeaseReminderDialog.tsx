@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, FileText, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -268,14 +269,16 @@ export function LeaseReminderDialog({
                   </p>
                 </div>
                 {recordedStatus ? (
-                  <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
-                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                    {recordedStatus === "previewed"
-                      ? "Preview tercatat"
-                      : recordedStatus === "external_opened"
-                        ? "WhatsApp dibuka"
-                        : "Dikirim manual"}
-                  </Badge>
+                  <StatusBadge
+                    label={
+                      recordedStatus === "previewed"
+                        ? "Preview tercatat"
+                        : recordedStatus === "external_opened"
+                          ? "WhatsApp dibuka"
+                          : "Dikirim manual"
+                    }
+                    tone={recordedStatus === "previewed" ? "info" : "success"}
+                  />
                 ) : null}
               </section>
             )}

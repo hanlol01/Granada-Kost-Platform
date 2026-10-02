@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/state/ErrorState";
 import { ForbiddenState } from "@/components/state/ForbiddenState";
 import { LoadingState } from "@/components/state/LoadingState";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { FilterResultNotice } from "@/components/ui/filter-result-notice";
@@ -76,24 +77,15 @@ const PRIORITY_LABELS: Record<NotificationCenterPriority, string> = {
   low: "Rendah",
 };
 
-function statusBadgeClass(status: NotificationCenterStatus): string {
-  if (status === "unread") {
-    return "rounded-full border-primary/35 bg-primary/10 text-primary";
-  }
-  if (status === "read") {
-    return "rounded-full border-success/35 bg-success/10 text-success";
-  }
-  return "rounded-full border-border bg-muted text-muted-foreground";
+function statusBadgeTone(status: NotificationCenterStatus): StatusTone {
+  if (status === "unread") return "warning";
+  return "neutral";
 }
 
-function priorityBadgeClass(priority: NotificationCenterPriority): string {
-  if (priority === "urgent" || priority === "high") {
-    return "rounded-full border-destructive/35 bg-destructive/10 text-destructive";
-  }
-  if (priority === "normal") {
-    return "rounded-full border-primary/25 bg-primary/10 text-primary";
-  }
-  return "rounded-full border-border bg-muted text-muted-foreground";
+function priorityBadgeTone(priority: NotificationCenterPriority): StatusTone {
+  if (priority === "urgent" || priority === "high") return "danger";
+  if (priority === "normal") return "info";
+  return "neutral";
 }
 
 function formatTimestamp(value: string): string {
@@ -313,18 +305,14 @@ function NotificationsPage() {
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-                      <Badge
-                        variant="outline"
-                        className={statusBadgeClass(notification.notification_status)}
-                      >
-                        {STATUS_LABELS[notification.notification_status]}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={priorityBadgeClass(notification.priority)}
-                      >
-                        Prioritas {PRIORITY_LABELS[notification.priority]}
-                      </Badge>
+                      <StatusBadge
+                        label={STATUS_LABELS[notification.notification_status]}
+                        tone={statusBadgeTone(notification.notification_status)}
+                      />
+                      <StatusBadge
+                        label={`Prioritas ${PRIORITY_LABELS[notification.priority]}`}
+                        tone={priorityBadgeTone(notification.priority)}
+                      />
                     </div>
                   </div>
                   {notification.expires_at ? (

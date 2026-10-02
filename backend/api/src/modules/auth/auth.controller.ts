@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { RequestWithCorrelationId } from '../../shared/types/request-with-correlation-id';
@@ -9,6 +20,10 @@ import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangeOwnerEmailDto } from './dto/change-owner-email.dto';
+import { OwnerAccountService } from './owner-account.service';
+import { RequireRoles } from '../rbac/decorators/roles.decorator';
+import { RbacGuard } from '../rbac/guards/rbac.guard';
 
 const REFRESH_COOKIE_NAME = 'granada_refresh_token';
 
@@ -17,6 +32,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService,
+    private readonly ownerAccounts: OwnerAccountService,
   ) {}
 
   @Post('login')
@@ -94,12 +110,33 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('password')
-  changePassword(
+  async changePassword(
     @CurrentUser() user: UserAccessContext,
     @Body() dto: ChangePasswordDto,
     @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.auth.changePassword(user, dto, this.contextFromRequest(request));
+    const result = await this.auth.changePassword(user, dto, this.contextFromRequest(request));
+    this.clearRefreshCookie(response);
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('property_owner')
+  @Patch('owner-email')
+  async changeOwnerEmail(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: ChangeOwnerEmailDto,
+    @Req() request: RequestWithCorrelationId,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.ownerAccounts.changeEmail(
+      user,
+      dto,
+      this.contextFromRequest(request),
+    );
+    if (result.changed) this.clearRefreshCookie(response);
+    return result;
   }
 
   private contextFromRequest(request: RequestWithCorrelationId) {

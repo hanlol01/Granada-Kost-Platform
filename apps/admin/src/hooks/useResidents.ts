@@ -37,6 +37,7 @@ export type UseResidentsFilters = {
   pricingSource?: "negotiated";
   commercialMode?: "owner_sponsored";
   managementFeeMode?: "charged" | "waived";
+  correctionHistory?: "ever" | "never";
   settlementStage?: Exclude<ContractSettlementStage, "none">;
   checkoutFinancialStatus?: Exclude<CheckoutFinancialStatus, "none"> | "attention";
   attentionCategory?: ResidentAttentionCategory;
@@ -66,6 +67,7 @@ export function useResidents(filters: UseResidentsFilters = {}): UseQueryResult<
             pricing_source: filters.pricingSource,
             commercial_mode: filters.commercialMode,
             management_fee_mode: filters.managementFeeMode,
+            correction_history: filters.correctionHistory,
             contract_settlement_stage: filters.settlementStage,
             checkout_financial_status: filters.checkoutFinancialStatus,
             attention_category: filters.attentionCategory,

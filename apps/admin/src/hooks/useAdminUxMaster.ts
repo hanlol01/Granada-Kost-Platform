@@ -4,6 +4,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  useQueries,
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
@@ -223,6 +224,51 @@ export function useM4RoomAvailability() {
     queryFn: () => adminUxMasterApi.rooms.availability(currentPropertyId!),
     enabled: Boolean(currentPropertyId),
   });
+}
+
+const ROOM_NOTIFICATION_STATUSES: RoomStatus[] = [
+  "vacant",
+  "reserved",
+  "awaiting_check_in",
+  "maintenance",
+  "inactive",
+  "requires_review",
+  "inspection_required",
+];
+
+export function useM4RoomStatusCounts(category: KostTypeCategory) {
+  const { currentPropertyId } = useProperty();
+  const queries = useQueries({
+    queries: ROOM_NOTIFICATION_STATUSES.map((status) => ({
+      queryKey: adminUxQueryKeys.rooms.list(currentPropertyId ?? "", {
+        category,
+        status,
+        limit: 1,
+        offset: 0,
+      }),
+      queryFn: () =>
+        adminUxMasterApi.rooms.list({
+          propertyId: currentPropertyId!,
+          category,
+          status,
+          limit: 1,
+          offset: 0,
+        }),
+      enabled: Boolean(currentPropertyId),
+      staleTime: 30_000,
+    })),
+  });
+
+  const counts = Object.fromEntries(
+    ROOM_NOTIFICATION_STATUSES.map((status, index) => [status, queries[index]?.data?.total ?? 0]),
+  ) as Partial<Record<RoomStatus, number>>;
+
+  return {
+    counts,
+    isLoading: Boolean(currentPropertyId) && queries.some((query) => query.isPending),
+    isError: queries.some((query) => query.isError),
+    refetch: () => Promise.all(queries.map((query) => query.refetch())),
+  };
 }
 
 export function useM4RoomBuildings(category: KostTypeCategory | null | undefined) {

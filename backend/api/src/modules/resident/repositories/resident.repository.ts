@@ -60,6 +60,8 @@ type ResidentRow = {
   lease_start?: string | null;
   lease_end?: string | null;
   lease_authority_count?: string;
+  lease_correction_count?: string;
+  lease_term_months?: number | null;
   commercial_mode?: 'rent' | 'owner_sponsored' | null;
   pricing_source?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   management_fee_mode?: 'charged' | 'waived' | null;
@@ -84,6 +86,8 @@ type ContactRow = {
 };
 
 type ResidentTenancyRow = {
+  service_period_state?: 'legacy' | 'pending_check_in' | 'started';
+  planned_start_date?: string;
   resident_id: string;
   property_id: string;
   lease_id: string;
@@ -158,6 +162,16 @@ export function residentPropertyMembershipSql(userParameter: '$1' | '$2'): strin
   )`;
 }
 
+export function residentCorrectionHistoryFilterSql(parameter: string): string {
+  return `(${parameter}::text IS NULL OR EXISTS (
+    SELECT 1 FROM lease_data_corrections correction
+    JOIN leases corrected_lease ON corrected_lease.id = correction.lease_id
+      AND corrected_lease.property_id = correction.property_id
+    WHERE corrected_lease.resident_id = residents.id
+      AND correction.property_id = residents.property_id
+  ) = (${parameter}::text = 'ever'))`;
+}
+
 @Injectable()
 export class ResidentRepository {
   constructor(private readonly database: DatabaseService) {}
@@ -175,7 +189,13 @@ export class ResidentRepository {
               COALESCE(users.user_status, 'not_provisioned') AS account_status,
               projection.room_number,projection.lease_start::text,projection.lease_end::text,
               COALESCE(projection.lease_authority_count,0)::text AS lease_authority_count,
+              (SELECT count(*)::text FROM lease_data_corrections correction
+               JOIN leases corrected_lease ON corrected_lease.id = correction.lease_id
+                 AND corrected_lease.property_id = correction.property_id
+               WHERE corrected_lease.resident_id = residents.id
+                 AND correction.property_id = residents.property_id) AS lease_correction_count,
               lease_projection.commercial_mode,
+              lease_projection.term_months AS lease_term_months,
               lease_projection.pricing_source,
               owner_sponsorship.management_fee_mode,
               owner_sponsorship.payment_status AS management_fee_payment_status,
@@ -246,6 +266,7 @@ export class ResidentRepository {
          AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
          AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)
          AND ${residentAttentionFilterSql('$18')}
+         AND ${residentCorrectionHistoryFilterSql('$21')}
        ORDER BY
          CASE WHEN $12::integer IS NOT NULL THEN projection.contract_settlement_due_date END ASC NULLS LAST,
          CASE WHEN $13::integer IS NOT NULL THEN projection.lease_end END ASC NULLS LAST,
@@ -272,6 +293,7 @@ export class ResidentRepository {
         query.attention_category ?? null,
         Math.min(Math.max(query.limit ?? 20, 1), 100),
         Math.max(query.offset ?? 0, 0),
+        query.correction_history ?? null,
       ],
     );
     return this.hydrate(result.rows);
@@ -330,7 +352,8 @@ export class ResidentRepository {
          AND ($15::text IS NULL OR lease_projection.commercial_mode=$15)
          AND ($16::text IS NULL OR lease_projection.pricing_source=$16)
          AND ($17::text IS NULL OR owner_sponsorship.management_fee_mode=$17)
-         AND ${residentAttentionFilterSql('$18')}`,
+         AND ${residentAttentionFilterSql('$18')}
+         AND ${residentCorrectionHistoryFilterSql('$19')}`,
       [
         propertyIds === undefined ? null : propertyIds,
         query.property_id ?? null,
@@ -350,6 +373,7 @@ export class ResidentRepository {
         query.pricing_source ?? null,
         query.management_fee_mode ?? null,
         query.attention_category ?? null,
+        query.correction_history ?? null,
       ],
     );
     return Number(result.rows[0]?.total ?? 0);
@@ -406,7 +430,8 @@ export class ResidentRepository {
               END AS checked_in_source,
                rooms.number AS room_number,rooms.manager_room_label,rooms.plot_number,
                leases.snapshot_kost_type_name AS kost_type_name,
-              buildings.building_code,leases.start_date::text,leases.end_date::text,
+               buildings.building_code,leases.start_date::text,leases.end_date::text,
+               leases.service_period_state,leases.planned_start_date::text,
               leases.term_months,leases.payment_plan_type,leases.snapshot_monthly_price,
               leases.contract_rent_amount,leases.pricing_source,leases.commercial_mode
        FROM leases
@@ -455,6 +480,8 @@ export class ResidentRepository {
       buildingCode: row.building_code,
       startDate: row.start_date,
       endDate: row.end_date,
+      servicePeriodState: row.service_period_state ?? 'legacy',
+      plannedStartDate: row.planned_start_date ?? row.start_date,
       termMonths: Number(row.term_months),
       paymentPlanType: row.payment_plan_type,
       commercialMode: row.commercial_mode,
@@ -649,8 +676,8 @@ export class ResidentRepository {
        JOIN properties ON properties.id = residents.property_id
        LEFT JOIN LATERAL (
          SELECT leases.lease_status,
-                leases.start_date::text AS lease_start,
-                leases.end_date::text AS lease_end,
+              CASE WHEN leases.service_period_state='pending_check_in' THEN NULL ELSE leases.start_date END::text AS lease_start,
+              CASE WHEN leases.service_period_state='pending_check_in' THEN NULL ELSE leases.end_date END::text AS lease_end,
                  leases.term_months,
                  leases.payment_plan_type,
                  leases.snapshot_monthly_price AS agreed_monthly_price,
@@ -842,6 +869,8 @@ export class ResidentRepository {
       leaseStart: row.lease_start ?? null,
       leaseEnd: row.lease_end ?? null,
       leaseAuthorityCount: Number(row.lease_authority_count ?? 0),
+      leaseCorrectionCount: Number(row.lease_correction_count ?? 0),
+      leaseTermMonths: row.lease_term_months ?? null,
       commercialMode: row.commercial_mode ?? null,
       pricingSource: row.pricing_source ?? null,
       managementFeeMode: row.management_fee_mode ?? null,

@@ -19,6 +19,7 @@ import { FilePreviewModal, type FilePreviewReference } from "@/components/file/F
 import { HistoricalRealizationSourceCombobox } from "@/components/reports/HistoricalRealizationSourceCombobox";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -59,6 +60,18 @@ const labels: Record<OwnerRealizationStatus, string> = {
   realized: "Terealisasi",
   published_to_owner: "Diterbitkan untuk Owner",
   void: "Dibatalkan",
+};
+
+const realizationTones: Record<OwnerRealizationStatus, StatusTone> = {
+  draft: "neutral",
+  awaiting_review: "warning",
+  approved: "success",
+  submitted_to_finance: "info",
+  awaiting_transfer: "warning",
+  partially_realized: "warning",
+  realized: "success",
+  published_to_owner: "success",
+  void: "neutral",
 };
 
 function rupiah(value: unknown) {
@@ -123,13 +136,11 @@ function notEligibleReason(value: unknown) {
   return notEligibleReasonLabels[code] ?? "Belum memenuhi syarat realisasi";
 }
 
-function notEligibleReasonClass(value: unknown) {
+function notEligibleReasonTone(value: unknown): StatusTone {
   const code = text(value);
-  if (code === "OUTSTANDING_CONTRACT_RENT")
-    return "border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300";
-  if (code === "PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD")
-    return "border-blue-500/50 bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  return "border-red-500/55 bg-red-500/10 text-red-700 dark:text-red-300";
+  if (code === "OUTSTANDING_CONTRACT_RENT") return "warning";
+  if (code === "PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD") return "info";
+  return "neutral";
 }
 
 const recoveryLabels: Record<string, string> = {
@@ -577,15 +588,10 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
               <h3>Transfer dan tindakan realisasi</h3>
               <p>Status dan transaksi tidak mengubah nilai kontrak yang telah ditetapkan.</p>
             </div>
-            <Badge
-              data-tone={
-                realization.status === "published_to_owner" || realization.status === "realized"
-                  ? "success"
-                  : "info"
-              }
-            >
-              {labels[realization.status]}
-            </Badge>
+            <StatusBadge
+              label={labels[realization.status]}
+              tone={realizationTones[realization.status]}
+            />
           </div>
           <div className="owner-report-filter__actions">
             {canCorrect || canRecordOverpayment ? (
@@ -709,16 +715,10 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                     {rupiah(line.net_realization_amount)}
                   </td>
                   <td className="px-3 py-3">
-                    <Badge
-                      data-tone={
-                        realization.status === "published_to_owner" ||
-                        realization.status === "realized"
-                          ? "success"
-                          : "info"
-                      }
-                    >
-                      {labels[realization.status]}
-                    </Badge>
+                    <StatusBadge
+                      label={labels[realization.status]}
+                      tone={realizationTones[realization.status]}
+                    />
                     {line.line_status === "historical_unlinked" ? (
                       <small className="mt-1 block text-muted-foreground">
                         Unlinked historical record
@@ -941,9 +941,10 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                       <span>
                         {text(row.room_code)} · {text(row.resident_name)}
                       </span>
-                      <Badge variant="outline" className={notEligibleReasonClass(row.reason_code)}>
-                        {notEligibleReason(row.reason_code)}
-                      </Badge>
+                      <StatusBadge
+                        label={notEligibleReason(row.reason_code)}
+                        tone={notEligibleReasonTone(row.reason_code)}
+                      />
                     </li>
                   ))}
                 </ul>

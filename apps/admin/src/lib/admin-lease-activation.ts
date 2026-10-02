@@ -11,6 +11,7 @@ export type LeaseCheckInResponse = {
   occupancyStatus: "active";
   roomStatus: "occupied";
   checkedInAt: string;
+  servicePeriod?: { startDate: string; endDate: string; versionId: string; sequenceNumber: number };
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -59,7 +60,8 @@ export function parseLeaseCheckIn(value: unknown): LeaseCheckInResponse {
   const keys = data ? Object.keys(data).sort().join(",") : "";
   if (
     !data ||
-    keys !== "checkedInAt,leaseId,occupancyId,occupancyStatus,roomStatus" ||
+    (keys !== "checkedInAt,leaseId,occupancyId,occupancyStatus,roomStatus" &&
+      keys !== "checkedInAt,leaseId,occupancyId,occupancyStatus,roomStatus,servicePeriod") ||
     typeof data.leaseId !== "string" ||
     !UUID.test(data.leaseId) ||
     typeof data.occupancyId !== "string" ||
@@ -71,12 +73,21 @@ export function parseLeaseCheckIn(value: unknown): LeaseCheckInResponse {
   ) {
     throw new Error("Invalid lease check-in response");
   }
+  const period = data.servicePeriod as LeaseCheckInResponse["servicePeriod"];
+  if (period !== undefined && (!period || typeof period !== "object" ||
+      Object.keys(period).sort().join(",") !== "endDate,sequenceNumber,startDate,versionId" ||
+      typeof period.startDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(period.startDate) ||
+      typeof period.endDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(period.endDate) ||
+      typeof period.versionId !== "string" || !UUID.test(period.versionId) ||
+      !Number.isSafeInteger(period.sequenceNumber) || period.sequenceNumber < 1))
+    throw new Error("Invalid lease check-in period response");
   return {
     leaseId: data.leaseId,
     occupancyId: data.occupancyId,
     occupancyStatus: "active",
     roomStatus: "occupied",
     checkedInAt: data.checkedInAt,
+    ...(period ? { servicePeriod: period } : {}),
   };
 }
 
@@ -86,14 +97,13 @@ export function requestLeaseCheckIn(
   propertyId: string,
   idempotencyKey: string,
   checkedInAt?: string,
+  notes?: string,
 ): Promise<LeaseCheckInResponse> {
   if (!UUID.test(leaseId) || !UUID.test(propertyId) || !idempotencyKey.trim())
     throw new Error("LEASE_CHECK_IN_REQUEST_INVALID");
   return post(
     `/leases/${encodeURIComponent(leaseId)}/check-in`,
-    checkedInAt
-      ? { property_id: propertyId, checked_in_at: checkedInAt }
-      : { property_id: propertyId },
+    { property_id: propertyId, ...(checkedInAt ? { checked_in_at: checkedInAt } : {}), ...(notes?.trim() ? { notes: notes.trim() } : {}) },
     { idempotencyKey },
   ).then(parseLeaseCheckIn);
 }
@@ -106,11 +116,13 @@ export function requestLeaseActivation(
   activatedAt?: string,
   confirmCheckIn = false,
   checkedInAt?: string,
+  note?: string,
 ): Promise<LeaseActivationResponse> {
   if (!UUID.test(leaseId) || !UUID.test(propertyId) || !idempotencyKey.trim())
     throw new Error("LEASE_ACTIVATION_REQUEST_INVALID");
   const body: Record<string, unknown> = { property_id: propertyId };
   if (activatedAt) body.activated_at = activatedAt;
+  if (note?.trim()) body.note = note.trim();
   if (confirmCheckIn) {
     body.confirm_check_in = true;
     if (checkedInAt) body.checked_in_at = checkedInAt;

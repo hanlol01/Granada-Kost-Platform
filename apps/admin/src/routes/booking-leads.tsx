@@ -350,7 +350,7 @@ function BookingLeadsPage() {
             onClick={() => navigate({ to: "/tenants", search: { flow: "new-lease" } })}
           >
             <Plus aria-hidden="true" />
-            Tambah Penyewaan
+            Tambah Penyewaan Langsung
           </Button>
         </div>
       ) : null}
@@ -642,7 +642,7 @@ function BookingLeadsPage() {
                               <Button
                                 className="min-h-11"
                                 size="sm"
-                                variant={canReleaseHold ? "outline" : "default"}
+                                variant={canReleaseHold ? "destructive" : "default"}
                                 onClick={() => openHoldDialog(lead)}
                               >
                                 {canReleaseHold ? (
@@ -781,7 +781,7 @@ function BookingLeadsPage() {
                         <Button
                           className="min-h-11"
                           size="sm"
-                          variant={canReleaseHold ? "outline" : "default"}
+                          variant={canReleaseHold ? "destructive" : "default"}
                           onClick={() => openHoldDialog(lead)}
                         >
                           {canReleaseHold ? (

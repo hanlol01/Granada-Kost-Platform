@@ -5,6 +5,7 @@ import { GalleryDropzone } from "@/components/gallery/GalleryDropzone";
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyState, ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
@@ -324,13 +325,22 @@ function GaleriRoute() {
               {uploads.map((item) => (
                 <div key={item.name} className="flex items-center justify-between gap-3 text-sm">
                   <span className="min-w-0 truncate">{item.name}</span>
-                  <Badge variant="outline">
-                    {item.state === "processing"
-                      ? "Memproses"
-                      : item.state === "attached"
-                        ? "Siap di draft"
-                        : "Gagal — coba lagi"}
-                  </Badge>
+                  <StatusBadge
+                    label={
+                      item.state === "processing"
+                        ? "Memproses"
+                        : item.state === "attached"
+                          ? "Siap di draf"
+                          : "Gagal — coba lagi"
+                    }
+                    tone={
+                      item.state === "processing"
+                        ? "info"
+                        : item.state === "attached"
+                          ? "success"
+                          : "danger"
+                    }
+                  />
                   {item.state === "failed" ? (
                     <Button
                       type="button"
@@ -356,11 +366,18 @@ function GaleriRoute() {
                 Arsip tidak menghapus histori published.
               </p>
             </div>
-            <Badge variant="outline">
-              {versions.find((version) => version.publicationStatus === "published")
-                ? `Published v${versions.find((version) => version.publicationStatus === "published")?.version}`
-                : "Belum published"}
-            </Badge>
+            <StatusBadge
+              label={
+                versions.find((version) => version.publicationStatus === "published")
+                  ? `Terbit v${versions.find((version) => version.publicationStatus === "published")?.version}`
+                  : "Belum diterbitkan"
+              }
+              tone={
+                versions.some((version) => version.publicationStatus === "published")
+                  ? "success"
+                  : "neutral"
+              }
+            />
           </CardHeader>
           <CardContent>
             {images.length ? (
@@ -455,9 +472,10 @@ function GaleriRoute() {
                   <span className="text-sm">
                     Versi {version.version} · efektif {version.effectiveDate}
                   </span>
-                  <Badge variant="outline">
-                    {version.publicationStatus === "published" ? "Published" : "Archived"}
-                  </Badge>
+                  <StatusBadge
+                    label={version.publicationStatus === "published" ? "Terbit" : "Diarsipkan"}
+                    tone={version.publicationStatus === "published" ? "success" : "neutral"}
+                  />
                   <Button
                     variant="outline"
                     className="min-h-11"
@@ -539,7 +557,7 @@ function GalleryCard({
               <Star className="mr-1 h-3 w-3" /> Cover
             </Badge>
           ) : null}
-          <Badge variant="outline">Draft</Badge>
+          <StatusBadge label="Draf" tone="neutral" />
         </div>
       </div>
       <div className="space-y-3 p-4">

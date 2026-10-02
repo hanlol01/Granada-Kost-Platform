@@ -20,6 +20,7 @@ import { FilePreviewModal } from "@/components/file/FilePreviewModal";
 import { FileUploadProgress } from "@/components/file/FileUploadProgress";
 import { WhatsAppFallbackButton } from "@/components/file/WhatsAppFallbackButton";
 import { LoadingState, EmptyState, ErrorState } from "@/components/state";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import {
   useCreateMyComplaint,
@@ -125,32 +126,19 @@ function ComplaintRow({ complaint }: { complaint: MyComplaintRecord }) {
 }
 
 function ComplaintStatusBadge({ status }: { status: MyComplaintStatus }) {
-  const map: Record<
-    MyComplaintStatus,
-    { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }
-  > = {
-    submitted: { label: "Menunggu", cls: "bg-warning/20 text-warning-foreground", icon: Clock },
-    acknowledged: { label: "Diterima", cls: "bg-primary/15 text-primary", icon: Clock },
-    in_progress: { label: "Diproses", cls: "bg-primary/15 text-primary", icon: Loader2 },
-    on_hold: { label: "Ditunda", cls: "bg-secondary text-foreground", icon: Clock },
-    escalated: { label: "Dieskalasi", cls: "bg-destructive/15 text-destructive", icon: Clock },
-    resolved: { label: "Selesai", cls: "bg-success/15 text-success", icon: CheckCircle2 },
-    reopened: { label: "Dibuka Ulang", cls: "bg-warning/20 text-warning-foreground", icon: Clock },
-    closed: { label: "Ditutup", cls: "bg-secondary text-foreground", icon: CheckCircle2 },
-    cancelled: { label: "Dibatalkan", cls: "bg-secondary text-foreground", icon: X },
+  const map: Record<MyComplaintStatus, { label: string; tone: StatusTone; icon: typeof Clock }> = {
+    submitted: { label: "Menunggu", tone: "warning", icon: Clock },
+    acknowledged: { label: "Diterima", tone: "info", icon: Clock },
+    in_progress: { label: "Diproses", tone: "info", icon: Loader2 },
+    on_hold: { label: "Ditunda", tone: "warning", icon: Clock },
+    escalated: { label: "Dieskalasi", tone: "danger", icon: Clock },
+    resolved: { label: "Selesai", tone: "success", icon: CheckCircle2 },
+    reopened: { label: "Dibuka Ulang", tone: "warning", icon: Clock },
+    closed: { label: "Ditutup", tone: "neutral", icon: CheckCircle2 },
+    cancelled: { label: "Dibatalkan", tone: "neutral", icon: X },
   };
   const s = map[status];
-  const Icon = s.icon;
-  return (
-    <span
-      className={
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold " +
-        s.cls
-      }
-    >
-      <Icon className="h-3 w-3" /> {s.label}
-    </span>
-  );
+  return <StatusBadge label={s.label} tone={s.tone} icon={s.icon} />;
 }
 
 function priorityLabel(priority: MyComplaintPriority): string {

@@ -1067,4 +1067,15 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_room_transfer_records_to_lease') IS NOT NULL",
     ],
   },
+  {
+    version: '114_check_in_anchored_lease_period.sql',
+    checksumSha256: '0e40e6679576ac85dd05acf4f01c931bf8603d3ccefded4f4cfc30b549c857cf',
+    sentinels: [
+      "EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leases' AND column_name='service_period_state')",
+      "to_regclass('public.lease_service_period_versions') IS NOT NULL",
+      "to_regclass('public.lease_installment_effective_periods') IS NOT NULL",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('public.lease_contract_paid_documents') AND tgname='trg_capture_contract_paid_service_period')",
+      "EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('public.leases') AND tgname='trg_initialize_lease_service_period')",
+    ],
+  },
 ] as const;

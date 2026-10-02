@@ -5,6 +5,7 @@ import { ArrowLeft, BedDouble, CalendarDays, ClipboardList, UserRound, Wrench } 
 import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
@@ -59,15 +60,20 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 }
 
 function BillingBadge({ state }: { state: OwnerOccupancyResidentDetail["billing"]["state"] }) {
-  const tone =
-    state === "overdue"
-      ? "border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300"
-      : state === "partially_paid"
-        ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-        : state === "settled" || state === "current"
-          ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : "border-border bg-muted/50 text-muted-foreground";
-  return <Badge className={`border ${tone}`}>{labels[state]}</Badge>;
+  const tones: Record<string, StatusTone> = {
+    overdue: "danger",
+    partially_paid: "warning",
+    settled: "success",
+    current: "info",
+    waived: "neutral",
+    not_available: "neutral",
+  };
+  return (
+    <StatusBadge
+      label={labels[state] ?? "Status tidak diketahui"}
+      tone={tones[state] ?? "neutral"}
+    />
+  );
 }
 
 function OwnerSponsorshipBadge({
@@ -82,14 +88,14 @@ function OwnerSponsorshipBadge({
     paid: "Lunas",
     overpaid: "Lebih bayar",
   } as const;
-  const attention = state === "unpaid" || state === "partially_paid";
-  return (
-    <Badge
-      className={`border ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
-    >
-      {content[state]}
-    </Badge>
-  );
+  const tones = {
+    waived: "neutral",
+    unpaid: "warning",
+    partially_paid: "warning",
+    paid: "success",
+    overpaid: "warning",
+  } as const;
+  return <StatusBadge label={content[state]} tone={tones[state]} />;
 }
 
 function money(value: string): string {
@@ -136,9 +142,7 @@ function ResidentDetailContent({ detail }: { detail: OwnerOccupancyResidentDetai
         <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="border border-primary/30 bg-primary/10 text-primary">
-                Penghuni aktif
-              </Badge>
+              <StatusBadge label="Penghuni aktif" tone="success" />
               <Badge variant="outline">{labels[detail.room.kostType]}</Badge>
               <Badge variant="outline">{detail.room.roomCode}</Badge>
             </div>

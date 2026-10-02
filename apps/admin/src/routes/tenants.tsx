@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
   useResidents,
   type CheckoutFinancialStatus,
@@ -44,7 +45,11 @@ import { formatIDR } from "@/lib/format";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
-type TenantRouteSearch = { flow?: "new-lease"; bookingLeadId?: string };
+type TenantRouteSearch = {
+  flow?: "new-lease";
+  bookingLeadId?: string;
+  correctionHistory?: "ever" | "never";
+};
 type DeadlineTarget = "settlement" | "lease_end";
 
 const DEADLINE_DAY_OPTIONS = [7, 14, 30] as const;
@@ -64,7 +69,14 @@ function validateSearch(raw: Record<string, unknown>): TenantRouteSearch {
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.bookingLeadId)
       ? raw.bookingLeadId
       : undefined;
-  return { flow: raw.flow === "new-lease" ? "new-lease" : undefined, bookingLeadId };
+  return {
+    flow: raw.flow === "new-lease" ? "new-lease" : undefined,
+    bookingLeadId,
+    correctionHistory:
+      raw.correctionHistory === "ever" || raw.correctionHistory === "never"
+        ? raw.correctionHistory
+        : undefined,
+  };
 }
 
 export function CheckoutFinancialStatusPill({
@@ -72,43 +84,37 @@ export function CheckoutFinancialStatusPill({
 }: {
   status: ResidentListRecord["checkoutFinancialStatus"];
 }) {
-  const presentation: Record<CheckoutFinancialStatus, { label: string; className: string }> = {
-    none: { label: "Belum ada check-out", className: "bg-muted text-muted-foreground" },
-    in_progress: { label: "Proses check-out berjalan", className: "bg-primary-soft text-primary" },
+  const presentation: Record<CheckoutFinancialStatus, { label: string; tone: StatusTone }> = {
+    none: { label: "Belum ada check-out", tone: "neutral" },
+    in_progress: { label: "Proses check-out berjalan", tone: "info" },
     awaiting_handover: {
       label: "Menunggu tanggal serah-terima",
-      className: "bg-primary-soft text-primary",
+      tone: "info",
     },
     handover_overdue: {
       label: "Terlambat serah-terima",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
     refund_pending: {
       label: "Menunggu pengembalian dana",
-      className: "bg-warning/15 text-warning",
+      tone: "warning",
     },
     refund_settled: {
       label: "Pengembalian dana selesai",
-      className: "bg-success/15 text-success",
+      tone: "success",
     },
     refund_waived: {
       label: "Hak pengembalian dilepaskan",
-      className: "bg-muted text-muted-foreground",
+      tone: "neutral",
     },
     amount_due: {
       label: "Tagihan akhir belum lunas",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
-    closed: { label: "Penyelesaian check-out selesai", className: "bg-success/15 text-success" },
+    closed: { label: "Penyelesaian check-out selesai", tone: "success" },
   };
   const current = presentation[status];
-  return (
-    <span
-      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
-    >
-      {current.label}
-    </span>
-  );
+  return <StatusBadge label={current.label} tone={current.tone} />;
 }
 
 export const Route = createFileRoute("/tenants")({
@@ -127,35 +133,25 @@ function TenantsRoute() {
 }
 
 export function ResidentStatusPill({ status }: { status: ResidentListRecord["residentStatus"] }) {
-  const presentation: Record<ResidentStatus, { label: string; className: string }> = {
-    draft: { label: "Draf", className: "bg-muted text-muted-foreground" },
-    pending_activation: { label: "Menunggu aktivasi", className: "bg-warning/15 text-warning" },
-    active: { label: "Aktif", className: "bg-success/15 text-success" },
-    inactive: { label: "Nonaktif", className: "bg-muted text-muted-foreground" },
-    archived: { label: "Diarsipkan", className: "bg-muted text-muted-foreground" },
+  const presentation: Record<ResidentStatus, { label: string; tone: StatusTone }> = {
+    draft: { label: "Draf", tone: "neutral" },
+    pending_activation: { label: "Menunggu aktivasi", tone: "warning" },
+    active: { label: "Aktif", tone: "success" },
+    inactive: { label: "Nonaktif", tone: "neutral" },
+    archived: { label: "Diarsipkan", tone: "neutral" },
   };
   const current = presentation[status];
-  return (
-    <span
-      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
-    >
-      {current.label}
-    </span>
-  );
+  return <StatusBadge label={current.label} tone={current.tone} />;
 }
 
 export function AccountStatusPill({ status }: { status: ResidentListRecord["accountStatus"] }) {
-  const label = {
-    active: "Akun aktif",
-    inactive: "Akun nonaktif",
-    suspended: "Akun ditangguhkan",
-    not_provisioned: "Belum memiliki akun",
+  const presentation = {
+    active: { label: "Akun aktif", tone: "success" },
+    inactive: { label: "Akun nonaktif", tone: "neutral" },
+    suspended: { label: "Akun ditangguhkan", tone: "danger" },
+    not_provisioned: { label: "Belum memiliki akun", tone: "neutral" },
   }[status];
-  return (
-    <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-      {label}
-    </span>
-  );
+  return <StatusBadge label={presentation.label} tone={presentation.tone as StatusTone} />;
 }
 
 export function RentPaymentStatusPill({
@@ -163,111 +159,78 @@ export function RentPaymentStatusPill({
 }: {
   status: ResidentListRecord["rentPaymentStatus"];
 }) {
-  const presentation: Record<RentPaymentStatus, { label: string; className: string }> = {
-    none: { label: "Belum ada pembayaran", className: "bg-muted text-muted-foreground" },
+  const presentation: Record<RentPaymentStatus, { label: string; tone: StatusTone }> = {
+    none: { label: "Belum ada pembayaran", tone: "neutral" },
     pending_verification: {
       label: "Menunggu verifikasi",
-      className: "bg-warning/15 text-warning",
+      tone: "warning",
     },
     booking_fee: {
       label: "Booking fee",
-      className: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+      tone: "info",
     },
-    down_payment: { label: "DP / uang muka", className: "bg-primary-soft text-primary" },
+    down_payment: { label: "DP / uang muka", tone: "info" },
     initial_month_payment: {
       label: "Pembayaran awal 1 bulan",
-      className: "bg-primary-soft text-primary",
+      tone: "info",
     },
-    partial_payment: { label: "Outstanding", className: "bg-warning/15 text-warning" },
-    paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+    partial_payment: { label: "Outstanding", tone: "warning" },
+    paid_in_full: { label: "Lunas", tone: "success" },
     reversed_refunded: {
       label: "Dibatalkan / Direfund",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
     outstanding_balance: {
       label: "Ada saldo tunggakan",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
   };
   const current = presentation[status];
-  return (
-    <span
-      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
-    >
-      {current.label}
-    </span>
-  );
+  return <StatusBadge label={current.label} tone={current.tone} />;
 }
 
 function OwnerSponsoredBadge() {
-  return (
-    <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
-      Hunian Tanggungan Owner
-    </span>
-  );
+  return <StatusBadge label="Hunian Tanggungan Owner" tone="info" />;
 }
 
 function ManagementFeeModePill({ mode }: { mode: ResidentListRecord["managementFeeMode"] }) {
   if (!mode) {
-    return (
-      <span className="inline-flex max-w-full whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-        Ketentuan fee belum tersedia
-      </span>
-    );
+    return <StatusBadge label="Ketentuan fee belum tersedia" tone="neutral" />;
   }
 
   if (mode === "waived") {
-    return (
-      <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
-        Tanpa biaya pengelolaan
-      </span>
-    );
+    return <StatusBadge label="Tanpa biaya pengelolaan" tone="success" />;
   }
-  return (
-    <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary">
-      Dengan biaya pengelolaan
-    </span>
-  );
+  return <StatusBadge label="Dengan biaya pengelolaan" tone="info" />;
 }
 
 function ManagementFeeSettlementSummary({ resident }: { resident: ResidentListRecord }) {
   if (resident.managementFeeMode === "waived") {
     return (
       <div className="flex flex-col items-start gap-1.5">
-        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
-          Biaya dibebaskan
-        </span>
-        <span className="inline-flex max-w-full whitespace-nowrap rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
-          Lunas
-        </span>
+        <StatusBadge label="Biaya dibebaskan" tone="success" />
+        <StatusBadge label="Lunas" tone="success" />
       </div>
     );
   }
   const status = resident.managementFeePaymentStatus;
   if (!status) {
-    return (
-      <span className="inline-flex max-w-full whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-        Status fee belum tersedia
-      </span>
-    );
+    return <StatusBadge label="Status fee belum tersedia" tone="neutral" />;
   }
-  const presentation = {
-    unpaid: { label: "Belum dibayar", className: "bg-warning/15 text-warning" },
-    partially_paid: { label: "Outstanding", className: "bg-warning/15 text-warning" },
-    paid: { label: "Lunas", className: "bg-success/15 text-success" },
-    overpaid: { label: "Lunas", className: "bg-success/15 text-success" },
-  } as const;
-  const current = status !== "waived" ? presentation[status] : presentation.unpaid;
+  const presentation: Record<
+    NonNullable<ResidentListRecord["managementFeePaymentStatus"]>,
+    { label: string; tone: StatusTone }
+  > = {
+    waived: { label: "Biaya dibebaskan", tone: "success" },
+    unpaid: { label: "Belum dibayar", tone: "warning" },
+    partially_paid: { label: "Outstanding", tone: "warning" },
+    paid: { label: "Lunas", tone: "success" },
+    overpaid: { label: "Lunas", tone: "success" },
+  };
+  const current = presentation[status];
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <span
-        className={cn(
-          "inline-flex max-w-full whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium",
-          current.className,
-        )}
-      >
-        {current.label}
-      </span>
+      <StatusBadge label={current.label} tone={current.tone} />
       {status === "partially_paid" && resident.managementFeeRemainingAmount > 0 ? (
         <p className="text-xs font-semibold text-foreground">
           Sisa fee: {formatIDR(resident.managementFeeRemainingAmount)}
@@ -299,49 +262,47 @@ export function SettlementStagePill({
 }: {
   stage: ResidentListRecord["contractSettlementStage"];
 }) {
-  const presentation: Record<ContractSettlementStage, { label: string; className: string }> = {
-    none: { label: "Belum ada penyewaan", className: "bg-muted text-muted-foreground" },
-    awaiting_activation: { label: "Menunggu aktivasi", className: "bg-warning/15 text-warning" },
-    checkpoint_one_pending: { label: "Checkpoint 1", className: "bg-primary-soft text-primary" },
+  const presentation: Record<ContractSettlementStage, { label: string; tone: StatusTone }> = {
+    none: { label: "Belum ada penyewaan", tone: "neutral" },
+    awaiting_activation: { label: "Menunggu aktivasi", tone: "warning" },
+    checkpoint_one_pending: { label: "Checkpoint 1", tone: "info" },
     checkpoint_one_met: {
       label: "Checkpoint 1 terpenuhi",
-      className: "bg-success/15 text-success",
+      tone: "success",
     },
-    checkpoint_two_pending: { label: "Checkpoint 2", className: "bg-primary-soft text-primary" },
+    checkpoint_two_pending: { label: "Checkpoint 2", tone: "info" },
     checkpoint_two_met: {
       label: "Checkpoint 2 terpenuhi",
-      className: "bg-success/15 text-success",
+      tone: "success",
     },
-    final_settlement_due: { label: "Pelunasan akhir", className: "bg-warning/15 text-warning" },
-    overdue: { label: "Tunggakan checkpoint", className: "bg-destructive/15 text-destructive" },
-    overdue_grace: { label: "Masa toleransi", className: "bg-warning/15 text-warning" },
-    extended: { label: "Perpanjangan aktif", className: "bg-primary-soft text-primary" },
+    final_settlement_due: { label: "Pelunasan akhir", tone: "warning" },
+    overdue: { label: "Tunggakan checkpoint", tone: "danger" },
+    overdue_grace: { label: "Masa toleransi", tone: "warning" },
+    extended: { label: "Perpanjangan aktif", tone: "info" },
     admin_action_required: {
       label: "Tindakan admin diperlukan",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
     termination_eligible: {
       label: "Tindakan admin diperlukan",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
     termination_pending: {
       label: "Proses pemberhentian",
-      className: "bg-destructive/15 text-destructive",
+      tone: "danger",
     },
-    paid_in_full: { label: "Lunas", className: "bg-success/15 text-success" },
+    paid_in_full: { label: "Lunas", tone: "success" },
     preactivation_cancelled: {
       label: "Dibatalkan pra-aktivasi",
-      className: "bg-muted text-muted-foreground",
+      tone: "neutral",
     },
   };
   const current = presentation[stage];
-  return (
-    <span
-      className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", current.className)}
-    >
-      {current.label}
-    </span>
-  );
+  return <StatusBadge label={current.label} tone={current.tone} />;
+}
+
+function LeaseExpiryAttentionBadge() {
+  return <StatusBadge label="Masa sewa berakhir — proses check-out diperlukan" tone="danger" />;
 }
 
 export function formatResidentDate(value: string): string {
@@ -355,7 +316,9 @@ export function formatResidentDate(value: string): string {
 
 export function leaseDuration(record: ResidentListRecord): string {
   if (record.leaseAuthorityCount > 1) return "Perlu rekonsiliasi";
-  if (!record.leaseStart || !record.leaseEnd) return "Belum ada penyewaan";
+  if (!record.leaseStart || !record.leaseEnd) return record.leaseTermMonths
+    ? `${record.leaseTermMonths} bulan · Masa sewa belum dimulai—menunggu check-in`
+    : "Belum ada penyewaan";
   const start = new Date(`${record.leaseStart}T00:00:00Z`);
   const end = new Date(`${record.leaseEnd}T00:00:00Z`);
   const months = Math.max(
@@ -380,6 +343,7 @@ function TenantsPage() {
   const [pricingSource, setPricingSource] = useState<"negotiated" | "all">("all");
   const [commercialMode, setCommercialMode] = useState<"owner_sponsored" | "all">("all");
   const [managementFeeMode, setManagementFeeMode] = useState<"charged" | "waived" | "all">("all");
+  const correctionHistory = search.correctionHistory ?? "all";
   const [settlementStage, setSettlementStage] = useState<
     Exclude<ContractSettlementStage, "none"> | "all"
   >("all");
@@ -414,6 +378,7 @@ function TenantsPage() {
     pricingSource: pricingSource === "all" ? undefined : pricingSource,
     commercialMode: commercialMode === "all" ? undefined : commercialMode,
     managementFeeMode: managementFeeMode === "all" ? undefined : managementFeeMode,
+    correctionHistory: correctionHistory === "all" ? undefined : correctionHistory,
     settlementStage: settlementStage === "all" ? undefined : settlementStage,
     checkoutFinancialStatus:
       checkoutFinancialStatus === "all" ? undefined : checkoutFinancialStatus,
@@ -442,6 +407,7 @@ function TenantsPage() {
     pricingSource !== "all" ||
     commercialMode !== "all" ||
     managementFeeMode !== "all" ||
+    correctionHistory !== "all" ||
     settlementStage !== "all" ||
     checkoutFinancialStatus !== "all" ||
     deadlineWithinDays !== "" ||
@@ -457,6 +423,7 @@ function TenantsPage() {
     Number(pricingSource !== "all") +
     Number(commercialMode !== "all") +
     Number(managementFeeMode !== "all") +
+    Number(correctionHistory !== "all") +
     Number(settlementStage !== "all") +
     Number(checkoutFinancialStatus !== "all") +
     Number(deadlineWithinDays !== "") +
@@ -472,6 +439,7 @@ function TenantsPage() {
     pricingSource,
     commercialMode,
     managementFeeMode,
+    correctionHistory,
     settlementStage,
     checkoutFinancialStatus,
     deadlineTarget,
@@ -521,6 +489,9 @@ function TenantsPage() {
       : "",
     pricingSource !== "all" ? "tarif: Kesepakatan khusus" : "",
     commercialMode !== "all" ? "jenis hunian: Tanggungan Owner" : "",
+    correctionHistory !== "all"
+      ? `riwayat koreksi: ${correctionHistory === "ever" ? "Pernah dikoreksi" : "Belum pernah dikoreksi"}`
+      : "",
     managementFeeMode !== "all"
       ? `biaya pengelolaan: ${managementFeeMode === "charged" ? "Dengan biaya" : "Tanpa biaya"}`
       : "",
@@ -578,6 +549,10 @@ function TenantsPage() {
   }, [currentPropertyId]);
 
   useEffect(() => {
+    setOffset(0);
+  }, [correctionHistory]);
+
+  useEffect(() => {
     if (pendingScroll.current && !residents.isFetching && !residents.isPlaceholderData) {
       pendingScroll.current = false;
       resultsRef.current?.scrollIntoView({
@@ -590,6 +565,11 @@ function TenantsPage() {
   }, [residents.isFetching, residents.isPlaceholderData, attentionCategory]);
 
   const resetFilters = () => {
+    void navigate({
+      search: (previous) => ({ ...previous, correctionHistory: undefined }),
+      replace: true,
+      resetScroll: false,
+    });
     setAttentionCategory(null);
     setQ("");
     setResidentStatus("all");
@@ -767,6 +747,29 @@ function TenantsPage() {
                 <SelectItem value="awaiting_activation">Menunggu aktivasi kamar</SelectItem>
                 <SelectItem value="active">Penyewaan aktif</SelectItem>
                 <SelectItem value="none">Belum ada penyewaan</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={correctionHistory}
+              onValueChange={(value) => {
+                setOffset(0);
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    correctionHistory: value === "all" ? undefined : (value as "ever" | "never"),
+                  }),
+                  replace: true,
+                  resetScroll: false,
+                });
+              }}
+            >
+              <SelectTrigger className="min-h-11" aria-label="Filter riwayat koreksi penyewaan">
+                <SelectValue placeholder="Riwayat koreksi penyewaan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua riwayat koreksi</SelectItem>
+                <SelectItem value="ever">Pernah dikoreksi</SelectItem>
+                <SelectItem value="never">Belum pernah dikoreksi</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -1053,7 +1056,9 @@ function TenantsPage() {
                       className="border-b border-border transition-colors last:border-0 hover:bg-muted/30"
                     >
                       <td className="px-4 py-3 text-muted-foreground">{offset + index + 1}</td>
-                      <td className="px-4 py-3 font-medium">{resident.fullName}</td>
+                      <td className="px-4 py-3 font-medium">
+                        {resident.fullName}
+                      </td>
                       <td className="px-4 py-3">{resident.roomNumber ?? "Belum ditempatkan"}</td>
                       <td className="px-4 py-3">{resident.university ?? "Belum diisi"}</td>
                       <td className="px-4 py-3">
@@ -1081,23 +1086,21 @@ function TenantsPage() {
                             <SettlementStagePill stage={resident.contractSettlementStage} />
                             {resident.contractSettlementStage === "paid_in_full" &&
                             resident.leaseEnd ? (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs font-semibold text-foreground">
                                 Jadwal check-out: {formatResidentDate(resident.leaseEnd)}
                               </p>
                             ) : resident.contractSettlementStage === "awaiting_activation" ? (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs font-semibold text-foreground">
                                 Aktivasi kamar diperlukan
                               </p>
                             ) : resident.contractSettlementDueDate ? (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs font-semibold text-foreground">
                                 Tenggat pembayaran:{" "}
                                 {formatResidentDate(resident.contractSettlementDueDate)}
                               </p>
                             ) : null}
                             {resident.leaseExpiredAdminActionRequired ? (
-                              <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
-                                Masa sewa berakhir — proses check-out diperlukan
-                              </span>
+                              <LeaseExpiryAttentionBadge />
                             ) : null}
                           </div>
                         )}
@@ -1105,6 +1108,11 @@ function TenantsPage() {
                       <td className="px-4 py-3">
                         <div className="space-y-1.5">
                           <ResidentStatusPill status={resident.residentStatus} />
+                          {(resident.leaseCorrectionCount ?? 0) > 0 ? (
+                            <p className="text-xs font-semibold">
+                              Riwayat koreksi · {resident.leaseCorrectionCount} kali
+                            </p>
+                          ) : null}
                           {resident.commercialMode === "owner_sponsored" ? (
                             <OwnerSponsoredBadge />
                           ) : null}
@@ -1170,7 +1178,7 @@ function TenantsPage() {
                     (deadlineTarget === "settlement"
                       ? resident.contractSettlementDueDate
                       : resident.leaseEnd) ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className={`mt-1 text-xs ${deadlineTarget === "settlement" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                         {deadlineTarget === "settlement" ? "Tenggat pembayaran" : "Akhir sewa"}:{" "}
                         {formatResidentDate(
                           deadlineTarget === "settlement"
@@ -1192,11 +1200,14 @@ function TenantsPage() {
                         </>
                       )}
                       {resident.leaseExpiredAdminActionRequired ? (
-                        <span className="inline-flex rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
-                          Masa sewa berakhir — proses check-out diperlukan
-                        </span>
+                        <LeaseExpiryAttentionBadge />
                       ) : null}
                       <ResidentStatusPill status={resident.residentStatus} />
+                      {(resident.leaseCorrectionCount ?? 0) > 0 ? (
+                        <p className="basis-full text-xs font-semibold">
+                          Riwayat koreksi · {resident.leaseCorrectionCount} kali
+                        </p>
+                      ) : null}
                       {resident.commercialMode === "owner_sponsored" ? (
                         <OwnerSponsoredBadge />
                       ) : null}

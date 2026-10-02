@@ -8,8 +8,11 @@ import {
   type PDFImage,
   type PDFPage,
 } from 'pdf-lib';
+import { servicePeriodLabel } from '../../lease/lease-service-period.helper';
 
 export type BillingInvoiceDocumentData = {
+  periodAuthorityNote?: string;
+  servicePeriodPending?: boolean;
   invoiceCode: string;
   invoiceStatus: string;
   invoicePurpose: 'rent' | 'other_charge';
@@ -44,6 +47,8 @@ export type BillingInvoiceDocument = {
 };
 
 export type BillingReceiptDocumentData = {
+  periodAuthorityNote?: string;
+  servicePeriodPending?: boolean;
   receiptCode: string;
   paymentCode: string;
   paymentMethod: string;
@@ -94,6 +99,7 @@ export type BillingReceiptDocument = {
 };
 
 export type OwnerSponsoredManagementFeeDocumentData = {
+  servicePeriodPending?: boolean;
   documentCode: string;
   residentName: string;
   roomNumber: string;
@@ -118,9 +124,11 @@ export type OwnerSponsoredManagementFeeDocumentData = {
 
 export type OwnerSponsoredResidenceStatementData = OwnerSponsoredManagementFeeDocumentData;
 
-export const BILLING_DOCUMENT_RENDERER_VERSION = 'room-label-v2';
+export const BILLING_DOCUMENT_RENDERER_VERSION = 'check-in-period-v3';
 
 export type ContractPaidDocumentSnapshot = {
+  periodAuthorityNote?: string;
+  servicePeriodPending?: boolean;
   documentCode: string;
   residentName: string;
   roomNumber: string;
@@ -438,7 +446,7 @@ export async function createBillingInvoicePdf(
   };
   const isRentInvoice = data.invoicePurpose === 'rent';
   const contractPeriod = isRentInvoice
-    ? invoiceContractPeriod(data.contractStart, data.contractEnd, data.leaseTermMonths)
+    ? invoiceContractPeriod(data.contractStart, data.contractEnd, data.leaseTermMonths, data.servicePeriodPending)
     : null;
   const coveragePeriod = `${receiptDate(data.coverageStart)} s.d. ${receiptDate(data.coverageEnd)}`;
   const rows: Array<[string, string]> = [
@@ -449,7 +457,7 @@ export async function createBillingInvoicePdf(
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     [
       'Jatuh Tempo Tagihan',
-      receiptDate(data.currentSettlementDueAt ?? data.finalSettlementDueAt ?? data.dueDate, true),
+      isRentInvoice && data.servicePeriodPending ? 'Ditentukan setelah check-in' : receiptDate(data.currentSettlementDueAt ?? data.finalSettlementDueAt ?? data.dueDate, true),
     ],
     ['Status invoice', statusLabels[data.invoiceStatus] ?? label(data.invoiceStatus)],
     ['Nilai tagihan awal', idr(data.totalAmount)],
@@ -460,6 +468,7 @@ export async function createBillingInvoicePdf(
     // and document identity in the service layer.
     ['Diterbitkan', receiptDate(data.printedAt ?? data.issuedAt ?? new Date(), true)],
   ];
+  if (data.periodAuthorityNote) rows.push(['Catatan periode', data.periodAuthorityNote]);
   if (isRentInvoice && data.contractRentAmount != null) {
     rows.splice(
       3,
@@ -476,7 +485,7 @@ export async function createBillingInvoicePdf(
       ['Nilai kontrak', idr(data.contractRentAmount)],
     );
   }
-  if (isRentInvoice && data.finalSettlementDueAt) {
+  if (isRentInvoice && data.finalSettlementDueAt && !data.servicePeriodPending) {
     rows.splice(
       rows.findIndex(([labelText]) => labelText === 'Status invoice'),
       0,
@@ -637,7 +646,9 @@ function receiptPeriod(
   start: BillingReceiptDocumentData['leaseStart'],
   end: BillingReceiptDocumentData['leaseEnd'],
   termMonths?: number | null,
+  pending = false,
 ) {
+  if (pending) return servicePeriodLabel(true, termMonths)!;
   if (!start) return 'Sesuai alokasi tagihan';
   const duration = leaseDuration(termMonths ?? inferLeaseTermMonths(start, end));
   const dates = `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
@@ -648,7 +659,9 @@ function invoiceContractPeriod(
   start: string | null | undefined,
   end: string | null | undefined,
   termMonths?: number | null,
+  pending = false,
 ): string | null {
+  if (pending) return servicePeriodLabel(true, termMonths);
   if (!start) return null;
   const duration = leaseDuration(termMonths ?? inferLeaseTermMonths(start, end));
   const dates = `${receiptDate(start)} s.d. ${end ? receiptDate(end) : 'berjalan'}`;
@@ -972,11 +985,12 @@ export async function createBillingReceiptPdf(
     ['Tanggal pembayaran', receiptDate(data.paidAt, true)],
     [
       data.periodLabel ?? 'Periode sewa',
-      receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths),
+      receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths, data.servicePeriodPending),
     ],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Pembayaran via', method],
   ];
+  if (data.periodAuthorityNote) rows.push(['Catatan periode', data.periodAuthorityNote]);
   if (!data.detailRows && data.agreedMonthlyPrice != null) {
     rows.splice(
       6,
@@ -1041,7 +1055,7 @@ export async function createBillingReceiptPdf(
         ['Sisa pelunasan', idr(data.remainingRentAmount!)],
         [
           'Batas akhir pelunasan',
-          data.remainingRentAmount! <= 0 ? 'Lunas' : receiptDate(data.finalSettlementDueAt ?? null),
+        data.remainingRentAmount! <= 0 ? 'Lunas' : data.servicePeriodPending ? 'Ditentukan setelah check-in' : receiptDate(data.finalSettlementDueAt ?? null),
         ],
       ]
     : [];
@@ -1127,6 +1141,7 @@ export async function createBillingReceiptPdf(
 }
 
 export type OwnerSponsoredManagementFeeReceiptData = {
+  servicePeriodPending?: boolean;
   receiptCode: string;
   paymentCode: string;
   paymentMethod: string;
@@ -1189,7 +1204,7 @@ export async function createOwnerSponsoredManagementFeeReceiptPdf(
       ['Jumlah transfer pada kuitansi ini', idr(data.amount)],
       ['Untuk pembayaran', 'Biaya pengelolaan hunian tanggungan Owner'],
       ['Tanggal pembayaran', receiptDate(data.paidAt, true)],
-      ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+      ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths, data.servicePeriodPending)],
       ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
       [
         'Ketentuan biaya pengelolaan',
@@ -1234,7 +1249,7 @@ export async function createOwnerSponsoredManagementFeeDocumentPdf(
     ['Penghuni', data.residentName],
     ['Owner pemilik kamar', `${data.ownerName} (Owner)`],
     ['Penanggung biaya pengelolaan', payer],
-    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths, data.servicePeriodPending)],
     ['Kamar No.', formatRoomDescription(data.roomNumber, data.buildingCode)],
     ['Ketentuan biaya pengelolaan', 'Dibayar fleksibel tanpa jatuh tempo dan denda'],
     ['Biaya pengelolaan per bulan', idr(data.monthlyManagementFee)],
@@ -1282,7 +1297,7 @@ export async function createOwnerSponsoredResidenceStatementPdf(
     ['Nama penghuni', data.residentName],
     ['Owner pemilik kamar', `${data.ownerName} (Owner)`],
     ['Status hunian', 'Hunian Tanggungan Owner — sewa kamar Rp0'],
-    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths)],
+    ['Periode hunian', receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths, data.servicePeriodPending)],
     ['Kamar', formatRoomDescription(data.roomNumber, data.buildingCode)],
     [
       'Ketentuan biaya pengelolaan',
@@ -1327,7 +1342,7 @@ export function createContractPaidDocumentPdf(
     : data.transactionCodes.length
       ? data.transactionCodes.join(', ')
       : 'Sesuai riwayat pembayaran terverifikasi';
-  const period = receiptPeriod(data.leaseStart, data.leaseEnd);
+  const period = receiptPeriod(data.leaseStart, data.leaseEnd, data.leaseTermMonths, data.servicePeriodPending);
   const commercialRows: Array<[string, string]> = [];
   if (data.leaseTermMonths && data.agreedMonthlyPrice) {
     commercialRows.push(
@@ -1388,6 +1403,7 @@ export function createContractPaidDocumentPdf(
     leaseStart: data.leaseStart,
     leaseEnd: data.leaseEnd,
     documentTitle: 'BUKTI PELUNASAN KONTRAK SEWA',
+    periodAuthorityNote: data.periodAuthorityNote,
     documentNumberLabel: 'Nomor Dokumen',
     documentStatusNote: invalidation ? 'STATUS DOKUMEN: DIBATALKAN' : undefined,
     detailRows,

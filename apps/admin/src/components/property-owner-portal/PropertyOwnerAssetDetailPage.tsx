@@ -17,6 +17,7 @@ import {
 import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
 import { ErrorState, LoadingState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
@@ -78,22 +79,38 @@ const label = (value: string): string => {
 };
 
 function StatusPill({ value }: { value: string }) {
-  const muted = ["vacant", "inactive", "ended", "cancelled"].includes(value);
-  const warning = [
-    "awaiting_check_in",
-    "maintenance",
-    "requires_review",
-    "awaiting_activation",
-    "unpaid",
-    "partially_paid",
-  ].includes(value);
+  const tones: Record<string, StatusTone> = {
+    vacant: "success",
+    reserved: "warning",
+    awaiting_check_in: "warning",
+    occupied: "info",
+    maintenance: "warning",
+    inactive: "neutral",
+    requires_review: "danger",
+    active: "success",
+    draft: "neutral",
+    awaiting_activation: "warning",
+    ended: "neutral",
+    completed: "success",
+    cancelled: "neutral",
+    transferred: "info",
+    current: "info",
+    partially_paid: "warning",
+    waived: "neutral",
+    overdue: "danger",
+    settled: "success",
+    not_available: "neutral",
+    scheduled: "info",
+    inspection_required: "warning",
+    unpaid: "warning",
+    paid: "success",
+    overpaid: "warning",
+  };
   return (
-    <Badge
-      variant="outline"
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${warning ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : muted ? "border-border bg-muted/50 text-muted-foreground" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
-    >
-      {label(value)}
-    </Badge>
+    <StatusBadge
+      label={tones[value] ? label(value) : "Status tidak diketahui"}
+      tone={tones[value] ?? "neutral"}
+    />
   );
 }
 
@@ -109,15 +126,14 @@ function OwnerSponsorshipStatusPill({
     paid: "Lunas",
     overpaid: "Lebih bayar",
   } as const;
-  const attention = value === "unpaid" || value === "partially_paid";
-  return (
-    <Badge
-      variant="outline"
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${attention ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"}`}
-    >
-      {copy[value]}
-    </Badge>
-  );
+  const tones = {
+    waived: "neutral",
+    unpaid: "warning",
+    partially_paid: "warning",
+    paid: "success",
+    overpaid: "warning",
+  } as const;
+  return <StatusBadge label={copy[value]} tone={tones[value]} />;
 }
 
 function DataItem({ label: title, value }: { label: string; value: string }) {
@@ -251,9 +267,7 @@ function DetailContent({
                 </div>
               </div>
             ) : (
-              <Badge className="border-warning/30 bg-warning/15 text-warning-foreground">
-                Penyelesaian keuangan belum ditetapkan
-              </Badge>
+              <StatusBadge label="Penyelesaian keuangan belum ditetapkan" tone="warning" />
             )}
           </div>
           <p className="mt-4 border-t border-warning/20 pt-4 text-xs leading-5 text-muted-foreground">
@@ -439,8 +453,8 @@ function DetailContent({
               label="Status penyewaan"
               value={lease ? label(lease.status) : "Tidak aktif"}
             />
-            <DataItem label="Mulai" value={lease ? date(lease.startDate) : "Tidak tercatat"} />
-            <DataItem label="Selesai" value={lease ? date(lease.endDate) : "Tidak tercatat"} />
+            <DataItem label="Mulai" value={lease?.servicePeriodPending ? "Menunggu check-in" : lease ? date(lease.startDate) : "Tidak tercatat"} />
+            <DataItem label="Selesai" value={lease?.servicePeriodPending ? "Ditentukan setelah check-in" : lease ? date(lease.endDate) : "Tidak tercatat"} />
             <DataItem label="Durasi" value={lease ? "Mengikuti periode sewa" : "Tidak tercatat"} />
             <DataItem
               label="Status hunian"

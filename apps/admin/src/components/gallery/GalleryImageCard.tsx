@@ -5,6 +5,7 @@
 
 import { ArrowDown, ArrowUp, ImageOff, Pencil, Star, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,11 +74,9 @@ export function GalleryImageCard({
             </Badge>
           ) : null}
           {image.publicVisible ? (
-            <Badge variant="secondary" className="bg-success/15 text-success">
-              Publik
-            </Badge>
+            <StatusBadge label="Publik" tone="success" />
           ) : (
-            <Badge variant="secondary">Draft</Badge>
+            <StatusBadge label="Draf" tone="neutral" />
           )}
         </div>
         <span className="absolute right-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-medium">

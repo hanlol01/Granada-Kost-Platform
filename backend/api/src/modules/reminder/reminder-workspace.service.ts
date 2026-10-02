@@ -125,7 +125,7 @@ export class ReminderWorkspaceService {
          WHERE i.property_id=l.property_id AND i.lease_id=l.id
            AND i.invoice_status IN ('issued','partially_paid','overdue')
        ) arrears ON true
-       WHERE l.property_id=$1 AND l.lease_status='active' AND l.end_date IS NOT NULL
+       WHERE l.property_id=$1 AND l.lease_status='active' AND l.end_date IS NOT NULL AND l.service_period_state<>'pending_check_in'
        ORDER BY l.end_date ASC,l.id ASC`,
       [propertyId],
     );

@@ -31,6 +31,8 @@ function detailWire() {
       property_id: PROPERTY_ID,
       number: "RK-01-01",
       room_code: "RK-01-01",
+      manager_room_label: "Rumah Kost · Unit 1, Kamar 1",
+      plot_number: null,
       building: { id: BUILDING_ID, code: "RK-01", name: "RuKost 01" },
       category: { id: TYPE_ID, code: "rukost", name: "Rumah Kost" },
       physical: {
@@ -326,6 +328,39 @@ test("room detail parser is an exact nested whitelist and preserves safe edit au
   );
 });
 
+test("correction activity exposes only a safe resident-detail link", () => {
+  const event = {
+    event_type: "lease_lease_data_corrected",
+    label: "Data penyewaan dikoreksi",
+    occurred_at: "2026-10-02T03:00:00.000Z",
+    description: "Penghuni uji",
+    resident_path: `/tenants/${RESIDENT_ID}`,
+  };
+  const wire = detailWire();
+  const parsed = parseRoomDetailEnvelope({ data: { ...wire.data, timeline: [event] } });
+  assert.equal(parsed.timeline[0].residentPath, `/tenants/${RESIDENT_ID}`);
+  for (const path of [
+    "https://example.test/tenants",
+    "/settings",
+    `/tenants/${RESIDENT_ID}?token=private`,
+    "/tenants/not-a-uuid",
+  ]) {
+    assert.throws(() =>
+      parseRoomDetailEnvelope({
+        data: { ...wire.data, timeline: [{ ...event, resident_path: path }] },
+      }),
+    );
+  }
+  assert.throws(() =>
+    parseRoomDetailEnvelope({
+      data: {
+        ...wire.data,
+        timeline: [{ ...event, event_type: "room_updated", label: "Inventori kamar diperbarui" }],
+      },
+    }),
+  );
+});
+
 test("detail cache is isolated by account, property, and canonical room number", () => {
   const first = adminUxQueryKeys.rooms.detailByNumber("account-a", "property-a", " RK-01-01 ");
   assert.deepEqual(first, ["roomDetail", "account-a", "property-a", "RK-01-01"]);
@@ -362,7 +397,8 @@ test("production route, table navigation, and registry expose one full-page deta
   assert.match(page, /Breadcrumb detail kamar/);
   assert.match(page, /KOST_TYPE_LABEL\[detail\.category\.code\]/);
   assert.match(page, /ownershipSourceLabel\(detail\.ownership\.source\)/);
-  assert.match(page, /ownershipPeriodLabel\(/);
+  assert.match(page, /detail\.ownership\.assignmentStatus === "active"/);
+  assert.doesNotMatch(page, /ownershipPeriodLabel\(/);
   assert.doesNotMatch(page, /ownershipReconciliationRequired|KMO-W10|Kebijakan default/);
 });
 
@@ -404,8 +440,8 @@ test("full page keeps every operational section, terminal state, and honest quic
 test("room detail keeps semantic status badges and aligned high-contrast data cards", () => {
   const page = source("components/rooms/RoomDetailPage.tsx");
 
-  assert.match(page, /roomStatusBadgeClass\(detail\.physical\.status\)/);
-  assert.match(page, /bg-success\/10/);
+  assert.match(page, /tone=\{ROOM_STATUS_TONE\[detail\.physical\.status\]\}/);
+  assert.match(page, /vacant: "success"/);
   assert.match(page, /border-foreground\/15/);
   assert.match(page, /className="min-w-0 h-full"/);
   assert.match(page, /className="h-full min-w-0/);

@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge as SemanticStatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PayoutBankCombobox } from "@/components/forms/PayoutBankCombobox";
 import {
@@ -247,21 +248,17 @@ function StatusBadge({
   children,
   tone = "slate",
 }: {
-  children: React.ReactNode;
+  children: string;
   tone?: "green" | "blue" | "amber" | "slate" | "red";
 }) {
-  const styles = {
-    green: "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
-    blue: "border-sky-500/35 bg-sky-500/12 text-sky-700 dark:text-sky-300",
-    amber: "border-amber-500/35 bg-amber-500/12 text-amber-700 dark:text-amber-300",
-    red: "border-destructive/35 bg-destructive/10 text-destructive",
-    slate: "border-border bg-muted/50 text-foreground",
+  const tones: Record<typeof tone, StatusTone> = {
+    green: "success",
+    blue: "info",
+    amber: "warning",
+    red: "danger",
+    slate: "neutral",
   };
-  return (
-    <Badge variant="outline" className={cn("rounded-full font-medium", styles[tone])}>
-      {children}
-    </Badge>
-  );
+  return <SemanticStatusBadge label={children} tone={tones[tone]} />;
 }
 
 function OwnerRoomInventory({ rooms }: { rooms: readonly OwnerInventoryRoom[] }) {
@@ -1773,7 +1770,7 @@ function OwnerDetailPageContent({
                 Lihat kredensial Owner
               </Button>
               {detail.profileStatus === "active" && (
-                <Button variant="outline" onClick={onCloseReport}>
+                <Button variant="default" onClick={onCloseReport}>
                   <CalendarClock className="mr-2 size-4" />
                   Kelola laporan Owner
                 </Button>

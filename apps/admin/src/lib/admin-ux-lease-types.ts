@@ -144,6 +144,16 @@ export type LeaseDataCorrectionRecord = LeaseDataCorrectionPreview & {
   createdAt: string;
 };
 
+export type ResidentLeaseCorrectionRecord = Omit<
+  LeaseDataCorrectionRecord,
+  "previous" | "corrected" | "commercialMode" | "pricingChoiceRequired"
+> & {
+  previous: Partial<LeaseDataCorrectionSnapshot>;
+  corrected: Partial<LeaseDataCorrectionSnapshot>;
+  createdByName: string | null;
+  roomNumber: string | null;
+};
+
 export type CheckoutState =
   | "notice_received"
   | "scheduled"

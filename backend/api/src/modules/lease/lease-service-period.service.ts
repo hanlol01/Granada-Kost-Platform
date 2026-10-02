@@ -66,8 +66,6 @@ export class LeaseServicePeriodService {
           contractRentAmount: Number(lease.contract_rent_amount),
           verifiedPaymentAmount: Number(facts.rows[0].received),
           documentCount: Number(facts.rows[0].document_count),
-          reasonRequired:
-            date.business_date !== lease.planned_start_date || date.business_date !== date.today,
         },
       };
     });
@@ -122,6 +120,7 @@ export class LeaseServicePeriodService {
     await this.assertAvailable(client, lease, period.startDate!, period.endDate!, input.source);
     const reason = input.reason?.trim();
     if (
+      input.source === 'lease_data_correction' &&
       (date.business_date !== lease.planned_start_date || date.business_date !== date.today) &&
       (!reason || reason.length < 3)
     )

@@ -31,7 +31,7 @@ The user authorized implementation after approving this plan. The implementation
 | A 12-month lease exists but the resident is not checked in | Show “12 months” and “Masa sewa belum dimulai—menunggu check-in”; show no effective start–end range. |
 | Admin activates the lease without physical check-in | Keep the service period pending; show activation as a separate operational fact. |
 | Physical check-in actually occurs 1 October 2026 | Effective service coverage is 1 October 2026 through 30 September 2027. The exclusive lease end is 1 October 2027 if the existing date model uses an exclusive end. |
-| Admin records that event on 2 October 2026 | Service still starts on 1 October, with the later recording time and required reason retained in the audit trail. |
+| Admin records that event on 2 October 2026 | Service still starts on 1 October; the later recording time is retained, and an optional note is saved when supplied. |
 | Invoice or receipt is downloaded after check-in | Current version shows the effective period; payment received on 5 September still says 5 September. Earlier issued versions remain readable as history. |
 
 The example is a policy illustration; the actual resident’s stored dates, duration, payment allocations, document issuance, and Owner state must be inspected read-only before any individual correction.
@@ -91,7 +91,7 @@ No stage may claim completion from a UI-only change. Do not run production migra
 - Activation-only followed by later check-in; no period, earned rent, or Owner-ready status between the two events.
 - Combined activation and check-in; retry/idempotency; failed billing reconciliation leaves neither a false check-in nor partial invoice/version changes.
 - Full prepayment before check-in; no duplicate charge/allocation, paid balance preserved, Owner realization excluded until physical check-in.
-- Planned date equals, precedes, or follows actual check-in; retrospective entry has a required reason and recorded-at provenance; early entry validates room and occupancy conflicts.
+- Planned date equals, precedes, or follows actual check-in; retrospective entry accepts an optional note and retains recorded-at provenance; early entry validates room and occupancy conflicts.
 - Terms of 1, 2, 3, 11, and 12 months, plus month-end/leap-year starts; inclusive service coverage and exclusive stored end remain consistent across documents and checkout.
 - Invoice/receipt generated before and after check-in; current version displays actual dates, historical version remains readable/superseded, transaction date never changes.
 - Checkout, late-grace, reminders, policy checkpoints, earning, management fee, Owner view, and PDF/XLSX outputs use the same effective period.
@@ -137,7 +137,7 @@ The tests live in `backend/api/test/lease-service-period/`. All opt-in database 
 
 1. Local development requires the rebuilt API to be restarted by its operator and the browser refreshed. Do not terminate an unrelated/user-owned port-3000 process automatically.
 2. Check a real pre-check-in resident read-only: duration and pending service should appear without a final range. Confirm activation-only does not start the period. Any physical check-in or historical correction of a real resident requires the operator's intentional action.
-3. Test the impact preview, changed/backdated reason, current document download, original-period/document access, and period history in Admin; verify pending versus occupied presentation in Penghuni and Owner access.
+3. Test the impact preview, changed/backdated check-in with and without an optional note, current document download, original-period/document access, and period history in Admin; verify pending versus occupied presentation in Penghuni and Owner access.
 4. Before VPS deployment, back up production, verify its ledger and migration-114 checksum with the official runner, build API/Admin/Penghuni, then perform authorized service restart and authenticated smoke tests. No manual ledger insertion, seed, or historical date backfill is required.
 5. Do not commit `.checkin-proof-build` or `.checkin-test-build`; they are disposable compilation outputs. Handoff 08 correction/archive/purge work remains unimplemented and parked.
 

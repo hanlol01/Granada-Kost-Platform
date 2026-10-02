@@ -107,7 +107,6 @@ export function useLeaseCheckInPreview(
           contractRentAmount: number;
           verifiedPaymentAmount: number;
           documentCount: number;
-          reasonRequired: boolean;
         };
       }>(
         `/leases/${encodeURIComponent(leaseId!)}/check-in/preview`,
@@ -121,7 +120,6 @@ export function useLeaseCheckInPreview(
         !/^\d{4}-\d{2}-\d{2}$/.test(data.endDate) ||
         !Number.isSafeInteger(data.termMonths) ||
         data.termMonths < 1 ||
-        typeof data.reasonRequired !== "boolean" ||
         !Number.isSafeInteger(data.contractRentAmount) ||
         !Number.isSafeInteger(data.verifiedPaymentAmount) ||
         !/^\d{4}-\d{2}-\d{2}$/.test(data.plannedStartDate) ||

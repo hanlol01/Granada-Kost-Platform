@@ -49,6 +49,7 @@ import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { HeroUiDatePicker } from "@/components/ui/heroui-date-picker";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -742,8 +743,8 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const residentName = resident.fullName.trim() || "Tanpa nama";
   const currentTenancy = tenancy.data ?? null;
   const checkInMinimumDate = undefined;
-  const checkInReviewReady = !!checkInPreview.data && !checkInPreview.isFetching && !checkInPreview.error &&
-    (!checkInPreview.data.reasonRequired || checkInReason.trim().length >= 3);
+  const checkInPreviewReady =
+    !!checkInPreview.data && !checkInPreview.isFetching && !checkInPreview.error;
   const servicePeriodPending = currentTenancy?.servicePeriodState === "pending_check_in";
   const canManage = hasPermission("resident.manage");
   const canActivate =
@@ -1854,7 +1855,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         }
         confirmLabel={activationOnly ? "Aktifkan kamar saja" : "Aktifkan & check-in"}
         pending={activation.isPending}
-        confirmDisabled={!activationEffectiveDate || (!activationOnly && (!checkInEffectiveDate || !checkInReviewReady))}
+        confirmDisabled={!activationEffectiveDate || (!activationOnly && (!checkInEffectiveDate || !checkInPreviewReady))}
         onConfirm={async () => {
           if (!currentTenancy || !activationEffectiveDate) return;
           await activation.mutateAsync({
@@ -1990,7 +1991,7 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         description="Pastikan penghuni benar-benar telah menerima kamar. Tanggal ini memulai masa sewa sesuai durasi yang disepakati."
         confirmLabel="Konfirmasi check-in"
         pending={checkIn.isPending}
-        confirmDisabled={!checkInEffectiveDate || !checkInReviewReady}
+        confirmDisabled={!checkInEffectiveDate || !checkInPreviewReady}
         onConfirm={async () => {
           if (!currentTenancy || !checkInEffectiveDate) return;
           await checkIn.mutateAsync({
@@ -2067,8 +2068,16 @@ function CheckInPeriodReview({ preview, reason, onReasonChange }: {
       <dt>Pembayaran tercatat</dt><dd>{rupiah(data.verifiedPaymentAmount)}</dd>
     </dl>
     <p className="text-xs leading-5 text-muted-foreground">Tanggal dan nominal pembayaran tidak berubah. {data.documentCount} dokumen tetap tersimpan; unduhan terbaru mengikuti periode yang berlaku.</p>
-    <label className="block text-sm font-medium" htmlFor="check-in-period-reason">Alasan pencatatan{data.reasonRequired ? " *" : " (opsional)"}</label>
-    <Input id="check-in-period-reason" maxLength={160} value={reason} onChange={event => onReasonChange(event.target.value)} placeholder="Jelaskan perubahan tanggal atau pencatatan historis" aria-required={data.reasonRequired} />
+    <label className="block text-sm font-medium" htmlFor="check-in-period-reason">Alasan pencatatan (opsional)</label>
+    <Textarea
+      id="check-in-period-reason"
+      maxLength={160}
+      rows={3}
+      className="min-h-20 resize-y"
+      value={reason}
+      onChange={(event) => onReasonChange(event.target.value)}
+      placeholder="Tambahkan catatan jika diperlukan"
+    />
   </div>;
 }
 

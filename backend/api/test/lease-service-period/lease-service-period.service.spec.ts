@@ -66,6 +66,7 @@ function fixture(
       actorId: 'actor',
       commandFingerprint: 'command',
       reason: overrides.reason as string | undefined,
+      source: overrides.source as 'physical_check_in' | 'lease_data_correction' | undefined,
     });
   return { run, writes };
 }
@@ -83,8 +84,13 @@ void test('future physical check-in is rejected with an operational message', as
   await rejectsCode(f.run, 'LEASE_CHECK_IN_TIME_INVALID');
   assert.deepEqual(f.writes, []);
 });
-void test('retrospective or changed planned date requires a reason', async () => {
+void test('physical check-in can use a changed planned date without an additional reason', async () => {
   const f = fixture();
+  await rejectsCode(f.run, 'LEASE_SERVICE_PERIOD_BILLING_RECONCILIATION_REQUIRED');
+  assert.deepEqual(f.writes, []);
+});
+void test('lease correction still requires a reason when changing the effective date', async () => {
+  const f = fixture(base, { source: 'lease_data_correction' });
   await rejectsCode(f.run, 'LEASE_SERVICE_PERIOD_REASON_REQUIRED');
   assert.deepEqual(f.writes, []);
 });

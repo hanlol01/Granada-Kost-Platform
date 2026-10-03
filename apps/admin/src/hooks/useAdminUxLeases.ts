@@ -152,6 +152,33 @@ export function useM6LeaseAvailableRooms(q = "", commercialDate?: string) {
   });
 }
 
+export function useM6LeaseRoomChoices(q = "", commercialDate?: string) {
+  const { currentPropertyId } = useProperty();
+  const keyFilters = { q, status: "all", limit: SELECT_LIMIT, commercialDate };
+  return useQuery({
+    queryKey: adminUxQueryKeys.rooms.availability(currentPropertyId ?? "", keyFilters),
+    queryFn: async () => {
+      const input = {
+        propertyId: currentPropertyId!,
+        q,
+        commercialDate,
+        limit: SELECT_LIMIT,
+      };
+      const first = await adminUxLeaseApi.rooms.listChoices({ ...input, offset: 0 });
+      const items = [...first.items];
+      while (items.length < first.total) {
+        const next = await adminUxLeaseApi.rooms.listChoices({ ...input, offset: items.length });
+        if (next.items.length === 0)
+          throw new Error("Daftar kamar belum lengkap. Muat ulang halaman.");
+        items.push(...next.items);
+      }
+      return { ...first, items };
+    },
+    enabled: Boolean(currentPropertyId),
+    placeholderData: keepPreviousData,
+  });
+}
+
 type LeaseMutationRunner<TData, TVariables> = (
   propertyId: string,
   variables: TVariables,

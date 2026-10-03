@@ -1094,10 +1094,48 @@ export const adminUxLeaseApi = {
           },
         })
         .then((envelope) => parseAvailableRooms(envelope, input.propertyId)),
+    listChoices: (input: LeasePageInput & { q?: string; commercialDate?: string }) =>
+      adminUxV2Requester
+        .get<V2ListEnvelope<unknown>>("/rooms", {
+          query: {
+            ...pageQuery(input),
+            include_lease_availability: true,
+            q: text(input.q),
+            commercial_date: input.commercialDate,
+          },
+        })
+        .then((envelope) => parseLeaseRoomChoices(envelope, input.propertyId)),
   },
 };
 
-export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedPropertyId: string) {
+const ROOM_STATUSES = new Set<string>([
+  "vacant",
+  "reserved",
+  "awaiting_check_in",
+  "occupied",
+  "maintenance",
+  "inactive",
+  "requires_review",
+  "inspection_required",
+]);
+const UNAVAILABLE_REASONS = new Set<string>([
+  "reserved",
+  "awaiting_check_in",
+  "occupied",
+  "maintenance",
+  "inactive",
+  "requires_review",
+  "inspection_required",
+  "active_lease",
+  "onboarding",
+  "booking_hold",
+]);
+
+function parseRoomOptions(
+  envelope: V2ListEnvelope<unknown>,
+  expectedPropertyId: string,
+  includeUnavailable: boolean,
+) {
   const page = mapV2Page<Record<string, unknown>>(envelope);
   if (
     ![page.total, page.limit, page.offset].every(
@@ -1110,11 +1148,20 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
     ...page,
     items: page.items.map((item): LeaseRoomOption => {
       const kostType = item.kostType;
+      const unavailableReason = item.leaseUnavailableReason;
       if (
         typeof item.id !== "string" ||
         typeof item.number !== "string" ||
         item.propertyId !== expectedPropertyId ||
-        item.status !== "vacant" ||
+        !ROOM_STATUSES.has(String(item.status)) ||
+        (!includeUnavailable && item.status !== "vacant") ||
+        (includeUnavailable &&
+          (unavailableReason === undefined ||
+            (unavailableReason !== null && !UNAVAILABLE_REASONS.has(String(unavailableReason))) ||
+            (item.status !== "vacant" && unavailableReason === null))) ||
+        (item.plotNumber !== undefined &&
+          item.plotNumber !== null &&
+          typeof item.plotNumber !== "string") ||
         !["male", "female", "mixed"].includes(String(item.genderPolicy)) ||
         kostType === null ||
         typeof kostType !== "object"
@@ -1145,7 +1192,11 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
         id: item.id,
         number: item.number,
         genderPolicy: item.genderPolicy as LeaseRoomOption["genderPolicy"],
-        roomStatus: "vacant",
+        roomStatus: item.status as LeaseRoomOption["roomStatus"],
+        plotNumber: typeof item.plotNumber === "string" ? item.plotNumber : null,
+        unavailableReason: includeUnavailable
+          ? (unavailableReason as LeaseRoomOption["unavailableReason"])
+          : null,
         buildingName: typeof item.buildingName === "string" ? item.buildingName : null,
         buildingId: typeof item.buildingId === "string" ? item.buildingId : null,
         buildingCode: typeof item.buildingCode === "string" ? item.buildingCode : null,
@@ -1169,4 +1220,15 @@ export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedP
       };
     }),
   };
+}
+
+export function parseAvailableRooms(envelope: V2ListEnvelope<unknown>, expectedPropertyId: string) {
+  return parseRoomOptions(envelope, expectedPropertyId, false);
+}
+
+export function parseLeaseRoomChoices(
+  envelope: V2ListEnvelope<unknown>,
+  expectedPropertyId: string,
+) {
+  return parseRoomOptions(envelope, expectedPropertyId, true);
 }

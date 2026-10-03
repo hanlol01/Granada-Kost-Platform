@@ -210,9 +210,11 @@ function plotNumbersFromRooms(rooms: OwnerRealizationQueueRoom[]): string | null
   const plotNumbers = rooms
     .map((room) => room.plot_number?.trim())
     .filter((plotNumber): plotNumber is string => Boolean(plotNumber));
-  return [...new Set(plotNumbers)]
-    .sort((left, right) => left.localeCompare(right, 'id', { numeric: true }))
-    .join(', ') || null;
+  return (
+    [...new Set(plotNumbers)]
+      .sort((left, right) => left.localeCompare(right, 'id', { numeric: true }))
+      .join(', ') || null
+  );
 }
 
 type NotEligibleRow = {
@@ -263,8 +265,8 @@ function notEligibleReasonLabel(code: string): string {
     {
       OWNER_ASSIGNMENT_UNAVAILABLE: 'Owner belum terhubung ke kamar',
       OWNER_SPONSORED_EXCLUDED: 'Hunian tanggungan Owner',
-    OUTSTANDING_CONTRACT_RENT: 'Kontrak belum lunas',
-    AWAITING_PHYSICAL_CHECK_IN: 'Menunggu check-in fisik',
+      OUTSTANDING_CONTRACT_RENT: 'Kontrak belum lunas',
+      AWAITING_PHYSICAL_CHECK_IN: 'Menunggu check-in fisik',
       ALREADY_ALLOCATED_TO_REALIZATION: 'Sudah masuk realisasi lain',
       PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD: 'Pelunasan di luar periode',
     }[code] ?? 'Belum memenuhi syarat realisasi'
@@ -522,6 +524,42 @@ export class PropertyOwnerRealizationService {
       };
     };
     const ownerById = new Map(owners.rows.map((owner) => [owner.id, owner]));
+    const readyCandidates = candidates.filter(
+      (candidate) =>
+        ownerById.has(candidate.owner_profile_id) &&
+        !(realizationsByOwner.get(candidate.owner_profile_id) ?? []).some(
+          (realization) => !historyStatuses.includes(this.summary(realization).status),
+        ),
+    );
+    const realizationStatuses = [
+      'draft',
+      'awaiting_review',
+      'approved',
+      'submitted_to_finance',
+      'awaiting_transfer',
+      'partially_realized',
+      'realized',
+      'published_to_owner',
+    ] as const;
+    const attentionStatuses = Object.fromEntries(
+      realizationStatuses.map((status) => [
+        status,
+        realizations.rows.filter((realization) => this.summary(realization).status === status)
+          .length,
+      ]),
+    );
+    const createdRealizations = realizations.rows.filter(
+      (realization) => this.summary(realization).status !== 'void',
+    );
+    const attention = {
+      ready_owners: new Set(readyCandidates.map((candidate) => candidate.owner_profile_id)).size,
+      ready_contracts: readyCandidates.length,
+      created_realizations: createdRealizations.length,
+      created_owners: new Set(
+        createdRealizations.map((realization) => realization.owner_profile_id),
+      ).size,
+      statuses: attentionStatuses,
+    };
     const historyRows =
       query.workspace === 'history'
         ? realizations.rows
@@ -548,7 +586,11 @@ export class PropertyOwnerRealizationService {
         return `${row.owner_name} ${row.owner_phone ?? ''}`.toLowerCase().includes(search);
       })
       .filter((row) => {
-        if (query.status === 'not_prepared' && row.realization) return false;
+        if (
+          query.status === 'not_prepared' &&
+          (row.realization || row.eligible_contract_count === 0)
+        )
+          return false;
         if (
           query.status &&
           query.status !== 'not_prepared' &&
@@ -694,6 +736,7 @@ export class PropertyOwnerRealizationService {
           },
         ),
         owner_counts: ownerCounts,
+        attention,
       },
     };
   }

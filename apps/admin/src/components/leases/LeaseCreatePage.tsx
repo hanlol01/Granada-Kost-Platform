@@ -51,8 +51,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
-import { useM6LeaseAvailableRooms } from "@/hooks/useAdminUxLeases";
+import { useM6LeaseRoomChoices } from "@/hooks/useAdminUxLeases";
 import { useOwnerAssetOptions } from "@/hooks/usePropertyOwners";
 import {
   useBookingLeadCompletionContext,
@@ -62,7 +63,7 @@ import { completedBookingLeadResidentId } from "@/lib/admin-booking-lead-complet
 import { useResidentOnboarding } from "@/hooks/useResidentOnboarding";
 import { useAdminPaymentVerificationPolicy } from "@/hooks/useAdminBilling";
 import { useFileDelete, useFileUpload } from "@/hooks/useFileUpload";
-import type { LeaseRoomOption } from "@/lib/admin-ux-lease-types";
+import type { LeaseRoomOption, LeaseRoomUnavailableReason } from "@/lib/admin-ux-lease-types";
 import type { OnboardingPayload, OnboardingResponse } from "@/lib/admin-onboarding";
 import {
   downloadAdminContractPaidDocument,
@@ -264,23 +265,60 @@ function calculateLeaseAmounts(
   };
 }
 
-function eligibleVacantRooms(
+const UNAVAILABLE_ROOM_LABELS: Record<LeaseRoomUnavailableReason, string> = {
+  reserved: "Sudah dipesan",
+  awaiting_check_in: "Menunggu check-in",
+  occupied: "Terisi",
+  maintenance: "Dalam perawatan",
+  inactive: "Tidak aktif",
+  requires_review: "Perlu peninjauan",
+  inspection_required: "Perlu pemeriksaan",
+  active_lease: "Penyewaan aktif",
+  onboarding: "Dalam proses penyewaan",
+  booking_hold: "Ditahan untuk minat booking",
+};
+
+function roomIsSelectable(room: LeaseRoomOption) {
+  return room.roomStatus === "vacant" && room.unavailableReason === null;
+}
+
+type RoomListFilter = "all" | "available" | "inspection_required" | "maintenance";
+
+function roomListStatus(room: LeaseRoomOption): Exclude<RoomListFilter, "all"> | null {
+  if (roomIsSelectable(room)) return "available";
+  if (room.roomStatus === "inspection_required" && room.unavailableReason === "inspection_required")
+    return "inspection_required";
+  if (room.roomStatus === "maintenance" && room.unavailableReason === "maintenance")
+    return "maintenance";
+  return null;
+}
+
+function roomUnavailableLabel(room: LeaseRoomOption) {
+  return room.unavailableReason
+    ? UNAVAILABLE_ROOM_LABELS[room.unavailableReason]
+    : "Tidak tersedia";
+}
+
+function matchingRooms(
   rooms: LeaseRoomOption[],
   category: "rukost" | "apartkost" | "",
   gender: Gender | "",
   search: string,
 ) {
   const query = normalizeRoomSearch(search);
-  return rooms.filter(
-    (room) =>
-      room.roomStatus === "vacant" &&
-      (!category || room.kostType.category === category) &&
-      (!gender || room.genderPolicy === gender || room.genderPolicy === "mixed") &&
-      (!query ||
-        [room.number, room.buildingName, room.buildingCode, room.kostType.name]
-          .filter((value): value is string => Boolean(value))
-          .some((value) => normalizeRoomSearch(value).includes(query))),
-  );
+  const priority = { available: 0, inspection_required: 1, maintenance: 2 };
+  return rooms
+    .filter(
+      (room) =>
+        roomListStatus(room) !== null &&
+        (!category || room.kostType.category === category) &&
+        (!gender || room.genderPolicy === gender || room.genderPolicy === "mixed") &&
+        (!query ||
+          [room.number, room.buildingName, room.buildingCode, room.kostType.name, room.plotNumber]
+            .filter((value): value is string => Boolean(value))
+            .some((value) => normalizeRoomSearch(value).includes(query))),
+    )
+    .sort((left, right) => priority[roomListStatus(left)!] - priority[roomListStatus(right)!]);
 }
 
 function currency(amount: number) {
@@ -385,7 +423,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const paymentSectionRef = useRef<HTMLDivElement>(null);
   propertyScopeRef.current = currentPropertyId;
   const deferredRoomSearch = useDeferredValue(roomSearch);
-  const rooms = useM6LeaseAvailableRooms(deferredRoomSearch, startDate || undefined);
+  const rooms = useM6LeaseRoomChoices(deferredRoomSearch, startDate || undefined);
   const ownerAssets = useOwnerAssetOptions();
   const bookingLeadContext = useBookingLeadCompletionContext(bookingLeadId);
   const bookingLeadQuote = useBookingLeadCompletionQuote(bookingLeadId, startDate, termMonths);
@@ -510,6 +548,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         number: bookingRoom.number,
         genderPolicy: bookingRoom.genderPolicy as LeaseRoomOption["genderPolicy"],
         roomStatus: "vacant",
+        plotNumber: null,
+        unavailableReason: null,
         kostType: {
           id: bookingRoom.kostTypeId,
           name: bookingRoom.category === "rukost" ? "Rumah Kost" : "Apart Kost",
@@ -534,9 +574,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const bookingCommercialLocked = Boolean(bookingLeadId && committedCommercial);
   const historicalPaymentDateRequired =
     commercialMode !== "owner_sponsored" && historicalEntryMode && !initialPaymentLocked;
+  const listedRoom = rooms.data?.items.find((room) => room.id === roomId);
   const selectedRoom =
-    rooms.data?.items.find((room) => room.id === roomId) ??
-    (heldRoom?.id === roomId ? heldRoom : undefined);
+    bookingLeadId && heldRoom?.id === roomId
+      ? { ...heldRoom, plotNumber: listedRoom?.plotNumber ?? null }
+      : listedRoom;
+  const selectedRoomIsSelectable = Boolean(
+    selectedRoom && (bookingLeadId || roomIsSelectable(selectedRoom)),
+  );
   const commercialPricingPending = Boolean(startDate && rooms.isPlaceholderData);
   const fallbackAmounts = calculateLeaseAmounts(
     selectedRoom,
@@ -744,7 +789,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   };
   const paymentDraftValid = Object.values(paymentDraftErrors).every((message) => !message);
   const endDate = calculateLeaseEndDate(startDate, termMonths);
-  const eligibleRooms = eligibleVacantRooms(
+  const visibleRooms = matchingRooms(
     rooms.data?.items ?? [],
     category,
     resident.gender,
@@ -780,7 +825,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const onboardingNotice = onboarding.error ? onboardingErrorNotice(onboarding.error) : null;
   const ownerSponsoredValid =
     commercialMode === "owner_sponsored" &&
-    Boolean(selectedRoom && sponsoringOwner) &&
+    selectedRoomIsSelectable &&
+    Boolean(sponsoringOwner) &&
     (managementFeeMode === "waived" || (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0) &&
     ownerSponsorshipReason.trim().length >= 3 &&
     (managementFeeMode === "waived" ||
@@ -791,7 +837,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     commercialMode === "owner_sponsored"
       ? ownerSponsoredValid
       : stagedPaymentMode
-        ? Boolean(selectedRoom) &&
+        ? selectedRoomIsSelectable &&
           paymentEntries.length > 0 &&
           totalRentCredit >= requiredInitialRent &&
           totalRentCredit <= amounts.contractRent &&
@@ -800,7 +846,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           !commercialPricingPending &&
           !paymentEvidenceBusy &&
           confirmed
-        : Boolean(selectedRoom) &&
+        : selectedRoomIsSelectable &&
           Number.isSafeInteger(paidRent) &&
           paidRent >= 0 &&
           Number.isSafeInteger(bookingFee) &&
@@ -820,7 +866,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
           confirmed;
 
   const stageTwoErrors = {
-    roomId: selectedRoom ? "" : "Pilih satu kamar kosong terlebih dahulu.",
+    roomId: !selectedRoom
+      ? "Pilih satu kamar kosong terlebih dahulu."
+      : selectedRoomIsSelectable
+        ? ""
+        : `Kamar ${selectedRoom.number} sudah tidak tersedia (${roomUnavailableLabel(selectedRoom)}). Pilih kamar lain.`,
     sponsoringOwner:
       commercialMode !== "owner_sponsored" || sponsoringOwner
         ? ""
@@ -981,6 +1031,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   };
 
   const pickRoom = (room: LeaseRoomOption) => {
+    if (!roomIsSelectable(room)) return;
     if (stagedPaymentMode && paymentEntries.length > 0 && roomId && room.id !== roomId) return;
     const replacingUnavailableRoom = stagedPaymentMode && paymentEntries.length > 0 && !roomId;
     setRoomId(room.id);
@@ -1708,7 +1759,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             }}
             search={roomSearch}
             setSearch={setRoomSearch}
-            rooms={bookingLeadId && heldRoom ? [heldRoom] : eligibleRooms}
+            rooms={bookingLeadId && selectedRoom ? [selectedRoom] : visibleRooms}
+            roomsLoading={rooms.isLoading}
+            roomsError={Boolean(rooms.error)}
             selectedRoom={selectedRoom}
             onPick={pickRoom}
             paymentSectionRef={paymentSectionRef}
@@ -2369,6 +2422,8 @@ function RoomAndPaymentStep({
   search,
   setSearch,
   rooms,
+  roomsLoading,
+  roomsError,
   selectedRoom,
   onPick,
   paymentSectionRef,
@@ -2437,6 +2492,8 @@ function RoomAndPaymentStep({
   search: string;
   setSearch: (value: string) => void;
   rooms: LeaseRoomOption[];
+  roomsLoading: boolean;
+  roomsError: boolean;
   selectedRoom?: LeaseRoomOption;
   onPick: (room: LeaseRoomOption) => void;
   paymentSectionRef: { current: HTMLDivElement | null };
@@ -2542,6 +2599,11 @@ function RoomAndPaymentStep({
     : null;
   const editorRef = useRef<HTMLDivElement>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<StagedPaymentEntry | null>(null);
+  const [roomFilter, setRoomFilter] = useState<RoomListFilter>("all");
+  const filteredRooms =
+    roomLocked || roomFilter === "all"
+      ? rooms
+      : rooms.filter((room) => roomListStatus(room) === roomFilter);
   useEffect(() => {
     if (!stagedPayment?.editingPaymentId) return;
     const frame = requestAnimationFrame(() => {
@@ -2556,7 +2618,7 @@ function RoomAndPaymentStep({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Pilih kamar kosong</CardTitle>
+          <CardTitle>Pilih kamar</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {roomLocked ? (
@@ -2584,20 +2646,63 @@ function RoomAndPaymentStep({
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Cari nomor kamar atau bangunan"
-              aria-label="Cari kamar kosong"
+              placeholder="Cari nomor kamar, bangunan, atau kavling"
+              aria-label="Cari kamar"
               className="pl-9"
               autoComplete="off"
               disabled={roomLocked}
             />
           </div>
           <p className="text-sm text-muted-foreground">
-            Hanya kamar kosong yang sesuai gender {gender === "male" ? "Putra" : "Putri"} dan
-            kategori pilihan yang ditampilkan.
+            Kamar yang sesuai gender{" "}
+            {gender === "male" ? "Putra" : gender === "female" ? "Putri" : "penghuni"} dan kategori
+            pilihan ditampilkan. Kamar tersedia ditampilkan lebih dulu; kamar yang perlu pemeriksaan
+            atau dalam perawatan hanya untuk informasi dan tidak dapat dipilih.
           </p>
+          {!roomLocked ? (
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Filter ketersediaan kamar"
+            >
+              {(
+                [
+                  ["all", "Semua"],
+                  ["available", "Tersedia"],
+                  ["inspection_required", "Perlu pemeriksaan"],
+                  ["maintenance", "Dalam perawatan"],
+                ] as const
+              ).map(([value, label]) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={roomFilter === value ? "default" : "outline"}
+                  className="rounded-full"
+                  aria-pressed={roomFilter === value}
+                  onClick={() => setRoomFilter(value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          {roomsError ? (
+            <p
+              className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              role="alert"
+            >
+              Daftar kamar gagal dimuat. Muat ulang halaman untuk mencoba lagi.
+            </p>
+          ) : roomsLoading ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Memuat daftar kamar…
+            </p>
+          ) : null}
           <div className="max-h-[28rem] overflow-y-auto overscroll-contain pr-1" aria-live="polite">
             <div className="grid gap-3 md:grid-cols-2">
-              {rooms.map((room) => {
+              {filteredRooms.map((room) => {
+                const selectable = roomIsSelectable(room);
                 const roomAmounts = calculateLeaseAmounts(room, termMonths);
                 const rateLabel =
                   roomAmounts.monthlyRate > 0
@@ -2607,20 +2712,39 @@ function RoomAndPaymentStep({
                   <button
                     key={room.id}
                     type="button"
-                    onClick={() => !roomLocked && onPick(room)}
-                    aria-disabled={roomLocked || undefined}
+                    onClick={() => onPick(room)}
+                    disabled={roomLocked || !selectable}
                     className={
-                      "min-h-28 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                      "min-h-32 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed " +
                       (selectedRoom?.id === room.id
                         ? "border-primary bg-primary/10"
-                        : "border-border bg-card hover:border-primary/50")
+                        : selectable
+                          ? "border-border bg-card hover:border-primary/50"
+                          : "border-border bg-muted/35")
                     }
                   >
-                    <p className="font-semibold">{room.number}</p>
+                    <span className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold">{room.number}</span>
+                      <StatusBadge
+                        tone={selectable ? "success" : "warning"}
+                        label={selectable ? "Tersedia" : roomUnavailableLabel(room)}
+                      />
+                    </span>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {room.kostType.name} · {room.buildingName ?? room.buildingCode ?? "Bangunan"}
                     </p>
-                    <p className="mt-2 text-xs font-medium text-primary">{rateLabel}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      No. Kavling: {room.plotNumber?.trim() || "—"}
+                    </p>
+                    <p
+                      className={
+                        selectable
+                          ? "mt-2 text-xs font-medium text-primary"
+                          : "mt-2 text-xs font-medium text-muted-foreground"
+                      }
+                    >
+                      {rateLabel}
+                    </p>
                   </button>
                 );
               })}
@@ -2636,9 +2760,9 @@ function RoomAndPaymentStep({
               {errors.roomId}
             </p>
           ) : null}
-          {rooms.length === 0 ? (
+          {!roomsLoading && !roomsError && filteredRooms.length === 0 ? (
             <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Tidak ada kamar kosong yang sesuai. Ubah kategori atau kata kunci pencarian.
+              Tidak ada kamar yang sesuai. Ubah filter, kategori, atau kata kunci pencarian.
             </p>
           ) : null}
         </CardContent>

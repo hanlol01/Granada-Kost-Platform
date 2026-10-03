@@ -50,6 +50,11 @@ const CODE_NOTICES: Readonly<Record<string, Pick<AdminErrorNotice, "title" | "de
     description:
       "Kamar hanya dapat diaktifkan pada atau setelah tanggal mulai sewa. Tunggu sampai jadwal check-in tiba.",
   },
+  LEASE_SERVICE_PERIOD_REASON_REQUIRED: {
+    title: "Alasan pencatatan check-in diperlukan",
+    description:
+      "Tanggal check-in berbeda dari tanggal rencana atau dicatat mundur. Isi alasan pencatatan pada form untuk melanjutkan. Untuk check-in sesuai jadwal, alasan tidak wajib; jika pesan ini muncul padahal tanggalnya sesuai, minta Pihak Pengelola memperbarui layanan lalu coba lagi.",
+  },
   BOOKING_LEAD_PAYMENT_COMMITMENT_EXISTS: {
     title: "Minat booking sudah diselesaikan",
     description:

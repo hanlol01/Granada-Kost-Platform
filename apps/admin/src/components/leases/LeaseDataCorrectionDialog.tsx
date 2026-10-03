@@ -336,10 +336,11 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
                 Ubah hanya data yang salah, lalu periksa hasil perhitungannya.
               </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid items-start gap-4 md:grid-cols-3">
               <HeroUiDatePicker
                 id="lease-correction-start-date"
                 label="Tanggal mulai kontrak"
+                className="min-w-0 self-start content-start"
                 value={startDate}
                 disabled={Boolean(tenancy.checkedInAt)}
                 description={
@@ -353,7 +354,7 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
                 }}
                 required
               />
-              <div className="space-y-2">
+              <div className="grid min-w-0 self-start content-start gap-1.5">
                 <label htmlFor="lease-correction-term" className="text-sm font-medium">
                   Durasi sewa (bulan) <span className="text-destructive">*</span>
                 </label>
@@ -374,6 +375,7 @@ export function LeaseDataCorrectionDialog({ open, onOpenChange, tenancy, onCompl
                 <HeroUiDatePicker
                   id="lease-correction-check-in-date"
                   label="Tanggal check-in aktual"
+                  className="min-w-0 self-start content-start"
                   value={checkedInDate}
                   maxDate={todayInJakarta()}
                   onChange={(value) => {

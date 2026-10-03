@@ -36,6 +36,7 @@ import {
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 import { reportTabs } from "./report-tabs";
+import { ReportNotifications } from "./ReportNotifications";
 import "./reports-workspace.css";
 const PAGE_SIZE = 20;
 
@@ -646,6 +647,22 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
     setFilterNoticeRevision((revision) => revision + 1);
     history.replaceState(null, "", window.location.pathname);
   };
+  const selectNotification = (noticeFilters: Partial<AdminReportFilters>) => {
+    const next = {
+      ...defaultFilters(currentPropertyId ?? ""),
+      date_from: applied.date_from,
+      date_to: applied.date_to,
+      ...noticeFilters,
+    };
+    setDraft(next);
+    apply(next);
+    window.requestAnimationFrame(() => {
+      document.getElementById("reports-results")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
   const page = (offset: number) => {
     const nextOffset = Math.max(0, offset);
     setApplied((current) => ({ ...current, offset: nextOffset }));
@@ -681,6 +698,14 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
     <AppShell title="Laporan" subtitle="Ringkasan resmi untuk operasional dan keuangan properti">
       <div className="reports-page">
         <ReportNavigation active={type} />
+
+        <ReportNotifications
+          type={type}
+          propertyId={currentPropertyId}
+          dateFrom={applied.date_from}
+          dateTo={applied.date_to}
+          onSelect={selectNotification}
+        />
 
         <Card className="reports-filter-card">
           <CardHeader className="pb-4">
@@ -1007,6 +1032,7 @@ export function ReportsWorkspace({ type }: { type: AdminReportType }) {
           </CardContent>
         </Card>
 
+        <div id="reports-results" className="scroll-mt-6" />
         {filterNoticeRevision > 0 && data && !query.isFetching && !query.error ? (
           <FilterResultNotice
             key={filterNoticeRevision}

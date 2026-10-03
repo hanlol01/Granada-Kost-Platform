@@ -30,6 +30,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import type { FileResponse } from "@granada-kost/domain";
 import { ReportNavigation } from "@/components/reports/ReportsWorkspace";
+import {
+  ReportNotificationsCard,
+  type ReportNoticeItem,
+} from "@/components/reports/ReportNotificationsCard";
 import { ErrorState, LoadingState } from "@/components/state";
 import { HistoricalRealizationSourceCombobox } from "@/components/reports/HistoricalRealizationSourceCombobox";
 import { Badge } from "@/components/ui/badge";
@@ -501,6 +505,26 @@ export function OwnerRealizationWorkspace() {
     queryFn: () => ownerRealizationApi.list(applied),
     enabled: Boolean(currentPropertyId && applied.property_id),
   });
+  const attention = useQuery({
+    queryKey: [
+      "owner-realizations",
+      "attention",
+      currentPropertyId,
+      applied.period,
+      applied.owner_profile_status ?? "active",
+    ],
+    queryFn: () =>
+      ownerRealizationApi.list({
+        property_id: currentPropertyId!,
+        period: applied.period ?? defaultPeriod,
+        owner_profile_status: applied.owner_profile_status ?? "active",
+        workspace: "active",
+        limit: 1,
+        offset: 0,
+      }),
+    enabled: Boolean(currentPropertyId && applied.period),
+    staleTime: 30_000,
+  });
   const notEligible = useQuery({
     queryKey: ["owner-realizations-not-eligible", applied],
     queryFn: () => ownerRealizationApi.notEligible({ ...applied, workspace: "not_eligible" }),
@@ -856,6 +880,25 @@ export function OwnerRealizationWorkspace() {
     setFilterNoticeRevision((revision) => revision + 1);
     history.replaceState(null, "", window.location.pathname);
   };
+  const selectNotification = (
+    status: OwnerRealizationFilters["status"],
+    workspace: "active" | "history",
+  ) => {
+    const next: OwnerRealizationFilters = {
+      property_id: currentPropertyId ?? "",
+      period: applied.period ?? defaultPeriod,
+      owner_profile_status: applied.owner_profile_status ?? "active",
+      workspace,
+      status,
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
+    setDraft(next);
+    apply(next);
+    window.requestAnimationFrame(() =>
+      workspaceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  };
   const page = (offset: number) =>
     setApplied((current) => ({ ...current, offset: Math.max(0, offset) }));
   const detailPath = (row: OwnerRealizationRow) =>
@@ -998,50 +1041,117 @@ export function OwnerRealizationWorkspace() {
       </AppShell>
     );
 
+  const attentionData = attention.data?.summary.attention;
+  const attentionItems: ReportNoticeItem[] = [];
+  const noticeStatus = (
+    key: Exclude<OwnerRealizationStatus, "void">,
+    label: string,
+    description: string,
+    workspace: "active" | "history" = "active",
+    group: ReportNoticeItem["group"] = "action",
+  ) => {
+    const count = attentionData?.statuses[key] ?? 0;
+    attentionItems.push({
+      key,
+      label,
+      description,
+      value: `${new Intl.NumberFormat("id-ID").format(count)} realisasi`,
+      active: count > 0,
+      group,
+      tone: group === "information" ? "success" : "warning",
+      onSelect: () => selectNotification(key, workspace),
+    });
+  };
+  const readyOwners = attentionData?.ready_owners ?? 0;
+  const selectedPeriod = applied.period ?? defaultPeriod;
+  attentionItems.push({
+    key: "not_prepared",
+    label: "Kontrak layak belum dibuat realisasi",
+    description: `${attentionData?.ready_contracts ?? 0} kontrak lunas siap dicatat untuk periode ini.`,
+    value: `${new Intl.NumberFormat("id-ID").format(readyOwners)} Owner`,
+    active: readyOwners > 0,
+    group: selectedPeriod <= defaultPeriod ? "action" : "information",
+    tone: selectedPeriod <= defaultPeriod ? "warning" : "info",
+    onSelect: () => selectNotification("not_prepared", "active"),
+  });
+  noticeStatus("draft", "Draft belum diajukan", "Ajukan realisasi untuk pemeriksaan.");
+  noticeStatus("awaiting_review", "Menunggu pemeriksaan", "Tinjau dan putuskan realisasi.");
+  noticeStatus(
+    "approved",
+    "Disetujui, belum diajukan ke Keuangan",
+    "Lanjutkan pengajuan ke Keuangan.",
+  );
+  noticeStatus("submitted_to_finance", "Diajukan ke Keuangan", "Pantau konfirmasi Keuangan.");
+  noticeStatus("awaiting_transfer", "Menunggu transfer", "Catat transfer saat dana telah dikirim.");
+  noticeStatus(
+    "partially_realized",
+    "Transfer sebagian",
+    "Masih ada hak Owner yang belum ditransfer.",
+  );
+  noticeStatus(
+    "realized",
+    "Transfer selesai, belum diterbitkan",
+    "Terbitkan rincian kepada Owner.",
+    "history",
+  );
+  noticeStatus(
+    "published_to_owner",
+    "Sudah diterbitkan kepada Owner",
+    "Rincian realisasi tersedia bagi Owner.",
+    "history",
+    "information",
+  );
+
   return (
     <AppShell title="Realisasi Owner" subtitle="Rilis hak Owner dari kontrak sewa yang telah lunas">
       <main className="owner-report-workspace">
         <ReportNavigation active="property-owners" />
-        <section className="owner-report-hero" aria-labelledby="owner-realization-heading">
-          <div>
-            <p className="owner-report-eyebrow">Realisasi hak Owner</p>
-            <h2 id="owner-realization-heading">
-              Satu kontrak lunas, satu jejak realisasi yang dapat diaudit
-            </h2>
-            <p>
-              Hanya sewa berbayar yang sudah lunas masuk realisasi. Deposit keamanan dan hunian
-              tanggungan Owner tidak tercampur ke hak Owner.
-            </p>
+        <ReportNotificationsCard
+          id="owner-realization-report-notifications"
+          items={attentionItems}
+          context={`${attentionData?.created_realizations ?? 0} realisasi untuk ${monthLabel(selectedPeriod)} telah dibuat oleh ${attentionData?.created_owners ?? 0} Owner.`}
+          isLoading={attention.isPending}
+          isError={attention.isError}
+          onRetry={() => void attention.refetch()}
+        />
+        <section
+          className="owner-report-period-summary"
+          aria-labelledby="owner-realization-summary-heading"
+          aria-label={`Ringkasan Realisasi Periode ${monthLabel(applied.period ?? defaultPeriod)}`}
+        >
+          <div className="owner-report-period-summary__heading">
+            <h2 id="owner-realization-summary-heading">Ringkasan Realisasi Periode</h2>
+            <p>{monthLabel(applied.period ?? defaultPeriod)}</p>
           </div>
-        </section>
-        <section className="owner-report-summary-grid" aria-label="Ringkasan Realisasi Owner">
-          <SummaryCard
-            label="Total kontrak layak"
-            value={rupiah(list.data?.summary.eligible_contract_total)}
-            helper="Kontrak sewa yang sudah lunas"
-            icon={<WalletCards />}
-          />
-          <SummaryCard
-            label="Total management fee"
-            value={rupiah(list.data?.summary.management_fee_total)}
-            helper="Mengikuti data kontrak saat dibuat"
-            icon={<Building2 />}
-            tone="slate"
-          />
-          <SummaryCard
-            label="Hak Owner direalisasikan"
-            value={rupiah(list.data?.summary.realization_total)}
-            helper="Setelah fee dan penyesuaian sah"
-            icon={<Landmark />}
-            tone="blue"
-          />
-          <SummaryCard
-            label="Dana sudah ditransfer"
-            value={rupiah(list.data?.summary.transferred_total)}
-            helper="Termasuk realisasi bertahap"
-            icon={<CheckCircle2 />}
-            tone="green"
-          />
+          <div className="owner-report-summary-grid">
+            <SummaryCard
+              label="Total kontrak layak"
+              value={rupiah(list.data?.summary.eligible_contract_total)}
+              helper="Kontrak sewa yang sudah lunas"
+              icon={<WalletCards />}
+            />
+            <SummaryCard
+              label="Total management fee"
+              value={rupiah(list.data?.summary.management_fee_total)}
+              helper="Mengikuti data kontrak saat dibuat"
+              icon={<Building2 />}
+              tone="slate"
+            />
+            <SummaryCard
+              label="Hak Owner direalisasikan"
+              value={rupiah(list.data?.summary.realization_total)}
+              helper="Setelah fee dan penyesuaian sah"
+              icon={<Landmark />}
+              tone="blue"
+            />
+            <SummaryCard
+              label="Dana sudah ditransfer"
+              value={rupiah(list.data?.summary.transferred_total)}
+              helper="Termasuk realisasi bertahap"
+              icon={<CheckCircle2 />}
+              tone="green"
+            />
+          </div>
         </section>
         <section
           ref={workspaceRef}

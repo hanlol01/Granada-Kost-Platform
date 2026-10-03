@@ -155,7 +155,9 @@ test('count and page use identical filter semantics with no more than two base q
     property_id: PROPERTY_A,
     kost_type_id: '44444444-4444-4444-8444-444444444444',
     number: 'A-01',
+    plot_number: '6B',
     room_status: 'vacant',
+    lease_unavailable_reason: 'booking_hold',
     public_visible: true,
     monthly_price: 1_900_000,
     yearly_price: 21_600_000,
@@ -186,6 +188,7 @@ test('count and page use identical filter semantics with no more than two base q
   const result = await service.list(user(), {
     property_id: PROPERTY_A,
     category: 'rukost',
+    include_lease_availability: true,
     limit: 20,
     offset: 0,
   });
@@ -194,8 +197,27 @@ test('count and page use identical filter semantics with no more than two base q
   assert.equal(base.length, 2);
   assert.deepEqual(base[0].values, base[1].values.slice(0, 10));
   assert.equal(result.meta.total, 1);
+  assert.equal(result.data[0]?.plot_number, '6B');
+  assert.equal(result.data[0]?.lease_unavailable_reason, 'booking_hold');
+  assert.match(base[1].sql, /END AS lease_unavailable_reason/);
+  assert.match(base[1].sql, /booking_hold\.hold_status = 'active'/);
+  assert.ok(
+    base[1].sql.indexOf("occupancy.occupancy_status = 'active'") <
+      base[1].sql.indexOf("WHEN room.room_status <> 'vacant'"),
+  );
+  assert.match(base[1].sql, /room\.plot_number ILIKE/);
   assert.deepEqual(Object.keys(result).sort(), ['data', 'meta']);
   assert.deepEqual(Object.keys(result.meta).sort(), ['limit', 'offset', 'total']);
+
+  const standardResult = await service.list(user(), {
+    property_id: PROPERTY_A,
+    category: 'rukost',
+    limit: 20,
+    offset: 0,
+  });
+  assert.equal('lease_unavailable_reason' in standardResult.data[0], false);
+  const standardPageQuery = calls.filter(({ sql }) => /FROM rooms room/.test(sql)).at(-1)?.sql;
+  assert.doesNotMatch(standardPageQuery ?? '', /END AS lease_unavailable_reason/);
 });
 
 test('room read patch does not add schema or migration operations', () => {

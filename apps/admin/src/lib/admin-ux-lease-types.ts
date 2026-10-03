@@ -1,3 +1,5 @@
+import type { RoomStatus } from "./admin-ux-master-api";
+
 export type LeaseStatus = "active" | "ended" | "cancelled" | "transferred";
 export type BillingCycle = "monthly" | "yearly";
 export type DepositTransactionType =
@@ -317,11 +319,19 @@ export type LeaseResidentOption = {
   residentStatus: "active" | "inactive";
 };
 
+export type LeaseRoomUnavailableReason =
+  | Exclude<RoomStatus, "vacant">
+  | "active_lease"
+  | "onboarding"
+  | "booking_hold";
+
 export type LeaseRoomOption = {
   id: string;
   number: string;
   genderPolicy: "male" | "female" | "mixed";
-  roomStatus: "vacant";
+  roomStatus: RoomStatus;
+  plotNumber: string | null;
+  unavailableReason: LeaseRoomUnavailableReason | null;
   buildingName?: string | null;
   buildingId?: string | null;
   buildingCode?: string | null;

@@ -89,6 +89,14 @@ export type OwnerRealizationOwnerCounts = {
   voided: number;
 };
 
+export type OwnerRealizationAttention = {
+  ready_owners: number;
+  ready_contracts: number;
+  created_realizations: number;
+  created_owners: number;
+  statuses: Record<Exclude<OwnerRealizationStatus, "void">, number>;
+};
+
 export type OwnerRealizationList = {
   period: string | null;
   rows: OwnerRealizationRow[];
@@ -99,6 +107,7 @@ export type OwnerRealizationList = {
     realization_total: number;
     transferred_total: number;
     owner_counts: OwnerRealizationOwnerCounts;
+    attention: OwnerRealizationAttention;
   };
 };
 
@@ -321,7 +330,7 @@ async function download(path: string, fallbackName: string) {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (!response.ok) {
-        const payload = await response.json().catch(() => null) as {
+        const payload = (await response.json().catch(() => null)) as {
           error?: { message?: unknown };
           message?: unknown;
         } | null;

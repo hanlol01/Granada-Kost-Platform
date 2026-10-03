@@ -139,6 +139,29 @@
   border-color: #185c37 !important;
   background: #185c37 !important;
 }
+.owner-report-period-summary {
+  min-width: 0;
+  border: 2px solid color-mix(in oklch, var(--foreground) 24%, var(--border));
+  border-radius: 1.1rem;
+  background: color-mix(in oklch, var(--primary) 2%, var(--card));
+  padding: 1.1rem;
+}
+.owner-report-period-summary__heading {
+  margin-bottom: 1rem;
+}
+.owner-report-period-summary__heading h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.owner-report-period-summary__heading p {
+  margin-top: 0.25rem;
+  color: var(--foreground);
+  font-size: clamp(1.6rem, 2.2vw, 2rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
 .owner-report-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1038,6 +1061,9 @@
   .owner-report-summary-grid {
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
+  }
+  .owner-report-period-summary {
+    padding: 0.9rem;
   }
   .owner-report-summary {
     min-height: 8.4rem;

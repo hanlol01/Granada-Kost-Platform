@@ -123,6 +123,11 @@ export class ListRoomsV2QueryDto extends V2PaginationQueryDto {
   @Transform(exactBooleanValue)
   @IsBoolean()
   include_active_lease?: boolean;
+
+  @IsOptional()
+  @Transform(exactBooleanValue)
+  @IsBoolean()
+  include_lease_availability?: boolean;
 }
 
 export class ListRoomBuildingsV2QueryDto {

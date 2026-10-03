@@ -233,6 +233,7 @@ export class AdminUxRoomV2Service {
                ILIKE '%' || $9 || '%' ESCAPE E'\\\\') OR
            building.building_code ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            building.building_name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
+           room.plot_number ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            kost_type.name ILIKE '%' || $8 || '%' ESCAPE E'\\\\' OR
            CASE kost_type.category
              WHEN 'rukost' THEN 'Rumah Kost'
@@ -307,6 +308,42 @@ export class AdminUxRoomV2Service {
     const orderBy = this.roomOrderBy(query.sort, query.order);
     const limitParameter = filters.length + 1;
     const offsetParameter = filters.length + 2;
+    const leaseAvailabilitySelect = query.include_lease_availability
+      ? `,
+         CASE
+            WHEN EXISTS (
+              SELECT 1 FROM occupancies occupancy
+              WHERE occupancy.property_id = room.property_id AND occupancy.room_id = room.id
+                AND occupancy.occupancy_status = 'active'
+            ) THEN 'occupied'
+            WHEN EXISTS (
+              SELECT 1 FROM leases lease
+              WHERE lease.property_id = room.property_id AND lease.room_id = room.id
+                AND lease.lease_status = 'active'
+            ) THEN 'active_lease'
+            WHEN EXISTS (
+              SELECT 1 FROM leases lease
+              WHERE lease.property_id = room.property_id AND lease.room_id = room.id
+                AND lease.lease_status = 'awaiting_activation'
+            ) THEN 'awaiting_check_in'
+            WHEN EXISTS (
+              SELECT 1 FROM onboarding_commitments commitment
+              WHERE commitment.property_id = room.property_id AND commitment.room_id = room.id
+                AND commitment.status IN (
+                  'draft', 'awaiting_documents', 'awaiting_financials',
+                  'ready_to_commit', 'committed'
+                )
+            ) THEN 'onboarding'
+            WHEN EXISTS (
+              SELECT 1 FROM booking_lead_holds booking_hold
+              WHERE booking_hold.property_id = room.property_id AND booking_hold.room_id = room.id
+                AND (booking_hold.hold_status = 'committed' OR
+                  (booking_hold.hold_status = 'active' AND booking_hold.expires_at > now()))
+            ) THEN 'booking_hold'
+            WHEN room.room_status <> 'vacant' THEN room.room_status
+            ELSE NULL
+         END AS lease_unavailable_reason`
+      : '';
     const result = await this.database.client.query<Row>(
       `SELECT
          room.id, room.property_id, room.kost_type_id, room.number, room.room_code, room.building_id,
@@ -324,13 +361,18 @@ export class AdminUxRoomV2Service {
           management_fee.monthly_fee_amount,
          (commercial_version.monthly_price * commercial_version.security_deposit_months)::bigint
            AS deposit_amount,
-         building.building_code, building.building_name
+         building.building_code, building.building_name${leaseAvailabilitySelect}
        ${fromAndWhere}
        ORDER BY ${orderBy}, room.id
        LIMIT $${limitParameter} OFFSET $${offsetParameter}`,
       [...filters, limit, offset],
     );
-    const records = await this.hydrate(result.rows, query.include_active_lease ?? false);
+    const records = await this.hydrate(
+      result.rows,
+      query.include_active_lease ?? false,
+      undefined,
+      query.include_lease_availability ?? false,
+    );
     return v2List(records, limit, offset, total);
   }
 
@@ -647,7 +689,12 @@ export class AdminUxRoomV2Service {
     return (await this.hydrate(result.rows, includeActiveLease, client))[0];
   }
 
-  private async hydrate(rows: Row[], includeActiveLease: boolean, client?: PoolClient) {
+  private async hydrate(
+    rows: Row[],
+    includeActiveLease: boolean,
+    client?: PoolClient,
+    includeLeaseAvailability = false,
+  ) {
     if (!rows.length) return [];
     const queryable = client ?? this.database.client;
     const typeScopes = [
@@ -792,6 +839,9 @@ export class AdminUxRoomV2Service {
       floor_label: row.floor_label,
       size_label: row.size_label,
       status: row.room_status,
+      ...(includeLeaseAvailability
+        ? { lease_unavailable_reason: row.lease_unavailable_reason }
+        : {}),
       primary_photo_file_id: row.primary_photo_file_id,
       public_visible: row.public_visible,
       created_at: row.created_at,

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { ApiError } from "@granada-kost/api-client";
 import { adminErrorNotice } from "./error-normalizer";
 import { parseResidentDetail, parseResidentPage, parseResidentTenancy } from "./admin-resident";
-import { parseAvailableRooms } from "./admin-ux-lease-api";
+import { parseAvailableRooms, parseLeaseRoomChoices } from "./admin-ux-lease-api";
 import {
   calculateLeaseEndDate,
   formatIdrInput,
@@ -439,6 +439,7 @@ test("vacant room parser accepts the live snake-case envelope and binds property
     gender_policy: "female",
     building_name: "Apart Kost Unit 01",
     building_code: "AK-01",
+    plot_number: "6A",
     unit_code: "01",
     floor_label: "Lantai 1",
     floor: "1",
@@ -452,6 +453,7 @@ test("vacant room parser accepts the live snake-case envelope and binds property
       medium_stay_monthly_price: 1_850_000,
       long_stay_monthly_price: 1_800_000,
       commercial_effective_date: "2026-06-01",
+      security_deposit_months: 1,
       deposit_amount: 1_900_000,
     },
   };
@@ -462,6 +464,8 @@ test("vacant room parser accepts the live snake-case envelope and binds property
   assert.equal(page.items[0]?.genderPolicy, "female");
   assert.equal(page.items[0]?.kostType.monthlyPrice, 1_900_000);
   assert.equal(page.items[0]?.kostType.mediumStayMonthlyPrice, 1_850_000);
+  assert.equal(page.items[0]?.plotNumber, "6A");
+  assert.equal(page.items[0]?.unavailableReason, null);
 
   assert.throws(() =>
     parseAvailableRooms(
@@ -475,6 +479,58 @@ test("vacant room parser accepts the live snake-case envelope and binds property
   assert.throws(() =>
     parseAvailableRooms(
       { ...envelope, meta: { limit: 0, offset: 0, total: Number.NaN } },
+      propertyId,
+    ),
+  );
+});
+
+test("new lease room choices retain blocked rooms with a reason and plot number", () => {
+  const room = {
+    id: "33333333-3333-4333-8333-333333333333",
+    property_id: propertyId,
+    number: "RK-06-05",
+    plot_number: "6B",
+    status: "vacant",
+    lease_unavailable_reason: "booking_hold",
+    gender_policy: "male",
+    kost_type: {
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Rumah Kost",
+      category: "rukost",
+      monthly_price: 1_900_000,
+      yearly_price: 21_600_000,
+      short_stay_monthly_price: 1_900_000,
+      medium_stay_monthly_price: 1_850_000,
+      long_stay_monthly_price: 1_800_000,
+      commercial_effective_date: "2026-06-01",
+      security_deposit_months: 1,
+      deposit_amount: 1_900_000,
+    },
+  };
+  const envelope = {
+    data: [
+      room,
+      {
+        ...room,
+        id: "55555555-5555-4555-8555-555555555555",
+        status: "occupied",
+        lease_unavailable_reason: "occupied",
+      },
+    ],
+    meta: { limit: 100, offset: 0, total: 2 },
+  };
+  const choices = parseLeaseRoomChoices(envelope, propertyId);
+  assert.deepEqual(
+    choices.items.map(({ plotNumber, unavailableReason }) => [plotNumber, unavailableReason]),
+    [
+      ["6B", "booking_hold"],
+      ["6B", "occupied"],
+    ],
+  );
+  assert.throws(() => parseAvailableRooms(envelope, propertyId));
+  assert.throws(() =>
+    parseLeaseRoomChoices(
+      { ...envelope, data: [{ ...room, lease_unavailable_reason: null }] },
       propertyId,
     ),
   );
@@ -711,6 +767,23 @@ test("operational error notices never expose API copy or correlation identifiers
     description:
       "Kamar hanya dapat diaktifkan pada atau setelah tanggal mulai sewa. Tunggu sampai jadwal check-in tiba.",
     code: "LEASE_ACTIVATION_NOT_YET_AVAILABLE",
+    kind: "conflict",
+  });
+
+  const checkInReasonRequired = adminErrorNotice(
+    new ApiError({
+      status: 409,
+      code: "LEASE_SERVICE_PERIOD_REASON_REQUIRED",
+      message:
+        "Tanggal check-in berbeda dari rencana atau dicatat mundur. Isi alasan pencatatan sebelum melanjutkan.",
+      correlationId: "47ea2a6b-a211-47ce-85f1-cd63edb9f69a",
+    }),
+  );
+  assert.deepEqual(checkInReasonRequired, {
+    title: "Alasan pencatatan check-in diperlukan",
+    description:
+      "Tanggal check-in berbeda dari tanggal rencana atau dicatat mundur. Isi alasan pencatatan pada form untuk melanjutkan. Untuk check-in sesuai jadwal, alasan tidak wajib; jika pesan ini muncul padahal tanggalnya sesuai, minta Pihak Pengelola memperbarui layanan lalu coba lagi.",
+    code: "LEASE_SERVICE_PERIOD_REASON_REQUIRED",
     kind: "conflict",
   });
 

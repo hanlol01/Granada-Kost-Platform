@@ -25,6 +25,7 @@ export type FileRecord = {
   checksumSha256: string;
   metadata: Record<string, unknown>;
   isDeleted: boolean;
+  archivePurgeCommandId?: string | null;
   deletedAt: Date | null;
   deletedByUserId: string | null;
   createdAt: Date;

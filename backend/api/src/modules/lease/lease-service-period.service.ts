@@ -138,12 +138,31 @@ export class LeaseServicePeriodService {
       coverage_end_date: string;
       due_date: string;
       scheduled_amount: string;
+      correction_charge: boolean;
+      correction_credit: boolean;
     }>(
-      `SELECT id,invoice_id,sequence_number,coverage_start_date::text,coverage_end_date::text,due_date::text,scheduled_amount
-          FROM lease_installments WHERE lease_id=$1 AND property_id=$2 ORDER BY sequence_number FOR UPDATE`,
+      `SELECT installment.id,installment.invoice_id,installment.sequence_number,
+              effective.coverage_start_date::text,effective.coverage_end_date::text,effective.due_date::text,
+              (installment.scheduled_amount-COALESCE(correction.amount,0))::text AS scheduled_amount,
+              COALESCE(correction.amount,0)>0 AS correction_credit,
+              EXISTS(SELECT 1 FROM invoices invoice JOIN lease_data_corrections amendment
+                       ON amendment.lease_id=installment.lease_id AND amendment.property_id=installment.property_id
+                      AND invoice.command_fingerprint='lease-correction:'||amendment.id::text
+                      WHERE invoice.id=installment.invoice_id AND invoice.lease_id=installment.lease_id
+                        AND invoice.property_id=installment.property_id) AS correction_charge
+          FROM lease_installments installment
+          JOIN lease_installment_effective_periods effective ON effective.id=installment.id
+          LEFT JOIN LATERAL (
+            SELECT SUM(credit.amount) AS amount FROM lease_data_correction_invoice_credits credit
+             WHERE credit.invoice_id=installment.invoice_id AND credit.lease_id=installment.lease_id
+               AND credit.property_id=installment.property_id
+          ) correction ON true
+         WHERE installment.lease_id=$1 AND installment.property_id=$2 AND installment.installment_status<>'void'
+           AND installment.scheduled_amount-COALESCE(correction.amount,0)>0
+         ORDER BY installment.sequence_number FOR UPDATE OF installment`,
       [lease.id, lease.property_id],
     );
-    const schedule =
+    let schedule =
       lease.commercial_mode === 'owner_sponsored'
         ? []
         : buildContractSchedule({
@@ -152,6 +171,69 @@ export class LeaseServicePeriodService {
             paymentPlanType: lease.payment_plan_type,
             contractRentAmount: Number(lease.contract_rent_amount),
           });
+    // Corrections append charges/credits instead of rewriting issued invoices.
+    // Rebase those recorded periods, preserving each net obligation and its ID.
+    if (
+      lease.commercial_mode === 'rent' &&
+      oldSchedule.rows.some((item) => item.correction_charge || item.correction_credit) &&
+      oldSchedule.rows.filter((item) => !item.correction_charge).length <= schedule.length &&
+      new Set(
+        oldSchedule.rows
+          .filter((item) => !item.correction_charge)
+          .map((item) => item.coverage_start_date),
+      ).size === oldSchedule.rows.filter((item) => !item.correction_charge).length &&
+      oldSchedule.rows.every(
+        (item) =>
+          Number.isSafeInteger(Number(item.scheduled_amount)) && Number(item.scheduled_amount) > 0,
+      ) &&
+      oldSchedule.rows.reduce((sum, item) => sum + BigInt(item.scheduled_amount), 0n) ===
+        BigInt(lease.contract_rent_amount)
+    ) {
+      const origin = oldSchedule.rows.map((item) => item.coverage_start_date).sort()[0];
+      const monthOffset = (value: string) => {
+        const date = new Date(`${value}T00:00:00Z`);
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+          !Number.isFinite(date.getTime()) ||
+          date.toISOString().slice(0, 10) !== value
+        )
+          return -1;
+        return (
+          (Number(value.slice(0, 4)) - Number(origin.slice(0, 4))) * 12 +
+          Number(value.slice(5, 7)) -
+          Number(origin.slice(5, 7))
+        );
+      };
+      const coverageMonths = lease.payment_plan_type === 'two_month_installments' ? 2 : 1;
+      const rebased = oldSchedule.rows.map((item, index) => {
+        const start =
+          lease.payment_plan_type === 'annual_full'
+            ? 0
+            : Math.floor(monthOffset(item.coverage_start_date) / coverageMonths);
+        const end =
+          lease.payment_plan_type === 'annual_full'
+            ? 0
+            : Math.min(
+                Math.floor(monthOffset(item.coverage_end_date) / coverageMonths),
+                schedule.length - 1,
+              );
+        if (!schedule[start] || !schedule[end] || end < start) return null;
+        return {
+          ...schedule[start],
+          sequenceNumber: index + 1,
+          coverageEndDate: schedule[end].coverageEndDate,
+          scheduledAmount: Number(item.scheduled_amount),
+        };
+      });
+      const routineStarts = rebased
+        .filter((_, index) => !oldSchedule.rows[index].correction_charge)
+        .map((item) => item?.coverageStartDate);
+      if (
+        rebased.every((item) => item !== null) &&
+        new Set(routineStarts).size === routineStarts.length
+      )
+        schedule = rebased;
+    }
     if (
       schedule.length !== oldSchedule.rows.length ||
       schedule.some(

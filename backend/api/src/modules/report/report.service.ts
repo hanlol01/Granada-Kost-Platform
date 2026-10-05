@@ -28,7 +28,7 @@ const titles: Record<ReportType, string> = {
 
 const methodologies: Record<ReportType, string> = {
   leases:
-    'Nilai kontrak memakai snapshot komersial saat penyewaan dibuat. Status check-out dan penyelesaian akhir berasal dari satu perintah check-out terbaru yang tercatat.',
+    'Nilai kontrak mengikuti pencatatan penyewaan beserta koreksi resmi. Penyewaan yang dibatalkan dikecualikan kecuali status pembatalan dipilih. Status check-out dan penyelesaian akhir mengikuti catatan terbaru.',
   payments:
     'Penerimaan hanya dihitung sebagai kas ketika pembayaran berstatus terverifikasi dan tidak dibalik. Biaya pengelolaan Hunian Tanggungan Owner dipisahkan dari sewa kamar.',
   expenses:
@@ -137,6 +137,7 @@ export class ReportService {
       where: [],
     };
     const dateBasis = query.date_basis ?? 'active';
+    if (query.status !== 'cancelled') parts.where.push("l.lease_status <> 'cancelled'");
     parts.where.push(
       dateBasis === 'started'
         ? `l.start_date BETWEEN $2::date AND $3::date`

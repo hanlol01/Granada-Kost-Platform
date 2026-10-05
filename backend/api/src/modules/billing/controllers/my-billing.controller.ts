@@ -6,6 +6,7 @@ import {
   Header,
   Headers,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -39,6 +40,33 @@ export class MyBillingController {
   @Get('billing')
   billing(@CurrentUser() user: UserAccessContext) {
     return this.w06.myBilling(user);
+  }
+
+  @Get('billing/history')
+  billingHistory(@CurrentUser() user: UserAccessContext, @Query() query: PaginationQueryDto) {
+    return this.w06.myBillingHistory(user, query);
+  }
+
+  @Get('billing/history/:leaseId')
+  historicalBilling(@CurrentUser() user: UserAccessContext, @Param('leaseId', ParseUUIDPipe) leaseId: string) {
+    return this.w06.myHistoricalBilling(user, leaseId);
+  }
+
+  @Get('billing/:leaseId/evidence/:fileId/content')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async evidenceContent(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', ParseUUIDPipe) leaseId: string,
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    const content = await this.w06.myBillingEvidence(user, leaseId, fileId, this.contextFromRequest(user, request));
+    return new StreamableFile(content.buffer, {
+      type: content.record.mimeType,
+      disposition: documentDisposition(content.filename, 'attachment', 'Bukti-Pembayaran'),
+      length: content.buffer.length,
+    });
   }
 
   @Get('invoices')

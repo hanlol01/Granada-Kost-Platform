@@ -86,8 +86,14 @@ export function AppShell({
           className="app-shell-header sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur"
         >
           <div className="app-shell-header-layout grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-3 px-4 py-3 md:px-8 md:py-3.5">
-            <RegistryMobileSidebar />
-            <div className="col-span-2 row-start-2 flex min-w-0 items-center gap-2 lg:col-span-1 lg:row-start-1">
+            {sidebar === null ? null : <RegistryMobileSidebar />}
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-2",
+                sidebar === null ? "col-start-1 row-start-1" : "col-span-2 row-start-2",
+                "lg:col-span-1 lg:row-start-1",
+              )}
+            >
               {leadingAction ? <div className="shrink-0">{leadingAction}</div> : null}
               <div className="min-w-0">
                 {eyebrow ? (

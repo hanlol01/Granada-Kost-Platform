@@ -13,6 +13,7 @@ import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
 import { RequestAuditContext } from '../../property/types/property.types';
 import { W06BillingService } from './w06-billing.service';
+import { receivedInvoiceCreditSql } from '../helpers/contract-correction-credit.helper';
 import {
   CancelLeaseTerminationDto,
   ExtendContractSettlementDto,
@@ -353,7 +354,7 @@ export class ContractSettlementService {
   ): Promise<V2MissedCheckpointLock> {
     const result = await client.query<V2MissedCheckpointLock>(
       `WITH ledger AS (
-         SELECT COALESCE(sum(contract_invoice.credit_amount + COALESCE(allocation.net,0)),0) AS verified_rent_credit
+         SELECT COALESCE(sum(${receivedInvoiceCreditSql('contract_invoice')} + COALESCE(allocation.net,0)),0) AS verified_rent_credit
            FROM invoices contract_invoice
            LEFT JOIN LATERAL (
              SELECT COALESCE(sum(payment_allocation.allocated_amount
@@ -418,7 +419,7 @@ export class ContractSettlementService {
   ): Promise<V2MissedCheckpointLock> {
     const result = await client.query<V2MissedCheckpointLock>(
       `WITH ledger AS (
-         SELECT COALESCE(sum(contract_invoice.credit_amount + COALESCE(allocation.net,0)),0)
+         SELECT COALESCE(sum(${receivedInvoiceCreditSql('contract_invoice')} + COALESCE(allocation.net,0)),0)
                   AS verified_rent_credit
            FROM invoices contract_invoice
            LEFT JOIN LATERAL (

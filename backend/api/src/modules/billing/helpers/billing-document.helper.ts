@@ -27,6 +27,8 @@ export type BillingInvoiceDocumentData = {
   currentSettlementDueAt?: Date | string | null;
   finalSettlementDueAt?: Date | string | null;
   totalAmount: number;
+  paidAmount?: number;
+  hasContractCorrection?: boolean;
   outstandingAmount: number;
   leaseTermMonths?: number | null;
   agreedMonthlyPrice?: number | null;
@@ -347,7 +349,7 @@ export async function createBillingInvoicePdf(
   data: BillingInvoiceDocumentData,
 ): Promise<BillingInvoiceDocument> {
   const outstandingAmount = Math.max(0, data.outstandingAmount);
-  const paidAmount = Math.max(0, data.totalAmount - outstandingAmount);
+  const paidAmount = Math.max(0, data.paidAmount ?? data.totalAmount - outstandingAmount);
   const document = await PDFDocument.create();
   let page = document.addPage([595.28, 841.89]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
@@ -460,7 +462,9 @@ export async function createBillingInvoicePdf(
       isRentInvoice && data.servicePeriodPending ? 'Ditentukan setelah check-in' : receiptDate(data.currentSettlementDueAt ?? data.finalSettlementDueAt ?? data.dueDate, true),
     ],
     ['Status invoice', statusLabels[data.invoiceStatus] ?? label(data.invoiceStatus)],
-    ['Nilai tagihan awal', idr(data.totalAmount)],
+    ...(data.hasContractCorrection
+      ? []
+      : ([['Nilai tagihan awal', idr(data.totalAmount)]] as Array<[string, string]>)),
     ['Sudah dibayarkan', idr(Math.max(0, paidAmount))],
     ['Sisa tagihan', idr(outstandingAmount)],
     // The invoice is generated on demand. Keep the visible publication date
@@ -468,6 +472,11 @@ export async function createBillingInvoicePdf(
     // and document identity in the service layer.
     ['Diterbitkan', receiptDate(data.printedAt ?? data.issuedAt ?? new Date(), true)],
   ];
+  const adjustmentAmount = Math.max(0, data.totalAmount - paidAmount - outstandingAmount);
+  if (adjustmentAmount > 0) {
+    rows.splice(rows.findIndex(([rowLabel]) => rowLabel === 'Sudah dibayarkan'), 0,
+      ['Pengurang tagihan', idr(adjustmentAmount)]);
+  }
   if (data.periodAuthorityNote) rows.push(['Catatan periode', data.periodAuthorityNote]);
   if (isRentInvoice && data.contractRentAmount != null) {
     rows.splice(
@@ -1368,8 +1377,7 @@ export function createContractPaidDocumentPdf(
     ...commercialRows,
     ['Total sewa kontrak', idr(data.contractRentAmount)],
     ['Total pembayaran diterima', idr(data.totalRentReceived)],
-    ['Penyesuaian kontrak', idr(data.contractAdjustmentAmount)],
-    ['Total kewajiban lunas', idr(data.totalSettledAmount)],
+    ['Total kewajiban lunas', idr(data.contractRentAmount)],
     ...(data.outstandingAmount > 0
       ? ([['Sisa kewajiban', idr(data.outstandingAmount)]] as Array<[string, string]>)
       : []),

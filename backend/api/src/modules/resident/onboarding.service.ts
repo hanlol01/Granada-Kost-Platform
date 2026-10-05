@@ -23,6 +23,7 @@ import { W06BillingService } from '../billing/services/w06-billing.service';
 import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
 import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
 import { calculateOwnerSponsoredManagementFee } from '../billing/helpers/owner-sponsored-occupancy.helper';
+import { prepareArchiveSuccessor, completeArchiveSuccessor } from '../lease/lease-archive-successor.helper';
 
 type RoomRow = {
   id: string;
@@ -265,6 +266,7 @@ export class OnboardingService {
             code: 'PROPERTY_NOT_FOUND',
             message: 'Property not found',
           });
+        const archiveSource = await prepareArchiveSuccessor(client, actor, dto);
         const lead = dto.booking_lead_id
           ? (
               await client.query<LeadRow>(
@@ -1294,6 +1296,7 @@ export class OnboardingService {
             }),
           ],
         );
+        if (archiveSource) await completeArchiveSuccessor(client, actor, archiveSource, lease.rows[0].id);
         const response: OnboardingCommitmentResponse = {
           commitmentId: commitment.rows[0].id,
           status: 'committed',

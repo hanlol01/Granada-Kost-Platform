@@ -8,6 +8,10 @@ const componentPath = new URL(
 );
 const detailPath = new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url);
 const apiPath = new URL("./admin-ux-lease-api.ts", import.meta.url);
+const contractPath = new URL("./lease-revision-contract.ts", import.meta.url);
+const correctionRoutePath = new URL("../routes/tenants/correction/$leaseId.tsx", import.meta.url);
+const tenantsRoutePath = new URL("../routes/tenants.tsx", import.meta.url);
+const registryPath = new URL("./admin-route-registry.ts", import.meta.url);
 
 test("lease correction uses the shared date and Rupiah controls with semantic button colors", async () => {
   const source = await readFile(componentPath, "utf8");
@@ -27,13 +31,30 @@ test("resident detail exposes correction history and identifies historical check
   assert.match(source, /Koreksi data penyewaan/);
   assert.match(source, /Tanggal check-in historis/);
   assert.match(source, /Tanggal check-in hasil koreksi/);
-  assert.match(source, /LeaseDataCorrectionDialog/);
+  assert.match(source, /to="\/tenants\/correction\/\$leaseId"/);
+  assert.match(source, /params=\{\{ leaseId: currentTenancy\.leaseId \}\}/);
+  assert.doesNotMatch(source, /<LeaseDataCorrectionDialog/);
 });
 
 test("Admin client binds preview, list, and idempotent commit endpoints", async () => {
   const source = await readFile(apiPath, "utf8");
-  assert.match(source, /\/data-correction\/preview/);
+  const contract = await readFile(contractPath, "utf8");
+  assert.match(source, /createLeaseRevisionClient/);
+  assert.match(contract, /\/data-correction\/preview/);
   assert.match(source, /\/data-corrections/);
-  assert.match(source, /\/data-correction"/);
-  assert.match(source, /commitDataCorrection[\s\S]*?idempotencyKey/);
+  assert.match(contract, /\/data-correction`/);
+  assert.match(contract, /commitDataCorrection[\s\S]*?idempotencyKey/);
+});
+
+test("dedicated correction route renders through the tenant parent and has Admin-only metadata", async () => {
+  const route = await readFile(correctionRoutePath, "utf8");
+  const parent = await readFile(tenantsRoutePath, "utf8");
+  const registry = await readFile(registryPath, "utf8");
+  assert.match(route, /createFileRoute\("\/tenants\/correction\/\$leaseId"\)/);
+  assert.match(route, /<LeaseDataCorrectionPage leaseId=\{leaseId\}/);
+  assert.match(parent, /match\.routeId === "\/tenants\/correction\/\$leaseId"/);
+  assert.match(
+    registry,
+    /id: "lease-correction"[\s\S]*?roles: \["admin"\][\s\S]*?readCapabilities: \["lease\.manage"\]/,
+  );
 });

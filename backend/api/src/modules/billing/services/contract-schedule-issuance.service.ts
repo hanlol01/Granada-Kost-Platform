@@ -39,6 +39,21 @@ export type ContractScheduleIssuanceInput = {
   /** Optional stable idempotency namespace for the issued invoices. */
   commandFingerprintPrefix?: string;
   actorUserId: string;
+  /** Administrative mode correction only; the immutable revision is already appended. */
+  correction?: {
+    correctionId: string;
+    sequenceOffset: number;
+    previousSettlementId: string | null;
+    /** Existing administrative activation only; this never establishes physical check-in. */
+    activateFrom: string | null;
+  };
+  /** A no-money archive restoration with its immutable authority already appended. */
+  restoration?: {
+    commandId: string;
+    sequenceOffset: number;
+    previousSettlementId: string;
+    activateFrom: string | null;
+  };
 };
 
 export type ContractScheduleIssuanceResult = {
@@ -58,6 +73,37 @@ export class ContractScheduleIssuanceService {
     client: PoolClient,
     input: ContractScheduleIssuanceInput,
   ): Promise<ContractScheduleIssuanceResult> {
+    const replacement = input.correction ?? input.restoration;
+    if (input.restoration) {
+      if (input.correction || !input.restoration.commandId || !input.restoration.previousSettlementId ||
+        !Number.isSafeInteger(input.restoration.sequenceOffset) || input.restoration.sequenceOffset < 0 ||
+        input.restoration.sequenceOffset > 2147483527 || input.initialRentCredit !== 0)
+        throw new ConflictException({ code: 'LEASE_ARCHIVE_RESTORE_BILLING_INVALID',
+          message: 'Jadwal pemulihan belum dapat dipastikan. Tinjau arsip; pembayaran lama tidak dihidupkan ulang.' });
+      const authority = await client.query(`SELECT command.id FROM lease_archive_restore_commands command
+        JOIN lease_archives archive ON archive.id=command.archive_id AND archive.property_id=command.property_id
+        JOIN leases lease ON lease.id=command.lease_id AND lease.property_id=command.property_id
+        WHERE command.id=$1 AND command.property_id=$2 AND command.lease_id=$3
+          AND archive.archive_status='archived' AND archive.financial_resolution_state='not_required'
+          AND lease.lease_status='cancelled' AND lease.commercial_mode='rent'
+          AND command.result_snapshot->>'archive_status'='restored'`,
+      [input.restoration.commandId, input.propertyId, input.leaseId]);
+      if (authority.rowCount !== 1) throw new ConflictException({ code: 'LEASE_ARCHIVE_RESTORE_BILLING_INVALID',
+        message: 'Otoritas pemulihan tagihan tidak cocok. Tidak ada tagihan baru diterbitkan; muat tinjauan arsip terbaru.' });
+    }
+    if (
+      input.correction &&
+      (!input.correction.correctionId ||
+        !Number.isSafeInteger(input.correction.sequenceOffset) ||
+        input.correction.sequenceOffset < 0 ||
+        input.correction.sequenceOffset > 2147483527 ||
+        input.initialRentCredit !== 0)
+    )
+      throw new ConflictException({
+        code: 'LEASE_MODE_CORRECTION_SCHEDULE_INVALID',
+        message:
+          'Jadwal koreksi belum dapat disiapkan. Perbarui tinjauan jenis hunian; pembayaran awal tidak boleh dibuat oleh koreksi.',
+      });
     if (!Number.isInteger(input.termMonths) || input.termMonths < 1 || input.termMonths > 120)
       throw new UnprocessableEntityException({
         code: 'LEASE_SETTLEMENT_TERM_NOT_SUPPORTED',
@@ -72,6 +118,7 @@ export class ContractScheduleIssuanceService {
     let firstInvoiceId: string | null = null;
     let remainingInitialRentCredit = Math.max(0, input.initialRentCredit);
     for (const item of schedule) {
+      const sequenceNumber = item.sequenceNumber + (replacement?.sequenceOffset ?? 0);
       const issueNow = item.sequenceNumber === 1 || remainingInitialRentCredit > 0;
       const installmentStatus = issueNow ? 'issued' : 'scheduled';
       const installmentId = randomUUID();
@@ -82,7 +129,7 @@ export class ContractScheduleIssuanceService {
           installmentId,
           input.propertyId,
           input.leaseId,
-          item.sequenceNumber,
+          sequenceNumber,
           item.coverageStartDate,
           item.coverageEndDate,
           item.dueDate,
@@ -116,7 +163,7 @@ export class ContractScheduleIssuanceService {
           invoiceId,
           input.propertyId,
           installmentId,
-          `RENT-${input.leaseId.slice(0, 8).toUpperCase()}-${String(item.sequenceNumber).padStart(2, '0')}`,
+          `RENT-${input.leaseId.slice(0, 8).toUpperCase()}-${String(sequenceNumber).padStart(2, '0')}`,
           installmentStatus === 'issued' ? 'issued' : 'draft',
           item.scheduledAmount,
           item.dueDate,
@@ -227,22 +274,64 @@ export class ContractScheduleIssuanceService {
     // A committed or approved schedule is not yet an occupancy. Checkpoint
     // dates remain durable commercial facts; their actionable status is only
     // projected after the lease becomes active.
-    await client.query(
-      `INSERT INTO lease_contract_settlements(
+    if (replacement?.previousSettlementId) {
+      const replaced = await client.query(
+        `UPDATE lease_contract_settlements
+        SET invoice_id=$3,policy_snapshot_id=$4,state='awaiting_activation',activated_at=NULL,original_due_at=NULL,
+            extension_due_at=NULL,extension_reason=NULL,extension_granted_at=NULL,extension_granted_by_user_id=NULL,updated_at=now()
+        WHERE property_id=$1 AND lease_id=$2 AND id=$5 AND state='cancelled'
+          AND ${input.restoration
+            ? "EXISTS (SELECT 1 FROM lease_archive_restore_commands WHERE id=$6 AND property_id=$1 AND lease_id=$2 AND result_snapshot->>'archive_status'='restored')"
+            : "EXISTS (SELECT 1 FROM lease_commercial_mode_revisions WHERE correction_id=$6 AND property_id=$1 AND lease_id=$2 AND to_mode='rent')"}`,
+        [
+          input.propertyId,
+          input.leaseId,
+          firstInvoiceId,
+          policySnapshotId,
+          replacement.previousSettlementId,
+          input.restoration?.commandId ?? input.correction?.correctionId,
+        ],
+      );
+      if (replaced.rowCount !== 1)
+        throw new ConflictException({
+          code: 'LEASE_MODE_CORRECTION_SETTLEMENT_STALE',
+          message:
+            'Otoritas tagihan berubah saat koreksi disimpan. Tidak ada perubahan diterapkan; perbarui data dan tinjau ulang.',
+        });
+    } else
+      await client.query(
+        `INSERT INTO lease_contract_settlements(
          property_id,lease_id,invoice_id,state,policy_snapshot_id
        ) VALUES($1,$2,$3,'awaiting_activation',$4)`,
-      [input.propertyId, input.leaseId, firstInvoiceId, policySnapshotId],
-    );
-    await client.query(
-      `INSERT INTO lease_activation_lifecycles(
+        [input.propertyId, input.leaseId, firstInvoiceId, policySnapshotId],
+      );
+    if (replacement?.activateFrom) {
+      const opened = await client.query(
+        `UPDATE lease_contract_settlements settlement
+        SET state='open',activated_at=$3::timestamptz,original_due_at=checkpoint.due_at,updated_at=now()
+        FROM lease_settlement_checkpoints checkpoint
+        WHERE settlement.property_id=$1 AND settlement.lease_id=$2 AND settlement.state='awaiting_activation'
+          AND checkpoint.policy_snapshot_id=settlement.policy_snapshot_id AND checkpoint.checkpoint_code='final_settlement'`,
+        [input.propertyId, input.leaseId, replacement.activateFrom],
+      );
+      if (opened.rowCount !== 1)
+        throw new ConflictException({
+          code: 'LEASE_MODE_CORRECTION_CHECKPOINT_MISSING',
+          message:
+            'Tenggat pelunasan hasil koreksi belum lengkap. Tidak ada perubahan diterapkan; perbarui tinjauan periode dan coba lagi.',
+        });
+    }
+    if (!replacement)
+      await client.query(
+        `INSERT INTO lease_activation_lifecycles(
          property_id,lease_id,state,cutoff_at,check_in_due_at
        ) VALUES(
          $1,$2,'scheduled',
          (($3::date + TIME '00:05') AT TIME ZONE 'Asia/Jakarta'),
          (($3::date + 1 + TIME '00:05') AT TIME ZONE 'Asia/Jakarta')
        )`,
-      [input.propertyId, input.leaseId, input.startDate],
-    );
+        [input.propertyId, input.leaseId, input.startDate],
+      );
     return { firstInvoiceId, installmentCount: schedule.length };
   }
 }

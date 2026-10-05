@@ -3075,10 +3075,16 @@ export class PropertyOwnerRealizationService {
     const result = await client.query<Candidate>(
       `WITH rent_ledger AS (
          SELECT invoice.lease_id,
-                COALESCE(sum(invoice.credit_amount + allocation.net_amount),0)::bigint AS verified_rent_credit,
+                 COALESCE(sum(invoice.credit_amount - COALESCE(correction_credit.amount,0) + allocation.net_amount),0)::bigint AS verified_rent_credit,
                 max(payment_dates.latest_paid_at) AS paid_in_full_at
-           FROM invoices invoice
-           LEFT JOIN LATERAL (
+            FROM invoices invoice
+            LEFT JOIN LATERAL (
+              SELECT COALESCE(sum(credit.amount),0) AS amount
+                FROM lease_data_correction_invoice_credits credit
+               WHERE credit.invoice_id=invoice.id AND credit.property_id=invoice.property_id
+                 AND credit.lease_id=invoice.lease_id
+            ) correction_credit ON true
+            LEFT JOIN LATERAL (
              SELECT COALESCE(sum(allocation.allocated_amount - COALESCE(reversal.reversed_amount,0)),0)::bigint AS net_amount
                FROM payment_allocations allocation
                JOIN payments allocation_payment ON allocation_payment.id=allocation.payment_id AND allocation_payment.payment_status='verified'
@@ -3143,7 +3149,7 @@ export class PropertyOwnerRealizationService {
               WHERE version.property_id=lease.property_id AND version.effective_date<=lease.start_date
               ORDER BY version.effective_date DESC LIMIT 1
            ) fee ON true
-           WHERE lease.property_id=$1 AND lease.commercial_mode='rent'
+           WHERE lease.property_id=$1 AND lease.commercial_mode='rent' AND lease.lease_status<>'cancelled'
              AND lease.service_period_state<>'pending_check_in'
              AND COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NOT NULL
             AND lease.contract_rent_amount>0 AND ledger.verified_rent_credit>=lease.contract_rent_amount
@@ -3188,18 +3194,29 @@ export class PropertyOwnerRealizationService {
                 WHEN lock.id IS NOT NULL THEN 'ALREADY_ALLOCATED_TO_REALIZATION'
                 ELSE 'PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD'
               END AS reason_code
-         FROM leases lease
-         JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
+          FROM leases lease
+          LEFT JOIN lease_activation_lifecycles check_in ON check_in.lease_id=lease.id AND check_in.property_id=lease.property_id
+          LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lease.property_id AND occupancy.occupancy_status<>'cancelled'
+          JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
          JOIN residents resident ON resident.id=lease.resident_id
          LEFT JOIN LATERAL (
-           SELECT COALESCE(sum(invoice.credit_amount + allocation.net_amount),0)::bigint AS verified_rent_credit,
+            SELECT COALESCE(sum(invoice.credit_amount - COALESCE(correction_credit.amount,0) + allocation.net_amount),0)::bigint AS verified_rent_credit,
                   max(payment_dates.latest_paid_at) AS paid_in_full_at
              FROM invoices invoice
-             LEFT JOIN lease_activation_lifecycles check_in ON check_in.lease_id=lease.id AND check_in.property_id=lease.property_id
-          LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lease.property_id
+              LEFT JOIN LATERAL (
+                SELECT COALESCE(sum(credit.amount),0) AS amount
+                  FROM lease_data_correction_invoice_credits credit
+                 WHERE credit.invoice_id=invoice.id AND credit.property_id=invoice.property_id
+                   AND credit.lease_id=invoice.lease_id
+              ) correction_credit ON true
           LEFT JOIN LATERAL (
-               SELECT COALESCE(sum(a.allocated_amount),0)::bigint AS net_amount
-                 FROM payment_allocations a JOIN payments p ON p.id=a.payment_id AND p.payment_status='verified'
+                SELECT COALESCE(sum(a.allocated_amount - COALESCE(reversal.reversed_amount,0)),0)::bigint AS net_amount
+                  FROM payment_allocations a JOIN payments p ON p.id=a.payment_id AND p.payment_status='verified'
+                  LEFT JOIN LATERAL (
+                    SELECT COALESCE(sum(reverse_allocation.reversed_amount),0) AS reversed_amount
+                      FROM payment_reversal_allocations reverse_allocation
+                     WHERE reverse_allocation.original_allocation_id=a.id
+                  ) reversal ON true
                 WHERE a.invoice_id=invoice.id AND a.allocation_status='active'
              ) allocation ON true
              LEFT JOIN LATERAL (
@@ -3230,7 +3247,7 @@ export class PropertyOwnerRealizationService {
           ) assignment ON true
           LEFT JOIN property_owner_profiles owner ON owner.id=assignment.owner_profile_id
           LEFT JOIN property_owner_realization_lease_locks lock ON lock.lease_id=lease.id AND lock.lock_status='locked'
-          WHERE lease.property_id=$1 AND lease.contract_rent_amount IS NOT NULL
+           WHERE lease.property_id=$1 AND lease.contract_rent_amount IS NOT NULL AND lease.lease_status<>'cancelled'
            AND ($3::uuid IS NULL OR assignment.owner_profile_id=$3::uuid)
             AND (assignment.owner_profile_id IS NULL OR lease.commercial_mode='owner_sponsored' OR lease.service_period_state='pending_check_in' OR COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NULL OR COALESCE(ledger.verified_rent_credit,0)<lease.contract_rent_amount
              OR lock.id IS NOT NULL

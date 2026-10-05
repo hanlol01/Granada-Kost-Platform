@@ -8,6 +8,15 @@ export const formatIDR = (n: number) =>
 export const formatDate = (s: string) =>
   new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 
+/** Audit timestamps are instants, unlike date-only contract boundaries. */
+export function formatRecordedAt(value: string): string {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "long", timeStyle: "short", timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
 /** Parses digit-only Rupiah input; decimals, negatives, and overflow are rejected. */
 export function parseIDR(value: string): number | null {
   const normalized = value.trim();

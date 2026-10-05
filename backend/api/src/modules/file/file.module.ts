@@ -21,6 +21,6 @@ import { LocalFileStorage } from './storage/local-file-storage';
       useExisting: LocalFileStorage,
     },
   ],
-  exports: [FileService, FileRepository],
+  exports: [FileService, FileRepository, FILE_STORAGE_PROVIDER],
 })
 export class FileModule {}

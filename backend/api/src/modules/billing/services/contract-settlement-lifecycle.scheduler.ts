@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
+import { receivedInvoiceCreditSql } from '../helpers/contract-correction-credit.helper';
 
 const SCHEDULER_LOCK_NAME = 'granada-lease-settlement-lifecycle-v2';
 const AUTOMATIC_INTERVAL_MS = 5 * 60 * 1000;
@@ -459,7 +460,7 @@ export class ContractSettlementLifecycleScheduler implements OnModuleInit, OnMod
   private candidateSql() {
     return `WITH ledger AS (
       SELECT invoice.lease_id,
-             COALESCE(sum(invoice.credit_amount + COALESCE(allocation.net,0)),0) AS verified_rent_credit
+             COALESCE(sum(${receivedInvoiceCreditSql('invoice')} + COALESCE(allocation.net,0)),0) AS verified_rent_credit
         FROM invoices invoice
         LEFT JOIN LATERAL (
           SELECT COALESCE(sum(payment_allocation.allocated_amount

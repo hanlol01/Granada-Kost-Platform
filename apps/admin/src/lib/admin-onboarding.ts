@@ -1,6 +1,9 @@
 export type OnboardingPayload = {
   property_id: string;
   booking_lead_id?: string;
+  resident_id?: string;
+  source_archive_id?: string;
+  archive_replacement_reason?: string;
   room_id?: string;
   visitor_name: string;
   visitor_phone: string;

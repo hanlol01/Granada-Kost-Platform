@@ -1,5 +1,6 @@
 import { ApiError } from "@granada-kost/api-client";
 import { normalizeAdminError, type NormalizedAdminError } from "@/lib/error-normalizer";
+import { LEASE_REVISION_ERROR_NOTICES } from "./lease-revision-notices";
 
 export type OnboardingErrorNotice = {
   title: string;
@@ -260,7 +261,7 @@ export function onboardingErrorFieldErrors(
 export function resolveOnboardingErrorNotice(
   error: Pick<NormalizedAdminError, "code" | "kind" | "message">,
 ): OnboardingErrorNotice {
-  const exact = CODE_NOTICES[error.code];
+  const exact = CODE_NOTICES[error.code] ?? LEASE_REVISION_ERROR_NOTICES[error.code];
   if (exact) return exact;
 
   if (error.kind === "validation") {

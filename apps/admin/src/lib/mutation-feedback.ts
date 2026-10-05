@@ -14,8 +14,9 @@ export function toastMutationSuccess(message: string): void {
 export function toastMutationError(
   err: unknown,
   fallback: string,
+  incidentError: unknown = err,
 ): { status: number | null; code: string | null; correlationId: string | null } {
-  const notice = adminErrorNotice(err, fallback);
+  const notice = adminErrorNotice(err, fallback, incidentError);
 
   if (ApiError.isApiError(err)) {
     toast.error(notice.title, { description: notice.description });

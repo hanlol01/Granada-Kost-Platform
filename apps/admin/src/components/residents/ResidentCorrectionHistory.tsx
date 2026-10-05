@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { History } from "lucide-react";
+import { ChevronDown, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { adminUxLeaseApi } from "@/lib/admin-ux-lease-api";
@@ -85,6 +86,7 @@ function Snapshot({
 
 export function ResidentCorrectionHistory({ residentId }: { residentId: string }) {
   const { currentPropertyId } = useProperty();
+  const [expanded, setExpanded] = useState(false);
   const history = useQuery({
     queryKey: ["resident-correction-history", currentPropertyId, residentId],
     queryFn: ({ signal }) =>
@@ -94,113 +96,139 @@ export function ResidentCorrectionHistory({ residentId }: { residentId: string }
   const records = history.data?.corrections ?? [];
   return (
     <Card id="riwayat-koreksi-penyewaan">
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <History className="h-5 w-5 text-primary" /> Riwayat koreksi penyewaan
-          {records.length ? (
-            <StatusBadge tone="info" label={`${records.length} kali koreksi`} />
-          ) : null}
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Catatan dari seluruh kontrak penghuni, termasuk penyewaan yang sudah berakhir.
-        </p>
+      <CardHeader className="p-0">
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-auto w-full justify-between gap-4 whitespace-normal px-6 py-5 text-left hover:bg-muted/50"
+          aria-expanded={expanded}
+          aria-controls="riwayat-koreksi-penyewaan-isi"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <span className="min-w-0 space-y-2">
+            <span className="flex flex-wrap items-center gap-2 text-base font-semibold">
+              <History className="h-5 w-5 text-primary" aria-hidden="true" />
+              Riwayat koreksi penyewaan
+              {records.length ? (
+                <StatusBadge tone="info" label={`${records.length} kali koreksi`} />
+              ) : null}
+            </span>
+            <span className="block text-sm font-normal text-muted-foreground">
+              Catatan dari seluruh kontrak penghuni, termasuk penyewaan yang sudah berakhir.
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-primary">
+            {expanded ? "Sembunyikan riwayat" : "Tampilkan riwayat"}
+            <ChevronDown
+              className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+              aria-hidden="true"
+            />
+          </span>
+        </Button>
       </CardHeader>
-      <CardContent>
-        {history.isPending ? (
-          <Skeleton className="h-28 w-full" />
-        ) : history.isError ? (
-          <div role="alert" className="space-y-3">
-            <p className="text-sm text-destructive">Riwayat koreksi belum dapat dimuat.</p>
-            <Button
-              variant="info"
-              disabled={history.isFetching}
-              onClick={() => void history.refetch()}
-            >
-              Coba lagi
-            </Button>
-          </div>
-        ) : records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Belum ada koreksi data penyewaan yang tercatat.
-          </p>
-        ) : (
-          <ol className="space-y-5">
-            {records.map((entry) => (
-              <li key={entry.id} className="space-y-4 rounded-xl border border-border p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+      {expanded ? (
+        <CardContent id="riwayat-koreksi-penyewaan-isi">
+          {history.isPending ? (
+            <Skeleton className="h-28 w-full" />
+          ) : history.isError ? (
+            <div role="alert" className="space-y-3">
+              <p className="text-sm text-destructive">Riwayat koreksi belum dapat dimuat.</p>
+              <Button
+                variant="info"
+                disabled={history.isFetching}
+                onClick={() => void history.refetch()}
+              >
+                Coba lagi
+              </Button>
+            </div>
+          ) : records.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada koreksi data penyewaan yang tercatat.
+            </p>
+          ) : (
+            <ol className="space-y-5">
+              {records.map((entry) => (
+                <li key={entry.id} className="space-y-4 rounded-xl border border-border p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">
+                        {entry.roomNumber ?? "Kamar belum tercatat"} · Koreksi ke-
+                        {entry.sequenceNumber}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {date(entry.createdAt, true)} ·{" "}
+                        {entry.createdByName || "Pencatat tidak tersedia"}
+                      </p>
+                    </div>
+                    <StatusBadge
+                      tone="info"
+                      label={correctionKinds[entry.correctionKind] ?? "Koreksi penyewaan"}
+                    />
+                  </div>
                   <div>
-                    <h3 className="font-semibold">
-                      {entry.roomNumber ?? "Kamar belum tercatat"} · Koreksi ke-
-                      {entry.sequenceNumber}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {date(entry.createdAt, true)} ·{" "}
-                      {entry.createdByName || "Pencatat tidak tersedia"}
+                    <p className="text-xs font-medium text-muted-foreground">Alasan koreksi</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+                      {entry.reason || "—"}
                     </p>
                   </div>
-                  <StatusBadge
-                    tone="info"
-                    label={correctionKinds[entry.correctionKind] ?? "Koreksi penyewaan"}
-                  />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Alasan koreksi</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-                    {entry.reason || "—"}
-                  </p>
-                </div>
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <Snapshot
-                    title="Sebelum koreksi"
-                    snapshot={entry.previous}
-                    other={entry.corrected}
-                  />
-                  <Snapshot
-                    title="Setelah koreksi"
-                    snapshot={entry.corrected}
-                    other={entry.previous}
-                  />
-                </div>
-                <div className="rounded-xl border border-border p-4">
-                  <p className="mb-3 text-sm font-semibold">Dampak keuangan</p>
-                  <StatusBadge
-                    tone={
-                      entry.impact.additionalChargeAmount > 0
-                        ? "warning"
-                        : entry.impact.contractCreditAmount > 0
-                          ? "info"
-                          : "neutral"
-                    }
-                    label={
-                      entry.impact.additionalChargeAmount > 0
-                        ? `Tambahan kewajiban ${amount(entry.impact.additionalChargeAmount)}`
-                        : entry.impact.contractCreditAmount > 0
-                          ? `Kredit koreksi ${amount(entry.impact.contractCreditAmount)}`
-                          : "Tidak ada perubahan nilai kontrak"
-                    }
-                  />
-                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                    {[
-                      ["Selisih nilai kontrak", entry.impact.contractAmountDelta],
-                      [
-                        "Pembayaran sewa terverifikasi saat koreksi",
-                        entry.impact.verifiedRentPaymentAmount,
-                      ],
-                      ["Sisa kewajiban setelah koreksi", entry.impact.outstandingAmountAfter],
-                      ["Kelebihan pembayaran setelah koreksi", entry.impact.overpaymentAmountAfter],
-                    ].map(([label, value]) => (
-                      <div key={String(label)}>
-                        <dt className="text-muted-foreground">{label}</dt>
-                        <dd className="mt-1 font-medium tabular-nums">{amount(value as number)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </CardContent>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <Snapshot
+                      title="Sebelum koreksi"
+                      snapshot={entry.previous}
+                      other={entry.corrected}
+                    />
+                    <Snapshot
+                      title="Setelah koreksi"
+                      snapshot={entry.corrected}
+                      other={entry.previous}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border p-4">
+                    <p className="mb-3 text-sm font-semibold">Dampak keuangan</p>
+                    <StatusBadge
+                      tone={
+                        entry.impact.additionalChargeAmount > 0
+                          ? "warning"
+                          : entry.impact.contractCreditAmount > 0
+                            ? "info"
+                            : "neutral"
+                      }
+                      label={
+                        entry.impact.additionalChargeAmount > 0
+                          ? `Tambahan kewajiban ${amount(entry.impact.additionalChargeAmount)}`
+                          : entry.impact.contractCreditAmount > 0
+                            ? `Kredit koreksi ${amount(entry.impact.contractCreditAmount)}`
+                            : "Tidak ada perubahan nilai kontrak"
+                      }
+                    />
+                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      {[
+                        ["Selisih nilai kontrak", entry.impact.contractAmountDelta],
+                        [
+                          "Pembayaran sewa terverifikasi saat koreksi",
+                          entry.impact.verifiedRentPaymentAmount,
+                        ],
+                        ["Sisa kewajiban setelah koreksi", entry.impact.outstandingAmountAfter],
+                        [
+                          "Kelebihan pembayaran setelah koreksi",
+                          entry.impact.overpaymentAmountAfter,
+                        ],
+                      ].map(([label, value]) => (
+                        <div key={String(label)}>
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd className="mt-1 font-medium tabular-nums">
+                            {amount(value as number)}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </CardContent>
+      ) : null}
     </Card>
   );
 }

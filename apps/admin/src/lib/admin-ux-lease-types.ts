@@ -102,6 +102,18 @@ export type LeaseDetailResponse = {
 };
 
 export type LeaseDataCorrectionSnapshot = {
+  commercialMode?: "rent" | "owner_sponsored";
+  commercialChange?: {
+    invoicesToVoid: { invoiceCode: string; invoiceStatus: string }[];
+    notice: string;
+  } | null;
+  ownerSponsorship?: LeaseCorrectionSponsorship | null;
+  roomId?: string | null;
+  roomNumber?: string | null;
+  managerRoomLabel?: string | null;
+  plotNumber?: string | null;
+  kostTypeName?: string | null;
+  roomCorrectionEvidenceFileIds?: string[];
   startDate: string;
   endDate: string;
   termMonths: number;
@@ -112,6 +124,22 @@ export type LeaseDataCorrectionSnapshot = {
   contractRentAmount: number;
   pricingSource: "standard" | "negotiated" | "owner_sponsored";
   pricingAgreementReason: string | null;
+};
+
+export type LeaseCorrectionSponsorship = {
+  ownerProfileId: string;
+  ownershipKind: "building" | "room";
+  ownershipAssignmentId: string;
+  managementFeeMode: "charged" | "waived";
+  managementFeePayer: "resident" | "owner" | "other" | null;
+  managementFeePayerName: string | null;
+  sponsorshipReason: string;
+  monthlyManagementFee: number;
+  projectedManagementFeeAmount: number;
+  roomId: string;
+  startDate: string;
+  endDate: string;
+  termMonths: number;
 };
 
 export type LeaseDataCorrectionImpact = {
@@ -136,9 +164,47 @@ export type LeaseDataCorrectionPreview = {
     | "contract_period"
     | "combined";
   pricingChoiceRequired: boolean;
+  ownerImpact: {
+    previous: LeaseCorrectionOwnerProjection;
+    corrected: LeaseCorrectionOwnerProjection;
+    projectionOnly: true;
+    transferAmountUnchanged: true;
+    notice: string;
+  };
+  documentImpact: Array<{
+    documentType: "invoice" | "payment_receipt" | "contract_paid_confirmation";
+    documentCode: string;
+    currentStatus: string;
+    effect: "retained" | "voided" | "invalidated" | "already_invalidated";
+    notice: string;
+  }>;
+  sponsorshipChange?: {
+    effectiveFrom: string;
+    previous: LeaseCorrectionSponsorship;
+    corrected: LeaseCorrectionSponsorship;
+    notice: string;
+  } | null;
+  roomChange?: {
+    previousRoomNumber: string;
+    correctedRoomNumber: string;
+    targetStatus: string;
+    evidenceFileIds: string[];
+    notice: string;
+  } | null;
 };
 
-export type LeaseDataCorrectionRecord = LeaseDataCorrectionPreview & {
+export type LeaseCorrectionOwnerProjection = {
+  ownerProfileId: string | null;
+  ownerName: string | null;
+  monthlyManagementFee: number;
+  managementFeeAmount: number;
+  projectedOwnerEntitlement: number;
+};
+
+export type LeaseDataCorrectionRecord = Omit<
+  LeaseDataCorrectionPreview,
+  "pricingChoiceRequired" | "ownerImpact" | "documentImpact"
+> & {
   id: string;
   sequenceNumber: number;
   reason: string;

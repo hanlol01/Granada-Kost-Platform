@@ -102,7 +102,7 @@ void test('rent invoice preserves the contractual period after an early checkout
   assert.doesNotMatch(text, /Cakupan tagihan/);
   assert.match(text, /Jatuh Tempo Tagihan\s*:\s*Minggu, 1 November 2026/);
   assert.match(text, /Batas Pelunasan Kontrak\s*:\s*Minggu, 1 November 2026/);
-  assert.doesNotMatch(text, /Sabtu, 1 Agustus 2026/);
+  assert.doesNotMatch(text, /Jatuh Tempo Tagihan\s*:\s*Sabtu, 1 Agustus 2026/);
 });
 
 void test('invoice renderer moves the balance summary to a continuation page when rows exceed the page', async () => {
@@ -133,10 +133,41 @@ void test('invoice renderer moves the balance summary to a continuation page whe
     propertyAddress:
       'Jalan Kiara Beres, Desa Cipacing, Kecamatan Jatinangor, Kabupaten Sumedang, Jawa Barat 45363',
     issuedByName: 'Admin Pengelola Dengan Nama Panjang Untuk Pengujian Tata Letak Dokumen',
+    periodAuthorityNote: 'Masa sewa mengikuti tanggal check-in yang tercatat. '.repeat(10),
   });
 
   const parsed = await PDFDocument.load(result.content);
   assert.equal(parsed.getPageCount(), 2);
+});
+
+void test('corrected invoices show current amounts without treating correction credit as received money', async () => {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  for (const fixture of [
+    { contract: 19_800_000, paid: 6_800_000, remaining: 13_000_000 },
+    { contract: 18_700_000, paid: 10_400_000, remaining: 8_300_000 },
+  ]) {
+    const result = await createBillingInvoicePdf({
+      invoiceCode: 'INV-CORRECTED', invoiceStatus: 'partially_paid', invoicePurpose: 'rent',
+      residentName: 'Penghuni', roomNumber: 'RK-01-04', buildingCode: 'RK-01',
+      coverageStart: '2026-10-01', coverageEnd: '2027-09-01', dueDate: '2026-11-15',
+      totalAmount: fixture.contract, paidAmount: fixture.paid, outstandingAmount: fixture.remaining,
+      hasContractCorrection: true, contractRentAmount: fixture.contract,
+      leaseTermMonths: 11, agreedMonthlyPrice: fixture.contract / 11, pricingSource: 'negotiated',
+      issuedAt: new Date('2026-10-01T00:00:00Z'),
+    });
+    const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+    let text = '';
+    for (let page = 1; page <= parsed.numPages; page++) {
+      const content = await (await parsed.getPage(page)).getTextContent();
+      text += content.items.map(item => 'str' in item ? item.str : '').join(' ');
+    }
+    const amountPattern = (amount: number) => new Intl.NumberFormat('id-ID').format(amount).replaceAll('.', '\\.');
+    assert.doesNotMatch(text, /Nilai tagihan setelah koreksi|Nilai tagihan awal/);
+    assert.match(text, new RegExp(`Nilai kontrak\\s*:\\s*Rp\\. ${amountPattern(fixture.contract)},-`));
+    assert.match(text, new RegExp(`Sudah dibayarkan\\s*:\\s*Rp\\. ${amountPattern(fixture.paid)},-`));
+    assert.match(text, new RegExp(`Sisa tagihan\\s*:\\s*Rp\\. ${amountPattern(fixture.remaining)},-`));
+    assert.doesNotMatch(text, /21\.600\.000|13\.300\.000/);
+  }
 });
 
 void test('branded receipt renderer creates a one-page PDF with the canonical receipt data', async () => {
@@ -411,6 +442,7 @@ void test('contract-paid proof moves its settlement block to a continuation page
     settledAt: '2026-09-03T03:00:00.000Z',
     issuedAt: '2026-09-03T03:00:00.000Z',
     transactionCodes: ['TRX-20260801-000001-DP', 'TRX-20260903-000004-LUNAS'],
+    periodAuthorityNote: 'Masa sewa berlaku sejak tanggal check-in hingga akhir kontrak. '.repeat(4),
     transactionReferences: [
       { code: 'TRX-20260801-000001-DP', amount: 1_800_000 },
       { code: 'TRX-20260903-000004-LUNAS', amount: 3_600_000 },
@@ -444,6 +476,40 @@ void test('contract-paid proof moves its settlement block to a continuation page
   assert.doesNotMatch(text, /Akumulasi pembayaran sewa/);
   assert.doesNotMatch(text, /Sisa kewajiban kontrak/);
   assert.doesNotMatch(text, /Sisa kewajiban\s*:\s*Rp\. 0,-/);
+});
+
+void test('contract-paid proof shows the corrected obligation without adding invoice correction credits', async () => {
+  const result = await createContractPaidDocumentPdf({
+    documentCode: '038-10/KONTRAK-LUNAS/GSH1/2026',
+    residentName: 'cik cobi', roomNumber: 'RK-01-04', buildingCode: 'RK-01',
+    leaseStart: '2026-10-01', leaseEnd: '2027-09-01', leaseTermMonths: 11,
+    agreedMonthlyPrice: 1_700_000, pricingSource: 'negotiated',
+    contractRentAmount: 18_700_000, initialRentCredit: 5_400_000,
+    additionalRentPayments: 13_300_000, totalRentReceived: 18_700_000,
+    contractAdjustmentAmount: 2_900_000, totalSettledAmount: 21_600_000,
+    outstandingAmount: 0, settledAt: '2026-10-04T00:00:00.000Z',
+    issuedAt: '2026-10-04T00:00:00.000Z',
+    transactionCodes: ['TRX-DP', 'TRX-SEWA', 'TRX-LUNAS'],
+    transactionReferences: [
+      { code: 'TRX-DP', amount: 5_400_000 },
+      { code: 'TRX-SEWA', amount: 5_000_000 },
+      { code: 'TRX-LUNAS', amount: 8_300_000 },
+    ],
+    propertyName: 'Granada Student House 1 Jatinangor',
+    propertyAddress: 'Jatinangor, Sumedang', issuedByName: 'Pihak Pengelola',
+  });
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const parsed = await getDocument({ data: new Uint8Array(result.content) }).promise;
+  let text = '';
+  for (let page = 1; page <= parsed.numPages; page++) {
+    const content = await (await parsed.getPage(page)).getTextContent();
+    text += content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+  }
+  assert.match(text, /Total sewa kontrak\s*:\s*Rp\. 18\.700\.000,-/);
+  assert.match(text, /Total pembayaran diterima\s*:\s*Rp\. 18\.700\.000,-/);
+  assert.match(text, /Total kewajiban lunas\s*:\s*Rp\. 18\.700\.000,-/);
+  assert.doesNotMatch(text, /Penyesuaian kontrak|21\.600\.000|2\.900\.000/);
+  assert.match(text, /TRX-LUNAS \( Rp\. 8\.300\.000,- \)/);
 });
 
 void test('contract-paid proof moves long transaction references to a continuation page', async () => {

@@ -6,10 +6,17 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { PoolClient } from 'pg';
 import { resolveLeaseCommercialAgreement } from '../billing/helpers/duration-pricing.helper';
 import { buildLeaseSettlementPolicyScheduleV4 } from '../billing/helpers/lease-settlement-policy.helper';
 import { W06BillingService } from '../billing/services/w06-billing.service';
+import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
+import {
+  LeaseCommercialModeCorrectionService,
+  type CommercialModeCorrectionFacts,
+  type CommercialModeCorrectionPlan,
+} from './lease-commercial-mode-correction.service';
 import type { UserAccessContext } from '../iam/types/iam.types';
 import type { CommitLeaseDataCorrectionDto, PreviewLeaseDataCorrectionDto } from './lease.dto';
 import {
@@ -17,7 +24,20 @@ import {
   calculateLeaseCorrectionImpact,
 } from './lease-data-correction.helper';
 import { LeaseRepository } from './lease.repository';
+import { readLeaseCommercialReference } from './lease-commercial-reference.helper';
 import { LeaseServicePeriodService } from './lease-service-period.service';
+import { LeaseRevisionContextService } from './lease-revision-context.service';
+import {
+  LeaseRoomRecordingCorrectionService,
+  type RoomRecordingCorrectionFacts,
+  type RoomRecordingCorrectionPlan,
+} from './lease-room-recording-correction.service';
+import {
+  LeaseSponsorshipCorrectionService,
+  type SponsorshipCorrectionFacts,
+  type SponsorshipCorrectionPlan,
+  type SponsorshipPolicySnapshot,
+} from './lease-sponsorship-correction.service';
 
 type LeaseCorrectionRow = {
   id: string;
@@ -65,18 +85,20 @@ type CorrectionContextRow = {
   activated_at: Date | null;
   lifecycle_checked_in_at: Date | null;
   effective_checked_in_date: string | null;
-};
-
-type CommercialRow = {
-  short_stay_monthly_price: string;
-  medium_stay_monthly_price: string;
-  long_stay_monthly_price: string;
-  annual_contract_value: string;
-  effective_date: string;
-  management_fee_amount: string | null;
+  onboarding_commitment_id: string | null;
+  service_period_state: string;
 };
 
 type CorrectionSnapshot = {
+  commercialMode?: 'rent' | 'owner_sponsored';
+  commercialTransition?: CommercialModeCorrectionPlan;
+  ownerSponsorship?: SponsorshipPolicySnapshot;
+  roomId?: string;
+  roomNumber?: string;
+  roomManagerLabel?: string | null;
+  roomPlotNumber?: string | null;
+  kostTypeName?: string;
+  roomEvidenceFileIds?: string[];
   startDate: string;
   endDate: string;
   termMonths: number;
@@ -98,6 +120,10 @@ type PreviewResult = {
   impact: ReturnType<typeof calculateLeaseCorrectionImpact>;
   correctionKind: LeaseCorrectionRow['correction_kind'];
   pricingChoiceRequired: boolean;
+  roomCorrection?: { facts: RoomRecordingCorrectionFacts; plan: RoomRecordingCorrectionPlan };
+  sponsorshipCorrection?: { facts: SponsorshipCorrectionFacts; plan: SponsorshipCorrectionPlan };
+  modeCorrection?: { facts: CommercialModeCorrectionFacts; plan: CommercialModeCorrectionPlan };
+  consequences?: Awaited<ReturnType<LeaseDataCorrectionService['previewConsequences']>>;
 };
 
 @Injectable()
@@ -106,6 +132,16 @@ export class LeaseDataCorrectionService {
     private readonly leases: LeaseRepository,
     private readonly billing: W06BillingService,
     private readonly periods: LeaseServicePeriodService,
+    private readonly revisions: LeaseRevisionContextService = new LeaseRevisionContextService(
+      leases,
+    ),
+    private readonly roomCorrections: LeaseRoomRecordingCorrectionService = new LeaseRoomRecordingCorrectionService(),
+    private readonly sponsorshipCorrections: LeaseSponsorshipCorrectionService = new LeaseSponsorshipCorrectionService(),
+    private readonly modeCorrections: LeaseCommercialModeCorrectionService = new LeaseCommercialModeCorrectionService(
+      billing,
+      new ContractScheduleIssuanceService(),
+      sponsorshipCorrections,
+    ),
   ) {}
 
   async preview(user: UserAccessContext, leaseId: string, dto: PreviewLeaseDataCorrectionDto) {
@@ -167,7 +203,7 @@ export class LeaseDataCorrectionService {
       }
     >(
       `SELECT correction.*, actor.display_name AS created_by_name,
-              COALESCE(origin.number, room.number, lease.snapshot_room_number) AS room_number
+               COALESCE(correction.corrected_snapshot->>'roomNumber', origin.number, room.number, lease.snapshot_room_number) AS room_number
        FROM lease_data_corrections correction
        JOIN leases lease ON lease.id = correction.lease_id AND lease.property_id = correction.property_id
        LEFT JOIN users actor ON actor.id = correction.created_by_user_id
@@ -211,6 +247,30 @@ export class LeaseDataCorrectionService {
         [leaseId],
       );
       if (!leaseScope.rows[0])
+        throw new NotFoundException({
+          code: 'LEASE_NOT_FOUND',
+          message: 'Penyewaan tidak ditemukan',
+        });
+      this.assertAdmin(user, leaseScope.rows[0].property_id);
+      // Match onboarding's property -> lease -> room ordering. Room changes must
+      // not race a booking hold, a physical cutover or new onboarding commitment.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended('booking_lead_hold:' || $1::text, 0))`,
+        [leaseScope.rows[0].property_id],
+      );
+      await client.query('SELECT id FROM properties WHERE id=$1 FOR UPDATE', [
+        leaseScope.rows[0].property_id,
+      ]);
+      const lockedScope = await client.query<{ property_id: string }>(
+        // Claim the aggregate lock before checking replay. A retry waiting for
+        // another commit must see its amendment before previewing current values.
+        'SELECT property_id FROM leases WHERE id=$1 FOR UPDATE',
+        [leaseId],
+      );
+      if (
+        !lockedScope.rows[0] ||
+        lockedScope.rows[0].property_id !== leaseScope.rows[0].property_id
+      )
         throw new NotFoundException({
           code: 'LEASE_NOT_FOUND',
           message: 'Penyewaan tidak ditemukan',
@@ -279,6 +339,40 @@ export class LeaseDataCorrectionService {
         ],
       );
 
+      // Preserve the locked source policy before any room or period projection changes.
+      if (preview.modeCorrection) {
+        await this.modeCorrections.record(
+          client,
+          preview.modeCorrection.facts,
+          correctionId,
+          user.id,
+          preview.previous,
+          preview.corrected,
+        );
+        await this.modeCorrections.retireSource(
+          client,
+          preview.modeCorrection.facts,
+          preview.modeCorrection.plan,
+          user,
+          dto.reason.trim(),
+        );
+      }
+      if (preview.sponsorshipCorrection)
+        await this.sponsorshipCorrections.record(
+          client,
+          preview.sponsorshipCorrection.facts,
+          preview.sponsorshipCorrection.plan,
+          correctionId,
+          user.id,
+        );
+      if (preview.roomCorrection)
+        await this.roomCorrections.apply(
+          client,
+          preview.roomCorrection.facts,
+          preview.roomCorrection.plan,
+          correctionId,
+          user.id,
+        );
       const checkInPeriodAmended =
         !!preview.previous.checkedInDate &&
         (preview.previous.checkedInDate !== preview.corrected.checkedInDate ||
@@ -294,12 +388,29 @@ export class LeaseDataCorrectionService {
           source: 'lease_data_correction',
         });
       await this.applyEffectiveLease(client, user.id, leaseId, preview);
-      if (preview.impact.contractCredit > 0)
+      if (preview.modeCorrection)
+        await this.modeCorrections.applyTarget(
+          client,
+          preview.modeCorrection.facts,
+          preview.modeCorrection.plan,
+          correctionId,
+          user.id,
+          preview.corrected,
+        );
+      if (preview.sponsorshipCorrection)
+        await this.sponsorshipCorrections.apply(
+          client,
+          preview.sponsorshipCorrection.facts,
+          preview.sponsorshipCorrection.plan,
+          correctionId,
+        );
+      if (!preview.modeCorrection && preview.impact.contractCredit > 0)
         await this.applyContractCredit(client, correctionId, user.id, preview);
-      if (preview.impact.additionalCharge > 0)
+      if (!preview.modeCorrection && preview.impact.additionalCharge > 0)
         await this.createAdditionalCharge(client, correctionId, user.id, preview);
       if (
         !checkInPeriodAmended &&
+        !preview.modeCorrection &&
         preview.commercialMode === 'rent' &&
         (preview.previous.startDate !== preview.corrected.startDate ||
           preview.previous.termMonths !== preview.corrected.termMonths ||
@@ -319,7 +430,8 @@ export class LeaseDataCorrectionService {
           correctionId,
           preview.impact.contractDelta,
           (!checkInPeriodAmended && preview.previous.startDate !== preview.corrected.startDate) ||
-            preview.previous.termMonths !== preview.corrected.termMonths,
+            preview.previous.termMonths !== preview.corrected.termMonths ||
+            !!preview.roomCorrection,
         ],
       );
       await client.query(
@@ -362,7 +474,7 @@ export class LeaseDataCorrectionService {
               lease.snapshot_reference_monthly_price,lease.snapshot_pricing_tier,
               lease.snapshot_commercial_effective_date::text,lease.contract_rent_amount,
               lease.pricing_source,lease.pricing_agreement_reason,lease.snapshot_room_number,
-              lease.snapshot_kost_type_name,lease.activated_at,lifecycle.checked_in_at AS lifecycle_checked_in_at,
+               lease.snapshot_kost_type_name,lease.activated_at,lease.onboarding_commitment_id,lease.service_period_state,lifecycle.checked_in_at AS lifecycle_checked_in_at,
               COALESCE(
                 latest_correction.corrected_snapshot->>'checkedInDate',
                 (lifecycle.checked_in_at AT TIME ZONE 'Asia/Jakarta')::date::text,
@@ -412,7 +524,39 @@ export class LeaseDataCorrectionService {
         message: 'Batalkan proses check-out sebelum mengoreksi data penyewaan',
       });
 
+    const revision = await this.revisions.readInTransaction(client, user, leaseId);
+    if (!revision.data.policies.correction.allowed)
+      throw new ConflictException({
+        code: revision.data.policies.correction.code,
+        message: revision.data.policies.correction.message,
+      });
+    const targetMode = dto.commercial_mode ?? lease.commercial_mode;
+    if (!['rent', 'owner_sponsored'].includes(targetMode))
+      throw new UnprocessableEntityException({
+        code: 'LEASE_MODE_CORRECTION_MODE_INVALID',
+        message:
+          'Pilih jenis hunian Penyewaan Berbayar atau Hunian Tanggungan Owner, lalu tinjau ulang.',
+      });
+    const modeChanged = targetMode !== lease.commercial_mode;
+    if (modeChanged && revision.data.policies.commercial_mode_change.allowed !== true)
+      throw new ConflictException({
+        code: revision.data.policies.commercial_mode_change.code,
+        message: revision.data.policies.commercial_mode_change.message,
+      });
+    if (!modeChanged && (dto.payment_plan_type != null || dto.billing_cycle != null))
+      throw new ConflictException({
+        code: 'LEASE_MODE_CORRECTION_SCHEDULE_REVIEW_REQUIRED',
+        message:
+          'Pilihan jadwal ini hanya untuk perubahan jenis hunian. Pertahankan jadwal lama atau tinjau perubahan jenis hunian terlebih dahulu.',
+      });
+
     const previous: CorrectionSnapshot = {
+      roomId: lease.room_id,
+      roomNumber: revision.data.room?.number ?? lease.snapshot_room_number,
+      roomManagerLabel: revision.data.room?.manager_room_label ?? null,
+      roomPlotNumber: revision.data.room?.plot_number ?? null,
+      kostTypeName: lease.snapshot_kost_type_name,
+      roomEvidenceFileIds: [],
       startDate: lease.start_date,
       endDate: lease.end_date,
       termMonths: Number(lease.term_months),
@@ -429,6 +573,44 @@ export class LeaseDataCorrectionService {
       !!previous.checkedInDate &&
       (dto.checked_in_date !== previous.checkedInDate ||
         previous.startDate !== dto.checked_in_date);
+    if (modeChanged && isCheckInDateAmendment)
+      throw new ConflictException({
+        code: 'LEASE_MODE_CORRECTION_SEPARATE_CHECK_IN_REVIEW_REQUIRED',
+        message:
+          'Simpan koreksi tanggal check-in terlebih dahulu. Setelah periode benar, tinjau perubahan jenis hunian sebagai koreksi terpisah.',
+      });
+    const roomChanged = !!dto.room_id && dto.room_id !== lease.room_id;
+    const combinedSponsorshipRoomReview =
+      roomChanged &&
+      !modeChanged &&
+      lease.commercial_mode === 'owner_sponsored' &&
+      [
+        dto.sponsoring_owner_profile_id,
+        dto.management_fee_mode,
+        dto.management_fee_payer,
+        dto.management_fee_payer_name,
+        dto.owner_sponsorship_reason,
+      ].some((value) => value != null);
+    if (
+      combinedSponsorshipRoomReview &&
+      revision.data.policies.sponsorship_policy_change.allowed !== true
+    )
+      throw new ConflictException({
+        code: revision.data.policies.sponsorship_policy_change.code,
+        message: revision.data.policies.sponsorship_policy_change.message,
+      });
+    if (roomChanged && isCheckInDateAmendment)
+      throw new ConflictException({
+        code: 'LEASE_ROOM_CORRECTION_SEPARATE_CHECK_IN_REVIEW_REQUIRED',
+        message:
+          'Simpan koreksi tanggal check-in terlebih dahulu agar periode sewa tetap benar. Setelah itu tinjau koreksi kamar sebagai perubahan terpisah.',
+      });
+    if (!roomChanged && dto.room_correction_evidence_file_ids?.length)
+      throw new UnprocessableEntityException({
+        code: 'LEASE_ROOM_CORRECTION_TARGET_REQUIRED',
+        message:
+          'Bukti koreksi kamar memerlukan kamar pengganti. Pilih kamar yang benar atau lepaskan bukti bila kamar tetap sama.',
+      });
     if (
       isCheckInDateAmendment &&
       ((dto.term_months != null && dto.term_months !== previous.termMonths) ||
@@ -480,7 +662,7 @@ export class LeaseDataCorrectionService {
           AND lease_status IN ('draft','awaiting_activation','active')
           AND daterange(start_date,end_date,'[)') && daterange($4::date,$5::date,'[)')
         LIMIT 1`,
-      [lease.room_id, lease.property_id, leaseId, startDate, endDate],
+      [dto.room_id ?? lease.room_id, lease.property_id, leaseId, startDate, endDate],
     );
     if (overlap.rows[0])
       throw new ConflictException({
@@ -488,12 +670,34 @@ export class LeaseDataCorrectionService {
         message: 'Periode hasil koreksi bertabrakan dengan penyewaan lain pada kamar ini',
       });
 
+    const roomFacts: RoomRecordingCorrectionFacts = {
+      leaseId,
+      propertyId: lease.property_id,
+      residentId: lease.resident_id,
+      sourceRoomId: lease.room_id,
+      targetRoomId: dto.room_id,
+      occupancyId: lease.occupancy_id,
+      leaseStatus: lease.lease_status,
+      // The target sponsorship is reviewed separately; do not require the old Owner on the new room.
+      commercialMode: modeChanged || combinedSponsorshipRoomReview ? 'rent' : lease.commercial_mode,
+      startDate,
+      endDate,
+      physicalCheckInRecorded:
+        revision.data.lease?.physical_check_in_recorded ?? !!lease.occupancy_id,
+      recordingErrorConfirmed: dto.room_recording_error_confirmed,
+      evidenceFileIds: dto.room_correction_evidence_file_ids ?? [],
+      relatedTransactionCount: revision.data.financial?.related_transaction_count ?? NaN,
+      ownerSponsorship: revision.data.owner_sponsorship,
+      policy: revision.data.policies.room_correction,
+      lock,
+    };
+    const roomPlan = await this.roomCorrections.preview(client, roomFacts);
     const periodChanged = startDate !== previous.startDate || termMonths !== previous.termMonths;
     const pricingChanged =
       dto.pricing_source != null ||
       dto.agreed_monthly_price != null ||
       dto.pricing_agreement_reason != null;
-    if (lease.commercial_mode === 'owner_sponsored' && pricingChanged)
+    if (targetMode === 'owner_sponsored' && pricingChanged)
       throw new UnprocessableEntityException({
         code: 'LEASE_DATA_CORRECTION_OWNER_SPONSORED_PRICING_IMMUTABLE',
         message:
@@ -518,12 +722,12 @@ export class LeaseDataCorrectionService {
             'Tanggal check-in terkait realisasi Owner yang sudah disiapkan. Batalkan realisasi yang belum ditransfer atau catat koreksi melalui alur realisasi sebelum mengubah tanggal; dokumen terbit tetap dipertahankan.',
         });
       corrected = { ...previous, startDate, endDate, checkedInDate };
-    } else if (!periodChanged && !pricingChanged) {
+    } else if (!periodChanged && !pricingChanged && !roomChanged && !modeChanged) {
       // A historical check-in correction must not silently re-price the contract.
       corrected = { ...previous, checkedInDate };
     } else {
-      const commercial = await this.commercialAt(client, lease.room_id, startDate);
-      if (lease.commercial_mode === 'owner_sponsored') {
+      const commercial = await this.commercialAt(client, dto.room_id ?? lease.room_id, startDate);
+      if (targetMode === 'owner_sponsored') {
         const pricingTier =
           termMonths <= 5 ? 'short_stay' : termMonths <= 11 ? 'medium_stay' : 'long_stay';
         const referenceMonthlyPrice = Number(
@@ -548,7 +752,12 @@ export class LeaseDataCorrectionService {
       } else {
         const pricingSource = periodChanged
           ? (dto.pricing_source ?? (termMonths < 3 ? 'negotiated' : 'standard'))
-          : (dto.pricing_source ?? previous.pricingSource);
+          : (dto.pricing_source ??
+            (previous.pricingSource === 'owner_sponsored'
+              ? termMonths < 3
+                ? 'negotiated'
+                : 'standard'
+              : previous.pricingSource));
         let agreement;
         try {
           agreement = resolveLeaseCommercialAgreement(
@@ -559,7 +768,7 @@ export class LeaseDataCorrectionService {
             },
             {
               termMonths,
-              pricingSource: pricingSource as 'standard' | 'negotiated',
+              pricingSource,
               agreedMonthlyPrice:
                 pricingSource === 'negotiated'
                   ? (dto.agreed_monthly_price ?? previous.agreedMonthlyPrice)
@@ -595,7 +804,89 @@ export class LeaseDataCorrectionService {
         };
       }
     }
-    if (JSON.stringify(previous) === JSON.stringify(corrected))
+    corrected = {
+      ...corrected,
+      roomId: roomPlan?.corrected.id ?? previous.roomId,
+      roomNumber: roomPlan?.corrected.number ?? previous.roomNumber,
+      roomManagerLabel: roomPlan
+        ? roomPlan.corrected.manager_room_label
+        : previous.roomManagerLabel,
+      roomPlotNumber: roomPlan ? roomPlan.corrected.plot_number : previous.roomPlotNumber,
+      kostTypeName: roomPlan?.corrected.kost_type_name ?? previous.kostTypeName,
+      roomEvidenceFileIds: roomPlan?.evidenceFileIds ?? [],
+    };
+    const sponsorshipFacts: SponsorshipCorrectionFacts = {
+      leaseId,
+      propertyId: lease.property_id,
+      residentId: lease.resident_id,
+      roomId: corrected.roomId ?? lease.room_id,
+      sourceRoomId: lease.room_id,
+      commercialMode: lease.commercial_mode,
+      startDate,
+      endDate,
+      termMonths,
+      policy: revision.data.policies.sponsorship_policy_change,
+      lock,
+    };
+    const sponsorshipPlan = modeChanged
+      ? null
+      : await this.sponsorshipCorrections.preview(client, sponsorshipFacts, dto);
+    if (sponsorshipPlan) {
+      if (isCheckInDateAmendment)
+        throw new ConflictException({
+          code: 'LEASE_CHECK_IN_CORRECTION_SEPARATE_SPONSORSHIP_REVIEW_REQUIRED',
+          message:
+            'Simpan koreksi tanggal check-in terlebih dahulu. Setelah periode benar, tinjau perubahan penanggung atau ketentuan biaya sebagai koreksi terpisah; pembayaran lama tetap tersimpan.',
+        });
+      previous.ownerSponsorship = sponsorshipPlan.previous;
+      corrected.ownerSponsorship = sponsorshipPlan.corrected;
+    }
+    const modeFacts: CommercialModeCorrectionFacts = {
+      leaseId,
+      propertyId: lease.property_id,
+      residentId: lease.resident_id,
+      roomId: corrected.roomId ?? lease.room_id,
+      sourceMode: lease.commercial_mode,
+      targetMode,
+      leaseStatus: lease.lease_status,
+      servicePeriodState: lease.service_period_state,
+      activatedAt: lease.activated_at?.toISOString() ?? null,
+      onboardingCommitmentId: lease.onboarding_commitment_id,
+      startDate,
+      endDate,
+      termMonths,
+      billingCycle: dto.billing_cycle ?? lease.billing_cycle,
+      paymentPlanType: dto.payment_plan_type ?? lease.payment_plan_type,
+      policy: revision.data.policies.commercial_mode_change,
+      lock,
+    };
+    const modePlan = modeChanged
+      ? await this.modeCorrections.preview(client, modeFacts, dto)
+      : null;
+    if (modePlan) {
+      previous.commercialMode = lease.commercial_mode;
+      corrected.commercialMode = targetMode;
+      corrected.commercialTransition = modePlan;
+      corrected.ownerSponsorship = modePlan.newSponsorship ?? undefined;
+      const source = revision.data.owner_sponsorship;
+      if (lease.commercial_mode === 'owner_sponsored' && source)
+        previous.ownerSponsorship = {
+          ownerProfileId: source.owner_profile_id as string,
+          ownershipKind: source.ownership_kind as 'building' | 'room',
+          ownershipAssignmentId: source.ownership_assignment_id as string,
+          managementFeeMode: source.management_fee_mode as 'charged' | 'waived',
+          managementFeePayer: source.management_fee_payer as 'resident' | 'owner' | 'other' | null,
+          managementFeePayerName: source.management_fee_payer_name as string | null,
+          sponsorshipReason: source.sponsorship_reason as string,
+          monthlyManagementFee: Number(source.snapshot_monthly_management_fee),
+          projectedManagementFeeAmount: Number(source.projected_management_fee_amount),
+          roomId: lease.room_id,
+          startDate: previous.startDate,
+          endDate: previous.endDate,
+          termMonths: previous.termMonths,
+        };
+    }
+    if (isDeepStrictEqual(previous, corrected))
       throw new UnprocessableEntityException({
         code: 'LEASE_DATA_CORRECTION_NO_CHANGES',
         message: 'Belum ada data yang berubah',
@@ -615,10 +906,12 @@ export class LeaseDataCorrectionService {
       [leaseId],
     );
     const correctionKind = this.correctionKind(previous, corrected);
+    const consequences = await this.previewConsequences(client, leaseId, lease.property_id, previous,
+      corrected, revision.data.owner_sponsorship);
     return {
       leaseId,
       propertyId: lease.property_id,
-      commercialMode: lease.commercial_mode,
+      commercialMode: targetMode,
       previous,
       corrected,
       impact: calculateLeaseCorrectionImpact(
@@ -627,43 +920,95 @@ export class LeaseDataCorrectionService {
         Number(paid.rows[0]?.amount ?? 0),
       ),
       correctionKind,
+      consequences,
       pricingChoiceRequired:
         lease.commercial_mode === 'rent' &&
         periodChanged &&
         previous.pricingTier !== corrected.pricingTier &&
         dto.pricing_source == null,
+      roomCorrection: roomPlan ? { facts: roomFacts, plan: roomPlan } : undefined,
+      sponsorshipCorrection: sponsorshipPlan
+        ? { facts: sponsorshipFacts, plan: sponsorshipPlan }
+        : undefined,
+      modeCorrection: modePlan ? { facts: modeFacts, plan: modePlan } : undefined,
     };
   }
 
   private async commercialAt(client: PoolClient, roomId: string, date: string) {
-    const result = await client.query<CommercialRow>(
-      `SELECT commercial.short_stay_monthly_price::text,
-              commercial.medium_stay_monthly_price::text,
-              commercial.long_stay_monthly_price::text,
-              commercial.annual_contract_value::text,commercial.effective_date::text,
-              fee.monthly_fee_amount::text AS management_fee_amount
-         FROM rooms room
-         JOIN LATERAL (
-           SELECT short_stay_monthly_price,medium_stay_monthly_price,
-                  long_stay_monthly_price,annual_contract_value,effective_date
-             FROM kost_type_commercial_versions
-            WHERE kost_type_id=room.kost_type_id AND effective_date<=$2::date
-            ORDER BY effective_date DESC,id DESC LIMIT 1
-         ) commercial ON true
-         LEFT JOIN LATERAL (
-           SELECT monthly_fee_amount FROM property_management_fee_versions
-            WHERE property_id=room.property_id AND effective_date<=$2::date
-            ORDER BY effective_date DESC,id DESC LIMIT 1
-         ) fee ON true
-        WHERE room.id=$1`,
-      [roomId, date],
-    );
-    if (!result.rows[0])
-      throw new ConflictException({
-        code: 'LEASE_DATA_CORRECTION_PRICING_MISSING',
-        message: 'Tarif yang berlaku pada tanggal hasil koreksi tidak tersedia',
-      });
-    return result.rows[0];
+    return readLeaseCommercialReference(client, roomId, date);
+  }
+
+  private async previewConsequences(client: PoolClient, leaseId: string, propertyId: string,
+    previous: CorrectionSnapshot, corrected: CorrectionSnapshot, sourceSponsorship?: Record<string, unknown> | null) {
+    const ownerProjection = async (snapshot: CorrectionSnapshot, before: boolean) => {
+      const sponsored = snapshot.commercialMode === 'owner_sponsored' || snapshot.pricingSource === 'owner_sponsored';
+      const policy = snapshot.ownerSponsorship;
+      const ownerId = sponsored ? policy?.ownerProfileId ?? sourceSponsorship?.owner_profile_id ?? null : null;
+      const result = await client.query<{ owner_profile_id: string | null; owner_name: string | null; monthly_fee: string | null }>(
+        `SELECT /* revision_owner_impact */ owner.id AS owner_profile_id,owner.full_name AS owner_name,fee.monthly_fee_amount::text AS monthly_fee
+         FROM rooms room LEFT JOIN LATERAL (
+           SELECT choice.owner_profile_id FROM (
+             SELECT owner_profile_id,0 AS priority FROM room_owner_assignments
+               WHERE property_id=$1 AND room_id=room.id AND assignment_status='active'
+             UNION ALL SELECT owner_profile_id,1 FROM building_owner_assignments
+               WHERE property_id=$1 AND building_id=room.building_id AND assignment_status='active'
+           ) choice ORDER BY priority LIMIT 1
+         ) assignment ON true
+         LEFT JOIN property_owner_profiles owner ON owner.id=COALESCE($4::uuid,assignment.owner_profile_id)
+           AND owner.property_id=$1 AND ($4::uuid IS NOT NULL OR owner.profile_status='active')
+         LEFT JOIN LATERAL (SELECT monthly_fee_amount FROM property_management_fee_versions
+           WHERE property_id=$1 AND effective_date<=$3::date ORDER BY effective_date DESC LIMIT 1) fee ON true
+         WHERE room.property_id=$1 AND room.id=$2`,
+        [propertyId, snapshot.roomId, snapshot.startDate, ownerId]);
+      const row = result.rows[0];
+      const monthly = Number(sponsored ? policy?.monthlyManagementFee ?? sourceSponsorship?.snapshot_monthly_management_fee : row?.monthly_fee ?? 0);
+      const waived = sponsored && (policy?.managementFeeMode ?? sourceSponsorship?.management_fee_mode) === 'waived';
+      const fee = waived ? 0 : sponsored && before
+        ? Number(policy?.projectedManagementFeeAmount ?? sourceSponsorship?.projected_management_fee_amount)
+        : monthly * snapshot.termMonths;
+      const entitlement = sponsored ? 0 : snapshot.contractRentAmount - fee;
+      if (![monthly, fee, entitlement].every(value => Number.isSafeInteger(value) && value >= 0))
+        throw new ConflictException({ code: 'LEASE_CORRECTION_OWNER_IMPACT_INVALID',
+          message: 'Perhitungan biaya pengelolaan dan hak Owner belum dapat dipastikan. Periksa tarif serta ketentuan biaya pada periode ini, lalu tinjau ulang; belum ada perubahan yang disimpan.' });
+      return { owner_profile_id: sponsored ? ownerId as string | null : row?.owner_profile_id ?? null,
+        owner_name: row?.owner_name ?? (sponsored ? sourceSponsorship?.owner_name as string | null : null) ?? null,
+        monthly_management_fee: monthly, management_fee_amount: fee, projected_owner_entitlement: entitlement };
+    };
+    const ownerBefore = await ownerProjection(previous, true);
+    const ownerAfter = await ownerProjection(corrected, false);
+    const documents = await client.query<{ document_type: 'invoice' | 'payment_receipt' | 'contract_paid_confirmation';
+      document_code: string; current_status: string }>(
+      `SELECT /* revision_document_impact */ 'invoice'::text AS document_type,invoice_code AS document_code,invoice_status AS current_status
+         FROM invoices WHERE lease_id=$1 AND property_id=$2
+       UNION ALL SELECT 'payment_receipt',receipt.receipt_code,'issued' FROM payment_receipts receipt
+         LEFT JOIN payment_reversals reversal ON reversal.receipt_id=receipt.id
+         JOIN payments payment ON payment.id=COALESCE(receipt.payment_id,reversal.payment_id) AND payment.property_id=receipt.property_id
+         WHERE receipt.property_id=$2 AND (payment.lease_id=$1 OR EXISTS (
+           SELECT 1 FROM payment_allocations allocation JOIN invoices invoice ON invoice.id=allocation.invoice_id AND invoice.property_id=$2
+           WHERE allocation.payment_id=payment.id AND invoice.lease_id=$1))
+       UNION ALL SELECT 'contract_paid_confirmation',document_code,
+         CASE WHEN invalidated_at IS NULL THEN 'issued' ELSE 'invalidated' END
+         FROM lease_contract_paid_documents WHERE lease_id=$1 AND property_id=$2
+       ORDER BY document_type,document_code`, [leaseId, propertyId]);
+    const modeChanged = (previous.commercialMode ?? (previous.pricingSource === 'owner_sponsored' ? 'owner_sponsored' : 'rent')) !==
+      (corrected.commercialMode ?? (corrected.pricingSource === 'owner_sponsored' ? 'owner_sponsored' : 'rent'));
+    const checkInAmended = !!previous.checkedInDate && (previous.checkedInDate !== corrected.checkedInDate || previous.startDate !== corrected.startDate);
+    // Match the existing commit invalidation rule. Check-in-only changes use the
+    // effective service-period version; amounts and historic documents are retained.
+    const confirmationChanged = previous.contractRentAmount !== corrected.contractRentAmount ||
+      (!checkInAmended && previous.startDate !== corrected.startDate) || previous.termMonths !== corrected.termMonths || previous.roomId !== corrected.roomId;
+    return { owner_impact: { previous: ownerBefore, corrected: ownerAfter, projection_only: true as const,
+      transfer_amount_unchanged: true as const,
+      notice: 'Estimasi hak Owner mengikuti nilai kontrak dan biaya pengelolaan seluruh durasi, bukan transfer. Realisasi tetap memerlukan sewa berbayar yang lunas dan check-in fisik; hunian tanggungan Owner tidak menghasilkan hak sewa. Transfer dan realisasi yang sudah tercatat tidak berubah.' },
+      document_impact: documents.rows.map(document => {
+        const effect = document.current_status === 'invalidated' ? 'already_invalidated' as const
+          : document.document_type === 'contract_paid_confirmation' && confirmationChanged ? 'invalidated' as const
+          : document.document_type === 'invoice' && document.current_status !== 'void' && modeChanged ? 'voided' as const : 'retained' as const;
+        return { ...document, effect, notice: effect === 'invalidated' ? 'Tidak berlaku untuk hasil koreksi; riwayat tetap tersimpan. Tinjau pelunasan sebelum menerbitkan dokumen baru.'
+          : effect === 'voided' ? 'Tagihan lama dibatalkan, bukan dihapus. Jadwal baru mengikuti hasil koreksi.'
+          : effect === 'already_invalidated' ? 'Sudah tidak berlaku sebelumnya; koreksi ini tidak mengaktifkannya kembali.'
+          : 'Catatan dan nilai transaksi tetap tersimpan. Unduhan terkait periode mengikuti ketentuan tanggal efektif tanpa mengubah pembayaran.' };
+      }) };
   }
 
   private async applyEffectiveLease(
@@ -673,6 +1018,8 @@ export class LeaseDataCorrectionService {
     preview: PreviewResult,
   ) {
     const commercialChanged =
+      !!preview.modeCorrection ||
+      !!preview.roomCorrection ||
       preview.previous.termMonths !== preview.corrected.termMonths ||
       preview.previous.agreedMonthlyPrice !== preview.corrected.agreedMonthlyPrice ||
       preview.previous.pricingSource !== preview.corrected.pricingSource;
@@ -695,7 +1042,10 @@ export class LeaseDataCorrectionService {
                 CASE WHEN EXTRACT(DAY FROM $2::date) <= 15 THEN date_trunc('month',$2::date)::date + 14
                      ELSE (date_trunc('month',$2::date) + INTERVAL '1 month')::date + 14 END
                 ELSE next_billing_date END,
-              updated_by_user_id=$11,updated_at=now()
+               commercial_mode=$14,
+               payment_plan_type=CASE WHEN $17 THEN $15 ELSE payment_plan_type END,
+               billing_cycle=CASE WHEN $17 THEN $16 ELSE billing_cycle END,
+               updated_by_user_id=$11,updated_at=now()
         WHERE id=$1 AND property_id=$12`,
       [
         leaseId,
@@ -711,15 +1061,24 @@ export class LeaseDataCorrectionService {
         actorId,
         preview.propertyId,
         commercialChanged,
+        preview.commercialMode,
+        preview.modeCorrection?.facts.paymentPlanType ?? null,
+        preview.modeCorrection?.facts.billingCycle ?? null,
+        !!preview.modeCorrection,
       ],
     );
-    if (preview.commercialMode === 'owner_sponsored' && commercialChanged)
+    if (
+      !preview.modeCorrection &&
+      !preview.sponsorshipCorrection &&
+      preview.commercialMode === 'owner_sponsored' &&
+      commercialChanged
+    )
       await client.query(
         `UPDATE owner_sponsored_lease_terms term
             SET projected_management_fee_amount=progress.current_projected_management_fee_amount,
                 updated_at=now()
            FROM owner_sponsored_management_fee_progress progress
-          WHERE progress.term_id=term.id AND term.lease_id=$1 AND term.property_id=$2`,
+          WHERE progress.id=term.id AND term.lease_id=$1 AND term.property_id=$2`,
         [leaseId, preview.propertyId],
       );
     if (preview.corrected.checkedInDate !== preview.previous.checkedInDate) {
@@ -830,8 +1189,8 @@ export class LeaseDataCorrectionService {
     await client.query(
       `INSERT INTO lease_installments(
          id,property_id,lease_id,sequence_number,coverage_start_date,coverage_end_date,
-         due_date,scheduled_amount,installment_status
-       ) VALUES($1,$2,$3,$4,$5::date,$6::date-1,$7::date,$8,'issued')`,
+          due_date,scheduled_amount,installment_status,correction_id
+        ) VALUES($1,$2,$3,$4,$5::date,$6::date-1,$7::date,$8,'issued',$9)`,
       [
         installmentId,
         preview.propertyId,
@@ -841,6 +1200,7 @@ export class LeaseDataCorrectionService {
         coverageEndExclusive,
         dueDate,
         preview.impact.additionalCharge,
+        correctionId,
       ],
     );
     await client.query(
@@ -974,6 +1334,8 @@ export class LeaseDataCorrectionService {
   }
 
   private correctionKind(previous: CorrectionSnapshot, corrected: CorrectionSnapshot) {
+    if (!isDeepStrictEqual(previous.ownerSponsorship, corrected.ownerSponsorship))
+      return 'combined';
     const checkIn = previous.checkedInDate !== corrected.checkedInDate;
     const start = previous.startDate !== corrected.startDate;
     const term = previous.termMonths !== corrected.termMonths;
@@ -990,6 +1352,7 @@ export class LeaseDataCorrectionService {
       property_id: preview.propertyId,
       previous: this.snapshotResponse(preview.previous),
       corrected: this.snapshotResponse(preview.corrected),
+      ...(preview.consequences ?? {}),
       impact: {
         contract_amount_delta: preview.impact.contractDelta,
         additional_charge_amount: preview.impact.additionalCharge,
@@ -1000,6 +1363,25 @@ export class LeaseDataCorrectionService {
       },
       correction_kind: preview.correctionKind,
       pricing_choice_required: preview.pricingChoiceRequired,
+      sponsorship_change: preview.sponsorshipCorrection
+        ? {
+            effective_from: preview.sponsorshipCorrection.plan.effectiveFrom,
+            previous: this.sponsorshipResponse(preview.sponsorshipCorrection.plan.previous),
+            corrected: this.sponsorshipResponse(preview.sponsorshipCorrection.plan.corrected),
+            notice:
+              'Perubahan dicatat sebagai koreksi keputusan penanggung. Kebijakan sebelumnya dan transaksi lama tetap tersimpan; pembebasan biaya bukan pengembalian dana.',
+          }
+        : null,
+      room_change: preview.roomCorrection
+        ? {
+            previous_room_number: preview.roomCorrection.plan.previous.number,
+            corrected_room_number: preview.roomCorrection.plan.corrected.number,
+            target_status: preview.roomCorrection.plan.targetStatus,
+            evidence_file_ids: preview.roomCorrection.plan.evidenceFileIds,
+            notice:
+              'Kamar sebelumnya salah dicatat. Riwayat asal dan dokumen lama tetap tersimpan; perubahan ini bukan perpindahan fisik.',
+          }
+        : null,
     };
   }
 
@@ -1028,6 +1410,28 @@ export class LeaseDataCorrectionService {
 
   private snapshotResponse(snapshot: CorrectionSnapshot) {
     return {
+      commercial_mode:
+        snapshot.commercialMode ??
+        (snapshot.pricingSource === 'owner_sponsored' ? 'owner_sponsored' : 'rent'),
+      commercial_change: snapshot.commercialTransition
+        ? {
+            invoices_to_void: snapshot.commercialTransition.previousBilling.invoices.map(
+              (invoice) => ({
+                invoice_code: invoice.invoice_code,
+                invoice_status: invoice.invoice_status,
+              }),
+            ),
+            notice:
+              'Jenis hunian sebelumnya salah dicatat. Tagihan lama tetap tersimpan dengan status dibatalkan; jadwal dan ketentuan baru mengikuti hasil koreksi. Ini bukan pengembalian pembayaran.',
+          }
+        : null,
+      owner_sponsorship: this.sponsorshipResponse(snapshot.ownerSponsorship),
+      room_id: snapshot.roomId ?? null,
+      room_number: snapshot.roomNumber ?? null,
+      manager_room_label: snapshot.roomManagerLabel ?? null,
+      plot_number: snapshot.roomPlotNumber ?? null,
+      kost_type_name: snapshot.kostTypeName ?? null,
+      room_correction_evidence_file_ids: snapshot.roomEvidenceFileIds ?? [],
       start_date: snapshot.startDate,
       end_date: snapshot.endDate,
       term_months: snapshot.termMonths,
@@ -1038,6 +1442,25 @@ export class LeaseDataCorrectionService {
       contract_rent_amount: snapshot.contractRentAmount,
       pricing_source: snapshot.pricingSource,
       pricing_agreement_reason: snapshot.pricingAgreementReason,
+    };
+  }
+
+  private sponsorshipResponse(snapshot?: SponsorshipPolicySnapshot) {
+    if (!snapshot) return null;
+    return {
+      owner_profile_id: snapshot.ownerProfileId,
+      ownership_kind: snapshot.ownershipKind,
+      ownership_assignment_id: snapshot.ownershipAssignmentId,
+      management_fee_mode: snapshot.managementFeeMode,
+      management_fee_payer: snapshot.managementFeePayer,
+      management_fee_payer_name: snapshot.managementFeePayerName,
+      sponsorship_reason: snapshot.sponsorshipReason,
+      monthly_management_fee: snapshot.monthlyManagementFee,
+      projected_management_fee_amount: snapshot.projectedManagementFeeAmount,
+      room_id: snapshot.roomId,
+      start_date: snapshot.startDate,
+      end_date: snapshot.endDate,
+      term_months: snapshot.termMonths,
     };
   }
 

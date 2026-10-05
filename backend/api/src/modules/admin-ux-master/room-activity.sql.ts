@@ -32,7 +32,30 @@ export const ROOM_ACTIVITY_SQL = `SELECT event_type, occurred_at, resident_name,
       AND COALESCE((SELECT transfer.from_room_id FROM room_transfer_records transfer
         WHERE transfer.property_id = lease.property_id AND transfer.from_lease_id = lease.id
         ORDER BY transfer.created_at, transfer.id LIMIT 1), lease.room_id) = $2
-      AND history.event_type NOT IN ('transferred_out', 'transferred_in', 'checkout_completed')
+      AND history.event_type NOT IN ('transferred_out', 'transferred_in', 'checkout_completed', 'archive_restored', 'archive_replaced', 'archive_successor_created')
+      AND history.metadata->>'action' IS DISTINCT FROM 'lease_cancelled_and_archived'
+    UNION ALL
+    SELECT 'lease_cancelled_and_archived',command.created_at,resident.full_name,NULL,command.reason,resident.id
+    FROM lease_archive_commands command
+    JOIN leases lease ON lease.id=command.lease_id AND lease.property_id=command.property_id
+    JOIN residents resident ON resident.id=lease.resident_id AND resident.property_id=lease.property_id
+    WHERE command.property_id=$1 AND command.result_snapshot->>'room_id'=$2::text
+    UNION ALL
+    SELECT 'lease_archive_restored',command.created_at,resident.full_name,NULL,command.reason,resident.id
+    FROM lease_archive_restore_commands command
+    JOIN leases lease ON lease.id=command.lease_id AND lease.property_id=command.property_id
+    JOIN residents resident ON resident.id=lease.resident_id AND resident.property_id=lease.property_id
+    WHERE command.property_id=$1 AND command.result_snapshot->>'room_id'=$2::text
+    UNION ALL
+    SELECT CASE WHEN command.source_room_id=$2 THEN 'lease_archive_replaced' ELSE 'lease_archive_successor_created' END,
+      command.created_at,resident.full_name,
+      CASE WHEN command.source_room_id=$2 THEN destination.number ELSE origin.number END,command.reason,resident.id
+    FROM lease_archive_successor_commands command
+    JOIN leases lease ON lease.id=command.lease_id AND lease.property_id=command.property_id
+    JOIN residents resident ON resident.id=lease.resident_id AND resident.property_id=lease.property_id
+    JOIN rooms origin ON origin.id=command.source_room_id AND origin.property_id=command.property_id
+    JOIN rooms destination ON destination.id=command.successor_room_id AND destination.property_id=command.property_id
+    WHERE command.property_id=$1 AND (command.source_room_id=$2 OR command.successor_room_id=$2)
     UNION ALL
     SELECT 'checkout_financial_completed',
       GREATEST(checkout.completed_at, refund.settled_at, final_payment.completed_at),

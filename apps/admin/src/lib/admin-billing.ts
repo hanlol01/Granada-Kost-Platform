@@ -3,6 +3,8 @@ import { getAccessToken } from "@/lib/api";
 import { adminUxV2Requester, type AdminUxV2Requester } from "@/lib/admin-ux-api";
 import { fetchPreviewAndDownload } from "@/lib/document-download";
 import { env } from "@/lib/env";
+import { parseBillingEvidence, type BillingEvidence } from "./billing-evidence-contract";
+export type { BillingEvidence } from "./billing-evidence-contract";
 
 export const W06_INVOICE_STATUSES = [
   "draft",
@@ -96,13 +98,6 @@ export type BillingWorklist = {
 };
 
 export type BillingAllocation = { invoice_id: string; amount: number };
-export type BillingEvidence = {
-  id: string;
-  original_filename: string;
-  mime_type: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
-  file_size_bytes: number;
-  content_path: string;
-};
 export type BillingPayment = {
   id: string;
   payment_code: string;
@@ -608,25 +603,7 @@ function payment(value: unknown): BillingPayment {
 }
 
 function evidence(value: unknown): BillingEvidence {
-  const file = object(
-    value,
-    ["id", "original_filename", "mime_type", "file_size_bytes", "content_path"],
-    "file bukti",
-  );
-  const id = uuid(file.id, "ID file");
-  const contentPath = text(file.content_path, "Akses file");
-  if (contentPath !== `/files/` + id + `/content`) throw new Error("Akses file bukti tidak valid.");
-  return {
-    id,
-    original_filename: text(file.original_filename, "Nama file"),
-    mime_type: oneOf(
-      file.mime_type,
-      ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const,
-      "MIME file",
-    ),
-    file_size_bytes: integer(file.file_size_bytes, "Ukuran file"),
-    content_path: contentPath,
-  };
+  return parseBillingEvidence(value);
 }
 
 function workspacePayment(value: unknown): BillingWorkspacePayment {
@@ -1653,28 +1630,7 @@ export function parseBillingProofs(value: unknown): BillingPage<BillingProof> {
         reviewed_at: nullable(proof.reviewed_at, (value) => timestamp(value, "Waktu review")),
         reject_reason: nullable(proof.reject_reason, (value) => text(value, "Alasan penolakan")),
         notes: nullable(proof.notes, (value) => text(value, "Catatan")),
-        evidence: proof.evidence.map((item) => {
-          const file = object(
-            item,
-            ["id", "original_filename", "mime_type", "file_size_bytes", "content_path"],
-            "file bukti",
-          );
-          const id = uuid(file.id, "ID file");
-          const contentPath = text(file.content_path, "Akses file");
-          if (contentPath !== `/files/${id}/content`)
-            throw new Error("Akses file bukti tidak valid.");
-          return {
-            id,
-            original_filename: text(file.original_filename, "Nama file"),
-            mime_type: oneOf(
-              file.mime_type,
-              ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const,
-              "MIME file",
-            ),
-            file_size_bytes: integer(file.file_size_bytes, "Ukuran file"),
-            content_path: contentPath,
-          };
-        }),
+        evidence: proof.evidence.map(evidence),
       };
     },
     "daftar bukti pembayaran",

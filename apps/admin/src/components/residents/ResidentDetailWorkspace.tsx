@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RecordPaymentDialog } from "@/components/billing/PaymentsWorkspace";
+import { BillingEvidenceUnavailable } from "@/components/billing/BillingEvidenceUnavailable";
 import { BookingLeadCancellationDialog } from "@/components/booking-leads/BookingLeadCancellationDialog";
 import { EvidenceFileUploadField } from "@/components/file/EvidenceFileUploadField";
 import { FilePreviewModal } from "@/components/file/FilePreviewModal";
@@ -41,7 +42,6 @@ import { ResidentFormDialog } from "@/components/forms/ResidentFormDialog";
 import { ResidentOperationalCards } from "@/components/residents/ResidentOperationalCards";
 import { TransferPanel } from "@/components/leases/TransferPanel";
 import { CheckoutPanel, type CheckoutEntryFocus } from "@/components/leases/CheckoutPanel";
-import { LeaseDataCorrectionDialog } from "@/components/leases/LeaseDataCorrectionDialog";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -619,7 +619,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
   const activation = useLeaseActivation();
   const checkIn = useLeaseCheckIn();
   const [editOpen, setEditOpen] = useState(false);
-  const [leaseCorrectionOpen, setLeaseCorrectionOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [confirmActivation, setConfirmActivation] = useState(false);
   const [confirmCheckIn, setConfirmCheckIn] = useState(false);
@@ -833,21 +832,10 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
             </Button>
           ) : null}
           {canManageTermination && currentTenancy && !checkoutCommand ? (
-            <Button
-              variant="info"
-              className="min-h-11"
-              onClick={() => setLeaseCorrectionOpen(true)}
-            >
-              <CalendarClock className="mr-1 h-4 w-4" /> Koreksi data penyewaan
-            </Button>
-          ) : null}
-          {canCancelAwaitingActivation && currentTenancy?.bookingLeadId ? (
-            <Button
-              variant="destructive"
-              className="min-h-11"
-              onClick={() => setCancellationOpen(true)}
-            >
-              <RotateCcw className="mr-1 h-4 w-4" /> Batalkan penyewaan
+            <Button variant="info" className="min-h-11" asChild>
+              <Link to="/tenants/correction/$leaseId" params={{ leaseId: currentTenancy.leaseId }}>
+                <CalendarClock className="mr-1 h-4 w-4" /> Koreksi data penyewaan
+              </Link>
             </Button>
           ) : null}
           {canActivate ? (
@@ -1800,26 +1788,6 @@ export function ResidentDetailWorkspace({ residentId }: Props) {
         initial={resident}
         onSaved={() => void detail.refetch()}
       />
-      {currentTenancy ? (
-        <LeaseDataCorrectionDialog
-          open={leaseCorrectionOpen}
-          onOpenChange={setLeaseCorrectionOpen}
-          tenancy={currentTenancy}
-          onCompleted={() =>
-            Promise.all([
-              detail.refetch(),
-              tenancy.refetch(),
-              billing.refetch(),
-              bookingProgress.refetch(),
-              queryClient.invalidateQueries({ queryKey: ["resident-correction-history"] }),
-              queryClient.invalidateQueries({ queryKey: ["lease-service-period-history"] }),
-              queryClient.invalidateQueries({ queryKey: ["residents"] }),
-              queryClient.invalidateQueries({ queryKey: ["rooms"] }),
-              queryClient.invalidateQueries({ queryKey: ["roomDetail"] }),
-            ])
-          }
-        />
-      ) : null}
       <ResidentCredentialsDialog
         open={credentialsOpen}
         onOpenChange={setCredentialsOpen}
@@ -2519,7 +2487,7 @@ function ContractSettlementSummary({
                 : "Kebijakan checkpoint kontrak"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-start gap-2">
           <SettlementStatusPill status={settlement.status} />
           {settlement.outstanding_amount === 0 &&
           settlement.paid_document?.status === "issued" &&
@@ -3688,7 +3656,7 @@ function PaymentDetailDialog({
             <div>
               <p className="text-sm font-semibold">Bukti transfer</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {payment.evidence.length} file tersimpan untuk pembayaran ini.
+                {payment.evidence.length} catatan bukti untuk pembayaran ini. Ketersediaan setiap berkas ditampilkan di bawah.
               </p>
             </div>
             <div className="grid gap-2">
@@ -3705,15 +3673,16 @@ function PaymentDetailDialog({
                     <p className="text-xs text-muted-foreground">
                       {formatFileSize(file.file_size_bytes)}
                     </p>
+                    {file.availability !== "available" ? <BillingEvidenceUnavailable file={file} /> : null}
                   </div>
-                  <Button
+                  {file.availability === "available" ? <Button
                     type="button"
                     variant="info"
                     size="sm"
                     onClick={() => setPreviewFile(file)}
                   >
                     <Eye className="h-4 w-4" aria-hidden="true" /> Lihat
-                  </Button>
+                  </Button> : null}
                 </div>
               ))}
             </div>
@@ -3746,7 +3715,10 @@ function PaymentDetailDialog({
             Tutup
           </Button>
         </div>
-        <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+        <FilePreviewModal
+          file={payment.evidence.find(file => file.id === previewFile?.id && file.availability === "available") ?? null}
+          onClose={() => setPreviewFile(null)}
+        />
       </DialogContent>
     </Dialog>
   );

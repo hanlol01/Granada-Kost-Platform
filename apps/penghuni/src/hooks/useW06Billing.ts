@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import {
   getMyW06Billing,
+  getMyBillingHistory,
+  getMyHistoricalBilling,
   getMyW06Receipt,
   submitMyW06Proof,
   type SubmitMyW06Proof,
@@ -30,11 +32,36 @@ export function useW06BillingAccountId() {
     : null;
 }
 
-export function useMyW06Billing() {
+export function useMyW06Billing(historicalLeaseId: string | null = null) {
   const accountId = useW06BillingAccountId();
   return useQuery({
-    queryKey: accountId ? w06BillingKey(accountId) : ["penghuni", "billing", "w06", "disabled"],
-    queryFn: ({ signal }) => getMyW06Billing(signal),
+    queryKey: accountId
+      ? historicalLeaseId
+        ? [...w06BillingKey(accountId), "history", historicalLeaseId]
+        : w06BillingKey(accountId)
+      : ["penghuni", "billing", "w06", "disabled"],
+    queryFn: ({ signal }) =>
+      historicalLeaseId
+        ? getMyHistoricalBilling(historicalLeaseId, signal)
+        : getMyW06Billing(signal),
+    enabled: accountId !== null,
+    staleTime: 30_000,
+  });
+}
+
+export function useMyBillingHistory(offset: number) {
+  const accountId = useW06BillingAccountId();
+  return useQuery({
+    queryKey: [
+      "penghuni",
+      "billing",
+      "w06",
+      "account",
+      accountId ?? "disabled",
+      "history-list",
+      offset,
+    ],
+    queryFn: ({ signal }) => getMyBillingHistory(offset, signal),
     enabled: accountId !== null,
     staleTime: 30_000,
   });

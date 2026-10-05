@@ -47,6 +47,9 @@ import { LeaseService } from './lease.service';
 import { LeaseRenewalService } from './lease-renewal.service';
 import { LeaseTransferService } from './lease-transfer.service';
 import { LeaseDataCorrectionService } from './lease-data-correction.service';
+import { LeaseRevisionContextService } from './lease-revision-context.service';
+import { LeaseArchiveService } from './lease-archive.service';
+import { CancelAndArchiveLeaseDto } from './lease-archive.dto';
 
 function auditContext(request: RequestWithCorrelationId) {
   return {
@@ -65,6 +68,8 @@ export class LeaseController {
     private readonly transfers: LeaseTransferService,
     private readonly renewals: LeaseRenewalService,
     private readonly corrections: LeaseDataCorrectionService,
+    private readonly revisionContext: LeaseRevisionContextService,
+    private readonly archives: LeaseArchiveService,
   ) {}
 
   @Get()
@@ -110,6 +115,42 @@ export class LeaseController {
     return this.corrections.listForResident(user, residentId, propertyId);
   }
 
+  @Get(':leaseId/revision-context')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  getRevisionContext(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', new ParseUUIDPipe({ version: '4' })) leaseId: string,
+  ) {
+    return this.revisionContext.get(user, leaseId);
+  }
+
+  @Get(':leaseId/cancellation-preview')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  previewCancellation(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', new ParseUUIDPipe({ version: '4' })) leaseId: string,
+  ) {
+    return this.archives.previewCancellation(user, leaseId);
+  }
+
+  @Post(':leaseId/cancel-and-archive')
+  @RequireRoles('admin')
+  @RequirePermissions('lease.manage')
+  async cancelAndArchive(
+    @CurrentUser() user: UserAccessContext,
+    @Param('leaseId', new ParseUUIDPipe({ version: '4' })) leaseId: string,
+    @Body() dto: CancelAndArchiveLeaseDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.archives.cancel(user, leaseId, dto, idempotencyKey);
+    if (result.idempotent) response.setHeader('Idempotency-Replayed', 'true');
+    response.status(result.idempotent ? HttpStatus.OK : HttpStatus.CREATED);
+    return { data: result.data };
+  }
+
   @Post(':leaseId/data-correction/preview')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('admin')
@@ -142,7 +183,7 @@ export class LeaseController {
     const result = await this.corrections.commit(user, leaseId, dto, idempotencyKey);
     if (result.idempotent) response.setHeader('Idempotency-Replayed', 'true');
     response.status(result.idempotent ? HttpStatus.OK : HttpStatus.CREATED);
-    return result.data;
+    return { data: result.data };
   }
 
   @Get(':leaseId/billing-summary')

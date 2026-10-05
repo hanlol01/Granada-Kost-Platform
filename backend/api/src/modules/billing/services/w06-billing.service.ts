@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
@@ -12,6 +14,8 @@ import { AuditRepository } from '../../../infrastructure/audit/audit.repository'
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { PropertyService } from '../../property/property.service';
+import { FileRepository } from '../../file/file.repository';
+import { FileService } from '../../file/file.service';
 import { RequestAuditContext } from '../../property/types/property.types';
 import {
   AdminBillingDocumentSearchQueryDto,
@@ -49,6 +53,11 @@ import {
   type LeaseSettlementCheckpointInput,
 } from '../helpers/lease-settlement-projection.helper';
 import { AdminPaymentVerificationPolicyService } from './admin-payment-verification-policy.service';
+import { contractCorrectionCreditSql, receivedInvoiceCreditSql } from '../helpers/contract-correction-credit.helper';
+import {
+  BILLING_EVIDENCE_JSON_SQL,
+  type BillingEvidenceRow,
+} from '../helpers/billing-evidence-projection.helper';
 
 type LeaseTupleRow = {
   service_period_pending?: boolean;
@@ -180,13 +189,7 @@ type PaymentProjectionRow = {
   reversal_reason: string | null;
   reversed_at: Date | null;
   allocations: Array<{ invoice_id: string; amount: string | number }>;
-  evidence?: Array<{
-    id: string;
-    original_filename: string;
-    mime_type: string;
-    file_size_bytes: string | number;
-    content_path: string;
-  }>;
+  evidence?: BillingEvidenceRow[];
 };
 type PublicPaymentPurpose = W06PaymentPurpose | 'booking_fee' | 'down_payment' | 'full_settlement';
 type FinancialTimelineRow = {
@@ -231,13 +234,7 @@ type PaymentWorkspaceRow = PaymentProjectionRow & {
   contract_paid_period_pending?: boolean;
   contract_paid_term_months?: number;
   contract_paid_transaction_references: Array<{ code: string; amount: string | number }> | null;
-  evidence: Array<{
-    id: string;
-    original_filename: string;
-    mime_type: string;
-    file_size_bytes: string | number;
-    content_path: string;
-  }>;
+  evidence: BillingEvidenceRow[];
 };
 type InvoiceProjectionRow = {
   id: string;
@@ -345,6 +342,7 @@ type ProofProjectionRow = {
   uploaded_at: Date;
   reviewed_at: Date | null;
   reject_reason: string | null;
+  evidence?: BillingEvidenceRow[];
 };
 type ProofWorkspaceRow = ProofProjectionRow & {
   invoice_code: string;
@@ -352,15 +350,12 @@ type ProofWorkspaceRow = ProofProjectionRow & {
   resident_name: string;
   room_number: string;
   notes: string | null;
-  evidence: Array<{
-    id: string;
-    original_filename: string;
-    mime_type: string;
-    file_size_bytes: string | number;
-    content_path: string;
-  }>;
+  evidence: BillingEvidenceRow[];
 };
 type InvoiceDocumentRow = {
+  original_total_amount?: string;
+  correction_credit_amount?: string;
+  paid_amount?: string;
   period_version_number?: number | null;
   period_authority_note?: string;
   service_period_pending?: boolean;
@@ -617,6 +612,25 @@ export function summarizeFirstPaymentCheckpoint(
   };
 }
 
+const CURRENT_PAYMENT_PERIOD_NOTE =
+  'Masa sewa Anda mengikuti tanggal check-in yang tercatat. Tanggal dan jumlah pembayaran pada dokumen ini sesuai transaksi yang telah diterima.';
+const HISTORICAL_RECEIPT_PERIOD_NOTE =
+  'Dokumen ini mencatat pembayaran yang telah diterima saat diterbitkan. Untuk periode sewa yang berlaku saat ini, silakan lihat invoice terbaru.';
+const HISTORICAL_INVOICE_PERIOD_NOTE =
+  'Dokumen ini mencatat tagihan saat diterbitkan. Untuk periode sewa dan batas pembayaran yang berlaku saat ini, silakan lihat invoice terbaru.';
+
+function recipientPeriodAuthorityNote(
+  note: string | undefined,
+  documentKind: 'invoice' | 'receipt',
+): string | undefined {
+  if (!note) return undefined;
+  if (/salinan|saat diterbitkan/i.test(note))
+    return documentKind === 'invoice'
+      ? HISTORICAL_INVOICE_PERIOD_NOTE
+      : HISTORICAL_RECEIPT_PERIOD_NOTE;
+  return CURRENT_PAYMENT_PERIOD_NOTE;
+}
+
 @Injectable()
 export class W06BillingService {
   constructor(
@@ -625,6 +639,8 @@ export class W06BillingService {
     private readonly audit: AuditRepository,
     @Optional()
     private readonly paymentVerificationPolicy?: AdminPaymentVerificationPolicyService,
+    @Optional() private readonly files?: FileRepository,
+    @Optional() private readonly fileContent?: FileService,
   ) {}
 
   async adminPaymentVerificationPolicy(user: UserAccessContext, propertyId: string) {
@@ -720,7 +736,7 @@ export class W06BillingService {
           LIMIT 1
       ) checkout_period ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(sum(contract_invoice.credit_amount + COALESCE(contract_allocation.net,0)),0) AS net
+        SELECT COALESCE(sum(${receivedInvoiceCreditSql('contract_invoice')} + COALESCE(contract_allocation.net,0)),0) AS net
           FROM invoices contract_invoice
           LEFT JOIN LATERAL (
             SELECT COALESCE(sum(contract_payment_allocation.allocated_amount),0)
@@ -822,7 +838,8 @@ export class W06BillingService {
                  lease.term_months,
                  ${settlementDueDate}::text AS settlement_due_date,
                   ${finalSettlementDueDate}::text AS final_settlement_due_date,
-                 ${operationalStatus} AS invoice_status,i.total_amount,
+                 ${operationalStatus} AS invoice_status,
+                 i.total_amount-${contractCorrectionCreditSql('i')} AS total_amount,
                 GREATEST(i.total_amount-i.credit_amount-COALESCE(allocation.net_allocated,0),0) AS outstanding_amount
          ${common} ORDER BY ${order} LIMIT $7 OFFSET $8`,
         values,
@@ -845,7 +862,11 @@ export class W06BillingService {
         term_months: row.term_months == null ? null : Number(row.term_months),
         settlement_due_date: row.settlement_due_date,
         final_settlement_due_date: row.final_settlement_due_date,
-        invoice_status: this.publicInvoiceStatus(row.service_period_pending && row.invoice_status === 'overdue' ? 'issued' : row.invoice_status),
+        invoice_status: this.publicInvoiceStatus(
+          row.service_period_pending && row.invoice_status === 'overdue'
+            ? 'issued'
+            : row.invoice_status,
+        ),
         total_amount: this.money(row.total_amount),
         outstanding_amount: this.money(row.outstanding_amount),
       })),
@@ -870,7 +891,7 @@ export class W06BillingService {
                 invoice.snapshot_resident_name AS resident_name,
                 invoice.snapshot_room_number AS room_number,
                 COALESCE(invoice.issued_at,invoice.created_at) AS issued_at,
-                invoice.total_amount AS amount,
+                invoice.total_amount-${contractCorrectionCreditSql('invoice')} AS amount,
                 invoice.invoice_status AS status,
                 NULL::uuid AS booking_lead_id,
                 invoice.lease_id,
@@ -1246,13 +1267,10 @@ export class W06BillingService {
            WHERE allocation.payment_id=p.id
          ) allocation_rows ON true
          LEFT JOIN LATERAL (
-           SELECT jsonb_agg(jsonb_build_object(
-             'id',file.id,'original_filename',file.original_filename,'mime_type',file.mime_type,
-             'file_size_bytes',file.file_size_bytes,'content_path','/files/'||file.id||'/content'
-           ) ORDER BY file.id) AS items
+            SELECT jsonb_agg(${BILLING_EVIDENCE_JSON_SQL} ORDER BY file.id) AS items
            FROM payment_evidence_files junction
            JOIN files file ON file.id=junction.file_id
-             AND file.property_id=p.property_id AND file.is_deleted=false
+              AND file.property_id=p.property_id
            WHERE junction.payment_id=p.id AND junction.property_id=p.property_id
          ) evidence_rows ON true
          WHERE p.property_id=$1
@@ -1303,24 +1321,26 @@ export class W06BillingService {
         values.slice(0, 2),
       ),
       this.database.client.query<ProofWorkspaceRow>(
-        `SELECT proof.id,proof.invoice_id,invoice.invoice_code,proof.resident_id,invoice.snapshot_resident_name AS resident_name,invoice.snapshot_room_number AS room_number,proof.proof_status,proof.claimed_amount,proof.payment_purpose,proof.uploaded_at,proof.reviewed_at,proof.reject_reason,proof.notes,COALESCE(jsonb_agg(jsonb_build_object('id',file.id,'original_filename',file.original_filename,'mime_type',file.mime_type,'file_size_bytes',file.file_size_bytes,'content_path','/files/'||file.id||'/content')) FILTER(WHERE file.id IS NOT NULL),'[]'::jsonb) AS evidence FROM payment_proofs proof JOIN invoices invoice ON invoice.id=proof.invoice_id AND invoice.property_id=proof.property_id LEFT JOIN payment_proof_files junction ON junction.payment_proof_id=proof.id LEFT JOIN files file ON file.id=junction.file_id AND file.property_id=proof.property_id AND file.is_deleted=false WHERE proof.property_id=$1 AND proof.payment_method='bank_transfer' AND ($2::text IS NULL OR proof.proof_status=$2) GROUP BY proof.id,invoice.id ORDER BY proof.uploaded_at DESC,proof.id DESC LIMIT $3 OFFSET $4`,
+        `SELECT proof.id,proof.invoice_id,invoice.invoice_code,proof.resident_id,
+          invoice.snapshot_resident_name AS resident_name,invoice.snapshot_room_number AS room_number,
+          proof.proof_status,proof.claimed_amount,proof.payment_purpose,proof.uploaded_at,
+          proof.reviewed_at,proof.reject_reason,proof.notes,
+          COALESCE(jsonb_agg(${BILLING_EVIDENCE_JSON_SQL} ORDER BY file.id)
+            FILTER(WHERE file.id IS NOT NULL),'[]'::jsonb) AS evidence
+        FROM payment_proofs proof
+        JOIN invoices invoice ON invoice.id=proof.invoice_id AND invoice.property_id=proof.property_id
+        LEFT JOIN payment_proof_files junction ON junction.payment_proof_id=proof.id
+        LEFT JOIN files file ON file.id=junction.file_id AND file.property_id=proof.property_id
+        WHERE proof.property_id=$1 AND proof.payment_method='bank_transfer'
+          AND ($2::text IS NULL OR proof.proof_status=$2)
+        GROUP BY proof.id,invoice.id ORDER BY proof.uploaded_at DESC,proof.id DESC LIMIT $3 OFFSET $4`,
         values,
       ),
     ]);
     return {
       data: page.rows.map((value) => {
         const row = value;
-        const evidence = Array.isArray(row.evidence)
-          ? row.evidence.map((file) => {
-              return {
-                id: file.id,
-                original_filename: file.original_filename,
-                mime_type: file.mime_type,
-                file_size_bytes: this.money(file.file_size_bytes),
-                content_path: file.content_path,
-              };
-            })
-          : [];
+        const evidence = this.sanitizeEvidenceFiles(row.evidence);
         return {
           id: row.id,
           invoice_id: row.invoice_id,
@@ -1379,6 +1399,132 @@ export class W06BillingService {
     return {
       data: await this.projectResidentBilling(this.database.client, context, 'self'),
     };
+  }
+
+  // Historical reads never select the active successor or grant billing mutation authority.
+  async myBillingHistory(user: UserAccessContext, query: { limit?: number; offset?: number }) {
+    this.assertResidentBillingHistoryAccess(user);
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const from = `FROM leases l JOIN residents resident
+      ON resident.id=l.resident_id AND resident.property_id=l.property_id
+      WHERE resident.user_id=$1 AND l.lease_status IN ('cancelled','ended')`;
+    const [items, count] = await Promise.all([
+      this.database.client.query<{
+        id: string;
+        lease_code: string;
+        room_number: string;
+        status: 'cancelled' | 'ended';
+        term_months: number;
+        start_date: string | null;
+        end_date: string | null;
+        closed_at: Date | null;
+      }>(
+        `SELECT l.id,l.lease_code,l.snapshot_room_number AS room_number,l.lease_status AS status,
+           l.term_months,CASE WHEN l.service_period_state='pending_check_in' THEN NULL ELSE l.start_date::text END AS start_date,
+           CASE WHEN l.service_period_state='pending_check_in' THEN NULL ELSE l.end_date::text END AS end_date,l.closed_at
+         ${from} ORDER BY l.closed_at DESC NULLS LAST,l.created_at DESC,l.id DESC LIMIT $2 OFFSET $3`,
+        [user.id, limit, offset],
+      ),
+      this.database.client.query<{ total: string }>(`SELECT count(*) AS total ${from}`, [user.id]),
+    ]);
+    return {
+      data: {
+        items: items.rows.map((row) => ({
+          ...row,
+          closed_at: row.closed_at?.toISOString() ?? null,
+        })),
+        total: Number(count.rows[0]?.total ?? 0),
+        limit,
+        offset,
+      },
+    };
+  }
+
+  async myHistoricalBilling(user: UserAccessContext, leaseId: string) {
+    this.assertResidentBillingHistoryAccess(user);
+    const result = await this.database.client.query<LeaseTupleRow>(
+      `${this.leaseTupleSql()} WHERE resident.user_id=$1 AND l.id=$2
+       AND l.lease_status IN ('cancelled','ended')`,
+      [user.id, leaseId],
+    );
+    if (!result.rows[0])
+      throw new NotFoundException({
+        code: 'RESIDENT_BILLING_HISTORY_NOT_FOUND',
+        message:
+          'Riwayat penyewaan tidak tersedia untuk akun ini. Pilih kembali penyewaan dari daftar riwayat.',
+      });
+    return {
+      data: await this.projectResidentBilling(this.database.client, result.rows[0], 'self'),
+    };
+  }
+
+  private assertResidentBillingHistoryAccess(user: UserAccessContext) {
+    if (!user.roles.includes('resident') || !user.permissions.includes('billing.self.read'))
+      throw new ForbiddenException({
+        code: 'RESIDENT_BILLING_HISTORY_ACCESS_DENIED',
+        message: 'Riwayat pembayaran ini hanya dapat diakses oleh Penghuni pemilik akun.',
+      });
+  }
+
+  async myBillingEvidence(
+    user: UserAccessContext,
+    leaseId: string,
+    fileId: string,
+    context: RequestAuditContext,
+  ) {
+    this.assertResidentBillingHistoryAccess(user);
+    const scope = await this.database.client.query<{ property_id: string }>(
+      `SELECT l.property_id FROM leases l JOIN residents resident
+         ON resident.id=l.resident_id AND resident.property_id=l.property_id
+       WHERE l.id=$1 AND resident.user_id=$2 AND EXISTS (
+         SELECT 1 FROM files file WHERE file.id=$3 AND file.property_id=l.property_id
+         AND file.file_purpose='payment_proof' AND (
+           EXISTS (SELECT 1 FROM payment_evidence_files attachment JOIN payments payment
+             ON payment.id=attachment.payment_id AND payment.property_id=attachment.property_id
+             WHERE attachment.file_id=file.id AND attachment.property_id=l.property_id
+               AND payment.lease_id=l.id AND payment.resident_id=l.resident_id)
+           OR EXISTS (SELECT 1 FROM payment_proof_files attachment JOIN payment_proofs proof
+             ON proof.id=attachment.payment_proof_id AND proof.property_id=l.property_id
+             JOIN invoices invoice ON invoice.id=proof.invoice_id AND invoice.property_id=l.property_id
+             WHERE attachment.file_id=file.id AND proof.resident_id=l.resident_id
+               AND (proof.lease_id=l.id OR (proof.lease_id IS NULL AND invoice.lease_id=l.id)
+                 OR (proof.lease_id IS NULL AND invoice.lease_id IS NULL AND invoice.occupancy_id=l.occupancy_id)))
+         ))`,
+      [leaseId, user.id, fileId],
+    );
+    const propertyId = scope.rows[0]?.property_id;
+    if (!propertyId)
+      throw new NotFoundException({
+        code: 'RESIDENT_BILLING_EVIDENCE_NOT_FOUND',
+        message:
+          'Bukti pembayaran tidak tersedia untuk penyewaan dan akun ini. Pilih kembali bukti dari riwayat pembayaran Anda.',
+      });
+    if (!this.files || !this.fileContent)
+      throw new ServiceUnavailableException({
+        code: 'FILE_STORAGE_UNAVAILABLE',
+        message: 'Layanan berkas belum tersedia. Coba unduh kembali beberapa saat lagi.',
+      });
+    const record = await this.files.findById(fileId);
+    if (!record || record.propertyId !== propertyId || record.filePurpose !== 'payment_proof')
+      throw new NotFoundException({
+        code: 'RESIDENT_BILLING_EVIDENCE_NOT_FOUND',
+        message: 'Bukti pembayaran tidak tersedia untuk akun ini.',
+      });
+    // Relationship authority above replaces uploader ownership, never a general resident file grant.
+    // FileService still enforces active bytes and durable purge claims before reading storage.
+    const content = await this.fileContent.readStoredContent(record);
+    await this.audit.write({
+      ...context,
+      actorUserId: user.id,
+      propertyId,
+      action: 'billing.evidence.download',
+      resourceType: 'file',
+      resourceId: fileId,
+      resultStatus: 'success',
+      afterData: { lease_id: leaseId },
+    });
+    return { ...content, filename: await this.fileContent.downloadName(content.record) };
   }
 
   async submitMyProof(
@@ -3202,59 +3348,13 @@ export class W06BillingService {
         scope.rows[0].lease_id,
         scope.rows[0].resident_id,
       );
-      const invoice = await client.query<{
-        id: string;
-        invoice_status: string;
-        installment_id: string | null;
-        allocated: string;
-      }>(
-        `SELECT i.id,i.invoice_status,i.installment_id,COALESCE(a.net,0) AS allocated FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.id=$1 AND i.property_id=$2 FOR UPDATE OF i`,
-        [invoiceId, dto.property_id],
-      );
-      const row = invoice.rows[0];
-      if (!row)
-        throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
-      if (
-        !['draft', 'issued', 'overdue'].includes(row.invoice_status) ||
-        this.money(row.allocated) !== 0
-      )
-        throw new ConflictException({
-          code: 'INVOICE_NOT_VOIDABLE',
-          message: 'Invoice with payment activity cannot be voided',
-        });
-      await client.query(
-        `UPDATE invoices SET invoice_status='void',voided_at=now(),voided_by_user_id=$2,void_reason=$3,updated_at=now() WHERE id=$1`,
-        [invoiceId, user.id, dto.reason.trim()],
-      );
-      if (row.installment_id)
-        await client.query(
-          `UPDATE lease_installments SET installment_status='void' WHERE id=$1 AND invoice_id=$2`,
-          [row.installment_id, invoiceId],
-        );
-      const result = { invoice_id: invoiceId, invoice_status: 'void' as const };
-      await this.audit.write(
-        {
-          actorUserId: user.id,
-          propertyId: dto.property_id,
-          action: 'billing.invoice_voided',
-          resourceType: 'invoice',
-          resourceId: invoiceId,
-          afterData: { ...result, reason: dto.reason.trim() },
-          resultStatus: 'success',
-          ...context,
-        },
+      const result = await this.voidInvoiceInTransaction(
         client,
-      );
-      await this.event(
-        client,
-        dto.property_id,
-        `invoice.voided:${invoiceId}`,
-        'invoice.voided',
-        'invoice',
+        user,
         invoiceId,
-        user.id,
+        dto,
         context,
-        result,
+        scope.rows[0].lease_id,
       );
       await this.complete(
         client,
@@ -3268,6 +3368,72 @@ export class W06BillingService {
       );
       return { data: result };
     });
+  }
+
+  /** Caller holds the property/lease aggregate lock and owns commit/rollback. */
+  async voidInvoiceInTransaction(
+    client: PoolClient,
+    user: UserAccessContext,
+    invoiceId: string,
+    dto: VoidInvoiceDto,
+    context: RequestAuditContext,
+    leaseId: string,
+  ) {
+    const invoice = await client.query<{
+      id: string;
+      invoice_status: string;
+      installment_id: string | null;
+      allocated: string;
+    }>(
+      `SELECT i.id,i.invoice_status,i.installment_id,COALESCE(a.net,0) AS allocated FROM invoices i LEFT JOIN LATERAL(SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id)a ON true WHERE i.id=$1 AND i.property_id=$2 AND i.lease_id=$3 FOR UPDATE OF i`,
+      [invoiceId, dto.property_id, leaseId],
+    );
+    const row = invoice.rows[0];
+    if (!row)
+      throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+    if (
+      !['draft', 'issued', 'overdue'].includes(row.invoice_status) ||
+      this.money(row.allocated) !== 0
+    )
+      throw new ConflictException({
+        code: 'INVOICE_NOT_VOIDABLE',
+        message: 'Invoice with payment activity cannot be voided',
+      });
+    await client.query(
+      `UPDATE invoices SET invoice_status='void',voided_at=now(),voided_by_user_id=$2,void_reason=$3,updated_at=now() WHERE id=$1`,
+      [invoiceId, user.id, dto.reason.trim()],
+    );
+    if (row.installment_id)
+      await client.query(
+        `UPDATE lease_installments SET installment_status='void' WHERE id=$1 AND invoice_id=$2`,
+        [row.installment_id, invoiceId],
+      );
+    const result = { invoice_id: invoiceId, invoice_status: 'void' as const };
+    await this.audit.write(
+      {
+        actorUserId: user.id,
+        propertyId: dto.property_id,
+        action: 'billing.invoice_voided',
+        resourceType: 'invoice',
+        resourceId: invoiceId,
+        afterData: { ...result, reason: dto.reason.trim() },
+        resultStatus: 'success',
+        ...context,
+      },
+      client,
+    );
+    await this.event(
+      client,
+      dto.property_id,
+      `invoice.voided:${invoiceId}`,
+      'invoice.voided',
+      'invoice',
+      invoiceId,
+      user.id,
+      context,
+      result,
+    );
+    return result;
   }
 
   async paymentDetail(user: UserAccessContext, propertyId: string, paymentId: string) {
@@ -3381,11 +3547,18 @@ export class W06BillingService {
     return createContractPaidDocumentPdf(
       {
         ...row.safe_snapshot,
-        leaseStart: original ? row.safe_snapshot.leaseStart : row.effective_start ?? row.safe_snapshot.leaseStart,
-        leaseEnd: original ? row.safe_snapshot.leaseEnd : row.effective_end ?? row.safe_snapshot.leaseEnd,
-        servicePeriodPending: original ? row.safe_snapshot.servicePeriodPending : row.service_period_pending,
-        periodAuthorityNote: original ? 'Salinan catatan penerbitan awal. Gunakan dokumen terbaru untuk periode sewa yang berlaku.'
-          : 'Periode mengikuti catatan check-in yang berlaku. Tanggal dan nominal pembayaran tetap sesuai transaksi asli.',
+        leaseStart: original
+          ? row.safe_snapshot.leaseStart
+          : (row.effective_start ?? row.safe_snapshot.leaseStart),
+        leaseEnd: original
+          ? row.safe_snapshot.leaseEnd
+          : (row.effective_end ?? row.safe_snapshot.leaseEnd),
+        servicePeriodPending: original
+          ? row.safe_snapshot.servicePeriodPending
+          : row.service_period_pending,
+        periodAuthorityNote: original
+          ? HISTORICAL_RECEIPT_PERIOD_NOTE
+          : CURRENT_PAYMENT_PERIOD_NOTE,
         settledAt: row.settling_paid_at.toISOString(),
       },
       row.invalidated_at
@@ -3623,7 +3796,7 @@ export class W06BillingService {
             LIMIT 1
          ) current_checkpoint ON true
          LEFT JOIN LATERAL (
-           SELECT COALESCE(sum(rent_invoice.credit_amount+COALESCE(invoice_payment.net,0)),0)
+            SELECT COALESCE(sum(${receivedInvoiceCreditSql('rent_invoice')}+COALESCE(invoice_payment.net,0)),0)
                     AS total_rent_received
              FROM invoices rent_invoice
              LEFT JOIN LATERAL (
@@ -3642,7 +3815,12 @@ export class W06BillingService {
         WHERE receipt.id=$1 AND receipt.property_id=$2`,
       [receiptId, propertyId],
     );
-    return result.rows[0] ? { ...result.rows[0], period_authority_note: 'Periode mengikuti catatan check-in yang berlaku. Tanggal dan nominal pembayaran tetap sesuai transaksi asli.' } : null;
+    return result.rows[0]
+      ? {
+          ...result.rows[0],
+          period_authority_note: CURRENT_PAYMENT_PERIOD_NOTE,
+        }
+      : null;
   }
 
   private receiptRowFromSnapshot(
@@ -3818,9 +3996,12 @@ export class W06BillingService {
             ['Uang sejumlah', feeMoney(row.amount)],
             ['Untuk pembayaran', 'Biaya pengelolaan hunian tanggungan Owner'],
             ['Status sewa kamar', 'Rp0 — ditanggung Owner'],
-            ['Periode hunian', row.service_period_pending
-              ? `${row.lease_term_months ?? '—'} bulan · Masa sewa belum dimulai—menunggu check-in`
-              : `${row.lease_start} s.d. ${row.lease_end ?? 'berjalan'}`],
+            [
+              'Periode hunian',
+              row.service_period_pending
+                ? `${row.lease_term_months ?? '—'} bulan · Masa sewa belum dimulai—menunggu check-in`
+                : `${row.lease_start} s.d. ${row.lease_end ?? 'berjalan'}`,
+            ],
             ['Kamar No.', row.room_number],
             [
               'Ketentuan biaya pengelolaan',
@@ -3838,7 +4019,7 @@ export class W06BillingService {
         : undefined;
     return createBillingReceiptPdf({
       receiptCode: row.receipt_code,
-      periodAuthorityNote: row.period_authority_note,
+      periodAuthorityNote: recipientPeriodAuthorityNote(row.period_authority_note, 'receipt'),
       paymentCode: row.payment_code,
       paymentMethod: row.payment_method,
       paymentPurpose: paymentClassification,
@@ -3921,30 +4102,51 @@ export class W06BillingService {
     return this.renderInvoiceDocument(result.rows[0]);
   }
 
-  async originalInvoiceDocument(user: UserAccessContext, propertyId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
+  async originalInvoiceDocument(
+    user: UserAccessContext,
+    propertyId: string,
+    invoiceId: string,
+  ): Promise<BillingInvoiceDocument> {
     await this.properties.assertCanReadProperty(user, propertyId);
-    const result = await this.database.client.query<InvoiceDocumentRow>(`${this.invoiceDocumentSql()}
-      WHERE invoice.id=$1 AND invoice.property_id=$2 AND invoice.lease_id IS NOT NULL AND invoice.invoice_status<>'draft'`, [invoiceId, propertyId]);
+    const result = await this.database.client.query<InvoiceDocumentRow>(
+      `${this.invoiceDocumentSql()}
+      WHERE invoice.id=$1 AND invoice.property_id=$2 AND invoice.lease_id IS NOT NULL AND invoice.invoice_status<>'draft'`,
+      [invoiceId, propertyId],
+    );
     const row = result.rows[0];
-    if (!row) throw new NotFoundException({ code: 'INVOICE_DOCUMENT_NOT_FOUND', message: 'Invoice penyewaan tidak ditemukan.' });
+    if (!row)
+      throw new NotFoundException({
+        code: 'INVOICE_DOCUMENT_NOT_FOUND',
+        message: 'Invoice penyewaan tidak ditemukan.',
+      });
     const history = await this.database.client.query<{
-      coverage_start: string; coverage_end: string; due_date: string;
+      coverage_start: string;
+      coverage_end: string;
+      due_date: string;
       period: { startDate: string; endDate: string; servicePeriodPending?: boolean } | null;
-    }>(`SELECT COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
+    }>(
+      `SELECT COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date)::text AS coverage_start,
         COALESCE(invoice.cycle_end_date,invoice.snapshot_period_end_date)::text AS coverage_end,invoice.due_date::text,
         COALESCE((SELECT version.effective_snapshot FROM lease_service_period_versions version
           WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id AND version.created_at<=invoice.issued_at
           ORDER BY version.sequence_number DESC LIMIT 1),
           (SELECT version.previous_snapshot FROM lease_service_period_versions version
            WHERE version.lease_id=invoice.lease_id AND version.property_id=invoice.property_id ORDER BY version.sequence_number LIMIT 1)) AS period
-        FROM invoices invoice WHERE invoice.id=$1 AND invoice.property_id=$2`, [invoiceId, propertyId]);
+        FROM invoices invoice WHERE invoice.id=$1 AND invoice.property_id=$2`,
+      [invoiceId, propertyId],
+    );
     const original = history.rows[0];
-    const document = await this.renderInvoiceDocument({ ...row, ...original,
+    const document = await this.renderInvoiceDocument({
+      ...row,
+      ...original,
+      total_amount: row.original_total_amount ?? row.total_amount,
+      correction_credit_amount: '0',
       contract_start: original.period?.startDate ?? row.contract_start,
       contract_end: original.period?.endDate ?? row.contract_end,
       service_period_pending: original.period?.servicePeriodPending ?? row.service_period_pending,
-      current_settlement_due_at: null, final_settlement_due_at: null,
-      period_authority_note: 'Salinan periode penerbitan awal; saldo pembayaran adalah saldo terbaru. Gunakan invoice terbaru untuk periode dan batas pembayaran yang berlaku.',
+      current_settlement_due_at: null,
+      final_settlement_due_at: null,
+      period_authority_note: HISTORICAL_INVOICE_PERIOD_NOTE,
     });
     return { ...document, filename: document.filename.replace(/\.pdf$/i, '-periode-awal.pdf') };
   }
@@ -4128,7 +4330,8 @@ export class W06BillingService {
       ownerSponsorshipResult,
     ] = await Promise.all([
       client.query<InvoiceProjectionRow>(
-        `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,i.total_amount,
+        `SELECT i.id,i.invoice_code,i.invoice_status,i.invoice_purpose,
+                 i.total_amount-${contractCorrectionCreditSql('i')} AS total_amount,
                 CASE WHEN GREATEST(i.total_amount-i.credit_amount-COALESCE(a.net,0),0)>0
                           AND uniform_adoption.lease_id IS NOT NULL
                           AND COALESCE(i.cycle_start_date,i.snapshot_period_start_date) IS NOT NULL
@@ -4158,12 +4361,35 @@ export class W06BillingService {
         [lease.property_id, lease.id],
       ),
       client.query<PaymentProjectionRow>(
-        `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,p.paid_at,p.verified_at,r.id AS reversal_id,receipt.id AS receipt_id,r.receipt_id AS reversal_receipt_id,r.reason AS reversal_reason,r.reversed_at,COALESCE(jsonb_agg(jsonb_build_object('invoice_id',pa.invoice_id,'amount',pa.allocated_amount)) FILTER(WHERE pa.id IS NOT NULL),'[]'::jsonb) AS allocations,COALESCE((SELECT jsonb_agg(jsonb_build_object('id',file.id,'original_filename',file.original_filename,'mime_type',file.mime_type,'file_size_bytes',file.file_size_bytes,'content_path','/files/'||file.id||'/content') ORDER BY file.id) FROM payment_evidence_files evidence_link JOIN files file ON file.id=evidence_link.file_id AND file.property_id=p.property_id AND file.is_deleted=false WHERE evidence_link.payment_id=p.id AND evidence_link.property_id=p.property_id),'[]'::jsonb) AS evidence FROM payments p LEFT JOIN payment_reversals r ON r.payment_id=p.id LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment' LEFT JOIN payment_allocations pa ON pa.payment_id=p.id WHERE p.property_id=$1 AND p.lease_id=$2 AND p.authority_source IN ('manual_transfer','audited_cash') GROUP BY p.id,r.id,receipt.id ORDER BY p.paid_at DESC,p.id DESC`,
+        `SELECT p.id,p.payment_code,p.payment_method,p.payment_status,p.payment_purpose,p.amount,
+          p.paid_at,p.verified_at,r.id AS reversal_id,receipt.id AS receipt_id,
+          r.receipt_id AS reversal_receipt_id,r.reason AS reversal_reason,r.reversed_at,
+          COALESCE(jsonb_agg(jsonb_build_object('invoice_id',pa.invoice_id,'amount',pa.allocated_amount))
+            FILTER(WHERE pa.id IS NOT NULL),'[]'::jsonb) AS allocations,
+          COALESCE((SELECT jsonb_agg(${BILLING_EVIDENCE_JSON_SQL} ORDER BY file.id)
+            FROM payment_evidence_files evidence_link
+            JOIN files file ON file.id=evidence_link.file_id AND file.property_id=p.property_id
+            WHERE evidence_link.payment_id=p.id AND evidence_link.property_id=p.property_id
+          ),'[]'::jsonb) AS evidence
+        FROM payments p LEFT JOIN payment_reversals r ON r.payment_id=p.id
+        LEFT JOIN payment_receipts receipt ON receipt.payment_id=p.id AND receipt.receipt_kind='payment'
+        LEFT JOIN payment_allocations pa ON pa.payment_id=p.id
+        WHERE p.property_id=$1 AND p.lease_id=$2 AND p.authority_source IN ('manual_transfer','audited_cash')
+        GROUP BY p.id,r.id,receipt.id ORDER BY p.paid_at DESC,p.id DESC`,
         [lease.property_id, lease.id],
       ),
       client.query<ProofProjectionRow>(
-        `SELECT pp.id,pp.invoice_id,pp.proof_status,pp.claimed_amount,pp.payment_purpose,pp.uploaded_at,pp.reviewed_at,pp.reject_reason FROM payment_proofs pp WHERE pp.property_id=$1 AND COALESCE(pp.lease_id,$2)=$2 AND pp.resident_id=$3 ORDER BY pp.uploaded_at DESC`,
-        [lease.property_id, lease.id, lease.resident_id],
+        `SELECT pp.id,pp.invoice_id,pp.proof_status,pp.claimed_amount,pp.payment_purpose,pp.uploaded_at,pp.reviewed_at,pp.reject_reason,
+          COALESCE((SELECT jsonb_agg(${BILLING_EVIDENCE_JSON_SQL} ORDER BY file.id)
+            FROM payment_proof_files attachment JOIN files file
+              ON file.id=attachment.file_id AND file.property_id=pp.property_id
+            WHERE attachment.payment_proof_id=pp.id),'[]'::jsonb) AS evidence
+         FROM payment_proofs pp JOIN invoices invoice ON invoice.id=pp.invoice_id AND invoice.property_id=pp.property_id
+         WHERE pp.property_id=$1 AND pp.resident_id=$3
+           AND (pp.lease_id=$2 OR (pp.lease_id IS NULL AND invoice.lease_id=$2)
+             OR (pp.lease_id IS NULL AND invoice.lease_id IS NULL AND invoice.occupancy_id=$4))
+         ORDER BY pp.uploaded_at DESC,pp.id DESC`,
+        [lease.property_id, lease.id, lease.resident_id, lease.occupancy_id],
       ),
       client.query<{ total: string; paid: string; next_due: string | null }>(
         `SELECT count(*) AS total,
@@ -4259,10 +4485,13 @@ export class W06BillingService {
                      COALESCE(sum(invoice_ledger.allocated_amount),0) AS allocated_amount,
                      COALESCE(sum(invoice_ledger.initial_payment_allocated),0) AS initial_payment_allocated
                 FROM (
-                  SELECT contract_invoice.credit_amount,
-                         COALESCE(allocation.net,0) AS allocated_amount,
-                         COALESCE(initial_payment.net,0) AS initial_payment_allocated
-                    FROM invoices contract_invoice
+                  -- The current lease already contains the corrected price. Its
+                  -- invoice reduction is historical reconciliation, not money
+                  -- received or another discount against that corrected price.
+                  SELECT ${receivedInvoiceCreditSql('contract_invoice')} AS credit_amount,
+                          COALESCE(allocation.net,0) AS allocated_amount,
+                          COALESCE(initial_payment.net,0) AS initial_payment_allocated
+                     FROM invoices contract_invoice
                     LEFT JOIN LATERAL (
                       SELECT COALESCE(sum(payment_allocation.allocated_amount
                                - COALESCE(reversal.reversed_amount,0)),0) AS net
@@ -4560,14 +4789,26 @@ export class W06BillingService {
         [lease.property_id, lease.id],
       ),
     ]);
-    const invoices = invoiceResult.rows.map((row) => this.sanitizeInvoice({ ...row,
-      invoice_status: row.invoice_purpose === 'rent'
-        ? this.currentPeriodInvoiceStatus(row.invoice_status, lease.service_period_pending === true, row.due_date, Number(row.total_amount) - Number(row.outstanding_amount))
-        : row.invoice_status,
-    }));
+    const invoices = invoiceResult.rows.map((row) =>
+      this.sanitizeInvoice({
+        ...row,
+        invoice_status:
+          row.invoice_purpose === 'rent'
+            ? this.currentPeriodInvoiceStatus(
+                row.invoice_status,
+                lease.service_period_pending === true,
+                row.due_date,
+                Number(row.total_amount) - Number(row.outstanding_amount),
+              )
+            : row.invoice_status,
+      }),
+    );
     const payments = paymentResult.rows.map((row) => ({
       ...this.sanitizePaymentDetail(row),
-      ...(view === 'admin' ? { evidence: this.sanitizeEvidenceFiles(row.evidence) } : {}),
+      evidence:
+        view === 'admin'
+          ? this.sanitizeEvidenceFiles(row.evidence)
+          : this.selfEvidenceFiles(row.evidence, lease.id),
     }));
     const deposit = await this.depositProjection(client, lease);
     const rentInvoiced = invoices
@@ -4582,15 +4823,30 @@ export class W06BillingService {
     const contractSettlement = settlement
       ? {
           ...this.projectContractSettlement(settlement),
-          ...(lease.service_period_pending ? {
-            status: this.projectContractSettlement(settlement).outstanding_amount === 0 ? 'paid' as const : 'awaiting_activation' as const,
-            original_due_at: null, effective_due_at: null, final_settlement_due_at: null,
-            extension_due_at: null, extension_reason: null, reminder_stage: null,
-            admin_action_required: false, termination_eligible: false, extension_available: false,
-            partial_payment_allowed: this.projectContractSettlement(settlement).outstanding_amount > 0,
-            full_payment_required: false,
-            first_payment_checkpoint: { ...this.projectContractSettlement(settlement).first_payment_checkpoint, due_at: null },
-          } : {}),
+          ...(lease.service_period_pending && lease.lease_status !== 'cancelled'
+            ? {
+                status:
+                  this.projectContractSettlement(settlement).outstanding_amount === 0
+                    ? ('paid' as const)
+                    : ('awaiting_activation' as const),
+                original_due_at: null,
+                effective_due_at: null,
+                final_settlement_due_at: null,
+                extension_due_at: null,
+                extension_reason: null,
+                reminder_stage: null,
+                admin_action_required: false,
+                termination_eligible: false,
+                extension_available: false,
+                partial_payment_allowed:
+                  this.projectContractSettlement(settlement).outstanding_amount > 0,
+                full_payment_required: false,
+                first_payment_checkpoint: {
+                  ...this.projectContractSettlement(settlement).first_payment_checkpoint,
+                  due_at: null,
+                },
+              }
+            : {}),
           ...(view === 'admin'
             ? {
                 paid_document: paidDocument
@@ -4645,7 +4901,10 @@ export class W06BillingService {
         installment_total: Number(progress.total),
         next_due_date: lease.service_period_pending ? null : progress.next_due,
         overdue_count: invoices.filter(
-          (row) => !lease.service_period_pending && row.invoice_status === 'overdue' && row.outstanding_amount > 0,
+          (row) =>
+            !lease.service_period_pending &&
+            row.invoice_status === 'overdue' &&
+            row.outstanding_amount > 0,
         ).length,
       },
       owner_sponsorship: ownerSponsorshipResult.rows[0]
@@ -4703,6 +4962,7 @@ export class W06BillingService {
         uploaded_at: row.uploaded_at.toISOString(),
         reviewed_at: row.reviewed_at?.toISOString() ?? null,
         reject_reason: row.reject_reason,
+        ...(view === 'self' ? { evidence: this.selfEvidenceFiles(row.evidence, lease.id) } : {}),
       })),
     };
   }
@@ -4735,7 +4995,11 @@ export class W06BillingService {
                         ) AT TIME ZONE 'Asia/Jakarta'
                       )::date,
                        effective_period.due_date,invoice.due_date
-                    )::text AS due_date,invoice.total_amount,invoice.issued_at,
+                    )::text AS due_date,invoice.issued_at,
+                    invoice.total_amount AS original_total_amount,
+                    ${contractCorrectionCreditSql('invoice')} AS correction_credit_amount,
+                    invoice.total_amount-${contractCorrectionCreditSql('invoice')} AS total_amount,
+                    ${receivedInvoiceCreditSql('invoice')}+COALESCE(allocation.net,0) AS paid_amount,
                     property.name AS property_name,property.address AS property_address,
                     issuer.display_name AS issued_by_name,
                     GREATEST(invoice.total_amount-invoice.credit_amount-COALESCE(allocation.net,0),0) AS outstanding_amount,
@@ -4788,7 +5052,7 @@ export class W06BillingService {
                ) allocation ON true
                LEFT JOIN LATERAL (
                  SELECT COALESCE(sum(
-                          contract_invoice.credit_amount + COALESCE(invoice_payment.net,0)
+                          ${receivedInvoiceCreditSql('contract_invoice')} + COALESCE(invoice_payment.net,0)
                         ),0) AS net
                    FROM invoices contract_invoice
                    LEFT JOIN LATERAL (
@@ -4849,20 +5113,39 @@ export class W06BillingService {
                 ) final_checkpoint ON true`;
   }
 
-  private currentPeriodInvoiceStatus(status: string, pending: boolean, dueDate: string, received: number) {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    if (status === 'overdue' && (pending || dueDate >= today)) return received > 0 ? 'partially_paid' : 'issued';
+  private currentPeriodInvoiceStatus(
+    status: string,
+    pending: boolean,
+    dueDate: string,
+    received: number,
+  ) {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    if (status === 'overdue' && (pending || dueDate >= today))
+      return received > 0 ? 'partially_paid' : 'issued';
     return status;
   }
 
   private renderInvoiceDocument(row: InvoiceDocumentRow): Promise<BillingInvoiceDocument> {
     return createBillingInvoicePdf({
       invoiceCode: row.invoice_code,
-      periodAuthorityNote: row.period_authority_note ?? (row.period_version_number
-        ? `Periode berlaku mengikuti catatan check-in versi ${row.period_version_number}; menggantikan periode rencana. Transaksi pembayaran tetap menggunakan tanggal asli.` : undefined),
-      invoiceStatus: this.publicInvoiceStatus(row.invoice_purpose === 'rent'
-        ? this.currentPeriodInvoiceStatus(row.invoice_status, row.service_period_pending === true, row.due_date, Number(row.total_amount) - Number(row.outstanding_amount))
-        : row.invoice_status),
+      periodAuthorityNote:
+        recipientPeriodAuthorityNote(row.period_authority_note, 'invoice') ??
+        (row.period_version_number ? CURRENT_PAYMENT_PERIOD_NOTE : undefined),
+      invoiceStatus: this.publicInvoiceStatus(
+        row.invoice_purpose === 'rent'
+          ? this.currentPeriodInvoiceStatus(
+              row.invoice_status,
+              row.service_period_pending === true,
+              row.due_date,
+              Number(row.total_amount) - Number(row.outstanding_amount),
+            )
+          : row.invoice_status,
+      ),
       invoicePurpose: row.invoice_purpose,
       residentName: row.snapshot_resident_name,
       roomNumber: row.snapshot_room_number,
@@ -4876,6 +5159,8 @@ export class W06BillingService {
       currentSettlementDueAt: row.current_settlement_due_at,
       finalSettlementDueAt: row.final_settlement_due_at,
       totalAmount: this.money(row.total_amount),
+      paidAmount: row.paid_amount == null ? undefined : this.money(row.paid_amount),
+      hasContractCorrection: this.money(row.correction_credit_amount ?? '0') > 0,
       outstandingAmount: this.money(row.outstanding_amount),
       leaseTermMonths: row.lease_term_months,
       agreedMonthlyPrice:
@@ -5072,7 +5357,7 @@ export class W06BillingService {
            SELECT COALESCE(sum(invoice_ledger.credit_amount),0) AS credit_amount,
                   COALESCE(sum(invoice_ledger.allocated_amount),0) AS allocated_amount
              FROM (
-               SELECT contract_invoice.credit_amount,
+               SELECT ${receivedInvoiceCreditSql('contract_invoice')} AS credit_amount,
                       COALESCE(allocation.net,0) AS allocated_amount
                  FROM invoices contract_invoice
                  LEFT JOIN LATERAL (
@@ -5147,7 +5432,7 @@ export class W06BillingService {
     if (requested > outstanding)
       throw new UnprocessableEntityException({
         code: 'CONTRACT_SETTLEMENT_AMOUNT_EXCEEDS_BALANCE',
-        message: 'Payment amount cannot exceed the remaining contract-rent balance',
+        message: 'Nominal pembayaran melebihi sisa sewa kontrak. Perbarui data pembayaran, lalu gunakan nominal sisa sewa terbaru.',
         details: { outstanding_amount: outstanding },
       });
     if (settlement.policy_snapshot_id && !settlement.final_checkpoint_due_at)
@@ -5175,7 +5460,7 @@ export class W06BillingService {
     if (mustSettleInFull && requested !== outstanding)
       throw new UnprocessableEntityException({
         code: 'CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED',
-        message: 'At final settlement, the remaining contract-rent balance must be paid in full',
+        message: 'Pembayaran saat ini harus melunasi seluruh sisa sewa kontrak. Pilih Lunasi Sekarang dengan nominal sisa sewa terbaru.',
         details: { outstanding_amount: outstanding },
       });
     return purpose === 'rent' && requested === outstanding;
@@ -5932,8 +6217,9 @@ export class W06BillingService {
                AND ledger.lease_id=commitment.lease_id
            ),0),
            updated_at=now()
-       WHERE commitment.property_id=$1 AND commitment.lease_id=$2`,
-      [lease.property_id, lease.id],
+       WHERE commitment.property_id=$1 AND commitment.lease_id=$2
+         AND commitment.commercial_mode=$3`,
+      [lease.property_id, lease.id, lease.commercial_mode],
     );
   }
 
@@ -6237,7 +6523,7 @@ export class W06BillingService {
          LIMIT 1
        ) latest_rent_payment ON true
        LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(rent_invoice.credit_amount+COALESCE(invoice_payment.net,0)),0)
+          SELECT COALESCE(sum(${receivedInvoiceCreditSql('rent_invoice')}+COALESCE(invoice_payment.net,0)),0)
                   AS total_rent_received
          FROM invoices rent_invoice
          LEFT JOIN LATERAL (
@@ -6663,24 +6949,45 @@ export class W06BillingService {
       evidence: this.sanitizeEvidenceFiles(row.evidence),
     };
   }
-  private sanitizeEvidenceFiles(
-    evidence:
-      | Array<{
-          id: string;
-          original_filename: string;
-          mime_type: string;
-          file_size_bytes: string | number;
-          content_path: string;
-        }>
-      | undefined,
-  ) {
-    return (Array.isArray(evidence) ? evidence : []).map((file) => ({
-      id: file.id,
-      original_filename: file.original_filename,
-      mime_type: file.mime_type,
-      file_size_bytes: this.money(file.file_size_bytes),
-      content_path: file.content_path,
+  private selfEvidenceFiles(evidence: BillingEvidenceRow[] | undefined, leaseId: string) {
+    return this.sanitizeEvidenceFiles(evidence).map((file) => ({
+      ...file,
+      content_path:
+        file.availability === 'available'
+          ? `/my/billing/${leaseId}/evidence/${file.id}/content`
+          : null,
     }));
+  }
+
+  private sanitizeEvidenceFiles(evidence: BillingEvidenceRow[] | undefined) {
+    return (Array.isArray(evidence) ? evidence : []).map((file) => {
+      let availability = file.availability ?? 'available';
+      let purgedAt: string | null = null;
+      if (
+        availability === 'purged' &&
+        typeof file.purged_at === 'string' &&
+        Number.isFinite(Date.parse(file.purged_at))
+      ) {
+        purgedAt = new Date(file.purged_at).toISOString();
+      } else if (
+        availability === 'purged' ||
+        !['available', 'purge_pending', 'unavailable'].includes(availability)
+      ) {
+        availability = 'unavailable';
+      }
+      const canonicalPath = `/files/${file.id}/content`;
+      if (availability === 'available' && file.content_path !== canonicalPath)
+        availability = 'unavailable';
+      return {
+        id: file.id,
+        original_filename: file.original_filename,
+        mime_type: file.mime_type,
+        file_size_bytes: this.money(file.file_size_bytes),
+        availability,
+        purged_at: purgedAt,
+        content_path: availability === 'available' ? canonicalPath : null,
+      };
+    });
   }
   private publicInvoiceStatus(status: string) {
     return status === 'unpaid' ? 'issued' : status;

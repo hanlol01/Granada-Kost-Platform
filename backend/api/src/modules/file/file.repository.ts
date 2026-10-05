@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import {
   CreateFileRecordInput,
@@ -23,6 +23,7 @@ type FileRow = {
   checksum_sha256: string;
   metadata: Record<string, unknown>;
   is_deleted: boolean;
+  archive_purge_command_id?: string | null;
   deleted_at: Date | null;
   deleted_by_user_id: string | null;
   created_at: Date;
@@ -65,7 +66,7 @@ export class FileRepository {
          id, property_id, uploader_user_id, original_filename, sanitized_filename,
          mime_type, file_extension, file_size_bytes, file_purpose, storage_driver,
          storage_path, checksum_sha256, metadata, is_deleted, deleted_at,
-         deleted_by_user_id, created_at, updated_at`,
+          deleted_by_user_id, created_at, updated_at, archive_purge_command_id`,
       [
         input.id,
         input.propertyId,
@@ -92,7 +93,7 @@ export class FileRepository {
          id, property_id, uploader_user_id, original_filename, sanitized_filename,
          mime_type, file_extension, file_size_bytes, file_purpose, storage_driver,
          storage_path, checksum_sha256, metadata, is_deleted, deleted_at,
-         deleted_by_user_id, created_at, updated_at
+          deleted_by_user_id, created_at, updated_at, archive_purge_command_id
        FROM files
        WHERE id = $1`,
       [fileId],
@@ -101,29 +102,79 @@ export class FileRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
-  async softDelete(fileId: string, deletedByUserId: string): Promise<FileRecord | null> {
-    const result = await this.database.client.query<FileRow>(
-      `UPDATE files
+  async softDelete(
+    fileId: string,
+    deletedByUserId: string,
+    purpose?: FilePurpose,
+  ): Promise<FileRecord | null> {
+    const operation = async (queryable: Pick<DatabaseService['client'], 'query'>) => {
+      if (purpose === 'lease_revision_evidence') {
+        // Serialize attachment and removal on the file row. Re-read relationships
+        // after waiting for a correction commit, not before acquiring this lock.
+        await queryable.query('SELECT id FROM files WHERE id=$1 FOR UPDATE', [fileId]);
+        const attached = await queryable.query<{ attached: boolean }>(
+          `SELECT EXISTS(SELECT 1 FROM lease_data_correction_evidence WHERE file_id=$1) AS attached`,
+          [fileId],
+        );
+        if (attached.rows[0]?.attached !== false)
+          throw new ConflictException({
+            code: 'LEASE_CORRECTION_EVIDENCE_ATTACHED',
+            message:
+              'Bukti sudah tercatat pada riwayat koreksi dan tidak dapat dihapus sebagai unggahan biasa. Tinjau penghapusan berkas melalui arsip penyewaan.',
+          });
+      }
+      const result = await queryable.query<FileRow>(
+        `UPDATE files
        SET is_deleted = true,
            deleted_at = now(),
            deleted_by_user_id = $2,
            updated_at = now()
-       WHERE id = $1 AND is_deleted = false
+        WHERE id = $1 AND is_deleted = false AND archive_purge_command_id IS NULL
        RETURNING
          id, property_id, uploader_user_id, original_filename, sanitized_filename,
          mime_type, file_extension, file_size_bytes, file_purpose, storage_driver,
          storage_path, checksum_sha256, metadata, is_deleted, deleted_at,
-         deleted_by_user_id, created_at, updated_at`,
-      [fileId, deletedByUserId],
-    );
+          deleted_by_user_id, created_at, updated_at, archive_purge_command_id`,
+        [fileId, deletedByUserId],
+      );
 
-    return result.rows[0] ? this.map(result.rows[0]) : null;
+      return result.rows[0] ? this.map(result.rows[0]) : null;
+    };
+    return purpose === 'lease_revision_evidence'
+      ? this.database.transaction(operation)
+      : operation(this.database.client);
+  }
+
+  /** Availability is not deletion. Never update a claimed or changed file. */
+  async recordContentAvailability(record: FileRecord, available: boolean): Promise<void> {
+    await this.database.client.query(
+      `UPDATE files SET metadata = CASE WHEN $6 THEN metadata - 'storage_content_unavailable'
+          ELSE metadata || '{"storage_content_unavailable":true}'::jsonb END, updated_at = now()
+       WHERE id = $1 AND property_id = $2
+         AND storage_path = $3 AND checksum_sha256 = $4 AND file_size_bytes = $5
+         AND is_deleted = false AND archive_purge_command_id IS NULL
+         AND COALESCE(metadata->>'storage_content_unavailable','false') <> CASE WHEN $6 THEN 'false' ELSE 'true' END`,
+      [record.id, record.propertyId, record.storagePath, record.checksumSha256, record.fileSizeBytes, available],
+    );
   }
 
   /** Invoked only after authorization; codes never contain people's names. */
   async downloadContext(
     record: FileRecord,
   ): Promise<{ label: string; code: string; sequence: string }> {
+    if (record.filePurpose === 'lease_revision_evidence') {
+      const correction = await this.database.client.query<{ code: string; sequence: string }>(
+        `WITH numbered AS (SELECT evidence.file_id,lease.lease_code || '-KOREKSI-' || correction.sequence_number::text AS code,
+                row_number() OVER (PARTITION BY evidence.correction_id ORDER BY evidence.created_at,evidence.id)::text AS sequence
+           FROM lease_data_correction_evidence evidence
+           JOIN lease_data_corrections correction ON correction.id=evidence.correction_id AND correction.property_id=evidence.property_id
+           JOIN leases lease ON lease.id=evidence.lease_id AND lease.property_id=evidence.property_id
+          WHERE evidence.property_id=$2 AND evidence.correction_id=(SELECT correction_id FROM lease_data_correction_evidence WHERE file_id=$1 AND property_id=$2 ORDER BY created_at,id LIMIT 1))
+          SELECT code,sequence FROM numbered WHERE file_id=$1`,
+        [record.id, record.propertyId],
+      );
+      if (correction.rows[0]) return { label: 'Bukti-Koreksi-Penyewaan', ...correction.rows[0] };
+    }
     const result = await this.database.client.query<{
       label: string;
       code: string;
@@ -224,6 +275,7 @@ export class FileRepository {
       checksumSha256: row.checksum_sha256,
       metadata: row.metadata ?? {},
       isDeleted: row.is_deleted,
+      archivePurgeCommandId: row.archive_purge_command_id ?? null,
       deletedAt: row.deleted_at,
       deletedByUserId: row.deleted_by_user_id,
       createdAt: row.created_at,

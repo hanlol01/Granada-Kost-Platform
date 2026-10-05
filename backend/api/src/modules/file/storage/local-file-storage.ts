@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { access, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { FilePurpose } from '../types/file.types';
-import type { FileStorageProvider } from './file-storage.provider';
+import type { FileStorageProvider, StoredFilePurgeTarget } from './file-storage.provider';
+import { purgeLocalFileVerified } from './verified-local-file-purge';
 
 @Injectable()
 export class LocalFileStorage implements FileStorageProvider {
@@ -42,12 +43,26 @@ export class LocalFileStorage implements FileStorageProvider {
   }
 
   async exists(storagePath: string): Promise<boolean> {
+    const absolutePath = this.resolveStoragePath(storagePath);
+    // A missing/unreadable storage root is uncertainty, not absence of a file.
+    const root = await lstat(this.rootPath);
+    if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('Storage root unavailable');
+    await access(this.rootPath);
     try {
-      await access(this.resolveStoragePath(storagePath));
+      await access(absolutePath);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // Also guard a root disappearing after the initial successful check.
+        await access(this.rootPath);
+        return false;
+      }
+      throw error;
     }
+  }
+
+  async purgeVerified(target: StoredFilePurgeTarget) {
+    return purgeLocalFileVerified(this.rootPath, target);
   }
 
   private resolveStoragePath(storagePath: string): string {

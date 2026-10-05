@@ -1,4 +1,6 @@
 import { ApiError } from "@granada-kost/api-client";
+import { LeaseRevisionContractError } from "./lease-revision-contract.ts";
+import { LEASE_REVISION_ERROR_NOTICES } from "./lease-revision-notices.ts";
 
 export type NormalizedAdminError = {
   status: number;
@@ -36,6 +38,17 @@ const SAFE_MESSAGES: Readonly<Record<NormalizedAdminError["kind"], string>> = {
  * API messages can be technical, English, or include implementation details.
  */
 const CODE_NOTICES: Readonly<Record<string, Pick<AdminErrorNotice, "title" | "description">>> = {
+  ...LEASE_REVISION_ERROR_NOTICES,
+  CONTRACT_SETTLEMENT_AMOUNT_EXCEEDS_BALANCE: {
+    title: "Nominal melebihi sisa sewa",
+    description:
+      "Nominal pembayaran lebih besar dari sisa sewa terbaru. Tutup form, perbarui data penghuni, lalu catat kembali dengan nominal yang ditampilkan. Periksa juga apakah ada pembayaran lain yang baru tercatat.",
+  },
+  CONTRACT_SETTLEMENT_FULL_PAYMENT_REQUIRED: {
+    title: "Pelunasan penuh diperlukan",
+    description:
+      "Batas pembayaran sebagian telah berakhir atau penyelesaian kontrak sedang berlangsung. Pilih Lunasi Sekarang untuk membayar seluruh sisa sewa terbaru.",
+  },
   UNAUTHENTICATED: {
     title: "Sesi masuk telah berakhir",
     description: "Silakan masuk kembali untuk melanjutkan pekerjaan Anda.",
@@ -139,6 +152,9 @@ function kindForStatus(status: number): NormalizedAdminError["kind"] {
  * server payloads, URL paths, identifiers, or potentially sensitive input.
  */
 export function normalizeAdminError(error: unknown): NormalizedAdminError {
+  if (error instanceof LeaseRevisionContractError) {
+    return { status: 409, code: error.code, kind: "conflict", message: SAFE_MESSAGES.conflict };
+  }
   if (ApiError.isApiError(error)) {
     const kind = kindForStatus(error.status);
     return {
@@ -161,11 +177,23 @@ export function safeErrorMessage(error: unknown): string {
   return normalizeAdminError(error).message;
 }
 
-/**
- * Returns only reviewed Indonesian operator copy. Raw API text and correlation
- * identifiers remain in devtools/server logs, never in customer-facing alerts.
- */
-export function adminErrorNotice(error: unknown, fallback?: string): AdminErrorNotice {
+/** Only a validated, shortened request reference may reach an unexpected-error notice. */
+export function adminSupportReference(error: unknown): string {
+  if (
+    !ApiError.isApiError(error) ||
+    (error.status !== 0 && error.status < 500) ||
+    !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(error.correlationId ?? "")
+  )
+    return "";
+  return ` Kode bantuan: ${error.correlationId!.slice(0, 8).toUpperCase()}.`;
+}
+
+/** Reviewed Indonesian copy, never raw payloads. Preserve the original failure when wrapping an uncertain command. */
+export function adminErrorNotice(
+  error: unknown,
+  fallback?: string,
+  incidentError: unknown = error,
+): AdminErrorNotice {
   const normalized = normalizeAdminError(error);
   const specific = CODE_NOTICES[normalized.code];
 
@@ -175,7 +203,7 @@ export function adminErrorNotice(error: unknown, fallback?: string): AdminErrorN
       (normalized.kind === "server"
         ? (fallback ?? KIND_TITLES.server)
         : KIND_TITLES[normalized.kind]),
-    description: specific?.description ?? normalized.message,
+    description: `${specific?.description ?? normalized.message}${adminSupportReference(incidentError)}`,
     code: normalized.code,
     kind: normalized.kind,
   };

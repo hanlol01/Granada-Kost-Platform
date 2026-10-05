@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'node:crypto';
@@ -143,6 +145,7 @@ export class FileService {
   ): Promise<FileRecord> {
     const record = await this.requireActiveFile(fileId);
     await this.assertCanAccess(user, record, 'file.metadata.denied', context);
+    this.assertNotClaimedForPurge(record);
     return record;
   }
 
@@ -153,16 +156,9 @@ export class FileService {
   ): Promise<FileContent> {
     const record = await this.requireActiveFile(fileId);
     await this.assertCanAccess(user, record, 'file.download.denied', context);
+    this.assertNotClaimedForPurge(record);
 
-    const exists = await this.storage.exists(record.storagePath);
-    if (!exists) {
-      throw new NotFoundException({
-        code: 'FILE_CONTENT_NOT_FOUND',
-        message: 'File content is missing from storage',
-      });
-    }
-
-    const buffer = await this.storage.read(record.storagePath);
+    const buffer = await this.readAvailableContent(record);
     await this.audit.write({
       ...context,
       propertyId: record.propertyId,
@@ -177,20 +173,41 @@ export class FileService {
   }
 
   async readStoredContent(record: FileRecord): Promise<FileContent> {
+    record = await this.requireActiveFile(record.id);
+    this.assertNotClaimedForPurge(record);
     if (record.isDeleted) {
       throw new NotFoundException({ code: 'FILE_NOT_FOUND', message: 'File not found' });
     }
 
-    const exists = await this.storage.exists(record.storagePath);
-    if (!exists) {
+    const buffer = await this.readAvailableContent(record);
+    return { record, buffer };
+  }
+
+  private async readAvailableContent(record: FileRecord): Promise<Buffer> {
+    const storageUnavailable = () => new ServiceUnavailableException({
+      code: 'FILE_STORAGE_UNAVAILABLE',
+      message: 'Penyimpanan berkas belum dapat diakses. Coba unduh kembali beberapa saat lagi; berkas belum dinyatakan hilang atau dihapus.',
+    });
+    const contentExists = () => this.storage.exists(record.storagePath).catch(() => { throw storageUnavailable(); });
+    const missing = async (): Promise<never> => {
+      await this.files.recordContentAvailability(record, false);
       throw new NotFoundException({
         code: 'FILE_CONTENT_NOT_FOUND',
-        message: 'File content is missing from storage',
+        message: 'Isi berkas tidak ditemukan di penyimpanan. Catatan dan riwayat tetap tersedia; hubungi Pihak Pengelola untuk memeriksa berkas ini.',
       });
+    };
+    if (!(await contentExists())) return missing();
+    let buffer: Buffer;
+    try {
+      buffer = await this.storage.read(record.storagePath);
+    } catch (error) {
+      // Recheck ENOENT: the root may have gone offline between lookup and read.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !(await contentExists())) return missing();
+      throw storageUnavailable();
     }
-
-    const buffer = await this.storage.read(record.storagePath);
-    return { record, buffer };
+    if (record.metadata?.storage_content_unavailable === true)
+      await this.files.recordContentAvailability(record, true);
+    return buffer;
   }
 
   async softDelete(
@@ -200,6 +217,7 @@ export class FileService {
   ): Promise<{ success: true; file: FileRecord }> {
     const before = await this.requireActiveFile(fileId);
     await this.assertCanAccess(user, before, 'file.delete.denied', context);
+    this.assertNotClaimedForPurge(before);
     if (
       before.filePurpose === 'owner_realization_evidence' &&
       (await this.files.isOwnerRealizationEvidenceAttached(fileId))
@@ -220,7 +238,7 @@ export class FileService {
       });
     }
 
-    const deleted = await this.files.softDelete(fileId, user.id);
+    const deleted = await this.files.softDelete(fileId, user.id, before.filePurpose);
     if (!deleted) {
       throw new NotFoundException({ code: 'FILE_NOT_FOUND', message: 'File not found' });
     }
@@ -272,6 +290,7 @@ export class FileService {
       profile_photo: 'Foto-Profil',
       document_signature: 'Tanda-Tangan',
       owner_realization_evidence: 'Bukti-Realisasi-Owner',
+      lease_revision_evidence: 'Bukti-Koreksi-Penyewaan',
       complaint_attachment: 'Lampiran-Komplain',
       maintenance_attachment: 'Lampiran-Perawatan',
       vehicle_photo: 'Foto-Kendaraan',
@@ -282,6 +301,13 @@ export class FileService {
         ? (labels[record.filePurpose] ?? 'Berkas-Terlampir')
         : context.label;
     return downloadFilename(`${label}-${context.code}-${sequence}.${record.fileExtension}`);
+  }
+
+  private assertNotClaimedForPurge(record: FileRecord) {
+    if (record.archivePurgeCommandId) throw new ConflictException({
+      code: 'FILE_ARCHIVE_PURGE_UNAVAILABLE',
+      message: 'Berkas sudah masuk pengajuan penghapusan permanen dan tidak dapat dibuka, diunduh, atau dilepas sebagai unggahan biasa. Periksa hasil penghapusan pada arsip penyewaan; keadaan penyimpanan yang belum pasti perlu diperiksa ulang.',
+    });
   }
 
   private assertFilePresent(
@@ -573,6 +599,16 @@ export class FileService {
     await this.properties.assertCanReadProperty(user, propertyId);
 
     if (
+      purpose === 'lease_revision_evidence' &&
+      (!user.roles.includes('admin') || !user.permissions.includes('lease.manage'))
+    )
+      throw new ForbiddenException({
+        code: 'FILE_PURPOSE_DENIED',
+        message:
+          'Bukti koreksi penyewaan hanya dapat diunggah Admin yang memiliki akses pengelolaan penyewaan.',
+      });
+
+    if (
       (purpose === 'owner_realization_evidence' || purpose === 'document_signature') &&
       !user.roles.includes('admin')
     ) {
@@ -632,6 +668,21 @@ export class FileService {
   ): Promise<void> {
     try {
       await this.properties.assertCanReadProperty(user, record.propertyId);
+
+      if (record.filePurpose === 'lease_revision_evidence') {
+        const permissionGranted =
+          deniedAction === 'file.delete.denied'
+            ? user.permissions.includes('lease.manage')
+            : user.permissions.some((permission) =>
+                ['lease.read', 'lease.manage'].includes(permission),
+              );
+        if (!user.roles.includes('admin') || !permissionGranted)
+          throw new ForbiddenException({
+            code: 'FILE_ACCESS_DENIED',
+            message:
+              'Bukti koreksi penyewaan hanya tersedia bagi Pihak Pengelola dengan akses penyewaan yang sesuai.',
+          });
+      }
 
       if (
         (record.filePurpose === 'owner_realization_evidence' ||

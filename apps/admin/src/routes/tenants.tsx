@@ -15,6 +15,7 @@ import { ResidentNotifications } from "@/components/residents/ResidentNotificati
 import { RESIDENT_ATTENTION, type ResidentAttentionCategory } from "@/lib/admin-resident-attention";
 import { AppShell } from "@/components/layout/app-shell";
 import { LeaseCreatePage } from "@/components/leases/LeaseCreatePage";
+import { LeaseArchiveSuccessorPage } from "@/components/leases/LeaseArchiveSuccessorPage";
 import { EmptyState } from "@/components/state/EmptyState";
 import { ErrorState } from "@/components/state/ErrorState";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ import { cn } from "@/lib/utils";
 type TenantRouteSearch = {
   flow?: "new-lease";
   bookingLeadId?: string;
+  sourceArchiveId?: string;
   correctionHistory?: "ever" | "never";
 };
 type DeadlineTarget = "settlement" | "lease_end";
@@ -72,6 +74,7 @@ function validateSearch(raw: Record<string, unknown>): TenantRouteSearch {
   return {
     flow: raw.flow === "new-lease" ? "new-lease" : undefined,
     bookingLeadId,
+    sourceArchiveId: typeof raw.sourceArchiveId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.sourceArchiveId) ? raw.sourceArchiveId : undefined,
     correctionHistory:
       raw.correctionHistory === "ever" || raw.correctionHistory === "never"
         ? raw.correctionHistory
@@ -125,11 +128,16 @@ export const Route = createFileRoute("/tenants")({
 const PAGE_SIZE = 20;
 
 function TenantsRoute() {
-  const showsResidentDetail = useRouterState({
-    select: (state) => state.matches.some((match) => match.routeId === "/tenants/$residentId"),
+  const showsChildWorkspace = useRouterState({
+    select: (state) => state.matches.some((match) =>
+      match.routeId === "/tenants/$residentId" ||
+      match.routeId === "/tenants/correction/$leaseId" ||
+      match.routeId === "/tenants/cancellation/$leaseId" ||
+      match.routeId === "/tenants/archives"
+    ),
   });
 
-  return showsResidentDetail ? <Outlet /> : <TenantsPage />;
+  return showsChildWorkspace ? <Outlet /> : <TenantsPage />;
 }
 
 export function ResidentStatusPill({ status }: { status: ResidentListRecord["residentStatus"] }) {
@@ -360,7 +368,7 @@ function TenantsPage() {
   );
   const resultsRef = useRef<HTMLDivElement>(null);
   const pendingScroll = useRef(false);
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, hasRole } = useAuth();
   const { currentPropertyId } = useProperty();
   const hasLeaseAuthority =
     (user?.roles ?? []).some((role) => ["owner", "manager", "admin"].includes(role)) &&
@@ -589,6 +597,9 @@ function TenantsPage() {
   };
 
   if (search.flow === "new-lease") {
+    if (search.sourceArchiveId) return <LeaseArchiveSuccessorPage archiveId={search.sourceArchiveId} onCreated={async () => {
+      await residents.refetch(); await navigate({ search: {}, replace: true });
+    }} />;
     return (
       <LeaseCreatePage
         bookingLeadId={search.bookingLeadId}
@@ -605,13 +616,16 @@ function TenantsPage() {
       title="Data Penghuni & Penyewaan"
       subtitle={residents.data ? `${total} penghuni terdaftar` : "Memuat..."}
       actions={
-        leaseCreateEnabled ? (
+        <div className="flex flex-wrap gap-2">
+        {hasRole("admin") && hasPermission("lease.read") ? <Button variant="outline" className="min-h-11" asChild><Link to="/tenants/archives">Arsip penyewaan</Link></Button> : null}
+        {leaseCreateEnabled ? (
           <Button asChild className="min-h-11">
             <Link to="/tenants" search={{ flow: "new-lease" }}>
               <CalendarPlus className="mr-1 h-4 w-4" /> Tambah Penyewaan
             </Link>
           </Button>
-        ) : null
+        ) : null}
+        </div>
       }
     >
       <ResidentNotifications

@@ -43,6 +43,7 @@ export type AdminRouteId =
   | "leases-create"
   | "lease-detail"
   | "tenants"
+  | "lease-correction"
   | "payments"
   | "expenses"
   | "vehicles"
@@ -329,6 +330,23 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
     icon: Users,
     access: { roles: OWNER_MANAGER_ADMIN, readCapabilities: ["resident.read"] },
     navigation: { sidebar: true, mobilePriority: 40 },
+  },
+  {
+    id: "lease-correction",
+    to: "/tenants/correction/$leaseId",
+    label: "Koreksi Data Penyewaan",
+    parentId: "tenants",
+    section: "pengelolaan",
+    order: 51,
+    icon: CalendarCheck,
+    access: {
+      roles: ["admin"],
+      readCapabilities: ["lease.manage"],
+      mutationCapabilities: ["lease.manage"],
+      feature: "adminUxLease",
+    },
+    safeLabel: () => "Koreksi Data Penyewaan",
+    navigation: { sidebar: false },
   },
   {
     id: "payments",

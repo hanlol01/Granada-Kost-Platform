@@ -1,7 +1,14 @@
 # ADR 0008: Separate lease cancellation from physical file deletion
 
-- Status: Accepted planning decision — not implemented
+- Status: Accepted — implemented and verified locally; not deployed to production
 - Date: 2026-10-02
+
+Local implementation and requirement-level evidence are recorded in
+[Handoff 08 progress](../21-kost-management-ecosystem-overhaul/handoff/08_LEASE_REVISION_IMPLEMENTATION_PROGRESS.md).
+The approved local migration/restart and user-confirmed Admin report file-save
+acceptance completed on 5 October. Production preflight/deployment requires
+separate authorization; the progress document distinguishes automatic evidence
+from manual confirmation and records the local API handoff.
 
 ## Context and decision
 

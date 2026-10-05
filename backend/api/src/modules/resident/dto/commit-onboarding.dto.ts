@@ -52,6 +52,8 @@ export class CommitOnboardingDto {
   @IsUUID('4') @IsOptional() booking_lead_id?: string;
   @IsUUID('4') @IsOptional() room_id?: string;
   @IsUUID('4') @IsOptional() resident_id?: string;
+  @IsUUID('4') @IsOptional() source_archive_id?: string;
+  @IsOptional() @Transform(optionalTrim) @IsString() @Length(3, 1000) archive_replacement_reason?: string;
   @Transform(trim) @IsString() @MaxLength(160) visitor_name!: string;
   @Transform(trim) @IsNumberString() @MaxLength(20) visitor_phone!: string;
   @IsOptional() @Transform(optionalTrim) @IsEmail() @MaxLength(254) visitor_email?: string;

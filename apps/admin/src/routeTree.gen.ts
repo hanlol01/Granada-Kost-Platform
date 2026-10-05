@@ -36,6 +36,7 @@ import { Route as RoomsIndexRouteImport } from './routes/rooms/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as PropertyOwnersIndexRouteImport } from './routes/property-owners/index'
 import { Route as PenyewaanIndexRouteImport } from './routes/penyewaan/index'
+import { Route as TenantsArchivesRouteImport } from './routes/tenants/archives'
 import { Route as TenantsResidentIdRouteImport } from './routes/tenants/$residentId'
 import { Route as RoomsRumahKostRouteImport } from './routes/rooms/rumah-kost'
 import { Route as RoomsGaleriRouteImport } from './routes/rooms/galeri'
@@ -54,6 +55,9 @@ import { Route as PenyewaanTambahRouteImport } from './routes/penyewaan/tambah'
 import { Route as PenyewaanLeaseIdRouteImport } from './routes/penyewaan/$leaseId'
 import { Route as ReportsPropertyOwnersIndexRouteImport } from './routes/reports/property-owners/index'
 import { Route as PropertyOwnersPortalIndexRouteImport } from './routes/property-owners/portal/index'
+import { Route as TenantsCorrectionLeaseIdRouteImport } from './routes/tenants/correction/$leaseId'
+import { Route as TenantsCancellationLeaseIdRouteImport } from './routes/tenants/cancellation/$leaseId'
+import { Route as TenantsArchivesArchiveIdRouteImport } from './routes/tenants/archives/$archiveId'
 import { Route as ReportsPropertyOwnersRealizationIdRouteImport } from './routes/reports/property-owners/$realizationId'
 import { Route as PropertyOwnersPortalReportsRouteImport } from './routes/property-owners/portal/reports'
 import { Route as PropertyOwnersPortalNotificationsRouteImport } from './routes/property-owners/portal/notifications'
@@ -201,6 +205,11 @@ const PenyewaanIndexRoute = PenyewaanIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PenyewaanRouteRoute,
 } as any)
+const TenantsArchivesRoute = TenantsArchivesRouteImport.update({
+  id: '/archives',
+  path: '/archives',
+  getParentRoute: () => TenantsRoute,
+} as any)
 const TenantsResidentIdRoute = TenantsResidentIdRouteImport.update({
   id: '/$residentId',
   path: '/$residentId',
@@ -292,6 +301,24 @@ const PropertyOwnersPortalIndexRoute =
     id: '/portal/',
     path: '/portal/',
     getParentRoute: () => PropertyOwnersRoute,
+  } as any)
+const TenantsCorrectionLeaseIdRoute =
+  TenantsCorrectionLeaseIdRouteImport.update({
+    id: '/correction/$leaseId',
+    path: '/correction/$leaseId',
+    getParentRoute: () => TenantsRoute,
+  } as any)
+const TenantsCancellationLeaseIdRoute =
+  TenantsCancellationLeaseIdRouteImport.update({
+    id: '/cancellation/$leaseId',
+    path: '/cancellation/$leaseId',
+    getParentRoute: () => TenantsRoute,
+  } as any)
+const TenantsArchivesArchiveIdRoute =
+  TenantsArchivesArchiveIdRouteImport.update({
+    id: '/$archiveId',
+    path: '/$archiveId',
+    getParentRoute: () => TenantsArchivesRoute,
   } as any)
 const ReportsPropertyOwnersRealizationIdRoute =
   ReportsPropertyOwnersRealizationIdRouteImport.update({
@@ -400,6 +427,7 @@ export interface FileRoutesByFullPath {
   '/rooms/galeri': typeof RoomsGaleriRoute
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
+  '/tenants/archives': typeof TenantsArchivesRouteWithChildren
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
   '/reports/': typeof ReportsIndexRoute
@@ -411,6 +439,9 @@ export interface FileRoutesByFullPath {
   '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
   '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
   '/reports/property-owners/$realizationId': typeof ReportsPropertyOwnersRealizationIdRoute
+  '/tenants/archives/$archiveId': typeof TenantsArchivesArchiveIdRoute
+  '/tenants/cancellation/$leaseId': typeof TenantsCancellationLeaseIdRoute
+  '/tenants/correction/$leaseId': typeof TenantsCorrectionLeaseIdRoute
   '/property-owners/portal/': typeof PropertyOwnersPortalIndexRoute
   '/reports/property-owners/': typeof ReportsPropertyOwnersIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
@@ -453,6 +484,7 @@ export interface FileRoutesByTo {
   '/rooms/galeri': typeof RoomsGaleriRoute
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
+  '/tenants/archives': typeof TenantsArchivesRouteWithChildren
   '/penyewaan': typeof PenyewaanIndexRoute
   '/property-owners': typeof PropertyOwnersIndexRoute
   '/reports': typeof ReportsIndexRoute
@@ -463,6 +495,9 @@ export interface FileRoutesByTo {
   '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
   '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
   '/reports/property-owners/$realizationId': typeof ReportsPropertyOwnersRealizationIdRoute
+  '/tenants/archives/$archiveId': typeof TenantsArchivesArchiveIdRoute
+  '/tenants/cancellation/$leaseId': typeof TenantsCancellationLeaseIdRoute
+  '/tenants/correction/$leaseId': typeof TenantsCorrectionLeaseIdRoute
   '/property-owners/portal': typeof PropertyOwnersPortalIndexRoute
   '/reports/property-owners': typeof ReportsPropertyOwnersIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
@@ -511,6 +546,7 @@ export interface FileRoutesById {
   '/rooms/galeri': typeof RoomsGaleriRoute
   '/rooms/rumah-kost': typeof RoomsRumahKostRoute
   '/tenants/$residentId': typeof TenantsResidentIdRoute
+  '/tenants/archives': typeof TenantsArchivesRouteWithChildren
   '/penyewaan/': typeof PenyewaanIndexRoute
   '/property-owners/': typeof PropertyOwnersIndexRoute
   '/reports/': typeof ReportsIndexRoute
@@ -522,6 +558,9 @@ export interface FileRoutesById {
   '/property-owners/portal/notifications': typeof PropertyOwnersPortalNotificationsRoute
   '/property-owners/portal/reports': typeof PropertyOwnersPortalReportsRoute
   '/reports/property-owners/$realizationId': typeof ReportsPropertyOwnersRealizationIdRoute
+  '/tenants/archives/$archiveId': typeof TenantsArchivesArchiveIdRoute
+  '/tenants/cancellation/$leaseId': typeof TenantsCancellationLeaseIdRoute
+  '/tenants/correction/$leaseId': typeof TenantsCorrectionLeaseIdRoute
   '/property-owners/portal/': typeof PropertyOwnersPortalIndexRoute
   '/reports/property-owners/': typeof ReportsPropertyOwnersIndexRoute
   '/property-owners/portal/assets/$roomCode': typeof PropertyOwnersPortalAssetsRoomCodeRoute
@@ -571,6 +610,7 @@ export interface FileRouteTypes {
     | '/rooms/galeri'
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
+    | '/tenants/archives'
     | '/penyewaan/'
     | '/property-owners/'
     | '/reports/'
@@ -582,6 +622,9 @@ export interface FileRouteTypes {
     | '/property-owners/portal/notifications'
     | '/property-owners/portal/reports'
     | '/reports/property-owners/$realizationId'
+    | '/tenants/archives/$archiveId'
+    | '/tenants/cancellation/$leaseId'
+    | '/tenants/correction/$leaseId'
     | '/property-owners/portal/'
     | '/reports/property-owners/'
     | '/property-owners/portal/assets/$roomCode'
@@ -624,6 +667,7 @@ export interface FileRouteTypes {
     | '/rooms/galeri'
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
+    | '/tenants/archives'
     | '/penyewaan'
     | '/property-owners'
     | '/reports'
@@ -634,6 +678,9 @@ export interface FileRouteTypes {
     | '/property-owners/portal/notifications'
     | '/property-owners/portal/reports'
     | '/reports/property-owners/$realizationId'
+    | '/tenants/archives/$archiveId'
+    | '/tenants/cancellation/$leaseId'
+    | '/tenants/correction/$leaseId'
     | '/property-owners/portal'
     | '/reports/property-owners'
     | '/property-owners/portal/assets/$roomCode'
@@ -681,6 +728,7 @@ export interface FileRouteTypes {
     | '/rooms/galeri'
     | '/rooms/rumah-kost'
     | '/tenants/$residentId'
+    | '/tenants/archives'
     | '/penyewaan/'
     | '/property-owners/'
     | '/reports/'
@@ -692,6 +740,9 @@ export interface FileRouteTypes {
     | '/property-owners/portal/notifications'
     | '/property-owners/portal/reports'
     | '/reports/property-owners/$realizationId'
+    | '/tenants/archives/$archiveId'
+    | '/tenants/cancellation/$leaseId'
+    | '/tenants/correction/$leaseId'
     | '/property-owners/portal/'
     | '/reports/property-owners/'
     | '/property-owners/portal/assets/$roomCode'
@@ -919,6 +970,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PenyewaanIndexRouteImport
       parentRoute: typeof PenyewaanRouteRoute
     }
+    '/tenants/archives': {
+      id: '/tenants/archives'
+      path: '/archives'
+      fullPath: '/tenants/archives'
+      preLoaderRoute: typeof TenantsArchivesRouteImport
+      parentRoute: typeof TenantsRoute
+    }
     '/tenants/$residentId': {
       id: '/tenants/$residentId'
       path: '/$residentId'
@@ -1044,6 +1102,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/property-owners/portal/'
       preLoaderRoute: typeof PropertyOwnersPortalIndexRouteImport
       parentRoute: typeof PropertyOwnersRoute
+    }
+    '/tenants/correction/$leaseId': {
+      id: '/tenants/correction/$leaseId'
+      path: '/correction/$leaseId'
+      fullPath: '/tenants/correction/$leaseId'
+      preLoaderRoute: typeof TenantsCorrectionLeaseIdRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/tenants/cancellation/$leaseId': {
+      id: '/tenants/cancellation/$leaseId'
+      path: '/cancellation/$leaseId'
+      fullPath: '/tenants/cancellation/$leaseId'
+      preLoaderRoute: typeof TenantsCancellationLeaseIdRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/tenants/archives/$archiveId': {
+      id: '/tenants/archives/$archiveId'
+      path: '/$archiveId'
+      fullPath: '/tenants/archives/$archiveId'
+      preLoaderRoute: typeof TenantsArchivesArchiveIdRouteImport
+      parentRoute: typeof TenantsArchivesRoute
     }
     '/reports/property-owners/$realizationId': {
       id: '/reports/property-owners/$realizationId'
@@ -1253,12 +1332,30 @@ const ReportsRouteChildren: ReportsRouteChildren = {
 const ReportsRouteWithChildren =
   ReportsRoute._addFileChildren(ReportsRouteChildren)
 
+interface TenantsArchivesRouteChildren {
+  TenantsArchivesArchiveIdRoute: typeof TenantsArchivesArchiveIdRoute
+}
+
+const TenantsArchivesRouteChildren: TenantsArchivesRouteChildren = {
+  TenantsArchivesArchiveIdRoute: TenantsArchivesArchiveIdRoute,
+}
+
+const TenantsArchivesRouteWithChildren = TenantsArchivesRoute._addFileChildren(
+  TenantsArchivesRouteChildren,
+)
+
 interface TenantsRouteChildren {
   TenantsResidentIdRoute: typeof TenantsResidentIdRoute
+  TenantsArchivesRoute: typeof TenantsArchivesRouteWithChildren
+  TenantsCancellationLeaseIdRoute: typeof TenantsCancellationLeaseIdRoute
+  TenantsCorrectionLeaseIdRoute: typeof TenantsCorrectionLeaseIdRoute
 }
 
 const TenantsRouteChildren: TenantsRouteChildren = {
   TenantsResidentIdRoute: TenantsResidentIdRoute,
+  TenantsArchivesRoute: TenantsArchivesRouteWithChildren,
+  TenantsCancellationLeaseIdRoute: TenantsCancellationLeaseIdRoute,
+  TenantsCorrectionLeaseIdRoute: TenantsCorrectionLeaseIdRoute,
 }
 
 const TenantsRouteWithChildren =

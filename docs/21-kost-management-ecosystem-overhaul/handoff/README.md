@@ -34,15 +34,23 @@ read [Handoff 07](07_OWNER_ACCOUNT_AND_LEASE_CORRECTION_HISTORY_HANDOFF.md).
 Its source implementation and automated verification are complete locally;
 live account credential changes and deployment remain separate checks.
 
-For the approved but **not yet implemented** expansion of lease corrections,
+For the **source-implemented** expansion of lease corrections,
 mistaken-lease cancellation, archive/recovery, and selective physical file
 purging, read [Handoff 08](08_LEASE_CORRECTION_CANCELLATION_ARCHIVE_PURGE_PLAN.md)
 and [ADR 0008](../../adr/0008-lease-archive-and-file-purge-boundary.md).
+Requirement-level evidence and the deployment/acceptance boundary are recorded in
+[the implementation progress](08_LEASE_REVISION_IMPLEMENTATION_PROGRESS.md).
+Handoff 08 is implemented and verified locally: migrations 115–124 and matching
+API restart completed, inspected data fingerprints are unchanged, and the user
+confirmed Admin report PDF/Excel saving and opening. Real Owner PDF/XLSX rendering,
+guarded HTTP delivery and portal UI checks pass independently. Production release
+requires separate authorization; see the progress document for exact evidence
+and the temporary local API process handoff.
 
 For the **locally implemented** rule that the lease service period
 begins at physical check-in rather than payment or administrative activation,
-read [Handoff 09](09_CHECK_IN_ANCHORED_LEASE_PERIOD_PLAN.md). Handoff 08 remains
-separate and parked; Handoff 09 does not authorize historical bulk updates.
+read [Handoff 09](09_CHECK_IN_ANCHORED_LEASE_PERIOD_PLAN.md). Handoff 08 has a
+separate local verification/release boundary; Handoff 09 does not authorize historical bulk updates.
 Migration 114 has passed the official local runner and replay; period/check-in,
 financial-preservation, rollback, document, and date-only correction proofs pass.
 Production deployment and interactive acceptance remain separate gates.

@@ -20,14 +20,25 @@ import { LeaseTransferService } from './lease-transfer.service';
 import { MyLeaseExitDocumentController } from './my-lease-exit-document.controller';
 import { LeaseDataCorrectionService } from './lease-data-correction.service';
 import { LeaseServicePeriodService } from './lease-service-period.service';
+import { LeaseRevisionContextService } from './lease-revision-context.service';
+import { LeaseRoomRecordingCorrectionService } from './lease-room-recording-correction.service';
+import { LeaseSponsorshipCorrectionService } from './lease-sponsorship-correction.service';
+import { LeaseCommercialModeCorrectionService } from './lease-commercial-mode-correction.service';
+import { LeaseArchiveService } from './lease-archive.service';
+import { LeaseArchiveController } from './lease-archive.controller';
+import { LeaseArchiveRestorationService } from './lease-archive-restoration.service';
+import { FileModule } from '../file/file.module';
+import { LeaseArchiveFileInventoryService } from './lease-archive-file-inventory.service';
+import { LeaseArchiveFilePurgeService } from './lease-archive-file-purge.service';
 
 @Module({
-  imports: [RbacModule, BillingModule, PropertyModule],
+  imports: [RbacModule, BillingModule, PropertyModule, FileModule],
   controllers: [
     LeaseController,
     LeaseCheckoutController,
     LeaseActivationController,
     MyLeaseExitDocumentController,
+    LeaseArchiveController,
   ],
   providers: [
     LeaseRepository,
@@ -37,6 +48,14 @@ import { LeaseServicePeriodService } from './lease-service-period.service';
     LeaseTransferService,
     LeaseRenewalService,
     LeaseDataCorrectionService,
+    LeaseRevisionContextService,
+    LeaseRoomRecordingCorrectionService,
+    LeaseSponsorshipCorrectionService,
+    LeaseCommercialModeCorrectionService,
+    LeaseArchiveService,
+    LeaseArchiveRestorationService,
+    LeaseArchiveFileInventoryService,
+    LeaseArchiveFilePurgeService,
     LeaseActivationService,
     LeaseCheckInService,
     LeaseServicePeriodService,

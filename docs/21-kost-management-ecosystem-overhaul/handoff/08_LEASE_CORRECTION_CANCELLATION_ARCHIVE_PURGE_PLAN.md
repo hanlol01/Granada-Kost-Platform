@@ -1,7 +1,17 @@
 # Handoff 08: Comprehensive lease correction, cancellation, archive, and file purge
 
-Status: `APPROVED PLAN — NOT IMPLEMENTED`
+Status: `IMPLEMENTED AND VERIFIED LOCALLY — NOT DEPLOYED TO PRODUCTION`
 Decision date: 2 October 2026
+
+Execution started on 3 October 2026. See [implementation progress and evidence](08_LEASE_REVISION_IMPLEMENTATION_PROGRESS.md).
+The full approved source scope is implemented and core local checks pass.
+The main local database received migrations 115–124 and the matching API was
+restarted on 5 October. The user confirmed local Admin report PDF/Excel saving
+and opening, closing the remaining manual acceptance gate. Automated native
+download capture remains a tooling limitation, not claimed browser evidence.
+Read the progress document's final evidence and release boundary before
+continuing acceptance or deployment. The approved scope and domain boundaries
+below remain unchanged.
 
 ## Purpose and scope
 

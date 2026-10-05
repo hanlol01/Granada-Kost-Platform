@@ -1223,7 +1223,7 @@ export class PropertyOwnerPortalService {
        ), invoice_summary AS (
          SELECT lease.id AS lease_id,
                 COALESCE(sum(invoice.total_amount) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_invoiced,
-                COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
+                COALESCE(sum(invoice.total_amount - GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) - invoice.correction_credit_amount) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_verified,
                 COALESCE(sum(GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0)) FILTER (WHERE invoice.invoice_purpose = 'rent'), 0)::text AS rent_outstanding,
                 COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent')::int AS invoice_count,
                  COUNT(*) FILTER (WHERE invoice.invoice_purpose = 'rent' AND invoice.invoice_status = 'overdue' AND invoice.effective_due_date<(now() AT TIME ZONE 'Asia/Jakarta')::date AND GREATEST(invoice.total_amount - invoice.credit_amount - invoice.allocated_amount, 0) > 0)::int AS overdue_count,
@@ -1233,6 +1233,7 @@ export class PropertyOwnerPortalService {
          LEFT JOIN LATERAL (
            SELECT invoice.id,invoice.invoice_status,invoice.invoice_purpose,
                   invoice.total_amount,invoice.credit_amount,
+                  COALESCE(correction_credit.amount,0) AS correction_credit_amount,
                   CASE WHEN uniform_adoption.lease_id IS NOT NULL
                             AND COALESCE(invoice.cycle_start_date,invoice.snapshot_period_start_date) IS NOT NULL
                        THEN GREATEST(
@@ -1243,7 +1244,13 @@ export class PropertyOwnerPortalService {
                   END AS effective_due_date,
                   COALESCE(allocation.net,0) AS allocated_amount
               FROM invoices invoice
-              LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=invoice.id AND effective_period.property_id=invoice.property_id
+              LEFT JOIN LATERAL (
+                SELECT COALESCE(sum(credit.amount),0) AS amount
+                  FROM lease_data_correction_invoice_credits credit
+                 WHERE credit.invoice_id=invoice.id AND credit.property_id=invoice.property_id
+                   AND credit.lease_id=invoice.lease_id
+              ) correction_credit ON true
+               LEFT JOIN lease_installment_effective_periods effective_period ON effective_period.invoice_id=invoice.id AND effective_period.property_id=invoice.property_id
              LEFT JOIN lease_uniform_rent_due_day_adoptions uniform_adoption
                ON uniform_adoption.property_id=invoice.property_id
               AND uniform_adoption.lease_id=invoice.lease_id
@@ -2258,7 +2265,7 @@ export class PropertyOwnerPortalService {
           'owner_collection.projected_management_fee',
         ),
         estimated_owner_entitlement: this.money(
-          row.service_period_pending ? 0 : row.estimated_owner_entitlement,
+          row.service_period_pending ? '0' : row.estimated_owner_entitlement,
           'owner_collection.estimated_owner_entitlement',
         ),
       },

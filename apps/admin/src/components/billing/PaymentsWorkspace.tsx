@@ -69,6 +69,7 @@ import {
   useVerifyProof,
 } from "@/hooks/useAdminBilling";
 import { useFilePreview } from "@/hooks/useFileUpload";
+import { BillingEvidenceUnavailable } from "./BillingEvidenceUnavailable";
 import {
   canManageW06Billing,
   canVerifyW06Payment,
@@ -84,6 +85,7 @@ import {
 } from "@/lib/admin-billing";
 import { useAuth } from "@/lib/auth";
 import { formatIDR } from "@/lib/format";
+import { adminErrorNotice } from "@/lib/error-normalizer";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { toastMutationSuccess } from "@/lib/mutation-feedback";
 import { useProperty } from "@/lib/property/useProperty";
@@ -959,14 +961,26 @@ function WorklistPanel({
                     </p>
                   </TableCell>
                   <TableCell>
-                    {item.service_period_pending ? `${item.term_months ?? "—"} bulan · Menunggu check-in` : formatContractPeriod(item.term_months, item.contract_start, item.contract_end)}
+                    {item.service_period_pending
+                      ? `${item.term_months ?? "—"} bulan · Menunggu check-in`
+                      : formatContractPeriod(
+                          item.term_months,
+                          item.contract_start,
+                          item.contract_end,
+                        )}
                   </TableCell>
                   <TableCell>
-                    <p>{item.service_period_pending ? "Ditentukan setelah check-in" : dateOnly(item.settlement_due_date)}</p>
+                    <p>
+                      {item.service_period_pending
+                        ? "Ditentukan setelah check-in"
+                        : dateOnly(item.settlement_due_date)}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {item.service_period_pending ? "Masa sewa belum dimulai" : item.settlement_due_date === item.final_settlement_due_date
-                        ? "Pelunasan akhir"
-                        : "Checkpoint berjalan"}
+                      {item.service_period_pending
+                        ? "Masa sewa belum dimulai"
+                        : item.settlement_due_date === item.final_settlement_due_date
+                          ? "Pelunasan akhir"
+                          : "Checkpoint berjalan"}
                     </p>
                   </TableCell>
                   <TableCell>
@@ -1077,7 +1091,9 @@ function ResidentBillingPanel({
               <p className="mt-1 font-semibold text-foreground">
                 {durationMonths} bulan
                 <span className="font-normal text-muted-foreground">
-                  {data.lease.service_period_pending ? " · Masa sewa belum dimulai—menunggu check-in" : ` (${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)})`}
+                  {data.lease.service_period_pending
+                    ? " · Masa sewa belum dimulai—menunggu check-in"
+                    : ` (${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)})`}
                 </span>
               </p>
             </div>
@@ -1209,22 +1225,32 @@ function SummaryGrid({ data }: { data: ResidentBilling }) {
     ["Deposit dipotong", formatIDR(data.summary.deposit_deducted)],
     ["Deposit dikembalikan", formatIDR(data.summary.deposit_refunded)],
     ["Saldo deposit", formatIDR(data.summary.deposit_balance)],
-    ["Periode", data.lease.service_period_pending ? "Masa sewa belum dimulai—menunggu check-in" : `${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)}`],
-    ["Sisa kontrak", data.lease.service_period_pending ? "Menunggu check-in" : `${data.lease.remaining_days} hari`],
+    [
+      "Periode",
+      data.lease.service_period_pending
+        ? "Masa sewa belum dimulai—menunggu check-in"
+        : `${dateOnly(data.lease.start_date)}–${dateOnly(data.lease.end_date)}`,
+    ],
+    [
+      "Sisa kontrak",
+      data.lease.service_period_pending ? "Menunggu check-in" : `${data.lease.remaining_days} hari`,
+    ],
     ["Paket", data.lease.payment_plan === "annual_full" ? "Tahunan penuh" : "Angsuran dua bulanan"],
     ["Progress", `${data.summary.installment_paid}/${data.summary.installment_total} angsuran`],
-    data.lease.service_period_pending ? ["Tenggat pelunasan", "Ditentukan setelah check-in"] : settlement?.status === "paid"
-      ? ["Jadwal check-out kontrak", dateOnly(data.lease.end_date)]
-      : [
-          "Tenggat pembayaran berikutnya",
-          settlement?.status === "awaiting_activation"
-            ? "Menunggu aktivasi kamar"
-            : settlementDueAt
-              ? formatBillingDate(settlementDueAt)
-              : data.summary.next_due_date
-                ? dateOnly(data.summary.next_due_date)
-                : "Tidak ada",
-        ],
+    data.lease.service_period_pending
+      ? ["Tenggat pelunasan", "Ditentukan setelah check-in"]
+      : settlement?.status === "paid"
+        ? ["Jadwal check-out kontrak", dateOnly(data.lease.end_date)]
+        : [
+            "Tenggat pembayaran berikutnya",
+            settlement?.status === "awaiting_activation"
+              ? "Menunggu aktivasi kamar"
+              : settlementDueAt
+                ? formatBillingDate(settlementDueAt)
+                : data.summary.next_due_date
+                  ? dateOnly(data.summary.next_due_date)
+                  : "Tidak ada",
+          ],
     ["Terlambat", `${data.summary.overdue_count} invoice`],
   ];
   return (
@@ -1318,19 +1344,21 @@ function InvoiceHistory({
               <div>
                 <p className="font-medium">{invoice.invoice_code}</p>
                 <p className="text-xs text-muted-foreground">
-                  {invoice.invoice_purpose === "rent" && data.lease.service_period_pending ? `${data.lease.term_months ?? leaseDurationMonths(data.lease.start_date, data.lease.end_date)} bulan · Masa sewa belum dimulai—menunggu check-in` : invoice.invoice_purpose === "rent"
-                    ? `Periode kontrak ${formatContractPeriod(
-                        leaseDurationMonths(data.lease.start_date, data.lease.end_date),
-                        data.lease.start_date,
-                        data.lease.end_date,
-                      )} · jatuh tempo tagihan ${
-                        contractSettlementDueAt
-                          ? formatBillingDate(contractSettlementDueAt)
-                          : dateOnly(invoice.due_date)
-                      }`
-                    : `Periode tagihan ${dateOnly(invoice.coverage_start)}–${dateOnly(
-                        invoice.coverage_end,
-                      )} · jatuh tempo ${dateOnly(invoice.due_date)}`}
+                  {invoice.invoice_purpose === "rent" && data.lease.service_period_pending
+                    ? `${data.lease.term_months ?? leaseDurationMonths(data.lease.start_date, data.lease.end_date)} bulan · Masa sewa belum dimulai—menunggu check-in`
+                    : invoice.invoice_purpose === "rent"
+                      ? `Periode kontrak ${formatContractPeriod(
+                          leaseDurationMonths(data.lease.start_date, data.lease.end_date),
+                          data.lease.start_date,
+                          data.lease.end_date,
+                        )} · jatuh tempo tagihan ${
+                          contractSettlementDueAt
+                            ? formatBillingDate(contractSettlementDueAt)
+                            : dateOnly(invoice.due_date)
+                        }`
+                      : `Periode tagihan ${dateOnly(invoice.coverage_start)}–${dateOnly(
+                          invoice.coverage_end,
+                        )} · jatuh tempo ${dateOnly(invoice.due_date)}`}
                 </p>
               </div>
               <StatusBadge status={invoice.invoice_status} />
@@ -1341,31 +1369,45 @@ function InvoiceHistory({
             </div>
             {invoice.invoice_status !== "draft" ? (
               <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                variant="info"
-                className="min-h-11"
-                disabled={!propertyId || documentId === invoice.id}
-                onClick={() => {
-                  if (!propertyId) return;
-                  setDocumentId(invoice.id);
-                  setDocumentError(null);
-                  void downloadAdminInvoiceDocument(propertyId, invoice.id, invoice.invoice_code)
-                    .then(() => setDocumentId(null))
-                    .catch(() => {
-                      setDocumentId(null);
-                      setDocumentError(invoice.id);
-                    });
-                }}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                {documentId === invoice.id ? "Menyiapkan PDF..." : "Unduh invoice"}
-              </Button>
-              <Button variant="outline" className="min-h-11" disabled={!propertyId || documentId === invoice.id} onClick={() => {
-                if (!propertyId) return;
-                setDocumentId(invoice.id); setDocumentError(null);
-                void downloadAdminInvoiceDocument(propertyId, invoice.id, invoice.invoice_code, true)
-                  .catch(() => setDocumentError(invoice.id)).finally(() => setDocumentId(null));
-              }}>Lihat periode penerbitan awal</Button>
+                <Button
+                  variant="info"
+                  className="min-h-11"
+                  disabled={!propertyId || documentId === invoice.id}
+                  onClick={() => {
+                    if (!propertyId) return;
+                    setDocumentId(invoice.id);
+                    setDocumentError(null);
+                    void downloadAdminInvoiceDocument(propertyId, invoice.id, invoice.invoice_code)
+                      .then(() => setDocumentId(null))
+                      .catch(() => {
+                        setDocumentId(null);
+                        setDocumentError(invoice.id);
+                      });
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {documentId === invoice.id ? "Menyiapkan PDF..." : "Unduh invoice"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={!propertyId || documentId === invoice.id}
+                  onClick={() => {
+                    if (!propertyId) return;
+                    setDocumentId(invoice.id);
+                    setDocumentError(null);
+                    void downloadAdminInvoiceDocument(
+                      propertyId,
+                      invoice.id,
+                      invoice.invoice_code,
+                      true,
+                    )
+                      .catch(() => setDocumentError(invoice.id))
+                      .finally(() => setDocumentId(null));
+                  }}
+                >
+                  Lihat periode penerbitan awal
+                </Button>
               </div>
             ) : null}
             {documentError === invoice.id ? (
@@ -1982,13 +2024,19 @@ export function RecordPaymentDialog({
                     type="text"
                     inputMode="numeric"
                     className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
-                    disabled={isFullSettlement}
+                    disabled={contractSettlementMode === "full"}
                     value={amount ? new Intl.NumberFormat("id-ID").format(amount) : ""}
                     onChange={(event) => {
                       const numeric = event.target.value.replace(/\D/g, "");
+                      const nextAmount = numeric ? Number(numeric) : 0;
                       setSelected({
-                        [contractSettlementInvoice.id]: numeric ? Number(numeric) : 0,
+                        [contractSettlementInvoice.id]: nextAmount,
                       });
+                      setSettlementChoice(
+                        nextAmount === contractSettlementInvoice.outstanding_amount
+                          ? "full"
+                          : "partial",
+                      );
                     }}
                     aria-label={
                       isFullSettlement ? "Jumlah pelunasan sewa" : "Nominal pembayaran sewa"
@@ -2221,7 +2269,11 @@ export function RecordPaymentDialog({
               ) : null}
             </Field>
             {mutation.isError ? (
-              <InlineMessage text="Pembayaran tidak dapat disimpan. Periksa saldo invoice dan coba lagi dengan data yang sama." />
+              <NoticeAlert
+                tone="destructive"
+                title={adminErrorNotice(mutation.error).title}
+                description={adminErrorNotice(mutation.error).description}
+              />
             ) : null}
           </div>
           <DialogFooter>
@@ -2443,7 +2495,11 @@ function ContractPaidDetailDialog({
               <DetailRow label="Metode terakhir" value={methodLabel(payment.payment_method)} />
               <DetailRow
                 label="Periode sewa"
-                value={document.service_period_pending ? `${document.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in` : `${formatBillingDate(document.lease_start)} s.d. ${formatBillingDate(document.lease_end)}`}
+                value={
+                  document.service_period_pending
+                    ? `${document.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in`
+                    : `${formatBillingDate(document.lease_start)} s.d. ${formatBillingDate(document.lease_end)}`
+                }
               />
               <DetailRow
                 label="Total sewa kontrak"
@@ -3081,10 +3137,18 @@ function OtherChargePanel({
 }
 
 function EvidencePreview({ file }: { file: BillingProof["evidence"][number] }) {
-  const preview = useFilePreview(file.id);
+  const preview = useFilePreview(file.availability === "available" ? file.id : null);
   const previewLabel = `Lihat ${file.original_filename} di tab baru`;
+  if (file.availability !== "available") {
+    return (
+      <div className="min-w-0 max-w-full space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+        <p className="break-words text-sm font-medium">{file.original_filename}</p>
+        <BillingEvidenceUnavailable file={file} />
+      </div>
+    );
+  }
   return (
-    <div className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-muted/20 px-2 py-2">
+    <div className="flex min-h-11 max-w-full flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 px-2 py-2">
       {preview.data ? (
         <a
           href={preview.data}
@@ -3106,7 +3170,9 @@ function EvidencePreview({ file }: { file: BillingProof["evidence"][number] }) {
       ) : (
         <span
           className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border border-border bg-background text-muted-foreground"
-          aria-label="Menyiapkan pratinjau bukti"
+          aria-label={
+            preview.isError ? "Pratinjau bukti belum dapat dimuat" : "Menyiapkan pratinjau bukti"
+          }
         >
           <ReceiptText className="size-4" aria-hidden="true" />
         </span>
@@ -3123,6 +3189,23 @@ function EvidencePreview({ file }: { file: BillingProof["evidence"][number] }) {
         >
           <Eye className="size-3.5" aria-hidden="true" /> Lihat
         </a>
+      ) : null}
+      {preview.isError ? (
+        <div className="w-full space-y-2 text-sm">
+          <p>
+            Pratinjau bukti belum dapat dimuat. Muat ulang data pembayaran untuk memeriksa
+            ketersediaannya atau coba lagi.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={preview.isFetching}
+            onClick={() => void preview.refetch()}
+          >
+            {preview.isFetching ? "Memuat bukti…" : "Coba lagi"}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

@@ -503,7 +503,7 @@ test("stale scope is rejected and invalidation remains property-scoped", () => {
   assert.equal(isOnboardingRequestCurrent(2, 3, id, id), false);
   assert.equal(isOnboardingRequestCurrent(3, 3, id, "99999999-9999-4999-8999-999999999999"), false);
   const keys = onboardingInvalidationKeys(id);
-  assert.equal(keys.length, 6);
+  assert.equal(keys.length, 9);
   for (const key of keys) assert.equal(JSON.stringify(key).includes(id), true);
   assert.equal(
     keys.some((key) => key[0] === "booking-leads"),

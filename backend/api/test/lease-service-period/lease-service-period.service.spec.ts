@@ -90,8 +90,19 @@ void test('physical check-in can use a changed planned date without an additiona
   assert.deepEqual(f.writes, []);
 });
 void test('lease correction still requires a reason when changing the effective date', async () => {
-  const f = fixture(base, { source: 'lease_data_correction' });
+  const f = fixture(
+    { ...base, service_period_state: 'started', occupancy_id: 'occupancy' },
+    { source: 'lease_data_correction' },
+  );
   await rejectsCode(f.run, 'LEASE_SERVICE_PERIOD_REASON_REQUIRED');
+  assert.deepEqual(f.writes, []);
+});
+void test('lease correction cannot establish physical check-in for an unoccupied lease', async () => {
+  const f = fixture(base, {
+    source: 'lease_data_correction',
+    reason: 'Correct the original recording',
+  });
+  await rejectsCode(f.run, 'LEASE_SERVICE_PERIOD_ALREADY_STARTED');
   assert.deepEqual(f.writes, []);
 });
 for (const [flag, code] of [

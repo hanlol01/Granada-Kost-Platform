@@ -5,6 +5,8 @@ import { adminUxV2Requester, type AdminUxQueryValue } from "./admin-ux-api";
 import { getAccessToken } from "./api";
 import { fetchPreviewAndDownload } from "./document-download";
 import { env } from "./env";
+import { createLeaseRevisionClient } from "./lease-revision-contract";
+export type { LeaseDataCorrectionInput } from "./lease-revision-contract";
 import { mapV2Data, mapV2Page, type V2DataEnvelope, type V2ListEnvelope } from "./admin-ux-mapper";
 import type {
   BillingCycle,
@@ -25,7 +27,6 @@ import type {
   RenewalEligibility,
   CheckoutCommand,
   CheckoutSettlementQuote,
-  LeaseDataCorrectionPreview,
   LeaseDataCorrectionRecord,
   ResidentLeaseCorrectionRecord,
 } from "./admin-ux-lease-types";
@@ -136,30 +137,6 @@ export type CheckoutRefundSettlementInput = {
   evidenceFileIds: string[];
   notes?: string;
 };
-
-export type LeaseDataCorrectionInput = {
-  startDate?: string;
-  termMonths?: number;
-  checkedInDate?: string;
-  pricingSource?: "standard" | "negotiated";
-  agreedMonthlyPrice?: number;
-  pricingAgreementReason?: string;
-  pricingVarianceAcknowledged?: boolean;
-  reason?: string;
-};
-
-function toLeaseDataCorrectionBody(input: LeaseDataCorrectionInput): Record<string, unknown> {
-  return {
-    start_date: input.startDate,
-    term_months: input.termMonths,
-    checked_in_date: input.checkedInDate,
-    pricing_source: input.pricingSource,
-    agreed_monthly_price: input.agreedMonthlyPrice,
-    pricing_agreement_reason: text(input.pricingAgreementReason),
-    pricing_variance_acknowledged: input.pricingVarianceAcknowledged,
-    reason: text(input.reason),
-  };
-}
 
 export async function downloadLeaseExitDocument(
   leaseId: string,
@@ -569,13 +546,7 @@ export const adminUxLeaseApi = {
           { idempotencyKey },
         ),
       ),
-    previewDataCorrection: (leaseId: string, input: LeaseDataCorrectionInput) =>
-      data<LeaseDataCorrectionPreview>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
-          "/leases/" + encodeURIComponent(leaseId) + "/data-correction/preview",
-          toLeaseDataCorrectionBody(input),
-        ),
-      ),
+    ...createLeaseRevisionClient(adminUxV2Requester),
     listDataCorrections: (leaseId: string) =>
       data<{ corrections: LeaseDataCorrectionRecord[] }>(
         adminUxV2Requester.get<V2DataEnvelope<unknown>>(
@@ -587,18 +558,6 @@ export const adminUxLeaseApi = {
         adminUxV2Requester.get<V2DataEnvelope<unknown>>(
           "/leases/residents/" + encodeURIComponent(residentId) + "/data-corrections",
           { query: { property_id: propertyId }, signal },
-        ),
-      ),
-    commitDataCorrection: (
-      leaseId: string,
-      input: LeaseDataCorrectionInput & { reason: string },
-      idempotencyKey: string,
-    ) =>
-      data<{ correction: LeaseDataCorrectionRecord }>(
-        adminUxV2Requester.post<V2DataEnvelope<unknown>>(
-          "/leases/" + encodeURIComponent(leaseId) + "/data-correction",
-          toLeaseDataCorrectionBody(input),
-          { idempotencyKey },
         ),
       ),
   },

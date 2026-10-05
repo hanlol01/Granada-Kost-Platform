@@ -195,6 +195,57 @@ export class UpdateLeaseDto {
 
 export class PreviewLeaseDataCorrectionDto {
   @IsOptional()
+  @IsIn(['rent', 'owner_sponsored'])
+  commercial_mode?: 'rent' | 'owner_sponsored';
+
+  @IsOptional()
+  @IsIn(['annual_full', 'two_month_installments', 'monthly_installments'])
+  payment_plan_type?: 'annual_full' | 'two_month_installments' | 'monthly_installments';
+
+  @IsOptional()
+  @IsIn(['monthly', 'yearly'])
+  billing_cycle?: 'monthly' | 'yearly';
+
+  @IsOptional()
+  @IsUUID('4')
+  sponsoring_owner_profile_id?: string;
+
+  @IsOptional()
+  @IsIn(['charged', 'waived'])
+  management_fee_mode?: 'charged' | 'waived';
+
+  @IsOptional()
+  @IsIn(['resident', 'owner', 'other'])
+  management_fee_payer?: 'resident' | 'owner' | 'other';
+
+  @IsOptional()
+  @Transform(trimOptionalString)
+  @IsString()
+  @Length(2, 160)
+  management_fee_payer_name?: string;
+
+  @IsOptional()
+  @Transform(trimOptionalString)
+  @IsString()
+  @Length(3, 500)
+  owner_sponsorship_reason?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  room_id?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  room_recording_error_confirmed?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  room_correction_evidence_file_ids?: string[];
+
+  @IsOptional()
   @IsDateString()
   start_date?: string;
 

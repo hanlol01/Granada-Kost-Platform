@@ -28,8 +28,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useMyW06Billing, useMyW06Receipt } from "@/hooks/useW06Billing";
 import {
+  useMyBillingHistory,
+  useMyW06Billing,
+  useMyW06Receipt,
+  useW06BillingAccountId,
+} from "@/hooks/useW06Billing";
+import {
+  downloadMyBillingEvidence,
   downloadMyInvoiceDocument,
   downloadMyLeaseExitDocument,
   downloadMyReceiptDocument,
@@ -37,6 +43,7 @@ import {
 import { paymentPlanLabel } from "@/lib/format";
 import type {
   MyW06Billing,
+  MyBillingEvidence,
   W06InvoiceStatus,
   W06PaymentPurpose,
   W06ProofStatus,
@@ -56,63 +63,230 @@ type Settlement = NonNullable<MyW06Billing["contract_settlement"]>;
 type TerminationStatus = NonNullable<Settlement["termination_case"]>["status"];
 
 function BillingPage() {
-  const query = useMyW06Billing();
-  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const accountId = useW06BillingAccountId();
+  return <BillingWorkspace key={accountId ?? "signed-out"} />;
+}
 
-  if (query.isPending)
-    return (
-      <Page>
-        <LoadingState label="Memuat billing kontrak..." />
-      </Page>
-    );
-  if (query.isError)
-    return (
-      <Page>
+function BillingWorkspace() {
+  const [historicalLeaseId, setHistoricalLeaseId] = useState<string | null>(null);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const history = useMyBillingHistory(historyOffset);
+  const query = useMyW06Billing(historicalLeaseId);
+  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const billing = query.data;
+  const isCancelled = billing?.lease.status === "cancelled";
+  return (
+    <Page
+      subtitle={
+        historicalLeaseId ? "Riwayat tagihan dan pembayaran penyewaan sebelumnya" : undefined
+      }
+    >
+      <section
+        aria-labelledby="lease-history-heading"
+        className="rounded-2xl border border-border bg-card p-4"
+      >
+        <h2 id="lease-history-heading" className="text-base font-semibold">
+          Penyewaan yang ditinjau
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pembayaran lama tetap terpisah dari penyewaan baru. Riwayat hanya dapat dibaca.
+        </p>
+        <Button
+          className="mt-3 min-h-11"
+          variant={historicalLeaseId ? "outline" : "default"}
+          aria-pressed={!historicalLeaseId}
+          onClick={() => {
+            setHistoricalLeaseId(null);
+            setReceiptId(null);
+          }}
+        >
+          Penyewaan saat ini
+        </Button>
+        <details
+          className="mt-4 border-t border-border pt-3"
+          open={historicalLeaseId ? true : undefined}
+        >
+          <summary className="min-h-11 cursor-pointer rounded-lg py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+            Riwayat penyewaan
+          </summary>
+          {history.isPending ? (
+            <LoadingState label="Memuat riwayat penyewaan..." />
+          ) : history.isError && !history.data ? (
+            <ErrorState
+              title="Riwayat belum dapat dimuat"
+              error={history.error}
+              onRetry={() => void history.refetch()}
+            />
+          ) : history.data ? (
+            <>
+              {history.isError ? (
+                <p role="alert" className="mb-3 text-sm text-destructive">
+                  Pembaruan riwayat belum berhasil. Daftar sebelumnya tetap ditampilkan.
+                </p>
+              ) : null}
+              <div className="divide-y divide-border">
+                {history.data.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-semibold">
+                        {item.lease_code} · {item.room_number}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.status === "cancelled"
+                          ? "Dibatalkan dan diarsipkan"
+                          : "Penyewaan berakhir"}{" "}
+                        · {item.term_months} bulan
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.start_date && item.end_date
+                          ? `${jakartaDate(item.start_date)} – ${jakartaDate(item.end_date)}`
+                          : "Masa sewa belum dimulai"}
+                      </p>
+                    </div>
+                    <Button
+                      className="min-h-11 shrink-0"
+                      variant={item.id === historicalLeaseId ? "default" : "outline"}
+                      aria-pressed={item.id === historicalLeaseId}
+                      onClick={() => {
+                        setHistoricalLeaseId(item.id);
+                        setReceiptId(null);
+                      }}
+                    >
+                      Lihat riwayat
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {!history.data.total ? (
+                <p className="py-3 text-sm text-muted-foreground">
+                  Belum ada penyewaan sebelumnya. Tagihan penyewaan aktif tampil di bawah.
+                </p>
+              ) : null}
+              {history.data.total > history.data.limit ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    {history.data.offset + 1}–
+                    {Math.min(history.data.offset + history.data.limit, history.data.total)} dari{" "}
+                    {history.data.total} penyewaan
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="min-h-11"
+                      disabled={history.isFetching || historyOffset === 0}
+                      onClick={() => setHistoryOffset(Math.max(0, historyOffset - 20))}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="min-h-11"
+                      disabled={history.isFetching || historyOffset + 20 >= history.data.total}
+                      onClick={() => setHistoryOffset(historyOffset + 20)}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </details>
+      </section>
+      {query.isPending ? (
+        <LoadingState label="Memuat tagihan penyewaan..." />
+      ) : !billing ? (
         <ErrorState
-          title="Billing belum dapat dimuat"
+          title={
+            historicalLeaseId
+              ? "Riwayat belum dapat dimuat"
+              : "Tagihan penyewaan saat ini belum tersedia"
+          }
           error={query.error}
           onRetry={() => void query.refetch()}
         />
-      </Page>
-    );
-
-  const billing = query.data;
-  return (
-    <Page
-      subtitle={`${paymentPlanLabel(billing.lease.payment_plan)} · ${billing.summary.installment_paid}/${billing.summary.installment_total} tahap lunas`}
-    >
-      <ReadOnlyNotice />
-      <BalanceHero billing={billing} />
-      <BillingNotice billing={billing} />
-      {!billing.lease.service_period_pending ? <SettlementProgress billing={billing} /> : null}
-      <ContractSummary billing={billing} />
-      <FinancialSeparationSummary billing={billing} />
-      <section aria-labelledby="invoice-heading">
-        <SectionHeading
-          id="invoice-heading"
-          title="Tagihan kontrak"
-          description="Saldo berasal dari invoice persisten dan alokasi pembayaran terverifikasi."
-        />
-        <div className="mt-3 space-y-3">
-          {billing.invoices.length ? (
-            billing.invoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} servicePeriodPending={billing.lease.service_period_pending} />)
-          ) : (
-            <Card>
-              <CardContent className="p-4">
-                <EmptyState
-                  title="Belum ada invoice"
-                  description="Invoice akan muncul sesuai jadwal kontrak yang dibekukan."
-                />
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </section>
-      <PaymentHistory billing={billing} onReceipt={setReceiptId} />
-      <FinancialTimeline billing={billing} onReceipt={setReceiptId} />
-      <OfficialLeaseDocuments billing={billing} />
-      <ProofHistory proofs={billing.proofs} invoices={billing.invoices} />
-      <ReceiptDialog receiptId={receiptId} onClose={() => setReceiptId(null)} />
+      ) : (
+        <>
+          {query.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Pembaruan tagihan belum berhasil. Data terakhir tetap ditampilkan; coba perbarui
+              kembali.
+            </p>
+          ) : null}
+          {historicalLeaseId || isCancelled ? (
+            <section className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+              <h2 className="text-base font-semibold">
+                {isCancelled
+                  ? "Penyewaan dibatalkan — riwayat tetap tersedia"
+                  : "Riwayat penyewaan berakhir"}
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed">
+                {billing.lease.room_number} · Catatan tagihan, pembayaran, dan kuitansi di bawah
+                berasal dari penyewaan lama. Membuka riwayat tidak mengaktifkan kembali penyewaan
+                atau memindahkan pembayaran ke kontrak baru.
+                {isCancelled
+                  ? " Jika penyelesaian pembayaran masih diperlukan, hubungi Pihak Pengelola."
+                  : ""}
+              </p>
+            </section>
+          ) : null}
+          <ReadOnlyNotice />
+          {!isCancelled ? <BalanceHero billing={billing} /> : null}
+          {!historicalLeaseId && !isCancelled ? <BillingNotice billing={billing} /> : null}
+          {!historicalLeaseId && !isCancelled && !billing.lease.service_period_pending ? (
+            <SettlementProgress billing={billing} />
+          ) : null}
+          <ContractSummary
+            billing={billing}
+            historical={Boolean(historicalLeaseId) || isCancelled}
+          />
+          <FinancialSeparationSummary billing={billing} />
+          <section aria-labelledby="invoice-heading">
+            <SectionHeading
+              id="invoice-heading"
+              title="Tagihan kontrak"
+              description="Saldo berasal dari invoice persisten dan alokasi pembayaran terverifikasi."
+            />
+            <div className="mt-3 space-y-3">
+              {billing.invoices.length ? (
+                billing.invoices.map((invoice) => (
+                  <InvoiceCard
+                    key={invoice.id}
+                    invoice={invoice}
+                    servicePeriodPending={billing.lease.service_period_pending}
+                  />
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="p-4">
+                    <EmptyState
+                      title="Belum ada invoice"
+                      description="Invoice akan muncul sesuai jadwal kontrak yang dibekukan."
+                    />
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </section>
+          <PaymentHistory billing={billing} onReceipt={setReceiptId} onEvidenceRefresh={() => query.refetch()} />
+          <FinancialTimeline billing={billing} onReceipt={setReceiptId} />
+          <OfficialLeaseDocuments billing={billing} />
+          <ProofHistory
+            leaseId={billing.lease.id}
+            proofs={billing.proofs}
+            invoices={billing.invoices}
+            onEvidenceRefresh={() => query.refetch()}
+          />
+        </>
+      )}
+      <ReceiptDialog
+        key={receiptId ?? "closed"}
+        receiptId={receiptId}
+        onClose={() => setReceiptId(null)}
+      />
     </Page>
   );
 }
@@ -280,7 +454,13 @@ function BalanceHero({ billing }: { billing: MyW06Billing }) {
   );
 }
 
-function ContractSummary({ billing }: { billing: MyW06Billing }) {
+function ContractSummary({
+  billing,
+  historical = false,
+}: {
+  billing: MyW06Billing;
+  historical?: boolean;
+}) {
   const depositRemaining = Math.max(
     0,
     billing.summary.security_deposit_required - billing.summary.deposit_collected,
@@ -296,7 +476,11 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
         <CardContent className="space-y-2 text-sm">
           <SummaryRow
             label="Periode"
-            value={billing.lease.service_period_pending ? `${billing.lease.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in` : `${jakartaDate(billing.lease.start_date)} – ${jakartaDate(billing.lease.end_date)}`}
+            value={
+              billing.lease.service_period_pending
+                ? `${billing.lease.term_months ?? "—"} bulan · Masa sewa belum dimulai—menunggu check-in`
+                : `${jakartaDate(billing.lease.start_date)} – ${jakartaDate(billing.lease.end_date)}`
+            }
           />
           <SummaryRow label="Nilai sewa" value={idr(billing.lease.contract_rent)} />
           <SummaryRow label="Tarif bulanan kontrak" value={idr(billing.lease.monthly_rate)} />
@@ -306,9 +490,18 @@ function ContractSummary({ billing }: { billing: MyW06Billing }) {
             </Badge>
           ) : null}
           <p className="rounded-xl bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
-            Tarif ini adalah snapshot sesuai durasi dan tanggal efektif saat kontrak dibuat.
+            Tarif ini mengikuti durasi dan ketentuan kontrak yang dicatat Pihak Pengelola.
           </p>
-          <SummaryRow label="Sisa masa kontrak" value={billing.lease.service_period_pending ? "Menunggu check-in" : `${billing.lease.remaining_days} hari`} />
+          {!historical ? (
+            <SummaryRow
+              label="Sisa masa kontrak"
+              value={
+                billing.lease.service_period_pending
+                  ? "Menunggu check-in"
+                  : `${billing.lease.remaining_days} hari`
+              }
+            />
+          ) : null}
         </CardContent>
       </Card>
       <Card>
@@ -382,7 +575,13 @@ function FinancialSeparationSummary({ billing }: { billing: MyW06Billing }) {
   );
 }
 
-function InvoiceCard({ invoice, servicePeriodPending }: { invoice: Invoice; servicePeriodPending?: boolean }) {
+function InvoiceCard({
+  invoice,
+  servicePeriodPending,
+}: {
+  invoice: Invoice;
+  servicePeriodPending?: boolean;
+}) {
   const [documentState, setDocumentState] = useState<"idle" | "loading" | "error">("idle");
   return (
     <Card className={invoice.invoice_status === "overdue" ? "border-destructive/40" : undefined}>
@@ -392,7 +591,9 @@ function InvoiceCard({ invoice, servicePeriodPending }: { invoice: Invoice; serv
             <p className="font-semibold">{invoice.invoice_code}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {invoice.invoice_purpose === "rent" ? "Sewa" : "Tagihan lainnya"} ·{" "}
-              {servicePeriodPending && invoice.invoice_purpose === "rent" ? "Masa sewa belum dimulai—menunggu check-in" : `${jakartaDate(invoice.coverage_start)} – ${jakartaDate(invoice.coverage_end)}`}
+              {servicePeriodPending && invoice.invoice_purpose === "rent"
+                ? "Masa sewa belum dimulai—menunggu check-in"
+                : `${jakartaDate(invoice.coverage_start)} – ${jakartaDate(invoice.coverage_end)}`}
             </p>
           </div>
           <InvoiceBadge status={invoice.invoice_status} />
@@ -400,7 +601,15 @@ function InvoiceCard({ invoice, servicePeriodPending }: { invoice: Invoice; serv
         <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-muted p-3 text-sm">
           <SummaryRow label="Total" value={idr(invoice.total_amount)} stacked />
           <SummaryRow label="Sisa" value={idr(invoice.outstanding_amount)} stacked />
-          <SummaryRow label="Jatuh tempo" value={servicePeriodPending && invoice.invoice_purpose === "rent" ? "Ditentukan setelah check-in" : jakartaDate(invoice.due_date)} stacked />
+          <SummaryRow
+            label="Jatuh tempo"
+            value={
+              servicePeriodPending && invoice.invoice_purpose === "rent"
+                ? "Ditentukan setelah check-in"
+                : jakartaDate(invoice.due_date)
+            }
+            stacked
+          />
           <SummaryRow
             label="Status pembayaran"
             value={invoiceStatusLabel(invoice.invoice_status)}
@@ -438,9 +647,11 @@ function InvoiceCard({ invoice, servicePeriodPending }: { invoice: Invoice; serv
 function PaymentHistory({
   billing,
   onReceipt,
+  onEvidenceRefresh,
 }: {
   billing: MyW06Billing;
   onReceipt: (id: string) => void;
+  onEvidenceRefresh: () => Promise<unknown>;
 }) {
   return (
     <section aria-labelledby="payment-heading">
@@ -489,6 +700,11 @@ function PaymentHistory({
                     {idr(payment.allocations.reduce((sum, item) => sum + item.amount, 0))}.
                   </p>
                 ) : null}
+                <BillingEvidenceFiles
+                  leaseId={billing.lease.id}
+                  evidence={payment.evidence ?? []}
+                  onRefresh={onEvidenceRefresh}
+                />
               </CardContent>
             </Card>
           ))
@@ -654,7 +870,81 @@ function OfficialLeaseDocuments({ billing }: { billing: MyW06Billing }) {
   );
 }
 
-function ProofHistory({ proofs, invoices }: { proofs: Proof[]; invoices: Invoice[] }) {
+function BillingEvidenceFiles({
+  leaseId,
+  evidence,
+  onRefresh,
+}: {
+  leaseId: string;
+  evidence: MyBillingEvidence[];
+  onRefresh: () => Promise<unknown>;
+}) {
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!evidence.length) return null;
+  return (
+    <div className="mt-3 space-y-2 border-t border-border pt-3">
+      <p className="text-sm font-semibold">Berkas bukti pembayaran</p>
+      {evidence.map((file) => (
+        <div key={file.id} className="flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 flex-1 break-words text-xs text-muted-foreground">
+            {file.original_filename}
+          </p>
+          {file.availability === "available" ? (
+            <Button
+              variant="outline"
+              className="min-h-11"
+              disabled={pendingId !== null}
+              onClick={() => {
+                setPendingId(file.id);
+                setError(null);
+                void downloadMyBillingEvidence(leaseId, file)
+                  .catch(async (error) => {
+                    setError(
+                      error instanceof Error
+                        ? error.message
+                        : "Bukti belum dapat diunduh. Coba kembali.",
+                    );
+                    // Refresh authoritative availability, without interpreting
+                    // a network/storage error as physical deletion locally.
+                    await onRefresh().catch(() => undefined);
+                  })
+                  .finally(() => setPendingId(null));
+              }}
+            >
+              {pendingId === file.id ? "Menyiapkan bukti..." : "Lihat / unduh bukti"}
+            </Button>
+          ) : (
+            <p className="w-full text-sm">
+              {file.availability === "purged"
+                ? `Berkas dihapus permanen pada ${jakartaFinancialDate(file.purged_at!)}. Riwayat tetap tersedia.`
+                : file.availability === "purge_pending"
+                  ? "Berkas sedang dalam pengajuan penghapusan. Hasilnya belum dipastikan."
+                  : "Berkas belum tersedia. Riwayat tetap tersimpan; hubungi Pihak Pengelola."}
+            </p>
+          )}
+        </div>
+      ))}
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ProofHistory({
+  leaseId,
+  proofs,
+  invoices,
+  onEvidenceRefresh,
+}: {
+  leaseId: string;
+  proofs: Proof[];
+  invoices: Invoice[];
+  onEvidenceRefresh: () => Promise<unknown>;
+}) {
   const invoiceCodes = useMemo(
     () => new Map(invoices.map((invoice) => [invoice.id, invoice.invoice_code])),
     [invoices],
@@ -689,6 +979,7 @@ function ProofHistory({ proofs, invoices }: { proofs: Proof[]; invoices: Invoice
                   Alasan penolakan: {proof.reject_reason}
                 </p>
               ) : null}
+              <BillingEvidenceFiles leaseId={leaseId} evidence={proof.evidence ?? []} onRefresh={onEvidenceRefresh} />
             </div>
           ))
         ) : (
@@ -709,7 +1000,9 @@ function ReceiptDialog({ receiptId, onClose }: { receiptId: string | null; onClo
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Kuitansi pembayaran</DialogTitle>
-          <DialogDescription>Snapshot ini tidak berubah setelah diterbitkan.</DialogDescription>
+          <DialogDescription>
+            Catatan kuitansi tetap disimpan setelah diterbitkan.
+          </DialogDescription>
         </DialogHeader>
         {query.isPending ? (
           <LoadingState label="Memuat kuitansi..." />
@@ -851,6 +1144,7 @@ function SettlementBadge({ status }: { status: Settlement["status"] }) {
     admin_action_required: "Tindakan pengelola diperlukan",
     termination_pending: "Pemberhentian diproses",
     terminated: "Dihentikan",
+    cancelled: "Dibatalkan",
     paid: "Lunas",
   };
   const tones: Record<Settlement["status"], StatusTone> = {
@@ -861,6 +1155,7 @@ function SettlementBadge({ status }: { status: Settlement["status"] }) {
     admin_action_required: "danger",
     termination_pending: "warning",
     terminated: "neutral",
+    cancelled: "neutral",
     paid: "success",
   };
   return <StatusBadge label={labels[status]} tone={tones[status]} />;
@@ -1003,6 +1298,7 @@ function purposeLabel(value: W06PaymentPurpose | null) {
         full_settlement: "Pelunasan sewa penuh",
         security_deposit: "Deposit keamanan",
         other_charge: "Tagihan lainnya",
+        management_fee: "Biaya pengelolaan",
       } as Record<string, string>
     )[value ?? ""] ?? "Pembayaran lama"
   );

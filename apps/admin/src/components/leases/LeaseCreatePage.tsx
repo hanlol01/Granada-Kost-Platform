@@ -1,6 +1,6 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R4 V4 */
 /* Hallmark · macrostructure: progressive-disclosure lease workspace · theme: existing KOSTATION system · contrast/mobile/responsive: pass */
 import {
@@ -90,8 +90,15 @@ import { normalizeWhatsAppPhone } from "@/lib/whatsapp-lead";
 import { normalizeRoomSearch } from "./transfer-shared";
 import type { FileResponse } from "@granada-kost/domain";
 import { ApiError } from "@granada-kost/api-client";
+import { archiveSuccessorLink, type ArchiveSuccessorSource } from "@/lib/lease-archive-successor";
+import { adminErrorNotice } from "@/lib/error-normalizer";
+import { toast } from "sonner";
 
-type Props = { onCreated: (leaseId: string) => void | Promise<void>; bookingLeadId?: string };
+type Props = {
+  onCreated: (leaseId: string) => void | Promise<void>;
+  bookingLeadId?: string;
+  archiveSuccessor?: ArchiveSuccessorSource;
+};
 type Gender = "male" | "female";
 type PaymentMethod = "cash" | "bank_transfer";
 type PaymentChoice = "dp" | "full";
@@ -365,12 +372,26 @@ function receiptPurposeLabel(
   return "security deposit";
 }
 
-export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
+export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: Props) {
   const { currentPropertyId } = useProperty();
   const navigate = useNavigate();
-  const pageTitle = bookingLeadId ? "Tambah Penyewaan dari Minat Booking" : "Tambah Penyewaan";
+  const pageTitle = archiveSuccessor
+    ? "Penyewaan Pengganti dari Arsip"
+    : bookingLeadId
+      ? "Tambah Penyewaan dari Minat Booking"
+      : "Tambah Penyewaan";
   const [step, setStep] = useState<1 | 2>(1);
-  const [resident, setResident] = useState<ResidentDraft>(EMPTY_RESIDENT);
+  const [resident, setResident] = useState<ResidentDraft>(() =>
+    archiveSuccessor
+      ? {
+          ...EMPTY_RESIDENT,
+          fullName: archiveSuccessor.residentName,
+          phone: archiveSuccessor.phone,
+          gender: archiveSuccessor.gender,
+        }
+      : EMPTY_RESIDENT,
+  );
+  const [archiveReplacementReason, setArchiveReplacementReason] = useState("");
   const [startDate, setStartDate] = useState("");
   const [termMonths, setTermMonths] = useState(3);
   const [pricingSource, setPricingSource] = useState<PricingSource>("standard");
@@ -428,6 +449,9 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   const bookingLeadContext = useBookingLeadCompletionContext(bookingLeadId);
   const bookingLeadQuote = useBookingLeadCompletionQuote(bookingLeadId, startDate, termMonths);
   const onboarding = useResidentOnboarding(setTemporaryPassword);
+  const submissionFrozen = Boolean(
+    archiveSuccessor && (onboarding.isPending || onboarding.submissionUncertain),
+  );
   const verificationPolicy = useAdminPaymentVerificationPolicy(
     bookingLeadId ? null : currentPropertyId,
   );
@@ -823,6 +847,20 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     !pricingAgreementReasonError &&
     !standardShortTermError;
   const onboardingNotice = onboarding.error ? onboardingErrorNotice(onboarding.error) : null;
+  useEffect(() => {
+    const target = onboarding.submissionUncertain
+      ? "archive-successor-uncertain"
+      : onboarding.error
+        ? "onboarding-command-error"
+        : null;
+    if (!target) return;
+    const frame = requestAnimationFrame(() => {
+      const element = document.getElementById(target);
+      element?.scrollIntoView({ block: "nearest" });
+      element?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [onboarding.error, onboarding.submissionUncertain]);
   const ownerSponsoredValid =
     commercialMode === "owner_sponsored" &&
     selectedRoomIsSelectable &&
@@ -970,16 +1008,26 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   }, [attemptedSubmit, step]);
 
   useEffect(() => {
-    if (!stagedPaymentMode || (paymentEntries.length === 0 && !hasUnsavedPaymentDraft)) return;
+    if (
+      !onboarding.submissionUncertain &&
+      (!stagedPaymentMode || (paymentEntries.length === 0 && !hasUnsavedPaymentDraft))
+    )
+      return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [hasUnsavedPaymentDraft, paymentEntries.length, stagedPaymentMode]);
+  }, [
+    hasUnsavedPaymentDraft,
+    paymentEntries.length,
+    stagedPaymentMode,
+    onboarding.submissionUncertain,
+  ]);
 
   const setDraft = <Key extends keyof ResidentDraft>(key: Key, value: ResidentDraft[Key]) => {
+    if (submissionFrozen) return;
     setResident((current) => ({ ...current, [key]: value }));
     if (onboarding.error) onboarding.reset();
     const errorKey = key as keyof typeof serverStageOneErrors;
@@ -1031,6 +1079,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   };
 
   const pickRoom = (room: LeaseRoomOption) => {
+    if (submissionFrozen) return;
     if (!roomIsSelectable(room)) return;
     if (stagedPaymentMode && paymentEntries.length > 0 && roomId && room.id !== roomId) return;
     const replacingUnavailableRoom = stagedPaymentMode && paymentEntries.length > 0 && !roomId;
@@ -1237,7 +1286,23 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
   };
 
   const submit = async () => {
+    if (submissionFrozen || onboarding.isPending) return;
     setAttemptedSubmit(true);
+    let archiveLink: ReturnType<typeof archiveSuccessorLink> | undefined;
+    if (archiveSuccessor) {
+      try {
+        archiveLink = archiveSuccessorLink(
+          archiveSuccessor,
+          currentPropertyId ?? "",
+          archiveReplacementReason,
+        );
+      } catch (error) {
+        const notice = adminErrorNotice(error);
+        toast.error(notice.title, { description: notice.description });
+        document.getElementById("archive-replacement-reason")?.focus();
+        return;
+      }
+    }
     if (
       !currentPropertyId ||
       !selectedRoom ||
@@ -1254,6 +1319,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
     const billingCycle = termMonths % 12 === 0 ? "yearly" : "monthly";
     const payload: OnboardingPayload = {
       property_id: currentPropertyId,
+      ...archiveLink,
       booking_lead_id: bookingLeadId,
       room_id: selectedRoom.id,
       visitor_name: resident.fullName.trim(),
@@ -1510,6 +1576,13 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {onboarding.refreshIncomplete ? (
+              <NoticeAlert
+                tone="warning"
+                title="Penyewaan tersimpan, tetapi daftar belum diperbarui"
+                description="Jangan simpan ulang. Buka detail penyewaan dari tombol di bawah atau perbarui daftar untuk melihat hasil yang sudah tersimpan."
+              />
+            ) : null}
             <p className="text-sm text-muted-foreground">
               {onboarding.data.roomNumber} untuk {onboarding.data.termMonths} bulan telah tercatat
               sebagai commitment.{" "}
@@ -1702,189 +1775,276 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
       subtitle="Buat penghuni pending activation dan commitment lease. Aktivasi kamar dilakukan sebagai perintah terpisah."
     >
       <div className="mx-auto max-w-6xl space-y-6 pb-16">
-        <StageIndicator step={step} />
-        {step === 1 ? (
-          <ResidentAndLeaseStep
-            propertyId={currentPropertyId}
-            resident={resident}
-            setDraft={setDraft}
-            startDate={startDate}
-            onStartDate={changeStartDate}
-            termMonths={termMonths}
-            onTermMonths={changeTerm}
-            pricingSource={pricingSource}
-            onPricingSource={requestPricingSourceChange}
-            agreedMonthlyPrice={agreedMonthlyPrice}
-            onAgreedMonthlyPrice={(value) => {
-              setAgreedMonthlyPrice(value);
-              setPricingVarianceAcknowledged(false);
-              setPaymentEntries([]);
-              clearPaymentDraft();
-              setConfirmed(false);
-            }}
-            pricingAgreementReason={pricingAgreementReason}
-            onPricingAgreementReason={setPricingAgreementReason}
-            pricingErrors={{
-              agreedMonthlyPrice: attemptedStepOne ? agreedMonthlyPriceError : "",
-              agreementReason: attemptedStepOne ? pricingAgreementReasonError : "",
-              term: attemptedStepOne ? standardShortTermError : "",
-            }}
-            endDate={endDate}
-            bookingPeriod={
-              bookingLeadContext.data
-                ? {
-                    startDate: bookingLeadContext.data.paymentCommitment.startDate,
-                    endDate: bookingLeadContext.data.paymentCommitment.endDate,
-                    termMonths: bookingLeadContext.data.paymentCommitment.termMonths,
-                  }
-                : undefined
-            }
-            leaseTermsLocked={bookingCommercialLocked}
-            errors={attemptedStepOne ? stageOneErrors : {}}
-            ktpDocument={ktpDocument}
-            ktpDocumentError={ktpDocumentError}
-            ktpUploading={ktpUpload.isUploading}
-            ktpDeleting={ktpDelete.isPending}
-            onKtpSelected={uploadKtpDocument}
-            onKtpRemoved={removeKtpDocument}
-          />
-        ) : (
-          <RoomAndPaymentStep
-            category={category}
-            setCategory={(value) => {
-              if (stagedPaymentMode && paymentEntries.length > 0) return;
-              setCategory(value);
-              setRoomId("");
-              setConfirmed(false);
-            }}
-            search={roomSearch}
-            setSearch={setRoomSearch}
-            rooms={bookingLeadId && selectedRoom ? [selectedRoom] : visibleRooms}
-            roomsLoading={rooms.isLoading}
-            roomsError={Boolean(rooms.error)}
-            selectedRoom={selectedRoom}
-            onPick={pickRoom}
-            paymentSectionRef={paymentSectionRef}
-            roomLocked={Boolean(bookingLeadId) || (stagedPaymentMode && paymentEntries.length > 0)}
-            roomLockMessage={
-              bookingLeadId
-                ? "Kamar dikunci dari Minat Booking yang telah ditahan. Ubah target melalui proses tahan kamar, bukan dari formulir ini."
-                : paymentEntries.length > 0
-                  ? "Kamar dikunci sementara karena pembayaran sudah ditambahkan. Hapus semua pembayaran sementara bila perlu mengganti kamar."
-                  : undefined
-            }
-            gender={resident.gender}
-            termMonths={termMonths}
-            amounts={amounts}
-            commercialMode={commercialMode}
-            onCommercialMode={(value) => {
-              setCommercialMode(value);
-              setPaymentEntries([]);
-              clearPaymentDraft();
-              setConfirmed(false);
-            }}
-            sponsoringOwner={sponsoringOwner}
-            ownerAssetsLoading={ownerAssets.isLoading || ownerAssets.isPlaceholderData}
-            managementFeeMode={managementFeeMode}
-            setManagementFeeMode={(value) => {
-              setManagementFeeMode(value);
-              setConfirmed(false);
-            }}
-            managementFeePayer={managementFeePayer}
-            setManagementFeePayer={(value) => {
-              setManagementFeePayer(value);
-              setConfirmed(false);
-            }}
-            managementFeePayerName={managementFeePayerName}
-            setManagementFeePayerName={(value) => {
-              setManagementFeePayerName(value);
-              setConfirmed(false);
-            }}
-            ownerSponsorshipReason={ownerSponsorshipReason}
-            setOwnerSponsorshipReason={(value) => {
-              setOwnerSponsorshipReason(value);
-              setConfirmed(false);
-            }}
-            projectedManagementFee={projectedManagementFee}
-            ownerSponsoredAvailable={!bookingLeadId}
-            pricingSource={pricingSource}
-            pricingAgreementReason={pricingAgreementReason}
-            pricingVariancePercent={pricingVariancePercent}
-            materialPricingVariance={materialPricingVariance}
-            pricingVarianceAcknowledged={pricingVarianceAcknowledged}
-            onPricingVarianceAcknowledged={setPricingVarianceAcknowledged}
-            pricingVarianceError={attemptedSubmit ? pricingVarianceError : ""}
-            paymentChoice={paymentChoice}
-            onPaymentChoiceChange={changePaymentChoice}
-            bookingFeeLocked={bookingFeeLocked}
-            initialPaymentLocked={initialPaymentLocked}
-            creditedRentAmount={creditedRentAmount}
-            bookingFeeExceedsRent={bookingFeeExceedsRent}
-            rentCreditExceedsContract={rentCreditExceedsContract}
-            maximumRentPayment={maximumRentPayment}
-            bookingFeeBelowMinimum={bookingFeeBelowMinimum}
-            paymentChoiceSelected={paymentChoiceSelected}
-            paymentMethodSelected={paymentMethodSelected}
-            paymentMethod={paymentMethod}
-            paymentPaidAt={paymentPaidAt}
-            setPaymentPaidAt={setPaymentPaidAt}
-            historicalEntryMode={historicalEntryMode}
-            historicalPaymentDateRequired={historicalPaymentDateRequired}
-            paymentVerified={
-              initialPaymentLocked
-                ? bookingLeadContext.data?.paymentCommitment.verificationStatus === "verified"
-                : paymentMethod === "cash" || historicalEntryMode
-            }
-            setPaymentMethod={(value) => {
-              setPaymentMethod(value);
-              if (bookingFeeLocked) setBookingFeePaymentMethodSelected(true);
-              setConfirmed(false);
-            }}
-            paymentNote={paymentNote}
-            setPaymentNote={setPaymentNote}
-            propertyId={currentPropertyId ?? ""}
-            paymentEvidence={paymentEvidence}
-            paymentEvidenceBusy={paymentEvidenceBusy}
-            onPaymentEvidenceChange={setPaymentEvidence}
-            onPaymentEvidenceBusyChange={setPaymentEvidenceBusy}
-            paidRent={paidRent}
-            setPaidRent={setPaidRent}
-            bookingFee={bookingFee}
-            setBookingFee={stagedPaymentMode ? setBookingFee : changeBookingFee}
-            stagedPayment={
-              stagedPaymentMode
-                ? {
-                    purpose: paymentPurpose,
-                    entries: paymentEntries,
-                    editingPaymentId,
-                    expandedPaymentId,
-                    draftAttempted: paymentDraftAttempted,
-                    draftErrors: paymentDraftErrors,
-                    onPurposeChange: changePaymentPurpose,
-                    onSave: savePaymentStage,
-                    onCancelEdit: cancelPaymentEdit,
-                    onEdit: editPaymentStage,
-                    onDelete: deletePaymentStage,
-                    onToggle: (id) =>
-                      setExpandedPaymentId((current) => (current === id ? null : id)),
-                    rentAmount: stagedRentAmount,
-                    bookingFeeAmount: stagedBookingFeeAmount,
-                    recordedRentFullyPaid,
-                    contractFullyPaid,
-                    hasUnsavedDraft: hasUnsavedPaymentDraft,
-                    hideDraft: hideStagedPaymentDraft,
-                    rentPurposeDisabled,
-                    recentlyAddedPaymentId,
-                  }
-                : null
-            }
-            errors={attemptedSubmit ? stageTwoErrors : undefined}
-            confirmed={confirmed}
-            setConfirmed={setConfirmed}
-          />
-        )}
-        {onboardingNotice ? (
+        {onboarding.submissionUncertain ? (
           <NoticeAlert
+            id="archive-successor-uncertain"
+            tone="warning"
+            title="Hasil penyewaan pengganti belum dapat dipastikan"
+            description="Isian dikunci agar tidak tercipta pengajuan berbeda. Coba ulang pengajuan awal untuk memeriksa hasil dengan data yang sama, atau periksa riwayat pada arsip asal. Jangan membuat penyewaan pengganti kedua."
+            action={
+              <Button
+                variant="info"
+                disabled={onboarding.isPending}
+                onClick={() => {
+                  void onboarding.retryOriginalSubmission().catch(() => {
+                    /* The hook retains the intent and reports the persistent error. */
+                  });
+                }}
+              >
+                {onboarding.isPending ? "Memeriksa pengajuan…" : "Coba ulang pengajuan awal"}
+              </Button>
+            }
+          />
+        ) : null}
+        <fieldset
+          disabled={submissionFrozen}
+          aria-busy={onboarding.isPending}
+          className="min-w-0 space-y-6"
+        >
+          <legend className="sr-only">
+            Isian penyewaan{archiveSuccessor ? " pengganti" : " baru"}
+          </legend>
+          {archiveSuccessor ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Pengganti untuk {archiveSuccessor.leaseCode}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <NoticeAlert
+                  tone={
+                    archiveSuccessor.financialResolutionState === "pending_review"
+                      ? "warning"
+                      : "info"
+                  }
+                  title="Catatan penyewaan lama tetap dipertahankan"
+                  description={`Pilih kamar, periode, jenis hunian dan tarif baru. Pembayaran, bukti, kuitansi serta tagihan lama tidak disalin atau dipindahkan ke penyewaan baru.${archiveSuccessor.financialResolutionState === "pending_review" ? " Peninjauan keuangan penyewaan lama tetap diperlukan, walaupun pengganti berhasil dibuat." : ""}`}
+                />
+                <div className="space-y-2">
+                  <Label htmlFor="archive-replacement-reason">
+                    Alasan membuat penyewaan pengganti <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    id="archive-replacement-reason"
+                    value={archiveReplacementReason}
+                    maxLength={1000}
+                    rows={3}
+                    disabled={submissionFrozen}
+                    onChange={(event) => setArchiveReplacementReason(event.target.value)}
+                    aria-invalid={attemptedSubmit && archiveReplacementReason.trim().length < 3}
+                    aria-describedby="archive-replacement-reason-help"
+                  />
+                  <p id="archive-replacement-reason-help" className="text-sm text-muted-foreground">
+                    Wajib 3–1.000 karakter. Catatan ini menghubungkan penyewaan baru dengan arsip
+                    lama.
+                  </p>
+                </div>
+                {attemptedSubmit && archiveReplacementReason.trim().length < 3 ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    Isi alasan penyewaan pengganti minimal 3 karakter. Belum ada penyewaan baru yang
+                    disimpan.
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+          <StageIndicator step={step} />
+          {step === 1 ? (
+            <ResidentAndLeaseStep
+              propertyId={currentPropertyId}
+              resident={resident}
+              existingResident={Boolean(archiveSuccessor)}
+              setDraft={setDraft}
+              startDate={startDate}
+              onStartDate={changeStartDate}
+              termMonths={termMonths}
+              onTermMonths={changeTerm}
+              pricingSource={pricingSource}
+              onPricingSource={requestPricingSourceChange}
+              agreedMonthlyPrice={agreedMonthlyPrice}
+              onAgreedMonthlyPrice={(value) => {
+                setAgreedMonthlyPrice(value);
+                setPricingVarianceAcknowledged(false);
+                setPaymentEntries([]);
+                clearPaymentDraft();
+                setConfirmed(false);
+              }}
+              pricingAgreementReason={pricingAgreementReason}
+              onPricingAgreementReason={setPricingAgreementReason}
+              pricingErrors={{
+                agreedMonthlyPrice: attemptedStepOne ? agreedMonthlyPriceError : "",
+                agreementReason: attemptedStepOne ? pricingAgreementReasonError : "",
+                term: attemptedStepOne ? standardShortTermError : "",
+              }}
+              endDate={endDate}
+              bookingPeriod={
+                bookingLeadContext.data
+                  ? {
+                      startDate: bookingLeadContext.data.paymentCommitment.startDate,
+                      endDate: bookingLeadContext.data.paymentCommitment.endDate,
+                      termMonths: bookingLeadContext.data.paymentCommitment.termMonths,
+                    }
+                  : undefined
+              }
+              leaseTermsLocked={bookingCommercialLocked}
+              errors={attemptedStepOne ? stageOneErrors : {}}
+              ktpDocument={ktpDocument}
+              ktpDocumentError={ktpDocumentError}
+              ktpUploading={ktpUpload.isUploading}
+              ktpDeleting={ktpDelete.isPending}
+              onKtpSelected={uploadKtpDocument}
+              onKtpRemoved={removeKtpDocument}
+            />
+          ) : (
+            <RoomAndPaymentStep
+              category={category}
+              setCategory={(value) => {
+                if (stagedPaymentMode && paymentEntries.length > 0) return;
+                setCategory(value);
+                setRoomId("");
+                setConfirmed(false);
+              }}
+              search={roomSearch}
+              setSearch={setRoomSearch}
+              rooms={bookingLeadId && selectedRoom ? [selectedRoom] : visibleRooms}
+              roomsLoading={rooms.isLoading}
+              roomsError={Boolean(rooms.error)}
+              selectedRoom={selectedRoom}
+              onPick={pickRoom}
+              paymentSectionRef={paymentSectionRef}
+              roomLocked={
+                Boolean(bookingLeadId) || (stagedPaymentMode && paymentEntries.length > 0)
+              }
+              roomLockMessage={
+                bookingLeadId
+                  ? "Kamar dikunci dari Minat Booking yang telah ditahan. Ubah target melalui proses tahan kamar, bukan dari formulir ini."
+                  : paymentEntries.length > 0
+                    ? "Kamar dikunci sementara karena pembayaran sudah ditambahkan. Hapus semua pembayaran sementara bila perlu mengganti kamar."
+                    : undefined
+              }
+              gender={resident.gender}
+              termMonths={termMonths}
+              amounts={amounts}
+              commercialMode={commercialMode}
+              onCommercialMode={(value) => {
+                setCommercialMode(value);
+                setPaymentEntries([]);
+                clearPaymentDraft();
+                setConfirmed(false);
+              }}
+              sponsoringOwner={sponsoringOwner}
+              ownerAssetsLoading={ownerAssets.isLoading || ownerAssets.isPlaceholderData}
+              managementFeeMode={managementFeeMode}
+              setManagementFeeMode={(value) => {
+                setManagementFeeMode(value);
+                setConfirmed(false);
+              }}
+              managementFeePayer={managementFeePayer}
+              setManagementFeePayer={(value) => {
+                setManagementFeePayer(value);
+                setConfirmed(false);
+              }}
+              managementFeePayerName={managementFeePayerName}
+              setManagementFeePayerName={(value) => {
+                setManagementFeePayerName(value);
+                setConfirmed(false);
+              }}
+              ownerSponsorshipReason={ownerSponsorshipReason}
+              setOwnerSponsorshipReason={(value) => {
+                setOwnerSponsorshipReason(value);
+                setConfirmed(false);
+              }}
+              projectedManagementFee={projectedManagementFee}
+              ownerSponsoredAvailable={!bookingLeadId}
+              pricingSource={pricingSource}
+              pricingAgreementReason={pricingAgreementReason}
+              pricingVariancePercent={pricingVariancePercent}
+              materialPricingVariance={materialPricingVariance}
+              pricingVarianceAcknowledged={pricingVarianceAcknowledged}
+              onPricingVarianceAcknowledged={setPricingVarianceAcknowledged}
+              pricingVarianceError={attemptedSubmit ? pricingVarianceError : ""}
+              paymentChoice={paymentChoice}
+              onPaymentChoiceChange={changePaymentChoice}
+              bookingFeeLocked={bookingFeeLocked}
+              initialPaymentLocked={initialPaymentLocked}
+              creditedRentAmount={creditedRentAmount}
+              bookingFeeExceedsRent={bookingFeeExceedsRent}
+              rentCreditExceedsContract={rentCreditExceedsContract}
+              maximumRentPayment={maximumRentPayment}
+              bookingFeeBelowMinimum={bookingFeeBelowMinimum}
+              paymentChoiceSelected={paymentChoiceSelected}
+              paymentMethodSelected={paymentMethodSelected}
+              paymentMethod={paymentMethod}
+              paymentPaidAt={paymentPaidAt}
+              setPaymentPaidAt={setPaymentPaidAt}
+              historicalEntryMode={historicalEntryMode}
+              historicalPaymentDateRequired={historicalPaymentDateRequired}
+              paymentVerified={
+                initialPaymentLocked
+                  ? bookingLeadContext.data?.paymentCommitment.verificationStatus === "verified"
+                  : paymentMethod === "cash" || historicalEntryMode
+              }
+              setPaymentMethod={(value) => {
+                setPaymentMethod(value);
+                if (bookingFeeLocked) setBookingFeePaymentMethodSelected(true);
+                setConfirmed(false);
+              }}
+              paymentNote={paymentNote}
+              setPaymentNote={setPaymentNote}
+              propertyId={currentPropertyId ?? ""}
+              paymentEvidence={paymentEvidence}
+              paymentEvidenceBusy={paymentEvidenceBusy}
+              onPaymentEvidenceChange={setPaymentEvidence}
+              onPaymentEvidenceBusyChange={setPaymentEvidenceBusy}
+              paidRent={paidRent}
+              setPaidRent={setPaidRent}
+              bookingFee={bookingFee}
+              setBookingFee={stagedPaymentMode ? setBookingFee : changeBookingFee}
+              stagedPayment={
+                stagedPaymentMode
+                  ? {
+                      purpose: paymentPurpose,
+                      entries: paymentEntries,
+                      editingPaymentId,
+                      expandedPaymentId,
+                      draftAttempted: paymentDraftAttempted,
+                      draftErrors: paymentDraftErrors,
+                      onPurposeChange: changePaymentPurpose,
+                      onSave: savePaymentStage,
+                      onCancelEdit: cancelPaymentEdit,
+                      onEdit: editPaymentStage,
+                      onDelete: deletePaymentStage,
+                      onToggle: (id) =>
+                        setExpandedPaymentId((current) => (current === id ? null : id)),
+                      rentAmount: stagedRentAmount,
+                      bookingFeeAmount: stagedBookingFeeAmount,
+                      recordedRentFullyPaid,
+                      contractFullyPaid,
+                      hasUnsavedDraft: hasUnsavedPaymentDraft,
+                      hideDraft: hideStagedPaymentDraft,
+                      rentPurposeDisabled,
+                      recentlyAddedPaymentId,
+                    }
+                  : null
+              }
+              errors={attemptedSubmit ? stageTwoErrors : undefined}
+              confirmed={confirmed}
+              setConfirmed={setConfirmed}
+            />
+          )}
+        </fieldset>
+        {archiveSuccessor ? (
+          <Button variant="outline" asChild>
+            <Link
+              to="/tenants/archives/$archiveId"
+              params={{ archiveId: archiveSuccessor.archiveId }}
+            >
+              Lihat arsip asal
+            </Link>
+          </Button>
+        ) : null}
+        {onboardingNotice && !onboarding.submissionUncertain ? (
+          <NoticeAlert
+            id="onboarding-command-error"
             tone="destructive"
             title={onboardingNotice.title}
             description={onboardingNotice.description}
@@ -1895,7 +2055,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             type="button"
             variant="default"
             className="min-h-11"
-            disabled={step === 1 || onboarding.isPending}
+            disabled={step === 1 || onboarding.isPending || submissionFrozen}
             onClick={() => setStep(1)}
           >
             <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
@@ -1904,6 +2064,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
             <Button
               type="button"
               className="min-h-11"
+              disabled={submissionFrozen}
               onClick={() => {
                 setAttemptedStepOne(true);
                 if (!stageOneValid) return;
@@ -1920,6 +2081,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
               className="min-h-11"
               disabled={
                 onboarding.isPending ||
+                submissionFrozen ||
                 paymentEvidenceBusy ||
                 (!bookingLeadId && verificationPolicy.isLoading)
               }
@@ -1936,7 +2098,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId }: Props) {
         </div>
       </div>
       <ConfirmDialog
-        open={pricingResetOpen}
+        open={pricingResetOpen && !submissionFrozen}
         onOpenChange={setPricingResetOpen}
         title="Kembali ke tarif standar?"
         description="Durasi, tarif, catatan kesepakatan, dan pembayaran sementara akan dikembalikan ke perhitungan standar."
@@ -1987,6 +2149,7 @@ function StageIndicator({ step }: { step: 1 | 2 }) {
 function ResidentAndLeaseStep({
   propertyId,
   resident,
+  existingResident,
   setDraft,
   startDate,
   onStartDate,
@@ -2012,6 +2175,7 @@ function ResidentAndLeaseStep({
 }: {
   propertyId: string | null;
   resident: ResidentDraft;
+  existingResident?: boolean;
   setDraft: <Key extends keyof ResidentDraft>(key: Key, value: ResidentDraft[Key]) => void;
   startDate: string;
   onStartDate: (value: string) => void;
@@ -2313,105 +2477,124 @@ function ResidentAndLeaseStep({
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UserRound className="h-5 w-5 text-primary" /> Data penghuni baru
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          {input("fullName", "Nama lengkap", { required: true, maxLength: 160 })}
-          {input("phone", "Nomor Telepon / WhatsApp", {
-            required: true,
-            numeric: true,
-            maxLength: 20,
-          })}
-          {input("email", "Email untuk akses Penghuni (opsional)", {
-            type: "email",
-            hint: "Dapat dilengkapi kemudian pada data penghuni.",
-            maxLength: 254,
-          })}
-          <div className="space-y-2">
-            <Label>
-              Jenis kelamin<span className="text-destructive"> *</span>
-            </Label>
-            <Select
-              value={resident.gender || "none"}
-              onValueChange={(value) =>
-                setDraft("gender", value === "none" ? "" : (value as Gender))
-              }
-            >
-              <SelectTrigger
-                aria-invalid={Boolean(errors.gender)}
-                className={errors.gender ? "border-destructive focus:ring-destructive" : undefined}
+      {existingResident ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Penghuni yang sama</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="font-semibold">{resident.fullName}</p>
+            <p className="text-sm">WhatsApp: {resident.phone}</p>
+            <p className="text-sm">{resident.gender === "male" ? "Putra" : "Putri"}</p>
+            <p className="text-sm text-muted-foreground">
+              Profil dan akun yang sudah ada digunakan kembali. Tidak ada penghuni baru atau salinan
+              dokumen identitas yang dibuat.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserRound className="h-5 w-5 text-primary" /> Data penghuni baru
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            {input("fullName", "Nama lengkap", { required: true, maxLength: 160 })}
+            {input("phone", "Nomor Telepon / WhatsApp", {
+              required: true,
+              numeric: true,
+              maxLength: 20,
+            })}
+            {input("email", "Email untuk akses Penghuni (opsional)", {
+              type: "email",
+              hint: "Dapat dilengkapi kemudian pada data penghuni.",
+              maxLength: 254,
+            })}
+            <div className="space-y-2">
+              <Label>
+                Jenis kelamin<span className="text-destructive"> *</span>
+              </Label>
+              <Select
+                value={resident.gender || "none"}
+                onValueChange={(value) =>
+                  setDraft("gender", value === "none" ? "" : (value as Gender))
+                }
               >
-                <SelectValue placeholder="Pilih jenis kelamin" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Pilih jenis kelamin</SelectItem>
-                <SelectItem value="male">Putra</SelectItem>
-                <SelectItem value="female">Putri</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.gender ? <p className="text-xs text-destructive">{errors.gender}</p> : null}
-          </div>
-          {input("ktpNumber", "NIK (opsional)", {
-            hint: "Jika diisi, gunakan 16 digit.",
-            numeric: true,
-            maxLength: 16,
-          })}
-          {input("placeOfBirth", "Tempat lahir (opsional)", { maxLength: 120 })}
-          {input("dateOfBirth", "Tanggal lahir (opsional)", { type: "date" })}
-          {input("university", "Universitas (opsional)", { maxLength: 160 })}
-          {input("faculty", "Fakultas (opsional)", { maxLength: 120 })}
-          {input("major", "Jurusan (opsional)", { maxLength: 120 })}
-          {input("cohort", "Angkatan (opsional)", { maxLength: 40 })}
-          {input("instagram", "Username Instagram (opsional)", { maxLength: 100 })}
-          {input("parentName", "Nama orang tua (opsional)", { maxLength: 160 })}
-          {input("parentPhone", "Telepon / WhatsApp orang tua (opsional)", {
-            numeric: true,
-            maxLength: 20,
-          })}
-          {input("emergencyPhone", "Kontak darurat (opsional)", {
-            numeric: true,
-            maxLength: 20,
-          })}
-          <div className="space-y-2 sm:col-span-2">
-            <ImageUploadField
-              id="resident-ktp-photo"
-              label="Foto KTP (opsional)"
-              description="JPG atau PNG, maksimal 5 MB. Di ponsel, kamera belakang dapat dipakai untuk memotret KTP."
-              file={ktpDocument}
-              error={ktpDocumentError}
-              isUploading={ktpUploading}
-              isRemoving={ktpDeleting}
-              capture="environment"
-              maxBytes={KTP_IMAGE_MAX_BYTES}
-              prepareFile={compressResidentKtpImage}
-              onFileSelected={onKtpSelected}
-              onRemove={onKtpRemoved}
-            />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="address">Alamat (opsional)</Label>
-            <Textarea
-              id="address"
-              value={resident.address}
-              onChange={(event) => setDraft("address", event.target.value)}
-              maxLength={1000}
-              aria-invalid={Boolean(errors.address)}
-              className={
-                errors.address ? "border-destructive focus-visible:ring-destructive" : undefined
-              }
-            />
-            {errors.address ? (
-              <p className="text-xs text-destructive" role="alert">
-                {errors.address}
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+                <SelectTrigger
+                  aria-invalid={Boolean(errors.gender)}
+                  className={
+                    errors.gender ? "border-destructive focus:ring-destructive" : undefined
+                  }
+                >
+                  <SelectValue placeholder="Pilih jenis kelamin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Pilih jenis kelamin</SelectItem>
+                  <SelectItem value="male">Putra</SelectItem>
+                  <SelectItem value="female">Putri</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.gender ? <p className="text-xs text-destructive">{errors.gender}</p> : null}
+            </div>
+            {input("ktpNumber", "NIK (opsional)", {
+              hint: "Jika diisi, gunakan 16 digit.",
+              numeric: true,
+              maxLength: 16,
+            })}
+            {input("placeOfBirth", "Tempat lahir (opsional)", { maxLength: 120 })}
+            {input("dateOfBirth", "Tanggal lahir (opsional)", { type: "date" })}
+            {input("university", "Universitas (opsional)", { maxLength: 160 })}
+            {input("faculty", "Fakultas (opsional)", { maxLength: 120 })}
+            {input("major", "Jurusan (opsional)", { maxLength: 120 })}
+            {input("cohort", "Angkatan (opsional)", { maxLength: 40 })}
+            {input("instagram", "Username Instagram (opsional)", { maxLength: 100 })}
+            {input("parentName", "Nama orang tua (opsional)", { maxLength: 160 })}
+            {input("parentPhone", "Telepon / WhatsApp orang tua (opsional)", {
+              numeric: true,
+              maxLength: 20,
+            })}
+            {input("emergencyPhone", "Kontak darurat (opsional)", {
+              numeric: true,
+              maxLength: 20,
+            })}
+            <div className="space-y-2 sm:col-span-2">
+              <ImageUploadField
+                id="resident-ktp-photo"
+                label="Foto KTP (opsional)"
+                description="JPG atau PNG, maksimal 5 MB. Di ponsel, kamera belakang dapat dipakai untuk memotret KTP."
+                file={ktpDocument}
+                error={ktpDocumentError}
+                isUploading={ktpUploading}
+                isRemoving={ktpDeleting}
+                capture="environment"
+                maxBytes={KTP_IMAGE_MAX_BYTES}
+                prepareFile={compressResidentKtpImage}
+                onFileSelected={onKtpSelected}
+                onRemove={onKtpRemoved}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="address">Alamat (opsional)</Label>
+              <Textarea
+                id="address"
+                value={resident.address}
+                onChange={(event) => setDraft("address", event.target.value)}
+                maxLength={1000}
+                aria-invalid={Boolean(errors.address)}
+                className={
+                  errors.address ? "border-destructive focus-visible:ring-destructive" : undefined
+                }
+              />
+              {errors.address ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {errors.address}
+                </p>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

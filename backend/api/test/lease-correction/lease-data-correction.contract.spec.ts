@@ -32,7 +32,7 @@ test('lease correction is Admin-only, previewable, and committed with idempotenc
 
 test('a check-in-only correction preserves the commercial snapshot', async () => {
   const service = await readFile(servicePath, 'utf8');
-  assert.match(service, /if \(!periodChanged && !pricingChanged\)/);
+  assert.match(service, /if \(!periodChanged && !pricingChanged && !roomChanged && !modeChanged\)/);
   assert.match(service, /corrected = \{ \.\.\.previous, checkedInDate \}/);
   assert.match(service, /must not silently re-price the contract/);
   assert.match(
@@ -55,7 +55,10 @@ test('a check-in correction only writes lifecycle fields that exist in the activ
   ]);
   assert.match(activationMigration, /checked_in_at TIMESTAMPTZ/);
   assert.doesNotMatch(activationMigration, /checked_in_by_user_id/);
-  assert.match(service, /SET checked_in_at=\(\(\$3::date\+TIME '00:00'\) AT TIME ZONE 'Asia\/Jakarta'\),\s*updated_at=now\(\)/);
+  assert.match(
+    service,
+    /SET checked_in_at=\(\(\$3::date\+TIME '00:00'\) AT TIME ZONE 'Asia\/Jakarta'\),\s*updated_at=now\(\)/,
+  );
   assert.doesNotMatch(service, /checked_in_by_user_id/);
 });
 

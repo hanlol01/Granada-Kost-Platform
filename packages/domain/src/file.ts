@@ -23,6 +23,7 @@ export const FILE_PURPOSES = [
   "hunian_gallery",
   "owner_realization_evidence",
   "document_signature",
+  "lease_revision_evidence",
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -53,6 +54,19 @@ export type FilePurposePolicy = {
 };
 
 export const FILE_PURPOSE_POLICIES: Record<FilePurpose, FilePurposePolicy> = {
+  lease_revision_evidence: {
+    purpose: "lease_revision_evidence",
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "application/pdf"],
+    maxBytesByMimeType: {
+      "image/jpeg": 5 * 1024 * 1024,
+      "image/png": 5 * 1024 * 1024,
+      "image/webp": 5 * 1024 * 1024,
+      "application/pdf": 5 * 1024 * 1024,
+    },
+    maxFilesPerEntity: 5,
+    label: "Bukti koreksi pencatatan kamar",
+    compressImages: true,
+  },
   document_signature: {
     purpose: "document_signature",
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],

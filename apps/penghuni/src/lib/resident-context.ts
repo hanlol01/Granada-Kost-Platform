@@ -13,6 +13,7 @@ const CONTEXT_KEYS = [
   "phone",
   "property_name",
   "room_number",
+  "manager_room_label",
   "occupancy_start",
   "building_name",
   "building_code",
@@ -30,6 +31,7 @@ export type ResidentContext = {
   phone: string | null;
   propertyName: string;
   roomNumber: string;
+  managerRoomLabel: string | null;
   occupancyStart: string;
   buildingName: string;
   buildingCode: string;
@@ -124,6 +126,12 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
   const displayName = nonEmptyString(value.data.display_name);
   const propertyName = nonEmptyString(value.data.property_name);
   const roomNumber = nonEmptyString(value.data.room_number);
+  const managerRoomLabel =
+    value.data.manager_room_label === null
+      ? null
+      : typeof value.data.manager_room_label === "string"
+        ? nonEmptyString(value.data.manager_room_label)
+        : undefined;
   const occupancyStart = nonEmptyString(value.data.occupancy_start);
   const buildingName = nonEmptyString(value.data.building_name);
   const buildingCode = nonEmptyString(value.data.building_code);
@@ -173,6 +181,7 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
     !displayName ||
     !propertyName ||
     !roomNumber ||
+    managerRoomLabel === undefined ||
     !occupancyStart ||
     !buildingName ||
     !buildingCode ||
@@ -194,6 +203,7 @@ export function parseResidentContextEnvelope(value: unknown): ResidentContext | 
     phone,
     propertyName,
     roomNumber,
+    managerRoomLabel,
     occupancyStart,
     buildingName,
     buildingCode,

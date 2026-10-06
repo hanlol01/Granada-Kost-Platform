@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -10,6 +11,7 @@ import {
   maintenanceDispatchInvalidationKeys,
   MAINTENANCE_PRIORITY_LABELS,
   parseMaintenanceDispatch,
+  parseTechnicianMutation,
   parseTechnicianList,
   parseWorkOrderDetail,
   parseWorkOrderList,
@@ -29,12 +31,15 @@ const OTHER_PROPERTY_ID = "22222222-2222-4222-8222-222222222222";
 const COMPLAINT_ID = "33333333-3333-4333-8333-333333333333";
 const WORK_ORDER_ID = "44444444-4444-4444-8444-444444444444";
 const TECHNICIAN_ID = "55555555-5555-4555-8555-555555555555";
+const TECHNICIAN_PROFILE_ID = "88888888-8888-4888-8888-888888888888";
 const OTHER_WORK_ORDER_ID = "66666666-6666-4666-8666-666666666666";
 const ROOM_ID = "77777777-7777-4777-8777-777777777777";
 const IDEMPOTENCY_KEY = "m16-admin-dispatch-0001";
 
 const source = (relativePath: string): string =>
   readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), "utf8");
+const projectSource = (relativePath: string): string =>
+  readFileSync(fileURLToPath(new URL(`../../../../${relativePath}`, import.meta.url)), "utf8");
 
 function workOrderWire(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,6 +51,7 @@ function workOrderWire(overrides: Record<string, unknown> = {}) {
     priority: "medium",
     status: "assigned",
     assignedToUserId: TECHNICIAN_ID,
+    assignedTechnicianProfileId: TECHNICIAN_PROFILE_ID,
     scheduledAt: null,
     startedAt: null,
     completedAt: null,
@@ -65,6 +71,7 @@ function complaintWire(overrides: Record<string, unknown> = {}) {
     priority: "medium",
     status: "in_progress",
     assignedToUserId: TECHNICIAN_ID,
+    assignedTechnicianProfileId: TECHNICIAN_PROFILE_ID,
     createdAt: "2026-07-28T00:00:00.000Z",
     updatedAt: "2026-07-28T01:00:00.000Z",
     ...overrides,
@@ -92,7 +99,7 @@ function dispatchInput(
     complaintCode: "CMP-DEMO-2026-0001",
     roomId: null,
     priority: "medium",
-    technicianUserId: TECHNICIAN_ID,
+    technicianProfileId: TECHNICIAN_PROFILE_ID,
     idempotencyKey: IDEMPOTENCY_KEY,
     ...overrides,
   };
@@ -202,7 +209,7 @@ function assertComplaintPriorityLabelsBound(text: string): void {
 function assertDispatchSubmissionSafety(text: string): void {
   const submit = functionText(text, "MaintenanceDispatchDialog.tsx", "MaintenanceDispatchDialog");
   for (const required of [
-    "!technicianUserId",
+    "!technicianProfileId",
     "!technicianIsAuthoritative",
     "submitting.current",
     "mutation.isPending",
@@ -211,7 +218,7 @@ function assertDispatchSubmissionSafety(text: string): void {
     "submissionKey.current ?? newIdempotencyKey()",
     "propertyAtOpen.current !== currentPropertyId",
     "complaintAtOpen.current !== complaint.id",
-    "technicianAtSubmit.current !== technicianUserId",
+    "technicianAtSubmit.current !== technicianProfileId",
     "complaintCode: complaint.complaintCode",
     "roomId: complaint.roomId",
     "priority: complaint.priority",
@@ -269,12 +276,45 @@ function assertScopedInvalidationSource(text: string): void {
 test("strict parsers accept exact V2 envelopes and copy only maintenance whitelists", () => {
   assert.deepEqual(
     parseTechnicianList({
-      data: [{ user_id: TECHNICIAN_ID, display_name: "Teknisi Demo", skill_tags: "listrik, AC" }],
+      data: [
+        {
+          id: TECHNICIAN_PROFILE_ID,
+          user_id: TECHNICIAN_ID,
+          display_name: "Teknisi Demo",
+          skill_tags: "listrik, AC",
+          is_active: true,
+        },
+      ],
     }),
-    [{ userId: TECHNICIAN_ID, displayName: "Teknisi Demo", skillTags: "listrik, AC" }],
+    [
+      {
+        id: TECHNICIAN_PROFILE_ID,
+        userId: TECHNICIAN_ID,
+        displayName: "Teknisi Demo",
+        skillTags: "listrik, AC",
+        isActive: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    parseTechnicianMutation({
+      id: TECHNICIAN_PROFILE_ID,
+      user_id: null,
+      display_name: "Teknisi Internal",
+      skill_tags: "plumbing",
+      is_active: true,
+    }),
+    {
+      id: TECHNICIAN_PROFILE_ID,
+      userId: null,
+      displayName: "Teknisi Internal",
+      skillTags: "plumbing",
+      isActive: true,
+    },
   );
   const workOrder = parseWorkOrderDetail({ data: workOrderWire() });
   assert.deepEqual(Object.keys(workOrder).sort(), [
+    "assignedTechnicianProfileId",
     "assignedToUserId",
     "complaintId",
     "completedAt",
@@ -301,14 +341,16 @@ test("strict parsers accept exact V2 envelopes and copy only maintenance whiteli
   assert.equal(dispatch.complaint.id, COMPLAINT_ID);
   assert.equal(dispatch.workOrder.id, WORK_ORDER_ID);
 
-  assert.throws(() => parseTechnicianList([{ user_id: TECHNICIAN_ID }]));
+  assert.throws(() => parseTechnicianList([{ id: TECHNICIAN_PROFILE_ID }]));
   assert.throws(() =>
     parseTechnicianList({
       data: [
         {
+          id: TECHNICIAN_PROFILE_ID,
           user_id: TECHNICIAN_ID,
           display_name: "Teknisi Demo",
           skill_tags: null,
+          is_active: true,
           phone: "forbidden",
         },
       ],
@@ -316,7 +358,15 @@ test("strict parsers accept exact V2 envelopes and copy only maintenance whiteli
   );
   assert.throws(() =>
     parseTechnicianList({
-      data: [{ user_id: TECHNICIAN_ID, display_name: "   ", skill_tags: null }],
+      data: [
+        {
+          id: TECHNICIAN_PROFILE_ID,
+          user_id: TECHNICIAN_ID,
+          display_name: "   ",
+          skill_tags: null,
+          is_active: true,
+        },
+      ],
     }),
   );
   assert.throws(() => parseWorkOrderDetail(workOrderWire()));
@@ -338,15 +388,61 @@ test("strict parsers accept exact V2 envelopes and copy only maintenance whiteli
   assert.throws(() =>
     parseMaintenanceDispatch(dispatchWire({}, { assignedToUserId: OTHER_WORK_ORDER_ID })),
   );
+  assert.throws(() =>
+    parseMaintenanceDispatch(
+      dispatchWire({}, { assignedTechnicianProfileId: OTHER_WORK_ORDER_ID }),
+    ),
+  );
   assert.throws(() => parseMaintenanceDispatch(dispatchWire({}, { roomId: ROOM_ID })));
   assert.throws(() => parseMaintenanceDispatch(dispatchWire({}, { priority: "urgent" })));
+});
+
+test("technician directory is accountless, property-scoped, reversible and manifest-backed", () => {
+  const migration = projectSource(
+    "backend/api/src/infrastructure/database/migrations/126_internal_technician_directory.sql",
+  );
+  const manifest = projectSource(
+    "backend/api/src/infrastructure/database/scripts/migration-manifest.ts",
+  );
+  const repository = projectSource(
+    "backend/api/src/modules/maintenance/repositories/technician-profile.repository.ts",
+  );
+  const controller = projectSource(
+    "backend/api/src/modules/maintenance/controllers/technician.controller.ts",
+  );
+  const checksum = createHash("sha256").update(migration).digest("hex");
+
+  assert.match(migration, /ALTER COLUMN user_id DROP NOT NULL/);
+  assert.match(migration, /FOREIGN KEY \(property_id, assigned_technician_profile_id\)/);
+  assert.match(migration, /ON DELETE RESTRICT/);
+  assert.match(
+    manifest,
+    new RegExp(
+      `version: '126_internal_technician_directory\\.sql',\\s*checksumSha256: '${checksum}'`,
+    ),
+  );
+  assert.match(repository, /VALUES \(\$1, NULL, \$2, \$3, true, \$4, \$4\)/);
+  assert.match(repository, /SET is_active = \$3/);
+  assert.doesNotMatch(repository, /DELETE FROM technician_profiles/);
+  assert.match(controller, /@RequirePermissions\('maintenance\.manage'\)/);
+  assert.doesNotMatch(controller, /@RequireRoles\([^)]*technician/);
 });
 
 test("requesters use exact endpoints, property query, payload and logical idempotency key", async () => {
   const gets: Array<{ path: string; options: unknown }> = [];
   await requestTechnicianReferences(async (path, options) => {
     gets.push({ path, options });
-    return { data: [{ user_id: TECHNICIAN_ID, display_name: "Teknisi Demo", skill_tags: null }] };
+    return {
+      data: [
+        {
+          id: TECHNICIAN_PROFILE_ID,
+          user_id: TECHNICIAN_ID,
+          display_name: "Teknisi Demo",
+          skill_tags: null,
+          is_active: true,
+        },
+      ],
+    };
   }, PROPERTY_ID);
   await requestWorkOrderDetail(async (path, options) => {
     gets.push({ path, options });
@@ -363,13 +459,14 @@ test("requesters use exact endpoints, property query, payload and logical idempo
   const posts: Array<{ path: string; body: unknown; options: unknown }> = [];
   const result = await requestComplaintDispatch(async (path, body, options) => {
     posts.push({ path, body, options });
-    return dispatchWire();
+    return dispatchWire({ assignedToUserId: null }, { assignedToUserId: null });
   }, dispatchInput());
-  assert.equal(result.workOrder.assignedToUserId, TECHNICIAN_ID);
+  assert.equal(result.workOrder.assignedToUserId, null);
+  assert.equal(result.workOrder.assignedTechnicianProfileId, TECHNICIAN_PROFILE_ID);
   assert.deepEqual(posts, [
     {
       path: `/complaints/${COMPLAINT_ID}/assign`,
-      body: { assigned_to_user_id: TECHNICIAN_ID },
+      body: { technician_profile_id: TECHNICIAN_PROFILE_ID },
       options: { idempotencyKey: IDEMPOTENCY_KEY },
     },
   ]);
@@ -396,8 +493,8 @@ test("requesters use exact endpoints, property query, payload and logical idempo
     requestComplaintDispatch(
       async () =>
         dispatchWire(
-          { assignedToUserId: OTHER_WORK_ORDER_ID },
-          { assignedToUserId: OTHER_WORK_ORDER_ID },
+          { assignedTechnicianProfileId: OTHER_WORK_ORDER_ID },
+          { assignedTechnicianProfileId: OTHER_WORK_ORDER_ID },
         ),
       dispatchInput(),
     ),
@@ -735,11 +832,12 @@ test("hooks consume only Admin UX V2 maintenance wire with property-safe query k
   const mutations = source("hooks/useComplaintMutations.ts");
   const route = functionText(source("routes/complaints.tsx"), "complaints.tsx", "ComplaintsPage");
   assert.match(workOrders, /adminUxV2Requester/);
-  assert.doesNotMatch(workOrders, /\bapiClient\b/);
   assert.match(workOrders, /requestWorkOrderCoverage/);
   assert.match(workOrders, /requestTechnicianReferences/);
   assert.match(workOrders, /maintenanceQueryKeys\.workOrders/);
   assert.match(workOrders, /maintenanceQueryKeys\.technicians/);
+  assert.match(workOrders, /apiClient\.post<unknown>\("\/maintenance\/technicians"/);
+  assert.match(workOrders, /apiClient\.patch<unknown>/);
   assert.match(mutations, /requestComplaintDispatch/);
   assert.match(mutations, /adminUxV2Requester\.post/);
   assert.match(mutations, /invalidateMaintenanceDispatch/);
@@ -758,7 +856,7 @@ test("complaint detail owns dispatch action and read-only work-order tracking wi
   assert.match(route, /<ComplaintWorkOrderPanel/);
   assert.match(route, /<MaintenanceDispatchDialog/);
   assert.match(route, /setDispatchTarget\(selected\)/);
-  assert.match(route, /"Assign Teknisi"/);
+  assert.match(route, /"Tugaskan Teknisi"/);
   assert.match(route, /"Ganti Teknisi"/);
   assert.match(route, /selectedActionableWorkOrder/);
   assert.match(route, /authority=\{selectedWorkOrderAuthority\}/);
@@ -785,7 +883,7 @@ test("complaint detail owns dispatch action and read-only work-order tracking wi
   const panel = source("components/maintenance/ComplaintWorkOrderPanel.tsx");
   assert.match(panel, /const workOrder = authority\.workOrder/);
   assert.match(panel, /authority\.anomaly/);
-  assert.match(panel, /Rekonsiliasi data diperlukan/);
+  assert.match(panel, /Terdapat lebih dari satu tugas maintenance aktif/);
   assert.doesNotMatch(panel, /findComplaintWorkOrders[\s\S]*\[0\]/);
 
   const production = [
@@ -811,18 +909,18 @@ test("complaint detail owns dispatch action and read-only work-order tracking wi
 test("dialog enforces stable logical idempotency, synchronous guard and stale-scope isolation", () => {
   const dialog = source("components/maintenance/MaintenanceDispatchDialog.tsx");
   assertDispatchSubmissionSafety(dialog);
-  assert.match(dialog, /nextTechnicianId !== technicianUserId/);
+  assert.match(dialog, /nextTechnicianId !== technicianProfileId/);
   assert.match(dialog, /submissionKey\.current = null/);
   assert.match(dialog, /currentPropertyId !== propertyAtOpen\.current/);
   assert.match(dialog, /complaint\?\.id !== complaintAtOpen\.current/);
-  assert.match(dialog, /setTechnicianUserId\(\(current\) =>/);
+  assert.match(dialog, /setTechnicianProfileId\(\(current\) =>/);
   assert.match(
     dialog,
-    /technicians\?\.some\(\(technician\) => technician\.userId === technicianUserId\) === true/,
+    /activeTechnicians\.some\(\s*\(technician\) => technician\.id === technicianProfileId/,
   );
   assert.match(
     dialog,
-    /if \(!technicians\?\.some\(\(technician\) => technician\.userId === nextTechnicianId\)\) return/,
+    /if \(!activeTechnicians\.some\(\(technician\) => technician\.id === nextTechnicianId\)\) return/,
   );
 
   assert.throws(() =>
@@ -858,15 +956,15 @@ test("dialog and tracking remain accessible, responsive and never render opaque 
     "flex-col-reverse",
     "sm:flex-row",
     "Memuat teknisi",
-    "Belum ada teknisi aktif",
+    "Tidak ada teknisi aktif yang cocok",
     "Coba lagi",
   ]) {
     assert.ok(dialog.includes(required), required);
   }
   for (const required of [
-    "Memuat work order",
-    "Belum ada work order",
-    "Gagal memuat work order",
+    "Memuat tugas maintenance",
+    "Belum ada tugas maintenance",
+    "Gagal memuat tugas maintenance terkait",
     "WORK_ORDER_STATUS_LABELS",
     "MAINTENANCE_PRIORITY_LABELS",
   ]) {
@@ -876,7 +974,14 @@ test("dialog and tracking remain accessible, responsive and never render opaque 
     ...renderedPropertyNames(dialog, "MaintenanceDispatchDialog.tsx"),
     ...renderedPropertyNames(panel, "ComplaintWorkOrderPanel.tsx"),
   ];
-  for (const opaque of ["userId", "id", "complaintId", "roomId", "assignedToUserId"]) {
+  for (const opaque of [
+    "userId",
+    "id",
+    "complaintId",
+    "roomId",
+    "assignedToUserId",
+    "assignedTechnicianProfileId",
+  ]) {
     assert.equal(rendered.includes(opaque), false, `${opaque} must not be rendered`);
   }
   assert.doesNotMatch(dialog, /\b(?:slate|blue)-\d{2,3}\b|text-white/);

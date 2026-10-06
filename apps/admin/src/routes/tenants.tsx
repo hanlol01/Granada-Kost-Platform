@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
+  Archive,
   ArrowLeft,
   ArrowRight,
   CalendarPlus,
@@ -617,7 +618,7 @@ function TenantsPage() {
       subtitle={residents.data ? `${total} penghuni terdaftar` : "Memuat..."}
       actions={
         <div className="flex flex-wrap gap-2">
-        {hasRole("admin") && hasPermission("lease.read") ? <Button variant="outline" className="min-h-11" asChild><Link to="/tenants/archives">Arsip penyewaan</Link></Button> : null}
+        {hasRole("admin") && hasPermission("lease.read") ? <Button variant="outline" className="min-h-11" asChild><Link to="/tenants/archives"><Archive aria-hidden="true" />Arsip Penyewaan</Link></Button> : null}
         {leaseCreateEnabled ? (
           <Button asChild className="min-h-11">
             <Link to="/tenants" search={{ flow: "new-lease" }}>

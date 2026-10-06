@@ -264,7 +264,7 @@ Canonical domains are `AUTH`, `PROPERTY`, `OWNER`, `ROOM`, `CONTENT`, `PUBLIC`,
 | **Kostation Management Fee** | Kostation service share of earned rent under an effective commercial policy. | Expense; Security Deposit |
 | **Owner Settlement** | Legacy monthly reconciled snapshot retained as historical evidence. | New Owner-payment workflow; rewriting payment history |
 | **Owner Realization** | Current full-contract Owner-payment snapshot, review, finance, transfer, receipt, and publication workflow. | Invoice; mutable payment history |
-| **Teknisi** | User assigned to maintenance work orders. | Treating technician as complaint owner |
+| **Teknisi** | Internal directory entry assigned to maintenance work orders; it does not imply a login account or technician portal. | Treating technician as complaint owner or a required system user |
 | **Akun Penghuni** | Login identity linked to a resident and resident property scope. | Password stored on resident |
 
 ### 6.2 Property and Inventory

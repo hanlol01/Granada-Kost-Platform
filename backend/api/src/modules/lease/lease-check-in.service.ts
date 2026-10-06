@@ -40,7 +40,12 @@ export type LeaseCheckInResponse = {
   occupancyStatus: 'active';
   roomStatus: 'occupied';
   checkedInAt: string;
-  servicePeriod?: { startDate: string | null; endDate: string | null; versionId: string; sequenceNumber: number };
+  servicePeriod?: {
+    startDate: string | null;
+    endDate: string | null;
+    versionId: string;
+    sequenceNumber: number;
+  };
 };
 
 type LockedCheckInInput = {
@@ -172,12 +177,17 @@ export class LeaseCheckInService {
     if (!row.activated_at || !time.rows[0]?.valid)
       throw new ConflictException({
         code: 'LEASE_CHECK_IN_TIME_INVALID',
-        message: 'Tanggal check-in harus sesuai serah-terima fisik dan tidak boleh berada di masa mendatang.',
+        message:
+          'Tanggal check-in harus sesuai serah-terima fisik dan tidak boleh berada di masa mendatang.',
       });
     const checkedInAt = time.rows[0].checked_in_at;
     const servicePeriod = await this.periods.finalizeLocked(client, {
-      leaseId, propertyId: input.propertyId, checkedInAt, actorId: actor.id,
-      reason: input.notes, commandFingerprint: input.attemptKey,
+      leaseId,
+      propertyId: input.propertyId,
+      checkedInAt,
+      actorId: actor.id,
+      reason: input.notes,
+      commandFingerprint: input.attemptKey,
     });
 
     const conflicts = await client.query<{ occupancy_count: string; lease_count: string }>(
@@ -289,7 +299,11 @@ export class LeaseCheckInService {
         leaseId,
         actor.id,
         checkedInAt,
-        JSON.stringify({ occupancy_id: occupancyId, room_id: row.room_id, service_period: servicePeriod }),
+        JSON.stringify({
+          occupancy_id: occupancyId,
+          room_id: row.room_id,
+          service_period: servicePeriod,
+        }),
       ],
     );
     await this.audit.write(
@@ -320,7 +334,12 @@ export class LeaseCheckInService {
         leaseId,
         input.context.correlationId ?? null,
         actor.id,
-        JSON.stringify({ lease_id: leaseId, occupancy_id: occupancyId, room_id: row.room_id }),
+        JSON.stringify({
+          lease_id: leaseId,
+          occupancy_id: occupancyId,
+          room_id: row.room_id,
+          service_period: servicePeriod,
+        }),
       ],
     );
 

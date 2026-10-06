@@ -303,6 +303,7 @@ const validComplaint = {
   resolutionSlaBreached: false,
   locationNote: null,
   assignedToUserId: null,
+  assignedTechnicianProfileId: null,
   submittedAt: ISO,
   acknowledgedAt: null,
   resolvedAt: null,

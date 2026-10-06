@@ -17,6 +17,7 @@
   "dependencies": {
     "@granada-kost/api-client": "*",
     "@granada-kost/domain": "*",
+    "@granada-kost/ui": "*",
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",

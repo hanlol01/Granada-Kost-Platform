@@ -1652,6 +1652,18 @@ export class PropertyOwnerRealizationService {
           },
           client,
         );
+        await this.notificationEvent(
+          client,
+          actor,
+          realization,
+          'property_owner.realization.published',
+          realizationId,
+          context,
+          {
+            room_count: realization.room_count,
+            entitlement_amount: realization.realization_total,
+          },
+        );
         return response;
       },
     );
@@ -1790,6 +1802,20 @@ export class PropertyOwnerRealizationService {
           },
           client,
         );
+        if (isPostTransfer) {
+          await this.notificationEvent(
+            client,
+            actor,
+            realization,
+            'property_owner.realization.corrected',
+            realizationId,
+            context,
+            {
+              correction_id: correction.rows[0].id,
+            },
+            correction.rows[0].id,
+          );
+        }
         return response;
       },
     );
@@ -1946,6 +1972,19 @@ export class PropertyOwnerRealizationService {
             ...context,
           },
           client,
+        );
+        await this.notificationEvent(
+          client,
+          actor,
+          realization,
+          'property_owner.transfer.verified',
+          transfer.rows[0].id,
+          context,
+          {
+            amount: dto.amount,
+            transferred_at: dto.transferred_at,
+            reference: dto.reference.trim(),
+          },
         );
         return response;
       },
@@ -2250,17 +2289,14 @@ export class PropertyOwnerRealizationService {
               ? matches.rows[0]
               : null;
           let linkResolution:
-            | 'explicit'
-            | 'automatic_exact_match'
-            | 'ambiguous'
-            | 'unmatched'
-            | 'already_allocated' = line.lease_id
-            ? 'explicit'
-            : linked
-              ? 'automatic_exact_match'
-              : matches.rows.length > 1
-                ? 'ambiguous'
-                : 'unmatched';
+            'explicit' | 'automatic_exact_match' | 'ambiguous' | 'unmatched' | 'already_allocated' =
+            line.lease_id
+              ? 'explicit'
+              : linked
+                ? 'automatic_exact_match'
+                : matches.rows.length > 1
+                  ? 'ambiguous'
+                  : 'unmatched';
           let assetSnapshot: Pick<
             HistoricalLeaseMatch,
             'asset_id' | 'building_code' | 'building_name'
@@ -3061,6 +3097,16 @@ export class PropertyOwnerRealizationService {
           },
           client,
         );
+        await this.notificationEvent(
+          client,
+          actor,
+          realization,
+          'property_owner.realization.state_changed',
+          realizationId,
+          context,
+          { status: next },
+          `${realizationId}:${key}`,
+        );
         return response;
       },
     );
@@ -3681,8 +3727,7 @@ export class PropertyOwnerRealizationService {
             ],
             ...(
               (detail.realization.tariff_snapshot.pricing_references as
-                | Array<Record<string, unknown>>
-                | undefined) ?? []
+                Array<Record<string, unknown>> | undefined) ?? []
             ).map((reference) => [
               textValue(reference.room_code),
               textValue(
@@ -4043,6 +4088,40 @@ export class PropertyOwnerRealizationService {
         message: 'Idempotency-Key wajib diisi.',
       });
     return key;
+  }
+
+  private async notificationEvent(
+    client: PoolClient,
+    actor: UserAccessContext,
+    realization: Realization,
+    type: string,
+    resourceId: string,
+    context: RequestAuditContext,
+    facts: Record<string, unknown>,
+    eventIdentity = resourceId,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,actor_user_id,correlation_id,payload)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT(event_key) DO NOTHING`,
+      [
+        realization.property_id,
+        `${type}:${eventIdentity}`,
+        type,
+        type === 'property_owner.transfer.verified'
+          ? 'property_owner_realization_transfer'
+          : 'property_owner_realization',
+        resourceId,
+        actor.id,
+        context.correlationId ?? null,
+        JSON.stringify({
+          realization_id: realization.id,
+          owner_profile_id: realization.owner_profile_id,
+          period: realization.realization_period,
+          reference: realization.realization_reference,
+          ...facts,
+        }),
+      ],
+    );
   }
 
   private async command<T>(

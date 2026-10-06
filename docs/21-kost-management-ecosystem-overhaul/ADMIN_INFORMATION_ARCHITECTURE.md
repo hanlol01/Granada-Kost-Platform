@@ -883,6 +883,13 @@ Assigning a technician uses the authoritative picker and creates or updates the
 complaint-linked work order atomically. Multiple actionable work orders are an
 anomaly and disable dispatch until reconciled.
 
+The technician picker searches a property-scoped internal directory by name and
+skill. Authorized operators can add a name with its duties/skills and
+deactivate/reactivate directory entries from the dispatch flow. This directory
+does not provision technician accounts or a technician portal. Deactivation
+removes the entry from new assignments but retains existing assignments and
+history.
+
 ### FR-ADM-COMPLAINT-103 — Maintenance view
 
 Maintenance workload may be presented as a tab within `/complaints` or a

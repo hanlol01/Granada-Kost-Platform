@@ -62,10 +62,10 @@ export function ComplaintWorkOrderPanel({
         </span>
         <div className="min-w-0 flex-1">
           <h3 id="complaint-work-order-title" className="text-sm font-semibold">
-            Work order terkait
+            Tugas maintenance terkait
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Pemantauan pekerjaan maintenance untuk tiket ini.
+            Pantau penanganan maintenance untuk tiket ini.
           </p>
         </div>
       </div>
@@ -73,13 +73,13 @@ export function ComplaintWorkOrderPanel({
       {isLoading ? (
         <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Memuat work order…
+          Memuat tugas maintenance…
         </div>
       ) : error ? (
         <div className="mt-4 flex flex-col items-start gap-2" role="alert">
           <span className="flex items-center gap-2 text-sm text-destructive">
             <AlertCircle className="h-4 w-4" aria-hidden="true" />
-            Gagal memuat work order terkait.
+            Gagal memuat tugas maintenance terkait.
           </span>
           <Button variant="outline" size="sm" onClick={onRetry}>
             <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -90,17 +90,17 @@ export function ComplaintWorkOrderPanel({
         <p className="mt-4 text-sm text-muted-foreground">Menunggu cakupan data lengkap…</p>
       ) : authority.anomaly ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
-          Terdapat lebih dari satu work order aktif. Rekonsiliasi data diperlukan sebelum teknisi
+          Terdapat lebih dari satu tugas maintenance aktif. Data perlu ditinjau sebelum teknisi
           dapat ditugaskan.
         </p>
       ) : !workOrder ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Belum ada work order untuk komplain ini.
+          Belum ada tugas maintenance untuk tiket ini.
         </p>
       ) : (
         <dl className="mt-4 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
           <div className="min-w-0">
-            <dt className="text-xs text-muted-foreground">Kode work order</dt>
+            <dt className="text-xs text-muted-foreground">Kode tugas maintenance</dt>
             <dd className="break-words font-medium">{workOrder.workOrderCode}</dd>
           </div>
           <div className="min-w-0">
@@ -120,9 +120,18 @@ export function ComplaintWorkOrderPanel({
           <div className="min-w-0">
             <dt className="text-xs text-muted-foreground">Teknisi</dt>
             <dd className="break-words font-medium">
-              {workOrder.assignedToUserId
-                ? (technicians?.find((item) => item.userId === workOrder.assignedToUserId)
-                    ?.displayName ?? "Teknisi tidak tersedia")
+              {workOrder.assignedTechnicianProfileId || workOrder.assignedToUserId
+                ? (() => {
+                    const assigned = technicians?.find(
+                      (item) =>
+                        item.id === workOrder.assignedTechnicianProfileId ||
+                        (!workOrder.assignedTechnicianProfileId &&
+                          item.userId === workOrder.assignedToUserId),
+                    );
+                    return assigned
+                      ? `${assigned.displayName}${assigned.isActive ? "" : " (nonaktif)"}`
+                      : "Teknisi tidak tersedia";
+                  })()
                 : "Belum ditugaskan"}
             </dd>
           </div>

@@ -517,6 +517,7 @@ export class WorkOrderService {
       roomId: workOrder.roomId,
       complaintId: workOrder.complaintId,
       assignedToUserId: workOrder.assignedToUserId,
+      assignedTechnicianProfileId: workOrder.assignedTechnicianProfileId,
     };
   }
 
@@ -530,6 +531,7 @@ export class WorkOrderService {
       priority: workOrder.priority,
       status: workOrder.workOrderStatus,
       assignedToUserId: workOrder.assignedToUserId,
+      assignedTechnicianProfileId: workOrder.assignedTechnicianProfileId,
       scheduledAt: workOrder.scheduledAt,
       startedAt: workOrder.startedAt,
       completedAt: workOrder.completedAt,

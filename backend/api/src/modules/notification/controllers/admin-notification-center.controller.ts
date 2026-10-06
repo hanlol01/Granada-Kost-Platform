@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Headers,
-  Param,
-  ParseUUIDPipe,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { RequestWithCorrelationId } from '../../../shared/types/request-with-correlation-id';
 import { UserAccessContext } from '../../iam/types/iam.types';
 import { CurrentUser } from '../../rbac/decorators/current-user.decorator';
@@ -17,75 +7,85 @@ import { RequireRoles } from '../../rbac/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../rbac/guards/jwt-auth.guard';
 import { RbacGuard } from '../../rbac/guards/rbac.guard';
 import { ListNotificationCenterQueryDto } from '../dto/list-notification-center-query.dto';
-import { AdminNotificationCenterService } from '../services/admin-notification-center.service';
+import { AccountNotificationCenterService } from '../services/account-notification-center.service';
+import { toLegacyNotification } from './account-notification-response.util';
 import { auditContext } from './notification-controller.util';
 
+// Compatibility routes share the account-scoped inbox; no property-wide row mutation remains reachable.
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles('owner', 'manager', 'admin')
 @RequirePermissions('notification.manage')
 @Controller('admin/notifications/center')
 export class AdminNotificationCenterController {
-  constructor(private readonly notifications: AdminNotificationCenterService) {}
-
+  constructor(private readonly notifications: AccountNotificationCenterService) {}
   @Get()
-  list(@CurrentUser() user: UserAccessContext, @Query() query: ListNotificationCenterQueryDto) {
-    return this.notifications.list(user, query);
+  async list(
+    @CurrentUser() user: UserAccessContext,
+    @Query() query: ListNotificationCenterQueryDto,
+  ) {
+    const response = await this.notifications.list(user, query);
+    return {
+      data: response.items.map(toLegacyNotification),
+      meta: {
+        limit: response.limit,
+        offset: response.offset,
+        total: response.total,
+        unread_count: response.unreadCount,
+      },
+    };
   }
-
   @Get('unread-count')
-  unreadCount(
+  async unreadCount(
     @CurrentUser() user: UserAccessContext,
     @Query('property_id', new ParseUUIDPipe()) propertyId: string,
   ) {
-    return this.notifications.unreadCount(user, propertyId);
+    return { unread_count: (await this.notifications.unreadCount(user, propertyId)).unreadCount };
   }
-
   @Post('read-all')
-  markAllRead(
+  async markAllRead(
     @CurrentUser() user: UserAccessContext,
     @Query('property_id', new ParseUUIDPipe()) propertyId: string,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.notifications.markAllRead(
+    const result = await this.notifications.change(
       user,
       propertyId,
-      idempotencyKey,
+      'read-all',
+      undefined,
       auditContext(user, request),
     );
+    return { updated_count: 'updatedCount' in result ? result.updatedCount : 0 };
   }
-
   @Post(':notificationId/read')
-  markRead(
+  async markRead(
     @CurrentUser() user: UserAccessContext,
-    @Param('notificationId', new ParseUUIDPipe()) notificationId: string,
     @Query('property_id', new ParseUUIDPipe()) propertyId: string,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Param('notificationId', new ParseUUIDPipe()) id: string,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.notifications.markRead(
+    const result = await this.notifications.change(
       user,
       propertyId,
-      notificationId,
-      idempotencyKey,
+      'read',
+      id,
       auditContext(user, request),
     );
+    return 'id' in result ? toLegacyNotification(result) : result;
   }
-
   @Post(':notificationId/archive')
-  archive(
+  async archive(
     @CurrentUser() user: UserAccessContext,
-    @Param('notificationId', new ParseUUIDPipe()) notificationId: string,
     @Query('property_id', new ParseUUIDPipe()) propertyId: string,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Param('notificationId', new ParseUUIDPipe()) id: string,
     @Req() request: RequestWithCorrelationId,
   ) {
-    return this.notifications.archive(
+    const result = await this.notifications.change(
       user,
       propertyId,
-      notificationId,
-      idempotencyKey,
+      'archive',
+      id,
       auditContext(user, request),
     );
+    return 'id' in result ? toLegacyNotification(result) : result;
   }
 }

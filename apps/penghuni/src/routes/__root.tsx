@@ -81,7 +81,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+          "Aplikasi penghuni kos: pantau tagihan, ajukan komplain, dan baca peraturan serta panduan hunian.",
       },
       { name: "author", content: "Kos Resident" },
       { name: "theme-color", content: "#3b82f6" },
@@ -89,7 +89,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+          "Aplikasi penghuni kos: pantau tagihan, ajukan komplain, dan baca peraturan serta panduan hunian.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -98,7 +98,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "twitter:description",
         content:
-          "Aplikasi penghuni kos: bayar tagihan, ajukan komplain, lihat pengumuman, dan chat dengan pengelola.",
+          "Aplikasi penghuni kos: pantau tagihan, ajukan komplain, dan baca peraturan serta panduan hunian.",
       },
       {
         property: "og:image",

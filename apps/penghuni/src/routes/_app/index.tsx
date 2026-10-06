@@ -3,7 +3,7 @@ import {
   Receipt,
   Wrench,
   MessageCircle,
-  Megaphone,
+  BookOpen,
   ChevronRight,
   Sparkles,
   Calendar,
@@ -12,13 +12,14 @@ import {
   Home,
   RefreshCw,
   Car,
+  ReceiptText,
 } from "lucide-react";
 import { LoadingState, ErrorState, EmptyState } from "@/components/state";
 import { ResidentTenancySummary } from "@/components/ResidentTenancySummary";
 import { AppHeader } from "@/components/AppHeader";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { usePenghuniHome, type PenghuniHomeView } from "@/hooks/usePenghuniHome";
-import { daysUntil, formatDate, formatIDR, formatPeriodKey } from "@/lib/format";
+import { daysUntil, formatDate, formatIDR } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
 
 export const Route = createFileRoute("/_app/")({
@@ -37,8 +38,19 @@ function HomePage() {
     return <ErrorState error={home.error} onRetry={() => void home.refetch()} />;
   }
 
-  const { profile, currentInvoice, recentPayments, unreadNotifications } = home;
-  const daysToDue = currentInvoice ? daysUntil(currentInvoice.dueDate) : null;
+  const {
+    profile,
+    currentInvoice,
+    contractSettlement,
+    recentPayments,
+    unreadNotifications,
+  } = home;
+  const settlementDueAt =
+    contractSettlement?.final_settlement_due_at ??
+    contractSettlement?.effective_due_at ??
+    currentInvoice?.dueDate ??
+    null;
+  const daysToSettlementDue = daysUntil(settlementDueAt);
   const paidCount = recentPayments.filter((p) => p.paymentStatus === "verified").length;
   const progressDenominator = paidCount + (currentInvoice ? 1 : 0);
   const progress =
@@ -48,8 +60,21 @@ function HomePage() {
     <div className="flex flex-col gap-5 animate-[fade-in_0.4s_ease-out]">
       <AppHeader title="Beranda Penghuni" />
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-b-3xl bg-[image:var(--gradient-primary)] px-5 pt-6 pb-10 text-primary-foreground">
+      <section className="relative -mt-5 overflow-hidden rounded-b-3xl bg-[image:var(--gradient-primary)] px-5 pt-6 pb-10 text-primary-foreground">
         <ResidentContextHero profile={profile} />
+
+        {contractSettlement?.status === "paid" && contractSettlement.contract_rent_amount > 0 ? (
+          <div className="mt-5 flex items-start gap-2.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/90 px-3.5 py-3 text-emerald-950 shadow-sm backdrop-blur dark:border-emerald-200/60 dark:bg-emerald-500/30 dark:text-white">
+            <ReceiptText className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold">Penyewaan sudah lunas</p>
+              <p className="mt-0.5 text-xs leading-relaxed">
+                Seluruh tagihan sewa kontrak sebesar {formatIDR(contractSettlement.contract_rent_amount)} telah
+                diterima.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Bill card overlay */}
         {currentInvoice ? (
@@ -57,32 +82,33 @@ function HomePage() {
             to="/billing"
             className="mt-6 block rounded-2xl bg-white/15 p-4 backdrop-blur-md ring-1 ring-white/20 transition hover:bg-white/20"
           >
-            <div className="flex items-center justify-between text-xs opacity-90">
-              <span>Tagihan {formatPeriodKey(currentInvoice.snapshotPeriodKey)}</span>
-              <InvoiceStatusBadge status={currentInvoice.invoiceStatus} />
+            <div className="flex items-center justify-between gap-3 text-xs opacity-90">
+              <span className="font-medium">Tagihan saat ini</span>
+              <SettlementStatusBadge
+                invoiceStatus={currentInvoice.invoiceStatus}
+                daysToSettlementDue={daysToSettlementDue}
+              />
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight">
-              {formatIDR(currentInvoice.totalAmount)}
+              {formatIDR(contractSettlement?.outstanding_amount ?? currentInvoice.totalAmount)}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs opacity-90">
-              <span className="inline-flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                {daysToDue === null
-                  ? `Jatuh tempo ${formatDate(currentInvoice.dueDate)}`
-                  : daysToDue >= 0
-                    ? `Jatuh tempo ${daysToDue} hari lagi`
-                    : `Telat ${Math.abs(daysToDue)} hari`}
-              </span>
+            {contractSettlement ? (
+              <div className="mt-1 space-y-0.5 text-xs leading-relaxed opacity-90">
+                <p>Dari total sewa kontrak {formatIDR(contractSettlement.contract_rent_amount)}</p>
+              </div>
+            ) : null}
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+              <SettlementDueBadge daysToDue={daysToSettlementDue} dueAt={settlementDueAt} />
               <span className="inline-flex items-center gap-0.5 font-medium">
                 Detail <ChevronRight className="h-3.5 w-3.5" />
               </span>
             </div>
           </Link>
-        ) : (
+        ) : contractSettlement?.status !== "paid" ? (
           <div className="mt-6 rounded-2xl bg-white/15 p-4 backdrop-blur-md ring-1 ring-white/20 text-xs opacity-90">
             Tidak ada tagihan yang menunggu pembayaran.
           </div>
-        )}
+        ) : null}
       </section>
 
       {/* Quick actions */}
@@ -90,7 +116,7 @@ function HomePage() {
         <div className="grid grid-cols-5 gap-2 rounded-2xl border border-border/80 bg-card p-3 shadow-[var(--shadow-card)]">
           <QuickAction to="/billing" icon={Receipt} label="Tagihan" />
           <QuickAction to="/complaints" icon={Wrench} label="Komplain" />
-          <QuickAction to="/info" icon={Megaphone} label="Info" />
+          <QuickAction to="/info" icon={BookOpen} label="Info" />
           <QuickAction to="/vehicles" icon={Car} label="Kendaraan" />
           <QuickAction
             to="/notifications"
@@ -117,7 +143,7 @@ function HomePage() {
           icon={<Receipt className="h-4 w-4 text-primary" />}
           label="Tagihan Aktif"
           value={currentInvoice ? "1" : "0"}
-          hint={currentInvoice ? formatPeriodKey(currentInvoice.snapshotPeriodKey) : "Tidak ada"}
+          hint={currentInvoice ? settlementDueHint(daysToSettlementDue, settlementDueAt) : "Tidak ada"}
         />
       </section>
 
@@ -136,17 +162,6 @@ function HomePage() {
           <div
             className="h-full rounded-full bg-[image:var(--gradient-primary)] transition-all"
             style={{ width: `${progress}%` }}
-          />
-        </div>
-      </section>
-
-      {/* Announcements remain empty until resident-safe publication authority is available. */}
-      <section className="px-5">
-        <SectionTitle title="Pengumuman Terbaru" to="/info" />
-        <div className="mt-3 rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
-          <EmptyState
-            title="Belum tersedia"
-            description="Belum ada pengumuman yang diterbitkan untuk akun Anda."
           />
         </div>
       </section>
@@ -222,12 +237,10 @@ function ResidentContextHero({ profile }: { profile: PenghuniHomeView["profile"]
           <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 text-xs opacity-90">
             <Home className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="break-words font-medium">{profile.propertyName}</span>
-            <span aria-hidden="true">·</span>
-            <span className="break-words">Kamar {profile.roomNumber}</span>
           </p>
-          <p className="mt-1 text-[11px] opacity-80">
-            {profile.buildingName ?? profile.buildingCode} ·{" "}
-            {profile.kostType === "rukost" ? "Rumah Kost" : "Apart Kost"}
+          <p className="mt-1 break-words text-[11px] font-medium opacity-90">
+            {profile.managerRoomLabel ??
+              `${profile.buildingName ?? profile.buildingCode} · Kamar ${profile.roomNumber}`}
           </p>
         </div>
         <div
@@ -325,18 +338,55 @@ function SectionTitle({ title, to }: { title: string; to: string }) {
   );
 }
 
-function InvoiceStatusBadge({ status }: { status: string }) {
+function SettlementStatusBadge({
+  invoiceStatus,
+  daysToSettlementDue,
+}: {
+  invoiceStatus: string;
+  daysToSettlementDue: number | null;
+}) {
+  if (daysToSettlementDue !== null && daysToSettlementDue < 0) {
+    return <StatusBadge label="Melewati batas pelunasan" tone="danger" />;
+  }
   const map: Record<string, { label: string; tone: StatusTone }> = {
-    overdue: { label: "Telat", tone: "danger" },
+    overdue: { label: "Belum lunas", tone: "warning" },
     unpaid: { label: "Belum Lunas", tone: "warning" },
     issued: { label: "Diterbitkan", tone: "info" },
-    partially_paid: { label: "Sebagian", tone: "warning" },
+    partially_paid: { label: "Dibayar sebagian", tone: "warning" },
     draft: { label: "Draf", tone: "neutral" },
     paid: { label: "Lunas", tone: "success" },
     void: { label: "Dibatalkan", tone: "neutral" },
   };
-  const s = map[status] ?? { label: "Status tidak diketahui", tone: "neutral" };
+  const s = map[invoiceStatus] ?? { label: "Status tidak diketahui", tone: "neutral" };
   return <StatusBadge label={s.label} tone={s.tone} />;
+}
+
+function SettlementDueBadge({
+  daysToDue,
+  dueAt,
+}: {
+  daysToDue: number | null;
+  dueAt: string | null;
+}) {
+  const label = settlementDueHint(daysToDue, dueAt);
+  const tone: StatusTone = daysToDue !== null && daysToDue < 0 ? "danger" : "warning";
+
+  return (
+    <StatusBadge
+      label={label}
+      tone={tone}
+      icon={Calendar}
+      className="border-white/35 bg-black/15 text-primary-foreground shadow-none dark:border-white/35 dark:bg-black/15 dark:text-primary-foreground"
+    />
+  );
+}
+
+function settlementDueHint(daysToDue: number | null, dueAt: string | null): string {
+  if (!dueAt) return "Batas pelunasan belum tersedia";
+  if (daysToDue === null) return `Batas pelunasan ${formatDate(dueAt)}`;
+  if (daysToDue < 0) return `Melewati batas pelunasan ${Math.abs(daysToDue)} hari`;
+  if (daysToDue === 0) return "Batas pelunasan hari ini";
+  return `Batas pelunasan ${formatDate(dueAt)}`;
 }
 
 function paymentMethodLabel(method: string): string {

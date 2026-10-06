@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { writeAccountNotificationEvent } from '../notification-events/account-notification-event';
 import { DatabaseService } from '../../infrastructure/database/database.service';
 import { UserAccessContext } from '../iam/types/iam.types';
 import { ChangeOwnerEmailDto } from './dto/change-owner-email.dto';
@@ -86,6 +87,7 @@ export class OwnerAccountService {
             JSON.stringify({ old_email: account.email, new_email: email }),
           ],
         );
+        await writeAccountNotificationEvent(client, actor.id, 'account.email_changed');
         return { success: true, changed: true };
       });
     } catch (error) {

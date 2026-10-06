@@ -1,5 +1,12 @@
-import { BadgeCheck, CalendarDays, DoorOpen, Home, type LucideIcon } from "lucide-react";
+import {
+  BadgeCheck,
+  CalendarDays,
+  DoorOpen,
+  Home,
+  type LucideIcon,
+} from "lucide-react";
 import type { PenghuniProfileView } from "@/hooks/usePenghuniProfile";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDate, paymentPlanLabel } from "@/lib/format";
 
 type ResidentTenancySummaryProps = {
@@ -30,9 +37,7 @@ export function ResidentTenancySummary({ profile }: ResidentTenancySummaryProps)
             <h2 id="resident-tenancy-summary" className="text-sm font-semibold">
               Hunian aktif
             </h2>
-            <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
-              {leaseStatus}
-            </span>
+            <StatusBadge label={leaseStatus} tone={profile.leaseStatus === "active" ? "success" : "warning"} />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Ringkasan ini mengikuti penugasan kamar dan sewa yang sedang berlaku.
@@ -41,7 +46,11 @@ export function ResidentTenancySummary({ profile }: ResidentTenancySummaryProps)
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <SummaryItem icon={DoorOpen} label="Kamar" value={profile.roomNumber ?? "Belum tersedia"} />
+        <SummaryItem
+          icon={DoorOpen}
+          label="Kamar"
+          value={profile.managerRoomLabel ?? profile.roomNumber ?? "Belum tersedia"}
+        />
         <SummaryItem
           icon={Home}
           label="Properti & tipe"

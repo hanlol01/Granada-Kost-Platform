@@ -17,7 +17,7 @@ export type StoredWorkOrderStatus = WorkOrderStatus;
 export type TechnicianProfileRecord = {
   id: string;
   propertyId: string;
-  userId: string;
+  userId: string | null;
   displayName: string;
   phone: string | null;
   skillTags: string | null;
@@ -27,9 +27,11 @@ export type TechnicianProfileRecord = {
 };
 
 export type TechnicianReferenceRecord = {
-  user_id: string;
+  id: string;
+  user_id: string | null;
   display_name: string;
   skill_tags: string | null;
+  is_active: boolean;
 };
 
 export type WorkOrderRecord = {
@@ -43,6 +45,7 @@ export type WorkOrderRecord = {
   priority: WorkOrderPriority;
   workOrderStatus: StoredWorkOrderStatus;
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   scheduledAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -64,6 +67,7 @@ export type AdminWorkOrderResponse = {
   priority: WorkOrderPriority;
   status: StoredWorkOrderStatus;
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   scheduledAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -80,6 +84,7 @@ export type AdminComplaintDispatchResponse = {
   priority: WorkOrderPriority;
   status: StoredComplaintStatus;
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -125,6 +130,13 @@ export type CreateTechnicianProfileInput = {
   displayName: string;
   phone?: string;
   skillTags?: string;
+};
+
+export type CreateInternalTechnicianInput = {
+  propertyId: string;
+  displayName: string;
+  skillTags: string;
+  actorUserId: string;
 };
 
 export type CreateWorkOrderInput = {

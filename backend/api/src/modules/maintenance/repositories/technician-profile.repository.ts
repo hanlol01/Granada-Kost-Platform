@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import {
+  CreateInternalTechnicianInput,
   CreateTechnicianProfileInput,
   TechnicianProfileRecord,
   TechnicianReferenceRecord,
@@ -10,7 +11,7 @@ import {
 type TechnicianProfileRow = {
   id: string;
   property_id: string;
-  user_id: string;
+  user_id: string | null;
   display_name: string;
   phone: string | null;
   skill_tags: string | null;
@@ -37,13 +38,11 @@ export class TechnicianProfileRepository {
 
   async listReferences(propertyId: string): Promise<TechnicianReferenceRecord[]> {
     const result = await this.database.client.query<TechnicianReferenceRecord>(
-      `SELECT profile.user_id, profile.display_name, profile.skill_tags
+      `SELECT profile.id, profile.user_id, profile.display_name, profile.skill_tags,
+              profile.is_active
        FROM technician_profiles profile
-       JOIN users ON users.id = profile.user_id
        WHERE profile.property_id = $1
-         AND profile.is_active = true
-         AND users.user_status = 'active'
-       ORDER BY profile.display_name ASC, profile.user_id ASC`,
+       ORDER BY profile.is_active DESC, profile.display_name ASC, profile.id ASC`,
       [propertyId],
     );
     return result.rows;
@@ -78,6 +77,57 @@ export class TechnicianProfileRepository {
       [propertyId, userId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async lockActiveById(
+    propertyId: string,
+    profileId: string,
+    client: PoolClient,
+  ): Promise<TechnicianProfileRecord | null> {
+    const result = await client.query<TechnicianProfileRow>(
+      `SELECT profile.id, profile.property_id, profile.user_id, profile.display_name,
+              profile.phone, profile.skill_tags, profile.is_active,
+              profile.created_at, profile.updated_at
+       FROM technician_profiles profile
+       WHERE profile.property_id = $1
+         AND profile.id = $2
+         AND profile.is_active = true
+       FOR UPDATE OF profile`,
+      [propertyId, profileId],
+    );
+    return result.rows[0] ? this.map(result.rows[0]) : null;
+  }
+
+  async createInternal(input: CreateInternalTechnicianInput): Promise<TechnicianReferenceRecord> {
+    const result = await this.database.client.query<TechnicianReferenceRecord>(
+      `INSERT INTO technician_profiles (
+         property_id, user_id, display_name, skill_tags, is_active,
+         created_by_user_id, updated_by_user_id
+       )
+       VALUES ($1, NULL, $2, $3, true, $4, $4)
+       RETURNING id, user_id, display_name, skill_tags, is_active`,
+      [input.propertyId, input.displayName, input.skillTags, input.actorUserId],
+    );
+    return result.rows[0];
+  }
+
+  async setActive(
+    propertyId: string,
+    profileId: string,
+    isActive: boolean,
+    actorUserId: string,
+  ): Promise<TechnicianReferenceRecord | null> {
+    const result = await this.database.client.query<TechnicianReferenceRecord>(
+      `UPDATE technician_profiles
+       SET is_active = $3,
+           updated_by_user_id = $4,
+           updated_at = now()
+       WHERE property_id = $1
+         AND id = $2
+       RETURNING id, user_id, display_name, skill_tags, is_active`,
+      [propertyId, profileId, isActive, actorUserId],
+    );
+    return result.rows[0] ?? null;
   }
 
   async upsert(input: CreateTechnicianProfileInput): Promise<TechnicianProfileRecord> {

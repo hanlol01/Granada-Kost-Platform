@@ -1202,4 +1202,31 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='invoices'::regclass AND tgname='trg_lease_correction_invoice_validate' AND NOT tgisinternal)",
     ],
   },
+  {
+    version: '125_account_notification_inbox.sql',
+    checksumSha256: 'ed8af9f977f01a0fb5e90e2e827c9c3467cbda2a72229ca15153c1672aad97ac',
+    sentinels: [
+      "to_regclass('public.notification_account_states') IS NOT NULL",
+      "to_regclass('public.idx_notification_account_states_user_status') IS NOT NULL",
+      "to_regclass('public.notification_event_projection_state') IS NOT NULL",
+      "to_regclass('public.notification_event_projections') IS NOT NULL",
+      "obj_description(to_regclass('public.notification_account_states'),'pg_class') = 'Account-scoped notification read and archive state; no business workflow mutation or permanent deletion.'",
+    ],
+  },
+  {
+    version: '126_internal_technician_directory.sql',
+    checksumSha256: 'ed1b8924d1d8d270aab251bf5f145a25ea1041499520f3e72219653306f3eb99',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='technician_profiles' AND column_name='user_id' AND is_nullable='YES')",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='technician_profiles' AND column_name='created_by_user_id')",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='technician_profiles' AND column_name='updated_by_user_id')",
+      "to_regclass('public.technician_profiles_property_id_id_unique') IS NOT NULL",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='complaints' AND column_name='assigned_technician_profile_id')",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='maintenance_work_orders' AND column_name='assigned_technician_profile_id')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.complaints'::regclass AND conname='complaints_assigned_technician_profile_fk' AND contype='f')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.maintenance_work_orders'::regclass AND conname='work_orders_assigned_technician_profile_fk' AND contype='f')",
+      "to_regclass('public.idx_complaints_assigned_technician_profile') IS NOT NULL",
+      "to_regclass('public.idx_work_orders_assigned_technician_profile') IS NOT NULL",
+    ],
+  },
 ] as const;

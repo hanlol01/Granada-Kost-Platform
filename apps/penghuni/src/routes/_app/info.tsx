@@ -1,20 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Building2, ChevronDown, HelpCircle, Home, Megaphone, ShieldCheck } from "lucide-react";
+import { Building2, ChevronDown, HelpCircle, Home, ShieldCheck } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { EmptyState, LoadingState } from "@/components/state";
-import { useAnnouncements, useFaqs, useKostRules } from "@/hooks/usePenghuniInfo";
+import { useFaqs, useKostRules } from "@/hooks/usePenghuniInfo";
 import { usePenghuniProfile } from "@/hooks/usePenghuniProfile";
 
 export const Route = createFileRoute("/_app/info")({
   component: InfoPage,
 });
 
-type Tab = "news" | "rules" | "faq";
+type Tab = "rules" | "faq";
 
 function InfoPage() {
-  const [tab, setTab] = useState<Tab>("news");
-  const announcements = useAnnouncements();
+  const [tab, setTab] = useState<Tab>("rules");
   const rules = useKostRules();
   const faqs = useFaqs();
   const profile = usePenghuniProfile();
@@ -51,58 +50,27 @@ function InfoPage() {
         </div>
       </section>
       <div className="px-5 pt-4">
-        <div className="grid grid-cols-3 gap-1 rounded-2xl bg-secondary p-1">
-          {(["news", "rules", "faq"] as const).map((t) => (
+        <div className="grid grid-cols-2 gap-1 rounded-2xl bg-secondary p-1">
+          {(["rules", "faq"] as const).map((t) => (
             <button
               key={t}
+              type="button"
               onClick={() => setTab(t)}
+              aria-pressed={tab === t}
               className={
-                "rounded-xl py-2 text-xs font-semibold transition " +
+                "min-h-11 rounded-xl py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
                 (tab === t
                   ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
                   : "text-muted-foreground")
               }
             >
-              {t === "news" ? "Pengumuman" : t === "rules" ? "Peraturan" : "FAQ"}
+              {t === "rules" ? "Peraturan" : "FAQ"}
             </button>
           ))}
         </div>
       </div>
 
       <div className="flex flex-col gap-3 px-5 py-5 animate-[fade-in_0.3s_ease-out]">
-        {tab === "news" &&
-          (announcements.isLoading ? (
-            <LoadingState label="Memuat pengumuman..." />
-          ) : announcements.data?.available && announcements.data.items.length > 0 ? (
-            announcements.data.items.map((a) => (
-              <div
-                key={a.id}
-                className="rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-primary">
-                    <Megaphone className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{a.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{a.body}</p>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
-              <EmptyState
-                title="Belum tersedia"
-                description={
-                  announcements.data?.reason ??
-                  "Pengumuman akan tampil setelah diterbitkan oleh pengelola."
-                }
-                icon={<Megaphone className="h-5 w-5" />}
-              />
-            </div>
-          ))}
-
         {tab === "rules" &&
           (rules.isLoading ? (
             <LoadingState label="Memuat peraturan..." />

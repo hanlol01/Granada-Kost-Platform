@@ -13,7 +13,7 @@ const ADVISORY_LOCK_KEY = 4_600_217_001;
 // carry the owner/room migrations under their former numbers. Accept those
 // exact, checksum-verified rows as aliases so the official runner can advance
 // them without rewriting the ledger or replaying already-applied SQL.
-const LEGACY_LEDGER_ALIASES = new Map([
+export const LEGACY_LEDGER_ALIASES = new Map([
   [
     '069_optional_property_owner_assignment_notes.sql',
     {
@@ -50,10 +50,25 @@ const LEGACY_LEDGER_ALIASES = new Map([
     },
   ],
 ]);
-const LEGACY_REMOVED_MIGRATIONS = new Map([
+export const LEGACY_REMOVED_MIGRATIONS = new Map([
   [
     '074_correct_apart_kost_room_18_22_code.sql',
     '2f097763a1bf744659e4b53cde40312b2664341c687b7c51f1adf05ad73f2e6b',
+  ],
+]);
+
+// 122–123 were recorded on the existing ledger with their manifest checksums
+// before their SQL sources were reconciled. Keep the runner strict everywhere
+// else while accepting only the exact checked-in source blobs required by that
+// ledger.
+export const LEGACY_SOURCE_CHECKSUM_ALIASES = new Map([
+  [
+    '122_owner_earning_candidate_authority.sql',
+    new Set(['acac62044aadf7b68f12071d730b9206843c446bf6a48602765869214a42ec8f']),
+  ],
+  [
+    '123_owner_earning_effective_service_period.sql',
+    new Set(['a7897ee0323dc34efe4799965bea9c5866af087dfe0128a23da3e7208d463e95']),
   ],
 ]);
 
@@ -64,8 +79,12 @@ function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function checksumMatchesManifest(source: MigrationSource): boolean {
-  if (sha256(source.rawBytes) === source.checksumSha256) return true;
+export function checksumMatchesManifest(source: MigrationSource): boolean {
+  const accepted = new Set([
+    source.checksumSha256,
+    ...(LEGACY_SOURCE_CHECKSUM_ALIASES.get(source.version) ?? []),
+  ]);
+  if (accepted.has(sha256(source.rawBytes))) return true;
 
   // Git may materialize a checked-in SQL blob with CRLF on Windows while the
   // canonical ledger checksum was generated from LF (or vice versa). Treat
@@ -73,10 +92,7 @@ function checksumMatchesManifest(source: MigrationSource): boolean {
   // drift still fails.
   const canonicalLfBytes = Buffer.from(source.sql.replace(/\r\n/g, '\n'), 'utf8');
   const canonicalCrlfBytes = Buffer.from(source.sql.replace(/\r?\n/g, '\r\n'), 'utf8');
-  return (
-    sha256(canonicalLfBytes) === source.checksumSha256 ||
-    sha256(canonicalCrlfBytes) === source.checksumSha256
-  );
+  return accepted.has(sha256(canonicalLfBytes)) || accepted.has(sha256(canonicalCrlfBytes));
 }
 
 export function executableSql(sql: string): string {

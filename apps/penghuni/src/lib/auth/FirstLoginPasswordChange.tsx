@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,30 +10,23 @@ import { useChangePassword } from "@/hooks/usePenghuniProfile";
 import { useAuth } from "./useAuth";
 
 export function FirstLoginPasswordChange() {
-  const { logout, user } = useAuth();
+  const { login, logout, user } = useAuth();
+  const navigate = useNavigate();
+  const residentName = user?.displayName?.trim() || user?.name?.trim() || "akun Penghuni";
   const changePassword = useChangePassword();
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isContinuing, setIsContinuing] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setValidationError(null);
 
-    if (!currentPassword) {
-      setValidationError("Masukkan password sementara yang diberikan admin.");
-      return;
-    }
     if (newPassword.length < 12) {
       setValidationError("Password baru minimal 12 karakter.");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setValidationError("Password baru harus berbeda dari password sementara.");
       return;
     }
     if (newPassword !== confirmation) {
@@ -39,14 +34,32 @@ export function FirstLoginPasswordChange() {
       return;
     }
 
+    let passwordSaved = false;
     try {
       await changePassword.mutateAsync({
-        current_password: currentPassword,
         new_password: newPassword,
       });
-      await logout();
-      window.location.assign("/login");
+      passwordSaved = true;
+      setIsContinuing(true);
+
+      const identifier = user?.phone?.trim() || user?.email?.trim();
+      if (!identifier) throw new Error("Resident login identifier is unavailable.");
+
+      await login(identifier, newPassword);
+      setNewPassword("");
+      setConfirmation("");
+      await navigate({ to: "/" });
     } catch {
+      if (!passwordSaved) return;
+      try {
+        await logout();
+      } catch {
+        // logout clears the local session even when the old session was revoked.
+      }
+      void navigate({ to: "/login" });
+      toast.error(
+        "Password baru tersimpan, tetapi sesi belum dapat dibuka. Silakan masuk dengan password baru.",
+      );
       return;
     }
   };
@@ -65,22 +78,13 @@ export function FirstLoginPasswordChange() {
           <div className="space-y-2">
             <CardTitle className="text-2xl">Buat password pribadi Anda</CardTitle>
             <CardDescription className="text-sm leading-6">
-              Ini adalah akses pertama untuk {user?.email ?? user?.phone ?? "akun Penghuni"}. Ganti
+              Ini adalah akses pertama untuk {residentName}. Ganti
               password sementara sebelum membuka informasi hunian.
             </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={submit} noValidate>
-            <PasswordField
-              id="temporary-password"
-              label="Password sementara"
-              value={currentPassword}
-              visible={showCurrent}
-              onToggle={() => setShowCurrent((value) => !value)}
-              onChange={setCurrentPassword}
-              autoComplete="current-password"
-            />
             <PasswordField
               id="new-password"
               label="Password baru"
@@ -89,7 +93,7 @@ export function FirstLoginPasswordChange() {
               onToggle={() => setShowNew((value) => !value)}
               onChange={setNewPassword}
               autoComplete="new-password"
-              description="Gunakan minimal 12 karakter dan jangan memakai password sementara."
+              description="Gunakan minimal 12 karakter."
             />
             <PasswordField
               id="new-password-confirmation"
@@ -114,18 +118,23 @@ export function FirstLoginPasswordChange() {
             <div className="flex gap-3 rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
               <p className="leading-6">
-                Setelah berhasil, semua sesi lama ditutup dan Anda masuk kembali memakai password
-                baru.
+                Setelah password diperbarui, Anda langsung diarahkan ke Beranda. Sesi lama pada
+                perangkat lain ditutup.
               </p>
             </div>
 
-            <Button type="submit" size="lg" className="w-full" disabled={changePassword.isPending}>
-              {changePassword.isPending ? (
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={changePassword.isPending || isContinuing}
+            >
+              {changePassword.isPending || isContinuing ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
                 <KeyRound className="h-4 w-4" aria-hidden="true" />
               )}
-              Simpan password baru
+              {isContinuing ? "Membuka Beranda..." : "Simpan password baru"}
             </Button>
           </form>
         </CardContent>

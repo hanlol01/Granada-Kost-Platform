@@ -15,19 +15,21 @@ import { BrevoEmailProvider } from './providers/brevo-email.provider';
 import { FonnteWhatsappProvider } from './providers/fonnte-whatsapp.provider';
 import { WebPushProvider } from './providers/web-push.provider';
 import { AdminNotificationRepository } from './repositories/admin-notification.repository';
-import { AdminNotificationCenterRepository } from './repositories/admin-notification-center.repository';
 import { NotificationDeliveryRepository } from './repositories/notification-delivery.repository';
 import { NotificationPreferenceRepository } from './repositories/notification-preference.repository';
 import { NotificationRepository } from './repositories/notification.repository';
 import { AdminNotificationService } from './services/admin-notification.service';
-import { AdminNotificationCenterService } from './services/admin-notification-center.service';
 import { NotificationDeliveryService } from './services/notification-delivery.service';
 import { NotificationPreferenceService } from './services/notification-preference.service';
 import { NotificationService } from './services/notification.service';
+import { AccountNotificationCenterController } from './controllers/account-notification-center.controller';
+import { AccountNotificationCenterRepository } from './repositories/account-notification-center.repository';
+import { AccountNotificationCenterService } from './services/account-notification-center.service';
 
 @Module({
   imports: [RbacModule, PropertyModule],
   controllers: [
+    AccountNotificationCenterController,
     MyNotificationController,
     MyNotificationPreferenceController,
     NotificationDeliveryController,
@@ -35,14 +37,14 @@ import { NotificationService } from './services/notification.service';
     AdminNotificationCenterController,
   ],
   providers: [
+    AccountNotificationCenterRepository,
+    AccountNotificationCenterService,
     NotificationRepository,
     AdminNotificationRepository,
-    AdminNotificationCenterRepository,
     NotificationDeliveryRepository,
     NotificationPreferenceRepository,
     NotificationService,
     AdminNotificationService,
-    AdminNotificationCenterService,
     NotificationDeliveryService,
     NotificationPreferenceService,
     BrevoEmailProvider,

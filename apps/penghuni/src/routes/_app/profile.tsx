@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ComponentType, type FormEvent } from "react";
+import { useState, type ComponentType, type FormEvent } from "react";
 import { toast } from "sonner";
 import {
   BadgeCheck,
@@ -30,6 +30,7 @@ import {
   usePenghuniProfile,
   type PenghuniProfileView,
 } from "@/hooks/usePenghuniProfile";
+import { useThemePreference } from "@/hooks/useThemePreference";
 import { useAuth } from "@/lib/auth";
 import { formatDate, paymentPlanLabel } from "@/lib/format";
 import { residentContextAnnouncementRole, residentContextStateCopy } from "@/lib/resident-context";
@@ -42,24 +43,9 @@ function ProfilePage() {
   const { logout } = useAuth();
   const profile = usePenghuniProfile();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(true);
+  const { dark, toggleDark } = useThemePreference();
   const [pending, setPending] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
-
-  useEffect(() => {
-    const isDark = localStorage.getItem("theme") !== "light";
-    setDark(isDark);
-    document.documentElement.classList.toggle("dark", isDark);
-  }, []);
-
-  const toggleDark = () => {
-    setDark((current) => {
-      const next = !current;
-      document.documentElement.classList.toggle("dark", next);
-      localStorage.setItem("theme", next ? "dark" : "light");
-      return next;
-    });
-  };
 
   const onLogout = async () => {
     if (pending) return;

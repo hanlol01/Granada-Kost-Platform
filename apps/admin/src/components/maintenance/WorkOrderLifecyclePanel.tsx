@@ -146,9 +146,9 @@ export function WorkOrderLifecyclePanel({ workOrder, propertyId, onChanged }: Pr
                 ? "Verifikasi pekerjaan?"
                 : pendingAction === "rework"
                   ? "Minta perbaikan pekerjaan"
-                  : "Batalkan work order"
+                  : "Batalkan tugas maintenance"
         }
-        description={`Work order ${workOrder.workOrderCode}. Perubahan ini dicatat dalam riwayat operasional.`}
+        description={`Tugas maintenance ${workOrder.workOrderCode}. Perubahan ini dicatat dalam riwayat operasional.`}
         confirmLabel={pendingAction === "cancel" ? "Batalkan" : "Konfirmasi"}
         destructive={pendingAction === "cancel"}
         pending={mutation.isPending}

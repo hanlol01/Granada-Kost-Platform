@@ -14,3 +14,35 @@ coverage/
 uploads/
 backend/api/uploads/
 backend/api/.room-transfer-test-run/
+
+# Local agent and design-tool state; never deploy these workspace-only files.
+.agents/
+.claude/
+.codex/
+.hallmark/
+.impeccable/
+.stitch_reference/
+.tmp-w08a-pg-proof/
+.tmp-w08c-pg-proof/
+backups/
+tmp/
+/finance-form-test.pdf
+/finance-form-test.xlsx
+/kostation_demo_pg3.backup.dump
+/kostation_demo_pg3.data.dump
+/nul
+
+# Local API build, migration, and validation artifacts.
+backend/api/.checkin-proof-build/
+backend/api/.checkin-test-build/
+backend/api/.codex-temp-*/
+backend/api/.migration-runner-test-*/
+backend/api/.owner-realization-migration-run/
+backend/api/tmp/
+backend/api/api-*.out
+backend/api/api-*.err
+backend/api/pnpm-lock.yaml
+backend/api/pnpm-workspace.yaml
+
+# Design-reference captures, not runtime application assets.
+apps/penghuni/public/assets/

@@ -40,6 +40,7 @@ const validEnvelope = {
     phone: "081234567890",
     property_name: "Properti Demo",
     room_number: "RK-01-01",
+    manager_room_label: "Rumah Kost · Unit 1, Kamar 1",
     occupancy_start: "2026-07-29",
     building_name: "Rumah Kost Unit 01",
     building_code: "RK-01",
@@ -167,6 +168,7 @@ function assertSourceContracts(sources: Sources): void {
 
   assert.match(sources.homeRoute, /profile\.propertyName/);
   assert.match(sources.homeRoute, /profile\.roomNumber/);
+  assert.match(sources.homeRoute, /profile\.managerRoomLabel/);
   assert.doesNotMatch(sources.homeRoute, /snapshotRoomNumber|profile\.roomLabel/);
   assert.match(sources.profileRoute, /profile\.propertyName/);
   assert.match(sources.profileRoute, /profile\.roomNumber/);
@@ -201,6 +203,7 @@ test("strict parser accepts zero/single context and returns an isolated resident
     phone: "081234567890",
     propertyName: "Properti Demo",
     roomNumber: "RK-01-01",
+    managerRoomLabel: "Rumah Kost · Unit 1, Kamar 1",
     occupancyStart: "2026-07-29",
     buildingName: "Rumah Kost Unit 01",
     buildingCode: "RK-01",

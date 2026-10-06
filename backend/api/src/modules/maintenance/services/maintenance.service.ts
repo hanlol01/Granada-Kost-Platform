@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { WorkOrderRecord } from '../types/maintenance.types';
+import { TechnicianProfileRecord, WorkOrderRecord } from '../types/maintenance.types';
 import { TechnicianService } from './technician.service';
 import { WorkOrderService } from './work-order.service';
 
@@ -15,7 +15,10 @@ export class MaintenanceService {
   }
 
   async technicianWorkload(propertyId: string): Promise<Array<{ userId: string; activeWorkOrders: number }>> {
-    const technicians = await this.technicians.list(propertyId, true);
+    const technicians = (await this.technicians.list(propertyId, true)).filter(
+      (technician): technician is TechnicianProfileRecord & { userId: string } =>
+        technician.userId !== null,
+    );
     const workloads = await Promise.all(
       technicians.map(async (technician) => {
         const assigned = await this.workOrders.listAssigned(technician.userId, 'assigned', 100, 0);

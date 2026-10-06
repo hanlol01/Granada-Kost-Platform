@@ -116,13 +116,23 @@ export class ComplaintController {
     @Body() dto: AssignComplaintDto,
     @Req() request: RequestWithCorrelationId,
   ) {
+    const hasLegacyUser = Boolean(dto.assigned_to_user_id);
+    const hasTechnicianProfile = Boolean(dto.technician_profile_id);
+    if (hasLegacyUser === hasTechnicianProfile) {
+      throw new BadRequestException({
+        code: 'TECHNICIAN_ASSIGNMENT_INVALID',
+        message: 'Provide exactly one technician profile or legacy user assignment',
+      });
+    }
     const complaint = await this.complaints.get(complaintId);
     await this.properties.assertCanReadProperty(user, complaint.propertyId);
     const v2 = acceptsAdminUxV2(request.headers.accept);
     const idempotencyHeader = request.headers['idempotency-key'];
     return this.complaints.assign(
       complaintId,
-      dto.assigned_to_user_id,
+      hasTechnicianProfile
+        ? { kind: 'profile', id: dto.technician_profile_id! }
+        : { kind: 'user', id: dto.assigned_to_user_id! },
       auditContext(user, request),
       {
         authorizedPropertyId: complaint.propertyId,

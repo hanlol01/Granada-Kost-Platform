@@ -306,8 +306,14 @@ export class AdminUxRoomDetailService {
             AND work_order.property_id = complaint.property_id
             AND work_order.room_id = complaint.room_id
            LEFT JOIN technician_profiles technician
-             ON technician.user_id = work_order.assigned_to_user_id
-            AND technician.property_id = work_order.property_id
+              ON technician.property_id = work_order.property_id
+             AND (
+               technician.id = work_order.assigned_technician_profile_id
+               OR (
+                 work_order.assigned_technician_profile_id IS NULL
+                 AND technician.user_id = work_order.assigned_to_user_id
+               )
+             )
            WHERE complaint.property_id = $1
              AND complaint.room_id = $2
              AND complaint.complaint_status NOT IN ('closed', 'cancelled')

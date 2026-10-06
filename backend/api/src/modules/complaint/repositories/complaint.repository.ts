@@ -30,6 +30,7 @@ type ComplaintRow = {
   resolution_sla_breached: boolean;
   location_note: string | null;
   assigned_to_user_id: string | null;
+  assigned_technician_profile_id: string | null;
   submitted_at: Date;
   acknowledged_at: Date | null;
   resolved_at: Date | null;
@@ -118,9 +119,13 @@ export class ComplaintRepository {
     if (filters.categoryId)
       predicates.push(`complaints.category_id = ${add(filters.categoryId)}::uuid`);
     if (filters.assignment === 'assigned')
-      predicates.push('complaints.assigned_to_user_id IS NOT NULL');
+      predicates.push(
+        '(complaints.assigned_to_user_id IS NOT NULL OR complaints.assigned_technician_profile_id IS NOT NULL)',
+      );
     if (filters.assignment === 'unassigned')
-      predicates.push('complaints.assigned_to_user_id IS NULL');
+      predicates.push(
+        '(complaints.assigned_to_user_id IS NULL AND complaints.assigned_technician_profile_id IS NULL)',
+      );
     if (filters.buildingId)
       predicates.push(`room_filter.building_id = ${add(filters.buildingId)}::uuid`);
     if (filters.roomId) predicates.push(`complaints.room_id = ${add(filters.roomId)}::uuid`);
@@ -322,7 +327,8 @@ export class ComplaintRepository {
 
   async assignForDispatch(
     id: string,
-    assignedToUserId: string,
+    assignedToUserId: string | null,
+    assignedTechnicianProfileId: string,
     client: PoolClient,
   ): Promise<ComplaintRecord | null> {
     const result = await client.query<ComplaintRow>(
@@ -332,14 +338,15 @@ export class ComplaintRepository {
                THEN 'in_progress'
              ELSE complaint_status
            END,
-           assigned_to_user_id = $2,
+            assigned_to_user_id = $2,
+            assigned_technician_profile_id = $3,
            updated_at = now()
        WHERE id = $1
          AND complaint_status IN (
            'submitted', 'acknowledged', 'in_progress', 'on_hold', 'escalated', 'reopened'
          )
        RETURNING ${this.columns()}`,
-      [id, assignedToUserId],
+       [id, assignedToUserId, assignedTechnicianProfileId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
@@ -349,16 +356,29 @@ export class ComplaintRepository {
     responseBreached: boolean,
     resolutionBreached: boolean,
   ): Promise<ComplaintRecord | null> {
-    const result = await this.database.client.query<ComplaintRow>(
-      `UPDATE complaints
+    return this.database.transaction(async (client) => {
+      const result = await client.query<ComplaintRow>(
+        `UPDATE complaints
        SET response_sla_breached = $2,
            resolution_sla_breached = $3,
            updated_at = now()
        WHERE id = $1
        RETURNING ${this.columns()}`,
-      [id, responseBreached, resolutionBreached],
-    );
-    return result.rows[0] ? this.map(result.rows[0]) : null;
+        [id, responseBreached, resolutionBreached],
+      );
+      if (result.rows[0])
+        await client.query(
+          `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,payload)
+       SELECT complaint.property_id,milestone.event_type||':'||complaint.id::text,milestone.event_type,'complaint',complaint.id,
+              jsonb_build_object('complaint_id',complaint.id,'room_id',complaint.room_id,'priority',complaint.priority)
+         FROM complaints complaint CROSS JOIN (VALUES
+           ('complaint.sla_response_breached',$2::boolean),('complaint.sla_resolution_breached',$3::boolean)
+         ) milestone(event_type,breached)
+        WHERE complaint.id=$1 AND milestone.breached ON CONFLICT(event_key) DO NOTHING`,
+          [id, responseBreached, resolutionBreached],
+        );
+      return result.rows[0] ? this.map(result.rows[0]) : null;
+    });
   }
 
   async nextSequence(propertyId: string, year: number): Promise<number> {
@@ -408,7 +428,8 @@ export class ComplaintRepository {
     const p = prefix ? `${prefix}.` : '';
     return `${p}id, ${p}property_id, ${p}resident_id, ${p}room_id, ${p}category_id, ${p}complaint_code, ${p}title, ${p}description,
             ${p}priority, ${p}complaint_status, ${p}reopen_count, ${p}response_sla_breached, ${p}resolution_sla_breached,
-            ${p}location_note, ${p}assigned_to_user_id, ${p}submitted_at, ${p}acknowledged_at, ${p}resolved_at, ${p}closed_at,
+            ${p}location_note, ${p}assigned_to_user_id, ${p}assigned_technician_profile_id,
+            ${p}submitted_at, ${p}acknowledged_at, ${p}resolved_at, ${p}closed_at,
             ${p}cancelled_at, ${p}cancel_reason, ${p}snapshot_room_number, ${p}snapshot_resident_name,
             ${p}created_by_user_id, ${p}created_at, ${p}updated_at`;
   }
@@ -430,6 +451,7 @@ export class ComplaintRepository {
       resolutionSlaBreached: row.resolution_sla_breached,
       locationNote: row.location_note,
       assignedToUserId: row.assigned_to_user_id,
+      assignedTechnicianProfileId: row.assigned_technician_profile_id,
       submittedAt: row.submitted_at,
       acknowledgedAt: row.acknowledged_at,
       resolvedAt: row.resolved_at,

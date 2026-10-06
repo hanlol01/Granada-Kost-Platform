@@ -119,6 +119,7 @@ export type ResidentSelfContext = {
   phone: string | null;
   propertyName: string;
   roomNumber: string;
+  managerRoomLabel: string | null;
   occupancyStart: string;
   buildingName: string;
   buildingCode: string;
@@ -636,6 +637,7 @@ export class ResidentRepository {
       phone: string | null;
       property_name: string;
       room_number: string;
+      manager_room_label: string | null;
       occupancy_start: string;
       building_name: string;
       building_code: string;
@@ -654,6 +656,7 @@ export class ResidentRepository {
               residents.phone,
               properties.name AS property_name,
               rooms.number AS room_number,
+              rooms.manager_room_label,
               occupancies.start_date::text AS occupancy_start,
               room_buildings.building_name,
               room_buildings.building_code,
@@ -709,6 +712,7 @@ export class ResidentRepository {
       phone: row.phone,
       propertyName: row.property_name,
       roomNumber: row.room_number,
+      managerRoomLabel: row.manager_room_label,
       occupancyStart: row.occupancy_start,
       buildingName: row.building_name,
       buildingCode: row.building_code,

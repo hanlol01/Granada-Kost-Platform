@@ -27,6 +27,7 @@ export type PenghuniProfileView = {
   phone: string | null;
   propertyName: string | null;
   roomNumber: string | null;
+  managerRoomLabel: string | null;
   occupancyStart: string | null;
   buildingName: string | null;
   buildingCode: string | null;
@@ -64,6 +65,7 @@ export function usePenghuniProfile(): PenghuniProfileView {
     phone: resident?.phone ?? null,
     propertyName: resident?.propertyName ?? null,
     roomNumber: resident?.roomNumber ?? null,
+    managerRoomLabel: resident?.managerRoomLabel ?? null,
     occupancyStart: resident?.occupancyStart ?? null,
     buildingName: resident?.buildingName ?? null,
     buildingCode: resident?.buildingCode ?? null,
@@ -119,13 +121,13 @@ export function useChangePassword() {
   return useMutation<
     { success: true },
     unknown,
-    { current_password: string; new_password: string }
+    { current_password?: string; new_password: string }
   >({
     mutationFn: (body) =>
       apiClient.patch<{ success: true }>("/auth/password", body, {
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => toastMutationSuccess("Kata sandi diperbarui. Silakan masuk kembali."),
+    onSuccess: () => toastMutationSuccess("Kata sandi diperbarui."),
     onError: (err) => toastMutationError(err, "Gagal memperbarui kata sandi"),
   });
 }

@@ -26,6 +26,7 @@ type WorkOrderRow = {
   priority: WorkOrderPriority;
   work_order_status: StoredWorkOrderStatus;
   assigned_to_user_id: string | null;
+  assigned_technician_profile_id: string | null;
   scheduled_at: Date | null;
   started_at: Date | null;
   completed_at: Date | null;
@@ -180,15 +181,19 @@ export class WorkOrderRepository {
   }
 
   async createDispatch(
-    input: CreateWorkOrderInput & { assignedToUserId: string },
+    input: CreateWorkOrderInput & {
+      assignedToUserId: string | null;
+      assignedTechnicianProfileId: string;
+    },
     client: PoolClient,
   ): Promise<WorkOrderRecord> {
     const result = await client.query<WorkOrderRow>(
       `INSERT INTO maintenance_work_orders (
          property_id, room_id, complaint_id, work_order_code, title, description,
-         priority, work_order_status, assigned_to_user_id, created_by_user_id
+          priority, work_order_status, assigned_to_user_id, assigned_technician_profile_id,
+          created_by_user_id
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'assigned', $8, $9)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'assigned', $8, $9, $10)
        RETURNING ${this.columns()}`,
       [
         input.propertyId,
@@ -199,6 +204,7 @@ export class WorkOrderRepository {
         input.description ?? null,
         input.priority,
         input.assignedToUserId,
+        input.assignedTechnicianProfileId,
         input.createdByUserId,
       ],
     );
@@ -207,18 +213,20 @@ export class WorkOrderRepository {
 
   async reassignForDispatch(
     id: string,
-    assignedToUserId: string,
+    assignedToUserId: string | null,
+    assignedTechnicianProfileId: string,
     client: PoolClient,
   ): Promise<WorkOrderRecord | null> {
     const result = await client.query<WorkOrderRow>(
       `UPDATE maintenance_work_orders
        SET assigned_to_user_id = $2,
+           assigned_technician_profile_id = $3,
            work_order_status = CASE WHEN work_order_status = 'open' THEN 'assigned' ELSE work_order_status END,
            updated_at = now()
        WHERE id = $1
          AND work_order_status IN ('open', 'assigned', 'in_progress', 'on_hold', 'rework_required')
        RETURNING ${this.columns()}`,
-      [id, assignedToUserId],
+       [id, assignedToUserId, assignedTechnicianProfileId],
     );
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
@@ -274,6 +282,10 @@ export class WorkOrderRepository {
       `UPDATE maintenance_work_orders
        SET work_order_status = $2,
            assigned_to_user_id = COALESCE($3, assigned_to_user_id),
+           assigned_technician_profile_id = CASE
+             WHEN $3::uuid IS NOT NULL THEN NULL
+             ELSE assigned_technician_profile_id
+           END,
            started_at = CASE WHEN $2 = 'in_progress' THEN COALESCE(started_at, now()) ELSE started_at END,
            completed_at = CASE WHEN $2 = 'completed' THEN COALESCE(completed_at, now()) ELSE completed_at END,
            verified_at = CASE WHEN $2 = 'verified' THEN COALESCE(verified_at, now()) ELSE verified_at END,
@@ -308,7 +320,8 @@ export class WorkOrderRepository {
 
   private columns(): string {
     return `id, property_id, room_id, complaint_id, work_order_code, title, description,
-            priority, work_order_status, assigned_to_user_id, scheduled_at, started_at,
+            priority, work_order_status, assigned_to_user_id, assigned_technician_profile_id,
+            scheduled_at, started_at,
             completed_at, verified_at, verified_by_user_id, rework_reason, cancel_reason,
             created_by_user_id, created_at, updated_at`;
   }
@@ -325,6 +338,7 @@ export class WorkOrderRepository {
       priority: row.priority,
       workOrderStatus: row.work_order_status,
       assignedToUserId: row.assigned_to_user_id,
+      assignedTechnicianProfileId: row.assigned_technician_profile_id,
       scheduledAt: row.scheduled_at,
       startedAt: row.started_at,
       completedAt: row.completed_at,

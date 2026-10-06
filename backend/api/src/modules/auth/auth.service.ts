@@ -238,7 +238,15 @@ export class AuthService {
   ): Promise<{ success: true }> {
     const record = await this.iam.findUserById(user.id);
 
-    if (!record || !(await argon2.verify(record.passwordHash, dto.current_password))) {
+    const isFirstPasswordChange = record?.passwordChangedAt === null;
+    const canSetFirstResidentPassword = isFirstPasswordChange && user.roles.includes('resident');
+    const currentPasswordIsValid =
+      record !== null &&
+      (canSetFirstResidentPassword ||
+        (typeof dto.current_password === 'string' &&
+          (await argon2.verify(record.passwordHash, dto.current_password))));
+
+    if (!record || !currentPasswordIsValid) {
       await this.audit.write({
         actorUserId: user.id,
         action: 'auth.password_change',
@@ -263,6 +271,7 @@ export class AuthService {
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
       correlationId: context.correlationId,
+      metadata: { first_password_change: canSetFirstResidentPassword },
     });
 
     return { success: true };

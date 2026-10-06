@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
+import { OwnerNotificationBell } from "@/components/notifications/RoleNotifications";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -144,7 +145,6 @@ export function OwnerPortalShell({
   activeRoute,
   ownerName,
   historical,
-  unreadNotifications = 0,
   breadcrumbTail,
   children,
 }: {
@@ -176,21 +176,6 @@ export function OwnerPortalShell({
       ) : null}
     </nav>
   );
-  const notificationAction = (
-    <Button
-      asChild
-      variant="ghost"
-      size="icon"
-      className="relative h-11 w-11 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-    >
-      <Link to="/property-owners/portal/notifications" aria-label="Buka notifikasi Owner">
-        <Bell className="h-4 w-4" />
-        {unreadNotifications > 0 ? (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-        ) : null}
-      </Link>
-    </Button>
-  );
 
   return (
     <AppShell
@@ -201,7 +186,7 @@ export function OwnerPortalShell({
       sidebar={null}
       bottomNavigation={null}
       breadcrumb={breadcrumb}
-      notificationAction={notificationAction}
+      notificationAction={<OwnerNotificationBell />}
       contentClassName="pb-8 lg:py-8"
     >
       <div className="owner-portal-root mx-auto w-full max-w-7xl">{children}</div>

@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { writeAccountNotificationEvent } from '../notification-events/account-notification-event';
 import { createHash } from 'crypto';
 import type { PoolClient } from 'pg';
 import { AuditRepository } from '../../infrastructure/audit/audit.repository';
@@ -161,6 +162,7 @@ export class ResidentAccountService {
         },
         client,
       );
+      if (account.user_id) await writeAccountNotificationEvent(client, account.user_id, 'account.password_reset');
       return {
         ...this.toSummary({ ...account, password_changed_at: null }),
         temporaryPassword: RESIDENT_TEMPORARY_PASSWORD,
@@ -473,6 +475,8 @@ export class ResidentAccountService {
       });
     }
 
+    if (temporaryPassword)
+      await writeAccountNotificationEvent(client, userId, 'account.provisioned', resident.id);
     return {
       status: temporaryPassword ? 'provisioned' : 'already_linked',
       temporaryPassword,

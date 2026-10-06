@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AppBreadcrumb } from "./Breadcrumb";
 import { RegistryMobileSidebar, RegistrySidebar } from "./registry-navigation";
 import { UserMenu } from "./user-menu";
+import { AdminNotificationBell } from "@/components/notifications/RoleNotifications";
 import "./app-shell.css";
 
 interface Props {
@@ -121,17 +122,7 @@ export function AppShell({
               >
                 {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
-              {notificationAction ?? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="relative h-11 w-11 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  aria-label="Notifikasi"
-                >
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-                </Button>
-              )}
+              {notificationAction ?? <AdminNotificationBell />}
               <UserMenu />
             </div>
             {actions ? (

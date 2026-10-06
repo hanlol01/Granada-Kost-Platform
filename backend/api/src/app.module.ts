@@ -23,6 +23,7 @@ import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { VehicleModule } from './modules/vehicle/vehicle.module';
 import { ParkingModule } from './modules/parking/parking.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { NotificationEventsModule } from './modules/notification-events/notification-events.module';
 import { SmartLockModule } from './modules/smart-lock/smart-lock.module';
 import { FileModule } from './modules/file/file.module';
 import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
@@ -88,6 +89,7 @@ import { ReportModule } from './modules/report/report.module';
     VehicleModule,
     ParkingModule,
     NotificationModule,
+    NotificationEventsModule,
     ReminderModule,
     ExpenseModule,
     ActivityLogModule,

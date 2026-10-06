@@ -24,6 +24,7 @@ export class MyResidentContextController {
         phone: context.phone,
         property_name: context.propertyName,
         room_number: context.roomNumber,
+        manager_room_label: context.managerRoomLabel,
         occupancy_start: context.occupancyStart,
         building_name: context.buildingName,
         building_code: context.buildingCode,
@@ -34,9 +35,6 @@ export class MyResidentContextController {
         lease_end: context.leaseEnd,
         term_months: context.termMonths,
         payment_plan_type: context.paymentPlanType,
-        agreed_monthly_price: context.agreedMonthlyPrice,
-        contract_rent_amount: context.contractRentAmount,
-        pricing_source: context.pricingSource,
       },
     };
   }

@@ -40,6 +40,7 @@ export type ComplaintRecord = {
   resolutionSlaBreached: boolean;
   locationNote: string | null;
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   submittedAt: string;
   acknowledgedAt: string | null;
   resolvedAt: string | null;

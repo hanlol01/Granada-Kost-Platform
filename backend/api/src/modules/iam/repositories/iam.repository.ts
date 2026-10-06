@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { writeAccountNotificationEvent } from '../../notification-events/account-notification-event';
 import { DatabaseService } from '../../../infrastructure/database/database.service';
 import { loginPhoneCandidates, normalizeLoginIdentifier } from '../identifier-normalizer';
 import {
@@ -190,14 +191,17 @@ export class IamRepository {
   }
 
   async changePassword(userId: string, passwordHash: string): Promise<void> {
-    await this.database.client.query(
-      `UPDATE users
+    await this.database.transaction(async (client) => {
+      await client.query(
+        `UPDATE users
        SET password_hash = $2,
            password_changed_at = now(),
            updated_at = now()
        WHERE id = $1`,
-      [userId, passwordHash],
-    );
+        [userId, passwordHash],
+      );
+      await writeAccountNotificationEvent(client, userId, 'account.password_changed');
+    });
   }
 
   async getAccessContext(userId: string, sessionId: string): Promise<UserAccessContext | null> {

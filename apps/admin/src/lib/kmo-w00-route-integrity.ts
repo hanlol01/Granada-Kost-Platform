@@ -140,6 +140,7 @@ function isComplaintRecord(value: unknown): boolean {
     typeof record.resolutionSlaBreached === "boolean" &&
     isNullableString(record.locationNote) &&
     isNullableUuid(record.assignedToUserId) &&
+    isNullableUuid(record.assignedTechnicianProfileId) &&
     isIsoTimestamp(record.submittedAt) &&
     isNullableIsoTimestamp(record.acknowledgedAt) &&
     isNullableIsoTimestamp(record.resolvedAt) &&

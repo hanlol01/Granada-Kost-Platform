@@ -495,6 +495,14 @@ Existing route families remain:
 - `/complaints`, `/my/complaints`;
 - `/maintenance/technicians`, `/work-orders`, `/my/work-orders`.
 
+`/maintenance/technicians` is an Admin/manager/Owner-operated, property-scoped
+directory, not a technician login or portal. Its authorized operators may add a
+technician name and skill description, list active/inactive entries, and
+deactivate/reactivate an entry. Complaint assignment submits a
+`technician_profile_id`; inactive entries cannot receive new assignments, while
+existing complaint/work-order references and history remain intact. Legacy
+account-backed technician profiles remain readable for compatibility.
+
 All gain full detail links and property/building-scoped query support needed by
 room/resident/Property Owner hubs. Complaint dispatch remains the sole authority
 for complaint-linked actionable work orders. Vehicle/parking writes must not

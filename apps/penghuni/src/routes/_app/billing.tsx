@@ -295,57 +295,36 @@ function SettlementProgress({ billing }: { billing: MyW06Billing }) {
   const settlement = billing.contract_settlement;
   if (!settlement) return null;
 
-  const checkpoint = settlement.first_payment_checkpoint;
-  const dueAt = checkpoint.due_at ?? settlement.effective_due_at;
-  const isFinalSettlement = settlement.full_payment_required;
+  const finalSettlementDueAt = settlement.final_settlement_due_at ?? settlement.effective_due_at;
 
   return (
     <section aria-labelledby="settlement-progress-heading">
       <SectionHeading
         id="settlement-progress-heading"
-        title={isFinalSettlement ? "Pelunasan akhir kontrak" : "Checkpoint pembayaran"}
-        description={
-          isFinalSettlement
-            ? "Nominal pelunasan akhir mengikuti sisa kontrak resmi dan tidak dapat dicicil."
-            : "Status dihitung dari akumulasi pembayaran sewa yang sudah diverifikasi pengelola."
-        }
+        title="Pelunasan sewa kontrak"
+        description="Lihat sisa kewajiban sewa dan batas waktu pelunasan kontrak Anda."
       />
       <Card className="mt-3 border-primary/25">
         <CardContent className="space-y-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">
-                {isFinalSettlement ? "Sisa yang wajib dilunasi" : "Kekurangan checkpoint"}
-              </p>
-              <p className="mt-1 text-xs font-medium text-primary">
-                {settlement.policy_version === "legacy_v1"
-                  ? "Kebijakan kontrak lama (Legacy V1)"
-                  : "Kebijakan checkpoint kontrak (V2)"}
-              </p>
-              <p className="mt-1 text-2xl font-bold">
-                {idr(
-                  isFinalSettlement ? settlement.outstanding_amount : checkpoint.remaining_amount,
-                )}
-              </p>
+              <p className="text-sm font-semibold">Sisa kewajiban sewa</p>
+              <p className="mt-1 text-2xl font-bold">{idr(settlement.outstanding_amount)}</p>
             </div>
             <SettlementBadge status={settlement.status} />
           </div>
 
-          <div className="grid gap-3 rounded-xl bg-muted p-3 text-sm sm:grid-cols-3">
-            <SummaryRow
-              label="Minimum checkpoint"
-              value={idr(checkpoint.required_additional_amount)}
-              stacked
+          <div className="grid gap-y-2 rounded-xl bg-muted p-3 text-sm">
+            <BillingDetailRow
+              label="Total sewa kontrak"
+              value={idr(settlement.contract_rent_amount)}
             />
-            <SummaryRow
-              label="Sudah diterima"
-              value={idr(checkpoint.additional_payment_received)}
-              stacked
-            />
-            <SummaryRow
-              label="Batas berlaku"
-              value={dueAt ? jakartaFinancialDate(dueAt) : "Belum tersedia"}
-              stacked
+            <BillingDetailRow label="Sudah dibayar" value={idr(billing.summary.rent_paid)} />
+            <BillingDetailRow
+              label="Batas pelunasan kontrak"
+              value={
+                finalSettlementDueAt ? jakartaFinancialDate(finalSettlementDueAt) : "Belum tersedia"
+              }
             />
           </div>
 
@@ -434,7 +413,7 @@ function BalanceHero({ billing }: { billing: MyW06Billing }) {
   const nextDue = billing.summary.next_due_date;
   return (
     <section className="overflow-hidden rounded-3xl bg-primary p-5 text-primary-foreground shadow-[var(--shadow-glow)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground/70">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-foreground">
         Sisa sewa kontrak
       </p>
       <p className="mt-2 text-3xl font-bold tracking-tight">
@@ -442,11 +421,11 @@ function BalanceHero({ billing }: { billing: MyW06Billing }) {
       </p>
       <div className="mt-5 grid grid-cols-2 gap-3 border-t border-primary-foreground/20 pt-4 text-sm">
         <div>
-          <p className="text-primary-foreground/70">Sudah dibayar</p>
+          <p className="text-primary-foreground">Sudah dibayar</p>
           <p className="mt-1 font-semibold">{idr(billing.summary.rent_paid)}</p>
         </div>
         <div>
-          <p className="text-primary-foreground/70">Jatuh tempo berikutnya</p>
+          <p className="text-primary-foreground">Jatuh tempo berikutnya</p>
           <p className="mt-1 font-semibold">{nextDue ? jakartaDate(nextDue) : "Tidak ada"}</p>
         </div>
       </div>
@@ -598,22 +577,20 @@ function InvoiceCard({
           </div>
           <InvoiceBadge status={invoice.invoice_status} />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-muted p-3 text-sm">
-          <SummaryRow label="Total" value={idr(invoice.total_amount)} stacked />
-          <SummaryRow label="Sisa" value={idr(invoice.outstanding_amount)} stacked />
-          <SummaryRow
+        <div className="mt-4 grid gap-y-2 rounded-xl bg-muted p-3 text-sm">
+          <BillingDetailRow label="Total" value={idr(invoice.total_amount)} />
+          <BillingDetailRow label="Sisa" value={idr(invoice.outstanding_amount)} />
+          <BillingDetailRow
             label="Jatuh tempo"
             value={
               servicePeriodPending && invoice.invoice_purpose === "rent"
                 ? "Ditentukan setelah check-in"
                 : jakartaDate(invoice.due_date)
             }
-            stacked
           />
-          <SummaryRow
+          <BillingDetailRow
             label="Status pembayaran"
             value={invoiceStatusLabel(invoice.invoice_status)}
-            stacked
           />
         </div>
         <div className="mt-4">
@@ -790,7 +767,7 @@ function FinancialTimeline({
                     ) : null}
                     {event.receipt_id ? (
                       <Button
-                        variant="outline"
+                        variant="default"
                         className="mt-3 min-h-11"
                         onClick={() => onReceipt(event.receipt_id!)}
                       >
@@ -1094,6 +1071,17 @@ function SummaryRow({
     </div>
   );
 }
+function BillingDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-2">
+      <span className="min-w-0 text-muted-foreground">{label}</span>
+      <span aria-hidden="true" className="text-muted-foreground">
+        :
+      </span>
+      <span className="text-right font-semibold tabular-nums">{value}</span>
+    </div>
+  );
+}
 function InvoiceBadge({ status }: { status: W06InvoiceStatus }) {
   const tones: Record<W06InvoiceStatus, StatusTone> = {
     draft: "neutral",
@@ -1254,7 +1242,7 @@ function noticePresentation(notice: ResidentBillingNotice, nextDueDate: string |
       icon: CalendarDays,
       title: "Jadwal pembayaran berikutnya",
       description: `Jatuh tempo berikutnya ${nextDueDate ? jakartaDate(nextDueDate) : "belum tersedia"}.`,
-      className: "border-primary/35 bg-primary/10 text-primary",
+      className: "border-success/35 bg-success/10 text-success",
     };
   return {
     icon: Info,

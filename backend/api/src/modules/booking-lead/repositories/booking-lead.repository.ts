@@ -360,8 +360,20 @@ export class BookingLeadRepository {
           input.createdByUserId,
         ],
       );
+      const lead = this.map(inserted.rows[0]);
+      await client.query(
+        `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,payload,actor_user_id)
+         VALUES($1,$2,'booking_lead.created_admin','booking_lead',$3,$4::jsonb,$5) ON CONFLICT(event_key) DO NOTHING`,
+        [
+          lead.propertyId,
+          `booking_lead.created_admin:${lead.id}`,
+          lead.id,
+          JSON.stringify({ room_id: lead.roomId, status: lead.status, source: lead.source }),
+          input.createdByUserId,
+        ],
+      );
       await client.query('COMMIT');
-      return { lead: this.map(inserted.rows[0]), created: true };
+      return { lead, created: true };
     } catch (error) {
       await this.rollback(client);
       throw error;

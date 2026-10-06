@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { LoadingState } from "@/components/state";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ function ArchiveList({ propertyId }: { propertyId: string }) {
   const notice = query.error ? adminErrorNotice(query.error, "Arsip belum dapat dimuat") : null;
   useEffect(() => { if (query.error) { const value = adminErrorNotice(query.error, "Arsip belum dapat dimuat"); toast.error(value.title, { description: value.description }); } }, [query.error]);
   return <div className="space-y-6">
-    <Button variant="outline" asChild><Link to="/tenants">Kembali ke data penghuni</Link></Button>
+    <Button variant="default" className="min-h-11" asChild><Link to="/tenants"><ArrowLeft aria-hidden="true" />Kembali ke data penghuni</Link></Button>
     <Card><CardHeader><CardTitle>Cari arsip penyewaan</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-3">
       <div className="space-y-2"><Label htmlFor="archive-search">Nama, kode penyewaan atau kamar</Label><Input id="archive-search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={100} placeholder="Cari arsip" /></div>
       <div className="space-y-2"><Label htmlFor="archive-mode">Jenis hunian</Label><Select value={mode ?? "all"} onValueChange={(value) => { setMode(value === "rent" || value === "owner_sponsored" ? value : undefined); setOffset(0); }}><SelectTrigger id="archive-mode"><SelectValue /></SelectTrigger><SelectContent>
@@ -69,8 +70,8 @@ function ArchiveList({ propertyId }: { propertyId: string }) {
             <td className="p-4"><FinanceState state={item.financialResolutionState} /></td>
             <td className="p-4"><Button variant="info" asChild><Link to="/tenants/archives/$archiveId" params={{ archiveId: item.id }}>Lihat arsip</Link></Button></td>
           </tr>)}</tbody></table></div>}
-        <div className="flex flex-wrap items-center justify-end gap-3"><Button variant="outline" disabled={offset === 0 || query.isFetching} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Sebelumnya</Button>
-          <Button variant="outline" disabled={offset + PAGE_SIZE >= query.data.total || query.isFetching} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya</Button></div>
+        <div className="flex flex-wrap items-center justify-end gap-3"><Button variant="default" className="min-h-11" disabled={offset === 0 || query.isFetching} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Sebelumnya</Button>
+          <Button variant="default" className="min-h-11" disabled={offset + PAGE_SIZE >= query.data.total || query.isFetching} onClick={() => setOffset(offset + PAGE_SIZE)}>Berikutnya</Button></div>
       </> : null}
   </div>;
 }

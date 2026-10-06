@@ -404,7 +404,8 @@ export class PropertyOwnerPortalService {
          LIMIT 1
        ) management_fee ON true
        LEFT JOIN LATERAL (
-          SELECT id, lease_status, commercial_mode, start_date, end_date, resident_id, occupancy_id
+           SELECT id, lease_status, commercial_mode, start_date, end_date, resident_id, occupancy_id,
+                   service_period_state
          FROM leases
          WHERE property_id = $2 AND room_id = rooms.id AND lease_status = 'active'
          ORDER BY start_date, id

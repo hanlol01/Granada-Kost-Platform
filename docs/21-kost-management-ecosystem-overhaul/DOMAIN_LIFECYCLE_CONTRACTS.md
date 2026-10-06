@@ -629,7 +629,7 @@ Rules:
 | State | Meaning |
 | --- | --- |
 | `open` | Work authority created and unassigned. |
-| `assigned` | Active technician assigned. |
+| `assigned` | An active technician directory entry is assigned to the work. |
 | `in_progress` | Technician is executing. |
 | `on_hold` | Work intentionally paused with reason. |
 | `escalated` | Requires higher skill/vendor/authority. |
@@ -638,8 +638,11 @@ Rules:
 | `rework_required` | Verification failed and corrective work is required. |
 | `cancelled` | Work order cancelled with reason. Terminal. |
 
-`DispatchComplaint` locks complaint, technician, linked work orders, and
-property/year code sequence. It creates at most one actionable work order.
+`DispatchComplaint` locks complaint, the active technician directory entry,
+linked work orders, and property/year code sequence. It creates at most one
+actionable work order. Directory deactivation blocks future assignments but
+does not rewrite existing complaint/work-order references or history; technicians
+do not need system accounts to appear in the directory.
 Reassignment never resets `on_hold`, `escalated`, or other active lifecycle
 state. Complaint closure requires consistent work-order resolution but does not
 rewrite work-order history.

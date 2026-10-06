@@ -500,6 +500,7 @@ function ComplaintsPage() {
             ...current,
             complaintStatus: result.complaint.status,
             assignedToUserId: result.complaint.assignedToUserId,
+            assignedTechnicianProfileId: result.complaint.assignedTechnicianProfileId,
             updatedAt: result.complaint.updatedAt,
           }
         : current,
@@ -733,7 +734,7 @@ function ComplaintsPage() {
               </Select>
               <Button
                 type="button"
-                variant="outline"
+                variant="default"
                 className="h-10 whitespace-nowrap"
                 onClick={() => setAdvancedOpen((open) => !open)}
                 aria-expanded={advancedOpen}
@@ -948,8 +949,8 @@ function ComplaintsPage() {
                   <Info label="Tanggal" value={formatDate(selected.submittedAt.slice(0, 10))} />
                   <Info label="Status" value={STATUS_META[selected.complaintStatus].label} />
                   <Info
-                    label="SLA"
-                    value={selected.resolutionSlaBreached ? "Terlampaui" : "Aman"}
+                    label="Status target penyelesaian"
+                    value={selected.resolutionSlaBreached ? "Terlampaui" : "Belum terlampaui"}
                   />
                 </div>
                 <div>
@@ -984,14 +985,14 @@ function ComplaintsPage() {
                     <>
                       {CAN_ACKNOWLEDGE.includes(selected.complaintStatus) ? (
                         <Button
-                          variant="outline"
+                          variant="default"
                           size="sm"
                           disabled={pendingTransition}
                           onClick={() =>
                             setConfirmTransition({ complaint: selected, kind: "acknowledge" })
                           }
                         >
-                          <Eye className="h-3.5 w-3.5 mr-1" /> Akui
+                          <Eye className="h-3.5 w-3.5 mr-1" /> Terima komplain
                         </Button>
                       ) : null}
                       {CAN_RESOLVE.includes(selected.complaintStatus) ? (
@@ -1031,18 +1032,19 @@ function ComplaintsPage() {
                       ) : null}
                       {CAN_CANCEL.includes(selected.complaintStatus) ? (
                         <Button
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
                           disabled={pendingTransition}
                           onClick={() => setCancelTarget(selected)}
                         >
-                          <Ban className="h-3.5 w-3.5 mr-1 text-destructive" /> Batalkan
+                          <Ban className="h-3.5 w-3.5 mr-1" /> Batalkan
                         </Button>
                       ) : null}
                       {complaintCanShowDispatch ? (
                         <Button
-                          variant="outline"
+                          variant="success"
                           size="sm"
+                          className="bg-success text-success-foreground hover:bg-success/90"
                           disabled={
                             !dispatchAllowed ||
                             workOrdersQuery.isLoading ||
@@ -1051,9 +1053,10 @@ function ComplaintsPage() {
                           onClick={() => setDispatchTarget(selected)}
                         >
                           <UserCog className="h-3.5 w-3.5 mr-1" />
-                          {selectedActionableWorkOrder?.assignedToUserId
+                          {selectedActionableWorkOrder?.assignedToUserId ||
+                          selectedActionableWorkOrder?.assignedTechnicianProfileId
                             ? "Ganti Teknisi"
-                            : "Assign Teknisi"}
+                            : "Tugaskan Teknisi"}
                         </Button>
                       ) : null}
                     </>
@@ -1088,7 +1091,7 @@ function ComplaintsPage() {
         onOpenChange={(o) => !o && setConfirmTransition(null)}
         title={
           confirmTransition?.kind === "acknowledge"
-            ? "Akui komplain"
+            ? "Konfirmasi penerimaan komplain"
             : confirmTransition?.kind === "resolve"
               ? "Tandai selesai"
               : confirmTransition?.kind === "close"
@@ -1102,7 +1105,9 @@ function ComplaintsPage() {
             ? `Tiket ${confirmTransition.complaint.complaintCode} · ${confirmTransition.complaint.snapshotResidentName}`
             : null
         }
-        confirmLabel="Konfirmasi"
+        confirmLabel={
+          confirmTransition?.kind === "acknowledge" ? "Terima komplain" : "Konfirmasi"
+        }
         pending={pendingTransition}
         onConfirm={async () => {
           if (!confirmTransition) return;

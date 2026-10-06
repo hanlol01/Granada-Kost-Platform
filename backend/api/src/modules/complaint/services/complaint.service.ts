@@ -44,6 +44,10 @@ type DispatchOptions = {
   idempotencyKey?: string;
 };
 
+type TechnicianDispatchTarget =
+  | { kind: 'profile'; id: string }
+  | { kind: 'user'; id: string };
+
 type TransitionCommandOptions = {
   authorizedPropertyId?: string;
   idempotencyKey?: string;
@@ -150,22 +154,7 @@ export class ComplaintService {
     const fileIds = this.normalizeFileIds(input.fileIds);
     await this.validateComplaintAttachmentFiles(fileIds, input);
 
-    if (fileIds.length > 0) {
-      return this.createComplaintWithAttachments(input, fileIds, context);
-    }
-
-    const complaint = await this.complaints.create(input);
-    await this.histories.record({
-      complaintId: complaint.id,
-      fromStatus: 'submitted',
-      toStatus: 'submitted',
-      actorUserId: context.actorUserId,
-      label: 'Complaint submitted',
-    });
-    await this.writeComplaintAudit(COMPLAINT_AUDIT_ACTIONS.create, complaint, context, undefined, {
-      fileIds,
-    });
-    return complaint;
+    return this.createComplaintWithAttachments(input, fileIds, context);
   }
 
   private async createComplaintWithAttachments(
@@ -202,6 +191,19 @@ export class ComplaintService {
         );
       }
 
+      await this.writeOutbox(client, {
+        propertyId: complaint.propertyId,
+        eventKey: `complaint.created:${complaint.id}`,
+        eventType: 'complaint.created',
+        aggregateId: complaint.id,
+        payload: {
+          complaint_id: complaint.id,
+          room_id: complaint.roomId,
+          priority: complaint.priority,
+        },
+        actorUserId: context.actorUserId,
+        correlationId: context.correlationId,
+      });
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -213,13 +215,14 @@ export class ComplaintService {
     await this.writeComplaintAudit(COMPLAINT_AUDIT_ACTIONS.create, complaint, context, undefined, {
       fileIds,
     });
-    await this.writeComplaintAudit(
-      COMPLAINT_AUDIT_ACTIONS.fileAttach,
-      complaint,
-      context,
-      undefined,
-      { fileIds },
-    );
+    if (fileIds.length)
+      await this.writeComplaintAudit(
+        COMPLAINT_AUDIT_ACTIONS.fileAttach,
+        complaint,
+        context,
+        undefined,
+        { fileIds },
+      );
     return complaint;
   }
 
@@ -248,7 +251,7 @@ export class ComplaintService {
 
   async assign(
     complaintId: string,
-    assignedToUserId: string,
+    targetInput: string | TechnicianDispatchTarget,
     context: AuditActorContext,
     options: DispatchOptions,
   ): Promise<ComplaintRecord | { data: AdminMaintenanceDispatchResponse }> {
@@ -262,13 +265,16 @@ export class ComplaintService {
     const idempotencyKey = options.v2
       ? this.requireIdempotencyKey(options.idempotencyKey)
       : undefined;
+    const target: TechnicianDispatchTarget =
+      typeof targetInput === 'string' ? { kind: 'user', id: targetInput } : targetInput;
     const route = '/api/v1/complaints/:complaintId/assign';
     const fingerprint = this.requestFingerprint({
       route,
       actor_user_id: actorUserId,
       property_id: options.authorizedPropertyId,
       complaint_id: complaintId,
-      assigned_to_user_id: assignedToUserId,
+      assigned_to_user_id: target.kind === 'user' ? target.id : null,
+      technician_profile_id: target.kind === 'profile' ? target.id : null,
     });
 
     return this.database.transaction(async (client) => {
@@ -313,17 +319,18 @@ export class ComplaintService {
         });
       }
 
-      const technician = await this.technicians.lockActive(
-        currentComplaint.propertyId,
-        assignedToUserId,
-        client,
-      );
+      const technician =
+        target.kind === 'profile'
+          ? await this.technicians.lockActiveById(currentComplaint.propertyId, target.id, client)
+          : await this.technicians.lockActive(currentComplaint.propertyId, target.id, client);
       if (!technician) {
         throw new BadRequestException({
           code: 'TECHNICIAN_NOT_ACTIVE',
           message: 'Technician is not active for this property',
         });
       }
+      const assignedToUserId = technician.userId;
+      const assignedTechnicianProfileId = technician.id;
 
       const linkedWorkOrders = await this.workOrders.lockByComplaint(complaintId, client);
       const actionable = linkedWorkOrders.filter((workOrder) =>
@@ -348,10 +355,12 @@ export class ComplaintService {
 
       const complaintNeedsUpdate =
         currentComplaint.assignedToUserId !== assignedToUserId ||
+        currentComplaint.assignedTechnicianProfileId !== assignedTechnicianProfileId ||
         INITIAL_DISPATCH_COMPLAINT_STATUSES.includes(currentComplaint.complaintStatus);
       const workOrderNeedsUpdate =
         currentWorkOrder !== undefined &&
         (currentWorkOrder.assignedToUserId !== assignedToUserId ||
+          currentWorkOrder.assignedTechnicianProfileId !== assignedTechnicianProfileId ||
           currentWorkOrder.workOrderStatus === 'open');
 
       let workOrder: WorkOrderRecord;
@@ -376,6 +385,7 @@ export class ComplaintService {
             description: currentComplaint.description,
             priority: currentComplaint.priority,
             assignedToUserId,
+            assignedTechnicianProfileId,
             createdByUserId: actorUserId,
           },
           client,
@@ -384,6 +394,7 @@ export class ComplaintService {
         const reassigned = await this.workOrders.reassignForDispatch(
           currentWorkOrder.id,
           assignedToUserId,
+          assignedTechnicianProfileId,
           client,
         );
         if (!reassigned) {
@@ -402,6 +413,7 @@ export class ComplaintService {
         const updated = await this.complaints.assignForDispatch(
           currentComplaint.id,
           assignedToUserId,
+          assignedTechnicianProfileId,
           client,
         );
         if (!updated) {
@@ -860,6 +872,7 @@ export class ComplaintService {
         priority: complaint.priority,
         status: complaint.complaintStatus,
         assignedToUserId: complaint.assignedToUserId,
+        assignedTechnicianProfileId: complaint.assignedTechnicianProfileId,
         createdAt: complaint.createdAt,
         updatedAt: complaint.updatedAt,
       },
@@ -872,6 +885,7 @@ export class ComplaintService {
         priority: workOrder.priority,
         status: workOrder.workOrderStatus,
         assignedToUserId: workOrder.assignedToUserId,
+        assignedTechnicianProfileId: workOrder.assignedTechnicianProfileId,
         scheduledAt: workOrder.scheduledAt,
         startedAt: workOrder.startedAt,
         completedAt: workOrder.completedAt,
@@ -916,6 +930,7 @@ export class ComplaintService {
       roomId: workOrder.roomId,
       complaintId: workOrder.complaintId,
       assignedToUserId: workOrder.assignedToUserId,
+      assignedTechnicianProfileId: workOrder.assignedTechnicianProfileId,
     };
   }
 
@@ -997,6 +1012,7 @@ export class ComplaintService {
       roomId: complaint.roomId,
       categoryId: complaint.categoryId,
       assignedToUserId: complaint.assignedToUserId,
+      assignedTechnicianProfileId: complaint.assignedTechnicianProfileId,
     };
   }
 }

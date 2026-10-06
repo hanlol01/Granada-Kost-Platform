@@ -16,9 +16,11 @@ export type WorkOrderStatus = (typeof WORK_ORDER_STATUSES)[number];
 export type MaintenancePriority = "low" | "medium" | "high" | "urgent";
 
 export type TechnicianReference = {
-  userId: string;
+  id: string;
+  userId: string | null;
   displayName: string;
   skillTags: string | null;
+  isActive: boolean;
 };
 
 export type AdminWorkOrder = {
@@ -30,6 +32,7 @@ export type AdminWorkOrder = {
   priority: MaintenancePriority;
   status: WorkOrderStatus;
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   scheduledAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
@@ -55,6 +58,7 @@ export type AdminComplaintDispatch = {
     | "closed"
     | "cancelled";
   assignedToUserId: string | null;
+  assignedTechnicianProfileId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -84,7 +88,7 @@ type MaintenanceGet = (
 
 type MaintenancePost = (
   path: string,
-  body: { assigned_to_user_id: string },
+  body: { assigned_to_user_id?: string; technician_profile_id?: string },
   options: { idempotencyKey: string },
 ) => Promise<unknown>;
 
@@ -94,7 +98,7 @@ export type MaintenanceDispatchInput = {
   complaintCode: string;
   roomId: string | null;
   priority: MaintenancePriority;
-  technicianUserId: string;
+  technicianProfileId: string;
   idempotencyKey: string;
 };
 
@@ -150,9 +154,10 @@ const ACTIONABLE_WORK_ORDER_STATUSES = new Set<WorkOrderStatus>([
   "completed",
   "rework_required",
 ]);
-const TECHNICIAN_KEYS = ["display_name", "skill_tags", "user_id"] as const;
+const TECHNICIAN_KEYS = ["display_name", "id", "is_active", "skill_tags", "user_id"] as const;
 const WORK_ORDER_KEYS = [
   "assignedToUserId",
+  "assignedTechnicianProfileId",
   "complaintId",
   "completedAt",
   "createdAt",
@@ -169,6 +174,7 @@ const WORK_ORDER_KEYS = [
 ] as const;
 const COMPLAINT_DISPATCH_KEYS = [
   "assignedToUserId",
+  "assignedTechnicianProfileId",
   "complaintCode",
   "createdAt",
   "id",
@@ -252,10 +258,13 @@ export function parseTechnicianReference(value: unknown): TechnicianReference {
   if (!source || !exactKeys(source, TECHNICIAN_KEYS)) throw new Error(INVALID_RESPONSE);
   const skillTags = source.skill_tags;
   if (skillTags !== null && typeof skillTags !== "string") throw new Error(INVALID_RESPONSE);
+  if (typeof source.is_active !== "boolean") throw new Error(INVALID_RESPONSE);
   return {
-    userId: requiredUuid(source, "user_id"),
+    id: requiredUuid(source, "id"),
+    userId: nullableUuid(source, "user_id"),
     displayName: requiredString(source, "display_name"),
     skillTags,
+    isActive: source.is_active,
   };
 }
 
@@ -265,10 +274,16 @@ export function parseTechnicianList(value: unknown): TechnicianReference[] {
     throw new Error(INVALID_RESPONSE);
   }
   const technicians = source.data.map(parseTechnicianReference);
-  if (new Set(technicians.map((technician) => technician.userId)).size !== technicians.length) {
+  if (new Set(technicians.map((technician) => technician.id)).size !== technicians.length) {
     throw new Error(INVALID_RESPONSE);
   }
   return technicians;
+}
+
+export function parseTechnicianMutation(value: unknown): TechnicianReference {
+  // ApiClient unwraps the standard { data } success envelope. Mutation responses
+  // therefore arrive as the technician object itself, unlike the V2 GET list.
+  return parseTechnicianReference(value);
 }
 
 export function parseAdminWorkOrder(value: unknown): AdminWorkOrder {
@@ -285,6 +300,7 @@ export function parseAdminWorkOrder(value: unknown): AdminWorkOrder {
     priority: priority(source),
     status,
     assignedToUserId: nullableUuid(source, "assignedToUserId"),
+    assignedTechnicianProfileId: nullableUuid(source, "assignedTechnicianProfileId"),
     scheduledAt: nullableTimestamp(source, "scheduledAt"),
     startedAt: nullableTimestamp(source, "startedAt"),
     completedAt: nullableTimestamp(source, "completedAt"),
@@ -336,6 +352,7 @@ function parseComplaintDispatch(value: unknown): AdminComplaintDispatch {
     priority: priority(source),
     status,
     assignedToUserId: nullableUuid(source, "assignedToUserId"),
+    assignedTechnicianProfileId: nullableUuid(source, "assignedTechnicianProfileId"),
     createdAt: requiredTimestamp(source, "createdAt"),
     updatedAt: requiredTimestamp(source, "updatedAt"),
   };
@@ -354,6 +371,7 @@ export function parseMaintenanceDispatch(value: unknown): MaintenanceDispatchRes
     workOrder.complaintId !== complaint.id ||
     workOrder.propertyId !== complaint.propertyId ||
     workOrder.assignedToUserId !== complaint.assignedToUserId ||
+    workOrder.assignedTechnicianProfileId !== complaint.assignedTechnicianProfileId ||
     workOrder.roomId !== complaint.roomId ||
     workOrder.priority !== complaint.priority
   ) {
@@ -463,7 +481,7 @@ export async function requestComplaintDispatch(
     input.complaintCode.trim().length === 0 ||
     (input.roomId !== null && !UUID_V4_PATTERN.test(input.roomId)) ||
     !PRIORITIES.has(input.priority) ||
-    !UUID_V4_PATTERN.test(input.technicianUserId) ||
+    !UUID_V4_PATTERN.test(input.technicianProfileId) ||
     input.idempotencyKey.trim().length < 16 ||
     input.idempotencyKey.trim().length > 128
   ) {
@@ -472,7 +490,7 @@ export async function requestComplaintDispatch(
   const result = parseMaintenanceDispatch(
     await post(
       `/complaints/${encodeURIComponent(input.complaintId)}/assign`,
-      { assigned_to_user_id: input.technicianUserId },
+      { technician_profile_id: input.technicianProfileId },
       { idempotencyKey: input.idempotencyKey },
     ),
   );
@@ -482,10 +500,10 @@ export async function requestComplaintDispatch(
     result.complaint.complaintCode !== input.complaintCode ||
     result.complaint.roomId !== input.roomId ||
     result.complaint.priority !== input.priority ||
-    result.complaint.assignedToUserId !== input.technicianUserId ||
+    result.complaint.assignedTechnicianProfileId !== input.technicianProfileId ||
     result.workOrder.complaintId !== input.complaintId ||
     result.workOrder.propertyId !== input.propertyId ||
-    result.workOrder.assignedToUserId !== input.technicianUserId
+    result.workOrder.assignedTechnicianProfileId !== input.technicianProfileId
   ) {
     throw new Error(INVALID_RESPONSE);
   }

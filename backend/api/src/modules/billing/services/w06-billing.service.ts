@@ -6744,6 +6744,16 @@ export class W06BillingService {
     context: RequestAuditContext,
     payload: Record<string, unknown>,
   ) {
+    if (aggregateType === 'payment' && payload.payment_purpose === 'management_fee') {
+      const obligation = await client.query<{ owner_profile_id: string; management_fee_payer: string | null }>(
+        `SELECT term.owner_profile_id,term.management_fee_payer FROM payments payment
+         JOIN owner_sponsored_lease_terms term ON term.lease_id=payment.lease_id AND term.property_id=payment.property_id
+         WHERE payment.id=$2 AND payment.property_id=$1 AND term.term_status='active'`,
+        [propertyId,aggregateId],
+      );
+      payload = { ...payload, owner_profile_id: obligation.rows[0]?.owner_profile_id ?? null,
+        owner_fee_payer: obligation.rows[0]?.management_fee_payer ?? null };
+    }
     await client.query(
       `INSERT INTO business_events(property_id,event_key,event_type,aggregate_type,aggregate_id,correlation_id,actor_user_id,payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
       [

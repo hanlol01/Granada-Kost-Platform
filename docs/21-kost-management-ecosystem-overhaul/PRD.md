@@ -94,8 +94,11 @@ the more specific contract wins.
 | `admin`          | Execute supported operational tasks                    | Permissions and rollout decide each task         |
 | `property_owner` | Monitor owned assets, earnings, and payouts            | Read-only, effective mixed-asset scope           |
 | `resident`       | Manage personal tenancy and service interactions       | Self-service for canonical resident context      |
-| `technician`     | Receive and update assigned work                       | Maintenance authority only                       |
 | Public prospect  | Discover housing and submit interest                   | Published category-level data only               |
+
+Maintenance technicians are tracked as internal directory entries for operator
+assignment and work history. This product does not provision a technician login
+or a technician-facing portal.
 
 The global `owner` operator role and the investor `property_owner` role are
 different. They must never be merged by label, permission, cache scope, or API

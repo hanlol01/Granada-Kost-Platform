@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import gsap from "gsap";
 import "@fontsource/noto-sans/400.css";
 import "@fontsource/noto-sans/700.css";
@@ -46,9 +46,14 @@ import {
 } from "@/components/ui/select";
 import { ErrorState, LoadingState } from "@/components/state";
 import { OwnerPortalShell } from "@/components/property-owner-portal/OwnerPortalShell";
+import { OwnerNotificationInbox } from "@/components/notifications/RoleNotifications";
 import { useAuth } from "@/lib/auth";
 import { OwnerAccountSettings } from "./OwnerAccountSettings";
 import { getOwnerPortalRoute } from "@/lib/property-owner-route-registry";
+import {
+  parseOwnerRealizationDestination,
+  selectOwnerRealizationDocuments,
+} from "@/lib/owner-realization-destination";
 import {
   downloadOwnerRealizationReceipt,
   downloadOwnerRealization,
@@ -2794,7 +2799,6 @@ function Reports({
       </Card>
       <CollectionPaymentOverview collection={collection} />
       <OwnerRealizationCard initialPeriod={report.period.period.slice(0, 7)} />
-      <OwnerRealizationDocuments />
       <section className="space-y-4" aria-labelledby="owner-report-finance-heading">
         <div>
           <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground">
@@ -2878,12 +2882,33 @@ function Reports({
 /** Published receipts are a separate, immutable payout trail.  The Owner never
  * sees Admin diagnostics, drafts, un-published reports, or other Owners' data. */
 function OwnerRealizationDocuments() {
+  const { user } = useAuth();
+  const search = useSearch({ strict: false });
+  const destination = parseOwnerRealizationDestination(search);
+  const selectionRef = useRef<HTMLElement>(null);
   const documents = useQuery({
-    queryKey: ["property-owner", "published-realizations"],
+    queryKey: ["property-owner", "published-realizations", user?.id],
     queryFn: () => propertyOwnerPortalApi.realizations(),
-    staleTime: 30_000,
+    enabled: Boolean(user?.id),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
-  if (documents.isLoading) return <LoadingState label="Memuat dokumen realisasi..." />;
+  const rows: OwnerRealizationDocument[] = documents.isFetching ? [] : (documents.data?.rows ?? []);
+  const selectedRows = selectOwnerRealizationDocuments(rows, destination);
+  const selected = selectedRows[0];
+  const requested = Boolean(destination.realizationId || destination.invalidDocumentLink);
+
+  useEffect(() => {
+    if (!documents.isFetching && selectedRows.length) {
+      selectionRef.current?.focus({ preventScroll: true });
+      selectionRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
+    }
+  }, [destination.realizationId, destination.transferId, documents.isFetching, selectedRows.length]);
+
+  if (documents.isPending || documents.isFetching) {
+    return <LoadingState label="Memuat dokumen realisasi..." />;
+  }
   if (documents.isError) {
     return (
       <ErrorState
@@ -2893,7 +2918,6 @@ function OwnerRealizationDocuments() {
       />
     );
   }
-  const rows: OwnerRealizationDocument[] = documents.data?.rows ?? [];
   return (
     <Card className="owner-data-surface border-border/90 shadow-sm">
       <CardHeader className="border-b border-border/70 pb-4">
@@ -2903,11 +2927,66 @@ function OwnerRealizationDocuments() {
         </p>
       </CardHeader>
       <CardContent className="p-0">
+        {requested && !selected ? (
+          <div role="status" className="border-b border-border/70 p-5">
+            <p className="font-semibold">Rincian notifikasi tidak tersedia</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Dokumen atau transfer ini tidak tersedia dalam akses akun Anda saat ini. Anda tetap
+              dapat membaca dokumen lain yang diizinkan di halaman laporan.
+            </p>
+            <Button asChild variant="outline" className="mt-3 min-h-11">
+              <Link to="/property-owners/portal/reports" search={{}}>Lihat laporan yang tersedia</Link>
+            </Button>
+          </div>
+        ) : selected ? (
+          <section
+            ref={selectionRef}
+            tabIndex={-1}
+            aria-label="Rincian dari notifikasi"
+            className="scroll-mt-24 border-b border-border/70 bg-primary/5 p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <h3 className="font-semibold">{selected.realization_reference}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Rincian dari notifikasi · Periode {dashboardPeriodLabel(selected.realization_period)}
+            </p>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground">Hak Owner diterbitkan</dt>
+                <dd className="mt-1 font-semibold">{formatOwnerMoney(selected.realization_total)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Tanggal penerbitan</dt>
+                <dd className="mt-1">{selected.published_at ? localDate(selected.published_at) : "—"}</dd>
+              </div>
+              {destination.transferId ? (
+                <>
+                  <div>
+                    <dt className="text-muted-foreground">Transfer tercatat</dt>
+                    <dd className="mt-1 font-semibold">{formatOwnerMoney(selected.transfer_amount ?? "0")}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Tanggal transfer</dt>
+                    <dd className="mt-1">{selected.transferred_at ? localDate(selected.transferred_at) : "—"}</dd>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <dt className="text-muted-foreground">Total transfer tercatat</dt>
+                  <dd className="mt-1 font-semibold">{formatOwnerMoney(selected.transferred_total)}</dd>
+                </div>
+              )}
+            </dl>
+            {destination.transferId && selected.receipt_number ? (
+              <p className="mt-3 text-sm text-muted-foreground">Kuitansi {selected.receipt_number}</p>
+            ) : null}
+          </section>
+        ) : null}
         {rows.length ? (
           rows.map((row) => (
             <div
               key={`${row.id}-${row.transfer_id ?? "report"}`}
-              className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 p-5 last:border-b-0"
+              className={"flex flex-wrap items-center justify-between gap-3 border-b border-border/70 p-5 last:border-b-0 " +
+                (selectedRows.includes(row) ? "bg-primary/5" : "")}
             >
               <div>
                 <p className="font-semibold text-foreground">
@@ -3373,6 +3452,7 @@ function ReportPanel({
       }
       description="Pilih periode untuk melihat data agregat yang berada dalam cakupan kepemilikan Anda."
     >
+      {tab === "reports" ? <OwnerRealizationDocuments /> : null}
       <PeriodToolbar period={period} setPeriod={setPeriod} onExport={onExport} />
       {activeQuery.isLoading ? (
         <LoadingState label="Memuat laporan owner..." />
@@ -3840,7 +3920,8 @@ function Content({
   if (tab === "dashboard") return <Dashboard portal={portal} ownerId={ownerId} />;
   if (tab === "assets") return <Assets portal={portal} />;
   if (tab === "occupancy") return <OccupancyFoundation portal={portal} />;
-  if (tab === "finance" || tab === "reports" || tab === "issues" || tab === "notifications")
+  if (tab === "notifications") return <OwnerNotificationInbox />;
+  if (tab === "finance" || tab === "reports" || tab === "issues")
     return <ReportPanel tab={tab} ownerId={ownerId} initialPeriod={initialPeriod} />;
   return <Account portal={portal} accountEmail={accountEmail} />;
 }

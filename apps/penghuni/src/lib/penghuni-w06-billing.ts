@@ -67,6 +67,7 @@ export type MyW06ContractSettlement = {
   extension_due_at: string | null;
   extension_reason: string | null;
   effective_due_at: string | null;
+  final_settlement_due_at: string | null;
   contract_rent_amount: number;
   initial_rent_credit: number;
   payment_allocated: number;
@@ -521,7 +522,7 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
       "remaining_amount",
       "status",
     ],
-    "Checkpoint pembayaran pertama",
+    "Ringkasan pembayaran kontrak",
   );
   const terminationCase = nullable(record.termination_case, (entry) => {
     const termination = object(entry, ["id", "status", "planned_checkout_date"], "Proses checkout");
@@ -587,31 +588,37 @@ function contractSettlement(value: unknown): MyW06ContractSettlement {
     effective_due_at: nullable(record.effective_due_at, (entry) =>
       timestamp(entry, "Tenggat efektif"),
     ),
+    final_settlement_due_at:
+      record.final_settlement_due_at === undefined
+        ? null
+        : nullable(record.final_settlement_due_at, (entry) =>
+            timestamp(entry, "Batas pelunasan kontrak"),
+          ),
     contract_rent_amount: integer(record.contract_rent_amount, "Total sewa kontrak"),
     initial_rent_credit: integer(record.initial_rent_credit, "Kredit sewa awal"),
     payment_allocated: integer(record.payment_allocated, "Pembayaran sewa"),
     first_payment_checkpoint: {
-      due_at: nullable(checkpoint.due_at, (entry) => timestamp(entry, "Tenggat checkpoint")),
+      due_at: nullable(checkpoint.due_at, (entry) => timestamp(entry, "Tenggat pembayaran")),
       required_additional_amount: integer(
         checkpoint.required_additional_amount,
-        "Minimum pembayaran checkpoint",
+        "Minimum pembayaran",
       ),
       additional_payment_received: integer(
         checkpoint.additional_payment_received,
-        "Pembayaran checkpoint",
+        "Pembayaran tercatat",
       ),
-      remaining_amount: integer(checkpoint.remaining_amount, "Sisa checkpoint"),
+      remaining_amount: integer(checkpoint.remaining_amount, "Sisa pembayaran"),
       status: oneOf(
         checkpoint.status,
         ["not_required", "pending", "met_early", "met", "overdue"] as const,
-        "Status checkpoint",
+        "Status pembayaran",
       ),
     },
     deposit_offset_amount: integer(record.deposit_offset_amount, "Potongan deposit"),
     outstanding_amount: integer(record.outstanding_amount, "Saldo sewa kontrak"),
     checkpoint_shortfall_amount: integer(
       record.checkpoint_shortfall_amount,
-      "Kekurangan checkpoint",
+      "Kekurangan pembayaran",
     ),
     reminder_stage: nullable(record.reminder_stage, (entry) =>
       oneOf(

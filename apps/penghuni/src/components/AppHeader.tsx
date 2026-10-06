@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Bell } from "lucide-react";
+import { ArrowLeft, Moon, Sun } from "lucide-react";
+import { NotificationBell } from "@granada-kost/ui";
+import { Button } from "@/components/ui/button";
+import { ResidentProfileMenu } from "@/components/ResidentProfileMenu";
+import { useThemePreference } from "@/hooks/useThemePreference";
+import { apiClient } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import "./AppHeader.css";
 import { ResidentSidebar } from "./ResidentSidebar";
 
@@ -17,6 +23,8 @@ export function AppHeader({
 }) {
   const headerRef = useRef<HTMLElement>(null);
   const [headerVisible, setHeaderVisible] = useState(true);
+  const { user, status } = useAuth();
+  const { dark, toggleDark } = useThemePreference();
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -65,16 +73,29 @@ export function AppHeader({
             <p className="line-clamp-2 break-words text-xs text-muted-foreground">{subtitle}</p>
           )}
         </div>
-        {action ? null : (
-          <Link
-            to="/notifications"
-            aria-label="Notifikasi"
-            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground hover:bg-accent"
-          >
-            <Bell className="h-4.5 w-4.5" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-destructive" />
-          </Link>
-        )}
+        {status === "authenticated" && user ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={toggleDark}
+              aria-label={dark ? "Aktifkan mode terang" : "Aktifkan mode gelap"}
+              title={dark ? "Mode terang" : "Mode gelap"}
+              className="h-11 w-11 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            <NotificationBell
+              key={user.id}
+              client={apiClient}
+              accountKey={user.id}
+              role="resident"
+              allHref="/notifications"
+            />
+            <ResidentProfileMenu />
+          </div>
+        ) : null}
       </div>
       {action ? <div className="flex min-w-0 flex-wrap gap-2 px-4 pb-3">{action}</div> : null}
     </header>

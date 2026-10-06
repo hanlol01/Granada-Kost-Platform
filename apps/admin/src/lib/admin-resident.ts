@@ -76,6 +76,19 @@ export type ResidentListRecord = {
   updatedAt: string;
 };
 
+export function resolveResidentSettlementStage(
+  resident: Pick<ResidentListRecord, "contractSettlementStage" | "contractSettlementRemainingAmount">,
+): ContractSettlementStage | "outstanding" {
+  // A correction can reopen rent while the original payment schedule stays fulfilled.
+  if (
+    resident.contractSettlementStage === "paid_in_full" &&
+    resident.contractSettlementRemainingAmount > 0
+  ) {
+    return "outstanding";
+  }
+  return resident.contractSettlementStage;
+}
+
 export type ResidentDetail = Omit<
   ResidentListRecord,
   | "rentPaymentStatus"

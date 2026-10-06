@@ -2670,7 +2670,15 @@ function ContractInvoicePanel({
 }) {
   const settlement = data.contract_settlement;
   if (!settlement) return null;
-  const invoice = data.invoices.find((item) => item.id === settlement.invoice_id) ?? null;
+   const settlementInvoice = data.invoices.find((item) => item.id === settlement.invoice_id) ?? null;
+   const paymentInvoice =
+     data.invoices.find(
+       (item) =>
+         item.invoice_purpose === "rent" &&
+        item.outstanding_amount > 0 &&
+        ["issued", "partially_paid", "overdue"].includes(item.invoice_status),
+     ) ?? settlementInvoice;
+   const invoice = settlementInvoice;
   const termination = settlement.termination_case;
   const invoiceSettlementDueAt = settlement.effective_due_at ?? settlement.final_settlement_due_at;
 
@@ -2734,23 +2742,23 @@ function ContractInvoicePanel({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {canManageBilling && settlement.partial_payment_allowed && invoice ? (
+         {canManageBilling && settlement.partial_payment_allowed && paymentInvoice ? (
           <RecordPaymentDialog
             data={data}
             propertyId={propertyId}
             triggerLabel="Catat Pembayaran Kontrak"
             triggerVariant="default"
-            contractSettlementInvoiceId={invoice?.id ?? null}
+             contractSettlementInvoiceId={paymentInvoice.id}
             contractSettlementMode="choose"
             onRecorded={onPaymentRecorded}
           />
         ) : null}
-        {canManageBilling && settlement.full_payment_required && invoice ? (
+         {canManageBilling && settlement.full_payment_required && paymentInvoice ? (
           <RecordPaymentDialog
             data={data}
             propertyId={propertyId}
             triggerLabel="Catat Pembayaran Kontrak"
-            contractSettlementInvoiceId={invoice.id}
+             contractSettlementInvoiceId={paymentInvoice.id}
             contractSettlementMode="full"
             onRecorded={onPaymentRecorded}
           />

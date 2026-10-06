@@ -44,6 +44,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { isAdminUxLeaseEnabled } from "@/lib/features";
 import { formatIDR } from "@/lib/format";
+import { resolveResidentSettlementStage } from "@/lib/admin-resident";
 import { useProperty } from "@/lib/property";
 import { cn } from "@/lib/utils";
 
@@ -267,11 +268,13 @@ function RentPaymentStatusSummary({ resident }: { resident: ResidentListRecord }
 }
 
 export function SettlementStagePill({
-  stage,
+  resident,
 }: {
-  stage: ResidentListRecord["contractSettlementStage"];
+  resident: ResidentListRecord;
 }) {
-  const presentation: Record<ContractSettlementStage, { label: string; tone: StatusTone }> = {
+  const stage = resolveResidentSettlementStage(resident);
+  const presentation: Record<ContractSettlementStage | "outstanding", { label: string; tone: StatusTone }> = {
+    outstanding: { label: "Outstanding", tone: "warning" },
     none: { label: "Belum ada penyewaan", tone: "neutral" },
     awaiting_activation: { label: "Menunggu aktivasi", tone: "warning" },
     checkpoint_one_pending: { label: "Checkpoint 1", tone: "info" },
@@ -1098,8 +1101,8 @@ function TenantsPage() {
                           <ManagementFeeSettlementSummary resident={resident} />
                         ) : (
                           <div className="flex flex-col items-start gap-1.5">
-                            <SettlementStagePill stage={resident.contractSettlementStage} />
-                            {resident.contractSettlementStage === "paid_in_full" &&
+                            <SettlementStagePill resident={resident} />
+                            {resolveResidentSettlementStage(resident) === "paid_in_full" &&
                             resident.leaseEnd ? (
                               <p className="text-xs font-semibold text-foreground">
                                 Jadwal check-out: {formatResidentDate(resident.leaseEnd)}
@@ -1211,7 +1214,7 @@ function TenantsPage() {
                       ) : (
                         <>
                           <RentPaymentStatusSummary resident={resident} />
-                          <SettlementStagePill stage={resident.contractSettlementStage} />
+                          <SettlementStagePill resident={resident} />
                         </>
                       )}
                       {resident.leaseExpiredAdminActionRequired ? (

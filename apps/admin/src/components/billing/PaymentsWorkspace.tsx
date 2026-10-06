@@ -1709,6 +1709,12 @@ export function RecordPaymentDialog({
     ? (data.invoices.find((invoice) => invoice.id === contractSettlementInvoiceId) ?? null)
     : null;
   const isContractSettlement = Boolean(contractSettlementInvoice && contractSettlementMode);
+  const contractSettlementOutstandingAmount = isContractSettlement
+    ? Math.max(
+        0,
+        data.contract_settlement?.outstanding_amount ?? contractSettlementInvoice?.outstanding_amount ?? 0,
+      )
+    : null;
   const isFullSettlement = contractSettlementMode === "full" || settlementChoice === "full";
   const allocations = Object.entries(selected)
     .filter(([, amount]) => amount > 0)
@@ -1719,8 +1725,8 @@ export function RecordPaymentDialog({
       : depositAmount
     : allocations.reduce((sum, item) => sum + item.amount, 0);
   const remainingAfterContractPayment =
-    isContractSettlement && contractSettlementInvoice
-      ? Math.max(0, contractSettlementInvoice.outstanding_amount - amount)
+    isContractSettlement && contractSettlementOutstandingAmount !== null
+      ? Math.max(0, contractSettlementOutstandingAmount - amount)
       : null;
   const contractSettlementDueLabel = data.contract_settlement?.effective_due_at
     ? formatBillingDate(data.contract_settlement.effective_due_at)
@@ -1761,20 +1767,27 @@ export function RecordPaymentDialog({
       setPurpose("rent");
       setSelected({
         [contractSettlementInvoice.id]:
-          contractSettlementMode === "full" ? contractSettlementInvoice.outstanding_amount : 0,
+          contractSettlementMode === "full" ? contractSettlementOutstandingAmount ?? 0 : 0,
       });
       setSettlementChoice(contractSettlementMode === "full" ? "full" : "partial");
     } else if (depositOnly) {
       setPurpose("security_deposit");
       setSelected({});
     }
-  }, [contractSettlementInvoice, contractSettlementMode, depositOnly, open, resetForm]);
+  }, [
+    contractSettlementInvoice,
+    contractSettlementMode,
+    contractSettlementOutstandingAmount,
+    depositOnly,
+    open,
+    resetForm,
+  ]);
   function chooseSettlementPayment(next: "partial" | "full") {
     if (!contractSettlementInvoice) return;
     setSettlementChoice(next);
     setSelected({
       [contractSettlementInvoice.id]:
-        next === "full" ? contractSettlementInvoice.outstanding_amount : 0,
+        next === "full" ? contractSettlementOutstandingAmount ?? 0 : 0,
     });
   }
   function submit() {
@@ -2013,7 +2026,8 @@ export function RecordPaymentDialog({
                   className="flex min-h-11 overflow-hidden rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
                   data-invalid={
                     amount <= 0 ||
-                    amount > contractSettlementInvoice.outstanding_amount ||
+                       (contractSettlementOutstandingAmount !== null &&
+                         amount > contractSettlementOutstandingAmount) ||
                     undefined
                   }
                 >
@@ -2033,7 +2047,7 @@ export function RecordPaymentDialog({
                         [contractSettlementInvoice.id]: nextAmount,
                       });
                       setSettlementChoice(
-                        nextAmount === contractSettlementInvoice.outstanding_amount
+                       nextAmount === contractSettlementOutstandingAmount
                           ? "full"
                           : "partial",
                       );
@@ -2043,15 +2057,17 @@ export function RecordPaymentDialog({
                     }
                     aria-invalid={
                       amount <= 0 ||
-                      amount > contractSettlementInvoice.outstanding_amount ||
+                       (contractSettlementOutstandingAmount !== null &&
+                         amount > contractSettlementOutstandingAmount) ||
                       undefined
                     }
                   />
                 </div>
-                {amount > contractSettlementInvoice.outstanding_amount ? (
+                 {contractSettlementOutstandingAmount !== null &&
+                 amount > contractSettlementOutstandingAmount ? (
                   <p className="text-sm font-medium text-destructive">
                     Nominal pembayaran tidak boleh melebihi sisa sewa{" "}
-                    {formatIDR(contractSettlementInvoice.outstanding_amount)}.
+                    {formatIDR(contractSettlementOutstandingAmount)}.
                   </p>
                 ) : amount <= 0 ? (
                   <p className="text-sm font-medium text-destructive" role="alert">
@@ -2131,7 +2147,8 @@ export function RecordPaymentDialog({
             contractSettlementInvoice &&
             remainingAfterContractPayment !== null &&
             amount > 0 &&
-            amount <= contractSettlementInvoice.outstanding_amount ? (
+             contractSettlementOutstandingAmount !== null &&
+             amount <= contractSettlementOutstandingAmount ? (
               <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm">
                 <p className="font-semibold text-foreground">Setelah pembayaran ini</p>
                 <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">

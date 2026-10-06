@@ -1084,7 +1084,7 @@ export function TransferPanel({
                   {command.state === "scheduled" ? (
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="destructive"
                       onClick={() => setCancelTarget(command)}
                     >
                       <XCircle className="mr-2 h-4 w-4" /> Batalkan

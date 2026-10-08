@@ -450,7 +450,7 @@ test("room detail keeps semantic status badges and aligned high-contrast data ca
 test("room detail keeps operational spacing and owner-scoped navigation", () => {
   const page = source("components/rooms/RoomDetailPage.tsx");
 
-  assert.match(page, /\["Unit", detail\.physical\.floorLabel\]/);
+  assert.doesNotMatch(page, /\["Unit", detail\.physical\.floorLabel\]/);
   assert.doesNotMatch(page, /\["DP minimum", detail\.commercial\.minimumDpLabel\]/);
   assert.doesNotMatch(
     page,

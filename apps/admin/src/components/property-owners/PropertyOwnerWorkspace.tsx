@@ -649,6 +649,7 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                   <th className="px-4 py-3">Akun</th>
                   <th className="px-4 py-3">Rumah Kost</th>
                   <th className="px-4 py-3">Apart Kost</th>
+                  <th className="px-4 py-3">Catatan</th>
                   <th className="px-5 py-3 text-right">Aksi</th>
                 </tr>
               </thead>
@@ -676,6 +677,9 @@ export function PropertyOwnerWorkspace({ ownerId }: { ownerId?: string }) {
                       {owner.activeRumahKostBuildings} bangunan
                     </td>
                     <td className="px-4 py-4 font-semibold">{owner.activeApartKostRooms} kamar</td>
+                    <td className="min-w-56 max-w-80 whitespace-pre-wrap break-words px-4 py-4">
+                      {owner.ownerVisibleNote?.trim() || "—"}
+                    </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
                         <Button

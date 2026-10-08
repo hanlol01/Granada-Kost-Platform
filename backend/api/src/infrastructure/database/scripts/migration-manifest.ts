@@ -1229,4 +1229,20 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "to_regclass('public.idx_work_orders_assigned_technician_profile') IS NOT NULL",
     ],
   },
+  {
+    version: '127_correct_rukost_unit_05_to_07.sql',
+    checksumSha256: 'b687f89c692ffff9b657b24decce5550ded27da41f24ef8d636e6ddbecdadab1',
+    sentinels: [
+      "NOT EXISTS (SELECT 1 FROM room_buildings WHERE category='rukost' AND building_code='RK-05' AND building_name='Rumah Kost Unit 05')",
+      "EXISTS (SELECT 1 FROM room_buildings WHERE category='rukost' AND building_code='RK-07' AND building_name='Rumah Kost Unit 07')",
+      "NOT EXISTS (SELECT 1 FROM rooms WHERE unit_code='RK-05' AND building_id IN (SELECT id FROM room_buildings WHERE category='rukost' AND building_code='RK-07'))",
+    ],
+  },
+  {
+    version: '128_correct_rukost_floor_label_05_to_07.sql',
+    checksumSha256: 'e06ed1194f6af5ba6626021e889d755109c8fa311a7bd03cbc515276e9e75ff9',
+    sentinels: [
+      "NOT EXISTS (SELECT 1 FROM rooms WHERE floor_label='Unit 05' AND building_id IN (SELECT id FROM room_buildings WHERE category='rukost' AND building_code='RK-07'))",
+    ],
+  },
 ] as const;

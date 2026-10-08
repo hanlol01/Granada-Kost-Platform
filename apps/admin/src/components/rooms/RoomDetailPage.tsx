@@ -280,7 +280,6 @@ export function RoomDetailPage({ roomNumber }: { roomNumber: string }) {
                 ["Kode kamar", detail.roomCode ?? "Belum ditetapkan"],
                 ["Bangunan", `${detail.building.code} · ${detail.building.name}`],
                 ["Kategori", detail.category.name],
-                ["Unit", detail.physical.floorLabel],
                 ["Ukuran", detail.physical.sizeLabel ?? "Belum dicatat"],
                 ["Visibilitas", detail.physical.publicVisible ? "Tampil di katalog" : "Internal"],
                 ["Catatan operasional", detail.physical.notes ?? "Tidak ada catatan operasional"],

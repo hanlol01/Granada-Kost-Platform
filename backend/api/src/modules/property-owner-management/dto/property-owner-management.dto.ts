@@ -422,6 +422,24 @@ export class OwnerRealizationQueryDto extends PropertyOwnerPropertyQueryDto {
   limit = 20;
 }
 
+export class OwnerRealizationRangeQueryDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  from_period!: string;
+
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  to_period!: string;
+
+  @IsOptional()
+  @IsIn(['pdf', 'xlsx'])
+  format?: 'pdf' | 'xlsx';
+
+  @IsOptional()
+  @IsIn(['include_voided', 'exclude_voided'])
+  voided?: 'include_voided' | 'exclude_voided';
+}
+
 export class PrepareOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {
   @IsString()
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
@@ -449,6 +467,18 @@ export class ChangeOwnerRealizationStatusDto extends PropertyOwnerPropertyQueryD
   @MinLength(3)
   @MaxLength(1000)
   note!: string;
+}
+
+export class CorrectOwnerRealizationPeriodDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  target_period!: string;
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(1000)
+  reason!: string;
 }
 
 export class CancelOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {
@@ -493,9 +523,7 @@ export class CreateOwnerRealizationCorrectionDto extends PropertyOwnerPropertyQu
   )
   @IsIn(['recover_from_owner', 'net_against_future_realization', 'outside_system_finance'])
   recovery_disposition?:
-    | 'recover_from_owner'
-    | 'net_against_future_realization'
-    | 'outside_system_finance';
+    'recover_from_owner' | 'net_against_future_realization' | 'outside_system_finance';
 
   @IsOptional()
   @IsArray()
@@ -674,11 +702,12 @@ export class CreateHistoricalOwnerRealizationTransferDto {
   @IsIn(['bank_transfer'])
   method!: 'bank_transfer';
 
+  @IsOptional()
   @Transform(trimOptional)
   @IsString()
   @MinLength(3)
   @MaxLength(150)
-  reference!: string;
+  reference?: string;
 
   @IsDateString({ strict: true })
   transferred_at!: string;

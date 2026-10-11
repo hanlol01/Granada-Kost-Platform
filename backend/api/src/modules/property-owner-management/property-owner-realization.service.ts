@@ -27,12 +27,15 @@ import { RequestAuditContext } from '../property/types/property.types';
 import { resolveHistoricalRealizationTransfers } from './owner-realization-historical-transfer.helper';
 import { transferEvidenceIsValid } from './owner-realization-evidence-policy';
 import { contractRoomIdSql } from '../lease/helpers/contract-room-reference.helper';
+import { ownerRealizationPaymentLedgerSql } from './owner-realization-payment-ledger';
 import {
   ChangeOwnerRealizationStatusDto,
   CancelOwnerRealizationDto,
   CreateHistoricalOwnerRealizationDto,
   CreateOwnerRealizationCorrectionDto,
+  CorrectOwnerRealizationPeriodDto,
   OwnerRealizationQueryDto,
+  OwnerRealizationRangeQueryDto,
   PrepareOwnerRealizationDto,
   RecordOwnerRealizationTransferDto,
   RecordOwnerRealizationRecoveryEventDto,
@@ -70,6 +73,7 @@ type Candidate = {
   monthly_management_fee: string | null;
   payment_completed_at: string;
   check_in_at: string | null;
+  waiting_physical_check_in: boolean;
   check_out_at: string | null;
   money_received_amount: string;
   contract_total_amount: string;
@@ -195,6 +199,7 @@ type OwnerRealizationQueueRoom = {
   contract_total: string;
   management_fee: string;
   realization_total: string;
+  waiting_physical_check_in: boolean;
 };
 
 type OwnerRealizationQueueAsset = {
@@ -359,7 +364,7 @@ export class PropertyOwnerRealizationService {
            ORDER BY owner_profile_id,building_code NULLS LAST,building_name,asset_id`,
         [query.property_id],
       ),
-      this.eligibleCandidates(this.database.client, query.property_id, period?.until ?? null),
+      this.eligibleCandidates(this.database.client, query.property_id, period?.value ?? null),
       this.database.client.query<Realization>(
         `SELECT realization.*,realization.realization_period::text AS realization_period,
                 profile.full_name,profile.phone,profile.email,
@@ -451,6 +456,7 @@ export class PropertyOwnerRealizationService {
         contract_total: candidate.contract_total_amount,
         management_fee: candidate.management_fee_amount,
         realization_total: candidate.net_realization_amount,
+        waiting_physical_check_in: candidate.waiting_physical_check_in,
       });
       ownerAssets.set(candidate.asset_id, asset);
       assetsByOwner.set(candidate.owner_profile_id, ownerAssets);
@@ -520,6 +526,9 @@ export class PropertyOwnerRealizationService {
           contract_total: candidate.contract_total_amount,
           management_fee: candidate.management_fee_amount,
           realization_total: candidate.net_realization_amount,
+          payment_completed_at: candidate.payment_completed_at,
+          check_in_at: candidate.check_in_at,
+          waiting_physical_check_in: candidate.waiting_physical_check_in,
         })),
       };
     };
@@ -669,6 +678,7 @@ export class PropertyOwnerRealizationService {
           contract_total: line.contract_total_amount,
           management_fee: line.management_fee_amount,
           realization_total: line.net_realization_amount,
+          waiting_physical_check_in: false,
         });
         ownerAssets.set(assetKey, asset);
         snapshotAssetsByRealization.set(line.realization_id, ownerAssets);
@@ -905,6 +915,163 @@ export class PropertyOwnerRealizationService {
     };
   }
 
+  async rangeDetail(
+    actor: UserAccessContext,
+    ownerId: string,
+    query: OwnerRealizationRangeQueryDto,
+  ) {
+    this.assertPropertyScope(actor, query.property_id);
+    const from = this.period(query.from_period);
+    const to = this.period(query.to_period);
+    if (from.start >= to.until) {
+      throw new ConflictException({
+        code: 'OWNER_REALIZATION_RANGE_INVALID',
+        message: 'Periode awal harus sama atau sebelum periode akhir.',
+      });
+    }
+    const statuses = query.voided === 'include_voided'
+      ? ['realized', 'published_to_owner', 'void']
+      : ['realized', 'published_to_owner'];
+    const ids = await this.database.client.query<{ id: string; realization_period: string }>(
+      `SELECT id, realization_period::text
+         FROM property_owner_realizations
+        WHERE owner_profile_id=$1 AND property_id=$2
+          AND realization_period >= $3::date AND realization_period < $4::date
+          AND realization_status=ANY($5::text[])
+        ORDER BY realization_period,id`,
+      [ownerId, query.property_id, from.start, to.until, statuses],
+    );
+    const details = await Promise.all(
+      ids.rows.map((row) => this.detail(actor, row.id, query.property_id)),
+    );
+    const included = details.filter((item) => item.realization.status !== 'void');
+    const sum = (key: 'eligible_contract_total' | 'management_fee_total' | 'correction_total' | 'realization_total' | 'transferred_total') =>
+      included.reduce((total, item) => total + numberValue(item.realization[key]), 0);
+    const detailsByPeriod = new Map<string, typeof details>();
+    for (const item of details) {
+      const period = String(item.realization.period).slice(0, 7);
+      const periodDetails = detailsByPeriod.get(period) ?? [];
+      periodDetails.push(item);
+      detailsByPeriod.set(period, periodDetails);
+    }
+    const periods: Array<any> = [];
+    for (let cursor = new Date(`${query.from_period}-01T00:00:00.000Z`); cursor.toISOString().slice(0, 10) < to.until; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) {
+      const period = cursor.toISOString().slice(0, 7);
+      const periodDetails = detailsByPeriod.get(period) ?? [];
+      const includedDetails = periodDetails.filter((item) => item.realization.status !== 'void');
+      const firstDetail = periodDetails[0];
+      periods.push(periodDetails.length
+        ? {
+            period,
+            included_in_total: includedDetails.length > 0,
+            realization: firstDetail.realization,
+            lines: periodDetails.flatMap((item) => item.lines),
+            transfers: periodDetails.flatMap((item) =>
+              item.transfers.map((transfer) => ({
+                ...transfer,
+                realization_id: item.realization.id,
+              })),
+            ),
+            corrections: periodDetails.flatMap((item) => item.corrections),
+          }
+        : { period, included_in_total: false, realization: null, lines: [], transfers: [], corrections: [] });
+    }
+    return {
+      owner_id: ownerId,
+      property_id: query.property_id,
+      from_period: query.from_period,
+      to_period: query.to_period,
+      summary: {
+        eligible_contract_total: sum('eligible_contract_total'),
+        management_fee_total: sum('management_fee_total'),
+        correction_total: sum('correction_total'),
+        realization_total: sum('realization_total'),
+        transferred_total: sum('transferred_total'),
+      },
+      periods,
+    };
+  }
+
+  async exportRange(
+    actor: UserAccessContext,
+    ownerId: string,
+    query: OwnerRealizationRangeQueryDto,
+    format: string,
+  ) {
+    const range = await this.rangeDetail(actor, ownerId, query);
+    const from = this.period(query.from_period);
+    const first = range.periods.find((item) => item.included_in_total) ?? range.periods[0];
+    if (!first) {
+      throw new ConflictException({
+        code: 'OWNER_REALIZATION_RANGE_EMPTY',
+        message: 'Belum ada realisasi pada rentang periode yang dipilih.',
+      });
+    }
+    const periodLabel =
+      query.from_period === query.to_period
+        ? formatOwnerMonthYear(`${query.from_period}-01`)
+        : `${formatOwnerMonthYear(`${query.from_period}-01`)} - ${formatOwnerMonthYear(`${query.to_period}-01`)}`;
+    const rows: Record<string, string | number>[] = [];
+    for (const period of range.periods) {
+      for (const line of period.lines as Array<Record<string, unknown>>) {
+        rows.push({
+          period: formatOwnerMonthYear(`${period.period}-01`),
+          room: textValue(line.room_code_snapshot, '—'),
+          resident: textValue(line.resident_name_snapshot),
+          owner: textValue(line.owner_name_snapshot),
+          plot_number: textValue(line.plot_number_snapshot),
+          duration_months: numberValue(line.duration_months),
+          rate_type: textValue(line.pricing_source_snapshot),
+          money_received: numberValue(line.money_received_amount),
+          contract_total: numberValue(line.contract_total_amount),
+          outstanding: numberValue(line.outstanding_amount),
+          management_fee: numberValue(line.management_fee_amount),
+          net_realization: numberValue(line.net_realization_amount),
+          paid_in_full_at: textValue(line.payment_completed_at),
+          realization_status: period.realization?.status ?? 'empty',
+          line_status: textValue(line.line_status),
+          check_in: textValue(line.check_in_at),
+          check_out: textValue(line.check_out_at),
+        });
+      }
+    }
+    rows.push({
+      period: '', room: 'TOTAL', resident: '', owner: '', plot_number: '', duration_months: '',
+      rate_type: '', money_received: range.summary.eligible_contract_total,
+      contract_total: range.summary.eligible_contract_total, outstanding: 0, management_fee: range.summary.management_fee_total,
+      net_realization: range.summary.realization_total, paid_in_full_at: '', realization_status: '', line_status: 'total', check_in: '', check_out: '',
+    });
+    const ownerName = textValue(first.realization?.owner_name, 'Owner');
+    const report: ReportResult = {
+      report_type: 'property-owners',
+      title: `Realisasi Owner ${ownerName} Rentang periode ${periodLabel}`,
+      property_name: textValue(first.realization?.scope_snapshot?.property_name, 'KOSTATION'),
+      period: { date_from: from.start, date_to: periodEndDate(query.to_period), label: periodLabel },
+      generated_at: new Date().toISOString(),
+      filter_checksum: createHash('sha256').update(JSON.stringify(query)).digest('hex'),
+      methodology: 'Rekap gabungan realisasi per periode; realisasi void ditampilkan sebagai catatan bila dipilih namun tidak dihitung dalam total.',
+      filter_summary: [['Rentang periode', periodLabel], ['Owner', ownerName]],
+      summary: {
+        total_contract_rent: range.summary.eligible_contract_total,
+        management_fee: range.summary.management_fee_total,
+        corrections: range.summary.correction_total,
+        net_realization: range.summary.realization_total,
+        transferred: range.summary.transferred_total,
+      },
+      rows,
+      additional_sheets: [{
+        name: 'Transfer',
+        rows: [['Periode', 'Tanggal', 'Nominal', 'Referensi', 'Kuitansi', 'Status'], ...range.periods.flatMap((period) => (period.transfers as Array<Record<string, unknown>>).map((transfer) => [
+          formatOwnerMonthYear(`${period.period}-01`), tanggalIndonesia(transfer.transferred_at), rupiahValue(transfer.transfer_amount), textValue(transfer.transfer_reference), textValue(transfer.receipt_number), transfer.transfer_status === 'succeeded' ? 'Berhasil' : transfer.transfer_status === 'failed' ? 'Gagal' : 'Menunggu',
+        ]))],
+      }],
+      meta: { limit: rows.length, offset: 0, total: rows.length },
+    };
+    return format === 'xlsx'
+      ? { content: reportToXlsx(report), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `realisasi-owner-${query.from_period}-${query.to_period}.xlsx` }
+      : { content: await reportToPdf(report), contentType: 'application/pdf', filename: `realisasi-owner-${query.from_period}-${query.to_period}.pdf` };
+  }
+
   /**
    * Builds Finance's external verification form from completed realization
    * history. The document is a Finance verification recap, so it belongs to
@@ -924,7 +1091,7 @@ export class PropertyOwnerRealizationService {
               realization.realization_reference,
               realization.realization_total::text AS realization_total,
               COALESCE(profile.full_name,realization.owner_snapshot->>'full_name','-') AS owner_name,
-              COALESCE(NULLIF(room.plot_number,''),line.room_code_snapshot) AS room_code,
+              line.room_code_snapshot AS room_code,
               line.resident_name_snapshot AS resident_name,
               COALESCE(room.plot_number,line.plot_number_snapshot) AS plot_number,
               COALESCE(line.duration_months,0)::int AS duration_months,
@@ -1187,7 +1354,7 @@ export class PropertyOwnerRealizationService {
     );
     const report: ReportResult = {
       report_type: 'property-owners',
-      title: 'Data Tidak Layak Realisasi Owner',
+      title: 'Data Belum Kriteria Realisasi Owner',
       property_name: property.rows[0]?.name ?? 'KOSTATION',
       period: { date_from: `${result.period}-01`, date_to: periodEndDate(result.period) },
       generated_at: new Date().toISOString(),
@@ -1196,7 +1363,7 @@ export class PropertyOwnerRealizationService {
       methodology:
         'Admin-only diagnostic list. These rows cannot be paid to Owner until their stated reason is resolved.',
       filter_summary: [
-        ['Ruang kerja', 'Tidak layak'],
+        ['Ruang kerja', 'Belum Kriteria'],
         [
           'Status profil Owner',
           query.owner_profile_status === 'all' ? 'Owner aktif dan arsip' : 'Owner aktif',
@@ -1270,8 +1437,8 @@ export class PropertyOwnerRealizationService {
       async (client) => {
         await this.lockOwner(client, ownerId, dto.property_id);
         const availableCandidates = (
-          await this.eligibleCandidates(client, dto.property_id, period.until, ownerId)
-        ).filter((candidate) => candidate.payment_completed_at.slice(0, 10) < period.until);
+          await this.eligibleCandidates(client, dto.property_id, period.value, ownerId)
+        );
         const selectedLeaseIds = dto.selected_lease_ids ? new Set(dto.selected_lease_ids) : null;
         const candidates = selectedLeaseIds
           ? availableCandidates.filter((candidate) => selectedLeaseIds.has(candidate.lease_id))
@@ -1821,6 +1988,121 @@ export class PropertyOwnerRealizationService {
     );
   }
 
+  async correctPeriod(
+    actor: UserAccessContext,
+    realizationId: string,
+    dto: CorrectOwnerRealizationPeriodDto,
+    key: string | undefined,
+    context: RequestAuditContext,
+  ) {
+    const target = this.period(dto.target_period);
+    return this.command(
+      actor,
+      dto.property_id,
+      '/admin/property-owner-realizations/:id/correct-period',
+      key,
+      dto,
+      context,
+      async (client) => {
+        const realization = await this.lockRealization(client, realizationId, dto.property_id);
+        if (realization.realization_status === 'void' || realization.realization_status === 'published_to_owner') {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_PERIOD_CORRECTION_LOCKED',
+            message: 'Periode tidak dapat dikoreksi setelah realisasi diterbitkan atau dibatalkan.',
+          });
+        }
+        if (realization.realization_period.slice(0, 7) === target.value) {
+          throw new BadRequestException({
+            code: 'OWNER_REALIZATION_PERIOD_UNCHANGED',
+            message: 'Periode tujuan sama dengan periode realisasi saat ini.',
+          });
+        }
+        const conflict = await client.query<{ id: string }>(
+          `SELECT id FROM property_owner_realizations
+             WHERE property_id=$1 AND owner_profile_id=$2 AND realization_period=$3::date
+               AND realization_status<>'void' AND id<>$4
+             LIMIT 1 FOR UPDATE`,
+          [dto.property_id, realization.owner_profile_id, target.start, realizationId],
+        );
+        if (conflict.rows[0]) {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_PERIOD_CONFLICT',
+            message: 'Owner sudah memiliki realisasi aktif pada periode tujuan.',
+          });
+        }
+        const lines = await client.query<{ payment_completed_at: string | null }>(
+          `SELECT payment_completed_at::text
+             FROM property_owner_realization_lines
+            WHERE realization_id=$1
+            ORDER BY id
+            FOR UPDATE`,
+          [realizationId],
+        );
+        if (!lines.rows.length || lines.rows.some((line) => !line.payment_completed_at)) {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_PERIOD_SOURCE_UNAVAILABLE',
+            message: 'Periode pembayaran pada rincian realisasi belum lengkap untuk dikoreksi.',
+          });
+        }
+        const mixed = lines.rows.some((line) => {
+          const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Jakarta',
+            year: 'numeric',
+            month: '2-digit',
+          }).formatToParts(new Date(line.payment_completed_at!));
+          const year = parts.find((part) => part.type === 'year')?.value;
+          const month = parts.find((part) => part.type === 'month')?.value;
+          return `${year}-${month}` !== target.value;
+        });
+        if (mixed) {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_PERIOD_MIXED_BATCH',
+            message: 'Batch berisi lebih dari satu bulan pelunasan. Pisahkan rincian sebelum koreksi periode.',
+          });
+        }
+        const transfers = await client.query<{ id: string; transfer_amount: string; transfer_reference: string | null }>(
+          `SELECT id,transfer_amount::text,transfer_reference
+             FROM property_owner_realization_transfers
+            WHERE realization_id=$1 ORDER BY transferred_at,id FOR UPDATE`,
+          [realizationId],
+        );
+        await client.query(
+          `UPDATE property_owner_realizations
+              SET realization_period=$2::date,updated_at=now()
+            WHERE id=$1`,
+          [realizationId, target.start],
+        );
+        const response = {
+          realization_id: realizationId,
+          previous_period: realization.realization_period.slice(0, 7),
+          realization_period: target.value,
+          transfer_facts_preserved: true,
+          transfer_ids: transfers.rows.map((transfer) => transfer.id),
+          transfer_total: transfers.rows.reduce((sum, transfer) => sum + Number(transfer.transfer_amount), 0),
+        };
+        await this.audit.write(
+          {
+            actorUserId: actor.id,
+            propertyId: dto.property_id,
+            action: 'property_owner.realization.period_corrected',
+            resourceType: 'property_owner_realization',
+            resourceId: realizationId,
+            beforeData: {
+              realization_period: realization.realization_period,
+              realization_status: realization.realization_status,
+              transfer_ids: transfers.rows.map((transfer) => transfer.id),
+            },
+            afterData: { ...response, reason: dto.reason.trim() },
+            resultStatus: 'success',
+            ...context,
+          },
+          client,
+        );
+        return response;
+      },
+    );
+  }
+
   async recordTransfer(
     actor: UserAccessContext,
     realizationId: string,
@@ -2105,7 +2387,6 @@ export class PropertyOwnerRealizationService {
         const legacyTransferValues = [
           dto.transfer_amount,
           dto.transfer_method,
-          dto.transfer_reference,
           dto.transfer_evidence_reference,
           dto.transferred_at,
         ];
@@ -2120,12 +2401,7 @@ export class PropertyOwnerRealizationService {
         }
         if (
           hasLegacyTransfer &&
-          !(
-            dto.transfer_amount &&
-            dto.transfer_method &&
-            dto.transfer_reference &&
-            dto.transferred_at
-          )
+          !(dto.transfer_amount && dto.transfer_method && dto.transferred_at)
         ) {
           throw new BadRequestException({
             code: 'OWNER_REALIZATION_HISTORICAL_TRANSFER_INCOMPLETE',
@@ -2139,7 +2415,7 @@ export class PropertyOwnerRealizationService {
                 {
                   amount: dto.transfer_amount!,
                   method: dto.transfer_method!,
-                  reference: dto.transfer_reference!.trim(),
+                  reference: dto.transfer_reference?.trim() || undefined,
                   evidence_reference: dto.transfer_evidence_reference?.trim() || undefined,
                   transferred_at: dto.transferred_at!,
                 },
@@ -2416,7 +2692,9 @@ export class PropertyOwnerRealizationService {
             );
           }
         }
-        const transferReferences = historicalTransfers.map((transfer) => transfer.reference.trim());
+        const transferReferences = historicalTransfers
+          .map((transfer) => transfer.reference?.trim() || '')
+          .filter(Boolean);
         if (new Set(transferReferences).size !== transferReferences.length) {
           throw new ConflictException({
             code: 'OWNER_REALIZATION_TRANSFER_REFERENCE_DUPLICATE',
@@ -2450,7 +2728,7 @@ export class PropertyOwnerRealizationService {
           }
         }
         for (const historicalTransfer of historicalTransfers) {
-          const transferReference = historicalTransfer.reference.trim();
+          const transferReference = historicalTransfer.reference?.trim() || '';
           this.assertTransferEvidence(
             historicalTransfer.transferred_at,
             'evidence_file_ids' in historicalTransfer
@@ -2477,7 +2755,7 @@ export class PropertyOwnerRealizationService {
               dto.property_id,
               historicalTransfer.amount,
               historicalTransfer.method,
-              transferReference,
+              transferReference || null,
               historicalTransfer.evidence_reference ?? null,
               JSON.stringify({
                 bank_name: owner.rows[0]?.payout_bank_name ?? null,
@@ -2688,7 +2966,7 @@ export class PropertyOwnerRealizationService {
       const candidates = await this.eligibleCandidates(
         this.database.client,
         owner.property_id,
-        period.until,
+        period.value,
         owner.owner_profile_id,
       );
       lines = await this.withRoomIdentifiers(
@@ -2818,6 +3096,36 @@ export class PropertyOwnerRealizationService {
     };
   }
 
+  /** Published-only period range for the Owner Portal. Empty months are retained for clarity. */
+  async portalProgressRange(actor: UserAccessContext, fromInput: string, toInput: string) {
+    const from = this.period(fromInput);
+    const to = this.period(toInput);
+    if (from.start >= to.until) {
+      throw new ConflictException({ code: 'OWNER_REALIZATION_RANGE_INVALID', message: 'Periode awal harus sama atau sebelum periode akhir.' });
+    }
+    const periods: Array<Record<string, unknown>> = [];
+    let ownerName: string | null = null;
+    let destination: unknown = null;
+    const summary = { room_count: 0, eligible_contract_total: 0, management_fee_total: 0, realization_total: 0, transferred_total: 0 };
+    for (let cursor = new Date(`${fromInput}-01T00:00:00.000Z`); cursor.toISOString().slice(0, 10) < to.until; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) {
+      const period = cursor.toISOString().slice(0, 7);
+      const progress = await this.portalProgress(actor, period);
+      if (progress.state !== 'published') {
+        periods.push({ period, state: 'empty', lines: [], transfers: [] });
+        continue;
+      }
+      ownerName = ownerName ?? progress.owner_name ?? null;
+      destination = destination ?? progress.payout_destination;
+      summary.room_count += Number(progress.summary.room_count ?? 0);
+      summary.eligible_contract_total += Number(progress.summary.eligible_contract_total ?? 0);
+      summary.management_fee_total += Number(progress.summary.management_fee_total ?? 0);
+      summary.realization_total += Number(progress.summary.realization_total ?? 0);
+      summary.transferred_total += Number(progress.summary.transferred_total ?? 0);
+      periods.push({ period, state: 'published', realization: progress.realization, lines: progress.lines, transfers: progress.transfers });
+    }
+    return { from_period: fromInput, to_period: toInput, state: periods.some((item) => item.state === 'published') ? 'published' : 'empty', owner_name: ownerName, payout_destination: destination, summary: Object.fromEntries(Object.entries(summary).map(([key, value]) => [key, String(value)])), periods };
+  }
+
   async portalProgressExport(actor: UserAccessContext, periodInput: string, format: string) {
     if (!['pdf', 'xlsx'].includes(format)) {
       throw new BadRequestException({
@@ -2848,7 +3156,7 @@ export class PropertyOwnerRealizationService {
       return this.ownerExport(actor, progress.realization.id, format);
     }
     const rows = progress.lines.map((line) => ({
-      room: textValue(line.plot_number_snapshot || line.room_code_snapshot),
+      room: textValue(line.room_code_snapshot, '—'),
       resident: textValue(line.resident_name_snapshot, '—'),
       owner: textValue(progress.owner_name, '—'),
       plot_number: textValue(line.plot_number_snapshot, '—'),
@@ -3115,47 +3423,15 @@ export class PropertyOwnerRealizationService {
   private async eligibleCandidates(
     client: SqlClient,
     propertyId: string,
-    until: string | null,
+    periodValue: string | null,
     ownerId?: string,
   ) {
+    const period = periodValue ? this.period(periodValue) : null;
     const result = await client.query<Candidate>(
-      `WITH rent_ledger AS (
-         SELECT invoice.lease_id,
-                 COALESCE(sum(invoice.credit_amount - COALESCE(correction_credit.amount,0) + allocation.net_amount),0)::bigint AS verified_rent_credit,
-                max(payment_dates.latest_paid_at) AS paid_in_full_at
-            FROM invoices invoice
-            LEFT JOIN LATERAL (
-              SELECT COALESCE(sum(credit.amount),0) AS amount
-                FROM lease_data_correction_invoice_credits credit
-               WHERE credit.invoice_id=invoice.id AND credit.property_id=invoice.property_id
-                 AND credit.lease_id=invoice.lease_id
-            ) correction_credit ON true
-            LEFT JOIN LATERAL (
-             SELECT COALESCE(sum(allocation.allocated_amount - COALESCE(reversal.reversed_amount,0)),0)::bigint AS net_amount
-               FROM payment_allocations allocation
-               JOIN payments allocation_payment ON allocation_payment.id=allocation.payment_id AND allocation_payment.payment_status='verified'
-               LEFT JOIN LATERAL (
-                 SELECT COALESCE(sum(reverse_allocation.reversed_amount),0)::bigint AS reversed_amount
-                   FROM payment_reversal_allocations reverse_allocation
-                  WHERE reverse_allocation.original_allocation_id=allocation.id
-               ) reversal ON true
-              WHERE allocation.invoice_id=invoice.id AND allocation.allocation_status='active'
-           ) allocation ON true
-           LEFT JOIN LATERAL (
-             SELECT max(COALESCE(payment.paid_at,payment.verified_at)) AS latest_paid_at
-               FROM payment_allocations payment_allocation
-               JOIN payments payment ON payment.id=payment_allocation.payment_id
-                 AND payment.payment_status='verified'
-              WHERE payment_allocation.invoice_id=invoice.id
-                AND payment_allocation.allocation_status='active'
-           ) payment_dates ON true
-          WHERE invoice.property_id=$1 AND invoice.invoice_purpose='rent'
-            AND invoice.authority_source='contract_schedule' AND invoice.invoice_status<>'void'
-          GROUP BY invoice.lease_id
-       ), scoped AS (
+      `WITH scoped AS (
          SELECT lease.id AS lease_id,room.id AS room_id,lease.resident_id,lease.term_months,lease.pricing_source,
                 lease.snapshot_pricing_tier,lease.snapshot_monthly_price,lease.snapshot_reference_monthly_price,
-                 lease.contract_rent_amount,lease.start_date,lease.end_date,
+                 lease.contract_rent_amount,lease.start_date,lease.end_date,lease.service_period_state,
                  COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') AS checked_in_at,
                  COALESCE(room.building_id,room.id)::text AS asset_id,
                  COALESCE(building.building_code,room.room_code) AS building_code,
@@ -3173,7 +3449,7 @@ export class PropertyOwnerRealizationService {
            JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
            LEFT JOIN room_buildings building ON building.id=room.building_id
            JOIN residents resident ON resident.id=lease.resident_id
-           JOIN rent_ledger ledger ON ledger.lease_id=lease.id
+           JOIN LATERAL (${ownerRealizationPaymentLedgerSql}) ledger ON true
            JOIN LATERAL (
              SELECT choice.owner_profile_id,choice.ownership_kind
                FROM (
@@ -3196,13 +3472,10 @@ export class PropertyOwnerRealizationService {
               ORDER BY version.effective_date DESC LIMIT 1
            ) fee ON true
            WHERE lease.property_id=$1 AND lease.commercial_mode='rent' AND lease.lease_status<>'cancelled'
-             AND lease.service_period_state<>'pending_check_in'
-             AND COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NOT NULL
-            AND lease.contract_rent_amount>0 AND ledger.verified_rent_credit>=lease.contract_rent_amount
-            AND ledger.paid_in_full_at IS NOT NULL
-             AND ($2::date IS NULL OR (GREATEST(ledger.paid_in_full_at,
-               COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta'))
-               AT TIME ZONE 'Asia/Jakarta')::date < $2::date)
+             AND lease.contract_rent_amount>0 AND ledger.verified_rent_credit>=lease.contract_rent_amount
+             AND ledger.paid_in_full_at IS NOT NULL
+             AND ($2::date IS NULL OR ((ledger.paid_in_full_at AT TIME ZONE 'Asia/Jakarta')::date >= $2::date
+               AND (ledger.paid_in_full_at AT TIME ZONE 'Asia/Jakarta')::date < $3::date))
        )
         SELECT scoped.lease_id,scoped.room_id,scoped.resident_id,scoped.owner_profile_id,
                 scoped.asset_id,scoped.building_code,scoped.room_code,scoped.plot_number,
@@ -3212,16 +3485,18 @@ export class PropertyOwnerRealizationService {
               scoped.snapshot_reference_monthly_price::text AS reference_monthly_price,
               scoped.monthly_management_fee::text AS monthly_management_fee,
               scoped.paid_in_full_at::text AS payment_completed_at,
-               scoped.checked_in_at::text AS check_in_at,scoped.end_date::text AS check_out_at,
+               scoped.checked_in_at::text AS check_in_at,
+               (scoped.checked_in_at IS NULL OR scoped.service_period_state='pending_check_in') AS waiting_physical_check_in,
+               scoped.end_date::text AS check_out_at,
               scoped.verified_rent_credit::text AS money_received_amount,scoped.contract_rent_amount::text AS contract_total_amount,
               GREATEST(scoped.contract_rent_amount-scoped.verified_rent_credit,0)::text AS outstanding_amount,
               scoped.management_fee_amount::text, (scoped.contract_rent_amount-scoped.management_fee_amount)::text AS net_realization_amount,
               scoped.fee_effective_date::text,scoped.ownership_kind
          FROM scoped
          LEFT JOIN property_owner_realization_lease_locks lock ON lock.lease_id=scoped.lease_id AND lock.lock_status='locked'
-        WHERE lock.id IS NULL AND ($3::uuid IS NULL OR scoped.owner_profile_id=$3)
+        WHERE lock.id IS NULL AND ($4::uuid IS NULL OR scoped.owner_profile_id=$4)
         ORDER BY scoped.paid_in_full_at,scoped.room_code`,
-      [propertyId, until, ownerId ?? null],
+      [propertyId, period?.start ?? null, period?.until ?? null, ownerId ?? null],
     );
     return result.rows;
   }
@@ -3235,8 +3510,8 @@ export class PropertyOwnerRealizationService {
               CASE
                 WHEN assignment.owner_profile_id IS NULL THEN 'OWNER_ASSIGNMENT_UNAVAILABLE'
                 WHEN lease.commercial_mode='owner_sponsored' THEN 'OWNER_SPONSORED_EXCLUDED'
-                WHEN lease.service_period_state='pending_check_in' OR COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NULL THEN 'AWAITING_PHYSICAL_CHECK_IN'
-                WHEN COALESCE(ledger.verified_rent_credit,0)<COALESCE(lease.contract_rent_amount,0) THEN 'OUTSTANDING_CONTRACT_RENT'
+                WHEN lease.contract_rent_amount<=0 OR ledger.paid_in_full_at IS NULL
+                  OR COALESCE(ledger.verified_rent_credit,0)<COALESCE(lease.contract_rent_amount,0) THEN 'OUTSTANDING_CONTRACT_RENT'
                 WHEN lock.id IS NOT NULL THEN 'ALREADY_ALLOCATED_TO_REALIZATION'
                 ELSE 'PAYMENT_COMPLETED_AFTER_RELEASE_PERIOD'
               END AS reason_code
@@ -3245,37 +3520,7 @@ export class PropertyOwnerRealizationService {
           LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id AND occupancy.property_id=lease.property_id AND occupancy.occupancy_status<>'cancelled'
           JOIN rooms room ON room.id=(${contractRoomIdSql('lease')}) AND room.property_id=lease.property_id
          JOIN residents resident ON resident.id=lease.resident_id
-         LEFT JOIN LATERAL (
-            SELECT COALESCE(sum(invoice.credit_amount - COALESCE(correction_credit.amount,0) + allocation.net_amount),0)::bigint AS verified_rent_credit,
-                  max(payment_dates.latest_paid_at) AS paid_in_full_at
-             FROM invoices invoice
-              LEFT JOIN LATERAL (
-                SELECT COALESCE(sum(credit.amount),0) AS amount
-                  FROM lease_data_correction_invoice_credits credit
-                 WHERE credit.invoice_id=invoice.id AND credit.property_id=invoice.property_id
-                   AND credit.lease_id=invoice.lease_id
-              ) correction_credit ON true
-          LEFT JOIN LATERAL (
-                SELECT COALESCE(sum(a.allocated_amount - COALESCE(reversal.reversed_amount,0)),0)::bigint AS net_amount
-                  FROM payment_allocations a JOIN payments p ON p.id=a.payment_id AND p.payment_status='verified'
-                  LEFT JOIN LATERAL (
-                    SELECT COALESCE(sum(reverse_allocation.reversed_amount),0) AS reversed_amount
-                      FROM payment_reversal_allocations reverse_allocation
-                     WHERE reverse_allocation.original_allocation_id=a.id
-                  ) reversal ON true
-                WHERE a.invoice_id=invoice.id AND a.allocation_status='active'
-             ) allocation ON true
-             LEFT JOIN LATERAL (
-               SELECT max(COALESCE(payment.paid_at,payment.verified_at)) AS latest_paid_at
-                 FROM payment_allocations payment_allocation
-                 JOIN payments payment ON payment.id=payment_allocation.payment_id
-                   AND payment.payment_status='verified'
-                WHERE payment_allocation.invoice_id=invoice.id
-                  AND payment_allocation.allocation_status='active'
-             ) payment_dates ON true
-             WHERE invoice.lease_id=lease.id AND invoice.invoice_purpose='rent'
-               AND invoice.authority_source='contract_schedule' AND invoice.invoice_status<>'void'
-          ) ledger ON true
+          LEFT JOIN LATERAL (${ownerRealizationPaymentLedgerSql}) ledger ON true
           LEFT JOIN LATERAL (
             SELECT choice.owner_profile_id
               FROM (
@@ -3294,12 +3539,14 @@ export class PropertyOwnerRealizationService {
           LEFT JOIN property_owner_profiles owner ON owner.id=assignment.owner_profile_id
           LEFT JOIN property_owner_realization_lease_locks lock ON lock.lease_id=lease.id AND lock.lock_status='locked'
            WHERE lease.property_id=$1 AND lease.contract_rent_amount IS NOT NULL AND lease.lease_status<>'cancelled'
-           AND ($3::uuid IS NULL OR assignment.owner_profile_id=$3::uuid)
-            AND (assignment.owner_profile_id IS NULL OR lease.commercial_mode='owner_sponsored' OR lease.service_period_state='pending_check_in' OR COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta') IS NULL OR COALESCE(ledger.verified_rent_credit,0)<lease.contract_rent_amount
+           AND ($4::uuid IS NULL OR assignment.owner_profile_id=$4::uuid)
+            AND (assignment.owner_profile_id IS NULL OR lease.commercial_mode='owner_sponsored'
+             OR lease.contract_rent_amount<=0 OR ledger.paid_in_full_at IS NULL OR COALESCE(ledger.verified_rent_credit,0)<lease.contract_rent_amount
              OR lock.id IS NOT NULL
-             OR (ledger.paid_in_full_at IS NOT NULL AND (GREATEST(ledger.paid_in_full_at,COALESCE(check_in.checked_in_at,(occupancy.start_date+TIME '00:00') AT TIME ZONE 'Asia/Jakarta')) AT TIME ZONE 'Asia/Jakarta')::date >= $2::date))
+             OR (ledger.paid_in_full_at AT TIME ZONE 'Asia/Jakarta')::date < $2::date
+             OR (ledger.paid_in_full_at AT TIME ZONE 'Asia/Jakarta')::date >= $3::date)
         ORDER BY room.room_code,resident.full_name`,
-      [propertyId, period.until, ownerId ?? null],
+      [propertyId, period.start, period.until, ownerId ?? null],
     );
     return rows.rows;
   }
@@ -3410,7 +3657,7 @@ export class PropertyOwnerRealizationService {
       [transferId, realizationId],
     );
     const lines = await client.query(
-      `SELECT room_code_snapshot,resident_name_snapshot,plot_number_snapshot,contract_total_amount::text,management_fee_amount::text,
+      `SELECT room_code_snapshot,resident_name_snapshot,plot_number_snapshot,duration_months,contract_total_amount::text,management_fee_amount::text,
               net_realization_amount::text FROM property_owner_realization_lines WHERE realization_id=$1 ORDER BY room_code_snapshot`,
       [realizationId],
     );
@@ -3601,7 +3848,7 @@ export class PropertyOwnerRealizationService {
       },
       rows: [
         ...detail.lines.map((line: Record<string, unknown>) => ({
-          room: textValue(line.plot_number_snapshot || line.room_code_snapshot),
+          room: textValue(line.room_code_snapshot, '—'),
           resident: textValue(line.resident_name_snapshot),
           owner: textValue(line.owner_name_snapshot),
           plot_number: textValue(line.plot_number_snapshot),
@@ -3700,7 +3947,7 @@ export class PropertyOwnerRealizationService {
           ],
         },
         {
-          name: 'Tidak Layak',
+          name: 'Belum Kriteria',
           rows: [
             ['Kamar', 'No. Kavling', 'Penghuni', 'Total kontrak', 'Alasan'],
             ...detail.not_eligible.map((row: Record<string, unknown>) => [
@@ -3812,6 +4059,23 @@ export class PropertyOwnerRealizationService {
       (document.lines as Array<Record<string, unknown>>) ?? [],
       textValue(document.property_id),
     );
+    const durationByRoom = new Map<string, number>();
+    const realizationId = textValue((realization as Record<string, unknown>).id);
+    if (realizationId && lines.some((line) => numberValue(line.duration_months) <= 0)) {
+      const storedDurations = await this.database.client.query<{
+        room_code_snapshot: string;
+        duration_months: number | null;
+      }>(
+        `SELECT room_code_snapshot,duration_months
+           FROM property_owner_realization_lines
+          WHERE realization_id=$1`,
+        [realizationId],
+      );
+      storedDurations.rows.forEach((line) => {
+        if (line.duration_months && line.duration_months > 0)
+          durationByRoom.set(line.room_code_snapshot, line.duration_months);
+      });
+    }
     const amount = Number(transfer.transfer_amount ?? 0);
     const destination = (transfer.destination_snapshot ?? {}) as Record<string, unknown>;
     const propertyId = textValue(document.property_id);
@@ -3878,9 +4142,13 @@ export class PropertyOwnerRealizationService {
         amountInWords: spokenAmount,
         ...(issuerSignature ? { issuerSignature } : {}),
         lines: lines.map((line) => ({
-          room: textValue(line.plot_number_snapshot || line.room_code_snapshot),
+          room: textValue(line.room_code_snapshot, '—'),
           resident: textValue(line.resident_name_snapshot),
           plotNumber: textValue(line.plot_number_snapshot, '—'),
+          durationMonths:
+            numberValue(line.duration_months) ||
+            durationByRoom.get(textValue(line.room_code_snapshot)) ||
+            0,
           contractTotal: numberValue(line.contract_total_amount),
           managementFee: numberValue(line.management_fee_amount),
           ownerEntitlement: numberValue(line.net_realization_amount),

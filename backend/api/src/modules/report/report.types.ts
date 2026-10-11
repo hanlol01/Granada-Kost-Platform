@@ -14,7 +14,11 @@ export type ReportResult = {
   report_type: ReportType;
   title: string;
   property_name: string;
-  period: { date_from: string; date_to: string };
+  period: {
+    date_from: string;
+    date_to: string;
+    label?: string;
+  };
   generated_at: string;
   generated_by?: string;
   filter_checksum: string;

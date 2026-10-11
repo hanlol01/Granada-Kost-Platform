@@ -45,6 +45,7 @@ export type OwnerRealizationRow = {
       contract_total: string;
       management_fee: string;
       realization_total: string;
+      waiting_physical_check_in: boolean;
     }>;
   }>;
   room_count: number;
@@ -61,6 +62,9 @@ export type OwnerRealizationRow = {
     contract_total: string;
     management_fee: string;
     realization_total: string;
+    payment_completed_at: string;
+    check_in_at: string | null;
+    waiting_physical_check_in: boolean;
   }>;
   realization: null | {
     id: string;
@@ -147,6 +151,28 @@ export type OwnerRealizationDetail = {
   not_eligible: Array<Record<string, unknown>>;
 };
 
+export type OwnerRealizationRange = {
+  owner_id: string;
+  property_id: string;
+  from_period: string;
+  to_period: string;
+  summary: {
+    eligible_contract_total: number;
+    management_fee_total: number;
+    correction_total: number;
+    realization_total: number;
+    transferred_total: number;
+  };
+  periods: Array<{
+    period: string;
+    included_in_total: boolean;
+      realization: OwnerRealizationDetail["realization"] | null;
+    lines: Array<Record<string, unknown>>;
+    transfers: Array<Record<string, unknown>>;
+    corrections: Array<Record<string, unknown>>;
+  }>;
+};
+
 export type OwnerRealizationNotEligible = {
   period: string;
   rows: Array<{
@@ -179,6 +205,8 @@ export const ownerRealizationApi = {
     apiClient.get<OwnerRealizationDetail>(`${base}/${encodeURIComponent(realizationId)}`, {
       query: { property_id: propertyId },
     }),
+  range: (ownerId: string, query: { property_id: string; from_period: string; to_period: string; voided?: "include_voided" | "exclude_voided" }) =>
+    apiClient.get<OwnerRealizationRange>(`${base}/owners/${encodeURIComponent(ownerId)}/range`, { query }),
   notEligible: (filters: OwnerRealizationFilters) =>
     apiClient.get<OwnerRealizationNotEligible>(`${base}/not-eligible`, { query: filters }),
   prepare: (
@@ -220,21 +248,24 @@ export const ownerRealizationApi = {
     body: {
       property_id: string;
       correction_kind:
-        | "contract_correction"
-        | "transfer_recovery"
-        | "approved_operational_adjustment";
+        "contract_correction" | "transfer_recovery" | "approved_operational_adjustment";
       amount: number;
       reason: string;
       evidence_reference?: string;
       source_reference?: string;
       recovery_disposition?:
-        | "recover_from_owner"
-        | "net_against_future_realization"
-        | "outside_system_finance";
+        "recover_from_owner" | "net_against_future_realization" | "outside_system_finance";
       evidence_file_ids?: string[];
     },
   ) =>
     apiClient.post(`${base}/${encodeURIComponent(realizationId)}/corrections`, body, {
+      idempotencyKey: crypto.randomUUID(),
+    }),
+  correctPeriod: (
+    realizationId: string,
+    body: { property_id: string; target_period: string; reason: string },
+  ) =>
+    apiClient.post(`${base}/${encodeURIComponent(realizationId)}/correct-period`, body, {
       idempotencyKey: crypto.randomUUID(),
     }),
   transfer: (
@@ -305,7 +336,7 @@ export const ownerRealizationApi = {
       transfers?: Array<{
         amount: number;
         method: "bank_transfer";
-        reference: string;
+        reference?: string;
         transferred_at: string;
         evidence_reference?: string;
         evidence_file_ids?: string[];
@@ -345,7 +376,7 @@ async function download(path: string, fallbackName: string) {
       return response;
     },
     fallbackName,
-    { preview: path.includes("format=pdf") || path.endsWith("/receipt") },
+    { preview: path.includes("format=pdf") || path.split("?", 1)[0].endsWith("/receipt") },
   );
 }
 
@@ -357,6 +388,18 @@ export function downloadOwnerRealization(
   return download(
     `${base}/${encodeURIComponent(realizationId)}/export?${new URLSearchParams({ property_id: propertyId, format })}`,
     `realisasi-owner.${format}`,
+  );
+}
+
+export function downloadOwnerRealizationRange(
+  ownerId: string,
+  query: { property_id: string; from_period: string; to_period: string; voided?: "include_voided" | "exclude_voided" },
+  format: "pdf" | "xlsx",
+) {
+  const parameters = new URLSearchParams({ ...query, format });
+  return download(
+    `${base}/owners/${encodeURIComponent(ownerId)}/range/export?${parameters.toString()}`,
+    `realisasi-owner-${query.from_period}-${query.to_period}.${format}`,
   );
 }
 

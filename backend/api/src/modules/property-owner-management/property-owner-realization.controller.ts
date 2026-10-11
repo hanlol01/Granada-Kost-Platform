@@ -26,7 +26,9 @@ import {
   CancelOwnerRealizationDto,
   CreateHistoricalOwnerRealizationDto,
   CreateOwnerRealizationCorrectionDto,
+  CorrectOwnerRealizationPeriodDto,
   OwnerRealizationQueryDto,
+  OwnerRealizationRangeQueryDto,
   PrepareOwnerRealizationDto,
   RecordOwnerRealizationTransferDto,
   RecordOwnerRealizationRecoveryEventDto,
@@ -84,6 +86,30 @@ export class PropertyOwnerRealizationController {
   @Get('not-eligible')
   notEligible(@CurrentUser() actor: UserAccessContext, @Query() query: OwnerRealizationQueryDto) {
     return this.realizations.listNotEligible(actor, query);
+  }
+
+  @Get('owners/:ownerId/range')
+  range(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Query() query: OwnerRealizationRangeQueryDto,
+  ) {
+    return this.realizations.rangeDetail(actor, ownerId, query);
+  }
+
+  @Get('owners/:ownerId/range/export')
+  async rangeExport(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Query() query: OwnerRealizationRangeQueryDto,
+    @Query('format') format: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.realizations.exportRange(actor, ownerId, query, format || query.format || 'pdf');
+    response.setHeader('Content-Type', file.contentType);
+    response.setHeader('Content-Disposition', documentDisposition(file.filename));
+    response.setHeader('Cache-Control', 'private, no-store');
+    return new StreamableFile(file.content);
   }
 
   @Get('not-eligible/export')
@@ -239,6 +265,17 @@ export class PropertyOwnerRealizationController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.realizations.addCorrection(actor, realizationId, dto, key, auditContext(request));
+  }
+
+  @Post(':realizationId/correct-period')
+  correctPeriod(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('realizationId', new ParseUUIDPipe({ version: '4' })) realizationId: string,
+    @Body() dto: CorrectOwnerRealizationPeriodDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: RequestWithCorrelationId,
+  ) {
+    return this.realizations.correctPeriod(actor, realizationId, dto, key, auditContext(request));
   }
 
   @Post(':realizationId/transfers')

@@ -46,7 +46,7 @@ const ownerSummaryLabels: Record<string, string> = {
   management_fee_total: 'Total management fee',
   realization_total: 'Hak Owner direalisasikan',
   transferred_total: 'Dana sudah ditransfer',
-  total_not_eligible: 'Total data tidak layak',
+  total_not_eligible: 'Total data belum masuk kriteria',
   outstanding_contract_rent: 'Kontrak masih outstanding',
   owner_sponsored_excluded: 'Hunian tanggungan Owner',
   total_contract_rent: 'Total kontrak sewa',
@@ -123,12 +123,12 @@ const formatReportDate = (value: ReportScalar): string => {
 
 function propertyOwnerSheets(report: ReportResult): Sheet[] {
   const notEligible =
-    report.title.toLowerCase().includes('tidak layak') ||
+    report.title.toLowerCase().includes('belum kriteria') ||
     report.rows.some((row) => 'reason' in row);
   const summary: ReportScalar[][] = [
     ['Laporan', report.title],
     ['Properti', formatDocumentPropertyName(report.property_name)],
-    ['Periode', formatOwnerMonthYear(report.period.date_from)],
+    ['Periode', report.period.label ?? formatOwnerMonthYear(report.period.date_from)],
     ['Diterbitkan', formatIssuedAt(report.generated_at)],
     ...(report.generated_by ? [['Diterbitkan oleh', report.generated_by] as ReportScalar[]] : []),
     ...(report.filter_summary?.map(
@@ -157,7 +157,9 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
   });
   const detailReport = report.title.startsWith('Realisasi Owner ');
   if (detailReport) {
+    const rangeReport = report.title.includes('Rentang periode');
     const header = [
+      ...(rangeReport ? ['Periode'] : []),
       'No.',
       'Kamar',
       'Nama penghuni',
@@ -178,6 +180,7 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
     const rows = report.rows.map(
       (row, index) =>
         [
+          ...(rangeReport ? [row.period ?? ''] : []),
           row.line_status === 'total' ? 'TOTAL' : index + 1,
           row.room,
           row.resident,
@@ -218,7 +221,7 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
       'No. Kavling',
       'Nama Penghuni',
       'Total kontrak',
-      'Alasan tidak layak',
+      'Alasan belum masuk kriteria',
     ];
     const rows = report.rows.map(
       (row, index) =>
@@ -321,6 +324,7 @@ export type OwnerRealizationReceiptPdf = {
     room: string;
     resident: string;
     plotNumber: string;
+    durationMonths: number;
     contractTotal: number;
     managementFee: number;
     ownerEntitlement: number;
@@ -626,7 +630,7 @@ export async function reportToPdf(report: ReportResult): Promise<Buffer> {
     }
     const displayPeriod =
       report.report_type === 'property-owners'
-        ? formatOwnerMonthYear(report.period.date_from)
+        ? (report.period.label ?? formatOwnerMonthYear(report.period.date_from))
         : formatPeriod(report.period.date_from, report.period.date_to);
     page.drawText(
       `${formatDocumentPropertyName(report.property_name)} · ${displayPeriod}${continued ? ' · lanjutan' : ''}`,
@@ -782,8 +786,8 @@ export async function reportToPdf(report: ReportResult): Promise<Buffer> {
 }
 
 /**
- * A dedicated, paginated receipt renderer. It deliberately works only from
- * the immutable realization document snapshot supplied by the caller.
+ * A dedicated, paginated receipt renderer. It deliberately works from the
+ * immutable realization document snapshot supplied by the caller.
  */
 export async function ownerRealizationReceiptToPdf(
   receipt: OwnerRealizationReceiptPdf,
@@ -934,6 +938,12 @@ export async function ownerRealizationReceiptToPdf(
 
   section('Penerima dan periode');
   line(margin, 'Dibayarkan kepada', receipt.ownerName);
+  const plotNumbers = Array.from(
+    new Set(
+      receipt.lines.map((item) => item.plotNumber.trim()).filter((value) => value && value !== '—'),
+    ),
+  ).join(', ');
+  line(margin, 'No. Kavling', plotNumbers || '—');
   line(margin, 'Properti', formatDocumentPropertyName(receipt.propertyName));
   line(margin, 'Periode realisasi', receipt.period);
   current.y -= 6;
@@ -1005,8 +1015,8 @@ export async function ownerRealizationReceiptToPdf(
   current.y -= 10;
 
   section('Rincian kontrak yang direalisasikan');
-  const tableHeaders = ['No.', 'Kamar / penghuni', 'Total sewa', 'Fee', 'Hak Owner'];
-  const columns = [margin, margin + 28, margin + 250, margin + 336, margin + 406];
+  const tableHeaders = ['No.', 'Kamar / penghuni', 'Durasi sewa', 'Total sewa', 'Fee', 'Hak Owner'];
+  const columns = [margin, margin + 28, margin + 173, margin + 243, margin + 343, margin + 403];
   const renderHeader = () => {
     need(22);
     current.page.drawRectangle({
@@ -1070,20 +1080,26 @@ export async function ownerRealizationReceiptToPdf(
       font,
       color: rgb(0.32, 0.37, 0.43),
     });
-    current.page.drawText(short(money(row.contractTotal), 16), {
+    current.page.drawText(row.durationMonths > 0 ? `${row.durationMonths} bulan` : '—', {
       x: columns[2] + 5,
       y: middle,
       size: 6.8,
       font,
     });
-    current.page.drawText(short(money(row.managementFee), 14), {
+    current.page.drawText(short(money(row.contractTotal), 16), {
       x: columns[3] + 5,
       y: middle,
       size: 6.8,
       font,
     });
-    current.page.drawText(short(money(row.ownerEntitlement), 14), {
+    current.page.drawText(short(money(row.managementFee), 14), {
       x: columns[4] + 5,
+      y: middle,
+      size: 6.8,
+      font,
+    });
+    current.page.drawText(short(money(row.ownerEntitlement), 14), {
+      x: columns[5] + 5,
       y: middle,
       size: 6.8,
       font: bold,

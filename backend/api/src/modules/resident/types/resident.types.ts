@@ -53,12 +53,7 @@ export type ResidentCheckoutFinancialStatus =
 
 export type ResidentManagementFeeMode = 'charged' | 'waived' | null;
 export type ResidentManagementFeePaymentStatus =
-  | 'waived'
-  | 'unpaid'
-  | 'partially_paid'
-  | 'paid'
-  | 'overpaid'
-  | null;
+  'waived' | 'unpaid' | 'partially_paid' | 'paid' | 'overpaid' | null;
 
 export type EmergencyContactRecord = {
   id: string;
@@ -155,6 +150,8 @@ export type ResidentTenancyRecord = {
   plotNumber?: string | null;
   kostTypeName: string;
   buildingCode: string;
+  ownerName: string | null;
+  totalManagementFee: number;
   startDate: string;
   endDate: string;
   termMonths: number;

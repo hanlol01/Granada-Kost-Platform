@@ -77,7 +77,10 @@ export type ResidentListRecord = {
 };
 
 export function resolveResidentSettlementStage(
-  resident: Pick<ResidentListRecord, "contractSettlementStage" | "contractSettlementRemainingAmount">,
+  resident: Pick<
+    ResidentListRecord,
+    "contractSettlementStage" | "contractSettlementRemainingAmount"
+  >,
 ): ContractSettlementStage | "outstanding" {
   // A correction can reopen rent while the original payment schedule stays fulfilled.
   if (
@@ -167,6 +170,8 @@ export type ResidentTenancy = {
   plotNumber?: string | null;
   kostTypeName: string;
   buildingCode: string;
+  ownerName: string | null;
+  totalManagementFee: number;
   startDate: string;
   endDate: string;
   termMonths: number;
@@ -574,6 +579,8 @@ export function parseResidentTenancy(
     "plot_number",
     "kost_type_name",
     "building_code",
+    "owner_name",
+    "total_management_fee",
     "start_date",
     "end_date",
     "term_months",
@@ -622,10 +629,18 @@ export function parseResidentTenancy(
     plotNumber: text(item.plot_number, true),
     kostTypeName: text(item.kost_type_name) as string,
     buildingCode: text(item.building_code) as string,
+    ownerName: text(item.owner_name, true),
+    totalManagementFee: integer(item.total_management_fee),
     startDate: date(item.start_date) as string,
     endDate: date(item.end_date) as string,
-    servicePeriodState: item.service_period_state == null ? "legacy" : enumValue(item.service_period_state, ["legacy", "pending_check_in", "started"] as const),
-    plannedStartDate: item.planned_start_date == null ? date(item.start_date) as string : date(item.planned_start_date) as string,
+    servicePeriodState:
+      item.service_period_state == null
+        ? "legacy"
+        : enumValue(item.service_period_state, ["legacy", "pending_check_in", "started"] as const),
+    plannedStartDate:
+      item.planned_start_date == null
+        ? (date(item.start_date) as string)
+        : (date(item.planned_start_date) as string),
     termMonths: integer(item.term_months),
     paymentPlanType: enumValue(item.payment_plan_type, [
       "annual_full",

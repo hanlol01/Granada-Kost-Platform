@@ -104,8 +104,12 @@ function tenancy() {
     checked_in_at: null,
     checked_in_source: null,
     room_number: "AK-18F-3A",
+    manager_room_label: null,
+    plot_number: null,
     kost_type_name: "Apart Kost",
     building_code: "AK-18F",
+    owner_name: "Joana",
+    total_management_fee: 900_000,
     start_date: "2026-07-31",
     end_date: "2026-10-31",
     term_months: 3,
@@ -395,7 +399,9 @@ test("resident admin views expose owner-sponsored filters, labels, and current m
   assert.match(tenants, /Outstanding/);
   assert.match(tenants, /Sisa fee:/);
   assert.match(detail, /managementFeePayerLabel/);
-  assert.match(detail, /Owner pemilik kamar/);
+  assert.match(detail, /Pemilik Unit \(Owner Property\)/);
+  assert.match(detail, /Owner penanggung hunian/);
+  assert.match(detail, /Total Management Fee/);
   assert.match(detail, /\(Owner\)/);
   assert.match(detail, /\(Penghuni\)/);
   assert.match(detail, /Unduh surat hunian Owner/);
@@ -413,6 +419,8 @@ test("tenancy projection exposes an awaiting activation lease without claiming o
   assert.equal(parsed?.agreedMonthlyPrice, 1_900_000);
   assert.equal(parsed?.contractRentAmount, 5_700_000);
   assert.equal(parsed?.pricingSource, "standard");
+  assert.equal(parsed?.ownerName, "Joana");
+  assert.equal(parsed?.totalManagementFee, 900_000);
 
   assert.throws(() =>
     parseResidentTenancy(

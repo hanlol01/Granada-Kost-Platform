@@ -66,12 +66,7 @@ type ResidentRow = {
   pricing_source?: 'standard' | 'negotiated' | 'owner_sponsored' | null;
   management_fee_mode?: 'charged' | 'waived' | null;
   management_fee_payment_status?:
-    | 'waived'
-    | 'unpaid'
-    | 'partially_paid'
-    | 'paid'
-    | 'overpaid'
-    | null;
+    'waived' | 'unpaid' | 'partially_paid' | 'paid' | 'overpaid' | null;
   management_fee_remaining_amount?: string;
   created_at: Date;
   updated_at: Date;
@@ -104,6 +99,8 @@ type ResidentTenancyRow = {
   plot_number: string | null;
   kost_type_name: string;
   building_code: string;
+  owner_name: string | null;
+  total_management_fee: string | number;
   start_date: string;
   end_date: string;
   term_months: number;
@@ -432,6 +429,9 @@ export class ResidentRepository {
                rooms.number AS room_number,rooms.manager_room_label,rooms.plot_number,
                leases.snapshot_kost_type_name AS kost_type_name,
                buildings.building_code,leases.start_date::text,leases.end_date::text,
+               owner_assignment.owner_name,
+               COALESCE(management_fee.monthly_fee_amount,0)::bigint
+                 * COALESCE(leases.term_months,0) AS total_management_fee,
                leases.service_period_state,leases.planned_start_date::text,
               leases.term_months,leases.payment_plan_type,leases.snapshot_monthly_price,
               leases.contract_rent_amount,leases.pricing_source,leases.commercial_mode
@@ -442,6 +442,33 @@ export class ResidentRepository {
        LEFT JOIN lease_activation_lifecycles AS lifecycle
          ON lifecycle.lease_id=leases.id AND lifecycle.property_id=leases.property_id
        LEFT JOIN occupancies AS occupancy ON occupancy.id=leases.occupancy_id
+        LEFT JOIN LATERAL (
+          SELECT owner_profile.full_name AS owner_name
+          FROM (
+            SELECT assignment.owner_profile_id,0 AS priority,assignment.effective_from
+            FROM room_owner_assignments assignment
+            WHERE assignment.room_id=rooms.id AND assignment.property_id=leases.property_id
+              AND assignment.assignment_status='active'
+            UNION ALL
+            SELECT assignment.owner_profile_id,1 AS priority,assignment.effective_from
+            FROM building_owner_assignments assignment
+            WHERE assignment.building_id=rooms.building_id AND assignment.property_id=leases.property_id
+              AND assignment.assignment_status='active'
+          ) assignment
+          JOIN property_owner_profiles owner_profile
+            ON owner_profile.id=assignment.owner_profile_id
+           AND owner_profile.property_id=leases.property_id
+          ORDER BY assignment.priority,assignment.effective_from DESC
+          LIMIT 1
+        ) owner_assignment ON true
+        LEFT JOIN LATERAL (
+          SELECT version.monthly_fee_amount
+          FROM property_management_fee_versions version
+          WHERE version.property_id=leases.property_id
+            AND version.effective_date<=leases.start_date
+          ORDER BY version.effective_date DESC
+          LIMIT 1
+        ) management_fee ON true
        LEFT JOIN LATERAL (
          SELECT correction.id,correction.corrected_snapshot
          FROM lease_data_corrections correction
@@ -479,6 +506,8 @@ export class ResidentRepository {
       plotNumber: row.plot_number,
       kostTypeName: row.kost_type_name,
       buildingCode: row.building_code,
+      ownerName: row.owner_name,
+      totalManagementFee: Number(row.total_management_fee),
       startDate: row.start_date,
       endDate: row.end_date,
       servicePeriodState: row.service_period_state ?? 'legacy',

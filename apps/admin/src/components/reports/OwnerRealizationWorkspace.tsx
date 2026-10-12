@@ -142,6 +142,13 @@ function localDateTimeInputValue(date = new Date()) {
   return localDate.toISOString().slice(0, 16);
 }
 
+function localDateTimeAlertLabel(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return "Belum diisi";
+  const [, year, month, day, hour, minute] = match;
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+}
+
 function emptyHistoricalTransfer(): HistoricalTransferDraft {
   return {
     id: crypto.randomUUID(),
@@ -173,6 +180,7 @@ function HistoricalRupiahInput({
   invalid = false,
   required = false,
   readOnly = false,
+  placeholder = "0",
 }: {
   id: string;
   value: number;
@@ -180,10 +188,11 @@ function HistoricalRupiahInput({
   invalid?: boolean;
   required?: boolean;
   readOnly?: boolean;
+  placeholder?: string;
 }) {
   return (
     <div
-      className={`flex min-h-11 w-full items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25 ${readOnly ? "bg-muted/45 text-muted-foreground" : ""}`}
+      className={`flex min-h-11 w-full items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25 ${readOnly ? "bg-muted/45 text-foreground" : ""}`}
       data-invalid={invalid || undefined}
     >
       <span className="border-r border-input bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
@@ -200,8 +209,8 @@ function HistoricalRupiahInput({
         aria-invalid={invalid}
         value={value > 0 ? formatIdrInput(value) : ""}
         onChange={(event) => onChange(normalizeDigits(event.target.value))}
-        className="h-10 min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 read-only:cursor-not-allowed read-only:text-muted-foreground"
-        placeholder="0"
+        className="h-10 min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0 read-only:cursor-not-allowed read-only:text-foreground"
+        placeholder={placeholder}
       />
     </div>
   );
@@ -1006,6 +1015,14 @@ export function OwnerRealizationWorkspace() {
     0,
   );
   const historicalRemaining = Math.max(historicalOwnerTotal - historicalTransferTotal, 0);
+  const historicalTransferSuggestion = (transferIndex: number) =>
+    Math.max(
+      historicalOwnerTotal -
+        historical.transfers
+          .slice(0, transferIndex)
+          .reduce((sum, transfer) => sum + transfer.amount, 0),
+      0,
+    );
   const historicalTransferExceedsOwner = historicalTransferTotal > historicalOwnerTotal;
   const historicalOwnerName = creationTarget?.owner_name ?? historicalOwnerId;
   const historicalPeriodLabel = monthLabel(applied.period ?? defaultPeriod);
@@ -2144,7 +2161,7 @@ export function OwnerRealizationWorkspace() {
                                   readOnly={line.source === "system"}
                                   className={
                                     line.source === "system"
-                                      ? "bg-muted/45 text-muted-foreground"
+                                      ? "bg-muted/45 text-foreground"
                                       : undefined
                                   }
                                   onChange={(event) =>
@@ -2169,7 +2186,7 @@ export function OwnerRealizationWorkspace() {
                                   readOnly={line.source === "system"}
                                   className={
                                     line.source === "system"
-                                      ? "bg-muted/45 text-muted-foreground"
+                                      ? "bg-muted/45 text-foreground"
                                       : undefined
                                   }
                                   onChange={(event) =>
@@ -2502,6 +2519,7 @@ export function OwnerRealizationWorkspace() {
                             <HistoricalRupiahInput
                               id={`historical-transfer-amount-${transfer.id}`}
                               value={transfer.amount}
+                              placeholder={formatIdrInput(historicalTransferSuggestion(index))}
                               required
                               onChange={(amount) =>
                                 setHistorical((value) => ({
@@ -2659,7 +2677,13 @@ export function OwnerRealizationWorkspace() {
                           </label>
                           {transfer.financeConfirmedBy.trim() ? (
                             <label className="owner-report-field sm:col-span-2">
-                              Waktu konfirmasi Keuangan
+                              <span className="font-semibold">Waktu konfirmasi Keuangan</span>
+                              <span
+                                className="mt-2 flex rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950 dark:border-amber-400/35 dark:bg-amber-950/30 dark:text-amber-100"
+                                role="status"
+                              >
+                                Tanggal transfer: {localDateTimeAlertLabel(transfer.transferredAt)}
+                              </span>
                               <Input
                                 type="datetime-local"
                                 value={transfer.financeConfirmedAt}

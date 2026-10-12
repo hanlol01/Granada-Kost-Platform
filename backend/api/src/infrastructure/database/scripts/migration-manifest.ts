@@ -1245,4 +1245,12 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "NOT EXISTS (SELECT 1 FROM rooms WHERE floor_label='Unit 05' AND building_id IN (SELECT id FROM room_buildings WHERE category='rukost' AND building_code='RK-07'))",
     ],
   },
+  {
+    version: '129_optional_historical_transfer_reference.sql',
+    checksumSha256: '217de62f0522eadbb71e0403019b4346321d311a4b744468bb9ca5225fcd95c6',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_realization_transfers' AND column_name='transfer_reference' AND is_nullable='YES')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.property_owner_realization_transfers'::regclass AND conname='property_owner_realization_transfers_reference_check' AND pg_get_constraintdef(oid) ILIKE '%transfer_reference IS NULL%')",
+    ],
+  },
 ] as const;

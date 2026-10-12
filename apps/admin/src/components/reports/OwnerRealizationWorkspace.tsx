@@ -703,12 +703,18 @@ export function OwnerRealizationWorkspace() {
         if (!Number.isSafeInteger(transfer.amount) || transfer.amount <= 0)
           throw new Error(`Nominal transfer ke-${index + 1} harus lebih dari Rp 0.`);
         const reference = transfer.reference.trim();
-        if (reference.length < 3 || reference.length > 150)
-          throw new Error(`Referensi transfer ke-${index + 1} harus berisi 3–150 karakter.`);
-        const normalizedReference = reference.toLocaleLowerCase("id-ID");
-        if (references.has(normalizedReference))
-          throw new Error("Setiap transfer harus memiliki referensi yang berbeda.");
-        references.add(normalizedReference);
+        if (reference.length > 150)
+          throw new Error(`Referensi transfer ke-${index + 1} maksimal 150 karakter.`);
+        if (reference) {
+          if (reference.length < 3)
+            throw new Error(
+              `Referensi transfer ke-${index + 1} harus kosong atau berisi minimal 3 karakter.`,
+            );
+          const normalizedReference = reference.toLocaleLowerCase("id-ID");
+          if (references.has(normalizedReference))
+            throw new Error("Setiap referensi transfer yang diisi harus berbeda.");
+          references.add(normalizedReference);
+        }
         if (!transfer.transferredAt || Number.isNaN(new Date(transfer.transferredAt).getTime()))
           throw new Error(`Tanggal transfer ke-${index + 1} belum valid.`);
         if (transfer.evidenceReference.trim().length > 300)
@@ -726,7 +732,7 @@ export function OwnerRealizationWorkspace() {
         return {
           amount: transfer.amount,
           method: transfer.method,
-          reference,
+          ...(reference ? { reference } : {}),
           evidence_reference: transfer.evidenceReference.trim() || undefined,
           transferred_at: new Date(transfer.transferredAt).toISOString(),
           evidence_file_ids: transfer.evidenceFiles.map((file) => file.id),
@@ -807,7 +813,7 @@ export function OwnerRealizationWorkspace() {
     applied.workspace === "history"
       ? "Riwayat realisasi"
       : applied.workspace === "not_eligible"
-        ? "Tidak layak"
+        ? "Belum Kriteria"
         : "Realisasi aktif";
   const ownerProfileStatusLabel =
     applied.owner_profile_status === "archived"
@@ -921,7 +927,7 @@ export function OwnerRealizationWorkspace() {
     try {
       if (applied.workspace === "not_eligible") {
         await downloadOwnerRealizationNotEligible(applied, format);
-        toast.success(`Daftar tidak layak ${format.toUpperCase()} berhasil diunduh.`);
+        toast.success(`Daftar Belum Kriteria ${format.toUpperCase()} berhasil diunduh.`);
       } else {
         await downloadOwnerRealizationQueue(applied, format);
         toast.success(`Antrian Realisasi Owner ${format.toUpperCase()} berhasil diunduh.`);
@@ -956,10 +962,13 @@ export function OwnerRealizationWorkspace() {
     const target = rows.find((row) => row.owner_id === ownerId) ?? null;
     setCreationTarget(target);
     setSelectedLeaseIds(target?.eligible_lease_ids ?? []);
-    setHistorical((value) => ({
-      ...value,
+    setNote("");
+    setHistorical({
+      source: "Rekap manual Admin",
       lines: mode === "historical" ? seedHistoricalLines(target) : [],
-    }));
+      transfers: [emptyHistoricalTransfer()],
+      notes: "",
+    });
     setHistoricalDialogOpen(true);
   };
   const creationOwnerId = historicalOwnerId || creationTarget?.owner_id || "";
@@ -971,7 +980,7 @@ export function OwnerRealizationWorkspace() {
     applied.workspace === "history"
       ? "Riwayat Realisasi"
       : applied.workspace === "not_eligible"
-        ? "Tidak Layak Realisasi"
+        ? "Belum Kriteria Realisasi"
         : "Realisasi Aktif";
   const historicalTransferTotal = historical.transfers.reduce(
     (sum, transfer) => sum + transfer.amount,
@@ -1193,7 +1202,7 @@ export function OwnerRealizationWorkspace() {
               onClick={() => switchWorkspace("not_eligible")}
             >
               <ClipboardCheck />
-              Tidak layak
+              Belum Kriteria
             </Button>
             <Button
               variant="success"
@@ -1260,7 +1269,7 @@ export function OwnerRealizationWorkspace() {
               >
                 <option value="active">Realisasi aktif</option>
                 <option value="history">Riwayat realisasi</option>
-                <option value="not_eligible">Tidak memenuhi syarat</option>
+                <option value="not_eligible">Belum Kriteria Realisasi</option>
               </select>
             </label>
             <label>
@@ -1558,6 +1567,11 @@ export function OwnerRealizationWorkspace() {
                                                     {room.resident_name ??
                                                       "Nama penghuni tidak tersedia"}
                                                   </span>
+                                                  {room.waiting_physical_check_in ? (
+                                                    <Badge data-tone="warning">
+                                                      Lunas, menunggu aktivasi/check-in
+                                                    </Badge>
+                                                  ) : null}
                                                 </span>
                                                 <small>
                                                   Hak Owner {rupiah(room.realization_total)}
@@ -1944,6 +1958,9 @@ export function OwnerRealizationWorkspace() {
                   setHistorical((value) => ({
                     ...value,
                     lines: seedHistoricalLines(creationTarget),
+                    transfers: value.transfers.length
+                      ? value.transfers
+                      : [emptyHistoricalTransfer()],
                   }));
                 }}
               >
@@ -2054,6 +2071,11 @@ export function OwnerRealizationWorkspace() {
                           <small>
                             Hak Owner {rupiah(lease.realization_total)} · Kontrak{" "}
                             {rupiah(lease.contract_total)}
+                            {lease.waiting_physical_check_in ? (
+                              <span className="mt-1 block font-medium text-amber-700 dark:text-amber-300">
+                                Lunas, menunggu aktivasi/check-in
+                              </span>
+                            ) : null}
                           </small>
                         </span>
                       </label>
@@ -2416,9 +2438,9 @@ export function OwnerRealizationWorkspace() {
                   <legend className="px-1 text-sm font-semibold">Transfer historis aktual</legend>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <p className="max-w-xl text-xs font-semibold leading-relaxed text-muted-foreground">
-                      Catat setiap transfer sebagai transaksi tersendiri. Referensi wajib unik;
-                      bukti dapat diisi per transfer. Kosongkan daftar ini bila belum ada dana yang
-                      ditransfer.
+                      Catat setiap transfer sebagai transaksi tersendiri. Referensi boleh
+                      dikosongkan bila data lama tidak memilikinya; bila diisi, referensi harus
+                      unik. Bukti dapat diisi per transfer.
                     </p>
                     <Button
                       type="button"
@@ -2499,12 +2521,8 @@ export function OwnerRealizationWorkspace() {
                             <Input readOnly value="Transfer Bank" className="bg-muted/45" />
                           </label>
                           <label className="owner-report-field">
-                            <span className="font-semibold">
-                              Referensi transfer <RequiredMark />
-                            </span>
+                            <span className="font-semibold">Referensi transfer (opsional)</span>
                             <Input
-                              required
-                              minLength={3}
                               maxLength={150}
                               value={transfer.reference}
                               onChange={(event) =>
@@ -2517,7 +2535,7 @@ export function OwnerRealizationWorkspace() {
                                   ),
                                 }))
                               }
-                              placeholder="Contoh: TRF-OWNER-2026-001"
+                              placeholder="Contoh: TRF-OWNER-2026-001 atau kosongkan"
                             />
                           </label>
                           <label className="owner-report-field">
@@ -2699,7 +2717,7 @@ export function OwnerRealizationWorkspace() {
                   ) : null}
                 </fieldset>
                 <label className="owner-report-field">
-                  Catatan (opsional)
+                  <span className="font-semibold">Catatan (opsional)</span>
                   <Textarea
                     rows={2}
                     value={historical.notes}
@@ -2707,6 +2725,10 @@ export function OwnerRealizationWorkspace() {
                       setHistorical((value) => ({ ...value, notes: event.target.value }))
                     }
                   />
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Tersimpan sebagai catatan internal Realisasi Owner dan dapat dilihat Admin pada
+                    halaman rincian. Tidak dicetak pada kuitansi Owner.
+                  </span>
                 </label>
               </>
             ) : null}

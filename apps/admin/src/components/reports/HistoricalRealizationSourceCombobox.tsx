@@ -47,6 +47,8 @@ export function HistoricalRealizationSourceCombobox({
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
   const [panelWidth, setPanelWidth] = useState<number>();
   const anchorRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogScrollTopRef = useRef(0);
   const typedName = search.trim().replace(/\s+/g, " ");
   const sortedOptions = useMemo(
     () =>
@@ -63,9 +65,24 @@ export function HistoricalRealizationSourceCombobox({
     typedName.length <= 120 &&
     !sortedOptions.some((option) => normalizeSource(option) === normalizeSource(typedName));
 
+  const restoreDialogScroll = () => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const top = dialogScrollTopRef.current;
+    window.requestAnimationFrame(() => {
+      dialog.scrollTop = top;
+    });
+    window.setTimeout(() => {
+      dialog.scrollTop = top;
+    }, 0);
+  };
+
   const openMenu = () => {
     const anchor = anchorRef.current;
-    setPortalContainer(anchor?.closest<HTMLElement>('[role="dialog"]') ?? null);
+    const dialog = anchor?.closest<HTMLElement>('[role="dialog"]') ?? null;
+    dialogRef.current = dialog;
+    dialogScrollTopRef.current = dialog?.scrollTop ?? 0;
+    setPortalContainer(dialog);
     setPanelWidth(anchor?.getBoundingClientRect().width);
     setSearch("");
     setOpen(true);
@@ -116,6 +133,16 @@ export function HistoricalRealizationSourceCombobox({
         portalContainer={portalContainer}
         style={{ width: panelWidth, maxWidth: "calc(100vw - 2rem)" }}
         className="min-w-0 p-0"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          anchorRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+          restoreDialogScroll();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          anchorRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+          restoreDialogScroll();
+        }}
       >
         <Command shouldFilter={false}>
           <CommandInput

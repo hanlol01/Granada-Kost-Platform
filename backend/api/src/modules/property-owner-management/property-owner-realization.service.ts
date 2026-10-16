@@ -36,6 +36,7 @@ import {
   CorrectOwnerRealizationPeriodDto,
   OwnerRealizationQueryDto,
   OwnerRealizationRangeQueryDto,
+  PreviewOwnerRealizationPeriodRescheduleDto,
   PrepareOwnerRealizationDto,
   RecordOwnerRealizationTransferDto,
   RecordOwnerRealizationRecoveryEventDto,
@@ -155,12 +156,16 @@ type FinanceRequestLine = {
   realization_id: string;
   owner_profile_id: string;
   realization_reference: string;
+  realization_status: RealizationStatus;
   realization_total: string;
+  transferred_total: string;
+  scheduling_note: string | null;
   owner_name: string;
   room_code: string;
   resident_name: string | null;
   plot_number: string | null;
   duration_months: number;
+  payment_source_period: string | null;
   contract_total: string;
   net_realization: string;
   account_number: string | null;
@@ -929,9 +934,10 @@ export class PropertyOwnerRealizationService {
         message: 'Periode awal harus sama atau sebelum periode akhir.',
       });
     }
-    const statuses = query.voided === 'include_voided'
-      ? ['realized', 'published_to_owner', 'void']
-      : ['realized', 'published_to_owner'];
+    const statuses =
+      query.voided === 'include_voided'
+        ? ['realized', 'published_to_owner', 'void']
+        : ['realized', 'published_to_owner'];
     const ids = await this.database.client.query<{ id: string; realization_period: string }>(
       `SELECT id, realization_period::text
          FROM property_owner_realizations
@@ -945,8 +951,14 @@ export class PropertyOwnerRealizationService {
       ids.rows.map((row) => this.detail(actor, row.id, query.property_id)),
     );
     const included = details.filter((item) => item.realization.status !== 'void');
-    const sum = (key: 'eligible_contract_total' | 'management_fee_total' | 'correction_total' | 'realization_total' | 'transferred_total') =>
-      included.reduce((total, item) => total + numberValue(item.realization[key]), 0);
+    const sum = (
+      key:
+        | 'eligible_contract_total'
+        | 'management_fee_total'
+        | 'correction_total'
+        | 'realization_total'
+        | 'transferred_total',
+    ) => included.reduce((total, item) => total + numberValue(item.realization[key]), 0);
     const detailsByPeriod = new Map<string, typeof details>();
     for (const item of details) {
       const period = String(item.realization.period).slice(0, 7);
@@ -955,26 +967,39 @@ export class PropertyOwnerRealizationService {
       detailsByPeriod.set(period, periodDetails);
     }
     const periods: Array<any> = [];
-    for (let cursor = new Date(`${query.from_period}-01T00:00:00.000Z`); cursor.toISOString().slice(0, 10) < to.until; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) {
+    for (
+      let cursor = new Date(`${query.from_period}-01T00:00:00.000Z`);
+      cursor.toISOString().slice(0, 10) < to.until;
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    ) {
       const period = cursor.toISOString().slice(0, 7);
       const periodDetails = detailsByPeriod.get(period) ?? [];
       const includedDetails = periodDetails.filter((item) => item.realization.status !== 'void');
       const firstDetail = periodDetails[0];
-      periods.push(periodDetails.length
-        ? {
-            period,
-            included_in_total: includedDetails.length > 0,
-            realization: firstDetail.realization,
-            lines: periodDetails.flatMap((item) => item.lines),
-            transfers: periodDetails.flatMap((item) =>
-              item.transfers.map((transfer) => ({
-                ...transfer,
-                realization_id: item.realization.id,
-              })),
-            ),
-            corrections: periodDetails.flatMap((item) => item.corrections),
-          }
-        : { period, included_in_total: false, realization: null, lines: [], transfers: [], corrections: [] });
+      periods.push(
+        periodDetails.length
+          ? {
+              period,
+              included_in_total: includedDetails.length > 0,
+              realization: firstDetail.realization,
+              lines: periodDetails.flatMap((item) => item.lines),
+              transfers: periodDetails.flatMap((item) =>
+                item.transfers.map((transfer) => ({
+                  ...transfer,
+                  realization_id: item.realization.id,
+                })),
+              ),
+              corrections: periodDetails.flatMap((item) => item.corrections),
+            }
+          : {
+              period,
+              included_in_total: false,
+              realization: null,
+              lines: [],
+              transfers: [],
+              corrections: [],
+            },
+      );
     }
     return {
       owner_id: ownerId,
@@ -1036,21 +1061,42 @@ export class PropertyOwnerRealizationService {
       }
     }
     rows.push({
-      period: '', room: 'TOTAL', resident: '', owner: '', plot_number: '', duration_months: '',
-      rate_type: '', money_received: range.summary.eligible_contract_total,
-      contract_total: range.summary.eligible_contract_total, outstanding: 0, management_fee: range.summary.management_fee_total,
-      net_realization: range.summary.realization_total, paid_in_full_at: '', realization_status: '', line_status: 'total', check_in: '', check_out: '',
+      period: '',
+      room: 'TOTAL',
+      resident: '',
+      owner: '',
+      plot_number: '',
+      duration_months: '',
+      rate_type: '',
+      money_received: range.summary.eligible_contract_total,
+      contract_total: range.summary.eligible_contract_total,
+      outstanding: 0,
+      management_fee: range.summary.management_fee_total,
+      net_realization: range.summary.realization_total,
+      paid_in_full_at: '',
+      realization_status: '',
+      line_status: 'total',
+      check_in: '',
+      check_out: '',
     });
     const ownerName = textValue(first.realization?.owner_name, 'Owner');
     const report: ReportResult = {
       report_type: 'property-owners',
       title: `Realisasi Owner ${ownerName} Rentang periode ${periodLabel}`,
       property_name: textValue(first.realization?.scope_snapshot?.property_name, 'KOSTATION'),
-      period: { date_from: from.start, date_to: periodEndDate(query.to_period), label: periodLabel },
+      period: {
+        date_from: from.start,
+        date_to: periodEndDate(query.to_period),
+        label: periodLabel,
+      },
       generated_at: new Date().toISOString(),
       filter_checksum: createHash('sha256').update(JSON.stringify(query)).digest('hex'),
-      methodology: 'Rekap gabungan realisasi per periode; realisasi void ditampilkan sebagai catatan bila dipilih namun tidak dihitung dalam total.',
-      filter_summary: [['Rentang periode', periodLabel], ['Owner', ownerName]],
+      methodology:
+        'Rekap gabungan realisasi per periode; realisasi void ditampilkan sebagai catatan bila dipilih namun tidak dihitung dalam total.',
+      filter_summary: [
+        ['Rentang periode', periodLabel],
+        ['Owner', ownerName],
+      ],
       summary: {
         total_contract_rent: range.summary.eligible_contract_total,
         management_fee: range.summary.management_fee_total,
@@ -1059,24 +1105,84 @@ export class PropertyOwnerRealizationService {
         transferred: range.summary.transferred_total,
       },
       rows,
-      additional_sheets: [{
-        name: 'Transfer',
-        rows: [['Periode', 'Tanggal', 'Nominal', 'Referensi', 'Kuitansi', 'Status'], ...range.periods.flatMap((period) => (period.transfers as Array<Record<string, unknown>>).map((transfer) => [
-          formatOwnerMonthYear(`${period.period}-01`), tanggalIndonesia(transfer.transferred_at), rupiahValue(transfer.transfer_amount), textValue(transfer.transfer_reference), textValue(transfer.receipt_number), transfer.transfer_status === 'succeeded' ? 'Berhasil' : transfer.transfer_status === 'failed' ? 'Gagal' : 'Menunggu',
-        ]))],
-      }],
+      additional_sheets: [
+        {
+          name: 'Transfer',
+          rows: [
+            ['Periode', 'Tanggal', 'Nominal', 'Referensi', 'Kuitansi', 'Status'],
+            ...range.periods.flatMap((period) =>
+              (period.transfers as Array<Record<string, unknown>>).map((transfer) => [
+                formatOwnerMonthYear(`${period.period}-01`),
+                tanggalIndonesia(transfer.transferred_at),
+                rupiahValue(transfer.transfer_amount),
+                textValue(transfer.transfer_reference),
+                textValue(transfer.receipt_number),
+                transfer.transfer_status === 'succeeded'
+                  ? 'Berhasil'
+                  : transfer.transfer_status === 'failed'
+                    ? 'Gagal'
+                    : 'Menunggu',
+              ]),
+            ),
+          ],
+        },
+      ],
       meta: { limit: rows.length, offset: 0, total: rows.length },
     };
     return format === 'xlsx'
-      ? { content: reportToXlsx(report), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `realisasi-owner-${query.from_period}-${query.to_period}.xlsx` }
-      : { content: await reportToPdf(report), contentType: 'application/pdf', filename: `realisasi-owner-${query.from_period}-${query.to_period}.pdf` };
+      ? {
+          content: reportToXlsx(report),
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          filename: `realisasi-owner-${query.from_period}-${query.to_period}.xlsx`,
+        }
+      : {
+          content: await reportToPdf(report),
+          contentType: 'application/pdf',
+          filename: `realisasi-owner-${query.from_period}-${query.to_period}.pdf`,
+        };
+  }
+
+  async financeRequestAvailability(actor: UserAccessContext, query: OwnerRealizationQueryDto) {
+    this.assertPropertyScope(actor, query.property_id);
+    const period = this.period(query.period ?? this.currentJakartaPeriod());
+    const allowedStatuses: RealizationStatus[] = [
+      'submitted_to_finance',
+      'awaiting_transfer',
+      'partially_realized',
+    ];
+    const statuses = query.status
+      ? allowedStatuses.filter((status) => status === query.status)
+      : allowedStatuses;
+    if (!statuses.length) return { realization_count: 0 };
+    const result = await this.database.client.query<{ realization_count: string }>(
+      `SELECT COUNT(DISTINCT realization.id)::text AS realization_count
+         FROM property_owner_realizations realization
+         JOIN property_owner_profiles profile ON profile.id=realization.owner_profile_id
+         JOIN property_owner_realization_lines line ON line.realization_id=realization.id
+        WHERE realization.property_id=$1
+          AND realization.realization_period=$2::date
+          AND realization.realization_status=ANY($3::text[])
+          AND realization.realization_total>realization.transferred_total
+          AND ($4::text='all' OR profile.profile_status=$4)
+          AND (
+            $5::text IS NULL OR CONCAT_WS(' ',profile.full_name,line.resident_name_snapshot,line.room_code_snapshot)
+              ILIKE '%' || $5::text || '%'
+          )`,
+      [
+        query.property_id,
+        period.start,
+        statuses,
+        query.owner_profile_status ?? 'active',
+        query.q?.trim() || null,
+      ],
+    );
+    return { realization_count: Number(result.rows[0]?.realization_count ?? 0) };
   }
 
   /**
-   * Builds Finance's external verification form from completed realization
-   * history. The document is a Finance verification recap, so it belongs to
-   * batches that have actually reached realization history—not the active
-   * queue, whose candidates can already be locked into a batch.
+   * Builds the Finance hand-off document. Active workspaces deliberately use
+   * only submitted/awaiting transfers and their remaining balance; history is
+   * a separate recap of transfers that were completed already.
    */
   async exportFinanceRequest(
     actor: UserAccessContext,
@@ -1085,33 +1191,58 @@ export class PropertyOwnerRealizationService {
   ) {
     this.assertPropertyScope(actor, query.property_id);
     const period = this.period(query.period ?? this.currentJakartaPeriod());
+    const workspace = query.workspace === 'active' ? 'active' : 'history';
+    const allowedStatuses: RealizationStatus[] =
+      workspace === 'active'
+        ? ['submitted_to_finance', 'awaiting_transfer', 'partially_realized']
+        : ['realized', 'published_to_owner'];
+    const statuses = query.status
+      ? allowedStatuses.filter((status) => status === query.status)
+      : allowedStatuses;
+    const statusLabels: Record<RealizationStatus, string> = {
+      draft: 'Draft',
+      awaiting_review: 'Menunggu pemeriksaan',
+      approved: 'Disetujui',
+      submitted_to_finance: 'Diajukan ke Keuangan',
+      awaiting_transfer: 'Menunggu transfer',
+      partially_realized: 'Realisasi sebagian',
+      realized: 'Terealisasi',
+      published_to_owner: 'Diterbitkan untuk Owner',
+      void: 'Dibatalkan',
+    };
+    const search = query.q?.trim() || null;
+    const ownerProfileStatus = query.owner_profile_status ?? 'active';
     const financeLines = await this.database.client.query<FinanceRequestLine>(
       `SELECT realization.id AS realization_id,
               realization.owner_profile_id,
               realization.realization_reference,
+              realization.realization_status,
               realization.realization_total::text AS realization_total,
-              COALESCE(profile.full_name,realization.owner_snapshot->>'full_name','-') AS owner_name,
+              realization.transferred_total::text AS transferred_total,
+               realization.notes AS scheduling_note,
+              CASE WHEN $4::text='active'
+                THEN COALESCE(NULLIF(BTRIM(realization.owner_snapshot->>'full_name'),''),profile.full_name,'-')
+                ELSE COALESCE(profile.full_name,NULLIF(BTRIM(realization.owner_snapshot->>'full_name'),''),'-')
+              END AS owner_name,
               line.room_code_snapshot AS room_code,
               line.resident_name_snapshot AS resident_name,
               COALESCE(room.plot_number,line.plot_number_snapshot) AS plot_number,
               COALESCE(line.duration_months,0)::int AS duration_months,
+               TO_CHAR(line.payment_completed_at AT TIME ZONE 'Asia/Jakarta','YYYY-MM') AS payment_source_period,
               line.contract_total_amount::text AS contract_total,
               line.net_realization_amount::text AS net_realization,
-              COALESCE(
-                NULLIF(BTRIM(profile.payout_account_number),''),
-                NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_number'),''),
-                '-'
-              ) AS account_number,
-              COALESCE(
-                NULLIF(BTRIM(profile.payout_bank_name),''),
-                NULLIF(BTRIM(realization.owner_snapshot->>'payout_bank_name'),''),
-                '-'
-              ) AS bank_name,
-              COALESCE(
-                NULLIF(BTRIM(profile.payout_account_holder),''),
-                NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_holder'),''),
-                '-'
-              ) AS account_holder
+              CASE WHEN $4::text='active'
+                THEN NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_number'),'')
+                ELSE COALESCE(NULLIF(BTRIM(profile.payout_account_number),''),NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_number'),''))
+              END AS account_number,
+              CASE WHEN $4::text='active'
+                THEN NULLIF(BTRIM(realization.owner_snapshot->>'payout_bank_name'),'')
+                ELSE COALESCE(NULLIF(BTRIM(profile.payout_bank_name),''),NULLIF(BTRIM(realization.owner_snapshot->>'payout_bank_name'),''))
+              END AS bank_name,
+              CASE WHEN $4::text='active'
+                THEN NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_holder'),'')
+                ELSE COALESCE(NULLIF(BTRIM(profile.payout_account_holder),''),NULLIF(BTRIM(realization.owner_snapshot->>'payout_account_holder'),''))
+              END AS account_holder
          FROM property_owner_realizations realization
          JOIN property_owner_profiles profile ON profile.id=realization.owner_profile_id
           JOIN property_owner_realization_lines line ON line.realization_id=realization.id
@@ -1119,21 +1250,22 @@ export class PropertyOwnerRealizationService {
         WHERE realization.property_id=$1
           AND realization.realization_period=$2::date
           AND realization.realization_status=ANY($3::text[])
+          AND ($4::text<>'active' OR realization.realization_total>realization.transferred_total)
+          AND ($5::text='all' OR profile.profile_status=$5)
+          AND (
+            $6::text IS NULL OR CONCAT_WS(' ',profile.full_name,line.resident_name_snapshot,line.room_code_snapshot)
+              ILIKE '%' || $6::text || '%'
+          )
         ORDER BY profile.full_name,realization.realization_reference,line.room_code_snapshot,line.resident_name_snapshot`,
-      [query.property_id, period.start, ['realized', 'published_to_owner']],
+      [query.property_id, period.start, statuses, workspace, ownerProfileStatus, search],
     );
-    const search = query.q?.trim().toLowerCase();
-    const filteredLines = search
-      ? financeLines.rows.filter((line) =>
-          `${line.owner_name} ${line.resident_name ?? ''} ${line.room_code}`
-            .toLowerCase()
-            .includes(search),
-        )
-      : financeLines.rows;
-    if (filteredLines.length === 0) {
+    if (financeLines.rows.length === 0) {
       throw new ConflictException({
         code: 'OWNER_REALIZATION_FINANCE_REQUEST_EMPTY',
-        message: `Belum ada realisasi yang tercatat pada Riwayat Realisasi untuk Form Finance ${formatOwnerMonthYear(period.start)}.`,
+        message:
+          workspace === 'active'
+            ? `Belum ada realisasi Diajukan ke Keuangan, Menunggu transfer, atau Realisasi sebagian dengan sisa transfer pada ${formatOwnerMonthYear(period.start)}.`
+            : `Belum ada realisasi tercatat pada Riwayat Realisasi untuk ${formatOwnerMonthYear(period.start)}.`,
       });
     }
     const property = await this.database.client.query<{ name: string }>(
@@ -1178,34 +1310,82 @@ export class PropertyOwnerRealizationService {
         ...(signature ? { signature } : {}),
       });
     }
+    const grouped = new Map<string, FinanceRequestLine[]>();
+    for (const line of financeLines.rows) {
+      const lines = grouped.get(line.realization_id) ?? [];
+      lines.push(line);
+      grouped.set(line.realization_id, lines);
+    }
     const rows: OwnerFinanceRequestDocument['rows'] = [];
-    const realizationTotals = new Map<string, number>();
-    filteredLines.forEach((line) => {
-      realizationTotals.set(line.realization_id, numberValue(line.realization_total));
-    });
-    const seenRealizations = new Set<string>();
-    for (const line of filteredLines) {
-      const firstForRealization = !seenRealizations.has(line.realization_id);
-      seenRealizations.add(line.realization_id);
-      rows.push({
-        tenantName: line.resident_name ?? '-',
-        roomCode: line.room_code,
-        ownerName: line.owner_name,
-        plotNumber: line.plot_number ?? '-',
-        durationMonths: line.duration_months,
-        totalRent: numberValue(line.contract_total),
-        realizationAmount: numberValue(line.net_realization),
-        accountNumber: line.account_number ?? '-',
-        bankName: line.bank_name ?? '-',
-        accountHolder: line.account_holder ?? '-',
-        ownerTotalRealization: firstForRealization
-          ? (realizationTotals.get(line.realization_id) ?? 0)
-          : 0,
-      });
+    const incompleteOwners: OwnerFinanceRequestDocument['incompleteOwners'] = [];
+    const exportedRealizationIds: string[] = [];
+    let requestedTransferTotal = 0;
+    for (const [realizationId, lines] of grouped) {
+      const first = lines[0];
+      const missingFields = [
+        !first.bank_name?.trim() ? 'Nama bank' : null,
+        !first.account_number?.trim() ? 'Nomor rekening' : null,
+        !first.account_holder?.trim() ? 'Atas nama rekening' : null,
+      ].filter((field): field is string => Boolean(field));
+      if (missingFields.length) {
+        incompleteOwners.push({
+          ownerName: first.owner_name,
+          realizationReference: first.realization_reference,
+          realizationStatus: statusLabels[first.realization_status],
+          missingFields,
+        });
+        continue;
+      }
+      const ownerEntitlement = numberValue(first.realization_total);
+      const transferredTotal = numberValue(first.transferred_total);
+      const requestedTransferAmount =
+        workspace === 'active'
+          ? Math.max(ownerEntitlement - transferredTotal, 0)
+          : ownerEntitlement;
+      if (workspace === 'active' && requestedTransferAmount <= 0) continue;
+      exportedRealizationIds.push(realizationId);
+      requestedTransferTotal += requestedTransferAmount;
+      for (const line of lines) {
+        const schedulingNote = line.scheduling_note
+          ? line.scheduling_note
+              .split(/\n\s*\n/)
+              .filter((note) => note.startsWith('Penjadwalan realisasi:'))
+              .join('\n')
+              .trim() || null
+          : null;
+        rows.push({
+          tenantName: line.resident_name ?? '-',
+          roomCode: line.room_code,
+          ownerName: line.owner_name,
+          realizationReference: line.realization_reference,
+          realizationStatus: statusLabels[line.realization_status],
+          plotNumber: line.plot_number ?? '-',
+          durationMonths: line.duration_months,
+          paymentSourcePeriod: line.payment_source_period,
+          totalRent: numberValue(line.contract_total),
+          realizationAmount: numberValue(line.net_realization),
+          accountNumber: line.account_number ?? '-',
+          bankName: line.bank_name ?? '-',
+          accountHolder: line.account_holder ?? '-',
+          ownerEntitlement,
+          transferredTotal,
+          requestedTransferAmount,
+          schedulingNote,
+        });
+      }
     }
     const propertyName = formatDocumentPropertyName(property.rows[0]?.name ?? 'KOSTATION');
     const companyName = organization.rows[0]?.company_name?.trim() || 'Kostation';
     const document: OwnerFinanceRequestDocument = {
+      kind: workspace,
+      title:
+        workspace === 'active'
+          ? 'FORM PENGAJUAN TRANSFER REALISASI OWNER'
+          : 'REKAP REALISASI OWNER',
+      notice:
+        workspace === 'active'
+          ? ''
+          : 'Dokumen ini adalah rekap realisasi transfer yang telah selesai dicatat.',
       period: formatOwnerMonthYear(period.start),
       propertyName,
       departmentUnit: `${companyName} ${propertyName}`.trim(),
@@ -1213,6 +1393,8 @@ export class PropertyOwnerRealizationService {
       address:
         organization.rows[0]?.company_address?.trim() || 'Kabupaten Sumedang, Jawa Barat 45363',
       rows,
+      requestedTransferTotal,
+      incompleteOwners,
       signatories,
     };
     const file =
@@ -1220,13 +1402,19 @@ export class PropertyOwnerRealizationService {
         ? {
             content: ownerFinanceRequestToXlsx(document),
             contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            filename: `form-pengajuan-realisasi-passive-income-${period.value}.xlsx`,
+            filename:
+              workspace === 'active'
+                ? `form-pengajuan-transfer-realisasi-owner-${period.value}.xlsx`
+                : `rekap-realisasi-owner-${period.value}.xlsx`,
           }
         : format === 'pdf'
           ? {
               content: await ownerFinanceRequestToPdf(document),
               contentType: 'application/pdf',
-              filename: `form-pengajuan-realisasi-passive-income-${period.value}.pdf`,
+              filename:
+                workspace === 'active'
+                  ? `form-pengajuan-transfer-realisasi-owner-${period.value}.pdf`
+                  : `rekap-realisasi-owner-${period.value}.pdf`,
             }
           : null;
     if (!file)
@@ -1239,7 +1427,22 @@ export class PropertyOwnerRealizationService {
       propertyId: query.property_id,
       action: 'property_owner.realization.finance_request_exported',
       resourceType: 'property_owner_finance_request',
-      afterData: { period: period.value, format, total: rows.length },
+      afterData: {
+        workspace,
+        period: period.value,
+        format,
+        statuses,
+        filters: {
+          q: query.q?.trim() || null,
+          status: query.status ?? null,
+          owner_profile_status: ownerProfileStatus,
+        },
+        realization_ids: exportedRealizationIds,
+        owner_count: new Set(rows.map((row) => row.ownerName)).size,
+        contract_line_count: rows.length,
+        requested_transfer_total: requestedTransferTotal,
+        incomplete_owner_count: incompleteOwners.length,
+      },
       resultStatus: 'success',
     });
     return file;
@@ -1426,7 +1629,32 @@ export class PropertyOwnerRealizationService {
     idempotencyKey: string | undefined,
     context: RequestAuditContext,
   ) {
-    const period = this.period(dto.period);
+    const requestedPeriod = this.period(dto.period);
+    const paymentSourcePeriod = this.period(dto.payment_source_period ?? requestedPeriod.value);
+    if (paymentSourcePeriod.value !== requestedPeriod.value) {
+      throw new BadRequestException({
+        code: 'OWNER_REALIZATION_PAYMENT_SOURCE_PERIOD_MISMATCH',
+        message: 'Periode sumber pelunasan harus sama dengan periode antrean realisasi aktif.',
+      });
+    }
+    const targetRealizationPeriod = this.period(
+      dto.target_realization_period ?? paymentSourcePeriod.value,
+    );
+    const schedulingReason = dto.scheduling_reason?.replace(/\s+/g, ' ').trim() || null;
+    const targetPeriodDiffers = targetRealizationPeriod.value !== paymentSourcePeriod.value;
+    if (targetPeriodDiffers && !schedulingReason) {
+      throw new BadRequestException({
+        code: 'OWNER_REALIZATION_TARGET_PERIOD_REASON_REQUIRED',
+        message:
+          'Alasan pemindahan periode wajib diisi ketika periode realisasi berbeda dari periode pelunasan.',
+      });
+    }
+    const schedulingNote = targetPeriodDiffers
+      ? `Penjadwalan realisasi: pelunasan ${formatOwnerMonthYear(
+          paymentSourcePeriod.start,
+        )} diproses pada ${formatOwnerMonthYear(targetRealizationPeriod.start)}. Alasan: ${schedulingReason}`
+      : null;
+    const notes = [dto.notes?.trim(), schedulingNote].filter(Boolean).join('\n\n') || null;
     return this.command(
       actor,
       dto.property_id,
@@ -1436,8 +1664,11 @@ export class PropertyOwnerRealizationService {
       context,
       async (client) => {
         await this.lockOwner(client, ownerId, dto.property_id);
-        const availableCandidates = (
-          await this.eligibleCandidates(client, dto.property_id, period.value, ownerId)
+        const availableCandidates = await this.eligibleCandidates(
+          client,
+          dto.property_id,
+          paymentSourcePeriod.value,
+          ownerId,
         );
         const selectedLeaseIds = dto.selected_lease_ids ? new Set(dto.selected_lease_ids) : null;
         const candidates = selectedLeaseIds
@@ -1480,30 +1711,103 @@ export class PropertyOwnerRealizationService {
           property_name: property.rows[0]?.name ?? 'KOSTATION',
         };
         const tariffSnapshot = this.tariffSnapshot(candidates);
-        const realizationReference = `RLS-${period.value.replace('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
-        const inserted = await client.query<{ id: string }>(
-          `INSERT INTO property_owner_realizations(
-            property_id,owner_profile_id,realization_period,realization_reference,owner_snapshot,scope_snapshot,
-            tariff_snapshot,room_count,eligible_contract_total,management_fee_total,realization_total,notes,
-            prepared_by_user_id,prepared_at
-         ) VALUES($1,$2,$3::date,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13,now()) RETURNING id`,
+        const targetBatches = await client.query<{
+          id: string;
+          realization_reference: string;
+          realization_status: string;
+        }>(
+          `SELECT id,realization_reference,realization_status
+             FROM property_owner_realizations
+            WHERE property_id=$1
+              AND owner_profile_id=$2
+              AND realization_period=$3::date
+              AND realization_status=ANY($4::text[])
+            ORDER BY created_at DESC,id DESC
+            FOR UPDATE`,
           [
             dto.property_id,
             ownerId,
-            period.start,
-            realizationReference,
-            JSON.stringify(ownerSnapshot),
-            JSON.stringify(scopeSnapshot),
-            JSON.stringify(tariffSnapshot),
-            candidates.length,
-            totals.contract,
-            totals.fee,
-            totals.net,
-            dto.notes ?? null,
-            actor.id,
+            targetRealizationPeriod.start,
+            [
+              'draft',
+              'awaiting_review',
+              'approved',
+              'submitted_to_finance',
+              'awaiting_transfer',
+              'partially_realized',
+            ],
           ],
         );
-        const realizationId = inserted.rows[0].id;
+        const blockedTargetBatch = targetBatches.rows.find(
+          (batch) => batch.realization_status !== 'draft',
+        );
+        if (blockedTargetBatch) {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_TARGET_PERIOD_BUSY',
+            message:
+              `Owner sudah memiliki realisasi ${blockedTargetBatch.realization_reference} yang sedang diproses ` +
+              `pada ${formatOwnerMonthYear(targetRealizationPeriod.start)}. ` +
+              'Selesaikan proses batch tersebut sebelum menambahkan kontrak baru.',
+          });
+        }
+        const reusableDraft = targetBatches.rows.find(
+          (batch) => batch.realization_status === 'draft',
+        );
+        let realizationId: string;
+        let realizationReference: string;
+        if (reusableDraft) {
+          realizationId = reusableDraft.id;
+          realizationReference = reusableDraft.realization_reference;
+          await client.query(
+            `UPDATE property_owner_realizations
+                SET room_count=room_count+$2,
+                    eligible_contract_total=eligible_contract_total+$3,
+                    management_fee_total=management_fee_total+$4,
+                    realization_total=realization_total+$5,
+                    notes=CASE
+                      WHEN $6::text IS NULL THEN notes
+                      WHEN notes IS NULL OR btrim(notes)='' THEN $6::text
+                      ELSE concat(notes,E'\n\n',$6::text)
+                    END,
+                    updated_at=now()
+              WHERE id=$1`,
+            [
+              realizationId,
+              candidates.length,
+              totals.contract,
+              totals.fee,
+              totals.net,
+              notes,
+            ],
+          );
+        } else {
+          realizationReference = `RLS-${targetRealizationPeriod.value.replace('-', '')}-${randomUUID()
+            .slice(0, 8)
+            .toUpperCase()}`;
+          const inserted = await client.query<{ id: string }>(
+            `INSERT INTO property_owner_realizations(
+              property_id,owner_profile_id,realization_period,realization_reference,owner_snapshot,scope_snapshot,
+              tariff_snapshot,room_count,eligible_contract_total,management_fee_total,realization_total,notes,
+              prepared_by_user_id,prepared_at
+           ) VALUES($1,$2,$3::date,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13,now()) RETURNING id`,
+            [
+              dto.property_id,
+              ownerId,
+              targetRealizationPeriod.start,
+              realizationReference,
+              JSON.stringify(ownerSnapshot),
+              JSON.stringify(scopeSnapshot),
+              JSON.stringify(tariffSnapshot),
+              candidates.length,
+              totals.contract,
+              totals.fee,
+              totals.net,
+              notes,
+              actor.id,
+            ],
+          );
+          realizationId = inserted.rows[0].id;
+        }
         for (const candidate of candidates) {
           const line = await client.query<{ id: string }>(
             `INSERT INTO property_owner_realization_lines(
@@ -1560,11 +1864,17 @@ export class PropertyOwnerRealizationService {
             throw error;
           }
         }
+        const recalculated = reusableDraft
+          ? await this.recalculate(client, realizationId)
+          : { ...totals, correction_total: 0, realization_total: totals.net };
         const response = {
           realization_id: realizationId,
           reference: realizationReference,
           status: 'draft',
-          totals,
+          reused_draft: Boolean(reusableDraft),
+          payment_source_period: paymentSourcePeriod.value,
+          target_realization_period: targetRealizationPeriod.value,
+          totals: recalculated,
         };
         await this.audit.write(
           {
@@ -1573,7 +1883,11 @@ export class PropertyOwnerRealizationService {
             action: 'property_owner.realization.prepared',
             resourceType: 'property_owner_realization',
             resourceId: realizationId,
-            afterData: response,
+            afterData: {
+              ...response,
+              scheduling_reason: schedulingReason,
+              selected_lease_ids: candidates.map((candidate) => candidate.lease_id),
+            },
             resultStatus: 'success',
             ...context,
           },
@@ -1988,6 +2302,55 @@ export class PropertyOwnerRealizationService {
     );
   }
 
+  async previewPeriodReschedule(
+    actor: UserAccessContext,
+    realizationId: string,
+    query: PreviewOwnerRealizationPeriodRescheduleDto,
+  ) {
+    this.assertPropertyScope(actor, query.property_id);
+    const target = this.period(query.target_period);
+    const realization = await this.database.client.query<
+      Pick<Realization, 'id' | 'owner_profile_id' | 'realization_period'>
+    >(
+      `SELECT id,owner_profile_id,realization_period::text
+         FROM property_owner_realizations
+        WHERE id=$1 AND property_id=$2`,
+      [realizationId, query.property_id],
+    );
+    if (!realization.rows[0]) {
+      throw new NotFoundException({
+        code: 'OWNER_REALIZATION_NOT_FOUND',
+        message: 'Realisasi Owner tidak ditemukan.',
+      });
+    }
+    const existing = await this.database.client.query<{
+      id: string;
+      realization_reference: string;
+      realization_period: string;
+      realization_status: RealizationStatus;
+      realization_total: string;
+    }>(
+      `SELECT id,realization_reference,realization_period::text,realization_status,realization_total::text
+         FROM property_owner_realizations
+        WHERE property_id=$1 AND owner_profile_id=$2 AND realization_period=$3::date
+          AND realization_status<>'void' AND id<>$4
+        ORDER BY created_at,id`,
+      [query.property_id, realization.rows[0].owner_profile_id, target.start, realizationId],
+    );
+    return {
+      realization_id: realizationId,
+      current_period: realization.rows[0].realization_period.slice(0, 7),
+      target_period: target.value,
+      existing_batches: existing.rows.map((batch) => ({
+        id: batch.id,
+        reference: batch.realization_reference,
+        period: batch.realization_period.slice(0, 7),
+        status: batch.realization_status,
+        realization_total: batch.realization_total,
+      })),
+    };
+  }
+
   async correctPeriod(
     actor: UserAccessContext,
     realizationId: string,
@@ -2005,10 +2368,16 @@ export class PropertyOwnerRealizationService {
       context,
       async (client) => {
         const realization = await this.lockRealization(client, realizationId, dto.property_id);
-        if (realization.realization_status === 'void' || realization.realization_status === 'published_to_owner') {
+        if (
+          realization.realization_status === 'void' ||
+          realization.realization_status === 'published_to_owner' ||
+          realization.realization_status === 'partially_realized' ||
+          realization.realization_status === 'realized'
+        ) {
           throw new ConflictException({
             code: 'OWNER_REALIZATION_PERIOD_CORRECTION_LOCKED',
-            message: 'Periode tidak dapat dikoreksi setelah realisasi diterbitkan atau dibatalkan.',
+            message:
+              'Periode hanya dapat dikoreksi sebelum transfer berhasil atau realisasi diterbitkan.',
           });
         }
         if (realization.realization_period.slice(0, 7) === target.value) {
@@ -2017,68 +2386,63 @@ export class PropertyOwnerRealizationService {
             message: 'Periode tujuan sama dengan periode realisasi saat ini.',
           });
         }
-        const conflict = await client.query<{ id: string }>(
-          `SELECT id FROM property_owner_realizations
+        const existing = await client.query<{
+          id: string;
+          realization_reference: string;
+          realization_period: string;
+          realization_status: RealizationStatus;
+          realization_total: string;
+        }>(
+          `SELECT id,realization_reference,realization_period::text,realization_status,realization_total::text
+             FROM property_owner_realizations
              WHERE property_id=$1 AND owner_profile_id=$2 AND realization_period=$3::date
                AND realization_status<>'void' AND id<>$4
-             LIMIT 1 FOR UPDATE`,
+             ORDER BY created_at,id
+             FOR UPDATE`,
           [dto.property_id, realization.owner_profile_id, target.start, realizationId],
         );
-        if (conflict.rows[0]) {
-          throw new ConflictException({
-            code: 'OWNER_REALIZATION_PERIOD_CONFLICT',
-            message: 'Owner sudah memiliki realisasi aktif pada periode tujuan.',
-          });
-        }
-        const lines = await client.query<{ payment_completed_at: string | null }>(
-          `SELECT payment_completed_at::text
-             FROM property_owner_realization_lines
-            WHERE realization_id=$1
-            ORDER BY id
-            FOR UPDATE`,
-          [realizationId],
-        );
-        if (!lines.rows.length || lines.rows.some((line) => !line.payment_completed_at)) {
-          throw new ConflictException({
-            code: 'OWNER_REALIZATION_PERIOD_SOURCE_UNAVAILABLE',
-            message: 'Periode pembayaran pada rincian realisasi belum lengkap untuk dikoreksi.',
-          });
-        }
-        const mixed = lines.rows.some((line) => {
-          const parts = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Jakarta',
-            year: 'numeric',
-            month: '2-digit',
-          }).formatToParts(new Date(line.payment_completed_at!));
-          const year = parts.find((part) => part.type === 'year')?.value;
-          const month = parts.find((part) => part.type === 'month')?.value;
-          return `${year}-${month}` !== target.value;
-        });
-        if (mixed) {
-          throw new ConflictException({
-            code: 'OWNER_REALIZATION_PERIOD_MIXED_BATCH',
-            message: 'Batch berisi lebih dari satu bulan pelunasan. Pisahkan rincian sebelum koreksi periode.',
-          });
-        }
-        const transfers = await client.query<{ id: string; transfer_amount: string; transfer_reference: string | null }>(
+        const transfers = await client.query<{
+          id: string;
+          transfer_amount: string;
+          transfer_reference: string | null;
+        }>(
           `SELECT id,transfer_amount::text,transfer_reference
              FROM property_owner_realization_transfers
-            WHERE realization_id=$1 ORDER BY transferred_at,id FOR UPDATE`,
+            WHERE realization_id=$1 AND transfer_status='succeeded'
+            ORDER BY transferred_at,id FOR UPDATE`,
           [realizationId],
         );
+        if (transfers.rows.length || Number(realization.transferred_total) > 0) {
+          throw new ConflictException({
+            code: 'OWNER_REALIZATION_PERIOD_CORRECTION_LOCKED',
+            message:
+              'Periode hanya dapat dikoreksi sebelum transfer berhasil atau realisasi diterbitkan.',
+          });
+        }
         await client.query(
           `UPDATE property_owner_realizations
-              SET realization_period=$2::date,updated_at=now()
+              SET realization_period=$2::date,
+                  realization_status='draft',
+                  notes=CASE
+                  WHEN notes IS NULL OR btrim(notes)='' THEN $3::text
+                  ELSE concat(notes,E'\n\nKoreksi periode: ',$3::text)
+                  END,
+                  updated_at=now()
             WHERE id=$1`,
-          [realizationId, target.start],
+          [realizationId, target.start, dto.reason.trim()],
         );
         const response = {
           realization_id: realizationId,
           previous_period: realization.realization_period.slice(0, 7),
           realization_period: target.value,
-          transfer_facts_preserved: true,
-          transfer_ids: transfers.rows.map((transfer) => transfer.id),
-          transfer_total: transfers.rows.reduce((sum, transfer) => sum + Number(transfer.transfer_amount), 0),
+          status: 'draft' as const,
+          existing_batches: existing.rows.map((batch) => ({
+            id: batch.id,
+            reference: batch.realization_reference,
+            period: batch.realization_period.slice(0, 7),
+            status: batch.realization_status,
+            realization_total: batch.realization_total,
+          })),
         };
         await this.audit.write(
           {
@@ -2090,7 +2454,7 @@ export class PropertyOwnerRealizationService {
             beforeData: {
               realization_period: realization.realization_period,
               realization_status: realization.realization_status,
-              transfer_ids: transfers.rows.map((transfer) => transfer.id),
+              transferred_total: realization.transferred_total,
             },
             afterData: { ...response, reason: dto.reason.trim() },
             resultStatus: 'success',
@@ -3101,13 +3465,26 @@ export class PropertyOwnerRealizationService {
     const from = this.period(fromInput);
     const to = this.period(toInput);
     if (from.start >= to.until) {
-      throw new ConflictException({ code: 'OWNER_REALIZATION_RANGE_INVALID', message: 'Periode awal harus sama atau sebelum periode akhir.' });
+      throw new ConflictException({
+        code: 'OWNER_REALIZATION_RANGE_INVALID',
+        message: 'Periode awal harus sama atau sebelum periode akhir.',
+      });
     }
     const periods: Array<Record<string, unknown>> = [];
     let ownerName: string | null = null;
     let destination: unknown = null;
-    const summary = { room_count: 0, eligible_contract_total: 0, management_fee_total: 0, realization_total: 0, transferred_total: 0 };
-    for (let cursor = new Date(`${fromInput}-01T00:00:00.000Z`); cursor.toISOString().slice(0, 10) < to.until; cursor.setUTCMonth(cursor.getUTCMonth() + 1)) {
+    const summary = {
+      room_count: 0,
+      eligible_contract_total: 0,
+      management_fee_total: 0,
+      realization_total: 0,
+      transferred_total: 0,
+    };
+    for (
+      let cursor = new Date(`${fromInput}-01T00:00:00.000Z`);
+      cursor.toISOString().slice(0, 10) < to.until;
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    ) {
       const period = cursor.toISOString().slice(0, 7);
       const progress = await this.portalProgress(actor, period);
       if (progress.state !== 'published') {
@@ -3121,9 +3498,25 @@ export class PropertyOwnerRealizationService {
       summary.management_fee_total += Number(progress.summary.management_fee_total ?? 0);
       summary.realization_total += Number(progress.summary.realization_total ?? 0);
       summary.transferred_total += Number(progress.summary.transferred_total ?? 0);
-      periods.push({ period, state: 'published', realization: progress.realization, lines: progress.lines, transfers: progress.transfers });
+      periods.push({
+        period,
+        state: 'published',
+        realization: progress.realization,
+        lines: progress.lines,
+        transfers: progress.transfers,
+      });
     }
-    return { from_period: fromInput, to_period: toInput, state: periods.some((item) => item.state === 'published') ? 'published' : 'empty', owner_name: ownerName, payout_destination: destination, summary: Object.fromEntries(Object.entries(summary).map(([key, value]) => [key, String(value)])), periods };
+    return {
+      from_period: fromInput,
+      to_period: toInput,
+      state: periods.some((item) => item.state === 'published') ? 'published' : 'empty',
+      owner_name: ownerName,
+      payout_destination: destination,
+      summary: Object.fromEntries(
+        Object.entries(summary).map(([key, value]) => [key, String(value)]),
+      ),
+      periods,
+    };
   }
 
   async portalProgressExport(actor: UserAccessContext, periodInput: string, format: string) {

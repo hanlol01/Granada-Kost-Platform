@@ -454,6 +454,8 @@ export function OwnerRealizationWorkspace() {
   const [historicalOwnerId, setHistoricalOwnerId] = useState("");
   const [creationTarget, setCreationTarget] = useState<OwnerRealizationRow | null>(null);
   const [selectedLeaseIds, setSelectedLeaseIds] = useState<string[]>([]);
+  const [targetRealizationPeriod, setTargetRealizationPeriod] = useState(defaultPeriod);
+  const [schedulingReason, setSchedulingReason] = useState("");
   const [filterNoticeRevision, setFilterNoticeRevision] = useState(1);
   const searchDebounceRef = useRef<number | null>(null);
   const ownerProgressRef = useRef<HTMLElement | null>(null);
@@ -513,6 +515,13 @@ export function OwnerRealizationWorkspace() {
     queryKey: ["owner-realizations", applied],
     queryFn: () => ownerRealizationApi.list(applied),
     enabled: Boolean(currentPropertyId && applied.property_id),
+  });
+  const financeRequestAvailability = useQuery({
+    queryKey: ["owner-realizations", "finance-request-availability", applied],
+    queryFn: () =>
+      ownerRealizationApi.financeRequestAvailability({ ...applied, workspace: "active" }),
+    enabled: Boolean(currentPropertyId && applied.property_id && applied.workspace === "active"),
+    staleTime: 15_000,
   });
   const attention = useQuery({
     queryKey: [
@@ -574,10 +583,23 @@ export function OwnerRealizationWorkspace() {
   const invalidate = async () =>
     queryClient.invalidateQueries({ queryKey: ["owner-realizations"] });
   const prepare = useMutation({
-    mutationFn: ({ ownerId, leaseIds }: { ownerId: string; leaseIds?: string[] }) =>
+    mutationFn: ({
+      ownerId,
+      leaseIds,
+      targetPeriod,
+      reason,
+    }: {
+      ownerId: string;
+      leaseIds?: string[];
+      targetPeriod: string;
+      reason?: string;
+    }) =>
       ownerRealizationApi.prepare(ownerId, {
         property_id: currentPropertyId!,
         period: applied.period!,
+        payment_source_period: applied.period!,
+        target_realization_period: targetPeriod,
+        scheduling_reason: reason,
         notes: note.trim() || undefined,
         selected_lease_ids: leaseIds?.length ? leaseIds : undefined,
       }),
@@ -589,6 +611,8 @@ export function OwnerRealizationWorkspace() {
       setHistoricalOwnerId("");
       setCreationTarget(null);
       setSelectedLeaseIds([]);
+      setTargetRealizationPeriod(applied.period ?? defaultPeriod);
+      setSchedulingReason("");
       setNote("");
       await invalidate();
     },
@@ -800,6 +824,14 @@ export function OwnerRealizationWorkspace() {
       : (list.data?.meta.total ?? 0);
   const noticeQuery = applied.workspace === "not_eligible" ? notEligible : list;
   const filterLoading = noticeQuery.isFetching;
+  const financeRequestReadyCount = financeRequestAvailability.data?.realization_count ?? 0;
+  const financeRequestUnavailable =
+    applied.workspace === "active" && financeRequestAvailability.isError;
+  const financeRequestDisabled =
+    filterLoading ||
+    financeRequestUnavailable ||
+    (applied.workspace === "active" &&
+      (financeRequestAvailability.isLoading || financeRequestReadyCount === 0));
   useEffect(() => {
     if (
       filterNoticeRevision <= 1 ||
@@ -950,7 +982,8 @@ export function OwnerRealizationWorkspace() {
   const exportFinanceRequest = async (format: "pdf" | "xlsx") => {
     try {
       await downloadOwnerRealizationFinanceRequest(applied, format);
-      toast.success(`Form pengajuan Finance ${format.toUpperCase()} berhasil diunduh.`);
+      const documentLabel = applied.workspace === "active" ? "Form Finance" : "Rekap Finance";
+      toast.success(`${documentLabel} ${format.toUpperCase()} berhasil diunduh.`);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Form pengajuan Finance belum dapat diunduh.",
@@ -971,6 +1004,8 @@ export function OwnerRealizationWorkspace() {
     const target = rows.find((row) => row.owner_id === ownerId) ?? null;
     setCreationTarget(target);
     setSelectedLeaseIds(target?.eligible_lease_ids ?? []);
+    setTargetRealizationPeriod(applied.period ?? defaultPeriod);
+    setSchedulingReason("");
     setNote("");
     setHistorical({
       source: "Rekap manual Admin",
@@ -1026,6 +1061,9 @@ export function OwnerRealizationWorkspace() {
   const historicalTransferExceedsOwner = historicalTransferTotal > historicalOwnerTotal;
   const historicalOwnerName = creationTarget?.owner_name ?? historicalOwnerId;
   const historicalPeriodLabel = monthLabel(applied.period ?? defaultPeriod);
+  const targetRealizationPeriodLabel = monthLabel(targetRealizationPeriod);
+  const targetPeriodDiffersFromSource =
+    creationMode === "future" && targetRealizationPeriod !== (applied.period ?? defaultPeriod);
   const latestPeriodLabel = (value: string) => monthLabel(value.slice(0, 7));
   const openSaveConfirmation = () => {
     if (!creationOwnerId) {
@@ -1317,6 +1355,17 @@ export function OwnerRealizationWorkspace() {
               </select>
             </label>
           </div>
+          {applied.workspace === "active" ? (
+            <p className="mt-3 text-sm text-muted-foreground" role="status">
+              {financeRequestAvailability.isLoading
+                ? "Memeriksa realisasi yang siap diajukan ke Finance…"
+                : financeRequestAvailability.isError
+                  ? "Status kesiapan Form Finance belum dapat diperiksa."
+                  : financeRequestReadyCount > 0
+                    ? `${financeRequestReadyCount} realisasi siap dimasukkan ke Form Finance sesuai filter aktif.`
+                    : "Belum ada realisasi Diajukan ke Keuangan, Menunggu transfer, atau Realisasi sebagian dengan sisa transfer pada filter ini."}
+            </p>
+          ) : null}
           <div className="owner-report-filter__actions">
             <Button variant="destructive" onClick={reset}>
               <RefreshCcw />
@@ -1340,13 +1389,20 @@ export function OwnerRealizationWorkspace() {
               <FileSpreadsheet />
               Unduh Excel {exportScopeLabel}
             </Button>
-            {applied.workspace === "history" ? (
+            {applied.workspace === "active" || applied.workspace === "history" ? (
               <>
                 <Button
                   variant="destructive"
                   className="owner-report-export--pdf whitespace-normal text-center leading-tight"
                   onClick={() => void exportFinanceRequest("pdf")}
-                  disabled={filterLoading}
+                  disabled={financeRequestDisabled}
+                  title={
+                    financeRequestUnavailable
+                      ? "Status kesiapan Form Finance belum dapat diperiksa. Coba lagi sesaat lagi."
+                      : applied.workspace === "active" && financeRequestReadyCount === 0
+                        ? "Tidak ada realisasi yang siap diajukan ke Finance pada filter ini."
+                        : undefined
+                  }
                 >
                   <FileText />
                   Unduh Form Finance PDF
@@ -1355,7 +1411,14 @@ export function OwnerRealizationWorkspace() {
                   variant="success"
                   className="owner-report-export--excel whitespace-normal text-center leading-tight"
                   onClick={() => void exportFinanceRequest("xlsx")}
-                  disabled={filterLoading}
+                  disabled={financeRequestDisabled}
+                  title={
+                    financeRequestUnavailable
+                      ? "Status kesiapan Form Finance belum dapat diperiksa. Coba lagi sesaat lagi."
+                      : applied.workspace === "active" && financeRequestReadyCount === 0
+                        ? "Tidak ada realisasi yang siap diajukan ke Finance pada filter ini."
+                        : undefined
+                  }
                 >
                   <FileSpreadsheet />
                   Unduh Form Finance Excel
@@ -1803,7 +1866,13 @@ export function OwnerRealizationWorkspace() {
             </Button>
             <Button
               disabled={!prepareTarget || prepare.isPending}
-              onClick={() => prepareTarget && prepare.mutate({ ownerId: prepareTarget.owner_id })}
+              onClick={() =>
+                prepareTarget &&
+                prepare.mutate({
+                  ownerId: prepareTarget.owner_id,
+                  targetPeriod: applied.period ?? defaultPeriod,
+                })
+              }
             >
               {prepare.isPending ? <Loader2 className="animate-spin" /> : <FilePlus2 />}Siapkan
               draft
@@ -1916,6 +1985,8 @@ export function OwnerRealizationWorkspace() {
             setHistoricalOwnerId("");
             setCreationTarget(null);
             setSelectedLeaseIds([]);
+            setTargetRealizationPeriod(applied.period ?? defaultPeriod);
+            setSchedulingReason("");
           }
         }}
       >
@@ -1930,14 +2001,14 @@ export function OwnerRealizationWorkspace() {
           <div
             className="rounded-xl border border-primary/35 bg-primary/5 px-4 py-3"
             role="status"
-            aria-label={`Periode realisasi yang dipilih ${historicalPeriodLabel}`}
+            aria-label={`Periode sumber pelunasan ${historicalPeriodLabel}`}
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Periode realisasi yang dipilih
+              Periode sumber pelunasan
             </p>
             <p className="mt-1 text-lg font-bold text-foreground">{historicalPeriodLabel}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Data yang disimpan melalui formulir ini akan dicatat untuk periode tersebut.
+              Kontrak yang tersedia telah lunas dan terverifikasi pada periode ini.
             </p>
           </div>
           <div className="grid gap-4">
@@ -2049,6 +2120,56 @@ export function OwnerRealizationWorkspace() {
                   Sistem memilih kontrak sewa normal yang sudah lunas dan terverifikasi. Deposit,
                   hunian tanggungan Owner, dan kontrak outstanding tidak masuk hak Owner.
                 </p>
+                <label className="owner-report-field mt-4">
+                  <span className="font-semibold">
+                    Periode realisasi tujuan <RequiredMark />
+                  </span>
+                  <MonthYearPicker
+                    value={targetRealizationPeriod}
+                    onChange={setTargetRealizationPeriod}
+                    className="owner-report-filter__month-picker"
+                    label="Periode realisasi tujuan"
+                    title="Periode realisasi tujuan"
+                    description="Pilih bulan dan tahun pencatatan realisasi Owner."
+                    yearLabel="Tahun realisasi tujuan"
+                  />
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Default mengikuti periode sumber pelunasan. Anda dapat memilih periode yang
+                    disepakati dengan Owner.
+                  </span>
+                </label>
+                {targetPeriodDiffersFromSource ? (
+                  <div
+                    className="mt-4 rounded-lg border border-amber-500/45 bg-amber-500/10 p-3 text-sm text-foreground"
+                    role="status"
+                  >
+                    <p className="font-semibold">Periode pelunasan dan realisasi berbeda</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Pelunasan kontrak tercatat pada {historicalPeriodLabel}. Realisasi akan
+                      dicatat pada {targetRealizationPeriodLabel}.
+                    </p>
+                  </div>
+                ) : null}
+                {targetPeriodDiffersFromSource ? (
+                  <label className="owner-report-field mt-4">
+                    <span className="font-semibold">
+                      Alasan pemindahan periode <RequiredMark />
+                    </span>
+                    <Textarea
+                      value={schedulingReason}
+                      onChange={(event) => setSchedulingReason(event.target.value)}
+                      placeholder="Contoh: sesuai kesepakatan pembayaran Owner pada Oktober 2026"
+                      rows={3}
+                      minLength={5}
+                      maxLength={1000}
+                      required
+                    />
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Catatan ini tersimpan untuk Admin dan Finance. Tidak ditampilkan pada portal
+                      Owner.
+                    </span>
+                  </label>
+                ) : null}
                 <label className="owner-report-field mt-4">
                   Catatan persiapan (opsional)
                   <Textarea
@@ -2772,6 +2893,8 @@ export function OwnerRealizationWorkspace() {
                 disabled={
                   prepare.isPending ||
                   !creationOwnerId ||
+                  !targetRealizationPeriod ||
+                  (targetPeriodDiffersFromSource && schedulingReason.trim().length < 5) ||
                   Boolean(
                     creationTarget &&
                     Array.isArray(creationTarget.eligible_lease_ids) &&
@@ -2782,6 +2905,8 @@ export function OwnerRealizationWorkspace() {
                   prepare.mutate({
                     ownerId: creationOwnerId,
                     leaseIds: selectedLeaseIds,
+                    targetPeriod: targetRealizationPeriod,
+                    reason: targetPeriodDiffersFromSource ? schedulingReason.trim() : undefined,
                   })
                 }
               >

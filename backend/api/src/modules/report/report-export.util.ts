@@ -116,9 +116,18 @@ const formatIssuedAt = (value: string): string => {
     : `${new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }).format(date)} WIB`;
 };
 const formatReportDate = (value: ReportScalar): string => {
-  const raw = String(value ?? '');
+  const raw = String(value ?? '').trim();
   if (!raw) return '—';
-  return formatDate(raw.slice(0, 10));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return formatDate(raw);
+  const timestamp = new Date(raw);
+  return Number.isNaN(timestamp.getTime())
+    ? raw
+    : new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'Asia/Jakarta',
+      }).format(timestamp);
 };
 
 function propertyOwnerSheets(report: ReportResult): Sheet[] {
@@ -335,23 +344,41 @@ export type OwnerFinanceRequestRow = {
   tenantName: string;
   roomCode: string;
   ownerName: string;
+  realizationReference: string;
+  realizationStatus: string;
   plotNumber: string;
   durationMonths: number;
+  paymentSourcePeriod: string | null;
   totalRent: number;
   realizationAmount: number;
   accountNumber: string;
   bankName: string;
   accountHolder: string;
-  ownerTotalRealization: number;
+  ownerEntitlement: number;
+  transferredTotal: number;
+  requestedTransferAmount: number;
+  schedulingNote: string | null;
+};
+
+export type OwnerFinanceRequestIncompleteOwner = {
+  ownerName: string;
+  realizationReference: string;
+  realizationStatus: string;
+  missingFields: string[];
 };
 
 export type OwnerFinanceRequestDocument = {
+  kind: 'active' | 'history';
+  title: string;
+  notice: string;
   period: string;
   propertyName: string;
   departmentUnit: string;
   requestedAt: string;
   address: string;
   rows: OwnerFinanceRequestRow[];
+  requestedTransferTotal: number;
+  incompleteOwners: OwnerFinanceRequestIncompleteOwner[];
   signatories: Array<{
     role: 'manager' | 'dbo' | 'director';
     label: 'Dibuat oleh' | 'Mengetahui' | 'Menyetujui';
@@ -1331,7 +1358,7 @@ export async function ownerFinanceRequestToPdf(
       thickness: 1.5,
       color: body,
     });
-    const title = 'FORM PENGAJUAN REALISASI PASSIVE INCOME INVESTOR';
+    const title = document.title;
     centered(title, margin, tableWidth, dividerY - 29, 13.2, true);
     if (!includeMetadata) {
       y = dividerY - 46;
@@ -1341,6 +1368,10 @@ export async function ownerFinanceRequestToPdf(
       ['Periode', document.period],
       ['Departemen/Unit', document.departmentUnit],
       ['Tanggal Pengajuan', document.requestedAt],
+      [
+        document.kind === 'active' ? 'Total diajukan transfer' : 'Total terealisasi',
+        money(document.requestedTransferTotal),
+      ],
     ] as const;
     let metadataY = dividerY - 62;
     metadata.forEach(([label, value]) => {
@@ -1351,10 +1382,20 @@ export async function ownerFinanceRequestToPdf(
         font: bold,
         color: body,
       });
-      page.drawText(value, { x: margin + 92, y: metadataY, size: 7.8, font, color: body });
+      page.drawText(value, { x: margin + 150, y: metadataY, size: 7.8, font, color: body });
       metadataY -= 14;
     });
-    y = metadataY - 9;
+    const noticeLines = document.notice.trim() ? wrap(document.notice, tableWidth - 8, 7.4, 2) : [];
+    noticeLines.forEach((line, index) =>
+      page.drawText(line, {
+        x: margin + 4,
+        y: metadataY - index * 9,
+        size: 7.4,
+        font,
+        color: muted,
+      }),
+    );
+    y = metadataY - noticeLines.length * 9 - (noticeLines.length ? 11 : 5);
   };
   const addPage = () => {
     footer();
@@ -1372,26 +1413,37 @@ export async function ownerFinanceRequestToPdf(
     'Nama Penyewa',
     'No. Kamar',
     'Nama Pemilik',
-    'No. Kav.',
     'Lama Sewa',
     'Total Sewa',
     'Total Realisasi',
     'No. Rekening',
     'Bank',
     'Atas Nama',
-    'Total Realisasi',
+    ...(document.kind === 'active' ? ['Catatan'] : []),
   ];
-  const weights = [0.34, 1.14, 0.72, 1.15, 0.48, 0.65, 1.03, 1.07, 1.16, 0.62, 1.04, 1.07];
+  const weights = [
+    0.34,
+    1.25,
+    1.02,
+    1.15,
+    0.68,
+    1.03,
+    1.07,
+    1.16,
+    0.62,
+    1.04,
+    ...(document.kind === 'active' ? [1.4] : []),
+  ];
   const weightTotal = weights.reduce((sum, value) => sum + value, 0);
   const widths = weights.map((value) => (tableWidth * value) / weightTotal);
   const positions = widths.reduce<number[]>((values, width, index) => {
     values.push(index === 0 ? margin : values[index - 1] + widths[index - 1]);
     return values;
   }, []);
-  const headerSize = 5.8;
-  const bodySize = 6.1;
-  const headerLineHeight = 6.95;
-  const bodyLineHeight = 7.55;
+  const headerSize = 6.1;
+  const bodySize = 6.5;
+  const headerLineHeight = 7.2;
+  const bodyLineHeight = 8;
   const drawTableHeader = () => {
     const lines = headers.map((header, index) => wrap(header, widths[index] - 10, headerSize, 3));
     const height = Math.max(...lines.map((value) => value.length), 1) * headerLineHeight + 9;
@@ -1437,37 +1489,77 @@ export async function ownerFinanceRequestToPdf(
     durationMonths: number;
     ownerName: string;
     realizationAmount: number;
+    realizationReference: string;
+    realizationStatus: string;
+    ownerEntitlement: number;
+    transferredTotal: number;
+    requestedTransferAmount: number;
+    schedulingNote: string | null;
     sequence: number;
   };
   const rows: FinanceRequestTableRow[] = document.rows.map((row, index) => ({
     values: [
       String(index + 1),
       row.tenantName || '-',
-      row.roomCode || '-',
+      `${row.roomCode || '-'}\nKav.${row.plotNumber && row.plotNumber !== '-' ? row.plotNumber : '—'}${
+        row.paymentSourcePeriod ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}` : ''
+      }`,
       row.ownerName || '-',
-      row.plotNumber || '-',
       duration(row.durationMonths),
       money(row.totalRent),
       money(row.realizationAmount),
       row.accountNumber || '-',
       row.bankName || '-',
       row.accountHolder || '-',
-      row.ownerTotalRealization ? money(row.ownerTotalRealization) : '-',
+      ...(document.kind === 'active'
+        ? [
+            `${row.transferredTotal > 0 ? 'Sisa Transfer' : 'Nominal diajukan'}:\n${money(row.requestedTransferAmount)}`,
+          ]
+        : []),
     ],
     durationMonths: row.durationMonths,
     ownerName: row.ownerName || '-',
     realizationAmount: row.realizationAmount,
+    realizationReference: row.realizationReference,
+    realizationStatus: row.realizationStatus,
+    ownerEntitlement: row.ownerEntitlement,
+    transferredTotal: row.transferredTotal,
+    requestedTransferAmount: row.requestedTransferAmount,
+    schedulingNote: row.schedulingNote,
     sequence: index,
   }));
-  const ownerGroups = rows.reduce<Array<{ ownerName: string; rows: FinanceRequestTableRow[] }>>(
-    (groups, row) => {
-      const previous = groups.at(-1);
-      if (previous?.ownerName === row.ownerName) previous.rows.push(row);
-      else groups.push({ ownerName: row.ownerName, rows: [row] });
-      return groups;
-    },
-    [],
-  );
+  const ownerGroups = rows.reduce<
+    Array<{
+      ownerName: string;
+      realizationReference: string;
+      realizationStatus: string;
+      ownerEntitlement: number;
+      transferredTotal: number;
+      requestedTransferAmount: number;
+      schedulingNote: string | null;
+      rows: FinanceRequestTableRow[];
+    }>
+  >((groups, row) => {
+    const previous = groups.at(-1);
+    if (
+      previous?.ownerName === row.ownerName &&
+      previous.realizationReference === row.realizationReference
+    ) {
+      previous.rows.push(row);
+    } else {
+      groups.push({
+        ownerName: row.ownerName,
+        realizationReference: row.realizationReference,
+        realizationStatus: row.realizationStatus,
+        ownerEntitlement: row.ownerEntitlement,
+        transferredTotal: row.transferredTotal,
+        requestedTransferAmount: row.requestedTransferAmount,
+        schedulingNote: row.schedulingNote,
+        rows: [row],
+      });
+    }
+    return groups;
+  }, []);
   const drawHorizontalBoundary = (boundaryY: number, merged: boolean) => {
     if (!merged) {
       page.drawLine({
@@ -1478,15 +1570,20 @@ export async function ownerFinanceRequestToPdf(
       });
       return;
     }
+    const mergedColumns = document.kind === 'active' ? [3, 10] : [3];
+    let segmentStart = margin;
+    for (const columnIndex of mergedColumns) {
+      page.drawLine({
+        start: { x: segmentStart, y: boundaryY },
+        end: { x: positions[columnIndex], y: boundaryY },
+        thickness: 0.7,
+        color: border,
+      });
+      segmentStart = positions[columnIndex] + widths[columnIndex];
+    }
     page.drawLine({
-      start: { x: margin, y: boundaryY },
-      end: { x: positions[3], y: boundaryY },
-      thickness: 0.7,
-      color: border,
-    });
-    page.drawLine({
-      start: { x: positions[4], y: boundaryY },
-      end: { x: positions[11], y: boundaryY },
+      start: { x: segmentStart, y: boundaryY },
+      end: { x: margin + tableWidth, y: boundaryY },
       thickness: 0.7,
       color: border,
     });
@@ -1499,9 +1596,10 @@ export async function ownerFinanceRequestToPdf(
     height: number,
     useBold = false,
     color = body,
+    maxLines = 4,
   ) => {
     const activeFont = useBold ? bold : font;
-    const lines = wrap(value, width - 10, bodySize, 4);
+    const lines = value.split('\n').flatMap((part) => wrap(part, width - 10, bodySize, maxLines));
     const lineHeight = bodyLineHeight;
     const firstBaseline = top - (height - lines.length * lineHeight) / 2 - bodySize * 0.72;
     lines.forEach((line, index) => {
@@ -1514,9 +1612,36 @@ export async function ownerFinanceRequestToPdf(
       });
     });
   };
+  const drawPriorityNote = (
+    value: string,
+    x: number,
+    width: number,
+    top: number,
+    height: number,
+  ) => {
+    const parts = value.split('\n');
+    const lines = parts.flatMap((part) => wrap(part, width - 10, bodySize, 3));
+    const firstBaseline = top - (height - lines.length * bodyLineHeight) / 2 - bodySize * 0.72;
+    let lineIndex = 0;
+    parts.forEach((part, partIndex) => {
+      const wrapped = wrap(part, width - 10, bodySize, 3);
+      wrapped.forEach((line) => {
+        page.drawText(line, {
+          x: x + 5,
+          y: firstBaseline - lineIndex * bodyLineHeight,
+          size: bodySize,
+          font: partIndex === parts.length - 1 ? bold : font,
+          color: body,
+        });
+        lineIndex += 1;
+      });
+    });
+  };
   const rowLayout = (row: FinanceRequestTableRow) => {
     const cells = row.values.map((value, index) =>
-      index === 3 || index === 11 ? [''] : wrap(value, widths[index] - 10, bodySize, 4),
+      index === 3 || (document.kind === 'active' && index === 10)
+        ? ['']
+        : value.split('\n').flatMap((part) => wrap(part, widths[index] - 10, bodySize, 4)),
     );
     return {
       row,
@@ -1531,7 +1656,7 @@ export async function ownerFinanceRequestToPdf(
     hasRowsOnPage = false;
   };
   const drawOwnerGroup = (
-    group: { ownerName: string; rows: FinanceRequestTableRow[] },
+    group: (typeof ownerGroups)[number],
     groupIndex: number,
     layouts: Array<ReturnType<typeof rowLayout>>,
   ) => {
@@ -1556,7 +1681,7 @@ export async function ownerFinanceRequestToPdf(
       );
       if (layoutIndex > 0) drawHorizontalBoundary(rowTop, true);
       row.values.forEach((value, index) => {
-        if (index === 3 || index === 11) return;
+        if (index === 3 || (document.kind === 'active' && index === 10)) return;
         drawCenteredCell(
           value,
           positions[index],
@@ -1571,7 +1696,7 @@ export async function ownerFinanceRequestToPdf(
     });
     const groupBottom = y;
     const mergedFill = groupIndex % 2 ? rgb(1, 1, 1) : rowBlue;
-    [3, 11].forEach((index) =>
+    (document.kind === 'active' ? [3, 10] : [3]).forEach((index) =>
       page.drawRectangle({
         x: positions[index],
         y: groupBottom,
@@ -1585,14 +1710,15 @@ export async function ownerFinanceRequestToPdf(
     drawHorizontalBoundary(groupTop, false);
     drawHorizontalBoundary(groupBottom, false);
     drawCenteredCell(group.ownerName, positions[3], widths[3], groupTop, groupHeight);
-    drawCenteredCell(
-      money(group.rows.reduce((sum, row) => sum + row.realizationAmount, 0)),
-      positions[11],
-      widths[11],
-      groupTop,
-      groupHeight,
-      true,
-    );
+    if (document.kind === 'active') {
+      drawPriorityNote(
+        `${group.transferredTotal > 0 ? 'Sisa Transfer' : 'Nominal diajukan'}:\n${money(group.requestedTransferAmount)}`,
+        positions[10],
+        widths[10],
+        groupTop,
+        groupHeight,
+      );
+    }
     hasRowsOnPage = true;
   };
   ownerGroups.forEach((group, groupIndex) => {
@@ -1610,10 +1736,11 @@ export async function ownerFinanceRequestToPdf(
         continue;
       }
       let count = 0;
-      let segmentHeight = 0;
-      for (const layout of layouts) {
-        if (count && segmentHeight + layout.height > y - 48) break;
-        segmentHeight += layout.height;
+      for (let nextCount = 1; nextCount <= layouts.length; nextCount += 1) {
+        const segmentHeight = layouts
+          .slice(0, nextCount)
+          .reduce((sum, candidate) => sum + candidate.height, 0);
+        if (count && segmentHeight > y - 48) break;
         count += 1;
       }
       if (!count) {
@@ -1631,18 +1758,19 @@ export async function ownerFinanceRequestToPdf(
       '',
       '',
       '',
-      '',
       money(totalRent),
       money(totalRealization),
       '',
       '',
       'TOTAL',
-      money(totalRealization),
+      ...(document.kind === 'active'
+        ? [`Total perlu ditransfer:\n${money(document.requestedTransferTotal)}`]
+        : []),
     ],
     durationMonths: 0,
   };
   const totalCells = totalRow.values.map((value, index) =>
-    wrap(value, widths[index] - 10, bodySize, 4),
+    value.split('\n').flatMap((part) => wrap(part, widths[index] - 10, bodySize, 4)),
   );
   const totalRowHeight =
     Math.max(...totalCells.map((value) => value.length), 1) * bodyLineHeight + 9;
@@ -1664,10 +1792,114 @@ export async function ownerFinanceRequestToPdf(
       color: border,
     }),
   );
-  totalRow.values.forEach((value, index) =>
-    drawCenteredCell(value, positions[index], widths[index], y, totalRowHeight, true),
-  );
+  totalRow.values.forEach((value, index) => {
+    if (document.kind === 'active' && index === 10) {
+      drawPriorityNote(value, positions[index], widths[index], y, totalRowHeight);
+      return;
+    }
+    drawCenteredCell(value, positions[index], widths[index], y, totalRowHeight, true);
+  });
   y -= totalRowHeight;
+  const summaryHeading =
+    document.kind === 'active' ? 'RINGKASAN TRANSFER OWNER' : 'RINGKASAN REALISASI OWNER';
+  const summaryLines = (group: (typeof ownerGroups)[number]) =>
+    document.kind === 'active'
+      ? [
+          `• Status: ${group.realizationStatus}`,
+          `• Hak Owner: ${money(group.ownerEntitlement)}`,
+          `• Sudah ditransfer: ${money(group.transferredTotal)}`,
+          ...(group.schedulingNote ? [`• Catatan jadwal: ${group.schedulingNote}`] : []),
+          `• ${group.transferredTotal > 0 ? 'Sisa transfer' : 'Nominal diajukan'}: ${money(group.requestedTransferAmount)}`,
+        ]
+      : [
+          `• Status: ${group.realizationStatus}`,
+          `• Hak Owner: ${money(group.ownerEntitlement)}`,
+          `• Sudah ditransfer: ${money(group.transferredTotal)}`,
+          ...(group.schedulingNote ? [`• Catatan jadwal: ${group.schedulingNote}`] : []),
+        ];
+  if (ownerGroups.length) {
+    if (y - 36 < 48) addPage();
+    page.drawText(summaryHeading, {
+      x: margin,
+      y: y - 12,
+      size: 8.8,
+      font: bold,
+      color: body,
+    });
+    y -= 24;
+    for (const [groupIndex, group] of ownerGroups.entries()) {
+      const lines = summaryLines(group);
+      const ownerLines = wrap(group.ownerName, tableWidth - 14, 7.8, 2);
+      const summaryTextLines = lines.flatMap((line) => wrap(line, tableWidth - 14, 7.5, 4));
+      const blockHeight = 6 + (ownerLines.length + summaryTextLines.length) * 10;
+      if (y - blockHeight < 48) addPage();
+      page.drawRectangle({
+        x: margin,
+        y: y - blockHeight,
+        width: tableWidth,
+        height: blockHeight,
+        color: groupIndex % 2 ? rgb(1, 1, 1) : rowBlue,
+        borderColor: border,
+        borderWidth: 0.6,
+      });
+      ownerLines.forEach((line, index) => {
+        page.drawText(line, {
+          x: margin + 7,
+          y: y - 11 - index * 10,
+          size: 7.8,
+          font: bold,
+          color: body,
+        });
+      });
+      summaryTextLines.forEach((line, index) => {
+        page.drawText(line, {
+          x: margin + 7,
+          y: y - 11 - (ownerLines.length + index) * 10,
+          size: 7.5,
+          font: index === summaryTextLines.length - 1 ? bold : font,
+          color: body,
+        });
+      });
+      y -= blockHeight + 5;
+    }
+  }
+  if (document.incompleteOwners.length) {
+    const headingHeight = 34;
+    if (y - headingHeight < 92) addPage();
+    page.drawText('DATA PERLU KELENGKAPAN REKENING', {
+      x: margin,
+      y: y - 16,
+      size: 8.8,
+      font: bold,
+      color: body,
+    });
+    y -= headingHeight;
+    for (const owner of document.incompleteOwners) {
+      const value = `${owner.ownerName} · ${owner.realizationReference} · ${owner.realizationStatus}. Lengkapi: ${owner.missingFields.join(', ')}. Tidak termasuk nilai transfer.`;
+      const lines = wrap(value, tableWidth - 8, 7.5, 4);
+      const height = lines.length * 10 + 12;
+      if (y - height < 92) addPage();
+      page.drawRectangle({
+        x: margin,
+        y: y - height,
+        width: tableWidth,
+        height,
+        color: rgb(1, 0.97, 0.87),
+        borderColor: border,
+        borderWidth: 0.7,
+      });
+      lines.forEach((line, index) =>
+        page.drawText(line, {
+          x: margin + 5,
+          y: y - 11 - index * 10,
+          size: 7.5,
+          font,
+          color: body,
+        }),
+      );
+      y -= height + 7;
+    }
+  }
   y -= 28;
   if (y < 190) {
     addPage();
@@ -1729,14 +1961,13 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
     'Nama Penyewa',
     'No. Kamar',
     'Nama Pemilik',
-    'No. Kav.',
     'Lama Sewa',
     'Total Sewa',
     'Total Realisasi',
     'No. Rekening',
     'Bank',
     'Atas Nama',
-    'Total Realisasi',
+    ...(document.kind === 'active' ? ['Catatan'] : []),
   ];
   const duration = (months: number) =>
     months === 12
@@ -1747,30 +1978,56 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
           ? `${months} Bulan`
           : '-';
   const money = (value: number) => `Rp ${new Intl.NumberFormat('id-ID').format(value || 0)}`;
+  const columnWidths = [
+    6,
+    22,
+    18,
+    22,
+    14,
+    18,
+    18,
+    22,
+    18,
+    22,
+    ...(document.kind === 'active' ? [24] : []),
+  ];
+  const ownerGroups = new Map<string, OwnerFinanceRequestRow>();
+  document.rows.forEach((row) => {
+    ownerGroups.set(`${row.ownerName}\u0000${row.realizationReference}`, row);
+  });
   const rows: ReportScalar[][] = [
-    ['FORM PENGAJUAN REALISASI PASSIVE INCOME INVESTOR'],
+    [document.title],
     ['Periode', document.period],
     ['Departemen/Unit', document.departmentUnit],
     ['Tanggal Pengajuan', document.requestedAt],
+    [
+      document.kind === 'active' ? 'Total diajukan transfer' : 'Total terealisasi',
+      money(document.requestedTransferTotal),
+    ],
+    ...(document.notice.trim() ? [['Catatan', document.notice] as ReportScalar[]] : []),
     [],
     headers,
     ...document.rows.map((row, index) => [
       index + 1,
       row.tenantName || '-',
-      row.roomCode || '-',
+      `${row.roomCode || '-'}\nKav.${row.plotNumber && row.plotNumber !== '-' ? row.plotNumber : '—'}${
+        row.paymentSourcePeriod ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}` : ''
+      }`,
       row.ownerName || '-',
-      row.plotNumber || '-',
       duration(row.durationMonths),
       money(row.totalRent),
       money(row.realizationAmount),
       row.accountNumber || '-',
       row.bankName || '-',
       row.accountHolder || '-',
-      row.ownerTotalRealization ? money(row.ownerTotalRealization) : '-',
+      ...(document.kind === 'active'
+        ? [
+            `${row.transferredTotal > 0 ? 'Sisa Transfer' : 'Nominal diajukan'}:\n${money(row.requestedTransferAmount)}`,
+          ]
+        : []),
     ]),
     [
       'TOTAL',
-      '',
       '',
       '',
       '',
@@ -1780,9 +2037,52 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
       '',
       '',
       '',
-      money(document.rows.reduce((sum, row) => sum + row.realizationAmount, 0)),
+      ...(document.kind === 'active'
+        ? [`Total perlu ditransfer:\n${money(document.requestedTransferTotal)}`]
+        : []),
     ],
   ];
+  if (ownerGroups.size) {
+    rows.push(
+      [],
+      [document.kind === 'active' ? 'RINGKASAN TRANSFER OWNER' : 'RINGKASAN REALISASI OWNER'],
+    );
+    for (const row of ownerGroups.values()) {
+      rows.push(
+        [row.ownerName],
+        ['• Status', row.realizationStatus],
+        ['• Hak Owner', money(row.ownerEntitlement)],
+      );
+      if (row.schedulingNote) rows.push(['• Catatan jadwal', row.schedulingNote]);
+      if (document.kind === 'active') {
+        rows.push(['• Sudah ditransfer', money(row.transferredTotal)]);
+        rows.push([
+          `• ${row.transferredTotal > 0 ? 'Sisa transfer' : 'Nominal diajukan'}`,
+          money(row.requestedTransferAmount),
+        ]);
+      } else {
+        rows.push(['• Sudah ditransfer', money(row.transferredTotal)]);
+      }
+      rows.push([]);
+    }
+    rows.push([
+      document.kind === 'active' ? 'TOTAL NOMINAL DIAJUKAN' : 'TOTAL NOMINAL TEREALISASI',
+      money(document.requestedTransferTotal),
+    ]);
+  }
+  if (document.incompleteOwners.length) {
+    rows.push(
+      [],
+      ['DATA PERLU KELENGKAPAN REKENING'],
+      ['Nama Owner', 'Referensi realisasi', 'Status', 'Data yang perlu dilengkapi'],
+      ...document.incompleteOwners.map((owner) => [
+        owner.ownerName,
+        owner.realizationReference,
+        owner.realizationStatus,
+        owner.missingFields.join(', '),
+      ]),
+    );
+  }
   rows.push(
     [],
     [
@@ -1802,15 +2102,20 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
     ],
   );
   const worksheet = (values: ReportScalar[][]) =>
-    `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${values
+    `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${columnName(headers.length - 1)}${values.length}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${columnWidths
+      .map(
+        (width, index) =>
+          `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`,
+      )
+      .join('')}</cols><sheetData>${values
       .map(
         (row, rowIndex) =>
-          `<row r="${rowIndex + 1}">${row
+          `<row r="${rowIndex + 1}"${row.some((cell) => typeof cell === 'string' && cell.includes('\n')) ? ' ht="30" customHeight="1"' : ''}>${row
             .map((cell, columnIndex) => {
               const reference = `${columnName(columnIndex)}${rowIndex + 1}`;
               return typeof cell === 'number'
                 ? `<c r="${reference}"><v>${cell}</v></c>`
-                : `<c r="${reference}" t="inlineStr"><is><t>${xml(safeCell(cell))}</t></is></c>`;
+                : `<c r="${reference}"${typeof cell === 'string' && cell.includes('\n') ? ' s="1"' : ''} t="inlineStr"><is><t xml:space="preserve">${xml(safeCell(cell))}</t></is></c>`;
             })
             .join('')}</row>`,
       )
@@ -1818,7 +2123,7 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
   return zip([
     [
       '[Content_Types].xml',
-      `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+      `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
     ],
     [
       '_rels/.rels',
@@ -1830,8 +2135,12 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
     ],
     [
       'xl/_rels/workbook.xml.rels',
-      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
     ],
     ['xl/worksheets/sheet1.xml', worksheet(rows)],
+    [
+      'xl/styles.xml',
+      '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyAlignment="1" xfId="0"><alignment vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+    ],
   ]);
 }

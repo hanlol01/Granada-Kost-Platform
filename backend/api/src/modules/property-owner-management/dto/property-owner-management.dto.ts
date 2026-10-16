@@ -446,6 +446,23 @@ export class PrepareOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {
   period!: string;
 
   @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  payment_source_period?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  target_realization_period?: string;
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(1000)
+  scheduling_reason?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(500)
@@ -479,6 +496,12 @@ export class CorrectOwnerRealizationPeriodDto extends PropertyOwnerPropertyQuery
   @MinLength(5)
   @MaxLength(1000)
   reason!: string;
+}
+
+export class PreviewOwnerRealizationPeriodRescheduleDto extends PropertyOwnerPropertyQueryDto {
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  target_period!: string;
 }
 
 export class CancelOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {

@@ -199,6 +199,32 @@ test('one Owner may have multiple non-void batches in one period while each leas
   assert.match(list, /historyRows/);
 });
 
+test('pre-transfer period rescheduling permits a later operational period without changing payment facts', () => {
+  const service = source('modules/property-owner-management/property-owner-realization.service.ts');
+  const controller = source(
+    'modules/property-owner-management/property-owner-realization.controller.ts',
+  );
+  const dto = source('modules/property-owner-management/dto/property-owner-management.dto.ts');
+  const adminApi = source('../../../apps/admin/src/lib/admin-owner-realization.ts');
+  const detailPage = source(
+    '../../../apps/admin/src/components/reports/OwnerRealizationDetailPage.tsx',
+  );
+  const reschedule = between(service, 'async previewPeriodReschedule', 'async recordTransfer');
+
+  assert.match(dto, /class PreviewOwnerRealizationPeriodRescheduleDto/);
+  assert.match(controller, /@Get\(':realizationId\/period-reschedule-preview'\)/);
+  assert.match(reschedule, /existing_batches/);
+  assert.match(reschedule, /realization_status='draft'/);
+  assert.match(reschedule, /Koreksi periode:/);
+  assert.match(reschedule, /\$3::text/);
+  assert.match(reschedule, /transfer_status='succeeded'/);
+  assert.doesNotMatch(reschedule, /OWNER_REALIZATION_PERIOD_MIXED_BATCH/);
+  assert.doesNotMatch(reschedule, /OWNER_REALIZATION_PERIOD_CONFLICT/);
+  assert.match(adminApi, /periodReschedulePreview/);
+  assert.match(detailPage, /Sudah ada realisasi Owner pada periode tujuan/);
+  assert.match(detailPage, /Ajukan ulang ke Keuangan sebelum transfer/);
+});
+
 test('wide realization exports use a paginated landscape table rather than flattening every cell into one line', () => {
   const exporter = source('modules/report/report-export.util.ts');
   const reportPdf = between(exporter, 'export async function reportToPdf', '/**\n * A dedicated');
@@ -215,4 +241,7 @@ test('wide realization exports use a paginated landscape table rather than flatt
   assert.match(receiptPdf, /KWT-RLS|receiptNumber/);
   assert.match(receiptPdf, /ownerSignatureLines/);
   assert.match(receiptPdf, /renderHeader\(\)/);
+  assert.match(receiptPdf, /No\. Kavling/);
+  assert.match(receiptPdf, /Durasi sewa/);
+  assert.match(receiptPdf, /durationMonths/);
 });

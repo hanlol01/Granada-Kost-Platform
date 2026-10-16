@@ -151,6 +151,19 @@ export type OwnerRealizationDetail = {
   not_eligible: Array<Record<string, unknown>>;
 };
 
+export type OwnerRealizationPeriodReschedulePreview = {
+  realization_id: string;
+  current_period: string;
+  target_period: string;
+  existing_batches: Array<{
+    id: string;
+    reference: string;
+    period: string;
+    status: OwnerRealizationStatus;
+    realization_total: string;
+  }>;
+};
+
 export type OwnerRealizationRange = {
   owner_id: string;
   property_id: string;
@@ -166,7 +179,7 @@ export type OwnerRealizationRange = {
   periods: Array<{
     period: string;
     included_in_total: boolean;
-      realization: OwnerRealizationDetail["realization"] | null;
+    realization: OwnerRealizationDetail["realization"] | null;
     lines: Array<Record<string, unknown>>;
     transfers: Array<Record<string, unknown>>;
     corrections: Array<Record<string, unknown>>;
@@ -188,6 +201,10 @@ export type OwnerRealizationNotEligible = {
   meta: { offset: number; limit: number; total: number };
 };
 
+export type OwnerFinanceRequestAvailability = {
+  realization_count: number;
+};
+
 const base = "/admin/property-owner-realizations";
 
 export const ownerRealizationApi = {
@@ -205,15 +222,40 @@ export const ownerRealizationApi = {
     apiClient.get<OwnerRealizationDetail>(`${base}/${encodeURIComponent(realizationId)}`, {
       query: { property_id: propertyId },
     }),
-  range: (ownerId: string, query: { property_id: string; from_period: string; to_period: string; voided?: "include_voided" | "exclude_voided" }) =>
-    apiClient.get<OwnerRealizationRange>(`${base}/owners/${encodeURIComponent(ownerId)}/range`, { query }),
+  periodReschedulePreview: (
+    realizationId: string,
+    query: { property_id: string; target_period: string },
+  ) =>
+    apiClient.get<OwnerRealizationPeriodReschedulePreview>(
+      `${base}/${encodeURIComponent(realizationId)}/period-reschedule-preview`,
+      { query },
+    ),
+  range: (
+    ownerId: string,
+    query: {
+      property_id: string;
+      from_period: string;
+      to_period: string;
+      voided?: "include_voided" | "exclude_voided";
+    },
+  ) =>
+    apiClient.get<OwnerRealizationRange>(`${base}/owners/${encodeURIComponent(ownerId)}/range`, {
+      query,
+    }),
   notEligible: (filters: OwnerRealizationFilters) =>
     apiClient.get<OwnerRealizationNotEligible>(`${base}/not-eligible`, { query: filters }),
+  financeRequestAvailability: (filters: OwnerRealizationFilters) =>
+    apiClient.get<OwnerFinanceRequestAvailability>(`${base}/finance-request/availability`, {
+      query: filters,
+    }),
   prepare: (
     ownerId: string,
     body: {
       property_id: string;
       period: string;
+      payment_source_period?: string;
+      target_realization_period?: string;
+      scheduling_reason?: string;
       notes?: string;
       selected_lease_ids?: string[];
     },
@@ -393,7 +435,12 @@ export function downloadOwnerRealization(
 
 export function downloadOwnerRealizationRange(
   ownerId: string,
-  query: { property_id: string; from_period: string; to_period: string; voided?: "include_voided" | "exclude_voided" },
+  query: {
+    property_id: string;
+    from_period: string;
+    to_period: string;
+    voided?: "include_voided" | "exclude_voided";
+  },
   format: "pdf" | "xlsx",
 ) {
   const parameters = new URLSearchParams({ ...query, format });
@@ -436,10 +483,11 @@ export function downloadOwnerRealizationFinanceRequest(
   for (const [key, value] of Object.entries(filters)) {
     if (value !== undefined && value !== "") parameters.set(key, String(value));
   }
-  parameters.set("workspace", "history");
   return download(
     `${base}/finance-request/export?${parameters.toString()}`,
-    `form-pengajuan-realisasi-passive-income.${format}`,
+    filters.workspace === "active"
+      ? `form-pengajuan-transfer-realisasi-owner.${format}`
+      : `rekap-realisasi-owner.${format}`,
   );
 }
 

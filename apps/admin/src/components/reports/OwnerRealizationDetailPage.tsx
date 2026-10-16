@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -116,22 +117,39 @@ function RupiahField({
   value,
   onChange,
   id,
+  allowNegative = false,
+  placeholder = "0",
 }: {
   value: number;
   onChange: (amount: number) => void;
   id: string;
+  allowNegative?: boolean;
+  placeholder?: string;
 }) {
+  const formattedValue = value
+    ? `${allowNegative && value < 0 ? "-" : ""}${formatIdrInput(Math.abs(value))}`
+    : "";
+  const [draftValue, setDraftValue] = useState(formattedValue);
+
+  useEffect(() => setDraftValue(formattedValue), [formattedValue]);
+
   return (
     <div className="flex min-h-11 items-center overflow-hidden rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/25">
       <span className="border-r border-input bg-muted/50 px-3 py-2.5 text-sm">Rp</span>
       <Input
         id={id}
         type="text"
-        inputMode="numeric"
+        inputMode={allowNegative ? "text" : "numeric"}
         className="border-0 shadow-none focus-visible:ring-0"
-        value={value ? formatIdrInput(value) : ""}
-        onChange={(event) => onChange(normalizeDigits(event.target.value))}
-        placeholder="0"
+        value={draftValue}
+        onChange={(event) => {
+          const raw = event.target.value;
+          setDraftValue(raw);
+          if (allowNegative && raw.trim() === "-") return;
+          const sign = allowNegative && raw.trimStart().startsWith("-") ? -1 : 1;
+          onChange(sign * normalizeDigits(raw));
+        }}
+        placeholder={placeholder}
       />
     </div>
   );
@@ -249,6 +267,24 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
     queryFn: () => ownerRealizationApi.detail(realizationId, currentPropertyId!),
     enabled: Boolean(currentPropertyId),
   });
+  const periodReschedulePreview = useQuery({
+    queryKey: [
+      "owner-realization-period-reschedule-preview",
+      realizationId,
+      currentPropertyId,
+      periodCorrection.target_period,
+    ],
+    queryFn: () =>
+      ownerRealizationApi.periodReschedulePreview(realizationId, {
+        property_id: currentPropertyId!,
+        target_period: periodCorrection.target_period,
+      }),
+    enabled:
+      periodCorrectionDialog &&
+      Boolean(currentPropertyId) &&
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(periodCorrection.target_period) &&
+      periodCorrection.target_period !== detail.data?.realization.period.slice(0, 7),
+  });
   useEffect(() => {
     const period = detail.data?.realization.period;
     if (period && !range.from_period) {
@@ -256,20 +292,28 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
     }
   }, [detail.data?.realization.period, range.from_period]);
   const filterValid = Boolean(
-    currentPropertyId && detail.data?.realization.owner_id &&
-      /^\d{4}-(0[1-9]|1[0-2])$/.test(range.from_period) &&
-      /^\d{4}-(0[1-9]|1[0-2])$/.test(range.to_period) &&
-      range.from_period <= range.to_period,
+    currentPropertyId &&
+    detail.data?.realization.owner_id &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(range.from_period) &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(range.to_period) &&
+    range.from_period <= range.to_period,
   );
   const rangeReady = Boolean(filterApplied && filterValid);
   const realizationRange = useQuery({
-    queryKey: ["owner-realization-range", detail.data?.realization.owner_id, currentPropertyId, range.from_period, range.to_period],
-    queryFn: () => ownerRealizationApi.range(detail.data!.realization.owner_id, {
-      property_id: currentPropertyId!,
-      from_period: range.from_period,
-      to_period: range.to_period,
-      voided: "exclude_voided",
-    }),
+    queryKey: [
+      "owner-realization-range",
+      detail.data?.realization.owner_id,
+      currentPropertyId,
+      range.from_period,
+      range.to_period,
+    ],
+    queryFn: () =>
+      ownerRealizationApi.range(detail.data!.realization.owner_id, {
+        property_id: currentPropertyId!,
+        from_period: range.from_period,
+        to_period: range.to_period,
+        voided: "exclude_voided",
+      }),
     enabled: rangeReady,
   });
   const refresh = async () => {
@@ -412,13 +456,17 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
         reason: periodCorrection.reason.trim(),
       }),
     onSuccess: async () => {
-      toast.success("Periode realisasi dikoreksi. Fakta transfer tetap dipertahankan.");
+      toast.success(
+        "Periode realisasi berhasil dijadwalkan ulang dan dikembalikan ke Draft. Ajukan ulang ke Keuangan sebelum transfer.",
+      );
       setPeriodCorrectionDialog(false);
       setPeriodCorrection({ target_period: "", reason: "" });
       await refresh();
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Periode realisasi belum dapat dikoreksi."),
+      toast.error(
+        error instanceof Error ? error.message : "Periode realisasi belum dapat dikoreksi.",
+      ),
   });
   const recordRecoveryEvent = useMutation({
     mutationFn: () =>
@@ -454,10 +502,14 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
   const download = async (format: "pdf" | "xlsx") => {
     try {
       if (rangeReady && detail.data?.realization.owner_id) {
-        await downloadOwnerRealizationRange(detail.data.realization.owner_id, {
-          property_id: currentPropertyId!,
-          ...range,
-        }, format);
+        await downloadOwnerRealizationRange(
+          detail.data.realization.owner_id,
+          {
+            property_id: currentPropertyId!,
+            ...range,
+          },
+          format,
+        );
       } else {
         await downloadOwnerRealization(realizationId, currentPropertyId!, format);
       }
@@ -491,7 +543,13 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
         />
       </AppShell>
     );
-  const { realization: baseRealization, lines: baseLines, corrections: baseCorrections, transfers: baseTransfers, not_eligible } = detail.data;
+  const {
+    realization: baseRealization,
+    lines: baseLines,
+    corrections: baseCorrections,
+    transfers: baseTransfers,
+    not_eligible,
+  } = detail.data;
   const isRangeView = Boolean(rangeReady && realizationRange.data);
   const rangePeriods = realizationRange.data?.periods ?? [];
   const realization = isRangeView
@@ -514,9 +572,13 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
     ? `${realization.owner_name} · ${realization.reference} · ${displayPeriod}`
     : `${realization.owner_name} · ${realization.reference}`;
   const lines = isRangeView ? rangePeriods.flatMap((period) => period.lines) : baseLines;
-  const transfers = isRangeView ? rangePeriods.flatMap((period) => period.transfers) : baseTransfers;
-  const corrections = isRangeView ? rangePeriods.flatMap((period) => period.corrections) : baseCorrections;
-  const recoveryEvents = isRangeView ? [] : detail.data.recovery_events ?? [];
+  const transfers = isRangeView
+    ? rangePeriods.flatMap((period) => period.transfers)
+    : baseTransfers;
+  const corrections = isRangeView
+    ? rangePeriods.flatMap((period) => period.corrections)
+    : baseCorrections;
+  const recoveryEvents = isRangeView ? [] : (detail.data.recovery_events ?? []);
   const selectedRecovery = corrections.find((item) => item.id === recoveryEventFor);
   const recoveryRemaining = selectedRecovery
     ? Math.abs(Number(selectedRecovery.amount ?? 0)) -
@@ -532,8 +594,9 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
   const canTransfer = ["awaiting_transfer", "partially_realized"].includes(realization.status);
   const canCorrect = realization.status === "draft";
   const canCorrectPeriod =
-    realization.entry_kind === "system" &&
-    !["void", "published_to_owner"].includes(realization.status);
+    !["void", "published_to_owner", "partially_realized", "realized"].includes(
+      realization.status,
+    ) && Number(realization.transferred_total) === 0;
   const canCancel =
     ["draft", "awaiting_review", "approved", "submitted_to_finance", "awaiting_transfer"].includes(
       realization.status,
@@ -571,10 +634,7 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
         .join("\n")
     : "Referensi tarif tidak tersedia pada data lama.";
   return (
-    <AppShell
-      title="Rincian Realisasi Owner"
-      subtitle={pageSubtitle}
-    >
+    <AppShell title="Rincian Realisasi Owner" subtitle={pageSubtitle}>
       <main className="owner-report-workspace p-4 sm:p-6">
         <nav aria-label="Breadcrumb" className="mb-2 text-sm text-muted-foreground">
           <a className="hover:text-primary hover:underline" href="/reports">
@@ -648,9 +708,14 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
           <div className="owner-report-filter__heading">
             <div>
               <h3>Filter periode laporan</h3>
-              <p>Semua ringkasan, tabel, transfer, koreksi, dan export mengikuti periode yang dipilih.</p>
+              <p>
+                Semua ringkasan, tabel, transfer, koreksi, dan export mengikuti periode yang
+                dipilih.
+              </p>
             </div>
-            <Badge data-tone={isRangeView ? "info" : "neutral"}>{isRangeView ? "Rentang aktif" : "Satu periode"}</Badge>
+            <Badge data-tone={isRangeView ? "info" : "neutral"}>
+              {isRangeView ? "Rentang aktif" : "Satu periode"}
+            </Badge>
           </div>
           <div className="owner-report-filter__actions flex flex-wrap items-end gap-3">
             <label className="grid gap-1 text-sm font-medium">
@@ -680,21 +745,23 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
             >
               {rangeOpen ? "Mode satu periode" : "Pilih rentang periode"}
             </Button>
-            {rangeOpen ? <label className="grid gap-1 text-sm font-medium">
-              Sampai periode
-              <MonthYearPicker
-                value={range.to_period}
-                onChange={(value) => {
-                  setRange((current) => ({ ...current, to_period: value }));
-                  setFilterApplied(false);
-                }}
-                className="owner-report-filter__month-picker"
-                label="Sampai periode realisasi"
-                title="Sampai periode realisasi"
-                description="Pilih batas akhir rentang laporan Realisasi Owner."
-                yearLabel="Tahun realisasi"
-              />
-            </label> : null}
+            {rangeOpen ? (
+              <label className="grid gap-1 text-sm font-medium">
+                Sampai periode
+                <MonthYearPicker
+                  value={range.to_period}
+                  onChange={(value) => {
+                    setRange((current) => ({ ...current, to_period: value }));
+                    setFilterApplied(false);
+                  }}
+                  className="owner-report-filter__month-picker"
+                  label="Sampai periode realisasi"
+                  title="Sampai periode realisasi"
+                  description="Pilih batas akhir rentang laporan Realisasi Owner."
+                  yearLabel="Tahun realisasi"
+                />
+              </label>
+            ) : null}
             <Button
               type="button"
               variant="success"
@@ -719,8 +786,14 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
               Reset filter
             </Button>
           </div>
-          {range.from_period > range.to_period ? <p className="mt-3 text-sm text-destructive">Periode awal harus sama atau sebelum periode akhir.</p> : null}
-          {realizationRange.isError ? <p className="mt-3 text-sm text-destructive">Rentang periode belum dapat dimuat.</p> : null}
+          {range.from_period > range.to_period ? (
+            <p className="mt-3 text-sm text-destructive">
+              Periode awal harus sama atau sebelum periode akhir.
+            </p>
+          ) : null}
+          {realizationRange.isError ? (
+            <p className="mt-3 text-sm text-destructive">Rentang periode belum dapat dimuat.</p>
+          ) : null}
         </section>
         {realization.notes?.trim() ? (
           <section className="owner-report-list">
@@ -773,72 +846,82 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
               tone={realizationTones[realization.status]}
             />
           </div>
-          {!isRangeView ? <div className="owner-report-filter__actions">
-            {canCorrectPeriod ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setPeriodCorrection({ target_period: realization.period.slice(0, 7), reason: "" });
-                  setPeriodCorrectionDialog(true);
-                }}
-              >
-                <PencilLine />
-                Koreksi periode realisasi
-              </Button>
-            ) : null}
-            {canCorrect || canRecordOverpayment ? (
-              <Button
-                variant="warning"
-                className={
-                  isPostTransfer
-                    ? "border-green-600 bg-green-600 text-white hover:bg-green-700"
-                    : undefined
-                }
-                onClick={() => setCorrectionDialog(true)}
-              >
-                <PencilLine />
-                {isPostTransfer
-                  ? "Catat pengembalian kelebihan transfer"
-                  : "Tambah penyesuaian laporan"}
-              </Button>
-            ) : null}
-            {realization.status === "awaiting_review" ? (
-              <Button variant="outline" onClick={() => setReturnDialog(true)}>
-                <ArrowLeft />
-                Kembalikan ke draft
-              </Button>
-            ) : null}
-            {canCancel ? (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setCancelReason("");
-                  setCancelDialog(true);
-                }}
-              >
-                <Ban />
-                Batalkan realisasi
-              </Button>
-            ) : null}
-            {next ? (
-              <Button onClick={() => setActionDialog(true)}>
-                <next.icon />
-                {next.label}
-              </Button>
-            ) : null}
-            {canTransfer ? (
-              <Button
-                variant="default"
-                onClick={() => {
-                  setTransfer((value) => ({ ...value, amount: available }));
-                  setTransferDialog(true);
-                }}
-              >
-                <Landmark />
-                Catat transfer berhasil
-              </Button>
-            ) : null}
-          </div> : <p className="text-sm text-muted-foreground">Tindakan perubahan dinonaktifkan saat rentang aktif. Pilih satu periode untuk mengubah atau mencatat transaksi.</p>}
+          {!isRangeView ? (
+            <div className="owner-report-filter__actions">
+              {canCorrectPeriod ? (
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    setPeriodCorrection({
+                      target_period: realization.period.slice(0, 7),
+                      reason: "",
+                    });
+                    setPeriodCorrectionDialog(true);
+                  }}
+                >
+                  <PencilLine />
+                  Koreksi periode realisasi
+                </Button>
+              ) : null}
+              {canCorrect || canRecordOverpayment ? (
+                <Button
+                  variant="warning"
+                  className={
+                    isPostTransfer
+                      ? "border-green-600 bg-green-600 text-white hover:bg-green-700"
+                      : undefined
+                  }
+                  onClick={() => setCorrectionDialog(true)}
+                >
+                  <PencilLine />
+                  {isPostTransfer
+                    ? "Catat pengembalian kelebihan transfer"
+                    : "Tambah penyesuaian laporan"}
+                </Button>
+              ) : null}
+              {realization.status === "awaiting_review" ? (
+                <Button variant="destructive" onClick={() => setReturnDialog(true)}>
+                  <ArrowLeft />
+                  Kembalikan ke draft
+                </Button>
+              ) : null}
+              {canCancel ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setCancelReason("");
+                    setCancelDialog(true);
+                  }}
+                >
+                  <Ban />
+                  Batalkan realisasi
+                </Button>
+              ) : null}
+              {next ? (
+                <Button onClick={() => setActionDialog(true)}>
+                  <next.icon />
+                  {next.label}
+                </Button>
+              ) : null}
+              {canTransfer ? (
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    setTransfer((value) => ({ ...value, amount: available }));
+                    setTransferDialog(true);
+                  }}
+                >
+                  <Landmark />
+                  Catat transfer berhasil
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Tindakan perubahan dinonaktifkan saat rentang aktif. Pilih satu periode untuk mengubah
+              atau mencatat transaksi.
+            </p>
+          )}
         </section>
         <section className="owner-report-list">
           <div className="p-5">
@@ -861,88 +944,88 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
             aria-label="Tabel kontrak yang direalisasikan"
             tabIndex={0}
           >
-          <table className="w-full min-w-[1400px] text-left text-sm">
-            <thead className="border-y bg-muted/35 text-xs uppercase text-muted-foreground">
-              <tr>
-                {[
-                  "No",
-                  "Kamar",
-                  "Penghuni",
-                  "Pemilik",
-                  "No. Kavling",
-                  "Durasi",
-                  "Jenis tarif",
-                  "Uang diterima",
-                  "Total kontrak",
-                  "Outstanding",
-                  "Pelunasan",
-                  "Management fee",
-                  "Realisasi Owner",
-                  "Status realisasi",
-                  "Check-in",
-                  "Check-out",
-                ].map((heading) => (
-                  <th className="px-3 py-3 font-semibold" key={heading}>
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, index) => (
-                <tr className="border-b" key={String(line.id)}>
-                  <td className="px-3 py-3">{index + 1}</td>
-                  <td className="px-3 py-3 font-medium">{text(line.room_code_snapshot)}</td>
-                  <td className="px-3 py-3">{text(line.resident_name_snapshot)}</td>
-                  <td className="px-3 py-3">{text(line.owner_name_snapshot)}</td>
-                  <td className="px-3 py-3">{text(line.plot_number_snapshot)}</td>
-                  <td className="px-3 py-3">
-                    {line.duration_months ? `${line.duration_months} bulan` : "—"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {line.pricing_source_snapshot === "negotiated"
-                      ? "Tarif kesepakatan"
-                      : "Tarif standar"}
-                  </td>
-                  <td className="px-3 py-3 tabular-nums">{rupiah(line.money_received_amount)}</td>
-                  <td className="px-3 py-3 tabular-nums">{rupiah(line.contract_total_amount)}</td>
-                  <td className="px-3 py-3 tabular-nums">{rupiah(line.outstanding_amount)}</td>
-                  <td className="px-3 py-3">{date(line.payment_completed_at)}</td>
-                  <td className="px-3 py-3 tabular-nums">{rupiah(line.management_fee_amount)}</td>
-                  <td className="px-3 py-3 font-semibold tabular-nums">
-                    {rupiah(line.net_realization_amount)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge
-                      label={labels[realization.status]}
-                      tone={realizationTones[realization.status]}
-                    />
-                    {line.line_status === "historical_unlinked" ? (
-                      <small className="mt-1 block text-muted-foreground">
-                        Unlinked historical record
-                      </small>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-3">{date(line.check_in_at)}</td>
-                  <td className="px-3 py-3">{date(line.check_out_at)}</td>
+            <table className="w-full min-w-[1400px] text-left text-sm">
+              <thead className="border-y bg-muted/35 text-xs uppercase text-muted-foreground">
+                <tr>
+                  {[
+                    "No",
+                    "Kamar",
+                    "Penghuni",
+                    "Pemilik",
+                    "No. Kavling",
+                    "Durasi",
+                    "Jenis tarif",
+                    "Uang diterima",
+                    "Total kontrak",
+                    "Outstanding",
+                    "Pelunasan",
+                    "Management fee",
+                    "Realisasi Owner",
+                    "Status realisasi",
+                    "Check-in",
+                    "Check-out",
+                  ].map((heading) => (
+                    <th className="px-3 py-3 font-semibold" key={heading}>
+                      {heading}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-sky-100 font-semibold text-sky-950 dark:bg-sky-950/45 dark:text-sky-100">
-              <tr>
-                <td className="px-3 py-3" colSpan={7}>
-                  Total
-                </td>
-                <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
-                <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
-                <td className="px-3 py-3">Rp0</td>
-                <td className="px-3 py-3">—</td>
-                <td className="px-3 py-3">{rupiah(realization.management_fee_total)}</td>
-                <td className="px-3 py-3">{rupiah(realization.realization_total)}</td>
-                <td colSpan={3} />
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {lines.map((line, index) => (
+                  <tr className="border-b" key={String(line.id)}>
+                    <td className="px-3 py-3">{index + 1}</td>
+                    <td className="px-3 py-3 font-medium">{text(line.room_code_snapshot)}</td>
+                    <td className="px-3 py-3">{text(line.resident_name_snapshot)}</td>
+                    <td className="px-3 py-3">{text(line.owner_name_snapshot)}</td>
+                    <td className="px-3 py-3">{text(line.plot_number_snapshot)}</td>
+                    <td className="px-3 py-3">
+                      {line.duration_months ? `${line.duration_months} bulan` : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {line.pricing_source_snapshot === "negotiated"
+                        ? "Tarif kesepakatan"
+                        : "Tarif standar"}
+                    </td>
+                    <td className="px-3 py-3 tabular-nums">{rupiah(line.money_received_amount)}</td>
+                    <td className="px-3 py-3 tabular-nums">{rupiah(line.contract_total_amount)}</td>
+                    <td className="px-3 py-3 tabular-nums">{rupiah(line.outstanding_amount)}</td>
+                    <td className="px-3 py-3">{date(line.payment_completed_at)}</td>
+                    <td className="px-3 py-3 tabular-nums">{rupiah(line.management_fee_amount)}</td>
+                    <td className="px-3 py-3 font-semibold tabular-nums">
+                      {rupiah(line.net_realization_amount)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusBadge
+                        label={labels[realization.status]}
+                        tone={realizationTones[realization.status]}
+                      />
+                      {line.line_status === "historical_unlinked" ? (
+                        <small className="mt-1 block text-muted-foreground">
+                          Unlinked historical record
+                        </small>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3">{date(line.check_in_at)}</td>
+                    <td className="px-3 py-3">{date(line.check_out_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-sky-100 font-semibold text-sky-950 dark:bg-sky-950/45 dark:text-sky-100">
+                <tr>
+                  <td className="px-3 py-3" colSpan={7}>
+                    Total
+                  </td>
+                  <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
+                  <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
+                  <td className="px-3 py-3">Rp0</td>
+                  <td className="px-3 py-3">—</td>
+                  <td className="px-3 py-3">{rupiah(realization.management_fee_total)}</td>
+                  <td className="px-3 py-3">{rupiah(realization.realization_total)}</td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </section>
         <section className="owner-report-list">
@@ -1011,7 +1094,9 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                     variant="info"
                     onClick={() =>
                       void downloadOwnerRealizationReceipt(
-                        isRangeView ? String(transfer.realization_id ?? realizationId) : realizationId,
+                        isRangeView
+                          ? String(transfer.realization_id ?? realizationId)
+                          : realizationId,
                         String(transfer.id),
                         currentPropertyId,
                       )
@@ -1185,21 +1270,50 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
           <DialogHeader>
             <DialogTitle>Koreksi periode realisasi</DialogTitle>
             <DialogDescription>
-              Gunakan untuk memindahkan realisasi yang salah periode berdasarkan bulan pelunasan.
-              Tanggal, nominal, referensi, dan kuitansi transfer tidak diubah. Perubahan tercatat di
-              audit Admin.
+              Gunakan sesuai kesepakatan jadwal pembayaran dengan Owner. Data pelunasan penghuni dan
+              nominal Realisasi Owner tidak berubah. Setelah disimpan, Realisasi kembali ke Draft
+              dan perlu diajukan ulang ke Keuangan.
             </DialogDescription>
           </DialogHeader>
           <label className="space-y-1 text-sm font-medium">
-            Periode realisasi yang benar
-            <Input
-              type="month"
+            Periode tujuan realisasi
+            <MonthYearPicker
               value={periodCorrection.target_period}
-              onChange={(event) =>
-                setPeriodCorrection((value) => ({ ...value, target_period: event.target.value }))
+              onChange={(value) =>
+                setPeriodCorrection((current) => ({ ...current, target_period: value }))
               }
+              label="Periode tujuan realisasi"
+              title="Periode tujuan realisasi"
+              description="Pilih bulan Realisasi Owner yang telah disepakati."
+              yearLabel="Tahun periode tujuan"
             />
           </label>
+          {periodReschedulePreview.isFetching ? (
+            <p className="text-sm text-muted-foreground">
+              Memeriksa realisasi Owner pada periode tujuan…
+            </p>
+          ) : null}
+          {periodReschedulePreview.data?.existing_batches.length ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-semibold">Sudah ada realisasi Owner pada periode tujuan.</p>
+              <p className="mt-1">
+                Batch tetap terpisah dan dapat dilanjutkan setelah Anda mengonfirmasi.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {periodReschedulePreview.data.existing_batches.map((batch) => (
+                  <li key={batch.id}>
+                    {batch.reference} · {rupiah(batch.realization_total)} · {labels[batch.status]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {periodReschedulePreview.isError ? (
+            <p className="text-sm text-destructive">
+              Peringatan batch pada periode tujuan belum dapat dimuat. Coba pilih periode kembali
+              sebelum menyimpan.
+            </p>
+          ) : null}
           <label className="space-y-1 text-sm font-medium">
             Alasan koreksi
             <Textarea
@@ -1207,7 +1321,7 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
               onChange={(event) =>
                 setPeriodCorrection((value) => ({ ...value, reason: event.target.value }))
               }
-              placeholder="Contoh: pelunasan terverifikasi pada Agustus, tetapi batch tersimpan di September."
+              placeholder="Contoh: sesuai kesepakatan jadwal pembayaran dengan Owner."
               rows={3}
             />
           </label>
@@ -1218,7 +1332,10 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
             <Button
               disabled={
                 correctPeriod.isPending ||
+                periodReschedulePreview.isFetching ||
+                periodReschedulePreview.isError ||
                 !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodCorrection.target_period) ||
+                periodCorrection.target_period === realization.period.slice(0, 7) ||
                 periodCorrection.reason.trim().length < 5
               }
               onClick={() => correctPeriod.mutate()}
@@ -1247,6 +1364,7 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
               Batal
             </Button>
             <Button
+              variant="destructive"
               disabled={returnToDraft.isPending || note.trim().length < 3}
               onClick={() => returnToDraft.mutate()}
             >
@@ -1543,23 +1661,38 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                 </label>
               </>
             ) : (
-              <label className="space-y-1 text-sm font-medium">
-                Jenis penyesuaian
-                <select
+              <fieldset className="space-y-2 text-sm font-medium">
+                <legend className="mb-2">Jenis penyesuaian</legend>
+                <RadioGroup
                   value={correction.correction_kind}
-                  onChange={(event) =>
-                    setCorrection((value) => ({
-                      ...value,
-                      correction_kind: event.target.value as typeof value.correction_kind,
+                  onValueChange={(value) =>
+                    setCorrection((current) => ({
+                      ...current,
+                      correction_kind: value as typeof current.correction_kind,
                     }))
                   }
+                  aria-label="Jenis penyesuaian"
+                  className="grid gap-2 sm:grid-cols-2"
                 >
-                  <option value="contract_correction">Koreksi kontrak</option>
-                  <option value="approved_operational_adjustment">
-                    Penyesuaian operasional disetujui
-                  </option>
-                </select>
-              </label>
+                  <label
+                    htmlFor="correction-kind-contract"
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-input bg-background p-3 hover:bg-accent/50"
+                  >
+                    <RadioGroupItem id="correction-kind-contract" value="contract_correction" />
+                    <span>Koreksi kontrak</span>
+                  </label>
+                  <label
+                    htmlFor="correction-kind-operational"
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-input bg-background p-3 hover:bg-accent/50"
+                  >
+                    <RadioGroupItem
+                      id="correction-kind-operational"
+                      value="approved_operational_adjustment"
+                    />
+                    <span>Penyesuaian operasional disetujui</span>
+                  </label>
+                </RadioGroup>
+              </fieldset>
             )}
             <label className="space-y-1 text-sm font-medium">
               {isPostTransfer ? "Nominal pengembalian dana berlebih" : "Nominal penyesuaian"}{" "}
@@ -1577,13 +1710,18 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                   </span>
                 </>
               ) : (
-                <Input
-                  type="number"
-                  value={correction.amount || ""}
-                  onChange={(event) =>
-                    setCorrection((value) => ({ ...value, amount: Number(event.target.value) }))
-                  }
-                />
+                <>
+                  <RupiahField
+                    id="correction-amount"
+                    value={correction.amount}
+                    onChange={(amount) => setCorrection((value) => ({ ...value, amount }))}
+                    allowNegative
+                    placeholder="Contoh: 500.000"
+                  />
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Masukkan nilai rupiah; gunakan angka negatif jika nominal perlu dikurangi.
+                  </span>
+                </>
               )}
             </label>
             <label className="space-y-1 text-sm font-medium">
@@ -1608,6 +1746,11 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                 value={correction.source_reference}
                 onChange={(event) =>
                   setCorrection((value) => ({ ...value, source_reference: event.target.value }))
+                }
+                placeholder={
+                  isPostTransfer
+                    ? "Contoh: Referensi transfer atau berita acara pengembalian"
+                    : "Contoh: BA koreksi kontrak No. 03/2026"
                 }
               />
             </label>

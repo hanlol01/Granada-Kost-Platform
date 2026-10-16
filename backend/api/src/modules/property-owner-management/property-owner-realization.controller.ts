@@ -29,6 +29,7 @@ import {
   CorrectOwnerRealizationPeriodDto,
   OwnerRealizationQueryDto,
   OwnerRealizationRangeQueryDto,
+  PreviewOwnerRealizationPeriodRescheduleDto,
   PrepareOwnerRealizationDto,
   RecordOwnerRealizationTransferDto,
   RecordOwnerRealizationRecoveryEventDto,
@@ -83,6 +84,14 @@ export class PropertyOwnerRealizationController {
     return new StreamableFile(file.content);
   }
 
+  @Get('finance-request/availability')
+  financeRequestAvailability(
+    @CurrentUser() actor: UserAccessContext,
+    @Query() query: OwnerRealizationQueryDto,
+  ) {
+    return this.realizations.financeRequestAvailability(actor, query);
+  }
+
   @Get('not-eligible')
   notEligible(@CurrentUser() actor: UserAccessContext, @Query() query: OwnerRealizationQueryDto) {
     return this.realizations.listNotEligible(actor, query);
@@ -105,7 +114,12 @@ export class PropertyOwnerRealizationController {
     @Query('format') format: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const file = await this.realizations.exportRange(actor, ownerId, query, format || query.format || 'pdf');
+    const file = await this.realizations.exportRange(
+      actor,
+      ownerId,
+      query,
+      format || query.format || 'pdf',
+    );
     response.setHeader('Content-Type', file.contentType);
     response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
@@ -140,6 +154,15 @@ export class PropertyOwnerRealizationController {
     @Query('property_id') propertyId: string,
   ) {
     return this.realizations.financeConfirmers(actor, propertyId);
+  }
+
+  @Get(':realizationId/period-reschedule-preview')
+  previewPeriodReschedule(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('realizationId', new ParseUUIDPipe({ version: '4' })) realizationId: string,
+    @Query() query: PreviewOwnerRealizationPeriodRescheduleDto,
+  ) {
+    return this.realizations.previewPeriodReschedule(actor, realizationId, query);
   }
 
   @Get(':realizationId')

@@ -24,6 +24,19 @@ const admin = {
 const context = { correlationId: 'w07d-test' };
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim();
 
+function assertCheckoutCommandInsertIsColumnAligned(sql: string) {
+  const match = sql.match(
+    /INSERT INTO lease_checkout_commands\((.+?)\) VALUES\((.+?)\) RETURNING/i,
+  );
+  assert.ok(match, 'checkout command insert should expose its columns and values');
+  const [, columns, values] = match;
+  assert.equal(
+    columns!.split(',').length,
+    values!.split(',').length,
+    'checkout command insert must provide one value for every target column',
+  );
+}
+
 type Options = {
   today?: string;
   state?: string;
@@ -157,7 +170,7 @@ function harness(options: Options = {}) {
       if (/SELECT inspection_room_status FROM lease_checkout_commands/.test(q))
         return { rows: [{ inspection_room_status: 'inspection_required' }], rowCount: 1 };
       if (
-        /FROM leases WHERE id=\$1 FOR UPDATE/.test(q) ||
+        /FROM leases lease/.test(q) ||
         /FROM leases l JOIN residents resident/.test(q)
       )
         return {
@@ -174,6 +187,7 @@ function harness(options: Options = {}) {
               commercial_mode: options.commercialMode ?? 'rent',
               snapshot_monthly_price: String(options.monthlyRate ?? 1_800_000),
               contract_rent_amount: String(options.contractRent ?? 10_800_000),
+              physical_check_in_date: options.leaseStartDate ?? '2026-08-28',
               snapshot_room_number: 'AK-18-01',
               resident_name: 'Fahmi',
               building_code: 'AK',
@@ -258,6 +272,7 @@ function harness(options: Options = {}) {
               id: '88888888-8888-4888-8888-888888888888',
               total_amount: String(options.invoiceTotal ?? 500),
               credit_amount: '0',
+              contract_correction_credit_amount: '0',
               net_allocated: String(options.invoicePaid ?? 0),
             },
           ],
@@ -456,7 +471,10 @@ function harness(options: Options = {}) {
         state = 'cancelled';
         return { rows: [command()], rowCount: 1 };
       }
-      if (/INSERT INTO lease_checkout_commands/.test(q)) return { rows: [command()], rowCount: 1 };
+      if (/INSERT INTO lease_checkout_commands/.test(q)) {
+        if (/late_checkout_penalty_v1/.test(q)) assertCheckoutCommandInsertIsColumnAligned(q);
+        return { rows: [command()], rowCount: 1 };
+      }
       return { rows: [], rowCount: 1 };
     },
   };
@@ -565,13 +583,18 @@ void test('checkout completion accepts its uploaded damage evidence when issuing
 });
 
 void test('owner-sponsored checkout can save its plan without inventing a positive rent', async () => {
-  const h = harness({ commercialMode: 'owner_sponsored', monthlyRate: 0, contractRent: 0 });
+  const h = harness({
+    commercialMode: 'owner_sponsored',
+    monthlyRate: 0,
+    contractRent: 0,
+    leaseEndDate: '2026-10-02',
+  });
   const result = await h.service.createLateCheckoutPlan(
     admin as never,
     LEASE_ID,
     {
       exit_type: 'normal_expiry',
-      effective_date: '2027-02-28',
+      effective_date: '2026-10-01',
       reason: 'Masa hunian selesai',
       request_source: 'admin',
     },
@@ -581,6 +604,93 @@ void test('owner-sponsored checkout can save its plan without inventing a positi
   assert.equal(result.status, 201);
   const plan = h.writes.find(({ sql }) => /INSERT INTO lease_checkout_commands/.test(sql));
   assert.equal(plan?.params[18], 0);
+});
+
+void test('historical actual checkout requires an internal explanation and preserves the actual date', async () => {
+  const missingNote = harness({
+    today: '2026-10-17',
+    leaseStartDate: '2026-08-01',
+    leaseEndDate: '2026-10-12',
+  });
+  const input = {
+    exit_type: 'resident_early_termination' as const,
+    effective_date: '2026-10-10',
+    reason: 'Penghuni telah mengosongkan kamar lebih awal',
+    request_source: 'admin' as const,
+  };
+  await assert.rejects(
+    () =>
+      missingNote.service.createLateCheckoutPlan(
+        admin as never,
+        LEASE_ID,
+        input,
+        '1234567890123456',
+        context,
+      ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_HISTORICAL_NOTE_REQUIRED',
+  );
+
+  const recorded = harness({
+    today: '2026-10-17',
+    leaseStartDate: '2026-08-01',
+    leaseEndDate: '2026-10-12',
+  });
+  const result = await recorded.service.createLateCheckoutPlan(
+    admin as never,
+    LEASE_ID,
+    {
+      ...input,
+      internal_note: 'Catatan serah-terima fisik dari Admin pada 10 Oktober 2026.',
+    },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 201);
+  const checkout = recorded.writes.find(({ sql }) => /INSERT INTO lease_checkout_commands/.test(sql));
+  assert.match(checkout?.sql ?? '', /'notice_received'/);
+  assert.equal(checkout?.params[5], '2026-10-10');
+});
+
+void test('a zero late-checkout tariff requires a waiver reason only when the actual date is overdue', async () => {
+  const withoutWaiver = harness({
+    today: '2026-10-17',
+    leaseEndDate: '2026-09-01',
+  });
+  const input = {
+    exit_type: 'normal_expiry' as const,
+    effective_date: '2026-10-17',
+    reason: 'Check-out tercatat setelah masa sewa berakhir',
+    request_source: 'admin' as const,
+    late_checkout_daily_penalty_amount: 0,
+  };
+  await assert.rejects(
+    () =>
+      withoutWaiver.service.createLateCheckoutPlan(
+        admin as never,
+        LEASE_ID,
+        input,
+        '1234567890123456',
+        context,
+      ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_LATE_PENALTY_WAIVER_REASON_REQUIRED',
+  );
+
+  const waived = harness({ today: '2026-10-17', leaseEndDate: '2026-09-01' });
+  const result = await waived.service.createLateCheckoutPlan(
+    admin as never,
+    LEASE_ID,
+    {
+      ...input,
+      late_checkout_penalty_waiver_reason: 'Pembebasan denda disetujui Admin.',
+    },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 201);
+  const checkout = waived.writes.find(({ sql }) => /INSERT INTO lease_checkout_commands/.test(sql));
+  assert.equal(checkout?.params[18], 0);
+  assert.equal(checkout?.params[19], 1_800_000);
+  assert.equal(checkout?.params[20], 'Pembebasan denda disetujui Admin.');
 });
 
 void test('owner-sponsored checkout previews and completes settlement with zero rent', async () => {
@@ -687,7 +797,7 @@ for (const [label, options] of [
 }
 
 void test('ordinary paid rent still rejects a zero monthly tariff at plan creation', async () => {
-  const h = harness({ commercialMode: 'rent', monthlyRate: 0 });
+  const h = harness({ commercialMode: 'rent', monthlyRate: 0, leaseEndDate: '2026-10-02' });
   await assert.rejects(
     () =>
       h.service.createLateCheckoutPlan(
@@ -695,7 +805,7 @@ void test('ordinary paid rent still rejects a zero monthly tariff at plan creati
         LEASE_ID,
         {
           exit_type: 'normal_expiry',
-          effective_date: '2027-02-28',
+          effective_date: '2026-10-01',
           reason: 'Selesai',
           request_source: 'admin',
         },
@@ -883,7 +993,7 @@ void test('W07D handover rejects an unconfirmed physical handover before recordi
   assert.ok(!h.queries.some((q) => /INSERT INTO lease_checkout_evidence/.test(q)));
 });
 
-void test('late-checkout handover cannot be recorded before its planned date', async () => {
+void test('late-checkout rejects a future actual check-out date before recording handover evidence', async () => {
   const h = harness({
     state: 'scheduled',
     m5Exit: true,
@@ -921,7 +1031,7 @@ void test('late-checkout handover cannot be recorded before its planned date', a
         '1234567890123456',
         context,
       ),
-    (error: unknown) => errorCode(error) === 'CHECKOUT_EFFECTIVE_DATE_NOT_REACHED',
+    (error: unknown) => errorCode(error) === 'CHECKOUT_ACTUAL_DATE_FUTURE',
   );
   assert.ok(!h.queries.some((query) => /INSERT INTO lease_checkout_evidence/.test(query)));
   assert.ok(
@@ -1120,6 +1230,50 @@ void test('M5 adjusted refund requires evidence and fully disposes the deposit l
   assert.equal(result.status, 200);
   assert.ok(adjusted.queries.some((query) => /checkout_refund_adjustment/.test(query)));
   assert.ok(adjusted.queries.some((query) => /checkout_exit_refund/.test(query)));
+});
+
+void test('M5 zero final refund requires resident waiver confirmation but not adjustment evidence', async () => {
+  const options = {
+    state: 'settlement_pending',
+    m5Exit: true,
+    physicalConfirmed: true,
+    actualCheckoutDate: '2026-09-27',
+    leaseStatus: 'ended',
+    invoiceTotal: 1_800_000,
+    invoicePaid: 1_800_000,
+    depositBalance: 1_800_000,
+  } as const;
+  const missingConsent = harness(options);
+  await assert.rejects(
+    () =>
+      missingConsent.service.complete(
+        admin as never,
+        LEASE_ID,
+        COMMAND_ID,
+        { room_status_after: 'inspection_required', final_refund_amount: 0 },
+        '1234567890123456',
+        context,
+      ),
+    (error: unknown) => errorCode(error) === 'CHECKOUT_REFUND_WAIVER_CONSENT_REQUIRED',
+  );
+
+  const waived = harness(options);
+  const result = await waived.service.complete(
+    admin as never,
+    LEASE_ID,
+    COMMAND_ID,
+    {
+      room_status_after: 'inspection_required',
+      final_refund_amount: 0,
+      refund_waived_by_resident: true,
+    },
+    '1234567890123456',
+    context,
+  );
+  assert.equal(result.status, 200);
+  assert.ok(waived.queries.some((query) => /checkout_refund_adjustment/.test(query)));
+  assert.ok(waived.queries.some((query) => /refund_waived_by_resident/.test(query)));
+  assert.ok(!waived.queries.some((query) => /INSERT INTO lease_exit_refunds/.test(query)));
 });
 
 void test('M5 explicit deposit offset can settle a short-notice charge outside rent invoices', async () => {

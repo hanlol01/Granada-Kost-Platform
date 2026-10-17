@@ -116,6 +116,22 @@ test('checkout revision and edit events are accepted by the lease history vocabu
   assert.ok(entry.sentinels.some((value) => value.includes('checkout_revision_requested')));
 });
 
+test('actual checkout recording is accepted by the lease history vocabulary', async () => {
+  const migration = await source(
+    'src/infrastructure/database/migrations/132_actual_checkout_history_event.sql',
+  );
+  const entry = MIGRATION_MANIFEST.find(
+    (item) => item.version === '132_actual_checkout_history_event.sql',
+  );
+
+  assert.match(migration, /DROP CONSTRAINT IF EXISTS lease_history_event_type_check/);
+  assert.match(migration, /ADD CONSTRAINT lease_history_event_type_check CHECK/);
+  assert.match(migration, /'checkout_actual_recorded'/);
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.ok(entry.sentinels.some((value) => value.includes('checkout_actual_recorded')));
+});
+
 test('W07D routes are Admin-only and completion is financially authorised', async () => {
   const controller = await source('src/modules/lease/lease-checkout.controller.ts');
   assert.match(controller, /@RequireRoles\('admin'\)/);

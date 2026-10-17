@@ -15,6 +15,7 @@ import {
   type LeaseExitOfficialDocumentKind,
   type LeaseExitOfficialDocumentSnapshot,
 } from '../billing/helpers/billing-document.helper';
+import { contractCorrectionCreditSql } from '../billing/helpers/contract-correction-credit.helper';
 import { nextFinancialTransactionCode } from '../billing/helpers/financial-transaction-code.helper';
 import { W06BillingService } from '../billing/services/w06-billing.service';
 import { UserAccessContext } from '../iam/types/iam.types';
@@ -77,6 +78,7 @@ type CheckoutRow = {
   late_checkout_overdue_days?: number | null;
   late_checkout_penalty_days?: number | null;
   late_checkout_penalty_amount?: string | null;
+  late_checkout_penalty_waiver_reason?: string | null;
   physical_checkout_confirmed_at: Date | null;
   actual_checkout_date: string | null;
   lease_start_date?: string | null;
@@ -89,6 +91,7 @@ type CheckoutRow = {
   final_rent_refund_amount?: string | null;
   final_deposit_refund_amount?: string | null;
   refund_adjustment_amount?: string | null;
+  refund_waived_by_resident?: boolean | null;
   documented_damage_amount?: string | null;
   damage_amount_due?: string | null;
   gross_refund_amount?: string | null;
@@ -132,12 +135,14 @@ type LeaseRow = {
   end_date: string;
   snapshot_monthly_price: string;
   contract_rent_amount: string;
+  physical_check_in_date: string | null;
 };
 type InvoiceRow = {
   id: string;
   invoice_purpose: 'rent';
   total_amount: string;
   credit_amount: string;
+  contract_correction_credit_amount: string;
   net_allocated: string;
 };
 
@@ -198,6 +203,8 @@ type ExitDocumentContextRow = {
   late_checkout_overdue_days: number | null;
   late_checkout_penalty_days: number | null;
   late_checkout_penalty_amount: string | null;
+  late_checkout_penalty_waiver_reason: string | null;
+  contract_correction_credit_amount: string;
   verified_rent_payment_amount: string;
   existing_invoice_credit_amount: string;
   recognized_rent_credit_amount: string;
@@ -261,6 +268,7 @@ const CHECKOUT_RETURNING_COLUMNS = `
   late_checkout_penalty_day_cap,contract_last_occupancy_date::text,
   penalty_free_until_date::text,late_checkout_daily_penalty_amount,
   late_checkout_overdue_days,late_checkout_penalty_days,late_checkout_penalty_amount,
+  late_checkout_penalty_waiver_reason,
   physical_checkout_confirmed_at,actual_checkout_date::text`;
 
 /** W07D sole general-checkout authority. W07A termination remains separate. */
@@ -291,13 +299,14 @@ export class LeaseCheckoutService {
               command.late_checkout_penalty_day_cap,command.contract_last_occupancy_date::text,
               command.penalty_free_until_date::text,command.late_checkout_daily_penalty_amount,
               command.late_checkout_overdue_days,command.late_checkout_penalty_days,
-              command.late_checkout_penalty_amount,
+               command.late_checkout_penalty_amount,command.late_checkout_penalty_waiver_reason,
               command.physical_checkout_confirmed_at,command.actual_checkout_date::text,
               command.inspection_room_status,
               settlement.id AS final_settlement_id,
               settlement.recommended_refund_amount,settlement.final_refund_amount,
                settlement.final_rent_refund_amount,settlement.final_deposit_refund_amount,
-               settlement.refund_adjustment_amount,settlement.documented_damage_amount,
+                settlement.refund_adjustment_amount,settlement.refund_waived_by_resident,
+                settlement.documented_damage_amount,
                settlement.damage_amount_due,settlement.gross_refund_amount,
                settlement.gross_amount_due,settlement.amount_due,
                settlement.late_checkout_penalty_amount AS settlement_late_checkout_penalty_amount,
@@ -380,7 +389,8 @@ export class LeaseCheckoutService {
                    'deposit_deduction_amount',settlement.deposit_deduction_amount,
                    'deposit_rent_offset_amount',settlement.deposit_rent_offset_amount,
                    'refundable_deposit_amount',settlement.refundable_deposit_amount,
-                   'refund_adjustment_reason',settlement.refund_adjustment_reason
+                    'refund_adjustment_reason',settlement.refund_adjustment_reason,
+                    'refund_waived_by_resident',settlement.refund_waived_by_resident
                  ) END
                ) AS history,
                COALESCE((
@@ -703,11 +713,7 @@ export class LeaseCheckoutService {
       async (client, today) => {
         const lease = await this.lockLease(client, leaseId);
         this.assertActive(lease);
-        if (dto.effective_date < today && dto.exit_type !== 'normal_expiry')
-          throw new UnprocessableEntityException({
-            code: 'CHECKOUT_EFFECTIVE_DATE_PAST',
-            message: 'Rencana tanggal check-out tidak boleh berada di masa lalu',
-          });
+        this.assertActualCheckoutDate(lease, dto.effective_date, today, dto.internal_note);
         this.assertLateCheckoutPlanDate(dto.exit_type, dto.effective_date, lease.end_date);
         const existing = await client.query<{ id: string }>(
           `SELECT id FROM lease_checkout_commands
@@ -725,7 +731,7 @@ export class LeaseCheckoutService {
         try {
           penalty = buildLateCheckoutPenaltyQuote({
             plannedLeaseEndDate: lease.end_date,
-            actualPossessionReturnedDate: lease.end_date,
+            actualPossessionReturnedDate: dto.effective_date,
             monthlyRateAmount: Number(lease.snapshot_monthly_price),
             commercialMode: lease.commercial_mode,
             graceDays: LATE_CHECKOUT_GRACE_DAYS,
@@ -738,21 +744,28 @@ export class LeaseCheckoutService {
               error instanceof Error ? error.message : 'Kebijakan denda check-out tidak valid',
           });
         }
+        const dailyPenaltyAmount =
+          dto.late_checkout_daily_penalty_amount ?? penalty.dailyPenaltyAmount;
+        this.assertLateCheckoutPenaltyWaiver(
+          penalty,
+          dailyPenaltyAmount,
+          dto.late_checkout_penalty_waiver_reason,
+        );
 
         const inserted = await client.query<CheckoutRow>(
           `INSERT INTO lease_checkout_commands(
-             property_id,lease_id,occupancy_id,resident_id,room_id,effective_date,
+             property_id,lease_id,occupancy_id,resident_id,room_id,state,effective_date,
              notice_recorded_date,notice_reason,notice_exception_reason,internal_note,created_by_user_id,
              exit_type,request_source,requested_by_user_id,notice_days,missing_notice_days,
              payment_period_days,daily_rate_amount,recommended_short_notice_charge,planned_lease_end_date,
              charge_policy,late_checkout_grace_days,late_checkout_penalty_day_cap,
              contract_last_occupancy_date,penalty_free_until_date,
              late_checkout_daily_penalty_amount,late_checkout_overdue_days,
-             late_checkout_penalty_days,late_checkout_penalty_amount
+             late_checkout_penalty_days,late_checkout_penalty_amount,late_checkout_penalty_waiver_reason
            ) VALUES(
-             $1,$2,$3,$4,$5,$6::date,$7::date,$8,NULL,$9,$10,
-             $11,$12,$10,0,0,30,$13,0,$14::date,
-             'late_checkout_penalty_v1',$15,$16,$17::date,$18::date,$19,0,0,0
+              $1,$2,$3,$4,$5,'notice_received',$6::date,$7::date,$8,NULL,$9,$10,
+              $11,$12,$10,0,0,30,$13,0,$14::date,
+              'late_checkout_penalty_v1',$15,$16,$17::date,$18::date,$19,0,0,$20,$21
            )
            RETURNING ${CHECKOUT_RETURNING_COLUMNS}`,
           [
@@ -774,7 +787,9 @@ export class LeaseCheckoutService {
             LATE_CHECKOUT_PENALTY_DAY_CAP,
             penalty.contractLastOccupancyDate,
             penalty.penaltyFreeUntilDate,
-            penalty.dailyPenaltyAmount,
+            dailyPenaltyAmount,
+            penalty.lateCheckoutPenaltyAmount,
+            dto.late_checkout_penalty_waiver_reason?.trim() || null,
           ],
         );
         const checkout = inserted.rows[0];
@@ -787,7 +802,7 @@ export class LeaseCheckoutService {
           client,
           scope.property_id,
           lease.id,
-          'checkout_notice_received',
+          'checkout_actual_recorded',
           user.id,
           today,
           {
@@ -796,9 +811,12 @@ export class LeaseCheckoutService {
             reason: dto.reason.trim(),
             request_source: dto.request_source,
             exit_type: dto.exit_type,
+            actual_checkout_date: dto.effective_date,
             contract_last_occupancy_date: penalty.contractLastOccupancyDate,
             penalty_free_until_date: penalty.penaltyFreeUntilDate,
-            daily_late_checkout_penalty_amount: penalty.dailyPenaltyAmount,
+            daily_late_checkout_penalty_amount: dailyPenaltyAmount,
+            late_checkout_penalty_waiver_reason:
+              dto.late_checkout_penalty_waiver_reason?.trim() || null,
           },
         );
         await this.audit(
@@ -816,7 +834,7 @@ export class LeaseCheckoutService {
           client,
           scope.property_id,
           `lease.checkout_late_plan:${checkout.id}`,
-          'lease.checkout.plan_recorded',
+          'lease.checkout.actual_recorded',
           'lease_checkout_command',
           checkout.id,
           user.id,
@@ -861,21 +879,33 @@ export class LeaseCheckoutService {
         if (!['notice_received', 'scheduled'].includes(checkout.state))
           throw new ConflictException({
             code: 'CHECKOUT_STATE_CONFLICT',
-            message: 'Rencana check-out hanya dapat diubah sebelum serah-terima',
+            message: 'Data check-out hanya dapat diubah sebelum serah-terima',
           });
         const lease = await this.lockLease(client, leaseId);
         this.assertActive(lease);
-        if (dto.effective_date < today && dto.exit_type !== 'normal_expiry')
-          throw new UnprocessableEntityException({
-            code: 'CHECKOUT_EFFECTIVE_DATE_PAST',
-            message: 'Rencana tanggal check-out tidak boleh berada di masa lalu',
-          });
+        this.assertActualCheckoutDate(lease, dto.effective_date, today, dto.internal_note);
         this.assertLateCheckoutPlanDate(dto.exit_type, dto.effective_date, lease.end_date);
+        const penalty = buildLateCheckoutPenaltyQuote({
+          plannedLeaseEndDate: lease.end_date,
+          actualPossessionReturnedDate: dto.effective_date,
+          monthlyRateAmount: Number(lease.snapshot_monthly_price),
+          commercialMode: lease.commercial_mode,
+          graceDays: checkout.late_checkout_grace_days ?? LATE_CHECKOUT_GRACE_DAYS,
+          penaltyDayCap: checkout.late_checkout_penalty_day_cap ?? LATE_CHECKOUT_PENALTY_DAY_CAP,
+        });
+        const dailyPenaltyAmount =
+          dto.late_checkout_daily_penalty_amount ??
+          Number(checkout.late_checkout_daily_penalty_amount ?? penalty.dailyPenaltyAmount);
+        this.assertLateCheckoutPenaltyWaiver(
+          penalty,
+          dailyPenaltyAmount,
+          dto.late_checkout_penalty_waiver_reason,
+        );
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands
-           SET state='notice_received',scheduled_by_user_id=NULL,scheduled_at=NULL,
-               effective_date=$2::date,exit_type=$3,request_source=$4,notice_reason=$5,
-               internal_note=$6,updated_at=now()
+           SET effective_date=$2::date,exit_type=$3,request_source=$4,notice_reason=$5,
+               internal_note=$6,late_checkout_daily_penalty_amount=$7,
+               late_checkout_penalty_waiver_reason=$8,updated_at=now()
            WHERE id=$1
            RETURNING ${CHECKOUT_RETURNING_COLUMNS}`,
           [
@@ -885,6 +915,8 @@ export class LeaseCheckoutService {
             dto.request_source,
             dto.reason.trim(),
             dto.internal_note?.trim() || null,
+            dailyPenaltyAmount,
+            dto.late_checkout_penalty_waiver_reason?.trim() || null,
           ],
         );
         await this.history(
@@ -928,13 +960,33 @@ export class LeaseCheckoutService {
             code: 'CHECKOUT_LATE_PENALTY_AMOUNT_INVALID',
             message: 'Tarif denda per hari harus berupa nominal Rupiah nol atau lebih',
           });
+        const lease = await this.lockLease(client, checkout.lease_id);
+        const penalty = buildLateCheckoutPenaltyQuote({
+          plannedLeaseEndDate: checkout.planned_lease_end_date ?? lease.end_date,
+          actualPossessionReturnedDate: checkout.effective_date,
+          monthlyRateAmount: Number(lease.snapshot_monthly_price),
+          commercialMode: lease.commercial_mode,
+          graceDays: checkout.late_checkout_grace_days ?? LATE_CHECKOUT_GRACE_DAYS,
+          penaltyDayCap: checkout.late_checkout_penalty_day_cap ?? LATE_CHECKOUT_PENALTY_DAY_CAP,
+        });
+        this.assertLateCheckoutPenaltyWaiver(
+          penalty,
+          dailyPenaltyAmount,
+          dto.late_checkout_penalty_waiver_reason,
+        );
         const updated = await client.query<CheckoutRow>(
           `UPDATE lease_checkout_commands
            SET state='scheduled',scheduled_by_user_id=$2,scheduled_at=now(),
-               late_checkout_daily_penalty_amount=$3,updated_at=now()
+                late_checkout_daily_penalty_amount=$3,late_checkout_penalty_waiver_reason=$4,
+                updated_at=now()
            WHERE id=$1
            RETURNING ${CHECKOUT_RETURNING_COLUMNS}`,
-          [checkout.id, user.id, dailyPenaltyAmount],
+          [
+            checkout.id,
+            user.id,
+            dailyPenaltyAmount,
+            dto.late_checkout_penalty_waiver_reason?.trim() || null,
+          ],
         );
         await this.history(
           client,
@@ -947,6 +999,8 @@ export class LeaseCheckoutService {
             checkout_command_id: checkout.id,
             checkout_policy: checkout.charge_policy,
             late_checkout_daily_penalty_amount: dailyPenaltyAmount,
+            late_checkout_penalty_waiver_reason:
+              dto.late_checkout_penalty_waiver_reason?.trim() || null,
           },
         );
         await this.audit(
@@ -1255,20 +1309,20 @@ export class LeaseCheckoutService {
               code: 'CHECKOUT_APPROVAL_REQUIRED',
               message: 'Checkout requires explicit Admin approval before physical handover',
             });
-          if (today < checkout.effective_date)
-            throw new UnprocessableEntityException({
-              code: 'CHECKOUT_EFFECTIVE_DATE_NOT_REACHED',
-              message:
-                'Serah-terima fisik hanya dapat dicatat pada atau setelah tanggal rencana check-out',
-            });
           const lease = await this.lockLease(client, checkout.lease_id);
           this.assertActive(lease);
           this.assertCheckoutTuple(checkout, lease);
+          this.assertActualCheckoutDate(
+            lease,
+            checkout.effective_date,
+            today,
+            checkout.internal_note,
+          );
           if (isLateCheckoutPolicy) {
             try {
               latePenalty = buildLateCheckoutPenaltyQuote({
                 plannedLeaseEndDate: checkout.planned_lease_end_date ?? lease.end_date,
-                actualPossessionReturnedDate: today,
+                actualPossessionReturnedDate: checkout.effective_date,
                 monthlyRateAmount: Number(lease.snapshot_monthly_price),
                 commercialMode: lease.commercial_mode,
                 graceDays: checkout.late_checkout_grace_days ?? LATE_CHECKOUT_GRACE_DAYS,
@@ -1312,7 +1366,7 @@ export class LeaseCheckoutService {
           const endedOccupancy = await client.query(
             `UPDATE occupancies SET occupancy_status='ended',end_date=$2::date,closed_by_user_id=$3,updated_at=now()
              WHERE id=$1 AND property_id=$4 AND occupancy_status='active'`,
-            [checkout.occupancy_id, today, user.id, checkout.property_id],
+            [checkout.occupancy_id, checkout.effective_date, user.id, checkout.property_id],
           );
           if (endedOccupancy.rowCount !== 1)
             throw new ConflictException({
@@ -1327,7 +1381,7 @@ export class LeaseCheckoutService {
               checkout.property_id,
               checkout.room_id,
               checkout.resident_id,
-              today,
+              checkout.effective_date,
               user.id,
               JSON.stringify({
                 source: 'lease_checkout',
@@ -1340,7 +1394,13 @@ export class LeaseCheckoutService {
             `UPDATE leases SET lease_status='ended',end_date=$2::date,closed_at=now(),closed_by_user_id=$3,
                     close_reason=$4,updated_by_user_id=$3,updated_at=now()
              WHERE id=$1 AND property_id=$5 AND lease_status='active'`,
-            [checkout.lease_id, today, user.id, checkout.exit_type, checkout.property_id],
+            [
+              checkout.lease_id,
+              checkout.effective_date,
+              user.id,
+              checkout.exit_type,
+              checkout.property_id,
+            ],
           );
           if (endedLease.rowCount !== 1)
             throw new ConflictException({
@@ -1388,7 +1448,7 @@ export class LeaseCheckoutService {
           [
             checkout.id,
             user.id,
-            today,
+            checkout.effective_date,
             latePenalty?.overdueDays ?? 0,
             latePenalty?.chargedDays ?? 0,
             latePenalty?.lateCheckoutPenaltyAmount ?? 0,
@@ -1406,6 +1466,7 @@ export class LeaseCheckoutService {
             late_checkout_penalty_amount: latePenalty?.lateCheckoutPenaltyAmount ?? 0,
             late_checkout_penalty_days: latePenalty?.chargedDays ?? 0,
             physical_checkout_confirmed: Boolean(checkout.exit_type),
+            actual_checkout_date: checkout.effective_date,
             exit_type: checkout.exit_type,
           },
         );
@@ -1501,7 +1562,7 @@ export class LeaseCheckoutService {
           throw new UnprocessableEntityException({
             code: 'CHECKOUT_EFFECTIVE_DATE_NOT_REACHED',
             message:
-              'Penyelesaian check-out hanya dapat dilakukan pada atau setelah tanggal rencana check-out',
+              'Penyelesaian check-out hanya dapat dilakukan pada atau setelah tanggal check-out aktual',
           });
         const inspectionResult = await client.query<{ inspection_room_status: string }>(
           `SELECT inspection_room_status FROM lease_checkout_commands WHERE id=$1 FOR UPDATE`,
@@ -1714,8 +1775,26 @@ export class LeaseCheckoutService {
               code: 'CHECKOUT_REFUND_EXCEEDS_RECOMMENDATION',
               message: 'Pengembalian dana final tidak boleh melebihi hasil perhitungan',
             });
+          const isResidentRefundWaiver =
+            quote.recommendedRefundAmount > 0 && finalRefund === 0;
+          const refundWaivedByResident = isResidentRefundWaiver
+            ? dto.refund_waived_by_resident === true
+            : false;
+          if (isResidentRefundWaiver && !refundWaivedByResident)
+            throw new UnprocessableEntityException({
+              code: 'CHECKOUT_REFUND_WAIVER_CONSENT_REQUIRED',
+              message:
+                'Konfirmasi persetujuan penghuni wajib dicentang ketika pengembalian dana final ditetapkan Rp0',
+            });
+          if (!isResidentRefundWaiver && dto.refund_waived_by_resident === true)
+            throw new UnprocessableEntityException({
+              code: 'CHECKOUT_REFUND_WAIVER_CONSENT_INVALID',
+              message:
+                'Konfirmasi pelepasan refund hanya dapat digunakan untuk rekomendasi refund positif dengan keputusan final Rp0',
+            });
           if (
             finalRefund !== quote.recommendedRefundAmount &&
+            !isResidentRefundWaiver &&
             (!adjustmentReason || !adjustmentEvidence.length)
           )
             throw new UnprocessableEntityException({
@@ -1734,7 +1813,7 @@ export class LeaseCheckoutService {
           const settlement = await client.query<{ id: string }>(
             `INSERT INTO lease_exit_final_settlements(
                property_id,checkout_command_id,lease_id,resident_id,room_id,exit_type,actual_checkout_date,
-               contract_rent_amount,verified_rent_payment_amount,existing_invoice_credit_amount,
+                contract_rent_amount,contract_correction_credit_amount,verified_rent_payment_amount,existing_invoice_credit_amount,
                recognized_rent_credit_amount,earned_rent_amount,earned_rent_amount_due_before_deposit_offset,
                contract_outstanding_amount,
                approved_short_notice_charge,short_notice_charge_due_amount,
@@ -1743,9 +1822,10 @@ export class LeaseCheckoutService {
                deposit_liability_amount,deposit_deduction_amount,deposit_rent_offset_amount,refundable_deposit_amount,
                recommended_refund_amount,final_refund_amount,final_rent_refund_amount,final_deposit_refund_amount,
                refund_adjustment_amount,refund_adjustment_reason,refund_adjustment_evidence_file_id,
+                refund_waived_by_resident,
                documented_damage_amount,damage_amount_due,gross_refund_amount,gross_amount_due,
-               amount_due,decision_status,approved_by_user_id
-             ) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
+                amount_due,decision_status,approved_by_user_id
+              ) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
              RETURNING id`,
             [
               checkout.property_id,
@@ -1756,6 +1836,7 @@ export class LeaseCheckoutService {
               checkout.exit_type,
               checkout.actual_checkout_date ?? today,
               quote.contractRentAmount,
+              quote.contractCorrectionCreditAmount,
               quote.verifiedRentPaymentAmount,
               quote.existingInvoiceCreditAmount,
               quote.recognizedRentCreditAmount,
@@ -1779,6 +1860,7 @@ export class LeaseCheckoutService {
               refundAdjustmentAmount,
               adjustmentReason,
               adjustmentEvidence[0] ?? null,
+              refundWaivedByResident,
               quote.documentedDamageAmount,
               quote.damageAmountDue,
               quote.grossRefundAmount,
@@ -1907,6 +1989,7 @@ export class LeaseCheckoutService {
             final_deposit_refund_amount: finalDepositRefundAmount,
             refund_adjustment_amount: refundAdjustmentAmount,
             reason: dto.refund_adjustment_reason?.trim() || null,
+            refund_waived_by_resident: refundWaivedByResident,
             documented_damage_amount: quote.documentedDamageAmount,
             deposit_deduction_amount: quote.depositDeductionAmount,
             damage_amount_due: quote.damageAmountDue,
@@ -1926,12 +2009,15 @@ export class LeaseCheckoutService {
                 checkout.property_id,
                 lease.id,
                 depositAdjustmentAmount,
-                adjustmentReason,
+                refundWaivedByResident
+                  ? 'Resident approved no refund'
+                  : adjustmentReason,
                 adjustmentEvidence[0] ?? null,
                 user.id,
                 JSON.stringify({
                   checkout_command_id: checkout.id,
                   final_settlement_id: finalSettlementId,
+                  refund_waived_by_resident: refundWaivedByResident,
                 }),
               ],
             );
@@ -2710,7 +2796,8 @@ export class LeaseCheckoutService {
               command.late_checkout_grace_days,command.contract_last_occupancy_date::text,
               command.penalty_free_until_date::text,command.late_checkout_daily_penalty_amount,
               command.late_checkout_overdue_days,command.late_checkout_penalty_days,
-              command.late_checkout_penalty_amount,
+               command.late_checkout_penalty_amount,command.late_checkout_penalty_waiver_reason,
+               settlement.contract_correction_credit_amount,
               settlement.verified_rent_payment_amount,settlement.existing_invoice_credit_amount,
               settlement.recognized_rent_credit_amount,settlement.earned_rent_amount,
               COALESCE(invoice_adjustment.amount,0) AS unearned_invoice_credit_amount,
@@ -2852,6 +2939,7 @@ export class LeaseCheckoutService {
               penalty_free_until_date:
                 authority.penalty_free_until_date ?? authority.actual_checkout_date,
               daily_penalty_amount: Number(authority.late_checkout_daily_penalty_amount ?? 0),
+              waiver_reason: authority.late_checkout_penalty_waiver_reason,
               overdue_days: authority.late_checkout_overdue_days ?? 0,
               charged_days: authority.late_checkout_penalty_days ?? 0,
               penalty_amount: Number(authority.late_checkout_penalty_amount ?? 0),
@@ -2893,6 +2981,7 @@ export class LeaseCheckoutService {
         amount: Number(damage.amount),
       })),
       settlement: {
+        contract_correction_credit_amount: Number(authority.contract_correction_credit_amount),
         verified_rent_payment_amount: Number(authority.verified_rent_payment_amount),
         existing_invoice_credit_amount: Number(authority.existing_invoice_credit_amount),
         recognized_rent_credit_amount: Number(authority.recognized_rent_credit_amount),
@@ -3042,12 +3131,21 @@ export class LeaseCheckoutService {
       (sum, invoice) => sum + Math.min(Number(invoice.total_amount), Number(invoice.net_allocated)),
       0,
     );
+    const contractCorrectionCredit = invoices.reduce(
+      (sum, invoice) =>
+        sum +
+        Math.min(Number(invoice.total_amount), Number(invoice.contract_correction_credit_amount)),
+      0,
+    );
     const existingInvoiceCredit = invoices.reduce(
       (sum, invoice) =>
         sum +
         Math.min(
           Math.max(Number(invoice.total_amount) - Number(invoice.net_allocated), 0),
-          Number(invoice.credit_amount),
+          Math.max(
+            Number(invoice.credit_amount) - Number(invoice.contract_correction_credit_amount),
+            0,
+          ),
         ),
       0,
     );
@@ -3058,6 +3156,7 @@ export class LeaseCheckoutService {
         contractRentAmount: Number(lease.contract_rent_amount),
         monthlyRateAmount: Number(lease.snapshot_monthly_price),
         commercialMode: lease.commercial_mode,
+        contractCorrectionCreditAmount: contractCorrectionCredit,
         verifiedRentPaymentAmount: verifiedRentPayment,
         existingInvoiceCreditAmount: existingInvoiceCredit,
         depositLiabilityAmount: depositBalance,
@@ -3375,7 +3474,18 @@ export class LeaseCheckoutService {
   }
   private async lockInvoices(client: PoolClient, leaseId: string) {
     const result = await client.query<InvoiceRow>(
-      `SELECT i.id,i.invoice_purpose,i.total_amount,i.credit_amount,COALESCE(allocation.net,0) AS net_allocated FROM invoices i LEFT JOIN LATERAL (SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net FROM payment_allocations pa LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id WHERE pa.invoice_id=i.id) allocation ON true WHERE i.lease_id=$1 AND i.invoice_purpose='rent' AND i.invoice_status<>'void' ORDER BY i.due_date,i.id FOR UPDATE OF i`,
+      `SELECT i.id,i.invoice_purpose,i.total_amount,i.credit_amount,
+              ${contractCorrectionCreditSql('i')} AS contract_correction_credit_amount,
+              COALESCE(allocation.net,0) AS net_allocated
+         FROM invoices i
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(sum(pa.allocated_amount),0)-COALESCE(sum(pra.reversed_amount),0) AS net
+             FROM payment_allocations pa
+             LEFT JOIN payment_reversal_allocations pra ON pra.original_allocation_id=pa.id
+            WHERE pa.invoice_id=i.id
+         ) allocation ON true
+        WHERE i.lease_id=$1 AND i.invoice_purpose='rent' AND i.invoice_status<>'void'
+        ORDER BY i.due_date,i.id FOR UPDATE OF i`,
       [leaseId],
     );
     return result.rows;
@@ -3686,9 +3796,13 @@ export class LeaseCheckoutService {
   }
   private async lockLease(client: PoolClient, leaseId: string) {
     const result = await client.query<LeaseRow>(
-      `SELECT id,property_id,occupancy_id,resident_id,room_id,lease_status,commercial_mode,start_date::text,end_date::text,
-              snapshot_monthly_price,contract_rent_amount
-       FROM leases WHERE id=$1 FOR UPDATE`,
+      `SELECT lease.id,lease.property_id,lease.occupancy_id,lease.resident_id,lease.room_id,
+              lease.lease_status,lease.commercial_mode,lease.start_date::text,lease.end_date::text,
+              lease.snapshot_monthly_price,lease.contract_rent_amount,
+              occupancy.start_date::text AS physical_check_in_date
+       FROM leases lease
+       LEFT JOIN occupancies occupancy ON occupancy.id=lease.occupancy_id
+       WHERE lease.id=$1 FOR UPDATE OF lease`,
       [leaseId],
     );
     if (!result.rows[0])
@@ -3703,7 +3817,8 @@ export class LeaseCheckoutService {
               charge_policy,late_checkout_grace_days,late_checkout_penalty_day_cap,
               contract_last_occupancy_date::text,penalty_free_until_date::text,
               late_checkout_daily_penalty_amount,late_checkout_overdue_days,
-              late_checkout_penalty_days,late_checkout_penalty_amount,
+               late_checkout_penalty_days,late_checkout_penalty_amount,late_checkout_penalty_waiver_reason,
+  late_checkout_penalty_waiver_reason,
               physical_checkout_confirmed_at,actual_checkout_date::text,planned_lease_end_date::text
        FROM lease_checkout_commands WHERE id=$1 AND lease_id=$2 FOR UPDATE`,
       [id, leaseId],
@@ -3742,12 +3857,57 @@ export class LeaseCheckoutService {
     if (exitType === 'resident_early_termination' && effectiveDate >= plannedEndExclusive)
       throw new UnprocessableEntityException({
         code: 'CHECKOUT_EARLY_DATE_INVALID',
-        message: 'Rencana keluar lebih awal harus berada sebelum masa sewa berakhir',
+        message: 'Tanggal check-out lebih awal harus berada sebelum masa sewa berakhir',
       });
     if (exitType === 'normal_expiry' && effectiveDate < contractLastOccupancyDate)
       throw new UnprocessableEntityException({
         code: 'CHECKOUT_NORMAL_EXPIRY_DATE_INVALID',
-        message: 'Rencana check-out akhir masa sewa tidak boleh sebelum hari terakhir masa sewa',
+        message: 'Tanggal check-out akhir masa sewa tidak boleh sebelum hari terakhir masa sewa',
+      });
+  }
+
+  private assertActualCheckoutDate(
+    lease: LeaseRow,
+    actualCheckoutDate: string,
+    today: string,
+    internalNote?: string | null,
+  ) {
+    if (actualCheckoutDate > today)
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_ACTUAL_DATE_FUTURE',
+        message: 'Tanggal check-out aktual tidak boleh berada di masa depan',
+      });
+    if (!lease.physical_check_in_date)
+      throw new ConflictException({
+        code: 'CHECKOUT_PHYSICAL_CHECK_IN_REQUIRED',
+        message: 'Tanggal check-in fisik diperlukan sebelum check-out aktual dapat dicatat',
+      });
+    if (actualCheckoutDate < lease.physical_check_in_date)
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_ACTUAL_DATE_BEFORE_CHECK_IN',
+        message: 'Tanggal check-out aktual tidak boleh sebelum tanggal check-in fisik',
+      });
+    if (actualCheckoutDate < today && !internalNote?.trim())
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_HISTORICAL_NOTE_REQUIRED',
+        message: 'Catatan internal wajib diisi untuk mencatat check-out yang sudah terjadi',
+      });
+  }
+
+  private assertLateCheckoutPenaltyWaiver(
+    penalty: ReturnType<typeof buildLateCheckoutPenaltyQuote>,
+    dailyPenaltyAmount: number,
+    waiverReason?: string | null,
+  ) {
+    if (!Number.isSafeInteger(dailyPenaltyAmount) || dailyPenaltyAmount < 0)
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_LATE_PENALTY_AMOUNT_INVALID',
+        message: 'Tarif denda per hari harus berupa nominal Rupiah nol atau lebih',
+      });
+    if (penalty.chargedDays > 0 && dailyPenaltyAmount === 0 && !waiverReason?.trim())
+      throw new UnprocessableEntityException({
+        code: 'CHECKOUT_LATE_PENALTY_WAIVER_REASON_REQUIRED',
+        message: 'Alasan pembebasan denda wajib diisi saat tarif denda keterlambatan bernilai Rp0',
       });
   }
 
@@ -3775,10 +3935,12 @@ export class LeaseCheckoutService {
         code: 'LEASE_STATE_CONFLICT',
         message: 'Only an active lease may be checked out',
       });
-    if (!lease.occupancy_id) throw new ConflictException({
-      code: 'CHECKOUT_PHYSICAL_CHECK_IN_REQUIRED',
-      message: 'Penghuni belum tercatat check-in fisik, sehingga masa sewa dan denda check-out belum dimulai. Catat serah-terima kamar yang sebenarnya atau gunakan pembatalan penyewaan yang belum dimulai.',
-    });
+    if (!lease.occupancy_id)
+      throw new ConflictException({
+        code: 'CHECKOUT_PHYSICAL_CHECK_IN_REQUIRED',
+        message:
+          'Penghuni belum tercatat check-in fisik, sehingga masa sewa dan denda check-out belum dimulai. Catat serah-terima kamar yang sebenarnya atau gunakan pembatalan penyewaan yang belum dimulai.',
+      });
   }
   private assertCheckoutTuple(checkout: CheckoutRow, lease: LeaseRow) {
     if (

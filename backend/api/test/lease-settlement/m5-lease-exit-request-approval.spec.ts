@@ -29,6 +29,10 @@ const finalSettlementInvoiceCreditMigrationPath = resolve(
   root,
   'src/infrastructure/database/migrations/089_checkout_final_settlement_invoice_credit_authority.sql',
 );
+const actualCheckoutSettlementMigrationPath = resolve(
+  root,
+  'src/infrastructure/database/migrations/131_actual_checkout_and_correction_settlement.sql',
+);
 
 void test('M5 migration is manifest-bound, additive, and preserves legacy checkout rows', () => {
   const migration = readFileSync(migrationPath, 'utf8');
@@ -145,6 +149,19 @@ void test('final-settlement invoice credits are accepted only through the immuta
   assert.match(migration, /lease_exit_invoice_adjustments/);
   assert.match(migration, /W06_ISSUED_INVOICE_IMMUTABLE/);
   assert.doesNotMatch(migration, /UPDATE\s+(leases|occupancies|rooms|payments|invoices)\b/i);
+  assert.doesNotMatch(migration, /DELETE\s+FROM/i);
+});
+
+void test('actual checkout migration permits a zero late tariff and snapshots correction credit separately', () => {
+  const migration = readFileSync(actualCheckoutSettlementMigrationPath, 'utf8');
+  const entry = MIGRATION_MANIFEST.find(
+    (candidate) => candidate.version === '131_actual_checkout_and_correction_settlement.sql',
+  );
+  assert.ok(entry);
+  assert.equal(createHash('sha256').update(migration).digest('hex'), entry.checksumSha256);
+  assert.match(migration, /late_checkout_daily_penalty_amount >= 0/);
+  assert.match(migration, /late_checkout_penalty_waiver_reason TEXT/);
+  assert.match(migration, /contract_correction_credit_amount BIGINT NOT NULL DEFAULT 0/);
   assert.doesNotMatch(migration, /DELETE\s+FROM/i);
 });
 
@@ -287,6 +304,29 @@ void test('late checkout penalty consumes unused rent credit before becoming an 
   assert.equal(quote.lateCheckoutPenaltyDue, 80_000);
   assert.equal(quote.rentRefundableAmount, 0);
   assert.equal(quote.amountDue, 80_000);
+});
+
+void test('contract correction credit is context only and never becomes a resident refund source', () => {
+  const quote = buildLeaseExitFinancialQuote({
+    leaseStartDate: '2026-08-01',
+    actualCheckoutDate: '2026-08-31',
+    contractRentAmount: 1_900_000,
+    monthlyRateAmount: 1_900_000,
+    contractCorrectionCreditAmount: 3_800_000,
+    verifiedRentPaymentAmount: 1_900_000,
+    existingInvoiceCreditAmount: 0,
+    depositLiabilityAmount: 0,
+    documentedDamageAmount: 0,
+    approvedShortNoticeCharge: 0,
+    lateCheckoutPenaltyAmount: 189_999,
+    depositRentOffsetAmount: 0,
+  });
+
+  assert.equal(quote.contractCorrectionCreditAmount, 3_800_000);
+  assert.equal(quote.recognizedRentCreditAmount, 1_900_000);
+  assert.equal(quote.rentRefundableAmount, 0);
+  assert.equal(quote.recommendedRefundAmount, 0);
+  assert.equal(quote.amountDue, 189_999);
 });
 
 void test('normal expiry never creates short-notice charges and cannot precede the planned end', () => {

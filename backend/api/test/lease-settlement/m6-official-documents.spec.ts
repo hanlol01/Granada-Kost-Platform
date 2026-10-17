@@ -113,6 +113,7 @@ function snapshot(
     ],
     damages: [{ reference: 'EV-DMG-01', reason: 'Kunci lemari rusak', amount: 150_000 }],
     settlement: {
+      contract_correction_credit_amount: 0,
       verified_rent_payment_amount: 1_800_000,
       existing_invoice_credit_amount: 0,
       recognized_rent_credit_amount: 1_800_000,
@@ -225,6 +226,7 @@ void test('M6 official handover document explains late-checkout grace and penalt
       overdue_days: 2,
       charged_days: 2,
       penalty_amount: 120_000,
+      waiver_reason: null,
     },
     settlement: {
       ...snapshot('checkout_handover').settlement,

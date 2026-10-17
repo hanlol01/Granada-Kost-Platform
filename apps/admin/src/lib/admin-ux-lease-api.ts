@@ -75,9 +75,12 @@ export type LateCheckoutPlanInput = {
   reason: string;
   requestSource: "resident" | "parent" | "admin" | "other";
   internalNote?: string;
+  dailyPenaltyAmount?: number;
+  lateCheckoutPenaltyWaiverReason?: string;
 };
 export type ConfirmLateCheckoutPlanInput = {
   dailyPenaltyAmount: number;
+  lateCheckoutPenaltyWaiverReason?: string;
 };
 export type CheckoutApprovalInput = {
   approvedShortNoticeCharge: number;
@@ -128,6 +131,7 @@ export type CheckoutCompleteInput = {
   finalRefundAmount?: number;
   refundAdjustmentReason?: string;
   refundAdjustmentEvidenceFileIds?: string[];
+  refundWaivedByResident?: boolean;
   refundReason?: string;
 };
 
@@ -599,6 +603,8 @@ export const adminUxLeaseApi = {
             reason: input.reason.trim(),
             request_source: input.requestSource,
             internal_note: text(input.internalNote),
+            late_checkout_daily_penalty_amount: input.dailyPenaltyAmount,
+            late_checkout_penalty_waiver_reason: text(input.lateCheckoutPenaltyWaiverReason),
           },
           { idempotencyKey },
         ),
@@ -623,6 +629,8 @@ export const adminUxLeaseApi = {
             reason: input.reason.trim(),
             request_source: input.requestSource,
             internal_note: text(input.internalNote),
+            late_checkout_daily_penalty_amount: input.dailyPenaltyAmount,
+            late_checkout_penalty_waiver_reason: text(input.lateCheckoutPenaltyWaiverReason),
           },
           { idempotencyKey },
         ),
@@ -641,7 +649,10 @@ export const adminUxLeaseApi = {
             "/checkout/" +
             encodeURIComponent(commandId) +
             "/confirm-late-checkout-plan",
-          { late_checkout_daily_penalty_amount: input.dailyPenaltyAmount },
+          {
+            late_checkout_daily_penalty_amount: input.dailyPenaltyAmount,
+            late_checkout_penalty_waiver_reason: text(input.lateCheckoutPenaltyWaiverReason),
+          },
           { idempotencyKey },
         ),
       ),
@@ -813,6 +824,7 @@ export const adminUxLeaseApi = {
             final_refund_amount: input.finalRefundAmount,
             refund_adjustment_reason: text(input.refundAdjustmentReason),
             refund_adjustment_evidence_file_ids: input.refundAdjustmentEvidenceFileIds,
+            refund_waived_by_resident: input.refundWaivedByResident,
             refund_reason: text(input.refundReason),
           },
           { idempotencyKey },

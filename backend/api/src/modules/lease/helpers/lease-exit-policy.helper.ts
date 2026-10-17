@@ -38,6 +38,12 @@ export type LeaseExitNoticeQuote = {
 
 export type LeaseExitFinancialQuote = {
   contractRentAmount: number;
+  /**
+   * A reduction of the contractual price caused by a lease-data correction.
+   * It is context only: it is neither cash received nor an eligible refund
+   * source.
+   */
+  contractCorrectionCreditAmount: number;
   verifiedRentPaymentAmount: number;
   existingInvoiceCreditAmount: number;
   recognizedRentCreditAmount: number;
@@ -80,6 +86,7 @@ type LeaseExitFinancialQuoteInput = {
   actualCheckoutDate: string;
   contractRentAmount: number;
   monthlyRateAmount: number;
+  contractCorrectionCreditAmount?: number;
   verifiedRentPaymentAmount: number;
   existingInvoiceCreditAmount: number;
   depositLiabilityAmount: number;
@@ -143,6 +150,10 @@ export function buildLeaseExitFinancialQuote(
   const leaseStart = parseBusinessDate(input.leaseStartDate);
   const checkout = parseBusinessDate(input.actualCheckoutDate);
   const contractRent = assertNonNegativeMoney(input.contractRentAmount, 'contract rent');
+  const contractCorrectionCredit = assertNonNegativeMoney(
+    input.contractCorrectionCreditAmount ?? 0,
+    'contract correction credit',
+  );
   const monthlyRate = assertLeaseMonthlyRate(input.monthlyRateAmount, input.commercialMode);
   if (input.commercialMode === 'owner_sponsored' && contractRent !== 0)
     throw new RangeError('Owner-sponsored contract rent must be zero');
@@ -210,6 +221,7 @@ export function buildLeaseExitFinancialQuote(
 
   return {
     contractRentAmount: contractRent,
+    contractCorrectionCreditAmount: contractCorrectionCredit,
     verifiedRentPaymentAmount: verifiedPayment,
     existingInvoiceCreditAmount: invoiceCredit,
     recognizedRentCreditAmount: recognizedCredit,

@@ -271,6 +271,7 @@ export type CheckoutCommand = {
   lateCheckoutOverdueDays: number | null;
   lateCheckoutPenaltyDays: number | null;
   lateCheckoutPenaltyAmount: number | null;
+  lateCheckoutPenaltyWaiverReason: string | null;
   physicalCheckoutConfirmedAt: string | null;
   actualCheckoutDate: string | null;
   leaseStartDate: string | null;
@@ -283,6 +284,7 @@ export type CheckoutCommand = {
   finalRentRefundAmount: number | null;
   finalDepositRefundAmount: number | null;
   refundAdjustmentAmount: number | null;
+  refundWaivedByResident: boolean | null;
   documentedDamageAmount: number | null;
   damageAmountDue: number | null;
   grossRefundAmount: number | null;
@@ -311,6 +313,7 @@ export type CheckoutCommand = {
       depositRentOffsetAmount: number;
       refundableDepositAmount: number;
       refundAdjustmentReason: string | null;
+      refundWaivedByResident: boolean | null;
     } | null;
   };
   settlementLateCheckoutPenaltyAmount: number | null;
@@ -342,6 +345,7 @@ export type CheckoutCommand = {
 
 export type CheckoutSettlementQuote = {
   contractRentAmount: number;
+  contractCorrectionCreditAmount: number;
   verifiedRentPaymentAmount: number;
   existingInvoiceCreditAmount: number;
   recognizedRentCreditAmount: number;

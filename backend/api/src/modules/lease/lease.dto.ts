@@ -598,6 +598,18 @@ export class CreateLateCheckoutPlanDto {
   @IsString()
   @Length(1, 2000)
   internal_note?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  late_checkout_daily_penalty_amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  late_checkout_penalty_waiver_reason?: string;
 }
 
 export class EditLateCheckoutPlanDto extends CreateLateCheckoutPlanDto {}
@@ -610,6 +622,11 @@ export class ConfirmLateCheckoutPlanDto {
   @Min(0)
   @Max(1_000_000_000)
   late_checkout_daily_penalty_amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  late_checkout_penalty_waiver_reason?: string;
 }
 
 export class ApproveLeaseCheckoutDto {
@@ -859,6 +876,14 @@ export class CompleteLeaseCheckoutDto {
   @ArrayUnique()
   @IsUUID('4', { each: true })
   refund_adjustment_evidence_file_ids?: string[];
+
+  /**
+   * Required only when a positive recommended refund is intentionally closed
+   * at Rp0 because the resident expressly declines the refund.
+   */
+  @IsOptional()
+  @IsBoolean()
+  refund_waived_by_resident?: boolean;
 
   @IsOptional()
   @IsString()

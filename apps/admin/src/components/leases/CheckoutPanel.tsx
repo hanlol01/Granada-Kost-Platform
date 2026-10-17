@@ -119,7 +119,7 @@ function messageFrom(error: unknown) {
     return "Pengurangan kompensasi memerlukan alasan persetujuan.";
   }
   if (ApiError.isApiError(error) && error.code === "CHECKOUT_EFFECTIVE_DATE_NOT_REACHED") {
-    return "Serah-terima fisik belum dapat dicatat karena tanggal rencana check-out belum tiba.";
+    return "Serah-terima fisik belum dapat dicatat sebelum tanggal check-out aktual yang tersimpan.";
   }
   return error instanceof Error ? error.message : "Checkout tidak dapat diproses. Coba lagi.";
 }
@@ -213,8 +213,8 @@ function refundMethodLabel(method: CheckoutCommand["exitRefundPaymentMethod"]) {
 }
 
 const checkoutStateLabel: Record<string, string> = {
-  notice_received: "Rencana check-out tersimpan",
-  scheduled: "Check-out terjadwal",
+  notice_received: "Data check-out menunggu dilengkapi",
+  scheduled: "Data check-out aktual tersimpan",
   inspection_required: "Menunggu inspeksi kamar",
   settlement_pending: "Menunggu penyelesaian keuangan",
   completed: "Proses check-out selesai",
@@ -222,8 +222,8 @@ const checkoutStateLabel: Record<string, string> = {
 };
 
 const checkoutStages = [
-  { id: 1, label: "Rencana check-out" },
-  { id: 2, label: "Konfirmasi rencana" },
+  { id: 1, label: "Data check-out aktual" },
+  { id: 2, label: "Konfirmasi data" },
   { id: 3, label: "Serah-terima" },
   { id: 4, label: "Inspeksi" },
   { id: 5, label: "Penyelesaian" },
@@ -254,15 +254,15 @@ const confirmationCopy: Record<
   { title: string; description: string; confirmLabel: string; destructive?: boolean }
 > = {
   notice: {
-    title: "Simpan rencana check-out?",
+    title: "Simpan data check-out aktual?",
     description:
-      "Periksa kembali jenis keluar, tanggal keluar, sumber permintaan, dan alasannya. Jika rencana berubah, Admin dapat membatalkan proses dan memulainya kembali.",
-    confirmLabel: "Ya, simpan rencana",
+      "Pastikan penghuni sudah benar-benar keluar dan kamar kosong. Periksa jenis keluar, tanggal aktual, sumber informasi, dan alasannya.",
+    confirmLabel: "Ya, simpan data check-out",
   },
   approval: {
     title: "Lanjutkan ke serah-terima?",
     description:
-      "Pastikan rencana check-out sudah sesuai. Tahap berikutnya adalah serah-terima fisik kamar dan kunci.",
+      "Pastikan data check-out aktual sudah sesuai. Tahap berikutnya adalah serah-terima fisik kamar dan kunci.",
     confirmLabel: "Ya, lanjutkan",
   },
   handover: {
@@ -397,17 +397,17 @@ function CheckoutStageHistory({
 }) {
   const copy: Record<CheckoutStage, { title: string; detail: string }> = {
     1: {
-      title: "Rencana check-out telah disimpan",
-      detail: `Rencana keluar ${formatIndonesianFullDate(command.effectiveDate)}. Alasan dan sumber permintaan tersimpan di riwayat proses.`,
+      title: "Data check-out aktual telah disimpan",
+      detail: `Penghuni dinyatakan keluar pada ${formatIndonesianFullDate(command.effectiveDate)}. Alasan dan sumber informasi tersimpan di riwayat proses.`,
     },
     2: {
       title:
         command.chargePolicy === "late_checkout_penalty_v1"
-          ? "Rencana serah-terima telah dikonfirmasi"
+          ? "Data check-out dan denda telah dikonfirmasi"
           : "Persetujuan jadwal telah dicatat",
       detail:
         command.chargePolicy === "late_checkout_penalty_v1"
-          ? `Batas check-out tanpa denda: ${formatIndonesianFullDate(command.penaltyFreeUntilDate)}. Denda dihitung dari serah-terima fisik.`
+          ? `Batas check-out tanpa denda: ${formatIndonesianFullDate(command.penaltyFreeUntilDate)}. Denda dihitung dari tanggal check-out aktual yang tersimpan.`
           : `Kompensasi pemberitahuan singkat yang disetujui: ${rupiah.format(command.approvedShortNoticeCharge ?? 0)}.`,
     },
     3: {
@@ -516,6 +516,7 @@ export function CheckoutPanel({
   const [refundAdjustmentReason, setRefundAdjustmentReason] = useState("");
   const [refundAdjustmentEvidence, setRefundAdjustmentEvidence] = useState<FileResponse[]>([]);
   const [refundAdjustmentEvidenceBusy, setRefundAdjustmentEvidenceBusy] = useState(false);
+  const [refundWaivedByResident, setRefundWaivedByResident] = useState(false);
   const [refundMethod, setRefundMethod] = useState<
     "cash" | "bank_transfer" | "qris" | "ewallet" | "other"
   >("bank_transfer");
@@ -662,7 +663,7 @@ export function CheckoutPanel({
       focusCheckoutPanelAfterCommandChange.current = true;
       await onChanged?.(open);
       setVisibleStage(stageForCommand(open));
-    }, "Rencana check-out berhasil disimpan.");
+    }, "Data check-out aktual berhasil disimpan.");
 
   const beginNoticeEdit = () => {
     if (!command || !["notice_received", "scheduled"].includes(command.state)) return;
@@ -674,6 +675,8 @@ export function CheckoutPanel({
     setRequestSource((command.requestSource ?? "resident") as typeof requestSource);
     setNoticeExceptionReason(command.noticeExceptionReason ?? "");
     setInternalNote(command.internalNote ?? "");
+    setLateCheckoutDailyPenaltyAmount(Number(command.lateCheckoutDailyPenaltyAmount ?? 0));
+    setWaiverReason(command.lateCheckoutPenaltyWaiverReason ?? "");
     setVisibleStage(1);
     setEditingStage(1);
   };
@@ -687,6 +690,12 @@ export function CheckoutPanel({
         reason,
         requestSource,
         internalNote: internalNote.trim() || undefined,
+        ...(command.chargePolicy === "late_checkout_penalty_v1"
+          ? {
+              dailyPenaltyAmount: Number(lateCheckoutDailyPenaltyAmount || 0),
+              lateCheckoutPenaltyWaiverReason: waiverReason.trim() || undefined,
+            }
+          : {}),
       };
       if (command.chargePolicy === "late_checkout_penalty_v1")
         await adminUxLeaseApi.checkout.editLateCheckoutPlan(leaseId, command.id, input, key());
@@ -703,7 +712,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
-    }, "Rencana check-out berhasil diperbarui.");
+    }, "Data check-out aktual berhasil diperbarui.");
   };
 
   const beginApprovalEdit = () => {
@@ -731,7 +740,7 @@ export function CheckoutPanel({
       const open = await refreshOpenCheckout();
       setEditingStage(null);
       setVisibleStage(stageForCommand(open));
-    }, "Konfirmasi rencana check-out berhasil disimpan.");
+    }, "Konfirmasi data check-out berhasil disimpan.");
   };
 
   const damageInput = () =>
@@ -747,13 +756,24 @@ export function CheckoutPanel({
     depositRentOffsetAmount: Number(depositOffsetAmount || 0),
     depositRentOffsetReason: depositOffsetReason.trim() || undefined,
     depositRentOffsetEvidenceFileIds: depositOffsetEvidence.map((file) => file.id),
-    finalRefundAmount: includeFinalDecision ? Number(finalRefundAmount || 0) : undefined,
-    refundAdjustmentReason: includeFinalDecision
-      ? refundAdjustmentReason.trim() || undefined
-      : undefined,
-    refundAdjustmentEvidenceFileIds: includeFinalDecision
-      ? refundAdjustmentEvidence.map((file) => file.id)
-      : undefined,
+    finalRefundAmount:
+      includeFinalDecision && (settlementQuote?.recommendedRefundAmount ?? 0) > 0
+        ? Number(finalRefundAmount || 0)
+        : undefined,
+    refundAdjustmentReason:
+      includeFinalDecision && (settlementQuote?.recommendedRefundAmount ?? 0) > 0
+        ? refundAdjustmentReason.trim() || undefined
+        : undefined,
+    refundAdjustmentEvidenceFileIds:
+      includeFinalDecision && (settlementQuote?.recommendedRefundAmount ?? 0) > 0
+        ? refundAdjustmentEvidence.map((file) => file.id)
+        : undefined,
+    refundWaivedByResident:
+      includeFinalDecision &&
+      (settlementQuote?.recommendedRefundAmount ?? 0) > 0 &&
+      Number(finalRefundAmount || 0) === 0
+        ? refundWaivedByResident
+        : undefined,
   });
 
   const previewSettlement = () => {
@@ -768,6 +788,7 @@ export function CheckoutPanel({
       setFinalRefundAmount(String(result.quote.recommendedRefundAmount));
       setRefundAdjustmentReason("");
       setRefundAdjustmentEvidence([]);
+      setRefundWaivedByResident(false);
     });
   };
 
@@ -855,7 +876,7 @@ export function CheckoutPanel({
     }
     const successMessage =
       command.state === "notice_received"
-        ? "Konfirmasi rencana check-out berhasil disimpan."
+        ? "Konfirmasi data check-out berhasil disimpan."
         : command.state === "scheduled"
           ? "Serah-terima check-out berhasil dicatat."
           : "Inspeksi kamar berhasil dicatat.";
@@ -865,7 +886,10 @@ export function CheckoutPanel({
           await adminUxLeaseApi.checkout.confirmLateCheckoutPlan(
             leaseId,
             command.id,
-            { dailyPenaltyAmount: lateCheckoutDailyPenaltyAmount },
+            {
+              dailyPenaltyAmount: lateCheckoutDailyPenaltyAmount,
+              lateCheckoutPenaltyWaiverReason: waiverReason.trim() || undefined,
+            },
             key(),
           );
         else
@@ -955,6 +979,7 @@ export function CheckoutPanel({
     setNoticeExceptionEvidenceBusy(false);
     setInternalNote("");
     setApprovedShortNoticeCharge(0);
+    setLateCheckoutDailyPenaltyAmount(0);
     setWaiverReason("");
     setWaiverEvidence([]);
     setWaiverEvidenceBusy(false);
@@ -984,6 +1009,7 @@ export function CheckoutPanel({
     setRefundAdjustmentReason("");
     setRefundAdjustmentEvidence([]);
     setRefundAdjustmentEvidenceBusy(false);
+    setRefundWaivedByResident(false);
     setRefundMethod("bank_transfer");
     setRefundReference("");
     setRefundEvidence([]);
@@ -1051,8 +1077,7 @@ export function CheckoutPanel({
         !reading.utilityType.trim() || !reading.checkoutReading.trim() || !reading.unit.trim(),
     );
   const isLateCheckoutPolicy = command?.chargePolicy === "late_checkout_penalty_v1";
-  const handoverScheduleNotReached =
-    command?.state === "scheduled" && command.effectiveDate > jakartaToday();
+  const handoverScheduleNotReached = false;
   const canRecordHandover =
     handover.keyAccess &&
     handover.inventory &&
@@ -1094,15 +1119,26 @@ export function CheckoutPanel({
     (offsetAmount > 0 &&
       (depositOffsetReason.trim().length < 3 || depositOffsetEvidence.length === 0));
   const finalRefund = Number(finalRefundAmount || 0);
+  const finalRefundIsResidentWaiver =
+    settlementQuote !== null &&
+    settlementQuote.recommendedRefundAmount > 0 &&
+    finalRefund === 0;
+  const refundAdjustmentRequiresEvidence =
+    settlementQuote !== null &&
+    settlementQuote.recommendedRefundAmount > 0 &&
+    finalRefund !== settlementQuote.recommendedRefundAmount &&
+    !finalRefundIsResidentWaiver;
   const finalRefundInvalid =
-    !settlementQuote ||
-    !Number.isSafeInteger(finalRefund) ||
-    finalRefund < 0 ||
-    finalRefund > settlementQuote.recommendedRefundAmount ||
-    (finalRefund !== settlementQuote.recommendedRefundAmount &&
-      (refundAdjustmentReason.trim().length < 3 ||
-        refundAdjustmentEvidence.length === 0 ||
-        refundAdjustmentEvidenceBusy));
+    settlementQuote !== null &&
+    settlementQuote.recommendedRefundAmount > 0 &&
+    (!Number.isSafeInteger(finalRefund) ||
+      finalRefund < 0 ||
+      finalRefund > settlementQuote.recommendedRefundAmount ||
+      (finalRefundIsResidentWaiver && !refundWaivedByResident) ||
+      (refundAdjustmentRequiresEvidence &&
+        (refundAdjustmentReason.trim().length < 3 ||
+          refundAdjustmentEvidence.length === 0 ||
+          refundAdjustmentEvidenceBusy)));
   const settlementDraftInvalid =
     damageInvalid || damageUploadBusy || offsetInvalid || depositOffsetEvidenceBusy;
   const refundSettlementInvalid = refundEvidence.length === 0 || refundEvidenceBusy;
@@ -1113,12 +1149,22 @@ export function CheckoutPanel({
           86_400_000,
       )
     : -1;
+  const isHistoricalActualCheckout = Boolean(effectiveDate && effectiveDate < jakartaToday());
   const noticeExceptionRequired =
     exitType === "resident_early_termination" && noticeDays >= 0 && noticeDays < 14;
   const lateCheckoutEstimate =
     command && isLateCheckoutPolicy
       ? lateCheckoutPlanEstimate(command, lateCheckoutDailyPenaltyAmount)
       : null;
+  const lateCheckoutDailyPenalty = Number(lateCheckoutDailyPenaltyAmount || 0);
+  const lateCheckoutDailyPenaltyInvalid =
+    isLateCheckoutPolicy &&
+    (!Number.isSafeInteger(lateCheckoutDailyPenalty) ||
+      lateCheckoutDailyPenalty < 0 ||
+      (lateCheckoutEstimate?.chargedDays &&
+        lateCheckoutEstimate.chargedDays > 0 &&
+        lateCheckoutDailyPenalty === 0 &&
+        waiverReason.trim().length < 3));
   const next =
     command?.state === "notice_received"
       ? isLateCheckoutPolicy
@@ -1151,9 +1197,9 @@ export function CheckoutPanel({
           Proses check-out
         </CardTitle>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          Catat rencana, serah-terima, inspeksi, dan penyelesaian keuangan secara bertahap. Masa
-          toleransi dan denda hanya dihitung dari tanggal kamar serta kunci benar-benar
-          dikembalikan.
+          Catat tanggal check-out aktual, serah-terima, inspeksi, dan penyelesaian keuangan secara
+          bertahap. Masa toleransi dan denda hanya dihitung dari tanggal kamar serta kunci
+          benar-benar dikembalikan.
         </p>
         <CheckoutStageNavigator
           activeStage={visibleStage}
@@ -1196,10 +1242,16 @@ export function CheckoutPanel({
                   <SelectItem value="normal_expiry">Masa sewa berakhir</SelectItem>
                 </SelectContent>
               </Select>
+              <span className="text-xs font-normal leading-5 text-muted-foreground">
+                {exitMode === "resident_early_termination"
+                  ? "Pilih bila penghuni benar-benar keluar sebelum akhir masa sewa. Tidak ada denda keterlambatan."
+                  : "Pilih bila penghuni benar-benar keluar pada atau setelah akhir masa sewa. Denda hanya dihitung setelah masa toleransi."}
+              </span>
             </label>
             <HeroUiDatePicker
               id="checkout-effective-date"
-              label="Tanggal keluar yang direncanakan"
+              label="Tanggal check-out aktual"
+              iconPosition="right"
               value={effectiveDate}
               onChange={(value) => setEffectiveDate(value ?? "")}
               required
@@ -1207,8 +1259,8 @@ export function CheckoutPanel({
             />
             <p className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
               {exitMode === "normal_expiry"
-                ? "Penghuni mendapat masa toleransi tiga hari setelah akhir masa sewa untuk mengosongkan kamar dan mengembalikan kunci."
-                : "Keluar lebih awal tidak dikenai denda. Denda hanya berlaku apabila kamar atau kunci dikembalikan setelah masa toleransi akhir sewa."}
+                ? "Pilih tanggal ketika penghuni benar-benar mengosongkan kamar dan mengembalikan kunci. Masa toleransi tiga hari setelah akhir sewa tetap berlaku."
+                : "Pilih tanggal ketika penghuni benar-benar keluar. Keluar lebih awal tidak dikenai denda; denda hanya berlaku setelah batas toleransi akhir sewa."}
             </p>
             <label className="grid gap-2 text-sm font-medium text-foreground">
               <span>
@@ -1236,16 +1288,34 @@ export function CheckoutPanel({
               <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
             </label>
             <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
-              Catatan internal
+              <span>
+                Catatan internal
+                {isHistoricalActualCheckout ? <span className="text-destructive"> *</span> : null}
+              </span>
               <Textarea
                 value={internalNote}
                 onChange={(event) => setInternalNote(event.target.value)}
-                placeholder="Hanya terlihat oleh tim operasional."
+                placeholder={
+                  isHistoricalActualCheckout
+                    ? "Wajib: jelaskan sumber dan alasan pencatatan check-out historis."
+                    : "Hanya terlihat oleh tim operasional."
+                }
               />
+              {isHistoricalActualCheckout ? (
+                <span className="text-xs font-normal text-warning-foreground dark:text-warning">
+                  Karena tanggal check-out sudah berlalu, catatan internal wajib memuat sumber atau
+                  alasan pencatatannya.
+                </span>
+              ) : null}
             </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-2">
               <Button
-                disabled={!reason.trim() || !effectiveDate || pending}
+                disabled={
+                  !reason.trim() ||
+                  !effectiveDate ||
+                  (isHistoricalActualCheckout && !internalNote.trim()) ||
+                  pending
+                }
                 onClick={() => setConfirmationIntent("notice")}
               >
                 {pending ? (
@@ -1253,7 +1323,7 @@ export function CheckoutPanel({
                 ) : (
                   <CalendarCheck2 className="mr-2 h-4 w-4" />
                 )}
-                Simpan rencana check-out
+                Simpan data check-out
               </Button>
               <Button type="button" variant="destructive" disabled={pending} onClick={onClose}>
                 <XCircle className="mr-2 h-4 w-4" />
@@ -1271,7 +1341,8 @@ export function CheckoutPanel({
                 {checkoutStateLabel[command.state] ?? command.state.replaceAll("_", " ")}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Rencana keluar {command.effectiveDate} · Dicatat {command.noticeRecordedDate}
+                Check-out aktual {formatIndonesianFullDate(command.effectiveDate)} · Dicatat{" "}
+                {command.noticeRecordedDate}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {command.exitType === "normal_expiry"
@@ -1321,7 +1392,7 @@ export function CheckoutPanel({
                     </>
                   ) : null}
                   <div>
-                    <dt className="text-muted-foreground">Tanggal rencana serah-terima</dt>
+                    <dt className="text-muted-foreground">Tanggal check-out aktual</dt>
                     <dd className="mt-1 font-semibold text-foreground">
                       {formatIndonesianFullDate(command.effectiveDate)}
                     </dd>
@@ -1337,7 +1408,7 @@ export function CheckoutPanel({
                       disabled={pending}
                       onClick={beginNoticeEdit}
                     >
-                      Edit rencana check-out
+                      Edit data check-out
                     </Button>
                     {command.state === "scheduled" && !isLateCheckoutPolicy ? (
                       <Button
@@ -1352,7 +1423,9 @@ export function CheckoutPanel({
                   </div>
                   <div className="flex flex-col gap-3 rounded-md border border-destructive/25 bg-destructive/5 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">Rencana berubah?</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        Data check-out perlu diperbaiki?
+                      </p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         Batalkan proses dan isi ulang dari tahap pertama. Jika serah-terima sudah
                         dicatat, status penyewaan, hunian, kamar, akses, dan parkir akan dipulihkan.
@@ -1376,14 +1449,14 @@ export function CheckoutPanel({
             {editingStage === 1 ? (
               <fieldset className="space-y-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
                 <legend className="px-1 text-sm font-semibold text-foreground">
-                  Edit rencana check-out
+                  Edit data check-out aktual
                 </legend>
                 <p className="text-sm leading-6 text-muted-foreground">
                   {isLateCheckoutPolicy
-                    ? "Perubahan rencana akan mengatur ulang konfirmasi serah-terima. Masa toleransi dan tarif denda harian tetap mengikuti kebijakan yang tersimpan."
+                    ? "Perubahan tanggal aktual akan memperbarui perhitungan denda. Masa toleransi tetap mengikuti kebijakan yang tersimpan."
                     : command.state === "scheduled"
-                      ? "Persetujuan jadwal sebelumnya akan dibatalkan dan perlu disetujui ulang setelah perubahan."
-                      : "Perubahan ini tersedia sebelum persetujuan jadwal. Sistem akan menghitung ulang hari pemberitahuan dan kompensasi."}
+                      ? "Konfirmasi data sebelumnya akan dibatalkan dan perlu dikonfirmasi ulang setelah perubahan."
+                      : "Perubahan ini tersedia sebelum konfirmasi data. Sistem akan menghitung ulang hari pemberitahuan dan kompensasi."}
                 </p>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-foreground">
@@ -1407,16 +1480,57 @@ export function CheckoutPanel({
                         <SelectItem value="normal_expiry">Masa sewa berakhir</SelectItem>
                       </SelectContent>
                     </Select>
+                    <span className="text-xs font-normal leading-5 text-muted-foreground">
+                      {exitMode === "resident_early_termination"
+                        ? "Pilih bila penghuni benar-benar keluar sebelum akhir masa sewa. Tidak ada denda keterlambatan."
+                        : "Pilih bila penghuni benar-benar keluar pada atau setelah akhir masa sewa. Denda hanya dihitung setelah masa toleransi."}
+                    </span>
                   </label>
                   <HeroUiDatePicker
                     id="checkout-effective-date-edit"
-                    label="Tanggal keluar yang direncanakan"
+                    label="Tanggal check-out aktual"
+                    iconPosition="right"
                     value={effectiveDate}
                     onChange={(value) => setEffectiveDate(value ?? "")}
                     required
                     disabled={!isLateCheckoutPolicy && exitMode === "same_day"}
                     className="min-w-0 gap-2"
                   />
+                  {isLateCheckoutPolicy ? (
+                    <>
+                      <label className="grid gap-2 text-sm font-medium text-foreground">
+                        <span>Tarif denda per hari</span>
+                        <CurrencyInput
+                          value={lateCheckoutDailyPenaltyAmount}
+                          onValueChange={setLateCheckoutDailyPenaltyAmount}
+                          formatOnChange
+                          onClear={() => setLateCheckoutDailyPenaltyAmount(0)}
+                          error={lateCheckoutDailyPenaltyInvalid}
+                          aria-invalid={lateCheckoutDailyPenaltyInvalid}
+                          aria-label="Tarif denda per hari"
+                        />
+                        <span className="text-xs font-normal leading-5 text-muted-foreground">
+                          Boleh Rp0 bila denda keterlambatan dibebaskan. Tarif ini hanya berlaku
+                          untuk check-out ini.
+                        </span>
+                      </label>
+                      {lateCheckoutEstimate?.chargedDays &&
+                      lateCheckoutEstimate.chargedDays > 0 &&
+                      lateCheckoutDailyPenalty === 0 ? (
+                        <label className="grid gap-2 text-sm font-medium text-foreground">
+                          <span>
+                            Alasan pembebasan denda keterlambatan
+                            <span className="text-destructive"> *</span>
+                          </span>
+                          <Textarea
+                            value={waiverReason}
+                            onChange={(event) => setWaiverReason(event.target.value)}
+                            placeholder="Contoh: disetujui Admin karena check-out sudah terjadi pada tanggal tersebut."
+                          />
+                        </label>
+                      ) : null}
+                    </>
+                  ) : null}
                   <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
                     <span>
                       Alasan check-out<span className="text-destructive"> *</span>
@@ -1443,12 +1557,27 @@ export function CheckoutPanel({
                     </Select>
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-foreground">
-                    Catatan internal
+                    <span>
+                      Catatan internal
+                      {isHistoricalActualCheckout ? (
+                        <span className="text-destructive"> *</span>
+                      ) : null}
+                    </span>
                     <Textarea
                       rows={3}
                       value={internalNote}
                       onChange={(event) => setInternalNote(event.target.value)}
+                      placeholder={
+                        isHistoricalActualCheckout
+                          ? "Wajib: jelaskan sumber dan alasan pencatatan check-out historis."
+                          : "Hanya terlihat oleh tim operasional."
+                      }
                     />
+                    {isHistoricalActualCheckout ? (
+                      <span className="text-xs font-normal text-warning-foreground dark:text-warning">
+                        Catatan internal wajib untuk perubahan tanggal check-out yang telah berlalu.
+                      </span>
+                    ) : null}
                   </label>
                   {!isLateCheckoutPolicy && noticeExceptionRequired ? (
                     <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
@@ -1484,6 +1613,8 @@ export function CheckoutPanel({
                       pending ||
                       !reason.trim() ||
                       !effectiveDate ||
+                      (isHistoricalActualCheckout && !internalNote.trim()) ||
+                      lateCheckoutDailyPenaltyInvalid ||
                       (!isLateCheckoutPolicy && noticeDays < 0) ||
                       (!isLateCheckoutPolicy &&
                         noticeExceptionRequired &&
@@ -1591,12 +1722,12 @@ export function CheckoutPanel({
                     </legend>
                     <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
                       Penghuni dapat mengosongkan kamar serta mengembalikan kunci sampai batas tanpa
-                      denda. Tarif denda ditetapkan untuk rencana check-out ini dan jumlah akhirnya
-                      mengikuti tanggal serah-terima fisik.
+                      denda. Tarif denda ditetapkan untuk check-out ini dan jumlah akhirnya
+                      mengikuti tanggal aktual yang telah dicatat.
                     </p>
                     <div className="rounded-lg border border-primary/25 bg-primary/5 p-4">
                       <p className="text-sm font-semibold text-foreground">
-                        Perkiraan denda bila serah-terima sesuai rencana
+                        Perhitungan denda berdasarkan tanggal check-out aktual
                       </p>
                       {lateCheckoutEstimate ? (
                         <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -1611,11 +1742,11 @@ export function CheckoutPanel({
                             </>
                           ) : (
                             <>
-                              Rp0 karena tanggal rencana masih berada dalam masa toleransi tiga
-                              hari.
+                              Rp0 karena tanggal check-out aktual masih berada dalam masa toleransi
+                              tiga hari.
                             </>
                           )}{" "}
-                          Nilai final mengikuti tanggal serah-terima yang benar-benar dicatat.
+                          Nilai ini akan dipakai pada penyelesaian keuangan akhir.
                         </p>
                       ) : (
                         <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -1659,6 +1790,24 @@ export function CheckoutPanel({
                         </p>
                       </div>
                     </dl>
+                    {lateCheckoutEstimate?.chargedDays &&
+                    lateCheckoutEstimate.chargedDays > 0 &&
+                    lateCheckoutDailyPenalty === 0 ? (
+                      <label className="grid gap-2 text-sm font-medium text-foreground">
+                        <span>
+                          Alasan pembebasan denda keterlambatan
+                          <span className="text-destructive"> *</span>
+                        </span>
+                        <Textarea
+                          value={waiverReason}
+                          onChange={(event) => setWaiverReason(event.target.value)}
+                          placeholder="Contoh: disetujui Admin karena penghuni telah keluar sesuai kesepakatan."
+                        />
+                        <span className="text-xs font-normal leading-5 text-muted-foreground">
+                          Wajib diisi bila denda seharusnya berlaku tetapi tarif ditetapkan Rp0.
+                        </span>
+                      </label>
+                    ) : null}
                     <div className="flex gap-2.5 rounded-md border border-primary/25 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
                       <Calculator
                         className="mt-0.5 h-4 w-4 shrink-0 text-primary"
@@ -1674,12 +1823,12 @@ export function CheckoutPanel({
                 ) : command.state === "notice_received" ? (
                   <fieldset className="space-y-4 rounded-lg border border-border p-4">
                     <legend className="px-1 text-sm font-semibold text-foreground">
-                      Persetujuan jadwal keluar dan kompensasi
+                      Konfirmasi data check-out dan kompensasi
                     </legend>
                     <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                      Tetapkan jadwal keluar dan, bila berlaku, kompensasi karena masa pemberitahuan
-                      kurang. Penyelesaian sewa, deposit, dan kerusakan dihitung setelah
-                      serah-terima serta inspeksi kamar.
+                      Konfirmasikan data check-out dan, bila berlaku, kompensasi karena masa
+                      pemberitahuan kurang. Penyelesaian sewa, deposit, dan kerusakan dihitung
+                      setelah serah-terima serta inspeksi kamar.
                     </p>
                     <div className="space-y-4 rounded-lg border border-primary/25 bg-primary/5 p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1886,7 +2035,8 @@ export function CheckoutPanel({
                           Serah-terima belum dapat dicatat sebelum{" "}
                           <strong>{formatIndonesianFullDate(command.effectiveDate)}</strong>. Isi
                           tahap ini setelah kamar dan kunci benar-benar diserahkan. Denda final akan
-                          dihitung dari tanggal serah-terima aktual, bukan dari tanggal rencana.
+                          dihitung dari tanggal serah-terima aktual, bukan dari tanggal yang
+                          sebelumnya dicatat.
                         </p>
                       </div>
                     ) : null}
@@ -2417,16 +2567,15 @@ export function CheckoutPanel({
                     </div>
 
                     <div className="space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">Potongan inspeksi</p>
-                          <p className="text-xs text-muted-foreground">
-                            Setiap potongan wajib memiliki alasan dan bukti.
-                          </p>
-                        </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Potongan inspeksi</p>
+                        <p className="text-xs text-muted-foreground">
+                          Setiap potongan wajib memiliki alasan dan bukti.
+                        </p>
                         <Button
                           type="button"
                           variant="info"
+                          className="mt-3"
                           onClick={() => {
                             setDamages((current) => [
                               ...current,
@@ -2593,93 +2742,113 @@ export function CheckoutPanel({
 
                     <Button
                       type="button"
-                      variant="info"
+                      variant="default"
                       disabled={pending || settlementDraftInvalid}
                       onClick={previewSettlement}
                     >
-                      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {pending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Calculator className="h-4 w-4" />
+                      )}
                       Hitung rincian akhir
                     </Button>
 
                     {settlementQuote ? (
                       <div className="space-y-4 rounded-md border border-primary/30 bg-primary/5 p-4">
-                        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                          <p>
-                            Pembayaran sewa terverifikasi
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.verifiedRentPaymentAmount)}
-                            </strong>
+                        <section className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                            Dana yang benar-benar diterima
                           </p>
-                          <p>
-                            Kredit invoice sebelumnya
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.existingInvoiceCreditAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            Sewa terpakai
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.earnedRentAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            {isLateCheckoutPolicy
-                              ? "Denda keterlambatan check-out"
-                              : "Kompensasi pemberitahuan singkat"}
-                            <strong className="block text-foreground">
-                              {rupiah.format(
-                                isLateCheckoutPolicy
-                                  ? settlementQuote.lateCheckoutPenaltyAmount
-                                  : settlementQuote.approvedShortNoticeCharge,
-                              )}
-                            </strong>
-                          </p>
-                          <p>
-                            Saldo deposit
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.depositLiabilityAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            Kerusakan terdokumentasi
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.documentedDamageAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            Kerusakan dipotong dari deposit
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.depositDeductionAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            Kerusakan di luar deposit
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.damageAmountDue)}
-                            </strong>
-                          </p>
-                          <p>
-                            Deposit untuk tunggakan sewa
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.depositRentOffsetAmount)}
-                            </strong>
-                          </p>
-                          <p>
-                            Deposit yang dapat dikembalikan
-                            <strong className="block text-foreground">
-                              {rupiah.format(settlementQuote.refundableDepositAmount)}
-                            </strong>
-                          </p>
-                        </div>
-                        <div className="grid gap-3 border-t border-primary/20 pt-4 sm:grid-cols-2">
-                          <div className="rounded-lg border border-success/30 bg-success/10 p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-success">
-                              Total hak pengembalian
+                          <div className="grid gap-3 text-sm sm:grid-cols-2">
+                            <p>
+                              Pembayaran sewa terverifikasi
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.verifiedRentPaymentAmount)}
+                              </strong>
                             </p>
-                            <strong className="mt-1 block text-lg text-foreground">
-                              {rupiah.format(settlementQuote.grossRefundAmount)}
-                            </strong>
+                            <p>
+                              Kredit invoice non-koreksi
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.existingInvoiceCreditAmount)}
+                              </strong>
+                            </p>
                           </div>
+                          {settlementQuote.contractCorrectionCreditAmount > 0 ? (
+                            <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm">
+                              <p className="font-semibold text-foreground">
+                                Kredit koreksi kontrak
+                              </p>
+                              <p className="mt-1 text-muted-foreground">
+                                {rupiah.format(settlementQuote.contractCorrectionCreditAmount)}. Ini
+                                adalah penyesuaian nilai kontrak, bukan pembayaran dari penghuni dan
+                                bukan sumber pengembalian dana.
+                              </p>
+                            </div>
+                          ) : null}
+                        </section>
+                        <section className="space-y-3 border-t border-primary/20 pt-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                            Kewajiban dan deposit
+                          </p>
+                          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                            <p>
+                              Sewa terpakai
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.earnedRentAmount)}
+                              </strong>
+                            </p>
+                            <p>
+                              {isLateCheckoutPolicy
+                                ? "Denda keterlambatan check-out"
+                                : "Kompensasi pemberitahuan singkat"}
+                              <strong className="block text-foreground">
+                                {rupiah.format(
+                                  isLateCheckoutPolicy
+                                    ? settlementQuote.lateCheckoutPenaltyAmount
+                                    : settlementQuote.approvedShortNoticeCharge,
+                                )}
+                              </strong>
+                            </p>
+                            <p>
+                              Saldo deposit
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.depositLiabilityAmount)}
+                              </strong>
+                            </p>
+                            <p>
+                              Kerusakan terdokumentasi
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.documentedDamageAmount)}
+                              </strong>
+                            </p>
+                            <p>
+                              Kerusakan dipotong dari deposit
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.depositDeductionAmount)}
+                              </strong>
+                            </p>
+                            <p>
+                              Kerusakan di luar deposit
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.damageAmountDue)}
+                              </strong>
+                            </p>
+                            <p>
+                              Deposit untuk tunggakan sewa
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.depositRentOffsetAmount)}
+                              </strong>
+                            </p>
+                            <p>
+                              Deposit yang dapat dikembalikan
+                              <strong className="block text-foreground">
+                                {rupiah.format(settlementQuote.refundableDepositAmount)}
+                              </strong>
+                            </p>
+                          </div>
+                        </section>
+                        <div className="grid gap-3 border-t border-primary/20 pt-4 sm:grid-cols-2">
                           <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3">
                             <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
                               Total kewajiban
@@ -2688,7 +2857,7 @@ export function CheckoutPanel({
                               {rupiah.format(settlementQuote.grossAmountDue)}
                             </strong>
                           </div>
-                          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 sm:col-span-2">
+                          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
                             <p className="text-xs font-semibold uppercase tracking-wide text-primary">
                               Hasil bersih
                             </p>
@@ -2701,29 +2870,61 @@ export function CheckoutPanel({
                             </strong>
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          Sisa kewajiban penghuni
-                          <strong className="block text-foreground">
-                            {rupiah.format(settlementQuote.amountDue)}
-                          </strong>
-                        </p>
-                        <p className="border-t border-primary/20 pt-3 text-sm font-semibold text-primary">
-                          Rekomendasi pengembalian dana:{" "}
-                          {rupiah.format(settlementQuote.recommendedRefundAmount)}
-                        </p>
-                        <label className="grid gap-2 text-sm font-medium text-foreground">
-                          <span>
-                            Pengembalian dana final yang diputuskan Admin
-                            <span className="text-destructive"> *</span>
-                          </span>
-                          <CurrencyInput
-                            value={Number(finalRefundAmount || 0)}
-                            formatOnChange
-                            onClear={() => setFinalRefundAmount("0")}
-                            onValueChange={(amount) => setFinalRefundAmount(String(amount))}
-                          />
-                        </label>
-                        {finalRefund !== settlementQuote.recommendedRefundAmount ? (
+                        {settlementQuote.recommendedRefundAmount > 0 ? (
+                          <>
+                            <p className="border-t border-primary/20 pt-3 text-sm font-semibold text-primary">
+                              Rekomendasi pengembalian dana:{" "}
+                              {rupiah.format(settlementQuote.recommendedRefundAmount)}
+                            </p>
+                            <label className="grid gap-2 text-sm font-medium text-foreground">
+                              <span>
+                                Pengembalian dana final yang diputuskan Admin
+                                <span className="text-destructive"> *</span>
+                              </span>
+                              <CurrencyInput
+                                value={Number(finalRefundAmount || 0)}
+                                formatOnChange
+                                onClear={() => {
+                                  setFinalRefundAmount("0");
+                                  setRefundWaivedByResident(false);
+                                }}
+                                onValueChange={(amount) => {
+                                  setFinalRefundAmount(String(amount));
+                                  if (amount !== 0) setRefundWaivedByResident(false);
+                                }}
+                              />
+                            </label>
+                          </>
+                        ) : (
+                          <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                            Tidak ada pengembalian dana untuk diputuskan pada check-out ini.
+                          </p>
+                        )}
+                        {finalRefundIsResidentWaiver ? (
+                          <div className="space-y-3 rounded-md border border-warning/35 bg-warning/10 p-4 text-sm text-foreground">
+                            <div className="flex items-start gap-3">
+                              <Checkbox
+                                id="checkout-refund-waived-by-resident"
+                                checked={refundWaivedByResident}
+                                onCheckedChange={(checked) =>
+                                  setRefundWaivedByResident(checked === true)
+                                }
+                                className="mt-0.5"
+                              />
+                              <label
+                                htmlFor="checkout-refund-waived-by-resident"
+                                className="cursor-pointer leading-6"
+                              >
+                                Saya mengonfirmasi penghuni menyetujui untuk tidak menerima pengembalian dana sebesar{" "}
+                                <strong>{rupiah.format(settlementQuote.recommendedRefundAmount)}</strong>.
+                              </label>
+                            </div>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              Keputusan Rp0 menutup hak pengembalian dana untuk proses check-out ini. Alasan dan bukti penyesuaian tidak diperlukan untuk persetujuan ini.
+                            </p>
+                          </div>
+                        ) : null}
+                        {refundAdjustmentRequiresEvidence ? (
                           <div className="space-y-4">
                             <label className="grid gap-2 text-sm font-medium text-foreground">
                               <span>
@@ -2816,6 +3017,11 @@ export function CheckoutPanel({
                             <strong className="block text-foreground">
                               {rupiah.format(command.currentAmountDue ?? 0)}
                             </strong>
+                          </p>
+                        ) : null}
+                        {command.refundWaivedByResident ? (
+                          <p className="rounded-md border border-success/30 bg-success/10 p-3 text-sm font-medium text-foreground sm:col-span-3">
+                            Penghuni menyetujui tidak menerima refund.
                           </p>
                         ) : null}
                       </div>
@@ -3068,6 +3274,9 @@ export function CheckoutPanel({
                       (command.state === "notice_received" &&
                         !isLateCheckoutPolicy &&
                         approvalInvalid) ||
+                      (command.state === "notice_received" &&
+                        isLateCheckoutPolicy &&
+                        lateCheckoutDailyPenaltyInvalid) ||
                       (command.state === "scheduled" && !canRecordHandover) ||
                       (command.state === "inspection_required" && inspectionInvalid)
                     }

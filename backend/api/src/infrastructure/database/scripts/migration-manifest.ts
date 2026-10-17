@@ -1263,4 +1263,29 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "pg_get_functiondef(to_regprocedure('validate_owner_sponsored_policy_revision()')) ILIKE '%managementFeeAgreementNote%'",
     ],
   },
+  {
+    version: '131_actual_checkout_and_correction_settlement.sql',
+    checksumSha256: '1dc788ea1627d8c33e9432889ed25503cc834f39425af3c9c75986debfa44ca3',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_checkout_commands' AND column_name='late_checkout_penalty_waiver_reason')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.lease_checkout_commands'::regclass AND conname='lease_checkout_commands_late_penalty_snapshot_check' AND pg_get_constraintdef(oid) LIKE '%late_checkout_daily_penalty_amount >= 0%')",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_exit_final_settlements' AND column_name='contract_correction_credit_amount' AND is_nullable='NO')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.lease_exit_final_settlements'::regclass AND conname='lease_exit_final_settlements_contract_correction_credit_check')",
+    ],
+  },
+  {
+    version: '132_actual_checkout_history_event.sql',
+    checksumSha256: 'ff7abdc30bef84d07a9a5727ea8cc7733faba16f0b8f2fd75c01c18e0b2c1af3',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.lease_history'::regclass AND conname='lease_history_event_type_check' AND pg_get_constraintdef(oid) LIKE '%checkout_actual_recorded%')",
+    ],
+  },
+  {
+    version: '133_resident_refund_waiver_consent.sql',
+    checksumSha256: '59ab906896bc2d0dd3e40039ff6c07ab333f113b4a4e40f4e48bf59d85065a73',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='lease_exit_final_settlements' AND column_name='refund_waived_by_resident' AND is_nullable='NO')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.lease_exit_final_settlements'::regclass AND conname='lease_exit_final_settlements_adjustment_reason_check' AND pg_get_constraintdef(oid) ILIKE '%refund_waived_by_resident%')",
+    ],
+  },
 ] as const;

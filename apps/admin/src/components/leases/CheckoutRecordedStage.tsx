@@ -230,6 +230,12 @@ export function CheckoutRecordedStage({
                   ["Deposit untuk tunggakan sewa", formatIDR(financial.depositRentOffsetAmount)],
                   ["Deposit yang dapat dikembalikan", formatIDR(financial.refundableDepositAmount)],
                   ["Alasan penyesuaian pengembalian", financial.refundAdjustmentReason],
+                  [
+                    "Persetujuan pengembalian dana",
+                    financial.refundWaivedByResident
+                      ? "Penghuni menyetujui tidak menerima refund"
+                      : null,
+                  ],
                 ]
               : [];
   return (

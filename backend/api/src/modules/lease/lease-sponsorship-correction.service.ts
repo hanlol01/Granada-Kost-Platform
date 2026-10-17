@@ -9,6 +9,10 @@ export type SponsorshipCorrectionInput = {
   management_fee_payer?: 'resident' | 'owner' | 'other';
   management_fee_payer_name?: string;
   owner_sponsorship_reason?: string;
+  negotiated_monthly_management_fee?: number;
+  management_fee_agreement_note?: string;
+  /** Internal preservation marker; never accepted from an external correction request. */
+  management_fee_source?: 'property_policy' | 'negotiated_snapshot';
 };
 
 export type SponsorshipCorrectionFacts = {
@@ -33,6 +37,8 @@ export type SponsorshipPolicySnapshot = {
   managementFeePayer: 'resident' | 'owner' | 'other' | null;
   managementFeePayerName: string | null;
   sponsorshipReason: string;
+  managementFeeSource: 'property_policy' | 'negotiated_snapshot';
+  managementFeeAgreementNote: string | null;
   monthlyManagementFee: number;
   projectedManagementFeeAmount: number;
   roomId: string;
@@ -44,6 +50,8 @@ export type SponsorshipPolicySnapshot = {
 export type SponsorshipCorrectionPlan = {
   termId: string;
   effectiveFrom: string;
+  /** A pre-payment negotiated agreement is the sole exception to the broad finance-review gate. */
+  negotiatedAgreementOnly: boolean;
   previous: SponsorshipPolicySnapshot;
   corrected: SponsorshipPolicySnapshot;
 };
@@ -61,6 +69,8 @@ type TermRow = {
   management_fee_payer: 'resident' | 'owner' | 'other' | null;
   management_fee_payer_name: string | null;
   sponsorship_reason: string;
+  management_fee_source: 'property_policy' | 'negotiated_snapshot';
+  management_fee_agreement_note: string | null;
   snapshot_monthly_management_fee: string;
   current_projected_management_fee_amount: string;
   start_date: string;
@@ -83,6 +93,8 @@ export class LeaseSponsorshipCorrectionService {
       'management_fee_payer',
       'management_fee_payer_name',
       'owner_sponsorship_reason',
+      'negotiated_monthly_management_fee',
+      'management_fee_agreement_note',
     ];
     if (!keys.some((key) => input[key] != null)) return null;
     if (facts.commercialMode !== 'owner_sponsored')
@@ -118,6 +130,8 @@ export class LeaseSponsorshipCorrectionService {
       managementFeePayer: term.management_fee_payer,
       managementFeePayerName: term.management_fee_payer_name,
       sponsorshipReason: term.sponsorship_reason,
+      managementFeeSource: term.management_fee_source,
+      managementFeeAgreementNote: term.management_fee_agreement_note,
       monthlyManagementFee: this.amount(term.snapshot_monthly_management_fee),
       projectedManagementFeeAmount: this.amount(term.current_projected_management_fee_amount),
       roomId: term.room_id,
@@ -127,6 +141,7 @@ export class LeaseSponsorshipCorrectionService {
     };
     if (
       !['charged', 'waived'].includes(previous.managementFeeMode) ||
+      !['property_policy', 'negotiated_snapshot'].includes(previous.managementFeeSource) ||
       !['building', 'room'].includes(previous.ownershipKind) ||
       !previous.ownerProfileId ||
       !previous.ownershipAssignmentId ||
@@ -136,7 +151,10 @@ export class LeaseSponsorshipCorrectionService {
       (previous.managementFeeMode === 'charged' &&
         (!['resident', 'owner', 'other'].includes(previous.managementFeePayer ?? '') ||
           previous.monthlyManagementFee <= 0 ||
-          previous.projectedManagementFeeAmount <= 0)) ||
+          previous.projectedManagementFeeAmount <= 0 ||
+          (previous.managementFeeSource === 'negotiated_snapshot' &&
+            (!previous.managementFeeAgreementNote ||
+              previous.managementFeeAgreementNote.trim().length < 3)))) ||
       (previous.managementFeeMode === 'waived' &&
         (previous.managementFeePayer !== null ||
           previous.managementFeePayerName !== null ||
@@ -153,13 +171,32 @@ export class LeaseSponsorshipCorrectionService {
         managementFeePayer: previous.managementFeePayer,
         managementFeePayerName: previous.managementFeePayerName,
         sponsorshipReason: previous.sponsorshipReason,
+        managementFeeSource: previous.managementFeeSource,
+        managementFeeAgreementNote: previous.managementFeeAgreementNote,
+        monthlyManagementFee: previous.monthlyManagementFee,
       })
     )
       return null;
-    this.assertReview(facts);
+    const negotiatedAgreementOnly =
+      previous.managementFeeSource === 'negotiated_snapshot' &&
+      (input.negotiated_monthly_management_fee != null ||
+        input.management_fee_agreement_note != null) &&
+      input.sponsoring_owner_profile_id == null &&
+      input.management_fee_mode == null &&
+      input.management_fee_payer == null &&
+      input.management_fee_payer_name == null &&
+      input.owner_sponsorship_reason == null;
+    if (negotiatedAgreementOnly) {
+      await this.assertNoActiveNegotiatedFeePayment(client, facts);
+      if (facts.policy?.code !== 'LEASE_REVISION_FINANCIAL_REVIEW_REQUIRED')
+        this.assertReview(facts);
+    } else {
+      this.assertReview(facts);
+    }
     return {
       termId: term.id,
       effectiveFrom: facts.startDate,
+      negotiatedAgreementOnly,
       previous,
       corrected: await this.resolvePolicy(client, facts, proposed, previous.monthlyManagementFee),
     };
@@ -227,12 +264,65 @@ export class LeaseSponsorshipCorrectionService {
         message:
           'Isi keterangan persetujuan hunian tanggungan Owner, 3–500 karakter. Alasan koreksi tetap dicatat terpisah.',
       });
+    const managementFeeSource =
+      previous?.managementFeeSource ?? input.management_fee_source ?? 'negotiated_snapshot';
+    if (!['property_policy', 'negotiated_snapshot'].includes(managementFeeSource))
+      this.invalidFacts();
+    if (
+      previous?.managementFeeSource === 'property_policy' &&
+      (input.negotiated_monthly_management_fee != null ||
+        input.management_fee_agreement_note != null)
+    )
+      throw new UnprocessableEntityException({
+        code: 'LEASE_SPONSORSHIP_LEGACY_FEE_SNAPSHOT_UNSUPPORTED',
+        message:
+          'Kontrak lama tetap memakai kebijakan biaya yang sudah tercatat. Nominal kesepakatan baru hanya dapat dipakai untuk penyewaan Owner baru.',
+      });
+    const monthlyManagementFee =
+      managementFeeSource === 'negotiated_snapshot'
+        ? (input.negotiated_monthly_management_fee ?? previous?.monthlyManagementFee ?? 0)
+        : (previous?.monthlyManagementFee ?? 0);
+    const managementFeeAgreementNote =
+      managementFeeSource === 'negotiated_snapshot'
+        ? (
+            input.management_fee_agreement_note ??
+            previous?.managementFeeAgreementNote ??
+            null
+          )?.trim() || null
+        : null;
+    if (
+      mode === 'charged' &&
+      managementFeeSource === 'negotiated_snapshot' &&
+      (!Number.isSafeInteger(monthlyManagementFee) ||
+        monthlyManagementFee <= 0 ||
+        !managementFeeAgreementNote ||
+        managementFeeAgreementNote.length < 3 ||
+        managementFeeAgreementNote.length > 500)
+    )
+      throw new UnprocessableEntityException({
+        code: 'LEASE_SPONSORSHIP_NEGOTIATED_FEE_REQUIRED',
+        message:
+          'Nominal dan catatan kesepakatan biaya pengelolaan wajib diisi untuk Hunian Tanggungan Owner.',
+      });
+    if (
+      mode === 'waived' &&
+      (input.negotiated_monthly_management_fee != null ||
+        input.management_fee_agreement_note != null)
+    )
+      throw new UnprocessableEntityException({
+        code: 'LEASE_SPONSORSHIP_WAIVED_NEGOTIATED_FEE_INVALID',
+        message:
+          'Hunian tanpa biaya pengelolaan tidak memerlukan nominal atau catatan kesepakatan biaya.',
+      });
     return {
       ownerProfileId,
       managementFeeMode: mode,
       managementFeePayer: payer,
       managementFeePayerName: payerName,
       sponsorshipReason: reason,
+      managementFeeSource,
+      managementFeeAgreementNote: mode === 'charged' ? managementFeeAgreementNote : null,
+      monthlyManagementFee: mode === 'charged' ? monthlyManagementFee : 0,
     };
   }
 
@@ -244,6 +334,28 @@ export class LeaseSponsorshipCorrectionService {
           facts.policy?.message ??
           'Hubungan keuangan belum dapat dipastikan. Perbarui data sebelum mengubah penanggung atau ketentuan biaya.',
       });
+  }
+
+  private async assertNoActiveNegotiatedFeePayment(
+    client: PoolClient,
+    facts: SponsorshipCorrectionFacts,
+  ): Promise<void> {
+    const activePayment = await client.query<{ id: string }>(
+      `SELECT id
+         FROM payments
+        WHERE property_id=$1 AND lease_id=$2
+          AND payment_purpose='management_fee'
+          AND payment_status IN ('pending_confirmation','verified')
+        LIMIT 1${facts.lock ? ' FOR UPDATE' : ''}`,
+      [facts.propertyId, facts.leaseId],
+    );
+    if (activePayment.rowCount) {
+      throw new ConflictException({
+        code: 'LEASE_SPONSORSHIP_NEGOTIATED_FEE_PAYMENT_LOCKED',
+        message:
+          'Nominal atau catatan kesepakatan biaya tidak dapat diubah karena sudah ada pembayaran biaya pengelolaan yang menunggu konfirmasi atau terverifikasi.',
+      });
+    }
   }
 
   private async resolvePolicy(
@@ -294,7 +406,14 @@ export class LeaseSponsorshipCorrectionService {
       });
     let monthlyFee = 0;
     let projectedFee = 0;
-    if (proposed.managementFeeMode === 'charged') {
+    if (
+      proposed.managementFeeMode === 'charged' &&
+      proposed.managementFeeSource === 'negotiated_snapshot'
+    ) {
+      monthlyFee = proposed.monthlyManagementFee;
+      projectedFee = monthlyFee * facts.termMonths;
+      if (!Number.isSafeInteger(projectedFee) || projectedFee <= 0) this.missingFee();
+    } else if (proposed.managementFeeMode === 'charged') {
       const fees = await client.query<{ month_index: number; monthly_fee: string }>(
         `SELECT /* revision_sponsorship_fee */ month_index.value AS month_index,
                 COALESCE(fee.monthly_fee_amount,$4::bigint)::text AS monthly_fee
@@ -328,6 +447,8 @@ export class LeaseSponsorshipCorrectionService {
       ...proposed,
       ownershipKind: owner.ownership_kind,
       ownershipAssignmentId: owner.id,
+      managementFeeSource: proposed.managementFeeSource,
+      managementFeeAgreementNote: proposed.managementFeeAgreementNote,
       monthlyManagementFee: monthlyFee,
       projectedManagementFeeAmount: projectedFee,
       roomId: facts.roomId,
@@ -344,7 +465,7 @@ export class LeaseSponsorshipCorrectionService {
     correctionId: string,
     actorId: string,
   ) {
-    this.assertLocked(facts);
+    this.assertLocked(facts, plan);
     await client.query(
       `INSERT INTO owner_sponsored_policy_revisions(
          property_id,lease_id,term_id,correction_id,effective_from,previous_policy,corrected_policy,created_by_user_id)
@@ -368,23 +489,27 @@ export class LeaseSponsorshipCorrectionService {
     plan: SponsorshipCorrectionPlan,
     correctionId: string,
   ) {
-    this.assertLocked(facts);
+    this.assertLocked(facts, plan);
+    if (plan.negotiatedAgreementOnly) await this.assertNoActiveNegotiatedFeePayment(client, facts);
     const next = plan.corrected;
     const updated = await client.query(
       `UPDATE owner_sponsored_lease_terms
           SET owner_profile_id=$4,ownership_kind=$5,ownership_assignment_id=$6,
               management_fee_mode=$7,management_fee_payer=$8,management_fee_payer_name=$9,
               sponsorship_reason=$10,snapshot_monthly_management_fee=$11,
-              projected_management_fee_amount=$12,room_id=$19,updated_at=now()
+              projected_management_fee_amount=$12,management_fee_source=$13,
+              management_fee_agreement_note=$14,room_id=$15,updated_at=now()
         WHERE id=$1 AND property_id=$2 AND lease_id=$3 AND term_status='active'
-          AND owner_profile_id=$13 AND management_fee_mode=$14
-          AND management_fee_payer IS NOT DISTINCT FROM $15::text
-          AND management_fee_payer_name IS NOT DISTINCT FROM $16::text
-          AND sponsorship_reason=$17
-          AND room_id=$20
-          AND ownership_kind=$21 AND ownership_assignment_id=$22
+          AND owner_profile_id=$16 AND management_fee_mode=$17
+          AND management_fee_payer IS NOT DISTINCT FROM $18::text
+          AND management_fee_payer_name IS NOT DISTINCT FROM $19::text
+          AND sponsorship_reason=$20
+          AND management_fee_source=$21
+          AND management_fee_agreement_note IS NOT DISTINCT FROM $22::text
+          AND room_id=$24
+          AND ownership_kind=$25 AND ownership_assignment_id=$26
           AND EXISTS (SELECT 1 FROM owner_sponsored_policy_revisions revision
-            WHERE revision.correction_id=$18 AND revision.term_id=$1
+            WHERE revision.correction_id=$23 AND revision.term_id=$1
               AND revision.property_id=$2 AND revision.lease_id=$3)`,
       [
         plan.termId,
@@ -399,13 +524,17 @@ export class LeaseSponsorshipCorrectionService {
         next.sponsorshipReason,
         next.monthlyManagementFee,
         next.projectedManagementFeeAmount,
+        next.managementFeeSource,
+        next.managementFeeAgreementNote,
+        next.roomId,
         plan.previous.ownerProfileId,
         plan.previous.managementFeeMode,
         plan.previous.managementFeePayer,
         plan.previous.managementFeePayerName,
         plan.previous.sponsorshipReason,
+        plan.previous.managementFeeSource,
+        plan.previous.managementFeeAgreementNote,
         correctionId,
-        next.roomId,
         plan.previous.roomId,
         plan.previous.ownershipKind,
         plan.previous.ownershipAssignmentId,
@@ -419,8 +548,11 @@ export class LeaseSponsorshipCorrectionService {
       });
   }
 
-  private assertLocked(facts: SponsorshipCorrectionFacts) {
-    if (!facts.lock || facts.policy?.allowed !== true)
+  private assertLocked(facts: SponsorshipCorrectionFacts, plan: SponsorshipCorrectionPlan) {
+    const allowsPrePaymentAgreementCorrection =
+      plan.negotiatedAgreementOnly &&
+      facts.policy?.code === 'LEASE_REVISION_FINANCIAL_REVIEW_REQUIRED';
+    if (!facts.lock || (facts.policy?.allowed !== true && !allowsPrePaymentAgreementCorrection))
       throw new ConflictException({
         code: 'LEASE_SPONSORSHIP_COMMIT_REVIEW_REQUIRED',
         message:

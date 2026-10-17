@@ -9,6 +9,13 @@ dependent as a normal resident and room occupant without charging room rent.
 It is a commercial mode, not a 100% discount. This distinction keeps rent,
 owner entitlement, and management fees unambiguous.
 
+The current charged-fee projection described below remains the production model
+until a later implementation stage changes it. The approved successor for new
+charged sponsored leases is recorded in
+[Owner-Sponsored Negotiated Management Fee](../OWNER_SPONSORED_NEGOTIATED_MANAGEMENT_FEE_DECISION.md).
+That decision introduces a contract-level negotiated fee snapshot without
+rewriting normal paid-lease economics or existing sponsored leases.
+
 ## Non-negotiable rules
 
 - Only an Admin may create it.

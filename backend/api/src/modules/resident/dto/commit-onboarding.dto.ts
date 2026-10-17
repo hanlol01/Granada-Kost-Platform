@@ -53,7 +53,11 @@ export class CommitOnboardingDto {
   @IsUUID('4') @IsOptional() room_id?: string;
   @IsUUID('4') @IsOptional() resident_id?: string;
   @IsUUID('4') @IsOptional() source_archive_id?: string;
-  @IsOptional() @Transform(optionalTrim) @IsString() @Length(3, 1000) archive_replacement_reason?: string;
+  @IsOptional()
+  @Transform(optionalTrim)
+  @IsString()
+  @Length(3, 1000)
+  archive_replacement_reason?: string;
   @Transform(trim) @IsString() @MaxLength(160) visitor_name!: string;
   @Transform(trim) @IsNumberString() @MaxLength(20) visitor_phone!: string;
   @IsOptional() @Transform(optionalTrim) @IsEmail() @MaxLength(254) visitor_email?: string;
@@ -78,9 +82,7 @@ export class CommitOnboardingDto {
   @IsOptional() @IsUUID('4') sponsoring_owner_profile_id?: string;
   @IsOptional() @IsIn(['charged', 'waived']) management_fee_mode?: 'charged' | 'waived';
   @IsOptional() @IsIn(['resident', 'owner', 'other']) management_fee_payer?:
-    | 'resident'
-    | 'owner'
-    | 'other';
+    'resident' | 'owner' | 'other';
   @IsOptional()
   @Transform(optionalTrim)
   @IsString()
@@ -92,6 +94,13 @@ export class CommitOnboardingDto {
   @MinLength(3)
   @MaxLength(500)
   owner_sponsorship_reason?: string;
+  @IsOptional() @IsInt() @Min(1) negotiated_monthly_management_fee?: number;
+  @IsOptional()
+  @Transform(optionalTrim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  management_fee_agreement_note?: string;
   @IsOptional() @IsIn(['standard', 'negotiated']) pricing_source?: 'standard' | 'negotiated';
   @IsOptional() @IsInt() @Min(1) agreed_monthly_price?: number;
   @IsOptional()
@@ -103,9 +112,7 @@ export class CommitOnboardingDto {
   @IsOptional() @IsBoolean() pricing_variance_acknowledged?: boolean;
   @IsIn(['monthly', 'yearly']) billing_cycle!: 'monthly' | 'yearly';
   @IsIn(['annual_full', 'two_month_installments', 'monthly_installments']) payment_plan_type!:
-    | 'annual_full'
-    | 'two_month_installments'
-    | 'monthly_installments';
+    'annual_full' | 'two_month_installments' | 'monthly_installments';
   @Transform(trim) @IsString() @MaxLength(64) accepted_terms_version!: string;
   @IsInt() @Min(0) dp_verified_amount!: number;
   @IsInt() @Min(0) security_deposit_funded_amount!: number;

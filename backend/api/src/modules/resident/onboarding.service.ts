@@ -23,7 +23,10 @@ import { W06BillingService } from '../billing/services/w06-billing.service';
 import { ContractScheduleIssuanceService } from '../billing/services/contract-schedule-issuance.service';
 import { AdminPaymentVerificationPolicyService } from '../billing/services/admin-payment-verification-policy.service';
 import { calculateOwnerSponsoredManagementFee } from '../billing/helpers/owner-sponsored-occupancy.helper';
-import { prepareArchiveSuccessor, completeArchiveSuccessor } from '../lease/lease-archive-successor.helper';
+import {
+  prepareArchiveSuccessor,
+  completeArchiveSuccessor,
+} from '../lease/lease-archive-successor.helper';
 
 type RoomRow = {
   id: string;
@@ -187,15 +190,21 @@ export class OnboardingService {
       if (
         managementFeeMode === 'charged' &&
         (!dto.management_fee_payer ||
-          (dto.management_fee_payer === 'other' && !dto.management_fee_payer_name?.trim()))
+          (dto.management_fee_payer === 'other' && !dto.management_fee_payer_name?.trim()) ||
+          !Number.isSafeInteger(dto.negotiated_monthly_management_fee) ||
+          Number(dto.negotiated_monthly_management_fee) <= 0 ||
+          !dto.management_fee_agreement_note?.trim())
       )
         throw new BadRequestException({
-          code: 'OWNER_SPONSORED_MANAGEMENT_FEE_PAYER_REQUIRED',
-          message: 'Penanggung biaya pengelolaan wajib dilengkapi',
+          code: 'OWNER_SPONSORED_NEGOTIATED_MANAGEMENT_FEE_REQUIRED',
+          message: 'Nominal dan catatan kesepakatan biaya pengelolaan wajib dilengkapi',
         });
       if (
         managementFeeMode === 'waived' &&
-        (dto.management_fee_payer || dto.management_fee_payer_name?.trim())
+        (dto.management_fee_payer ||
+          dto.management_fee_payer_name?.trim() ||
+          dto.negotiated_monthly_management_fee != null ||
+          dto.management_fee_agreement_note?.trim())
       )
         throw new BadRequestException({
           code: 'OWNER_SPONSORED_MANAGEMENT_FEE_WAIVER_INVALID',
@@ -742,7 +751,7 @@ export class OnboardingService {
         if (commercialMode === 'owner_sponsored') {
           try {
             ownerSponsoredFee = calculateOwnerSponsoredManagementFee(
-              Number(room.management_fee_amount ?? 0),
+              Number(dto.negotiated_monthly_management_fee ?? 0),
               dto.term_months,
               managementFeeMode,
             );
@@ -1005,10 +1014,11 @@ export class OnboardingService {
              pricing_source,pricing_agreement_reason,pricing_agreed_by_user_id,pricing_agreed_at,
               commercial_mode,management_fee_mode,sponsoring_owner_profile_id,management_fee_payer,
               management_fee_payer_name,owner_sponsorship_reason,
-              snapshot_monthly_management_fee,projected_management_fee_amount
+              snapshot_monthly_management_fee,projected_management_fee_amount,
+              management_fee_source,management_fee_agreement_note
            ) VALUES(
              $1,$2,$3,$4,$5,$6,$7,'committed',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-              $19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now(),$27,$28,$29,$30,$31,$32,$33,$34
+              $19,$20,$21,now(),$22,$23,$24,$25,$26,$21,now(),$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
            ) RETURNING id`,
           [
             dto.property_id,
@@ -1045,6 +1055,10 @@ export class OnboardingService {
             dto.owner_sponsorship_reason?.trim() || null,
             ownerSponsoredFee?.monthlyManagementFee ?? null,
             ownerSponsoredFee?.projectedManagementFeeAmount ?? null,
+            commercialMode === 'owner_sponsored' ? 'negotiated_snapshot' : null,
+            managementFeeMode === 'charged'
+              ? dto.management_fee_agreement_note?.trim() || null
+              : null,
           ],
         );
         const lease = await client.query<{ id: string }>(
@@ -1131,8 +1145,9 @@ export class OnboardingService {
                property_id,lease_id,onboarding_commitment_id,resident_id,room_id,
                owner_profile_id,ownership_kind,ownership_assignment_id,
                management_fee_mode,management_fee_payer,management_fee_payer_name,sponsorship_reason,
-               snapshot_monthly_management_fee,projected_management_fee_amount,created_by_user_id
-             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+               snapshot_monthly_management_fee,projected_management_fee_amount,
+               management_fee_source,management_fee_agreement_note,created_by_user_id
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
             [
               dto.property_id,
               lease.rows[0].id,
@@ -1150,6 +1165,8 @@ export class OnboardingService {
               dto.owner_sponsorship_reason!.trim(),
               ownerSponsoredFee!.monthlyManagementFee,
               ownerSponsoredFee!.projectedManagementFeeAmount,
+              'negotiated_snapshot',
+              managementFeeMode === 'charged' ? dto.management_fee_agreement_note!.trim() : null,
               actor.id,
             ],
           );
@@ -1296,7 +1313,8 @@ export class OnboardingService {
             }),
           ],
         );
-        if (archiveSource) await completeArchiveSuccessor(client, actor, archiveSource, lease.rows[0].id);
+        if (archiveSource)
+          await completeArchiveSuccessor(client, actor, archiveSource, lease.rows[0].id);
         const response: OnboardingCommitmentResponse = {
           commitmentId: commitment.rows[0].id,
           status: 'committed',
@@ -1331,6 +1349,10 @@ export class OnboardingService {
                       ? dto.management_fee_payer_name?.trim() || null
                       : null,
                   reason: dto.owner_sponsorship_reason!.trim(),
+                  managementFeeAgreementNote:
+                    managementFeeMode === 'charged'
+                      ? dto.management_fee_agreement_note?.trim() || null
+                      : null,
                   monthlyManagementFee: ownerSponsoredFee!.monthlyManagementFee,
                   projectedManagementFeeAmount: ownerSponsoredFee!.projectedManagementFeeAmount,
                 }

@@ -15,7 +15,10 @@ const payload = {
   term_months: 12,
   commercial_mode: 'owner_sponsored',
   sponsoring_owner_profile_id: '33333333-3333-4333-8333-333333333333',
+  management_fee_mode: 'charged',
   management_fee_payer: 'owner',
+  negotiated_monthly_management_fee: 300000,
+  management_fee_agreement_note: 'Biaya pengelolaan disepakati bersama Owner.',
   owner_sponsorship_reason: 'Anak pemilik menempati kamar selama masa kuliah',
   billing_cycle: 'monthly',
   payment_plan_type: 'monthly_installments',
@@ -32,6 +35,17 @@ void test('owner-sponsored onboarding accepts explicit owner authority with zero
     forbidNonWhitelisted: true,
   });
   assert.deepEqual(errors, []);
+});
+
+void test('charged owner-sponsored onboarding permits only server-calculated fee totals', async () => {
+  const errors = await validate(
+    plainToInstance(CommitOnboardingDto, {
+      ...payload,
+      negotiated_monthly_management_fee: 0,
+    }),
+    { whitelist: true, forbidNonWhitelisted: true },
+  );
+  assert.ok(errors.some((error) => error.property === 'negotiated_monthly_management_fee'));
 });
 
 void test('owner-sponsored onboarding still rejects client-supplied fee totals', async () => {

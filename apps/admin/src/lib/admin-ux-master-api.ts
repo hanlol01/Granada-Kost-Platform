@@ -53,6 +53,15 @@ export type ManagementFeeAuthority = {
   effectiveDate: string;
 };
 
+export type PropertyManagementFeeAuthority = ManagementFeeAuthority & {
+  propertyId: string;
+};
+
+export type PropertyManagementFeeInput = {
+  monthlyFeeAmount: number;
+  effectiveDate: string;
+};
+
 export type KostType = {
   id: string;
   propertyId: string;
@@ -625,6 +634,25 @@ function isManagementFeeAuthority(value: unknown): value is Record<string, unkno
     isNonNegativeSafeInteger(value.monthly_fee_amount) &&
     isCanonicalDate(value.effective_date)
   );
+}
+
+function parsePropertyManagementFeeDataEnvelope(value: unknown): PropertyManagementFeeAuthority {
+  if (
+    !isPlainRecord(value) ||
+    !hasExactKeys(value, ["data"]) ||
+    !isPlainRecord(value.data) ||
+    !hasExactKeys(value.data, ["property_id", "monthly_fee_amount", "effective_date"]) ||
+    !isUuidV4(value.data.property_id) ||
+    !isNonNegativeSafeInteger(value.data.monthly_fee_amount) ||
+    !isCanonicalDate(value.data.effective_date)
+  ) {
+    throw new Error("Invalid property management fee response.");
+  }
+  return {
+    propertyId: value.data.property_id,
+    monthlyFeeAmount: value.data.monthly_fee_amount,
+    effectiveDate: value.data.effective_date,
+  };
 }
 
 function isCanonicalDate(value: unknown): value is string {
@@ -2438,6 +2466,20 @@ function reorderItems(items: ReorderItem[]) {
 }
 
 export const adminUxMasterApi = {
+  propertyManagementFee: {
+    update: (input: PropertyManagementFeeInput & { propertyId: string }, idempotencyKey?: string) =>
+      adminUxV2Requester
+        .put<V2DataEnvelope<unknown>>(
+          "/property-management-fee",
+          {
+            property_id: input.propertyId,
+            monthly_fee_amount: input.monthlyFeeAmount,
+            effective_date: input.effectiveDate,
+          },
+          { idempotencyKey },
+        )
+        .then(parsePropertyManagementFeeDataEnvelope),
+  },
   kostTypes: {
     list: (
       input: PropertyPageInput & {
@@ -2468,9 +2510,11 @@ export const adminUxMasterApi = {
         .then(parseKostTypeDataEnvelope),
     update: (id: string, input: KostTypeUpdateInput, idempotencyKey?: string) =>
       adminUxV2Requester
-        .patch<
-          V2DataEnvelope<unknown>
-        >("/kost-types/" + encodeURIComponent(id), kostTypeBody(input), { idempotencyKey })
+        .patch<V2DataEnvelope<unknown>>(
+          "/kost-types/" + encodeURIComponent(id),
+          kostTypeBody(input),
+          { idempotencyKey },
+        )
         .then(parseKostTypeDataEnvelope),
     remove: (id: string, idempotencyKey?: string) =>
       data<{ id: string; deleted: boolean }>(

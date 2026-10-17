@@ -3,11 +3,7 @@ import type { RoomStatus } from "./admin-ux-master-api";
 export type LeaseStatus = "active" | "ended" | "cancelled" | "transferred";
 export type BillingCycle = "monthly" | "yearly";
 export type DepositTransactionType =
-  | "collection"
-  | "carry_forward"
-  | "top_up"
-  | "deduction"
-  | "refund";
+  "collection" | "carry_forward" | "top_up" | "deduction" | "refund";
 export type DepositDirection = "credit" | "debit";
 export type RefundSettlementStatus = "pending" | "settled" | "waived";
 export type PaymentMethod = "cash" | "bank_transfer" | "qris" | "ewallet" | "other";
@@ -134,6 +130,8 @@ export type LeaseCorrectionSponsorship = {
   managementFeePayer: "resident" | "owner" | "other" | null;
   managementFeePayerName: string | null;
   sponsorshipReason: string;
+  managementFeeSource: "property_policy" | "negotiated_snapshot";
+  managementFeeAgreementNote: string | null;
   monthlyManagementFee: number;
   projectedManagementFeeAmount: number;
   roomId: string;
@@ -158,11 +156,7 @@ export type LeaseDataCorrectionPreview = {
   corrected: LeaseDataCorrectionSnapshot;
   impact: LeaseDataCorrectionImpact;
   correctionKind:
-    | "check_in_date"
-    | "contract_start"
-    | "contract_term"
-    | "contract_period"
-    | "combined";
+    "check_in_date" | "contract_start" | "contract_term" | "contract_period" | "combined";
   pricingChoiceRequired: boolean;
   ownerImpact: {
     previous: LeaseCorrectionOwnerProjection;
@@ -386,10 +380,7 @@ export type LeaseResidentOption = {
 };
 
 export type LeaseRoomUnavailableReason =
-  | Exclude<RoomStatus, "vacant">
-  | "active_lease"
-  | "onboarding"
-  | "booking_hold";
+  Exclude<RoomStatus, "vacant"> | "active_lease" | "onboarding" | "booking_hold";
 
 export type LeaseRoomOption = {
   id: string;
@@ -563,10 +554,7 @@ export type RenewalEligibility = {
     h60: RenewalReminderFact;
     h30: RenewalReminderFact & {
       unresolvedWork:
-        | "financial_preparation"
-        | "activation_authorization"
-        | "activation_execution"
-        | null;
+        "financial_preparation" | "activation_authorization" | "activation_execution" | null;
       paymentRecorded: boolean;
     };
     h14: RenewalReminderFact;

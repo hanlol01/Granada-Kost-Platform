@@ -32,6 +32,7 @@ import {
   UpdateKostTypeDto,
   UpdateKostTypeRuleDto,
   UpdateRoomFacilityV2Dto,
+  UpdatePropertyManagementFeeDto,
 } from './admin-ux-master.dto';
 
 type DbRow = Record<string, unknown>;
@@ -347,6 +348,16 @@ export class AdminUxMasterService {
         message: 'Kost type category cannot be changed.',
       });
     }
+    if (
+      dto.management_fee_amount !== undefined ||
+      dto.management_fee_effective_date !== undefined
+    ) {
+      throw new BadRequestException({
+        code: 'MANAGEMENT_FEE_PROPERTY_ENDPOINT_REQUIRED',
+        message:
+          'Management fee is a property policy. Update it through the property management-fee endpoint.',
+      });
+    }
     await this.assertCanMutate(user, dto.property_id);
     const key = this.requireIdempotencyKey(idempotencyKey);
     const commercialChange = [
@@ -359,7 +370,6 @@ export class AdminUxMasterService {
       dto.payment_schedules,
       dto.effective_date,
     ].some((value) => value !== undefined);
-    const managementFeeChange = dto.management_fee_amount !== undefined;
     if (commercialChange && dto.effective_date === undefined) {
       throw new BadRequestException({
         code: 'KOST_TYPE_EFFECTIVE_DATE_REQUIRED',
@@ -390,9 +400,6 @@ export class AdminUxMasterService {
       const effectiveDate = commercialChange
         ? this.effectiveDate(dto.effective_date)
         : String(current.effective_date).slice(0, 10);
-      const managementFeeEffectiveDate = managementFeeChange
-        ? this.effectiveDate(dto.management_fee_effective_date ?? dto.effective_date)
-        : null;
       const futureVersions = versions.filter(
         (version) => String(version.effective_date).slice(0, 10) > today,
       );
@@ -411,14 +418,6 @@ export class AdminUxMasterService {
           code: 'KOST_TYPE_EFFECTIVE_DATE_NOT_FUTURE',
           message: 'Commercial updates must start after the current business date.',
         });
-      }
-      if (managementFeeChange) {
-        if (managementFeeEffectiveDate! <= today || !managementFeeEffectiveDate!.endsWith('-01')) {
-          throw new BadRequestException({
-            code: 'MANAGEMENT_FEE_EFFECTIVE_DATE_INVALID',
-            message: 'Management fee must start on the first day of a future month.',
-          });
-        }
       }
       if (
         commercialChange &&
@@ -541,35 +540,6 @@ export class AdminUxMasterService {
           );
         }
       }
-      if (managementFeeChange) {
-        await this.assertManagementFeeCompatible(
-          client,
-          dto.property_id,
-          managementFeeEffectiveDate!,
-          dto.management_fee_amount,
-        );
-        const existingFutureFee = await client.query<{ effective_date: string }>(
-          `SELECT effective_date::text FROM property_management_fee_versions
-           WHERE property_id=$1 AND effective_date>CURRENT_DATE
-             AND effective_date<>$2::date FOR UPDATE`,
-          [dto.property_id, managementFeeEffectiveDate],
-        );
-        if (existingFutureFee.rowCount) {
-          throw new ConflictException({
-            code: 'MANAGEMENT_FEE_FUTURE_CONFLICT',
-            message: 'A future management fee is already scheduled.',
-          });
-        }
-        await client.query(
-          `INSERT INTO property_management_fee_versions(
-             property_id,effective_date,monthly_fee_amount,created_by_user_id,updated_by_user_id
-           ) VALUES($1,$2::date,$3,$4,$4)
-           ON CONFLICT(property_id,effective_date) DO UPDATE
-             SET monthly_fee_amount=EXCLUDED.monthly_fee_amount,
-                 updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()`,
-          [dto.property_id, managementFeeEffectiveDate, dto.management_fee_amount, user.id],
-        );
-      }
       await this.audit.write(
         {
           actorUserId: user.id,
@@ -598,6 +568,129 @@ export class AdminUxMasterService {
       );
       const response = v2Data(await this.kostTypeDetail(updated, client));
       await this.completeKostTypeCommand(client, user.id, route, key, response, id, 200);
+      await client.query('COMMIT');
+      return response;
+    } catch (error) {
+      await this.rollback(client);
+      this.rethrowKostTypeConflict(error);
+    } finally {
+      client.release();
+    }
+  }
+
+  async updatePropertyManagementFee(
+    user: UserAccessContext,
+    body: unknown,
+    context: RequestAuditContext,
+    idempotencyKey?: string,
+  ) {
+    const dto = await this.validateCommercialBody(UpdatePropertyManagementFeeDto, body);
+    await this.assertCanMutate(user, dto.property_id);
+    const key = this.requireIdempotencyKey(idempotencyKey);
+    const route = '/property-management-fee';
+    const client = await this.database.client.connect();
+    try {
+      await client.query('BEGIN');
+      const replay = await this.claimKostTypeCommand(
+        client,
+        dto.property_id,
+        user.id,
+        route,
+        key,
+        this.requestFingerprint(dto),
+        context.correlationId,
+      );
+      if (replay) {
+        await client.query('COMMIT');
+        return replay as { data: Record<string, unknown> };
+      }
+
+      const today = await this.databaseToday(client);
+      const effectiveDate = this.effectiveDate(dto.effective_date);
+      if (effectiveDate <= today || !effectiveDate.endsWith('-01')) {
+        throw new BadRequestException({
+          code: 'MANAGEMENT_FEE_EFFECTIVE_DATE_INVALID',
+          message: 'Management fee must start on the first day of a future month.',
+        });
+      }
+      const beforeResult = await client.query<{
+        monthly_fee_amount: string | number;
+        effective_date: string;
+      }>(
+        `SELECT monthly_fee_amount, effective_date::text
+         FROM property_management_fee_versions
+         WHERE property_id=$1 AND effective_date<=CURRENT_DATE
+         ORDER BY effective_date DESC,id DESC
+         LIMIT 1 FOR UPDATE`,
+        [dto.property_id],
+      );
+      const existingFutureFee = await client.query<{ effective_date: string }>(
+        `SELECT effective_date::text FROM property_management_fee_versions
+         WHERE property_id=$1 AND effective_date>CURRENT_DATE
+           AND effective_date<>$2::date FOR UPDATE`,
+        [dto.property_id, effectiveDate],
+      );
+      if (existingFutureFee.rowCount) {
+        throw new ConflictException({
+          code: 'MANAGEMENT_FEE_FUTURE_CONFLICT',
+          message: 'A future management fee is already scheduled.',
+        });
+      }
+      await this.assertManagementFeeCompatible(
+        client,
+        dto.property_id,
+        effectiveDate,
+        dto.monthly_fee_amount,
+      );
+      const updated = await client.query<{
+        monthly_fee_amount: string | number;
+        effective_date: string;
+      }>(
+        `INSERT INTO property_management_fee_versions(
+           property_id,effective_date,monthly_fee_amount,created_by_user_id,updated_by_user_id
+         ) VALUES($1,$2::date,$3,$4,$4)
+         ON CONFLICT(property_id,effective_date) DO UPDATE
+           SET monthly_fee_amount=EXCLUDED.monthly_fee_amount,
+               updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()
+         RETURNING monthly_fee_amount,effective_date::text`,
+        [dto.property_id, effectiveDate, dto.monthly_fee_amount, user.id],
+      );
+      const row = updated.rows[0];
+      const after = {
+        property_id: dto.property_id,
+        monthly_fee_amount: Number(row.monthly_fee_amount),
+        effective_date: row.effective_date,
+      };
+      await this.audit.write(
+        {
+          actorUserId: user.id,
+          propertyId: dto.property_id,
+          action: 'property_management_fee.schedule',
+          resourceType: 'property',
+          resourceId: dto.property_id,
+          beforeData: beforeResult.rows[0]
+            ? {
+                monthly_fee_amount: Number(beforeResult.rows[0].monthly_fee_amount),
+                effective_date: beforeResult.rows[0].effective_date,
+              }
+            : null,
+          afterData: after,
+          resultStatus: 'success',
+          ...context,
+        },
+        client,
+      );
+      const response = v2Data(after);
+      await this.completeKostTypeCommand(
+        client,
+        user.id,
+        route,
+        key,
+        response,
+        dto.property_id,
+        200,
+        'property',
+      );
       await client.query('COMMIT');
       return response;
     } catch (error) {
@@ -1919,13 +2012,14 @@ export class AdminUxMasterService {
     body: unknown,
     resourceId: string,
     responseStatus: 200 | 201,
+    resourceType = 'kost_type',
   ): Promise<void> {
     await client.query(
       `UPDATE idempotency_commands
        SET command_status = 'succeeded', response_status = $6, response_body = $4::jsonb,
-           resource_type = 'kost_type', resource_id = $5, completed_at = now()
+           resource_type = $7, resource_id = $5, completed_at = now()
        WHERE actor_user_id = $1 AND route = $2 AND idempotency_key = $3`,
-      [actorUserId, route, key, JSON.stringify(body), resourceId, responseStatus],
+      [actorUserId, route, key, JSON.stringify(body), resourceId, responseStatus, resourceType],
     );
   }
 

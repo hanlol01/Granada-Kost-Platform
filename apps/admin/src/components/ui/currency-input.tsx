@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { formatIDRInput, parseIDR } from "@/lib/format";
@@ -9,6 +9,8 @@ type Props = Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "ty
   error?: boolean;
   /** Format thousands separators as the user types, matching the onboarding Rupiah field. */
   formatOnChange?: boolean;
+  /** Start empty when the controlled amount is zero; useful for a required amount that has no default. */
+  emptyWhenZero?: boolean;
   /** Render a trailing clear affordance that resets the amount to zero. */
   onClear?: () => void;
   clearLabel?: string;
@@ -20,16 +22,21 @@ export function CurrencyInput({
   onValueChange,
   error = false,
   formatOnChange = false,
+  emptyWhenZero = false,
   onClear,
   clearLabel = "Hapus nominal",
   ...props
 }: Props) {
-  const [text, setText] = useState(() => formatIDRInput(value));
+  const displayValue = useCallback(
+    (amount: number) => (emptyWhenZero && amount === 0 ? "" : formatIDRInput(amount)),
+    [emptyWhenZero],
+  );
+  const [text, setText] = useState(() => displayValue(value));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setText(formatIDRInput(value));
-  }, [value]);
+    setText(displayValue(value));
+  }, [displayValue, value]);
 
   const input = (
     <Input
@@ -45,13 +52,19 @@ export function CurrencyInput({
       onChange={(event) => {
         const next = event.target.value;
         const parsed = parseIDR(next);
-        setText(formatOnChange && parsed !== null ? formatIDRInput(parsed) : next);
+        setText(
+          formatOnChange && parsed !== null
+            ? next.trim() === "" && emptyWhenZero
+              ? ""
+              : formatIDRInput(parsed)
+            : next,
+        );
         if (parsed !== null) onValueChange(parsed);
       }}
       onBlur={(event) => {
         const parsed = parseIDR(event.target.value);
         const normalized = parsed ?? value;
-        setText(formatIDRInput(normalized));
+        setText(displayValue(normalized));
         if (parsed !== null) onValueChange(parsed);
         props.onBlur?.(event);
       }}
@@ -81,7 +94,7 @@ export function CurrencyInput({
         type="button"
         className="flex min-h-11 min-w-11 shrink-0 items-center justify-center border-l border-destructive/20 text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50"
         onClick={() => {
-          setText(formatIDRInput(0));
+          setText(displayValue(0));
           onValueChange(0);
           onClear();
           requestAnimationFrame(() => {

@@ -74,6 +74,38 @@ function context(): LeaseRevisionContext {
   };
 }
 
+function negotiatedOwnerSponsoredContext(paymentLocked = false): LeaseRevisionContext {
+  const source = context();
+  source.lease.commercialMode = "owner_sponsored";
+  source.lease.agreedMonthlyPrice = 0;
+  source.lease.contractRentAmount = 0;
+  source.lease.pricingSource = "owner_sponsored";
+  source.ownerSponsorship = {
+    ownerProfileId: ownerId,
+    ownerName: "Owner uji",
+    ownershipKind: "building",
+    ownershipAssignmentId: targetId,
+    sponsorshipReason: "Kesepakatan Owner untuk keluarga",
+    managementFeeMode: "charged",
+    managementFeePayer: "owner",
+    managementFeePayerName: null,
+    managementFeeSource: "negotiated_snapshot",
+    managementFeeAgreementNote: "Biaya disepakati sebelum penyewaan dibuat.",
+    snapshotMonthlyManagementFee: 300000,
+    projectedManagementFeeAmount: 3600000,
+    verifiedManagementFeeAmount: paymentLocked ? 300000 : 0,
+    pendingManagementFeeAmount: 0,
+    managementFeePaymentLocked: paymentLocked,
+    termStatus: "active",
+  };
+  source.policies.sponsorshipPolicyChange = {
+    allowed: false,
+    code: "LEASE_REVISION_FINANCIAL_REVIEW_REQUIRED",
+    message: "Riwayat pembayaran mengunci perubahan ketentuan penanggung.",
+  };
+  return source;
+}
+
 test("an unchanged room is omitted and pending service never fabricates check-in", () => {
   const source = context();
   const draft = {
@@ -179,6 +211,34 @@ test("financial policy denial survives zero amounts and prevents mode or fee cha
     validateLeaseRevisionDraft(source, draft).commercialMode,
     source.policies.commercialModeChange.message,
   );
+});
+
+test("a pre-payment negotiated fee correction sends only the agreed fee and note", () => {
+  const source = negotiatedOwnerSponsoredContext();
+  const draft = {
+    ...createLeaseRevisionDraft(source),
+    negotiatedMonthlyManagementFee: 350000,
+    managementFeeAgreementNote: "Kesepakatan biaya diperbarui sebelum pembayaran dibuat.",
+    reason: "Nominal kesepakatan awal salah dicatat.",
+  };
+  assert.deepEqual(validateLeaseRevisionDraft(source, draft), {});
+  assert.deepEqual(buildLeaseRevisionProposal(source, draft), {
+    negotiatedMonthlyManagementFee: 350000,
+    managementFeeAgreementNote: "Kesepakatan biaya diperbarui sebelum pembayaran dibuat.",
+    reason: "Nominal kesepakatan awal salah dicatat.",
+  });
+});
+
+test("a negotiated fee correction is blocked once a fee payment is pending or verified", () => {
+  const source = negotiatedOwnerSponsoredContext(true);
+  const draft = {
+    ...createLeaseRevisionDraft(source),
+    negotiatedMonthlyManagementFee: 350000,
+    reason: "Nominal kesepakatan awal salah dicatat.",
+  };
+  const errors = validateLeaseRevisionDraft(source, draft);
+  assert.match(errors.negotiatedMonthlyManagementFee ?? "", /tidak dapat diubah/);
+  assert.match(errors.managementFeeAgreementNote ?? "", /tidak dapat diubah/);
 });
 
 test("no changes, invalid dates, a missing reason and unsafe prices produce field errors", () => {

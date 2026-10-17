@@ -184,6 +184,26 @@ assign(
   "Periksa Owner penanggung, ketentuan dibebaskan/dikenakan biaya dan alasan tanggungan. Jika dikenakan biaya, pilih penanggung; penanggung lain wajib memiliki nama. Biaya dibebaskan tidak memerlukan penanggung pembayaran.",
 );
 assign(
+  ["LEASE_SPONSORSHIP_NEGOTIATED_FEE_REQUIRED"],
+  "Kesepakatan biaya pengelolaan belum lengkap",
+  "Isi nominal biaya pengelolaan per bulan dan catatan kesepakatan minimal 3 karakter. Nominal ini berlaku khusus untuk penyewaan Owner tersebut, bukan tarif sewa kamar.",
+);
+assign(
+  ["LEASE_SPONSORSHIP_WAIVED_NEGOTIATED_FEE_INVALID"],
+  "Hunian dibebaskan dari biaya pengelolaan",
+  "Lepaskan nominal dan catatan kesepakatan biaya, atau ubah ketentuan menjadi Dengan biaya pengelolaan bila memang ada kewajiban fee yang disepakati.",
+);
+assign(
+  ["LEASE_SPONSORSHIP_LEGACY_FEE_SNAPSHOT_UNSUPPORTED"],
+  "Kesepakatan biaya tidak dapat diterapkan pada kontrak lama",
+  "Kontrak ini tetap menggunakan kebijakan biaya yang telah tercatat. Jangan mengubah nominalnya melalui koreksi; gunakan penyewaan Owner baru bila ada kesepakatan khusus yang baru.",
+);
+assign(
+  ["LEASE_SPONSORSHIP_NEGOTIATED_FEE_PAYMENT_LOCKED"],
+  "Kesepakatan biaya sudah memiliki pembayaran",
+  "Nominal, catatan kesepakatan, dan durasi yang memengaruhi total fee tidak dapat diubah setelah ada pembayaran yang menunggu konfirmasi atau terverifikasi. Gunakan alur koreksi keuangan yang terpisah.",
+);
+assign(
   [
     "LEASE_SPONSORSHIP_MODE_REQUIRED",
     "LEASE_MODE_CORRECTION_SPONSORSHIP_NOT_APPLICABLE",
@@ -213,7 +233,11 @@ assign(
   "Kredit hasil koreksi belum dapat diterapkan pada tagihan yang ada. Tinjau penyelesaian tagihan atau pengembalian melalui alur keuangan; pembayaran dan dokumen lama tetap dipertahankan.",
 );
 assign(
-  ["LEASE_ARCHIVE_RESPONSE_INVALID", "LEASE_CANCELLATION_FACTS_INVALID", "LEASE_CANCELLATION_BINDINGS_INVALID"],
+  [
+    "LEASE_ARCHIVE_RESPONSE_INVALID",
+    "LEASE_CANCELLATION_FACTS_INVALID",
+    "LEASE_CANCELLATION_BINDINGS_INVALID",
+  ],
   "Hubungan penyewaan belum dapat dipastikan",
   "Kamar tidak dilepas. Perbarui tinjauan dan periksa catatan pemesanan, aktivasi serta penyewaan. Bila catatan masih tidak sesuai, minta Pihak Pengelola meninjau riwayat sebelum membatalkan.",
 );
@@ -272,67 +296,165 @@ assign(
   "Tagihan belum dapat dibatalkan",
   "Ada status atau aktivitas pembayaran yang perlu ditinjau. Tidak ada perubahan pembatalan disimpan; periksa riwayat tagihan dan penyelesaian keuangan lalu perbarui tinjauan.",
 );
-assign(["LEASE_ARCHIVE_RESTORE_RESPONSE_INVALID", "LEASE_ARCHIVE_RESTORE_FACTS_INVALID"],
-  "Pemulihan belum dapat ditinjau", "Hubungan arsip belum lengkap. Perbarui data dan periksa riwayat penyewaan; jangan memulihkan atau membuat pengganti sebelum pemeriksaan selesai.");
-assign(["LEASE_ARCHIVE_RESTORE_COMMIT_RESPONSE_INVALID"], "Hasil pemulihan belum dapat dipastikan",
-  "Periksa riwayat arsip atau coba ulang pengajuan yang sama tanpa mengubah isian. Jangan mengirim pengajuan baru; percobaan ulang memakai kunci yang sama.");
-assign(["LEASE_ARCHIVE_RESTORE_STATUS_INVALID", "LEASE_ARCHIVE_SUCCESSOR_SOURCE_STALE"], "Arsip sudah berubah",
-  "Arsip mungkin sudah dipulihkan atau memiliki penyewaan pengganti. Buka riwayat terbaru dan penyewaan yang berlaku; jangan membuat pengganti kedua.");
-assign(["LEASE_ARCHIVE_RESTORE_HISTORY_PROTECTED"], "Riwayat hunian atau realisasi perlu ditinjau",
-  "Arsip terkait hunian nyata, pendapatan atau realisasi Owner. Tinjau penyelesaian terkait melalui alurnya dahulu; riwayat lama tidak dihidupkan atau dihapus ulang.");
-assign(["LEASE_ARCHIVE_RESTORE_FINANCIAL_HISTORY"], "Arsip memiliki riwayat pembayaran",
-  "Transaksi, bukti dan kewajiban lama tidak dihidupkan ulang. Siapkan penyewaan pengganti yang terhubung ke arsip; penyelesaian keuangan lama tetap ditinjau terpisah.");
-assign(["LEASE_ARCHIVE_RESTORE_ROOM_CONFLICT"], "Kamar asal belum tersedia",
-  "Kamar sudah digunakan, dipesan atau belum siap. Arsip tetap aman; pilih kamar tersedia melalui penyewaan pengganti.");
-assign(["LEASE_ARCHIVE_RESTORE_RESIDENT_CONFLICT"], "Penghuni memiliki proses penyewaan lain",
-  "Buka penyewaan atau proses hunian yang masih berlaku. Jangan memulihkan atau membuat dua penyewaan aktif untuk penghuni yang sama.");
-assign(["LEASE_ARCHIVE_RESTORE_PERIOD_INVALID"], "Periode lama perlu diperbarui",
-  "Periode lama sudah berakhir atau tidak sesuai catatan check-in. Tinjau periode yang benar melalui penyewaan pengganti; pemulihan tidak membuat check-in fisik.");
-assign(["LEASE_ARCHIVE_RESTORE_BINDINGS_CHANGED"], "Pemesanan lama tidak dapat dipulihkan otomatis",
-  "Hubungan komitmen, pemesanan atau aktivasi sudah berubah. Buat penyewaan pengganti dari arsip dan tinjau ketentuan baru; pemesanan lama tetap menjadi riwayat.");
-assign(["LEASE_ARCHIVE_RESTORE_COMMERCIAL_REVIEW_REQUIRED"], "Tarif atau kepemilikan perlu ditinjau ulang",
-  "Tarif, jenis hunian atau kepemilikan Owner tidak lagi cocok dengan arsip. Siapkan penyewaan pengganti dan tinjau ketentuan baru, bukan memaksakan ketentuan lama.");
-assign(["LEASE_ARCHIVE_RESTORE_REVIEW_STALE"], "Data berubah setelah tinjauan pemulihan",
-  "Tidak ada perubahan pemulihan disimpan. Perbarui data kamar dan arsip, lalu tinjau kembali sebelum menyimpan.");
-assign(["LEASE_ARCHIVE_RESTORE_BILLING_INVALID"], "Otoritas tagihan pemulihan belum cocok",
-  "Tidak ada tagihan baru yang disimpan. Muat tinjauan arsip terbaru dan periksa riwayat tagihan; pembayaran lama tidak dihidupkan ulang.");
-assign(["LEASE_ARCHIVE_RESTORE_REASON_REQUIRED"], "Alasan pemulihan perlu dilengkapi",
-  "Isi alasan pemulihan 3–1.000 karakter yang menjelaskan pembatalan sebelumnya keliru, lalu tinjau kembali.");
-assign(["LEASE_ARCHIVE_RESTORE_CONFIRMATION_REQUIRED"], "Konfirmasi pemulihan belum lengkap",
-  "Baca akibat pemulihan dan centang konfirmasi. Check-in fisik dan berkas yang telah dihapus permanen tidak dibuat ulang.");
-assign(["LEASE_ARCHIVE_SUCCESSOR_INPUT_REQUIRED"], "Sumber penyewaan pengganti belum lengkap",
-  "Buka dari arsip asal, pertahankan penghuni yang sama dan isi alasan pengganti 3–1.000 karakter. Tinjau kamar, periode dan ketentuan baru tanpa memakai pemesanan lama.");
-assign(["LEASE_ARCHIVE_SUCCESSOR_IDENTITY_REQUIRED"], "Profil penghuni perlu dilengkapi",
-  "Lengkapi nama, nomor WhatsApp Indonesia dan jenis kelamin pada detail penghuni, lalu buka ulang arsip. Penyewaan pengganti menggunakan profil yang sama, bukan membuat penghuni baru.");
-assign(["LEASE_ARCHIVE_SUCCESSOR_SUBMISSION_UNCERTAIN"], "Hasil penyewaan pengganti belum dapat dipastikan",
-  "Isian tetap dikunci. Coba ulang pengajuan awal dengan kunci yang sama atau periksa riwayat arsip. Jangan mengganti kamar, pembayaran atau ketentuan dan mengirim sebagai pengajuan baru sebelum hasilnya diketahui.");
-assign(["LEASE_ARCHIVE_RESTORE_FILE_PURGE_UNRESOLVED"], "Penghapusan berkas belum selesai",
-  "Selesaikan pemeriksaan berkas yang gagal atau belum dapat dipastikan melalui pengajuan di arsip sebelum memulihkan penyewaan. Berkas yang sudah dihapus tidak dapat dikembalikan.");
-assign(["LEASE_FILE_PURGE_RESPONSE_INVALID", "LEASE_FILE_PURGE_FACTS_INVALID", "LEASE_FILE_PURGE_COVERAGE_UNVERIFIED", "LEASE_FILE_PURGE_OWNERSHIP_UNVERIFIED"],
-  "Hubungan berkas belum dapat dipastikan", "Tidak ada penghapusan baru yang dapat diajukan. Perbarui inventaris dan minta Pihak Pengelola memeriksa hubungan berkas serta pembaruan sistem sebelum melanjutkan.");
-assign(["LEASE_FILE_PURGE_COMMIT_RESPONSE_INVALID"], "Hasil penghapusan belum dapat dipastikan",
-  "Pilihan pengajuan tetap dikunci. Coba ulang pengajuan yang sama tanpa mengubah isian, atau periksa hasilnya pada riwayat pengajuan. Jangan mengajukan berkas yang sama dengan pengajuan baru.");
-assign(["LEASE_FILE_PURGE_PROTECTED", "LEASE_FILE_PURGE_SHARED"], "Berkas digunakan oleh hubungan lain",
-  "Berkas tidak dihapus. Periksa hubungan yang ditampilkan pada inventaris; berkas bersama, identitas, foto kamar dan bukti Realisasi Owner tetap dilindungi.");
-assign(["LEASE_FILE_PURGE_ALREADY_CLAIMED", "FILE_ARCHIVE_PURGE_UNAVAILABLE"], "Berkas masuk pengajuan penghapusan",
-  "Berkas tidak dapat diunduh atau diajukan ulang. Buka hasil pengajuan pada arsip; coba ulang hanya berkas yang gagal atau belum dapat dipastikan.");
-assign(["LEASE_FILE_PURGE_ALREADY_DELETED"], "Berkas sudah tidak tersedia",
-  "Periksa catatan penghapusan pada arsip. Berkas yang dihapus permanen tidak dapat dipulihkan; tidak ada ruang tambahan yang dihitung dari berkas yang sudah tidak tersedia.");
-assign(["LEASE_FILE_PURGE_ARCHIVE_ACTIVE"], "Penyewaan tidak lagi dapat diproses dari arsip",
-  "Penyewaan sudah dipulihkan atau tidak lagi dibatalkan. Tidak ada berkas baru yang dihapus; buka penyewaan yang sedang berlaku dan tinjau riwayat arsip.");
-assign(["LEASE_FILE_PURGE_REVIEW_STALE", "LEASE_FILE_PURGE_REVIEW_REQUIRED"], "Tinjauan berkas perlu diperbarui",
-  "Keadaan atau hubungan berkas berubah. Tidak ada berkas baru yang dihapus; perbarui inventaris lalu tinjau pilihan dan akibatnya kembali.");
-assign(["LEASE_FILE_PURGE_SELECTION_INVALID"], "Pilihan berkas belum sesuai",
-  "Pilih 1–100 berkas yang dapat dihapus dari arsip ini tanpa pilihan ganda. Tidak ada berkas baru yang dihapus.");
-assign(["LEASE_FILE_PURGE_RETRY_SELECTION_INVALID"], "Pilihan coba ulang belum sesuai",
-  "Pilih hanya berkas yang gagal atau belum dapat dipastikan pada pengajuan ini. Berkas yang terverifikasi telah dihapus tidak diproses kembali.");
-assign(["LEASE_FILE_PURGE_REASON_REQUIRED"], "Alasan penghapusan perlu dilengkapi",
-  "Isi alasan penghapusan 3–1.000 karakter sebelum melanjutkan. Alasan dan hasil tiap berkas akan tersimpan pada riwayat pengajuan.");
-assign(["LEASE_FILE_PURGE_CONFIRMATION_REQUIRED"], "Akibat penghapusan perlu dikonfirmasi",
-  "Baca pilihan berkas lalu centang konfirmasi. Bukti terpilih tidak dapat dilihat, diunduh atau dikembalikan dengan memulihkan penyewaan setelah dihapus permanen.");
-assign(["LEASE_FILE_PURGE_FORBIDDEN"], "Izin berkas arsip belum sesuai",
-  "Gunakan akun Admin dengan izin penyewaan pada properti terkait. Melihat inventaris tidak otomatis memberikan izin menghapus berkas.");
-assign(["LEASE_FILE_PURGE_NOT_FOUND", "LEASE_FILE_PURGE_PAGE_INVALID"], "Pengajuan berkas belum ditemukan",
-  "Kembali ke rincian arsip pada properti yang benar dan perbarui riwayat pengajuan sebelum melanjutkan.");
+assign(
+  ["LEASE_ARCHIVE_RESTORE_RESPONSE_INVALID", "LEASE_ARCHIVE_RESTORE_FACTS_INVALID"],
+  "Pemulihan belum dapat ditinjau",
+  "Hubungan arsip belum lengkap. Perbarui data dan periksa riwayat penyewaan; jangan memulihkan atau membuat pengganti sebelum pemeriksaan selesai.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_COMMIT_RESPONSE_INVALID"],
+  "Hasil pemulihan belum dapat dipastikan",
+  "Periksa riwayat arsip atau coba ulang pengajuan yang sama tanpa mengubah isian. Jangan mengirim pengajuan baru; percobaan ulang memakai kunci yang sama.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_STATUS_INVALID", "LEASE_ARCHIVE_SUCCESSOR_SOURCE_STALE"],
+  "Arsip sudah berubah",
+  "Arsip mungkin sudah dipulihkan atau memiliki penyewaan pengganti. Buka riwayat terbaru dan penyewaan yang berlaku; jangan membuat pengganti kedua.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_HISTORY_PROTECTED"],
+  "Riwayat hunian atau realisasi perlu ditinjau",
+  "Arsip terkait hunian nyata, pendapatan atau realisasi Owner. Tinjau penyelesaian terkait melalui alurnya dahulu; riwayat lama tidak dihidupkan atau dihapus ulang.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_FINANCIAL_HISTORY"],
+  "Arsip memiliki riwayat pembayaran",
+  "Transaksi, bukti dan kewajiban lama tidak dihidupkan ulang. Siapkan penyewaan pengganti yang terhubung ke arsip; penyelesaian keuangan lama tetap ditinjau terpisah.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_ROOM_CONFLICT"],
+  "Kamar asal belum tersedia",
+  "Kamar sudah digunakan, dipesan atau belum siap. Arsip tetap aman; pilih kamar tersedia melalui penyewaan pengganti.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_RESIDENT_CONFLICT"],
+  "Penghuni memiliki proses penyewaan lain",
+  "Buka penyewaan atau proses hunian yang masih berlaku. Jangan memulihkan atau membuat dua penyewaan aktif untuk penghuni yang sama.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_PERIOD_INVALID"],
+  "Periode lama perlu diperbarui",
+  "Periode lama sudah berakhir atau tidak sesuai catatan check-in. Tinjau periode yang benar melalui penyewaan pengganti; pemulihan tidak membuat check-in fisik.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_BINDINGS_CHANGED"],
+  "Pemesanan lama tidak dapat dipulihkan otomatis",
+  "Hubungan komitmen, pemesanan atau aktivasi sudah berubah. Buat penyewaan pengganti dari arsip dan tinjau ketentuan baru; pemesanan lama tetap menjadi riwayat.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_COMMERCIAL_REVIEW_REQUIRED"],
+  "Tarif atau kepemilikan perlu ditinjau ulang",
+  "Tarif, jenis hunian atau kepemilikan Owner tidak lagi cocok dengan arsip. Siapkan penyewaan pengganti dan tinjau ketentuan baru, bukan memaksakan ketentuan lama.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_REVIEW_STALE"],
+  "Data berubah setelah tinjauan pemulihan",
+  "Tidak ada perubahan pemulihan disimpan. Perbarui data kamar dan arsip, lalu tinjau kembali sebelum menyimpan.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_BILLING_INVALID"],
+  "Otoritas tagihan pemulihan belum cocok",
+  "Tidak ada tagihan baru yang disimpan. Muat tinjauan arsip terbaru dan periksa riwayat tagihan; pembayaran lama tidak dihidupkan ulang.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_REASON_REQUIRED"],
+  "Alasan pemulihan perlu dilengkapi",
+  "Isi alasan pemulihan 3–1.000 karakter yang menjelaskan pembatalan sebelumnya keliru, lalu tinjau kembali.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_CONFIRMATION_REQUIRED"],
+  "Konfirmasi pemulihan belum lengkap",
+  "Baca akibat pemulihan dan centang konfirmasi. Check-in fisik dan berkas yang telah dihapus permanen tidak dibuat ulang.",
+);
+assign(
+  ["LEASE_ARCHIVE_SUCCESSOR_INPUT_REQUIRED"],
+  "Sumber penyewaan pengganti belum lengkap",
+  "Buka dari arsip asal, pertahankan penghuni yang sama dan isi alasan pengganti 3–1.000 karakter. Tinjau kamar, periode dan ketentuan baru tanpa memakai pemesanan lama.",
+);
+assign(
+  ["LEASE_ARCHIVE_SUCCESSOR_IDENTITY_REQUIRED"],
+  "Profil penghuni perlu dilengkapi",
+  "Lengkapi nama, nomor WhatsApp Indonesia dan jenis kelamin pada detail penghuni, lalu buka ulang arsip. Penyewaan pengganti menggunakan profil yang sama, bukan membuat penghuni baru.",
+);
+assign(
+  ["LEASE_ARCHIVE_SUCCESSOR_SUBMISSION_UNCERTAIN"],
+  "Hasil penyewaan pengganti belum dapat dipastikan",
+  "Isian tetap dikunci. Coba ulang pengajuan awal dengan kunci yang sama atau periksa riwayat arsip. Jangan mengganti kamar, pembayaran atau ketentuan dan mengirim sebagai pengajuan baru sebelum hasilnya diketahui.",
+);
+assign(
+  ["LEASE_ARCHIVE_RESTORE_FILE_PURGE_UNRESOLVED"],
+  "Penghapusan berkas belum selesai",
+  "Selesaikan pemeriksaan berkas yang gagal atau belum dapat dipastikan melalui pengajuan di arsip sebelum memulihkan penyewaan. Berkas yang sudah dihapus tidak dapat dikembalikan.",
+);
+assign(
+  [
+    "LEASE_FILE_PURGE_RESPONSE_INVALID",
+    "LEASE_FILE_PURGE_FACTS_INVALID",
+    "LEASE_FILE_PURGE_COVERAGE_UNVERIFIED",
+    "LEASE_FILE_PURGE_OWNERSHIP_UNVERIFIED",
+  ],
+  "Hubungan berkas belum dapat dipastikan",
+  "Tidak ada penghapusan baru yang dapat diajukan. Perbarui inventaris dan minta Pihak Pengelola memeriksa hubungan berkas serta pembaruan sistem sebelum melanjutkan.",
+);
+assign(
+  ["LEASE_FILE_PURGE_COMMIT_RESPONSE_INVALID"],
+  "Hasil penghapusan belum dapat dipastikan",
+  "Pilihan pengajuan tetap dikunci. Coba ulang pengajuan yang sama tanpa mengubah isian, atau periksa hasilnya pada riwayat pengajuan. Jangan mengajukan berkas yang sama dengan pengajuan baru.",
+);
+assign(
+  ["LEASE_FILE_PURGE_PROTECTED", "LEASE_FILE_PURGE_SHARED"],
+  "Berkas digunakan oleh hubungan lain",
+  "Berkas tidak dihapus. Periksa hubungan yang ditampilkan pada inventaris; berkas bersama, identitas, foto kamar dan bukti Realisasi Owner tetap dilindungi.",
+);
+assign(
+  ["LEASE_FILE_PURGE_ALREADY_CLAIMED", "FILE_ARCHIVE_PURGE_UNAVAILABLE"],
+  "Berkas masuk pengajuan penghapusan",
+  "Berkas tidak dapat diunduh atau diajukan ulang. Buka hasil pengajuan pada arsip; coba ulang hanya berkas yang gagal atau belum dapat dipastikan.",
+);
+assign(
+  ["LEASE_FILE_PURGE_ALREADY_DELETED"],
+  "Berkas sudah tidak tersedia",
+  "Periksa catatan penghapusan pada arsip. Berkas yang dihapus permanen tidak dapat dipulihkan; tidak ada ruang tambahan yang dihitung dari berkas yang sudah tidak tersedia.",
+);
+assign(
+  ["LEASE_FILE_PURGE_ARCHIVE_ACTIVE"],
+  "Penyewaan tidak lagi dapat diproses dari arsip",
+  "Penyewaan sudah dipulihkan atau tidak lagi dibatalkan. Tidak ada berkas baru yang dihapus; buka penyewaan yang sedang berlaku dan tinjau riwayat arsip.",
+);
+assign(
+  ["LEASE_FILE_PURGE_REVIEW_STALE", "LEASE_FILE_PURGE_REVIEW_REQUIRED"],
+  "Tinjauan berkas perlu diperbarui",
+  "Keadaan atau hubungan berkas berubah. Tidak ada berkas baru yang dihapus; perbarui inventaris lalu tinjau pilihan dan akibatnya kembali.",
+);
+assign(
+  ["LEASE_FILE_PURGE_SELECTION_INVALID"],
+  "Pilihan berkas belum sesuai",
+  "Pilih 1–100 berkas yang dapat dihapus dari arsip ini tanpa pilihan ganda. Tidak ada berkas baru yang dihapus.",
+);
+assign(
+  ["LEASE_FILE_PURGE_RETRY_SELECTION_INVALID"],
+  "Pilihan coba ulang belum sesuai",
+  "Pilih hanya berkas yang gagal atau belum dapat dipastikan pada pengajuan ini. Berkas yang terverifikasi telah dihapus tidak diproses kembali.",
+);
+assign(
+  ["LEASE_FILE_PURGE_REASON_REQUIRED"],
+  "Alasan penghapusan perlu dilengkapi",
+  "Isi alasan penghapusan 3–1.000 karakter sebelum melanjutkan. Alasan dan hasil tiap berkas akan tersimpan pada riwayat pengajuan.",
+);
+assign(
+  ["LEASE_FILE_PURGE_CONFIRMATION_REQUIRED"],
+  "Akibat penghapusan perlu dikonfirmasi",
+  "Baca pilihan berkas lalu centang konfirmasi. Bukti terpilih tidak dapat dilihat, diunduh atau dikembalikan dengan memulihkan penyewaan setelah dihapus permanen.",
+);
+assign(
+  ["LEASE_FILE_PURGE_FORBIDDEN"],
+  "Izin berkas arsip belum sesuai",
+  "Gunakan akun Admin dengan izin penyewaan pada properti terkait. Melihat inventaris tidak otomatis memberikan izin menghapus berkas.",
+);
+assign(
+  ["LEASE_FILE_PURGE_NOT_FOUND", "LEASE_FILE_PURGE_PAGE_INVALID"],
+  "Pengajuan berkas belum ditemukan",
+  "Kembali ke rincian arsip pada properti yang benar dan perbarui riwayat pengajuan sebelum melanjutkan.",
+);
 export const LEASE_REVISION_ERROR_NOTICES: Readonly<Record<string, Notice>> =
   Object.freeze(notices);

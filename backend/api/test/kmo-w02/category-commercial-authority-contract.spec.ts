@@ -247,6 +247,9 @@ test('pure commercial validation separates DP, deposit, and schedules', () => {
   assert.deepEqual(value, {
     monthlyPrice: 1_800_000,
     annualContractValue: 21_600_000,
+    shortStayMonthlyPrice: 1_800_000,
+    mediumStayMonthlyPrice: 1_800_000,
+    longStayMonthlyPrice: 1_800_000,
     minimumDpPercent: 25,
     securityDepositMonths: 1,
     paymentSchedules: ['annual', 'two_month_installments'],
@@ -303,6 +306,7 @@ test('category create rejects non-baseline initial rates before database access'
           slug: 'rumah-kost',
           monthly_price: 1_900_000,
           yearly_price: 21_600_000,
+          short_stay_monthly_price: 2_000_000,
           effective_date: '2026-07-31',
           payment_schedules: ['annual'],
           security_deposit_months: 1,
@@ -394,6 +398,14 @@ function updateHarness(
       }
       if (sql.includes('INSERT INTO idempotency_commands')) {
         return { rows: [{ request_fingerprint: 'new', command_status: 'pending' }] };
+      }
+      if (sql.includes('AS minimum_monthly_rate')) {
+        return {
+          rows: [{ management_fee_amount: 300_000, minimum_monthly_rate: 1_800_000 }],
+        };
+      }
+      if (sql.includes('FROM property_management_fee_versions') && sql.includes('effective_date>$2::date')) {
+        return { rows: [] };
       }
       if (sql.includes("AT TIME ZONE 'Asia/Jakarta'")) {
         return { rows: [{ today: '2026-07-31' }] };
@@ -495,6 +507,34 @@ test('commercial update authorizes before lookup or idempotency', async () => {
         'auth-order',
       ),
     /property denied/,
+  );
+  assert.equal(connected, false);
+});
+
+test('kost type updates refuse property management-fee fields before any database access', async () => {
+  let connected = false;
+  const service = new AdminUxMasterService(
+    {
+      client: {
+        connect: async () => {
+          connected = true;
+          throw new Error('database must not be reached');
+        },
+      },
+    } as never,
+    { assertCanReadProperty: async () => undefined } as never,
+    {} as never,
+  );
+  await assert.rejects(
+    () =>
+      service.updateKostType(
+        { id: actorId, roles: ['admin'], propertyIds: [propertyId] } as never,
+        kostTypeId,
+        { ...updateBody('2026-08-01'), management_fee_amount: 300_000 },
+        {} as never,
+        'property-fee-route-required',
+      ),
+    (error: unknown) => errorHasCode(error, 'MANAGEMENT_FEE_PROPERTY_ENDPOINT_REQUIRED'),
   );
   assert.equal(connected, false);
 });

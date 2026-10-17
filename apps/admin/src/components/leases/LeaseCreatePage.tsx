@@ -403,6 +403,8 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
   const [managementFeeMode, setManagementFeeMode] = useState<ManagementFeeMode>("charged");
   const [managementFeePayer, setManagementFeePayer] = useState<ManagementFeePayer>("owner");
   const [managementFeePayerName, setManagementFeePayerName] = useState("");
+  const [negotiatedManagementFeeAmount, setNegotiatedManagementFeeAmount] = useState(0);
+  const [managementFeeAgreementNote, setManagementFeeAgreementNote] = useState("");
   const [ownerSponsorshipReason, setOwnerSponsorshipReason] = useState("");
   const [category, setCategory] = useState<"rukost" | "apartkost" | "">("");
   const [roomSearch, setRoomSearch] = useState("");
@@ -533,8 +535,11 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
     setPricingAgreementReason("");
     setPricingVarianceAcknowledged(false);
     setCommercialMode("rent");
+    setManagementFeeMode("charged");
     setManagementFeePayer("owner");
     setManagementFeePayerName("");
+    setNegotiatedManagementFeeAmount(0);
+    setManagementFeeAgreementNote("");
     setOwnerSponsorshipReason("");
     setPaidRent(0);
     setBookingFee(0);
@@ -664,7 +669,7 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
   const sponsoringOwner = ownerAsset?.currentOwner ?? null;
   const projectedManagementFee =
     commercialMode === "owner_sponsored" && managementFeeMode === "charged"
-      ? (selectedRoom?.kostType.managementFeeAmount ?? 0) * termMonths
+      ? negotiatedManagementFeeAmount * termMonths
       : 0;
   const pricingVariancePercent =
     amounts.referenceMonthlyRate > 0
@@ -865,7 +870,10 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
     commercialMode === "owner_sponsored" &&
     selectedRoomIsSelectable &&
     Boolean(sponsoringOwner) &&
-    (managementFeeMode === "waived" || (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0) &&
+    (managementFeeMode === "waived" ||
+      (Number.isSafeInteger(negotiatedManagementFeeAmount) &&
+        negotiatedManagementFeeAmount > 0 &&
+        managementFeeAgreementNote.trim().length >= 3)) &&
     ownerSponsorshipReason.trim().length >= 3 &&
     (managementFeeMode === "waived" ||
       managementFeePayer !== "other" ||
@@ -916,9 +924,15 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
     managementFee:
       commercialMode !== "owner_sponsored" ||
       managementFeeMode === "waived" ||
-      (selectedRoom?.kostType.managementFeeAmount ?? 0) > 0
+      (Number.isSafeInteger(negotiatedManagementFeeAmount) && negotiatedManagementFeeAmount > 0)
         ? ""
-        : "Biaya pengelolaan properti belum ditetapkan.",
+        : "Masukkan nominal biaya pengelolaan yang disepakati per bulan.",
+    managementFeeAgreementNote:
+      commercialMode !== "owner_sponsored" ||
+      managementFeeMode === "waived" ||
+      managementFeeAgreementNote.trim().length >= 3
+        ? ""
+        : "Catatan kesepakatan biaya wajib diisi minimal 3 karakter.",
     managementFeePayerName:
       commercialMode !== "owner_sponsored" ||
       managementFeeMode === "waived" ||
@@ -1353,6 +1367,14 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
         managementFeeMode === "charged" &&
         managementFeePayer === "other"
           ? managementFeePayerName.trim()
+          : undefined,
+      negotiated_monthly_management_fee:
+        commercialMode === "owner_sponsored" && managementFeeMode === "charged"
+          ? negotiatedManagementFeeAmount
+          : undefined,
+      management_fee_agreement_note:
+        commercialMode === "owner_sponsored" && managementFeeMode === "charged"
+          ? managementFeeAgreementNote.trim()
           : undefined,
       owner_sponsorship_reason:
         commercialMode === "owner_sponsored" ? ownerSponsorshipReason.trim() : undefined,
@@ -1946,6 +1968,16 @@ export function LeaseCreatePage({ onCreated, bookingLeadId, archiveSuccessor }: 
               managementFeePayerName={managementFeePayerName}
               setManagementFeePayerName={(value) => {
                 setManagementFeePayerName(value);
+                setConfirmed(false);
+              }}
+              negotiatedManagementFeeAmount={negotiatedManagementFeeAmount}
+              setNegotiatedManagementFeeAmount={(value) => {
+                setNegotiatedManagementFeeAmount(value);
+                setConfirmed(false);
+              }}
+              managementFeeAgreementNote={managementFeeAgreementNote}
+              setManagementFeeAgreementNote={(value) => {
+                setManagementFeeAgreementNote(value);
                 setConfirmed(false);
               }}
               ownerSponsorshipReason={ownerSponsorshipReason}
@@ -2625,6 +2657,10 @@ function RoomAndPaymentStep({
   setManagementFeePayer,
   managementFeePayerName,
   setManagementFeePayerName,
+  negotiatedManagementFeeAmount,
+  setNegotiatedManagementFeeAmount,
+  managementFeeAgreementNote,
+  setManagementFeeAgreementNote,
   ownerSponsorshipReason,
   setOwnerSponsorshipReason,
   projectedManagementFee,
@@ -2695,6 +2731,10 @@ function RoomAndPaymentStep({
   setManagementFeePayer: (value: ManagementFeePayer) => void;
   managementFeePayerName: string;
   setManagementFeePayerName: (value: string) => void;
+  negotiatedManagementFeeAmount: number;
+  setNegotiatedManagementFeeAmount: (value: number) => void;
+  managementFeeAgreementNote: string;
+  setManagementFeeAgreementNote: (value: string) => void;
   ownerSponsorshipReason: string;
   setOwnerSponsorshipReason: (value: string) => void;
   projectedManagementFee: number;
@@ -3077,27 +3117,56 @@ function RoomAndPaymentStep({
                     </p>
                   ) : null}
                   {managementFeeMode === "charged" ? (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>
-                          Penanggung biaya pengelolaan <span className="text-destructive">*</span>
-                        </Label>
-                        <Select
-                          value={managementFeePayer}
-                          onValueChange={(value) =>
-                            setManagementFeePayer(value as ManagementFeePayer)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="owner">Owner</SelectItem>
-                            <SelectItem value="resident">Penghuni</SelectItem>
-                            <SelectItem value="other">Pihak lain</SelectItem>
-                          </SelectContent>
-                        </Select>
+                    <div className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>
+                            Biaya pengelolaan disepakati per bulan{" "}
+                            <span className="text-destructive">*</span>
+                          </Label>
+                          <CurrencyInput
+                            value={negotiatedManagementFeeAmount}
+                            onValueChange={setNegotiatedManagementFeeAmount}
+                            formatOnChange
+                            emptyWhenZero
+                            placeholder="Contoh: 300.000"
+                            error={Boolean(errors?.managementFee)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Nominal ini menjadi snapshot kontrak dan tidak mengikuti perubahan
+                            kebijakan properti berikutnya.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>
+                            Penanggung biaya pengelolaan <span className="text-destructive">*</span>
+                          </Label>
+                          <Select
+                            value={managementFeePayer}
+                            onValueChange={(value) =>
+                              setManagementFeePayer(value as ManagementFeePayer)
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="owner">Owner</SelectItem>
+                              <SelectItem value="resident">Penghuni</SelectItem>
+                              <SelectItem value="other">Pihak lain</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
+                      {negotiatedManagementFeeAmount > amounts.referenceMonthlyRate &&
+                      amounts.referenceMonthlyRate > 0 ? (
+                        <NoticeAlert
+                          tone="warning"
+                          density="compact"
+                          title="Biaya pengelolaan melebihi tarif referensi kamar"
+                          description="Nilai tetap dapat disimpan bila sudah ada kesepakatan dengan pihak terkait."
+                        />
+                      ) : null}
                       {managementFeePayer === "other" ? (
                         <div className="space-y-2">
                           <Label>
@@ -3120,6 +3189,28 @@ function RoomAndPaymentStep({
                           ) : null}
                         </div>
                       ) : null}
+                      <div className="space-y-2">
+                        <Label>
+                          Catatan kesepakatan biaya pengelolaan{" "}
+                          <span className="text-destructive">*</span>
+                        </Label>
+                        <Textarea
+                          value={managementFeeAgreementNote}
+                          onChange={(event) => setManagementFeeAgreementNote(event.target.value)}
+                          placeholder="Contoh: Biaya pengelolaan Rp300.000 per bulan disepakati bersama Owner untuk masa sewa ini."
+                          rows={3}
+                        />
+                        {errors?.managementFeeAgreementNote ? (
+                          <p
+                            className="text-xs font-medium text-destructive"
+                            data-validation-target="true"
+                            role="alert"
+                            tabIndex={-1}
+                          >
+                            {errors.managementFeeAgreementNote}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   ) : (
                     <NoticeAlert
@@ -3155,7 +3246,7 @@ function RoomAndPaymentStep({
                       label="Biaya pengelolaan per bulan"
                       value={
                         managementFeeMode === "charged"
-                          ? currency(selectedRoom.kostType.managementFeeAmount ?? 0)
+                          ? currency(negotiatedManagementFeeAmount)
                           : "Tidak ditagihkan"
                       }
                     />

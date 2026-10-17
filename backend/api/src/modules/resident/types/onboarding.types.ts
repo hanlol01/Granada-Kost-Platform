@@ -28,6 +28,7 @@ export type OnboardingCommitmentResponse = {
     managementFeePayer: 'resident' | 'owner' | 'other' | null;
     managementFeePayerName: string | null;
     reason: string;
+    managementFeeAgreementNote: string | null;
     monthlyManagementFee: number;
     projectedManagementFeeAmount: number;
   } | null;
@@ -41,11 +42,7 @@ export type OnboardingCommitmentResponse = {
     receipts: Array<{
       id: string;
       purpose:
-        | 'booking_fee'
-        | 'down_payment'
-        | 'installment'
-        | 'full_settlement'
-        | 'security_deposit';
+        'booking_fee' | 'down_payment' | 'installment' | 'full_settlement' | 'security_deposit';
       amount: number;
       rentPaymentSequence: number | null;
     }>;

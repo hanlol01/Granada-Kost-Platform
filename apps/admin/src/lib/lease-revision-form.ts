@@ -18,6 +18,8 @@ export type LeaseRevisionDraft = {
   managementFeePayer: "resident" | "owner" | "other";
   managementFeePayerName: string;
   ownerSponsorshipReason: string;
+  negotiatedMonthlyManagementFee: number;
+  managementFeeAgreementNote: string;
   paymentPlanType: "" | "annual_full" | "two_month_installments" | "monthly_installments";
   billingCycle: "" | "monthly" | "yearly";
   reason: string;
@@ -43,6 +45,8 @@ export function createLeaseRevisionDraft(context: LeaseRevisionContext): LeaseRe
     managementFeePayer: policy?.managementFeePayer ?? "resident",
     managementFeePayerName: policy?.managementFeePayerName ?? "",
     ownerSponsorshipReason: policy?.sponsorshipReason ?? "",
+    negotiatedMonthlyManagementFee: policy?.monthlyManagementFee ?? 0,
+    managementFeeAgreementNote: policy?.managementFeeAgreementNote ?? "",
     paymentPlanType: "",
     billingCycle: "",
     reason: "",
@@ -70,9 +74,24 @@ export function leaseRevisionChanges(context: LeaseRevisionContext, draft: Lease
       draft.managementFeeMode !== original.managementFeeMode ||
       draft.ownerSponsorshipReason.trim() !== original.ownerSponsorshipReason.trim() ||
       (draft.managementFeeMode === "charged" &&
-        (draft.managementFeePayer !== original.managementFeePayer ||
+        (draft.negotiatedMonthlyManagementFee !== original.negotiatedMonthlyManagementFee ||
+          draft.managementFeeAgreementNote.trim() !== original.managementFeeAgreementNote.trim() ||
+          draft.managementFeePayer !== original.managementFeePayer ||
           (draft.managementFeePayer === "other" &&
             draft.managementFeePayerName.trim() !== original.managementFeePayerName.trim()))));
+  const negotiatedFeeAgreementOnly =
+    context.lease.commercialMode === "owner_sponsored" &&
+    context.ownerSponsorship?.managementFeeSource === "negotiated_snapshot" &&
+    context.ownerSponsorship.managementFeeMode === "charged" &&
+    !mode &&
+    draft.commercialMode === "owner_sponsored" &&
+    draft.managementFeeMode === original.managementFeeMode &&
+    draft.sponsoringOwnerProfileId === original.sponsoringOwnerProfileId &&
+    draft.managementFeePayer === original.managementFeePayer &&
+    draft.managementFeePayerName.trim() === original.managementFeePayerName.trim() &&
+    draft.ownerSponsorshipReason.trim() === original.ownerSponsorshipReason.trim() &&
+    (draft.negotiatedMonthlyManagementFee !== original.negotiatedMonthlyManagementFee ||
+      draft.managementFeeAgreementNote.trim() !== original.managementFeeAgreementNote.trim());
   return {
     room,
     mode,
@@ -80,6 +99,7 @@ export function leaseRevisionChanges(context: LeaseRevisionContext, draft: Lease
     period,
     pricing,
     sponsorship,
+    negotiatedFeeAgreementOnly,
     any: room || mode || period || pricing || sponsorship,
   };
 }
@@ -120,11 +140,23 @@ export function buildLeaseRevisionProposal(
     }
   }
   if (changed.sponsorship) {
+    if (changed.negotiatedFeeAgreementOnly) {
+      input.negotiatedMonthlyManagementFee = draft.negotiatedMonthlyManagementFee;
+      input.managementFeeAgreementNote = draft.managementFeeAgreementNote.trim();
+      return input;
+    }
     input.sponsoringOwnerProfileId = draft.sponsoringOwnerProfileId;
     input.managementFeeMode = draft.managementFeeMode;
     input.ownerSponsorshipReason = draft.ownerSponsorshipReason.trim();
     if (draft.managementFeeMode === "charged") {
       input.managementFeePayer = draft.managementFeePayer;
+      if (
+        !context.ownerSponsorship ||
+        context.ownerSponsorship.managementFeeSource === "negotiated_snapshot"
+      ) {
+        input.negotiatedMonthlyManagementFee = draft.negotiatedMonthlyManagementFee;
+        input.managementFeeAgreementNote = draft.managementFeeAgreementNote.trim();
+      }
       if (draft.managementFeePayer === "other")
         input.managementFeePayerName = draft.managementFeePayerName.trim();
     }
@@ -182,8 +214,19 @@ export function validateLeaseRevisionDraft(
   if (changed.mode && changed.checkIn)
     errors.checkedInDate =
       "Koreksi jenis hunian dan tanggal check-in perlu ditinjau terpisah. Simpan tanggal check-in yang benar dahulu, lalu buka kembali koreksi jenis hunian.";
-  if (changed.sponsorship && !changed.mode && !context.policies.sponsorshipPolicyChange.allowed)
+  if (
+    changed.sponsorship &&
+    !changed.mode &&
+    !changed.negotiatedFeeAgreementOnly &&
+    !context.policies.sponsorshipPolicyChange.allowed
+  )
     errors.managementFeeMode = context.policies.sponsorshipPolicyChange.message!;
+  if (changed.negotiatedFeeAgreementOnly && context.ownerSponsorship?.managementFeePaymentLocked) {
+    const message =
+      "Nominal atau catatan kesepakatan tidak dapat diubah karena ada pembayaran biaya pengelolaan yang menunggu konfirmasi atau terverifikasi.";
+    errors.negotiatedMonthlyManagementFee = message;
+    errors.managementFeeAgreementNote = message;
+  }
   if (
     draft.commercialMode === "rent" &&
     (changed.pricing || changed.period || changed.room || changed.mode) &&
@@ -205,11 +248,29 @@ export function validateLeaseRevisionDraft(
       errors.billingCycle = "Pilih siklus tagihan agar ketentuan baru dapat ditinjau.";
   }
   if (changed.sponsorship) {
+    const requiresNegotiatedSnapshot =
+      !context.ownerSponsorship ||
+      context.ownerSponsorship.managementFeeSource === "negotiated_snapshot";
     if (!z.string().uuid().safeParse(draft.sponsoringOwnerProfileId).success)
       errors.sponsoringOwnerProfileId =
         "Pilih Owner yang memiliki kamar ini. Bila belum tersedia, perbarui kepemilikan aset dahulu.";
     if (!validText(draft.ownerSponsorshipReason, 500))
       errors.ownerSponsorshipReason = "Isi alasan tanggungan Owner 3–500 karakter.";
+    if (
+      requiresNegotiatedSnapshot &&
+      draft.managementFeeMode === "charged" &&
+      (!Number.isSafeInteger(draft.negotiatedMonthlyManagementFee) ||
+        draft.negotiatedMonthlyManagementFee <= 0)
+    )
+      errors.negotiatedMonthlyManagementFee =
+        "Masukkan biaya pengelolaan hasil kesepakatan berupa Rupiah bulat lebih dari Rp 0.";
+    if (
+      requiresNegotiatedSnapshot &&
+      draft.managementFeeMode === "charged" &&
+      !validText(draft.managementFeeAgreementNote, 500)
+    )
+      errors.managementFeeAgreementNote =
+        "Isi catatan kesepakatan biaya pengelolaan 3–500 karakter.";
     if (
       draft.managementFeeMode === "charged" &&
       draft.managementFeePayer === "other" &&

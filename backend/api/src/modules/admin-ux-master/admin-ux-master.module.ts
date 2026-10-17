@@ -6,6 +6,7 @@ import {
   KostTypeContentController,
   KostTypeController,
   KostTypeRuleController,
+  PropertyManagementFeeController,
   PropertyPolicyDocumentController,
   RoomFacilityV2Controller,
 } from './admin-ux-master.controller';
@@ -19,6 +20,7 @@ import { AdminUxMasterService } from './admin-ux-master.service';
   imports: [PropertyModule, RbacModule],
   controllers: [
     KostTypeController,
+    PropertyManagementFeeController,
     FacilityCategoryController,
     RoomFacilityV2Controller,
     KostTypeRuleController,

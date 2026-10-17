@@ -102,9 +102,14 @@ export class LeaseRevisionContextService {
                   'sponsorship_reason',term.sponsorship_reason,'management_fee_mode',term.management_fee_mode,
                   'management_fee_payer',term.management_fee_payer,
                   'management_fee_payer_name',term.management_fee_payer_name,
+                  'management_fee_source',term.management_fee_source,
+                  'management_fee_agreement_note',term.management_fee_agreement_note,
                   'snapshot_monthly_management_fee',term.snapshot_monthly_management_fee,
                   'projected_management_fee_amount',progress.current_projected_management_fee_amount,
                   'verified_management_fee_amount',progress.verified_paid_amount,
+                  'pending_management_fee_amount',progress.pending_amount,
+                  'management_fee_payment_locked',
+                    (progress.verified_paid_amount>0 OR progress.pending_amount>0),
                   'term_status',term.term_status) END AS owner_sponsorship
            FROM leases lease
            JOIN residents resident ON resident.id=lease.resident_id AND resident.property_id=lease.property_id

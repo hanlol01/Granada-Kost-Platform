@@ -74,6 +74,8 @@ export class LeaseCommercialModeCorrectionService {
         input.management_fee_payer,
         input.management_fee_payer_name,
         input.owner_sponsorship_reason,
+        input.negotiated_monthly_management_fee,
+        input.management_fee_agreement_note,
       ].some((value) => value != null)
     )
       throw new ConflictException({
@@ -294,14 +296,18 @@ export class LeaseCommercialModeCorrectionService {
       const inserted = await client.query(
         `INSERT INTO owner_sponsored_lease_terms(property_id,lease_id,onboarding_commitment_id,resident_id,room_id,
         owner_profile_id,ownership_kind,ownership_assignment_id,management_fee_mode,management_fee_payer,management_fee_payer_name,
-        sponsorship_reason,snapshot_monthly_management_fee,projected_management_fee_amount,created_by_user_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        sponsorship_reason,snapshot_monthly_management_fee,projected_management_fee_amount,
+        management_fee_source,management_fee_agreement_note,created_by_user_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         ON CONFLICT(lease_id) DO UPDATE SET room_id=EXCLUDED.room_id,owner_profile_id=EXCLUDED.owner_profile_id,
           ownership_kind=EXCLUDED.ownership_kind,ownership_assignment_id=EXCLUDED.ownership_assignment_id,
           management_fee_mode=EXCLUDED.management_fee_mode,management_fee_payer=EXCLUDED.management_fee_payer,
           management_fee_payer_name=EXCLUDED.management_fee_payer_name,sponsorship_reason=EXCLUDED.sponsorship_reason,
           snapshot_monthly_management_fee=EXCLUDED.snapshot_monthly_management_fee,
-          projected_management_fee_amount=EXCLUDED.projected_management_fee_amount,term_status='active',updated_at=now()
+          projected_management_fee_amount=EXCLUDED.projected_management_fee_amount,
+          management_fee_source=EXCLUDED.management_fee_source,
+          management_fee_agreement_note=EXCLUDED.management_fee_agreement_note,
+          term_status='active',updated_at=now()
         WHERE owner_sponsored_lease_terms.term_status='cancelled' AND owner_sponsored_lease_terms.property_id=EXCLUDED.property_id
           AND owner_sponsored_lease_terms.onboarding_commitment_id=EXCLUDED.onboarding_commitment_id
           AND owner_sponsored_lease_terms.resident_id=EXCLUDED.resident_id`,
@@ -320,6 +326,8 @@ export class LeaseCommercialModeCorrectionService {
           policy.sponsorshipReason,
           policy.monthlyManagementFee,
           policy.projectedManagementFeeAmount,
+          policy.managementFeeSource,
+          policy.managementFeeAgreementNote,
           actorId,
         ],
       );

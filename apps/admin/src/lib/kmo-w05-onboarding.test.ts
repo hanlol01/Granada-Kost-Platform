@@ -345,6 +345,22 @@ test("new lease custom pricing uses the shared Rupiah field and blue duration bo
   assert.match(source, /Gunakan durasi & tarif khusus/);
 });
 
+test("charged Owner-sponsored onboarding records a separate negotiated fee snapshot", () => {
+  const page = readFileSync(
+    fileURLToPath(new URL("../components/leases/LeaseCreatePage.tsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(page, /Biaya pengelolaan disepakati per bulan/);
+  assert.match(page, /emptyWhenZero/);
+  assert.match(page, /placeholder="Contoh: 300\.000"/);
+  assert.match(page, /Catatan kesepakatan biaya pengelolaan/);
+  assert.match(page, /negotiated_monthly_management_fee/);
+  assert.match(page, /management_fee_agreement_note/);
+  assert.match(page, /Biaya pengelolaan melebihi tarif referensi kamar/);
+  assert.match(page, /negotiatedManagementFeeAmount \* termMonths/);
+});
+
 test("physical check-in is a separate exact command that creates occupancy", async () => {
   const leaseId = "22222222-2222-4222-8222-222222222222";
   const occupancyId = "33333333-3333-4333-8333-333333333333";

@@ -100,6 +100,8 @@ const stageFields: (keyof LeaseRevisionErrors)[][] = [
     "pricingVarianceAcknowledged",
     "sponsoringOwnerProfileId",
     "managementFeeMode",
+    "negotiatedMonthlyManagementFee",
+    "managementFeeAgreementNote",
     "managementFeePayerName",
     "ownerSponsorshipReason",
     "paymentPlanType",
@@ -264,7 +266,7 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
       else headingRef.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [stage]);
+  }, [errors, stage]);
 
   function update(patch: Partial<LeaseRevisionDraft>) {
     if (locked) return;
@@ -417,6 +419,13 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
     "aria-describedby": errors[field] ? `revision-${field}-error` : undefined,
   });
   const policyLocked = !changed.mode && !baseline.policies.sponsorshipPolicyChange.allowed;
+  const negotiatedFeeEditable =
+    !baseline.ownerSponsorship ||
+    baseline.ownerSponsorship.managementFeeSource === "negotiated_snapshot";
+  const negotiatedFeePaymentLocked =
+    baseline.ownerSponsorship?.managementFeeSource === "negotiated_snapshot" &&
+    baseline.ownerSponsorship.managementFeePaymentLocked;
+  const negotiatedAgreementLocked = locked || (policyLocked && negotiatedFeePaymentLocked);
   const ownerOption =
     assignedOwner ??
     (!changed.room
@@ -596,7 +605,9 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
                               aria-describedby={[
                                 "revision-room-picker-help",
                                 invalid("roomId")["aria-describedby"],
-                              ].filter(Boolean).join(" ")}
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
                               onChange={(event) => setRoomSearch(event.target.value)}
                             />
                           </div>
@@ -1158,6 +1169,37 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
                           </div>
                           {draft.managementFeeMode === "charged" ? (
                             <div className="grid items-start gap-5 sm:grid-cols-2">
+                              {negotiatedFeeEditable ? (
+                                <div className="space-y-2">
+                                  <Label htmlFor="revision-negotiatedMonthlyManagementFee">
+                                    Biaya pengelolaan disepakati per bulan{" "}
+                                    <span className="text-destructive">*</span>
+                                  </Label>
+                                  <CurrencyInput
+                                    id="revision-negotiatedMonthlyManagementFee"
+                                    disabled={negotiatedAgreementLocked}
+                                    value={draft.negotiatedMonthlyManagementFee}
+                                    formatOnChange
+                                    placeholder="Contoh: 300.000"
+                                    error={Boolean(errors.negotiatedMonthlyManagementFee)}
+                                    onValueChange={(value) =>
+                                      update({ negotiatedMonthlyManagementFee: value })
+                                    }
+                                  />
+                                  {error("negotiatedMonthlyManagementFee")}
+                                  <p className="text-xs leading-5 text-muted-foreground">
+                                    Nilai ini menjadi snapshot kontrak dan tidak memengaruhi hak
+                                    realisasi Owner.
+                                  </p>
+                                </div>
+                              ) : (
+                                <NoticeAlert
+                                  density="compact"
+                                  tone="info"
+                                  title="Kebijakan biaya lama dipertahankan"
+                                  description="Kontrak ini dibuat sebelum biaya kesepakatan per penyewaan diberlakukan. Nominal historis tidak diubah melalui koreksi ini."
+                                />
+                              )}
                               <div className="space-y-2">
                                 <Label htmlFor="revision-managementFeePayer">
                                   Penanggung biaya pengelolaan
@@ -1199,6 +1241,27 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
                               ) : null}
                             </div>
                           ) : null}
+                          {draft.managementFeeMode === "charged" && negotiatedFeeEditable ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="revision-managementFeeAgreementNote">
+                                Catatan kesepakatan biaya pengelolaan{" "}
+                                <span className="text-destructive">*</span>
+                              </Label>
+                              <Textarea
+                                id="revision-managementFeeAgreementNote"
+                                disabled={negotiatedAgreementLocked}
+                                value={draft.managementFeeAgreementNote}
+                                maxLength={500}
+                                rows={3}
+                                placeholder="Contoh: Biaya pengelolaan Rp300.000 per bulan disepakati bersama Owner untuk masa sewa ini."
+                                {...invalid("managementFeeAgreementNote")}
+                                onChange={(event) =>
+                                  update({ managementFeeAgreementNote: event.target.value })
+                                }
+                              />
+                              {error("managementFeeAgreementNote")}
+                            </div>
+                          ) : null}
                           <div className="space-y-2">
                             <Label htmlFor="revision-ownerSponsorshipReason">
                               Alasan tanggungan Owner <span className="text-destructive">*</span>
@@ -1220,8 +1283,16 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
                             <NoticeAlert
                               density="compact"
                               tone="warning"
-                              title="Ketentuan penanggung dipertahankan"
-                              description={baseline.policies.sponsorshipPolicyChange.message}
+                              title={
+                                !negotiatedFeePaymentLocked && negotiatedFeeEditable
+                                  ? "Ketentuan penanggung dipertahankan"
+                                  : "Ketentuan biaya dan penanggung dipertahankan"
+                              }
+                              description={
+                                !negotiatedFeePaymentLocked && negotiatedFeeEditable
+                                  ? "Riwayat keuangan mengunci perubahan Owner, pembayar, dan alasan tanggungan. Nominal serta catatan kesepakatan biaya masih dapat dikoreksi sebelum ada pembayaran biaya pengelolaan yang aktif."
+                                  : baseline.policies.sponsorshipPolicyChange.message
+                              }
                             />
                           ) : null}
                         </>
@@ -1564,6 +1635,10 @@ function RevisionSnapshot({
       ["Owner penanggung", ownerNames.get(policy.ownerProfileId) || "Owner terkait kamar"],
       ["Biaya pengelolaan", policy.managementFeeMode === "waived" ? "Dibebaskan" : "Dikenakan"],
       [
+        "Biaya pengelolaan per bulan",
+        policy.managementFeeMode === "waived" ? "—" : formatIDR(policy.monthlyManagementFee),
+      ],
+      [
         "Penanggung biaya",
         policy.managementFeeMode === "waived"
           ? "—"
@@ -1574,6 +1649,9 @@ function RevisionSnapshot({
               : policy.managementFeePayerName || "Pihak lain",
       ],
       ["Proyeksi biaya pengelolaan", formatIDR(policy.projectedManagementFeeAmount)],
+      ...(policy.managementFeeAgreementNote
+        ? [["Catatan kesepakatan biaya", policy.managementFeeAgreementNote] as [string, ReactNode]]
+        : []),
       ["Alasan tanggungan", policy.sponsorshipReason],
     );
   return (

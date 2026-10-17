@@ -1253,4 +1253,14 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.property_owner_realization_transfers'::regclass AND conname='property_owner_realization_transfers_reference_check' AND pg_get_constraintdef(oid) ILIKE '%transfer_reference IS NULL%')",
     ],
   },
+  {
+    version: '130_owner_sponsored_negotiated_management_fee.sql',
+    checksumSha256: '69a7448c62928c0f50ae96806af5d45a6e29f5bdb73ee1f2fb6ed5ff18e7ad4e',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='owner_sponsored_lease_terms' AND column_name='management_fee_source')",
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='owner_sponsored_lease_terms' AND column_name='management_fee_agreement_note')",
+      "pg_get_viewdef('owner_sponsored_management_fee_progress'::regclass, true) ILIKE '%negotiated_snapshot%'",
+      "pg_get_functiondef(to_regprocedure('validate_owner_sponsored_policy_revision()')) ILIKE '%managementFeeAgreementNote%'",
+    ],
+  },
 ] as const;

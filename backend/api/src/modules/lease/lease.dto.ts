@@ -231,6 +231,18 @@ export class PreviewLeaseDataCorrectionDto {
   owner_sponsorship_reason?: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  negotiated_monthly_management_fee?: number;
+
+  @IsOptional()
+  @Transform(trimOptionalString)
+  @IsString()
+  @Length(3, 500)
+  management_fee_agreement_note?: string;
+
+  @IsOptional()
   @IsUUID('4')
   room_id?: string;
 

@@ -265,6 +265,20 @@ export class UpdateKostTypeDto {
   category?: 'rukost' | 'apartkost';
 }
 
+/** Property-level standard fee. This authority is intentionally separate from a kost type. */
+export class UpdatePropertyManagementFeeDto {
+  @IsUUID('4')
+  property_id!: string;
+
+  @IsInt()
+  @Min(0)
+  monthly_fee_amount!: number;
+
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  effective_date!: string;
+}
+
 export class ReplaceKostTypeFacilitiesDto {
   @IsUUID('4')
   property_id!: string;

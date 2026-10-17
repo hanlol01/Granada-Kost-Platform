@@ -17,6 +17,10 @@ const sponsorshipSchema = z.object({
   managementFeePayer: z.enum(["resident", "owner", "other"]).nullable(),
   managementFeePayerName: z.string().nullable(),
   sponsorshipReason: z.string(),
+  managementFeeSource: z
+    .enum(["property_policy", "negotiated_snapshot"])
+    .default("property_policy"),
+  managementFeeAgreementNote: z.string().nullable().default(null),
   monthlyManagementFee: amount,
   projectedManagementFeeAmount: amount,
   roomId: uuid,
@@ -192,9 +196,15 @@ const contextSchema = z
         managementFeeMode: z.enum(["charged", "waived"]),
         managementFeePayer: z.enum(["resident", "owner", "other"]).nullable(),
         managementFeePayerName: z.string().nullable(),
+        managementFeeSource: z
+          .enum(["property_policy", "negotiated_snapshot"])
+          .default("property_policy"),
+        managementFeeAgreementNote: z.string().nullable().default(null),
         snapshotMonthlyManagementFee: amount,
         projectedManagementFeeAmount: amount,
         verifiedManagementFeeAmount: amount,
+        pendingManagementFeeAmount: amount,
+        managementFeePaymentLocked: z.boolean(),
         termStatus: z.string().min(1),
       })
       .nullable(),
@@ -293,6 +303,8 @@ export type LeaseDataCorrectionInput = {
   managementFeePayer?: "resident" | "owner" | "other";
   managementFeePayerName?: string;
   ownerSponsorshipReason?: string;
+  negotiatedMonthlyManagementFee?: number;
+  managementFeeAgreementNote?: string;
   reason?: string;
 };
 
@@ -382,6 +394,8 @@ function toBody(input: LeaseDataCorrectionInput): Record<string, unknown> {
     management_fee_payer: input.managementFeePayer,
     management_fee_payer_name: input.managementFeePayerName?.trim() || undefined,
     owner_sponsorship_reason: input.ownerSponsorshipReason?.trim() || undefined,
+    negotiated_monthly_management_fee: input.negotiatedMonthlyManagementFee,
+    management_fee_agreement_note: input.managementFeeAgreementNote?.trim() || undefined,
     reason: input.reason?.trim() || undefined,
   };
 }

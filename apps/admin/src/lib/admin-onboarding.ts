@@ -30,6 +30,8 @@ export type OnboardingPayload = {
   management_fee_payer?: "resident" | "owner" | "other";
   management_fee_payer_name?: string;
   owner_sponsorship_reason?: string;
+  negotiated_monthly_management_fee?: number;
+  management_fee_agreement_note?: string;
   pricing_source?: "standard" | "negotiated";
   agreed_monthly_price?: number;
   pricing_agreement_reason?: string;
@@ -82,6 +84,7 @@ export type OnboardingResponse = {
     managementFeePayer: "resident" | "owner" | "other" | null;
     managementFeePayerName: string | null;
     reason: string;
+    managementFeeAgreementNote: string | null;
     monthlyManagementFee: number;
     projectedManagementFeeAmount: number;
   } | null;
@@ -95,11 +98,7 @@ export type OnboardingResponse = {
     receipts: Array<{
       id: string;
       purpose:
-        | "booking_fee"
-        | "down_payment"
-        | "installment"
-        | "full_settlement"
-        | "security_deposit";
+        "booking_fee" | "down_payment" | "installment" | "full_settlement" | "security_deposit";
       amount: number;
       rentPaymentSequence?: number | null;
     }>;
@@ -314,10 +313,15 @@ function validOwnerSponsorship(value: unknown, mode: unknown) {
     (item.managementFeePayerName === null || typeof item.managementFeePayerName === "string") &&
     typeof item.reason === "string" &&
     item.reason.trim().length >= 3 &&
+    (item.managementFeeAgreementNote === null ||
+      (typeof item.managementFeeAgreementNote === "string" &&
+        item.managementFeeAgreementNote.trim().length >= 3)) &&
     Number.isSafeInteger(item.monthlyManagementFee) &&
     Number.isSafeInteger(item.projectedManagementFeeAmount) &&
     (managementFeeMode === "charged"
-      ? Number(item.monthlyManagementFee) > 0 && Number(item.projectedManagementFeeAmount) > 0
+      ? Number(item.monthlyManagementFee) > 0 &&
+        Number(item.projectedManagementFeeAmount) > 0 &&
+        typeof item.managementFeeAgreementNote === "string"
       : item.monthlyManagementFee === 0 && item.projectedManagementFeeAmount === 0)
   );
 }

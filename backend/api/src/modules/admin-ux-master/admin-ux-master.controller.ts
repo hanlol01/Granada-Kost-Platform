@@ -43,6 +43,7 @@ import {
   UpdateFacilityCategoryDto,
   UpdateKostTypeRuleDto,
   UpdateRoomFacilityV2Dto,
+  UpdatePropertyManagementFeeDto,
 } from './admin-ux-master.dto';
 import { AdminUxContentPublicationService } from './admin-ux-content-publication.service';
 import { AdminUxMasterService } from './admin-ux-master.service';
@@ -120,6 +121,24 @@ export class KostTypeController {
     @Req() request: RequestWithCorrelationId,
   ) {
     return this.master.replaceKostTypeFacilities(user, id, dto, context(request));
+  }
+}
+
+@UseGuards(JwtAuthGuard, RbacGuard)
+@Controller('property-management-fee')
+export class PropertyManagementFeeController {
+  constructor(private readonly master: AdminUxMasterService) {}
+
+  @Put()
+  @RequireRoles('owner', 'manager', 'admin')
+  @RequirePermissions('room.manage')
+  update(
+    @CurrentUser() user: UserAccessContext,
+    @Body() dto: UpdatePropertyManagementFeeDto,
+    @Req() request: RequestWithCorrelationId,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    return this.master.updatePropertyManagementFee(user, dto, context(request), idempotencyKey);
   }
 }
 

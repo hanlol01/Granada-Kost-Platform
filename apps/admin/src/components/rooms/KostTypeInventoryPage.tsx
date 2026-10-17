@@ -73,6 +73,7 @@ import {
   type KostTypeCategory,
   type KostTypeInput,
   type KostTypeUpdateInput,
+  type PropertyManagementFeeAuthority,
   type RoomInventory,
   type RoomInventoryUpdateInput,
 } from "@/lib/admin-ux-master-api";
@@ -167,6 +168,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
   });
   const roomStatusCounts = useM4RoomStatusCounts(category);
   const [typeEditor, setTypeEditor] = useState<KostType | null | "create">(null);
+  const [managementFeeEditor, setManagementFeeEditor] = useState(false);
   const [roomEditor, setRoomEditor] = useState<RoomInventory | null>(null);
   const [statusRoom, setStatusRoom] = useState<RoomInventory | null>(null);
   const currentRoomScope = `${currentPropertyId ?? ""}:${category}`;
@@ -236,6 +238,7 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
     setStatusRoom(null);
     setRoomEditor(null);
     setTypeEditor(null);
+    setManagementFeeEditor(false);
     previousRoomScope.current = currentRoomScope;
   }, [currentRoomScope]);
 
@@ -274,6 +277,16 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
       actions={
         canManage ? (
           <div className="flex flex-wrap gap-2">
+            {activeType ? (
+              <Button
+                variant="outline"
+                className="min-h-11"
+                onClick={() => setManagementFeeEditor(true)}
+              >
+                <CircleDollarSign className="mr-2 h-4 w-4" />
+                Kebijakan Keuangan Properti
+              </Button>
+            ) : null}
             <Button
               variant="default"
               className="min-h-11"
@@ -305,10 +318,14 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
             </CardContent>
           </Card>
         )}
-        {activeType?.futureCommercial ? <KostTypeRateScheduleNotice kostType={activeType} /> : null}
-        {activeType?.futureManagementFee ? (
-          <ManagementFeeScheduleNotice kostType={activeType} />
+        {activeType ? (
+          <PropertyManagementFeeCard
+            kostType={activeType}
+            canManage={canManage}
+            onEdit={() => setManagementFeeEditor(true)}
+          />
         ) : null}
+        {activeType?.futureCommercial ? <KostTypeRateScheduleNotice kostType={activeType} /> : null}
 
         <RoomNotifications
           counts={roomStatusCounts.counts}
@@ -382,6 +399,15 @@ export function KostTypeInventoryPage({ category, search, onSearchChange }: Prop
         open={typeEditor !== null}
         onOpenChange={(open) => !open && setTypeEditor(null)}
       />
+      {activeType && currentPropertyId ? (
+        <PropertyManagementFeeEditor
+          propertyId={currentPropertyId}
+          authority={activeType.managementFee ?? null}
+          futureAuthority={activeType.futureManagementFee ?? null}
+          open={managementFeeEditor}
+          onOpenChange={setManagementFeeEditor}
+        />
+      ) : null}
       {roomEditor ? (
         <RoomInventoryEditor
           key={`${currentRoomScope}:${roomEditor.id}`}
@@ -429,7 +455,7 @@ function KostTypeHeader({ kostType }: { kostType: KostType }) {
           </p>
         </div>
       </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-3 xl:grid-cols-6">
+      <CardContent className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-3 xl:grid-cols-5">
         <Metric
           label="3–5 bulan"
           value={`${formatIDR(kostType.shortStayMonthlyPrice)}/bln`}
@@ -447,19 +473,67 @@ function KostTypeHeader({ kostType }: { kostType: KostType }) {
         />
         <Metric label="Deposit" value={formatIDR(kostType.depositAmount)} icon={ShieldAlert} />
         <Metric
-          label="Management fee"
-          value={
-            kostType.managementFee
-              ? `${formatIDR(kostType.managementFee.monthlyFeeAmount)}/bln`
-              : "Belum diatur"
-          }
-          icon={CircleDollarSign}
-        />
-        <Metric
           label="Fasilitas"
           value={`${kostType.facilityCount ?? kostType.facilities?.length ?? 0} item`}
           icon={Wrench}
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PropertyManagementFeeCard({
+  kostType,
+  canManage,
+  onEdit,
+}: {
+  kostType: KostType;
+  canManage: boolean;
+  onEdit: () => void;
+}) {
+  const current = kostType.managementFee;
+  const scheduled = kostType.futureManagementFee;
+
+  return (
+    <Card className="border-primary/20 bg-primary/[0.035]">
+      <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
+        <div>
+          <CardTitle className="text-base text-foreground">Kebijakan Keuangan Properti</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Fee standar properti untuk kontrak yang mengikuti kebijakan. Kesepakatan fee per
+            penyewaan Owner disimpan terpisah dan tidak berubah dari sini.
+          </p>
+        </div>
+        {canManage ? (
+          <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Atur fee
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardContent className="grid gap-3 pt-0 sm:grid-cols-2">
+        <div className="rounded-lg border border-border bg-background/70 p-3">
+          <p className="text-xs font-medium text-muted-foreground">Fee aktif saat ini</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {current ? `${formatIDR(current.monthlyFeeAmount)}/bulan` : "Belum diatur"}
+          </p>
+          {current ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Efektif {formatDate(current.effectiveDate)}
+            </p>
+          ) : null}
+        </div>
+        <div className="rounded-lg border border-border bg-background/70 p-3">
+          <p className="text-xs font-medium text-muted-foreground">Perubahan terjadwal</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">
+            {scheduled ? `${formatIDR(scheduled.monthlyFeeAmount)}/bulan` : "Belum ada"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {scheduled
+              ? `Efektif ${formatDate(scheduled.effectiveDate)}`
+              : "Tidak ada jadwal fee baru."}
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
@@ -493,32 +567,6 @@ function KostTypeRateScheduleNotice({ kostType }: { kostType: KostType }) {
             {formatIDR(scheduled.longStayMonthlyPrice)}/bulan
           </span>
           . Sebelum tanggal tersebut, tarif aktif saat ini tetap digunakan.
-        </>
-      }
-    />
-  );
-}
-
-function ManagementFeeScheduleNotice({ kostType }: { kostType: KostType }) {
-  const scheduled = kostType.futureManagementFee;
-  if (!scheduled) return null;
-
-  return (
-    <NoticeAlert
-      tone="info"
-      density="compact"
-      title="Perubahan management fee sudah dijadwalkan"
-      description={
-        <>
-          Mulai{" "}
-          <span className="font-semibold text-foreground">
-            {formatDate(scheduled.effectiveDate)}
-          </span>
-          , management fee Kostation menjadi{" "}
-          <span className="font-semibold text-foreground">
-            {formatIDR(scheduled.monthlyFeeAmount)}/kamar/bulan
-          </span>
-          . Periode jasa sebelum tanggal tersebut tetap memakai fee aktif saat ini.
         </>
       }
     />
@@ -995,7 +1043,6 @@ type KostTypeDraft = Omit<KostTypeInput, "propertyId" | "category">;
 
 function draftForKostType(kostType: KostType | null): KostTypeDraft {
   const authority = kostType?.futureCommercial ?? kostType?.commercial;
-  const managementFee = kostType?.futureManagementFee ?? kostType?.managementFee;
   return {
     name: kostType?.name ?? "",
     slug: kostType?.slug ?? "",
@@ -1008,8 +1055,6 @@ function draftForKostType(kostType: KostType | null): KostTypeDraft {
     shortStayMonthlyPrice: authority?.shortStayMonthlyPrice ?? 1_900_000,
     mediumStayMonthlyPrice: authority?.mediumStayMonthlyPrice ?? 1_850_000,
     longStayMonthlyPrice: authority?.longStayMonthlyPrice ?? 1_800_000,
-    managementFeeAmount: managementFee?.monthlyFeeAmount ?? 300_000,
-    managementFeeEffectiveDate: kostType?.futureManagementFee?.effectiveDate ?? "",
     effectiveDate: kostType?.futureCommercial?.effectiveDate ?? (kostType ? "" : jakartaDate()),
     paymentSchedules: authority?.paymentSchedules ?? ["annual", "two_month_installments"],
     securityDepositMonths: authority?.securityDepositMonths ?? 1,
@@ -1034,6 +1079,136 @@ function nextCanonicalDate(value: string): string {
   const date = new Date(`${value}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
+}
+
+function nextMonthStart(): string {
+  const date = new Date(`${jakartaDate()}T00:00:00.000Z`);
+  date.setUTCMonth(date.getUTCMonth() + 1, 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function PropertyManagementFeeEditor({
+  propertyId,
+  authority,
+  futureAuthority,
+  open,
+  onOpenChange,
+}: {
+  propertyId: string;
+  authority: KostType["managementFee"] | null;
+  futureAuthority: KostType["futureManagementFee"] | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [monthlyFeeAmount, setMonthlyFeeAmount] = useState(
+    futureAuthority?.monthlyFeeAmount ?? authority?.monthlyFeeAmount ?? 0,
+  );
+  const [effectiveDate, setEffectiveDate] = useState(
+    futureAuthority?.effectiveDate ?? nextMonthStart(),
+  );
+  const update = useKostTypeCommercialMutation<
+    PropertyManagementFeeAuthority,
+    { monthlyFeeAmount: number; effectiveDate: string }
+  >(
+    "Kebijakan keuangan properti berhasil dijadwalkan",
+    (scopedPropertyId, input, key) =>
+      adminUxMasterApi.propertyManagementFee.update(
+        { ...input, propertyId: scopedPropertyId },
+        key,
+      ),
+    (result, scopedPropertyId) => {
+      if (result.propertyId !== scopedPropertyId) throw new Error("KOST_TYPE_SCOPE_MISMATCH");
+    },
+  );
+  const pending = update.isPending;
+  const valid =
+    Number.isSafeInteger(monthlyFeeAmount) &&
+    monthlyFeeAmount >= 0 &&
+    effectiveDate > jakartaDate() &&
+    effectiveDate.endsWith("-01");
+
+  useEffect(() => {
+    if (!open) return;
+    setMonthlyFeeAmount(futureAuthority?.monthlyFeeAmount ?? authority?.monthlyFeeAmount ?? 0);
+    setEffectiveDate(futureAuthority?.effectiveDate ?? nextMonthStart());
+  }, [
+    authority?.monthlyFeeAmount,
+    futureAuthority?.effectiveDate,
+    futureAuthority?.monthlyFeeAmount,
+    open,
+  ]);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!valid) return;
+    try {
+      await update.mutateAsync({ monthlyFeeAmount, effectiveDate });
+      onOpenChange(false);
+    } catch {
+      // The shared mutation boundary surfaces a safe toast.
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <DialogContent className="max-w-lg border-border bg-background">
+        <DialogHeader>
+          <DialogTitle>Kebijakan Keuangan Properti</DialogTitle>
+          <DialogDescription>
+            Jadwalkan fee standar properti untuk kontrak baru yang memakai kebijakan properti. Fee
+            hasil kesepakatan per penyewaan Owner tidak akan berubah.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit}>
+          <Field
+            label="Management fee per bulan"
+            required
+            hint="Boleh Rp 0. Nilai harus lebih kecil dari setiap tarif sewa aktif properti."
+          >
+            <CurrencyInput
+              value={monthlyFeeAmount}
+              formatOnChange
+              disabled={pending}
+              onValueChange={setMonthlyFeeAmount}
+              placeholder="Contoh: 300.000"
+            />
+          </Field>
+          <HeroUiDatePicker
+            id="property-management-fee-effective-date"
+            label="Efektif mulai"
+            required
+            value={effectiveDate}
+            minDate={nextMonthStart()}
+            disabled={pending}
+            description="Harus pada tanggal 1 di bulan mendatang. Satu jadwal fee mendatang dapat aktif pada satu waktu."
+            onChange={(value) => setEffectiveDate(value ?? "")}
+          />
+          {!valid ? (
+            <NoticeAlert
+              tone="warning"
+              density="compact"
+              title="Periksa jadwal fee"
+              description="Masukkan nominal valid dan pilih tanggal 1 pada bulan mendatang."
+            />
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => onOpenChange(false)}
+            >
+              Batal
+            </Button>
+            <Button type="submit" disabled={!valid || pending}>
+              {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Simpan jadwal fee
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function KostTypeEditor({
@@ -1076,11 +1251,6 @@ function KostTypeEditor({
   const set = <Key extends keyof KostTypeDraft>(key: Key, value: KostTypeDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
-  const managementFeeChanged = Boolean(
-    kostType &&
-    draft.managementFeeAmount !==
-      (kostType.futureManagementFee ?? kostType.managementFee)?.monthlyFeeAmount,
-  );
   const pricingAuthority = kostType?.futureCommercial ?? kostType?.commercial;
   const pricingChanged = Boolean(
     !kostType ||
@@ -1098,15 +1268,8 @@ function KostTypeEditor({
     Number.isInteger(draft.shortStayMonthlyPrice) &&
     Number.isInteger(draft.mediumStayMonthlyPrice) &&
     Number.isInteger(draft.longStayMonthlyPrice) &&
-    Number.isInteger(draft.managementFeeAmount) &&
     draft.shortStayMonthlyPrice! >= draft.mediumStayMonthlyPrice! &&
     draft.mediumStayMonthlyPrice! >= draft.longStayMonthlyPrice! &&
-    draft.managementFeeAmount! >= 0 &&
-    draft.managementFeeAmount! < draft.longStayMonthlyPrice! &&
-    (!managementFeeChanged ||
-      (Boolean(draft.managementFeeEffectiveDate) &&
-        draft.managementFeeEffectiveDate! > jakartaDate() &&
-        draft.managementFeeEffectiveDate!.endsWith("-01"))) &&
     (!pricingChanged ||
       (Boolean(draft.effectiveDate) && (!kostType || draft.effectiveDate! > jakartaDate()))) &&
     draft.paymentSchedules?.length &&
@@ -1143,12 +1306,6 @@ function KostTypeEditor({
                   effectiveDate: draft.effectiveDate,
                   paymentSchedules: draft.paymentSchedules,
                   securityDepositMonths: draft.securityDepositMonths,
-                }
-              : {}),
-            ...(managementFeeChanged
-              ? {
-                  managementFeeAmount: draft.managementFeeAmount,
-                  managementFeeEffectiveDate: draft.managementFeeEffectiveDate,
                 }
               : {}),
           },
@@ -1196,26 +1353,6 @@ function KostTypeEditor({
                         kostType.futureCommercial.effectiveDate
                       }`
                     : "Belum ada perubahan tarif terjadwal."}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                <p className="font-medium text-foreground">Management fee aktif</p>
-                <p className="mt-1 text-muted-foreground">
-                  {kostType.managementFee
-                    ? `${formatIDR(kostType.managementFee.monthlyFeeAmount)}/kamar/bulan · efektif ${
-                        kostType.managementFee.effectiveDate
-                      }`
-                    : "Belum ada management fee aktif."}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
-                <p className="font-medium text-foreground">Management fee terjadwal</p>
-                <p className="mt-1 text-muted-foreground">
-                  {kostType.futureManagementFee
-                    ? `${formatIDR(kostType.futureManagementFee.monthlyFeeAmount)}/kamar/bulan · efektif ${
-                        kostType.futureManagementFee.effectiveDate
-                      }`
-                    : "Belum ada perubahan management fee terjadwal."}
                 </p>
               </div>
             </div>
@@ -1327,7 +1464,7 @@ function KostTypeEditor({
               </span>
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div>
             <HeroUiDatePicker
               id="kost-type-effective-date"
               label="Tanggal efektif tarif"
@@ -1338,52 +1475,14 @@ function KostTypeEditor({
               disabled={pending}
               onChange={(value) => set("effectiveDate", value)}
             />
-            <Field
-              label="Management fee Kostation"
-              required
-              hint="Nominal tetap per kamar per bulan berjalan."
-            >
-              <CurrencyInput
-                value={draft.managementFeeAmount ?? 0}
-                disabled={pending}
-                onValueChange={(value) => set("managementFeeAmount", value)}
-              />
-            </Field>
-            {managementFeeChanged ? (
-              <HeroUiDatePicker
-                id="management-fee-effective-date"
-                label="Efektif management fee"
-                required
-                description="Harus tanggal 1 pada bulan mendatang; tidak mengubah periode yang sudah lewat."
-                value={draft.managementFeeEffectiveDate ?? ""}
-                minDate={nextCanonicalDate(jakartaDate())}
-                disabled={pending}
-                onChange={(value) => set("managementFeeEffectiveDate", value)}
-              />
-            ) : null}
           </div>
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-            Hak pemilik per bulan: 3–5 bulan{" "}
-            <strong className="text-foreground">
-              {formatIDR((draft.shortStayMonthlyPrice ?? 0) - (draft.managementFeeAmount ?? 0))}
-            </strong>
-            {" · "}6–11 bulan{" "}
-            <strong className="text-foreground">
-              {formatIDR((draft.mediumStayMonthlyPrice ?? 0) - (draft.managementFeeAmount ?? 0))}
-            </strong>
-            {" · "}12+ bulan{" "}
-            <strong className="text-foreground">
-              {formatIDR((draft.longStayMonthlyPrice ?? 0) - (draft.managementFeeAmount ?? 0))}
-            </strong>
-            {" · "}DP minimum 25% · deposit {draft.securityDepositMonths ?? 1} bulan tarif kontrak
+            DP minimum 25% · deposit {draft.securityDepositMonths ?? 1} bulan tarif kontrak
             {pricingChanged
               ? draft.effectiveDate
                 ? ` · tarif efektif ${draft.effectiveDate}`
                 : " · pilih tanggal efektif tarif"
               : " · tarif tidak berubah"}
-            {managementFeeChanged && draft.managementFeeEffectiveDate
-              ? ` · fee efektif ${draft.managementFeeEffectiveDate}`
-              : ""}
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Minimum DP" hint="DP adalah advance rent, bukan deposit jaminan.">

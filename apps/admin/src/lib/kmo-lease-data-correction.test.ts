@@ -6,6 +6,10 @@ const componentPath = new URL(
   "../components/leases/LeaseDataCorrectionDialog.tsx",
   import.meta.url,
 );
+const correctionPagePath = new URL(
+  "../components/leases/LeaseDataCorrectionPage.tsx",
+  import.meta.url,
+);
 const detailPath = new URL("../components/residents/ResidentDetailWorkspace.tsx", import.meta.url);
 const apiPath = new URL("./admin-ux-lease-api.ts", import.meta.url);
 const contractPath = new URL("./lease-revision-contract.ts", import.meta.url);
@@ -24,6 +28,14 @@ test("lease correction uses the shared date and Rupiah controls with semantic bu
   assert.match(source, /text-destructive/);
   assert.match(source, /pricingVarianceAcknowledged/);
   assert.match(source, /Saya sudah memeriksa selisih tarif/);
+});
+
+test("lease correction typing does not move focus back to the stage heading", async () => {
+  const source = await readFile(correctionPagePath, "utf8");
+  assert.match(source, /const errorsRef = useRef\(errors\);/);
+  assert.match(source, /errorsRef\.current = errors/);
+  assert.match(source, /\}, \[stage\]\);/);
+  assert.doesNotMatch(source, /\}, \[errors, stage\]\);/);
 });
 
 test("resident detail exposes correction history and identifies historical check-in dates", async () => {

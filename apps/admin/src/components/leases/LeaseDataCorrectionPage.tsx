@@ -207,6 +207,7 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
   const intentKey = useRef<string | null>(null);
   const pendingRef = useRef(false);
   const mounted = useRef(true);
+  const errorsRef = useRef(errors);
   const formRef = useRef<HTMLFormElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const queryClient = useQueryClient();
@@ -261,12 +262,15 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
     };
   }, []);
   useEffect(() => {
+    errorsRef.current = errors;
+  }, [errors]);
+  useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      if (Object.keys(errors).length) revealFirstValidationError(formRef.current);
+      if (Object.keys(errorsRef.current).length) revealFirstValidationError(formRef.current);
       else headingRef.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [errors, stage]);
+  }, [stage]);
 
   function update(patch: Partial<LeaseRevisionDraft>) {
     if (locked) return;
@@ -865,7 +869,6 @@ function CorrectionWorkspace({ context }: { context: LeaseRevisionContext }) {
                           value={draft.startDate}
                           disabled={locked || baseline.lease.physicalCheckInRecorded}
                           required
-                          forceBottom
                           error={errors.startDate}
                           onChange={(value) => update({ startDate: value ?? "" })}
                         />

@@ -17,6 +17,9 @@ features:
 For resident check-out history, property-wide attention filters or Owner room
 inventory revisions, read [the read-model extension](05_RESIDENT_CHECKOUT_HISTORY_AND_ATTENTION_HANDOFF.md).
 
+For the approved checkout notification categories on the Admin resident page,
+read [the checkout-attention notification plan](11_RESIDENT_CHECKOUT_ATTENTION_NOTIFICATIONS_PLAN.md).
+
 For the five Admin report attention cards and their period-scoped counting rules,
 read [Report attention cards](REPORT_ATTENTION_NOTICES.md).
 

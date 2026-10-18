@@ -12,6 +12,7 @@ export const RESIDENT_ATTENTION_PREDICATES = {
     AND projection.lease_end::date <= (now() AT TIME ZONE 'Asia/Jakarta')::date
     AND (checkout_projection.checkout_lease_id IS DISTINCT FROM projection.projected_lease_id
       OR COALESCE(checkout_projection.checkout_state,'none') NOT IN ('scheduled','inspection_required','settlement_pending','completed'))`,
+  checkout_in_progress: `checkout_projection.checkout_financial_status='in_progress'`,
   refund_pending: `checkout_projection.checkout_financial_status='refund_pending'`,
   amount_due: `checkout_projection.checkout_financial_status='amount_due'`,
   lease_ending: `projection.projected_lease_status='active'

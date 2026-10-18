@@ -16,8 +16,13 @@ export const RESIDENT_ATTENTION = {
     description: "Perlu menyiapkan check-out atau meninjau penyewaan.",
     tone: "danger",
   },
+  checkout_in_progress: {
+    label: "Proses check-out berjalan",
+    description: "Inspeksi kamar atau penyelesaian akhir belum selesai.",
+    tone: "info",
+  },
   refund_pending: {
-    label: "Pengembalian dana tertunda",
+    label: "Menunggu pengembalian dana",
     description: "Check-out selesai, pengembalian dana belum selesai.",
     tone: "warning",
   },

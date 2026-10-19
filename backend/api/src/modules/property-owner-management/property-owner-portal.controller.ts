@@ -117,6 +117,15 @@ export class PropertyOwnerPortalController {
     return this.realizations.portalProgress(actor, period ?? this.realizations.currentPeriod());
   }
 
+  @Get('realizations/progress/range')
+  realizationProgressRange(
+    @CurrentUser() actor: UserAccessContext,
+    @Query('from_period') fromPeriod: string,
+    @Query('to_period') toPeriod: string,
+  ) {
+    return this.realizations.portalProgressRange(actor, fromPeriod, toPeriod);
+  }
+
   @Get('realizations/progress/export')
   async realizationProgressExport(
     @CurrentUser() actor: UserAccessContext,

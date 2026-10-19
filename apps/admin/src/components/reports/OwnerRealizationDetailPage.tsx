@@ -108,6 +108,12 @@ function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value : "—";
 }
 
+function realizationLineEntryMode(line: Record<string, unknown>) {
+  const snapshot = line.snapshot;
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "Otomatis";
+  return (snapshot as Record<string, unknown>).entry_mode === "manual" ? "Manual" : "Otomatis";
+}
+
 function localDateTime() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -795,13 +801,25 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
             <p className="mt-3 text-sm text-destructive">Rentang periode belum dapat dimuat.</p>
           ) : null}
         </section>
-        {realization.notes?.trim() ? (
+        {realization.notes?.trim() || realization.manual_reason?.trim() ? (
           <section className="owner-report-list">
             <div className="p-5">
               <h3 className="font-semibold">Catatan realisasi</h3>
-              <p className="mt-2 whitespace-pre-line text-sm text-foreground">
-                {realization.notes}
-              </p>
+              {realization.manual_reason?.trim() ? (
+                <div className="mt-2 rounded-lg border border-primary/25 bg-primary/5 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Alasan realisasi manual
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-sm text-foreground">
+                    {realization.manual_reason}
+                  </p>
+                </div>
+              ) : null}
+              {realization.notes?.trim() ? (
+                <p className="mt-2 whitespace-pre-line text-sm text-foreground">
+                  {realization.notes}
+                </p>
+              ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
                 Catatan internal Admin. Catatan ini tersimpan pada Realisasi Owner dan tidak dicetak
                 pada kuitansi Owner.
@@ -944,7 +962,7 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
             aria-label="Tabel kontrak yang direalisasikan"
             tabIndex={0}
           >
-            <table className="w-full min-w-[1400px] text-left text-sm">
+            <table className="w-full min-w-[1520px] text-left text-sm">
               <thead className="border-y bg-muted/35 text-xs uppercase text-muted-foreground">
                 <tr>
                   {[
@@ -959,6 +977,8 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                     "Total kontrak",
                     "Outstanding",
                     "Pelunasan",
+                    "Periode pelunasan",
+                    "Sumber baris",
                     "Management fee",
                     "Realisasi Owner",
                     "Status realisasi",
@@ -991,6 +1011,20 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                     <td className="px-3 py-3 tabular-nums">{rupiah(line.contract_total_amount)}</td>
                     <td className="px-3 py-3 tabular-nums">{rupiah(line.outstanding_amount)}</td>
                     <td className="px-3 py-3">{date(line.payment_completed_at)}</td>
+                    <td className="px-3 py-3">
+                      {line.payment_source_period
+                        ? monthLabel(String(line.payment_source_period))
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge
+                        variant={
+                          realizationLineEntryMode(line) === "Manual" ? "default" : "outline"
+                        }
+                      >
+                        {realizationLineEntryMode(line)}
+                      </Badge>
+                    </td>
                     <td className="px-3 py-3 tabular-nums">{rupiah(line.management_fee_amount)}</td>
                     <td className="px-3 py-3 font-semibold tabular-nums">
                       {rupiah(line.net_realization_amount)}
@@ -1019,6 +1053,8 @@ export function OwnerRealizationDetailPage({ realizationId }: { realizationId: s
                   <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
                   <td className="px-3 py-3">{rupiah(realization.eligible_contract_total)}</td>
                   <td className="px-3 py-3">Rp0</td>
+                  <td className="px-3 py-3">—</td>
+                  <td className="px-3 py-3">—</td>
                   <td className="px-3 py-3">—</td>
                   <td className="px-3 py-3">{rupiah(realization.management_fee_total)}</td>
                   <td className="px-3 py-3">{rupiah(realization.realization_total)}</td>

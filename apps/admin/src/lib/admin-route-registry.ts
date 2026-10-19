@@ -452,7 +452,7 @@ export const adminRouteRegistry: readonly AdminRouteMetadata[] = [
   },
   {
     id: "reports",
-    to: "/reports",
+    to: "/reports/property-owners",
     label: "Laporan",
     section: "lainnya",
     order: 130,

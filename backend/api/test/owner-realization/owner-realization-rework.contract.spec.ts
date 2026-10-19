@@ -46,6 +46,9 @@ test('Owner Realization schema preserves snapshots, lease locks, recovery dispos
 
 test('eligibility accepts only fully verified normal rent and transactionally excludes locked leases', () => {
   const service = source('modules/property-owner-management/property-owner-realization.service.ts');
+  const paymentLedger = source(
+    'modules/property-owner-management/owner-realization-payment-ledger.ts',
+  );
   const candidates = between(
     service,
     'private async eligibleCandidates',
@@ -56,8 +59,9 @@ test('eligibility accepts only fully verified normal rent and transactionally ex
   assert.match(candidates, /lease\.contract_rent_amount>0/);
   assert.match(candidates, /ledger\.verified_rent_credit>=lease\.contract_rent_amount/);
   assert.match(candidates, /ledger\.paid_in_full_at IS NOT NULL/);
-  assert.match(candidates, /payment\.payment_status='verified'/);
-  assert.match(candidates, /invoice\.invoice_purpose='rent'/);
+  assert.match(candidates, /ownerRealizationPaymentLedgerSql/);
+  assert.match(paymentLedger, /payment\.payment_status='verified'/);
+  assert.match(paymentLedger, /invoice\.invoice_purpose='rent'/);
   assert.match(candidates, /LEFT JOIN property_owner_realization_lease_locks lock/);
   assert.match(candidates, /WHERE lock\.id IS NULL/);
   assert.match(candidates, /lease\.snapshot_monthly_price/);
@@ -163,11 +167,12 @@ test('erroneous draft cancellation is audited, releases lease locks, and frees i
   assert.match(manifest, /104_owner_realization_voided_period_replacement\.sql/);
   assert.match(dto, /class VoidOwnerRealizationDraftDto/);
   assert.match(controller, /@Post\(':realizationId\/void-draft'\)/);
-  assert.match(cancel, /realization\.realization_status !== 'draft'/);
+  assert.match(cancel, /cancellableStatuses/);
+  assert.match(cancel, /'awaiting_transfer'/);
   assert.match(cancel, /property_owner_realization_transfers/);
   assert.match(cancel, /lock_status='released'/);
   assert.match(cancel, /realization_status='void'/);
-  assert.match(cancel, /property_owner\.realization\.voided/);
+  assert.match(cancel, /property_owner\.realization\.cancelled/);
   assert.doesNotMatch(prepare, /OWNER_REALIZATION_ALREADY_PREPARED/);
   assert.doesNotMatch(historical, /OWNER_REALIZATION_ALREADY_PREPARED/);
 });
@@ -244,4 +249,56 @@ test('wide realization exports use a paginated landscape table rather than flatt
   assert.match(receiptPdf, /No\. Kavling/);
   assert.match(receiptPdf, /Durasi sewa/);
   assert.match(receiptPdf, /durationMonths/);
+});
+
+test('manual Draft lines retain the eligible source lease while allowing an editable realization snapshot', () => {
+  const service = source('modules/property-owner-management/property-owner-realization.service.ts');
+  const controller = source(
+    'modules/property-owner-management/property-owner-realization.controller.ts',
+  );
+  const dto = source('modules/property-owner-management/dto/property-owner-management.dto.ts');
+  const workspace = source(
+    '../../../apps/admin/src/components/reports/OwnerRealizationWorkspace.tsx',
+  );
+  const detailPage = source(
+    '../../../apps/admin/src/components/reports/OwnerRealizationDetailPage.tsx',
+  );
+  const exporter = source('modules/report/report-export.util.ts');
+  const migration = source(
+    'infrastructure/database/migrations/134_owner_realization_manual_reason.sql',
+  );
+  const manifest = source('infrastructure/database/scripts/migration-manifest.ts');
+  const candidates = between(service, 'async manualCandidates', 'async prepare');
+  const prepare = between(service, 'async prepare', 'async submitForReview');
+
+  assert.match(dto, /class PrepareOwnerRealizationManualLineDto/);
+  assert.match(dto, /manual_lines\?: PrepareOwnerRealizationManualLineDto\[\]/);
+  assert.match(dto, /manual_reason\?: string/);
+  assert.match(controller, /@Get\('owners\/:ownerId\/manual-candidates'\)/);
+  assert.match(candidates, /profile_status='active'/);
+  assert.match(candidates, /eligibleCandidates\([\s\S]*null,[\s\S]*ownerId/);
+  assert.match(prepare, /OWNER_REALIZATION_MANUAL_REASON_REQUIRED/);
+  assert.match(prepare, /OWNER_REALIZATION_MANUAL_SELECTION_STALE/);
+  assert.match(prepare, /OWNER_REALIZATION_MANUAL_SELECTION_DUPLICATE/);
+  assert.match(prepare, /OWNER_REALIZATION_MANUAL_NEGATIVE_NET/);
+  assert.match(prepare, /const targetPeriodReason = manualReason \?\? schedulingReason/);
+  assert.match(prepare, /manual_reason=CASE/);
+  assert.match(prepare, /entry_mode: preparedLine\.kind/);
+  assert.match(prepare, /payment_source_period: candidate\.payment_completed_at\.slice\(0, 7\)/);
+  assert.match(prepare, /property_owner_realization_lease_locks/);
+  assert.match(workspace, /Baris kontrak realisasi manual/);
+  assert.match(workspace, /Kontrak otomatis yang masuk draft/);
+  assert.match(workspace, /Alasan realisasi manual/);
+  assert.match(workspace, /current\.filter\(\(id\) => id !== selected\.lease_id\)/);
+  assert.doesNotMatch(workspace, /!selectedLeaseIds\.includes\(item\.lease_id\)/);
+  assert.match(workspace, /disabled=\{!line\.leaseId\}/);
+  assert.match(workspace, /prepareDisabledReason/);
+  assert.match(workspace, /Periode pelunasan/);
+  assert.match(detailPage, /Periode pelunasan/);
+  assert.match(detailPage, /Alasan realisasi manual/);
+  assert.match(detailPage, /Sumber baris/);
+  assert.match(exporter, /Sumber baris/);
+  assert.match(exporter, /Periode pelunasan/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS manual_reason TEXT/);
+  assert.match(manifest, /134_owner_realization_manual_reason\.sql/);
 });

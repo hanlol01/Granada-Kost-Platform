@@ -1288,4 +1288,12 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = [
       "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.lease_exit_final_settlements'::regclass AND conname='lease_exit_final_settlements_adjustment_reason_check' AND pg_get_constraintdef(oid) ILIKE '%refund_waived_by_resident%')",
     ],
   },
+  {
+    version: '134_owner_realization_manual_reason.sql',
+    checksumSha256: '72686ad34f2e1692f6e444c3428c44c45a3c577a742eb612263960d423a5ddf4',
+    sentinels: [
+      "EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='property_owner_realizations' AND column_name='manual_reason')",
+      "EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.property_owner_realizations'::regclass AND conname='property_owner_realizations_manual_reason_check' AND convalidated)",
+    ],
+  },
 ] as const;

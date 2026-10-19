@@ -36,6 +36,8 @@ import {
 } from "@/components/reports/ReportNotificationsCard";
 import { ErrorState, LoadingState } from "@/components/state";
 import { HistoricalRealizationSourceCombobox } from "@/components/reports/HistoricalRealizationSourceCombobox";
+import { OwnerRealizationLeaseCombobox } from "@/components/reports/OwnerRealizationLeaseCombobox";
+import { OwnerRealizationOwnerCombobox } from "@/components/reports/OwnerRealizationOwnerCombobox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -105,6 +107,28 @@ type HistoricalLineDraft = {
   checkInAt: string;
   checkOutAt: string;
 };
+
+type ManualDraftLine = {
+  id: string;
+  leaseId: string;
+  roomCode: string;
+  residentName: string;
+  contractTotal: number;
+  managementFee: number;
+  paymentSourcePeriod: string;
+};
+
+function emptyManualDraftLine(): ManualDraftLine {
+  return {
+    id: crypto.randomUUID(),
+    leaseId: "",
+    roomCode: "",
+    residentName: "",
+    contractTotal: 0,
+    managementFee: 0,
+    paymentSourcePeriod: "",
+  };
+}
 
 function emptyHistoricalLine(): HistoricalLineDraft {
   return {
@@ -180,6 +204,7 @@ function HistoricalRupiahInput({
   invalid = false,
   required = false,
   readOnly = false,
+  disabled = false,
   placeholder = "0",
 }: {
   id: string;
@@ -188,11 +213,12 @@ function HistoricalRupiahInput({
   invalid?: boolean;
   required?: boolean;
   readOnly?: boolean;
+  disabled?: boolean;
   placeholder?: string;
 }) {
   return (
     <div
-      className={`flex min-h-11 w-full items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25 ${readOnly ? "bg-muted/45 text-foreground" : ""}`}
+      className={`flex min-h-11 w-full items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25 ${readOnly || disabled ? "bg-muted/45 text-foreground" : ""}`}
       data-invalid={invalid || undefined}
     >
       <span className="border-r border-input bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
@@ -205,6 +231,7 @@ function HistoricalRupiahInput({
         autoComplete="off"
         required={required}
         readOnly={readOnly}
+        disabled={disabled}
         aria-required={required || undefined}
         aria-invalid={invalid}
         value={value > 0 ? formatIdrInput(value) : ""}
@@ -454,8 +481,9 @@ export function OwnerRealizationWorkspace() {
   const [historicalOwnerId, setHistoricalOwnerId] = useState("");
   const [creationTarget, setCreationTarget] = useState<OwnerRealizationRow | null>(null);
   const [selectedLeaseIds, setSelectedLeaseIds] = useState<string[]>([]);
+  const [manualDraftLines, setManualDraftLines] = useState<ManualDraftLine[]>([]);
+  const [manualReason, setManualReason] = useState("");
   const [targetRealizationPeriod, setTargetRealizationPeriod] = useState(defaultPeriod);
-  const [schedulingReason, setSchedulingReason] = useState("");
   const [filterNoticeRevision, setFilterNoticeRevision] = useState(1);
   const searchDebounceRef = useRef<number | null>(null);
   const ownerProgressRef = useRef<HTMLElement | null>(null);
@@ -467,6 +495,7 @@ export function OwnerRealizationWorkspace() {
     transfers: [] as HistoricalTransferDraft[],
     notes: "",
   });
+  const creationOwnerId = historicalOwnerId || creationTarget?.owner_id || "";
   useEffect(() => {
     if (!currentPropertyId) return;
     const restoreFromUrl = () => {
@@ -560,6 +589,11 @@ export function OwnerRealizationWorkspace() {
       listAllOwnersForHistoricalInput(currentPropertyId!, applied.owner_profile_status ?? "active"),
     enabled: Boolean(currentPropertyId),
   });
+  const activeOwners = useQuery({
+    queryKey: ["property-owners-for-owner-realization", currentPropertyId, "active"],
+    queryFn: () => listAllOwnersForHistoricalInput(currentPropertyId!, "active"),
+    enabled: Boolean(currentPropertyId),
+  });
   const historicalSources = useQuery({
     queryKey: ["owner-realization-historical-sources", currentPropertyId],
     queryFn: () => ownerRealizationApi.historicalSources(currentPropertyId!),
@@ -572,6 +606,15 @@ export function OwnerRealizationWorkspace() {
     enabled: Boolean(currentPropertyId && historicalDialogOpen),
     staleTime: 5 * 60 * 1000,
   });
+  const manualCandidates = useQuery({
+    queryKey: ["owner-realization-manual-candidates", currentPropertyId, creationOwnerId],
+    queryFn: () =>
+      ownerRealizationApi.manualCandidates(creationOwnerId, { property_id: currentPropertyId! }),
+    enabled: Boolean(
+      currentPropertyId && historicalDialogOpen && creationMode === "future" && creationOwnerId,
+    ),
+    staleTime: 30_000,
+  });
   const historicalSourceOptions = useMemo(
     () => ["Rekap manual Admin", ...(historicalSources.data?.items ?? [])],
     [historicalSources.data?.items],
@@ -580,17 +623,23 @@ export function OwnerRealizationWorkspace() {
     () => financeConfirmers.data?.items ?? [],
     [financeConfirmers.data?.items],
   );
+  const selectableCreationOwners =
+    creationMode === "future" ? (activeOwners.data ?? []) : (owners.data ?? []);
   const invalidate = async () =>
     queryClient.invalidateQueries({ queryKey: ["owner-realizations"] });
   const prepare = useMutation({
     mutationFn: ({
       ownerId,
       leaseIds,
+      manualLines,
+      manualReason: reasonForManualLines,
       targetPeriod,
       reason,
     }: {
       ownerId: string;
       leaseIds?: string[];
+      manualLines?: ManualDraftLine[];
+      manualReason?: string;
       targetPeriod: string;
       reason?: string;
     }) =>
@@ -599,9 +648,22 @@ export function OwnerRealizationWorkspace() {
         period: applied.period!,
         payment_source_period: applied.period!,
         target_realization_period: targetPeriod,
-        scheduling_reason: reason,
+        scheduling_reason:
+          targetPeriod !== (applied.period ?? defaultPeriod) && !manualLines?.length
+            ? reason?.trim() || undefined
+            : undefined,
         notes: note.trim() || undefined,
         selected_lease_ids: leaseIds?.length ? leaseIds : undefined,
+        manual_lines: manualLines?.length
+          ? manualLines.map((line) => ({
+              lease_id: line.leaseId,
+              room_code: line.roomCode.trim(),
+              resident_name: line.residentName.trim(),
+              contract_total: line.contractTotal,
+              management_fee: line.managementFee,
+            }))
+          : undefined,
+        manual_reason: manualLines?.length ? reasonForManualLines?.trim() || undefined : undefined,
       }),
     onSuccess: async () => {
       toast.success("Draft Realisasi Owner berhasil disiapkan.");
@@ -611,8 +673,9 @@ export function OwnerRealizationWorkspace() {
       setHistoricalOwnerId("");
       setCreationTarget(null);
       setSelectedLeaseIds([]);
+      setManualDraftLines([]);
+      setManualReason("");
       setTargetRealizationPeriod(applied.period ?? defaultPeriod);
-      setSchedulingReason("");
       setNote("");
       await invalidate();
     },
@@ -1004,8 +1067,10 @@ export function OwnerRealizationWorkspace() {
     const target = rows.find((row) => row.owner_id === ownerId) ?? null;
     setCreationTarget(target);
     setSelectedLeaseIds(target?.eligible_lease_ids ?? []);
+    setManualDraftLines([]);
+    setManualReason("");
+    setManualReason("");
     setTargetRealizationPeriod(applied.period ?? defaultPeriod);
-    setSchedulingReason("");
     setNote("");
     setHistorical({
       source: "Rekap manual Admin",
@@ -1015,10 +1080,22 @@ export function OwnerRealizationWorkspace() {
     });
     setHistoricalDialogOpen(true);
   };
-  const creationOwnerId = historicalOwnerId || creationTarget?.owner_id || "";
+  const selectCreationOwner = (ownerId: string) => {
+    setHistoricalOwnerId(ownerId);
+    const target = rows.find((row) => row.owner_id === ownerId) ?? null;
+    setCreationTarget(target);
+    setSelectedLeaseIds(target?.eligible_lease_ids ?? []);
+    setManualDraftLines([]);
+    if (creationMode === "historical") {
+      setHistorical((value) => ({ ...value, lines: seedHistoricalLines(target) }));
+    }
+  };
   const selectedCreationOwner = useMemo(
-    () => (owners.data ?? []).find((owner) => owner.id === creationOwnerId) ?? null,
-    [creationOwnerId, owners.data],
+    () =>
+      [...(activeOwners.data ?? []), ...(owners.data ?? [])].find(
+        (owner) => owner.id === creationOwnerId,
+      ) ?? null,
+    [activeOwners.data, creationOwnerId, owners.data],
   );
   const exportScopeLabel =
     applied.workspace === "history"
@@ -1061,9 +1138,38 @@ export function OwnerRealizationWorkspace() {
   const historicalTransferExceedsOwner = historicalTransferTotal > historicalOwnerTotal;
   const historicalOwnerName = creationTarget?.owner_name ?? historicalOwnerId;
   const historicalPeriodLabel = monthLabel(applied.period ?? defaultPeriod);
+  const sourcePeriodTitle =
+    creationMode === "future" ? "Periode antrean otomatis" : "Periode sumber pelunasan";
+  const sourcePeriodDescription =
+    creationMode === "future"
+      ? "Kontrak otomatis pada antrean ini telah lunas dan terverifikasi. Baris manual dapat memilih kontrak lunas dari periode lain."
+      : "Kontrak yang tersedia telah lunas dan terverifikasi pada periode ini.";
   const targetRealizationPeriodLabel = monthLabel(targetRealizationPeriod);
   const targetPeriodDiffersFromSource =
     creationMode === "future" && targetRealizationPeriod !== (applied.period ?? defaultPeriod);
+  const manualDraftLinesInvalid = manualDraftLines.some(
+    (line) =>
+      !line.leaseId ||
+      !line.roomCode.trim() ||
+      line.residentName.trim().length < 2 ||
+      !Number.isSafeInteger(line.contractTotal) ||
+      line.contractTotal <= 0 ||
+      !Number.isSafeInteger(line.managementFee) ||
+      line.managementFee < 0 ||
+      line.managementFee > line.contractTotal,
+  );
+  const manualReasonRequired = manualDraftLines.length > 0 || targetPeriodDiffersFromSource;
+  const prepareDisabledReason = !creationOwnerId
+    ? "Pilih Owner penerima realisasi terlebih dahulu."
+    : !targetRealizationPeriod
+      ? "Pilih periode realisasi tujuan terlebih dahulu."
+      : selectedLeaseIds.length === 0 && manualDraftLines.length === 0
+        ? "Pilih kontrak otomatis atau tambahkan satu baris kontrak manual."
+        : manualDraftLinesInvalid
+          ? "Pilih sumber kontrak untuk setiap baris manual dan lengkapi nilai sewanya."
+          : manualReasonRequired && manualReason.trim().length < 5
+            ? "Isi alasan realisasi manual atau pemindahan periode minimal lima karakter."
+            : null;
   const latestPeriodLabel = (value: string) => monthLabel(value.slice(0, 7));
   const openSaveConfirmation = () => {
     if (!creationOwnerId) {
@@ -1985,8 +2091,9 @@ export function OwnerRealizationWorkspace() {
             setHistoricalOwnerId("");
             setCreationTarget(null);
             setSelectedLeaseIds([]);
+            setManualDraftLines([]);
+            setManualReason("");
             setTargetRealizationPeriod(applied.period ?? defaultPeriod);
-            setSchedulingReason("");
           }
         }}
       >
@@ -2001,15 +2108,13 @@ export function OwnerRealizationWorkspace() {
           <div
             className="rounded-xl border border-primary/35 bg-primary/5 px-4 py-3"
             role="status"
-            aria-label={`Periode sumber pelunasan ${historicalPeriodLabel}`}
+            aria-label={`${sourcePeriodTitle} ${historicalPeriodLabel}`}
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Periode sumber pelunasan
+              {sourcePeriodTitle}
             </p>
             <p className="mt-1 text-lg font-bold text-foreground">{historicalPeriodLabel}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Kontrak yang tersedia telah lunas dan terverifikasi pada periode ini.
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{sourcePeriodDescription}</p>
           </div>
           <div className="grid gap-4">
             <div
@@ -2025,6 +2130,15 @@ export function OwnerRealizationWorkspace() {
                 className="owner-report-creation-mode__option owner-report-creation-mode__option--future h-auto min-h-16 justify-start whitespace-normal border-2 border-primary px-4 py-3 text-left"
                 onClick={() => {
                   setCreationMode("future");
+                  if (
+                    historicalOwnerId &&
+                    !(activeOwners.data ?? []).some((owner) => owner.id === historicalOwnerId)
+                  ) {
+                    setHistoricalOwnerId("");
+                    setCreationTarget(null);
+                    setSelectedLeaseIds([]);
+                    setManualDraftLines([]);
+                  }
                   setHistorical((value) => ({ ...value, lines: [] }));
                 }}
               >
@@ -2064,34 +2178,20 @@ export function OwnerRealizationWorkspace() {
               <span className="font-semibold">
                 Owner penerima realisasi <RequiredMark />
               </span>
-              <Select
-                value={creationOwnerId || "__none__"}
-                onValueChange={(ownerId) => {
-                  const selectedOwnerId = ownerId === "__none__" ? "" : ownerId;
-                  setHistoricalOwnerId(selectedOwnerId);
-                  const target = rows.find((row) => row.owner_id === selectedOwnerId) ?? null;
-                  setCreationTarget(target);
-                  setSelectedLeaseIds(target?.eligible_lease_ids ?? []);
-                  if (creationMode === "historical") {
-                    setHistorical((value) => ({ ...value, lines: seedHistoricalLines(target) }));
-                  }
-                }}
-                disabled={owners.isLoading || owners.isError}
-              >
-                <SelectTrigger className="min-h-11 rounded-lg bg-background" aria-required="true">
-                  <SelectValue placeholder="Pilih Owner Property" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Pilih Owner Property</SelectItem>
-                  {(owners.data ?? []).map((owner) => (
-                    <SelectItem key={owner.id} value={owner.id}>
-                      {owner.fullName}
-                      {owner.profileStatus === "archived" ? " (diarsipkan)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {owners.isError ? (
+              <OwnerRealizationOwnerCombobox
+                id="owner-realization-owner"
+                value={creationOwnerId}
+                owners={selectableCreationOwners}
+                loading={creationMode === "future" ? activeOwners.isLoading : owners.isLoading}
+                disabled={
+                  creationMode === "future"
+                    ? activeOwners.isLoading || activeOwners.isError
+                    : owners.isLoading || owners.isError
+                }
+                required
+                onChange={selectCreationOwner}
+              />
+              {(creationMode === "future" ? activeOwners.isError : owners.isError) ? (
                 <span className="block text-xs font-normal text-destructive">
                   Daftar Owner belum dapat dimuat. Coba tutup lalu buka kembali formulir ini.
                 </span>
@@ -2145,30 +2245,11 @@ export function OwnerRealizationWorkspace() {
                   >
                     <p className="font-semibold">Periode pelunasan dan realisasi berbeda</p>
                     <p className="mt-1 text-muted-foreground">
-                      Pelunasan kontrak tercatat pada {historicalPeriodLabel}. Realisasi akan
-                      dicatat pada {targetRealizationPeriodLabel}.
+                      Realisasi akan dicatat pada {targetRealizationPeriodLabel}. Kontrak otomatis
+                      mengikuti antrean {historicalPeriodLabel}; setiap baris manual menyimpan
+                      periode pelunasannya sendiri.
                     </p>
                   </div>
-                ) : null}
-                {targetPeriodDiffersFromSource ? (
-                  <label className="owner-report-field mt-4">
-                    <span className="font-semibold">
-                      Alasan pemindahan periode <RequiredMark />
-                    </span>
-                    <Textarea
-                      value={schedulingReason}
-                      onChange={(event) => setSchedulingReason(event.target.value)}
-                      placeholder="Contoh: sesuai kesepakatan pembayaran Owner pada Oktober 2026"
-                      rows={3}
-                      minLength={5}
-                      maxLength={1000}
-                      required
-                    />
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      Catatan ini tersimpan untuk Admin dan Finance. Tidak ditampilkan pada portal
-                      Owner.
-                    </span>
-                  </label>
                 ) : null}
                 <label className="owner-report-field mt-4">
                   Catatan persiapan (opsional)
@@ -2181,46 +2262,367 @@ export function OwnerRealizationWorkspace() {
                 </label>
               </div>
             ) : null}
-            {creationMode === "future" && creationTarget?.eligible_leases?.length ? (
-              <fieldset className="owner-report-lease-selection">
-                <legend>Kontrak yang masuk draft</legend>
-                <p className="owner-report-lease-selection__hint">
-                  Semua kontrak layak dipilih secara default. Batalkan centang bila kontrak ini
-                  belum ingin dimasukkan ke batch realisasi.
-                </p>
-                <div className="owner-report-lease-selection__list">
-                  {creationTarget.eligible_leases.map((lease) => {
-                    const checked = selectedLeaseIds.includes(lease.id);
-                    return (
-                      <label key={lease.id} className="owner-report-lease-selection__item">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setSelectedLeaseIds((current) =>
-                              checked
-                                ? current.filter((id) => id !== lease.id)
-                                : [...current, lease.id],
-                            )
-                          }
-                        />
-                        <span>
-                          <strong>{lease.room_code}</strong> · {lease.resident_name}
-                          <small>
-                            Hak Owner {rupiah(lease.realization_total)} · Kontrak{" "}
-                            {rupiah(lease.contract_total)}
-                            {lease.waiting_physical_check_in ? (
-                              <span className="mt-1 block font-medium text-amber-700 dark:text-amber-300">
-                                Lunas, menunggu aktivasi/check-in
-                              </span>
-                            ) : null}
-                          </small>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
+            {creationMode === "future" ? (
+              <>
+                <fieldset className="owner-report-field min-w-0 rounded-xl border border-border bg-background p-4">
+                  <legend className="px-1 text-sm font-semibold">
+                    Kontrak otomatis yang masuk draft
+                  </legend>
+                  <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+                    Sistem hanya memasukkan kontrak sewa normal yang lunas dan belum pernah
+                    direalisasikan pada periode sumber. Batalkan centang untuk menahannya dari draft
+                    ini.
+                  </p>
+                  {creationTarget?.eligible_leases?.length ? (
+                    <div className="overflow-x-auto rounded-lg border">
+                      <table className="w-full min-w-[900px] text-left text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="w-14 px-3 py-3">Pilih</th>
+                            <th className="px-3 py-3">Kamar</th>
+                            <th className="px-3 py-3">Penghuni</th>
+                            <th className="px-3 py-3">Periode pelunasan</th>
+                            <th className="px-3 py-3 text-right">Total sewa</th>
+                            <th className="px-3 py-3 text-right">Management fee</th>
+                            <th className="px-3 py-3 text-right">Hak Owner</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {creationTarget.eligible_leases.map((lease) => {
+                            const checked = selectedLeaseIds.includes(lease.id);
+                            const selectedManually = manualDraftLines.some(
+                              (line) => line.leaseId === lease.id,
+                            );
+                            return (
+                              <tr key={lease.id} className="border-t">
+                                <td className="px-3 py-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={selectedManually}
+                                    aria-label={`Masukkan ${lease.room_code} ke draft`}
+                                    title={
+                                      selectedManually
+                                        ? "Kontrak ini sudah dipilih sebagai baris manual."
+                                        : undefined
+                                    }
+                                    onChange={() =>
+                                      setSelectedLeaseIds((current) =>
+                                        checked
+                                          ? current.filter((id) => id !== lease.id)
+                                          : [...current, lease.id],
+                                      )
+                                    }
+                                  />
+                                </td>
+                                <td className="px-3 py-3 font-medium">
+                                  {lease.room_code}
+                                  {lease.waiting_physical_check_in ? (
+                                    <span className="mt-1 block text-xs font-normal text-amber-700 dark:text-amber-300">
+                                      Lunas, menunggu aktivasi/check-in
+                                    </span>
+                                  ) : null}
+                                </td>
+                                <td className="px-3 py-3">{lease.resident_name}</td>
+                                <td className="px-3 py-3 text-muted-foreground">
+                                  {monthLabel(applied.period ?? defaultPeriod)}
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                  {rupiah(lease.contract_total)}
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                  {rupiah(lease.management_fee)}
+                                </td>
+                                <td className="px-3 py-3 text-right font-semibold">
+                                  {rupiah(lease.realization_total)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="rounded-lg bg-muted/50 px-3 py-4 text-sm text-muted-foreground">
+                      Tidak ada kontrak otomatis dari periode sumber untuk Owner ini.
+                    </p>
+                  )}
+                </fieldset>
+                <fieldset className="owner-report-field min-w-0 rounded-xl border-2 border-primary/35 bg-primary/5 p-4">
+                  <legend className="px-1 text-sm font-semibold">
+                    Baris kontrak realisasi manual
+                  </legend>
+                  <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+                    Tambahkan kontrak lunas milik Owner ini dari periode pelunasan mana pun. Nilai
+                    yang ditampilkan setelah pemilihan dapat disesuaikan; sumber kontraknya tetap
+                    terkunci agar tidak dapat dipakai pada realisasi lain. Kontrak yang sedang
+                    terpilih otomatis akan dipindahkan ke sini saat Anda memilihnya sebagai baris
+                    manual.
+                  </p>
+                  {manualCandidates.isError ? (
+                    <p className="mb-4 rounded-lg border border-destructive/35 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      Daftar kontrak manual tidak dapat dimuat. Coba muat ulang halaman sebelum
+                      menambahkan baris.
+                    </p>
+                  ) : null}
+                  {manualDraftLines.length ? (
+                    <div className="overflow-x-auto rounded-lg border-2 border-black/80 bg-background dark:border-white/35">
+                      <table className="w-full min-w-[1120px] text-left text-sm">
+                        <thead className="border-b-2 border-black/80 bg-muted/45 text-xs uppercase text-foreground dark:border-white/35">
+                          <tr>
+                            <th className="w-14 px-3 py-3">No.</th>
+                            <th className="min-w-64 px-3 py-3">
+                              Kamar <RequiredMark />
+                            </th>
+                            <th className="min-w-52 px-3 py-3">
+                              Nama penghuni <RequiredMark />
+                            </th>
+                            <th className="min-w-40 px-3 py-3">Sumber pelunasan</th>
+                            <th className="min-w-48 px-3 py-3">
+                              Total sewa <RequiredMark />
+                            </th>
+                            <th className="min-w-48 px-3 py-3">
+                              Management fee <RequiredMark />
+                            </th>
+                            <th className="min-w-36 px-3 py-3 text-right">Hak Owner</th>
+                            <th className="w-20 px-3 py-3 text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manualDraftLines.map((line, index) => {
+                            const candidate = (manualCandidates.data?.items ?? []).find(
+                              (item) => item.lease_id === line.leaseId,
+                            );
+                            const selectableManualCandidates = (manualCandidates.data?.items ?? [])
+                              .filter(
+                                (item) =>
+                                  item.lease_id === line.leaseId ||
+                                  !manualDraftLines.some(
+                                    (other) =>
+                                      other.id !== line.id && other.leaseId === item.lease_id,
+                                  ),
+                              )
+                              .map((item) => ({
+                                leaseId: item.lease_id,
+                                roomCode: item.room_code,
+                                residentName: item.resident_name,
+                                paymentSourcePeriod: monthLabel(item.payment_source_period),
+                              }));
+                            const noManualCandidateMessage =
+                              (manualCandidates.data?.items.length ?? 0) === 0
+                                ? "Tidak ada kontrak sewa normal yang sudah lunas dan tersedia untuk Owner ini."
+                                : "Semua kontrak yang memenuhi syarat sudah dipilih pada baris manual lain.";
+                            return (
+                              <tr key={line.id} className="border-t align-top">
+                                <td className="px-3 py-3 font-medium">{index + 1}</td>
+                                <td className="px-3 py-3">
+                                  <OwnerRealizationLeaseCombobox
+                                    id={`manual-realization-room-${line.id}`}
+                                    value={line.leaseId}
+                                    loading={manualCandidates.isLoading}
+                                    options={selectableManualCandidates}
+                                    emptyMessage={noManualCandidateMessage}
+                                    disabled={!creationOwnerId || manualCandidates.isError}
+                                    onChange={(leaseId) => {
+                                      const selected = (manualCandidates.data?.items ?? []).find(
+                                        (item) => item.lease_id === leaseId,
+                                      );
+                                      if (!selected) return;
+                                      setSelectedLeaseIds((current) =>
+                                        current.filter((id) => id !== selected.lease_id),
+                                      );
+                                      setManualDraftLines((lines) =>
+                                        lines.map((current) =>
+                                          current.id !== line.id
+                                            ? current
+                                            : {
+                                                ...current,
+                                                leaseId: selected.lease_id,
+                                                roomCode: selected.room_code,
+                                                residentName: selected.resident_name,
+                                                contractTotal: Number(selected.contract_total),
+                                                managementFee: Number(selected.management_fee),
+                                                paymentSourcePeriod: selected.payment_source_period,
+                                              },
+                                        ),
+                                      );
+                                    }}
+                                  />
+                                  <Input
+                                    className="mt-2"
+                                    value={line.roomCode}
+                                    placeholder="Kode kamar"
+                                    disabled={!line.leaseId}
+                                    aria-label={`Kode kamar baris manual ${index + 1}`}
+                                    onChange={(event) =>
+                                      setManualDraftLines((lines) =>
+                                        lines.map((current) =>
+                                          current.id === line.id
+                                            ? { ...current, roomCode: event.target.value }
+                                            : current,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  {candidate?.waiting_physical_check_in ? (
+                                    <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                                      Lunas, menunggu aktivasi/check-in
+                                    </span>
+                                  ) : null}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <Input
+                                    value={line.residentName}
+                                    placeholder="Nama penghuni"
+                                    disabled={!line.leaseId}
+                                    onChange={(event) =>
+                                      setManualDraftLines((lines) =>
+                                        lines.map((current) =>
+                                          current.id === line.id
+                                            ? { ...current, residentName: event.target.value }
+                                            : current,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </td>
+                                <td className="px-3 py-3 text-muted-foreground">
+                                  {line.paymentSourcePeriod
+                                    ? monthLabel(line.paymentSourcePeriod)
+                                    : "—"}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <HistoricalRupiahInput
+                                    id={`manual-realization-total-${line.id}`}
+                                    value={line.contractTotal}
+                                    onChange={(contractTotal) =>
+                                      setManualDraftLines((lines) =>
+                                        lines.map((current) =>
+                                          current.id === line.id
+                                            ? { ...current, contractTotal }
+                                            : current,
+                                        ),
+                                      )
+                                    }
+                                    required
+                                    disabled={!line.leaseId}
+                                  />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <HistoricalRupiahInput
+                                    id={`manual-realization-fee-${line.id}`}
+                                    value={line.managementFee}
+                                    onChange={(managementFee) =>
+                                      setManualDraftLines((lines) =>
+                                        lines.map((current) =>
+                                          current.id === line.id
+                                            ? { ...current, managementFee }
+                                            : current,
+                                        ),
+                                      )
+                                    }
+                                    required
+                                    disabled={!line.leaseId}
+                                  />
+                                </td>
+                                <td className="px-3 py-3 text-right font-semibold">
+                                  {rupiah(Math.max(line.contractTotal - line.managementFee, 0))}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="icon"
+                                    aria-label={`Hapus baris manual ${index + 1}`}
+                                    onClick={() =>
+                                      setManualDraftLines((lines) =>
+                                        lines.filter((current) => current.id !== line.id),
+                                      )
+                                    }
+                                  >
+                                    <Trash className="size-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="border-t-2 border-black/80 bg-sky-100 font-semibold dark:border-white/35 dark:bg-sky-950/35">
+                          <tr>
+                            <td colSpan={4} className="px-3 py-3">
+                              Total {manualDraftLines.length} baris manual
+                            </td>
+                            <td className="px-3 py-3">
+                              {rupiah(
+                                manualDraftLines.reduce((sum, line) => sum + line.contractTotal, 0),
+                              )}
+                            </td>
+                            <td className="px-3 py-3">
+                              {rupiah(
+                                manualDraftLines.reduce((sum, line) => sum + line.managementFee, 0),
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              {rupiah(
+                                manualDraftLines.reduce(
+                                  (sum, line) =>
+                                    sum + Math.max(line.contractTotal - line.managementFee, 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+                            <td />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-primary/35 bg-background/70 px-3 py-4 text-sm text-muted-foreground">
+                      Belum ada kontrak manual. Tambahkan bila kontrak lunas perlu direalisasikan
+                      pada periode ini.
+                    </p>
+                  )}
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      Kamar, nama penghuni, total sewa, dan management fee wajib diisi setelah
+                      kontrak sumber dipilih. Data bebas tanpa kontrak sumber tidak dapat disimpan
+                      sebagai realisasi yang belum ditransfer.
+                    </span>
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setManualDraftLines((lines) => [...lines, emptyManualDraftLine()])
+                      }
+                      disabled={!creationOwnerId}
+                    >
+                      <Plus /> Tambah baris manual
+                    </Button>
+                  </div>
+                  {manualReasonRequired ? (
+                    <label className="owner-report-field mt-4">
+                      <span className="font-semibold">
+                        {manualDraftLines.length
+                          ? "Alasan realisasi manual"
+                          : "Alasan pemindahan periode"}{" "}
+                        <RequiredMark />
+                      </span>
+                      <Textarea
+                        value={manualReason}
+                        onChange={(event) => setManualReason(event.target.value)}
+                        placeholder="Contoh: kontrak lunas Agustus direalisasikan pada Oktober sesuai kesepakatan Owner"
+                        rows={3}
+                        minLength={5}
+                        maxLength={1000}
+                        required
+                      />
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        Satu alasan ini menjelaskan seluruh baris manual dan periode tujuan.
+                        Tersimpan untuk review Admin dan Finance, bukan pada portal Owner.
+                      </span>
+                    </label>
+                  ) : null}
+                </fieldset>
+              </>
             ) : null}
             {creationMode === "historical" ? (
               <>
@@ -2878,53 +3280,65 @@ export function OwnerRealizationWorkspace() {
               </>
             ) : null}
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setHistoricalDialogOpen(false);
-                setHistoricalOwnerId("");
-              }}
-            >
-              Batal
-            </Button>
+          <DialogFooter className="flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:space-x-0">
             {creationMode === "future" ? (
-              <Button
-                disabled={
-                  prepare.isPending ||
-                  !creationOwnerId ||
-                  !targetRealizationPeriod ||
-                  (targetPeriodDiffersFromSource && schedulingReason.trim().length < 5) ||
-                  Boolean(
-                    creationTarget &&
-                    Array.isArray(creationTarget.eligible_lease_ids) &&
-                    selectedLeaseIds.length === 0,
-                  )
-                }
-                onClick={() =>
-                  prepare.mutate({
-                    ownerId: creationOwnerId,
-                    leaseIds: selectedLeaseIds,
-                    targetPeriod: targetRealizationPeriod,
-                    reason: targetPeriodDiffersFromSource ? schedulingReason.trim() : undefined,
-                  })
-                }
-              >
-                {prepare.isPending ? <Loader2 className="animate-spin" /> : <FilePlus2 />}
-                Siapkan draft
-              </Button>
+              <>
+                {prepareDisabledReason ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 sm:max-w-md">
+                    {prepareDisabledReason}
+                  </p>
+                ) : null}
+                <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:ml-auto sm:w-auto">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setHistoricalDialogOpen(false);
+                      setHistoricalOwnerId("");
+                    }}
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    disabled={prepare.isPending || Boolean(prepareDisabledReason)}
+                    onClick={() =>
+                      prepare.mutate({
+                        ownerId: creationOwnerId,
+                        leaseIds: selectedLeaseIds,
+                        manualLines: manualDraftLines,
+                        manualReason,
+                        targetPeriod: targetRealizationPeriod,
+                        reason: manualReason.trim() || undefined,
+                      })
+                    }
+                  >
+                    {prepare.isPending ? <Loader2 className="animate-spin" /> : <FilePlus2 />}
+                    Siapkan draft
+                  </Button>
+                </div>
+              </>
             ) : (
-              <Button
-                disabled={historicalMutation.isPending || historicalUploadBusy || !creationOwnerId}
-                onClick={openSaveConfirmation}
-              >
-                {historicalMutation.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <FilePlus2 />
-                )}
-                Simpan realisasi
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setHistoricalDialogOpen(false);
+                    setHistoricalOwnerId("");
+                  }}
+                >
+                  Batal
+                </Button>
+                <Button
+                  disabled={historicalMutation.isPending || historicalUploadBusy || !creationOwnerId}
+                  onClick={openSaveConfirmation}
+                >
+                  {historicalMutation.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <FilePlus2 />
+                  )}
+                  Simpan realisasi
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>

@@ -134,6 +134,7 @@ export type OwnerRealizationDetail = {
     realization_total: string;
     transferred_total: string;
     notes: string | null;
+    manual_reason: string | null;
     historical_source: string | null;
     prepared_at: string;
     submitted_for_review_at: string | null;
@@ -205,6 +206,18 @@ export type OwnerFinanceRequestAvailability = {
   realization_count: number;
 };
 
+export type OwnerRealizationManualCandidate = {
+  lease_id: string;
+  room_code: string;
+  resident_name: string;
+  contract_total: string;
+  management_fee: string;
+  realization_total: string;
+  payment_completed_at: string;
+  payment_source_period: string;
+  waiting_physical_check_in: boolean;
+};
+
 const base = "/admin/property-owner-realizations";
 
 export const ownerRealizationApi = {
@@ -248,6 +261,11 @@ export const ownerRealizationApi = {
     apiClient.get<OwnerFinanceRequestAvailability>(`${base}/finance-request/availability`, {
       query: filters,
     }),
+  manualCandidates: (ownerId: string, query: { property_id: string; q?: string }) =>
+    apiClient.get<{ items: OwnerRealizationManualCandidate[] }>(
+      `${base}/owners/${encodeURIComponent(ownerId)}/manual-candidates`,
+      { query },
+    ),
   prepare: (
     ownerId: string,
     body: {
@@ -258,6 +276,14 @@ export const ownerRealizationApi = {
       scheduling_reason?: string;
       notes?: string;
       selected_lease_ids?: string[];
+      manual_lines?: Array<{
+        lease_id: string;
+        room_code: string;
+        resident_name: string;
+        contract_total: number;
+        management_fee: number;
+      }>;
+      manual_reason?: string;
     },
   ) =>
     apiClient.post(`${base}/owners/${encodeURIComponent(ownerId)}/prepare`, body, {

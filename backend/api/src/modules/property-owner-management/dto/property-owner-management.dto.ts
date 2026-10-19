@@ -440,6 +440,33 @@ export class OwnerRealizationRangeQueryDto extends PropertyOwnerPropertyQueryDto
   voided?: 'include_voided' | 'exclude_voided';
 }
 
+export class PrepareOwnerRealizationManualLineDto {
+  @IsUUID('4')
+  lease_id!: string;
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  room_code!: string;
+
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(150)
+  resident_name!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  contract_total!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  management_fee!: number;
+}
+
 export class PrepareOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {
   @IsString()
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
@@ -471,11 +498,34 @@ export class PrepareOwnerRealizationDto extends PropertyOwnerPropertyQueryDto {
   selected_lease_ids?: string[];
 
   @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => PrepareOwnerRealizationManualLineDto)
+  manual_lines?: PrepareOwnerRealizationManualLineDto[];
+
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(1000)
+  manual_reason?: string;
+
+  @IsOptional()
   @Transform(trimOptional)
   @IsString()
   @MinLength(3)
   @MaxLength(1000)
   notes?: string;
+}
+
+export class OwnerRealizationManualCandidatesQueryDto extends PropertyOwnerPropertyQueryDto {
+  @IsOptional()
+  @Transform(trimOptional)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
 }
 
 export class ChangeOwnerRealizationStatusDto extends PropertyOwnerPropertyQueryDto {

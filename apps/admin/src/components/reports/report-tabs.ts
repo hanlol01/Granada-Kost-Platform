@@ -1,5 +1,11 @@
 export const reportTabs = [
   {
+    type: "property-owners",
+    route: "/reports/property-owners",
+    label: "Realisasi Owner",
+    description: "Hak Owner, transfer, dan publikasi",
+  },
+  {
     type: "leases",
     route: "/reports/leases",
     label: "Penyewaan",
@@ -22,12 +28,6 @@ export const reportTabs = [
     route: "/reports/finance",
     label: "Keuangan",
     description: "Arus kas operasional",
-  },
-  {
-    type: "property-owners",
-    route: "/reports/property-owners",
-    label: "Realisasi Owner",
-    description: "Hak Owner, transfer, dan publikasi",
   },
 ] as const;
 

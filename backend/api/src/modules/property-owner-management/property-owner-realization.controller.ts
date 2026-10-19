@@ -27,6 +27,7 @@ import {
   CreateHistoricalOwnerRealizationDto,
   CreateOwnerRealizationCorrectionDto,
   CorrectOwnerRealizationPeriodDto,
+  OwnerRealizationManualCandidatesQueryDto,
   OwnerRealizationQueryDto,
   OwnerRealizationRangeQueryDto,
   PreviewOwnerRealizationPeriodRescheduleDto,
@@ -124,6 +125,15 @@ export class PropertyOwnerRealizationController {
     response.setHeader('Content-Disposition', documentDisposition(file.filename));
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(file.content);
+  }
+
+  @Get('owners/:ownerId/manual-candidates')
+  manualCandidates(
+    @CurrentUser() actor: UserAccessContext,
+    @Param('ownerId', new ParseUUIDPipe({ version: '4' })) ownerId: string,
+    @Query() query: OwnerRealizationManualCandidatesQueryDto,
+  ) {
+    return this.realizations.manualCandidates(actor, ownerId, query);
   }
 
   @Get('not-eligible/export')

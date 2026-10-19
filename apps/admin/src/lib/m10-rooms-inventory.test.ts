@@ -390,6 +390,14 @@ test("RoomsPage delegates metrics to the authoritative summary helper", () => {
   assert.match(route, /summarizeRoomInventory\(/);
 });
 
+test("room status mutation keeps roomId in the URL and out of the request body", () => {
+  const inventory = readAdminSource("components/rooms/KostTypeInventoryPage.tsx");
+
+  assert.match(inventory, /const \{ roomId, \.\.\.input \} = values;/);
+  assert.match(inventory, /rooms\.updateStatus\(roomId, input, key\)/);
+  assert.doesNotMatch(inventory, /rooms\.updateStatus\(values\.roomId, values, key\)/);
+});
+
 test("category summary includes inactive kost types", () => {
   const route = readAdminSource("routes/rooms/index.tsx");
   assert.doesNotMatch(route, /type\.status === "active"/);

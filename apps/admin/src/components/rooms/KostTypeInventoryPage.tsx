@@ -2181,7 +2181,8 @@ function RoomStatusDialog({
     }
   >("room", "Status operasional kamar diperbarui", (propertyId, values, key) => {
     void propertyId;
-    return adminUxMasterApi.rooms.updateStatus(values.roomId, values, key);
+    const { roomId, ...input } = values;
+    return adminUxMasterApi.rooms.updateStatus(roomId, input, key);
   });
 
   useEffect(() => {

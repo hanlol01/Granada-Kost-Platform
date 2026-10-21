@@ -109,6 +109,7 @@ export type OwnerRealizationList = {
     eligible_contract_total: number;
     management_fee_total: number;
     realization_total: number;
+    voided_realization_total: number;
     transferred_total: number;
     owner_counts: OwnerRealizationOwnerCounts;
     attention: OwnerRealizationAttention;

@@ -726,33 +726,47 @@ export class PropertyOwnerRealizationService {
       }
     }
     const ownerStatusValues = [...ownerStatusById.values()];
-    const voidedOwnerCount = ownerStatusValues.filter((status) => status === 'void').length;
+    const voidedOwnerCount = new Set(
+      orderedRows
+        .filter((row) => row.realization?.status === 'void')
+        .map((row) => row.owner_id),
+    ).size;
     const ownerCounts = {
-      total: ownerStatusValues.length - voidedOwnerCount,
+      total: ownerStatusValues.filter((status) => status !== 'void').length,
       published: ownerStatusValues.filter((status) => status === 'published_to_owner').length,
       waiting_publication: ownerStatusValues.filter((status) => status === 'realized').length,
       voided: voidedOwnerCount,
     };
+    const summary = orderedRows.reduce(
+      (total, row) => {
+        const isVoided = row.realization?.status === 'void';
+        const realizationTotal = Number(row.realization_total);
+        return {
+          eligible_contract_total:
+            total.eligible_contract_total + Number(row.eligible_contract_total),
+          management_fee_total: total.management_fee_total + Number(row.management_fee_total),
+          // A cancelled realization remains visible as history, but it is no longer
+          // an Owner entitlement that can be called realized.
+          realization_total: total.realization_total + (isVoided ? 0 : realizationTotal),
+          voided_realization_total:
+            total.voided_realization_total + (isVoided ? realizationTotal : 0),
+          transferred_total: total.transferred_total + Number(row.transferred_total),
+        };
+      },
+      {
+        eligible_contract_total: 0,
+        management_fee_total: 0,
+        realization_total: 0,
+        voided_realization_total: 0,
+        transferred_total: 0,
+      },
+    );
     return {
       period: period?.value ?? null,
       rows: pageWithAssets,
       meta: { offset, limit, total: orderedRows.length },
       summary: {
-        ...orderedRows.reduce(
-          (total, row) => ({
-            eligible_contract_total:
-              total.eligible_contract_total + Number(row.eligible_contract_total),
-            management_fee_total: total.management_fee_total + Number(row.management_fee_total),
-            realization_total: total.realization_total + Number(row.realization_total),
-            transferred_total: total.transferred_total + Number(row.transferred_total),
-          }),
-          {
-            eligible_contract_total: 0,
-            management_fee_total: 0,
-            realization_total: 0,
-            transferred_total: 0,
-          },
-        ),
+        ...summary,
         owner_counts: ownerCounts,
         attention,
       },
@@ -1501,12 +1515,23 @@ export class PropertyOwnerRealizationService {
         ],
         ...(query.q ? [['Pencarian', query.q] as [string, string]] : []),
       ],
-      summary: {
-        eligible_contract_total: first.summary.eligible_contract_total,
-        management_fee_total: first.summary.management_fee_total,
-        realization_total: first.summary.realization_total,
-        transferred_total: first.summary.transferred_total,
-      },
+      summary:
+        query.workspace === 'history' && query.status === 'void'
+          ? {
+              eligible_contract_total: first.summary.eligible_contract_total,
+              management_fee_total: first.summary.management_fee_total,
+              voided_realization_total: first.summary.voided_realization_total,
+              transferred_total: first.summary.transferred_total,
+            }
+          : {
+              eligible_contract_total: first.summary.eligible_contract_total,
+              management_fee_total: first.summary.management_fee_total,
+              realization_total: first.summary.realization_total,
+              ...(first.summary.voided_realization_total > 0
+                ? { voided_realization_total: first.summary.voided_realization_total }
+                : {}),
+              transferred_total: first.summary.transferred_total,
+            },
       rows: rows.map((row) => ({
         owner: row.owner_name,
         owner_assets: ownerAssetsForExport(row.assets, Boolean(row.realization)),

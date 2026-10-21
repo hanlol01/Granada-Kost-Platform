@@ -45,6 +45,7 @@ const ownerSummaryLabels: Record<string, string> = {
   eligible_contract_total: 'Total kontrak layak',
   management_fee_total: 'Total management fee',
   realization_total: 'Hak Owner direalisasikan',
+  voided_realization_total: 'Hak Owner dibatalkan (tidak dihitung sebagai realisasi)',
   transferred_total: 'Dana sudah ditransfer',
   total_not_eligible: 'Total data belum masuk kriteria',
   outstanding_contract_rent: 'Kontrak masih outstanding',
@@ -155,6 +156,7 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
       'eligible_contract_total',
       'management_fee_total',
       'realization_total',
+      'voided_realization_total',
       'transferred_total',
       'total_contract_rent',
       'management_fee',
@@ -288,18 +290,33 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
       ] as ReportScalar[],
   );
   if (!rows.length) rows.push(['', 'Tidak ada data sesuai filter', '', '', '', '', '', '', '', '']);
-  rows.push([
-    'TOTAL',
+  const queueRows = report.rows;
+  const voidedQueueRows = queueRows.filter((row) => String(row.status) === 'void');
+  const validQueueRows = queueRows.filter((row) => String(row.status) !== 'void');
+  const onlyVoidedRows = queueRows.length > 0 && validQueueRows.length === 0;
+  const sumQueueRows = (source: typeof queueRows, key: string) =>
+    source.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
+  const queueTotalRow = (label: string, source: typeof queueRows) => [
+    label,
     '',
     '',
-    report.rows.reduce((sum, row) => sum + Number(row.eligible_contract_count ?? 0), 0),
-    rupiah(report.rows.reduce((sum, row) => sum + Number(row.total_contract_rent ?? 0), 0)),
-    rupiah(report.rows.reduce((sum, row) => sum + Number(row.management_fee ?? 0), 0)),
-    rupiah(report.rows.reduce((sum, row) => sum + Number(row.owner_realization ?? 0), 0)),
-    rupiah(report.rows.reduce((sum, row) => sum + Number(row.transferred ?? 0), 0)),
+    sumQueueRows(source, 'eligible_contract_count'),
+    rupiah(sumQueueRows(source, 'total_contract_rent')),
+    rupiah(sumQueueRows(source, 'management_fee')),
+    rupiah(sumQueueRows(source, 'owner_realization')),
+    rupiah(sumQueueRows(source, 'transferred')),
     '',
     '',
-  ]);
+  ];
+  rows.push(
+    queueTotalRow(
+      onlyVoidedRows ? 'TOTAL DIBATALKAN' : 'TOTAL REALISASI VALID',
+      onlyVoidedRows ? voidedQueueRows : validQueueRows,
+    ),
+  );
+  if (!onlyVoidedRows && voidedQueueRows.length > 0) {
+    rows.push(queueTotalRow('DIBATALKAN (TIDAK DIHITUNG)', voidedQueueRows));
+  }
   return [
     { name: 'Ringkasan', rows: summary },
     { name: 'Rincian', rows: [header, ...rows] },

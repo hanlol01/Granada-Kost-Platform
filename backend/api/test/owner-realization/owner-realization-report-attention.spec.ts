@@ -58,11 +58,24 @@ void test('report attention counts ready contracts after a completed batch and e
       transferred_total: '0',
       published_at: null,
     },
+    {
+      id: '00000000-0000-4000-8000-000000000007',
+      owner_profile_id: ownerB,
+      realization_status: 'void',
+      realization_period: '2026-08-01',
+      realization_reference: 'RLS-B-VOID',
+      room_count: 1,
+      eligible_contract_total: '7560000',
+      management_fee_total: '1260000',
+      realization_total: '6300000',
+      transferred_total: '0',
+      published_at: null,
+    },
   ];
   const client = {
     query: (sql: string) => {
       if (sql.includes('SELECT DISTINCT ON')) return Promise.resolve({ rows: [] });
-      if (sql.includes('WITH rent_ledger AS')) return Promise.resolve({ rows: candidates });
+      if (sql.includes('WITH scoped AS')) return Promise.resolve({ rows: candidates });
       if (sql.includes('WITH ownership_scope AS')) return Promise.resolve({ rows: [] });
       if (sql.includes('FROM property_owner_realizations realization'))
         return Promise.resolve({ rows: realizations });
@@ -99,4 +112,27 @@ void test('report attention counts ready contracts after a completed batch and e
     result.rows.map((row) => row.owner_id),
     [ownerA],
   );
+
+  const history = await service.list(actor, {
+    property_id: propertyId,
+    period: '2026-08',
+    workspace: 'history',
+    limit: 20,
+    offset: 0,
+  });
+  assert.equal(history.summary.realization_total, 4_500_000);
+  assert.equal(history.summary.voided_realization_total, 6_300_000);
+  assert.equal(history.summary.transferred_total, 4_500_000);
+  assert.equal(history.summary.owner_counts.voided, 1);
+
+  const voidedHistory = await service.list(actor, {
+    property_id: propertyId,
+    period: '2026-08',
+    workspace: 'history',
+    status: 'void',
+    limit: 20,
+    offset: 0,
+  });
+  assert.equal(voidedHistory.summary.realization_total, 0);
+  assert.equal(voidedHistory.summary.voided_realization_total, 6_300_000);
 });

@@ -895,6 +895,53 @@ export function OwnerRealizationWorkspace() {
     financeRequestUnavailable ||
     (applied.workspace === "active" &&
       (financeRequestAvailability.isLoading || financeRequestReadyCount === 0));
+  const isVoidedHistoryFilter = applied.workspace === "history" && applied.status === "void";
+  const voidedRealizationTotal = list.data?.summary.voided_realization_total ?? 0;
+  const voidedOwnerCount = list.data?.summary.owner_counts.voided ?? 0;
+  const ownerEntitlementSummary = (() => {
+    if (isVoidedHistoryFilter) {
+      return {
+        label: "Hak Owner dibatalkan",
+        helper: "Tidak dihitung sebagai realisasi valid.",
+      };
+    }
+
+    if (applied.workspace === "history") {
+      return {
+        label: "Hak Owner tercatat dalam riwayat realisasi",
+        helper:
+          voidedRealizationTotal > 0
+            ? `Nilai realisasi tercatat; transfer aktual ditampilkan terpisah. Tidak termasuk ${voidedOwnerCount} Owner dibatalkan · ${rupiah(voidedRealizationTotal)}`
+            : "Nilai realisasi tercatat; transfer aktual ditampilkan terpisah.",
+      };
+    }
+
+    if (applied.workspace === "active" && applied.status === "not_prepared") {
+      return {
+        label: "Hak Owner siap direalisasi",
+        helper: "Kontrak lunas yang belum dibuatkan realisasi.",
+      };
+    }
+
+    if (applied.workspace === "active" && applied.status) {
+      return {
+        label: "Hak Owner dalam proses realisasi",
+        helper: `Nilai realisasi berstatus ${statusLabel[applied.status]}; transfer aktual ditampilkan terpisah.`,
+      };
+    }
+
+    if (applied.workspace === "active") {
+      return {
+        label: "Hak Owner pada realisasi aktif",
+        helper: "Gabungan antrean siap dan realisasi yang masih diproses.",
+      };
+    }
+
+    return {
+      label: "Hak Owner direalisasikan",
+      helper: "Setelah fee dan penyesuaian sah",
+    };
+  })();
   useEffect(() => {
     if (
       filterNoticeRevision <= 1 ||
@@ -1308,11 +1355,15 @@ export function OwnerRealizationWorkspace() {
               tone="slate"
             />
             <SummaryCard
-              label="Hak Owner direalisasikan"
-              value={rupiah(list.data?.summary.realization_total)}
-              helper="Setelah fee dan penyesuaian sah"
-              icon={<Landmark />}
-              tone="blue"
+              label={ownerEntitlementSummary.label}
+              value={rupiah(
+                isVoidedHistoryFilter
+                  ? voidedRealizationTotal
+                  : list.data?.summary.realization_total,
+              )}
+              helper={ownerEntitlementSummary.helper}
+              icon={isVoidedHistoryFilter ? <Ban /> : <Landmark />}
+              tone={isVoidedHistoryFilter ? "amber" : "blue"}
             />
             <SummaryCard
               label="Dana sudah ditransfer"

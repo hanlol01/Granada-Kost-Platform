@@ -185,6 +185,8 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
       'Hak Owner',
       'Status realisasi',
       'Tanggal pelunasan',
+      'Periode pelunasan',
+      'Sumber baris',
       'Check-in',
       'Check-out',
     ];
@@ -214,6 +216,10 @@ function propertyOwnerSheets(report: ReportResult): Sheet[] {
           rupiah(row.net_realization),
           ownerStatusLabels[String(row.realization_status)] ?? row.realization_status,
           row.line_status === 'total' ? '' : formatReportDate(row.paid_in_full_at),
+          row.line_status === 'total' || !row.payment_source_period
+            ? ''
+            : formatOwnerMonthYear(`${row.payment_source_period}-01`),
+          row.line_status === 'total' ? '' : row.entry_mode === 'manual' ? 'Manual' : 'Otomatis',
           row.line_status === 'total' ? '' : formatReportDate(row.check_in),
           row.line_status === 'total' ? '' : formatReportDate(row.check_out),
         ] as ReportScalar[],
@@ -366,6 +372,7 @@ export type OwnerFinanceRequestRow = {
   plotNumber: string;
   durationMonths: number;
   paymentSourcePeriod: string | null;
+  entryMode: 'automatic' | 'manual';
   totalRent: number;
   realizationAmount: number;
   accountNumber: string;
@@ -1519,8 +1526,10 @@ export async function ownerFinanceRequestToPdf(
       String(index + 1),
       row.tenantName || '-',
       `${row.roomCode || '-'}\nKav.${row.plotNumber && row.plotNumber !== '-' ? row.plotNumber : '—'}${
-        row.paymentSourcePeriod ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}` : ''
-      }`,
+        row.paymentSourcePeriod
+          ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}`
+          : ''
+      }\nSumber: ${row.entryMode === 'manual' ? 'Manual' : 'Otomatis'}`,
       row.ownerName || '-',
       duration(row.durationMonths),
       money(row.totalRent),
@@ -2028,8 +2037,10 @@ export function ownerFinanceRequestToXlsx(document: OwnerFinanceRequestDocument)
       index + 1,
       row.tenantName || '-',
       `${row.roomCode || '-'}\nKav.${row.plotNumber && row.plotNumber !== '-' ? row.plotNumber : '—'}${
-        row.paymentSourcePeriod ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}` : ''
-      }`,
+        row.paymentSourcePeriod
+          ? `\nLunas: ${formatOwnerMonthYear(`${row.paymentSourcePeriod}-01`)}`
+          : ''
+      }\nSumber: ${row.entryMode === 'manual' ? 'Manual' : 'Otomatis'}`,
       row.ownerName || '-',
       duration(row.durationMonths),
       money(row.totalRent),
